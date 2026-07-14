@@ -116,6 +116,10 @@ def test_report_survives_incomplete_crash_session(tmp_path: Path) -> None:
     assert "incomplete" in report
     assert "## Combats" in report
     assert "CARD.ZAP" in report
+    # Torn-final-line contract: the crash-terminated session's torn in-flight
+    # line is skipped with a specific note, not a generic truncation warning.
+    assert "torn final line" in report
+    assert "stream truncated/unreadable" not in report
 
 
 def test_report_handles_empty_streams(tmp_path: Path) -> None:

@@ -1,0 +1,102 @@
+diff --color -ruN --exclude=bin --exclude=obj sts2mcp-pristine/McpMod.Actions.cs sts2mcp-upstream/McpMod.Actions.cs
+--- sts2mcp-pristine/McpMod.Actions.cs	2026-06-16 13:47:12
++++ sts2mcp-upstream/McpMod.Actions.cs	2026-07-14 22:43:56
+@@ -95,7 +95,7 @@
+     {
+         if (!CombatManager.Instance.IsInProgress)
+             return Error("Not in combat");
+-        if (!CombatManager.Instance.IsPlayPhase)
++        if (player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
+             return Error("Not in play phase - cannot act during enemy turn");
+         if (CombatManager.Instance.PlayerActionsDisabled)
+             return Error("Player actions are currently disabled");
+@@ -150,7 +150,7 @@
+     {
+         if (!CombatManager.Instance.IsInProgress)
+             return Error("Not in combat");
+-        if (!CombatManager.Instance.IsPlayPhase)
++        if (player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
+             return Error("Not in play phase - cannot act during enemy turn");
+         if (CombatManager.Instance.PlayerActionsDisabled)
+             return Error("Player actions are currently disabled (turn may already be ending)");
+@@ -193,7 +193,7 @@
+         {
+             if (!inCombat)
+                 return Error($"Potion '{SafeGetText(() => potion.Title)}' can only be used in combat");
+-            if (!CombatManager.Instance.IsPlayPhase)
++            if (player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
+                 return Error("Cannot use potions outside of play phase");
+         }
+         else if (potion.Usage == PotionUsage.Automatic)
+@@ -362,7 +362,7 @@
+             var merchUI = NMerchantRoom.Instance;
+             if (merchUI?.Inventory != null && !merchUI.Inventory.IsOpen)
+                 merchUI.OpenInventory();
+-            inventory = merchantRoom.Inventory;
++            inventory = merchantRoom.Inventories.Count > 0 ? merchantRoom.GetLocalInventory() : null;
+         }
+         else if (player.RunState.CurrentRoom is EventRoom eventRoom
+                  && eventRoom.CanonicalEvent is FakeMerchant
+@@ -1050,7 +1050,7 @@
+             .FirstOrDefault(IsControlVisibleOrActionable);
+     }
+ 
+-    private static Creature? ResolveTarget(CombatState combatState, string entityId)
++    private static Creature? ResolveTarget(ICombatState combatState, string entityId)
+     {
+         // Try to match by entity_id pattern: "model_entry_N"
+         // First try matching by combat_id if it's a pure number
+diff --color -ruN --exclude=bin --exclude=obj sts2mcp-pristine/McpMod.MultiplayerActions.cs sts2mcp-upstream/McpMod.MultiplayerActions.cs
+--- sts2mcp-pristine/McpMod.MultiplayerActions.cs	2026-06-16 13:47:12
++++ sts2mcp-upstream/McpMod.MultiplayerActions.cs	2026-07-14 22:43:17
+@@ -73,7 +73,7 @@
+     {
+         if (!CombatManager.Instance.IsInProgress)
+             return Error("Not in combat");
+-        if (!CombatManager.Instance.IsPlayPhase)
++        if (player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
+             return Error("Not in play phase - cannot act during enemy turn");
+         if (CombatManager.Instance.PlayerActionsDisabled)
+             return Error("Player actions are currently disabled");
+@@ -106,7 +106,7 @@
+     {
+         if (!CombatManager.Instance.IsInProgress)
+             return Error("Not in combat");
+-        if (!CombatManager.Instance.IsPlayPhase)
++        if (player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
+             return Error("Not in play phase - cannot act during enemy turn");
+         if (CombatManager.Instance.PlayerActionsDisabled)
+             return Error("Player actions are currently disabled");
+diff --color -ruN --exclude=bin --exclude=obj sts2mcp-pristine/McpMod.MultiplayerState.cs sts2mcp-upstream/McpMod.MultiplayerState.cs
+--- sts2mcp-pristine/McpMod.MultiplayerState.cs	2026-06-16 13:47:12
++++ sts2mcp-upstream/McpMod.MultiplayerState.cs	2026-07-14 22:43:19
+@@ -269,7 +269,7 @@
+ 
+         battle["round"] = combatState.RoundNumber;
+         battle["turn"] = combatState.CurrentSide.ToString().ToLower();
+-        battle["is_play_phase"] = CombatManager.Instance.IsPlayPhase;
++        battle["is_play_phase"] = LocalContext.GetMe(runState)?.PlayerCombatState?.Phase == PlayerTurnPhase.Play;
+         battle["all_players_ready"] = CombatManager.Instance.AllPlayersReadyToEndTurn();
+ 
+         // Enemies
+diff --color -ruN --exclude=bin --exclude=obj sts2mcp-pristine/McpMod.StateBuilder.cs sts2mcp-upstream/McpMod.StateBuilder.cs
+--- sts2mcp-pristine/McpMod.StateBuilder.cs	2026-06-16 13:47:12
++++ sts2mcp-upstream/McpMod.StateBuilder.cs	2026-07-14 22:43:57
+@@ -1072,7 +1072,7 @@
+ 
+         battle["round"] = combatState.RoundNumber;
+         battle["turn"] = combatState.CurrentSide.ToString().ToLower();
+-        battle["is_play_phase"] = CombatManager.Instance.IsPlayPhase;
++        battle["is_play_phase"] = LocalContext.GetMe(runState)?.PlayerCombatState?.Phase == PlayerTurnPhase.Play;
+ 
+         // Enemies
+         var enemies = new List<Dictionary<string, object?>>();
+@@ -1564,7 +1564,7 @@
+     {
+         var state = new Dictionary<string, object?>();
+ 
+-        var inventory = merchantRoom.Inventory;
++        var inventory = merchantRoom.Inventories.Count > 0 ? merchantRoom.GetLocalInventory() : null;
+         if (inventory == null)
+         {
+             state["items"] = new List<Dictionary<string, object?>>();

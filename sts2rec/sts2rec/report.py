@@ -65,13 +65,28 @@ def _load_lenient(session_dir: Path) -> _SessionData:
         "actions": (parse_action_record, data.actions),
         "events": (parse_event_record, data.events),
     }
+    # incomplete=true (crash-terminated): a malformed FINAL line is the
+    # recorder's torn in-flight write at SIGKILL — skip it with a specific
+    # note instead of aborting the stream read.
+    incomplete = data.manifest.incomplete
     for stream, (parser, records) in parsers.items():
         path = resolve_stream_path(session_dir, stream)
         if not path.is_file():
             data.warnings.append(f"missing stream file: {path.name}")
             continue
+
+        def _note_torn_final(
+            line_no: int, _error: JsonlError, *, name: str = path.name
+        ) -> None:
+            data.warnings.append(
+                f"{name}:{line_no}: torn final line "
+                "(crash-terminated session); skipped"
+            )
+
         try:
-            for line_no, raw in iter_jsonl(path):
+            for line_no, raw in iter_jsonl(
+                path, on_torn_final=_note_torn_final if incomplete else None
+            ):
                 try:
                     records.append(parser(raw, where=f"{path.name}:{line_no}"))
                 except RecordError as error:

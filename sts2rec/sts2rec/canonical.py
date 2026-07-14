@@ -62,12 +62,25 @@ REWARD_NOTE = (
 )
 
 
-def _load_stream(session_dir: Path, stream: str, parser: Any) -> tuple[Any, ...]:
+def _discard_torn_final(_line_no: int, _error: JsonlError) -> None:
+    """Torn-final-line contract (crash-terminated session): the malformed
+    final line is the recorder's in-flight write at SIGKILL; drop it and
+    build the trajectory from the intact records."""
+
+
+def _load_stream(
+    session_dir: Path,
+    stream: str,
+    parser: Any,
+    *,
+    tolerate_torn_final: bool = False,
+) -> tuple[Any, ...]:
     path = resolve_stream_path(session_dir, stream)
+    on_torn_final = _discard_torn_final if tolerate_torn_final else None
     try:
         return tuple(
             parser(raw, where=f"{path.name}:{line_no}")
-            for line_no, raw in iter_jsonl(path)
+            for line_no, raw in iter_jsonl(path, on_torn_final=on_torn_final)
         )
     except (JsonlError, RecordError) as error:
         raise CanonicalError(
@@ -199,14 +212,18 @@ def build_canonical(session_dir: Path | str) -> dict[str, Any]:
     """Build the canonical {meta, prelude_events, steps[]} trajectory."""
     session_dir = Path(session_dir)
     manifest = load_manifest(session_dir)
+    # incomplete=true (crash-terminated): tolerate one torn FINAL line per
+    # stream — the recorder's in-flight write at SIGKILL. Finalized sessions
+    # keep strict parsing: any malformed line is corruption.
+    tolerate = manifest.incomplete
     states: tuple[StateRecord, ...] = _load_stream(
-        session_dir, "states", parse_state_record
+        session_dir, "states", parse_state_record, tolerate_torn_final=tolerate
     )
     actions: tuple[ActionRecord, ...] = _load_stream(
-        session_dir, "actions", parse_action_record
+        session_dir, "actions", parse_action_record, tolerate_torn_final=tolerate
     )
     events: tuple[EventRecord, ...] = _load_stream(
-        session_dir, "events", parse_event_record
+        session_dir, "events", parse_event_record, tolerate_torn_final=tolerate
     )
 
     ordered_states = tuple(sorted(states, key=lambda record: record.seq))

@@ -87,6 +87,42 @@ class TestIterJsonl:
         path.write_text('{"a": 1}\n\n{"a": 2}\n', encoding="utf-8")
         assert len(list(iter_jsonl(path))) == 2
 
+    def test_torn_final_line_skipped_with_callback(self, tmp_path: Path) -> None:
+        """on_torn_final: a malformed FINAL line (torn in-flight write at
+        SIGKILL) is skipped, the intact records are yielded, and the callback
+        receives the torn line number and the would-be error."""
+        path = tmp_path / "states.jsonl"
+        path.write_text('{"seq": 1, "t": 1.0}\n{"seq": 2, "t"', encoding="utf-8")
+        torn: list[tuple[int, JsonlError]] = []
+        records = list(
+            iter_jsonl(path, on_torn_final=lambda n, e: torn.append((n, e)))
+        )
+        assert records == [(1, {"seq": 1, "t": 1.0})]
+        assert len(torn) == 1
+        assert torn[0][0] == 2
+        assert "malformed JSON line" in str(torn[0][1])
+
+    def test_torn_middle_line_raises_even_with_callback(self, tmp_path: Path) -> None:
+        """A malformed NON-final line is corruption, never a torn write."""
+        path = tmp_path / "states.jsonl"
+        path.write_text(
+            '{"seq": 1, "t": 1.0}\n{"seq": 2, "t"\n{"seq": 3, "t": 3.0}\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(JsonlError, match=r"states\.jsonl:2"):
+            list(iter_jsonl(path, on_torn_final=lambda n, e: None))
+
+    def test_callback_not_invoked_on_clean_file(self, session_dir: Path) -> None:
+        torn: list[int] = []
+        records = list(
+            iter_jsonl(
+                session_dir / "states.jsonl",
+                on_torn_final=lambda n, e: torn.append(n),
+            )
+        )
+        assert len(records) == 3
+        assert torn == []
+
 
 class TestRecordParsing:
     def test_state_record(self) -> None:

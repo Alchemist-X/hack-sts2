@@ -12,8 +12,14 @@ counts must match the JSONL line counts exactly — a mismatch is an error.
 When incomplete=true (crash-terminated session), the manifest on disk is a
 periodic checkpoint while the OS may have flushed more (or fewer) buffered
 JSONL lines than the checkpoint recorded, so count mismatches degrade to
-warnings; line-level integrity violations (malformed/truncated lines, seq
-regressions, dangling state_seq) remain errors either way.
+warnings; line-level integrity violations (seq regressions, dangling
+state_seq, malformed NON-final lines) remain errors either way.
+
+Torn-final-line contract: when incomplete=true, a malformed FINAL line of a
+stream is the recorder's single in-flight write at SIGKILL — expected crash
+debris, not corruption — so it degrades to a warning and the intact records
+are retained. A malformed final line in a cleanly finalized session
+(incomplete=false), or any malformed non-final line, stays an error.
 
 state_seq contract: an action's state_seq is null (legacy: 0, normalized at
 parse time) when the action fired before the first snapshot; that is valid
@@ -64,19 +70,35 @@ class _StreamResult:
     records: tuple[Any, ...]
     line_count: int
     errors: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
-def _read_stream(session_dir: Path, stream: str) -> _StreamResult:
-    """Parse one stream (plain or .gz), collecting per-line integrity errors."""
+def _read_stream(
+    session_dir: Path, stream: str, *, incomplete: bool
+) -> _StreamResult:
+    """Parse one stream (plain or .gz), collecting per-line integrity errors.
+
+    When `incomplete` is true (crash-terminated session), a malformed FINAL
+    line is tolerated as the recorder's torn in-flight write at SIGKILL and
+    reported as a warning; otherwise it stays an error like any other
+    malformed line.
+    """
     path = resolve_stream_path(session_dir, stream)
     parser = _PARSERS[stream]
     records: list[Any] = []
     errors: list[str] = []
+    torn_final_lines: list[int] = []
+
+    def _note_torn_final(line_no: int, _error: JsonlError) -> None:
+        torn_final_lines.append(line_no)
+
     line_count = 0
     prev_seq: int | None = None
     prev_t: float | None = None
     try:
-        for line_no, raw in iter_jsonl(path):
+        for line_no, raw in iter_jsonl(
+            path, on_torn_final=_note_torn_final if incomplete else None
+        ):
             line_count += 1
             where = f"{path.name}:{line_no}"
             try:
@@ -102,8 +124,16 @@ def _read_stream(session_dir: Path, stream: str) -> _StreamResult:
             records.append(record)
     except JsonlError as error:
         errors.append(str(error))
+    warnings = tuple(
+        f"{path.name}:{line_no}: torn final line (crash-terminated session); "
+        f"{line_count} intact records retained"
+        for line_no in torn_final_lines
+    )
     return _StreamResult(
-        records=tuple(records), line_count=line_count, errors=tuple(errors)
+        records=tuple(records),
+        line_count=line_count,
+        errors=tuple(errors),
+        warnings=warnings,
     )
 
 
@@ -204,13 +234,16 @@ def validate_session(session_dir: Path | str) -> ValidationReport:
         )
 
     results = {
-        stream: _read_stream(session_dir, stream)
+        stream: _read_stream(
+            session_dir, stream, incomplete=manifest.incomplete
+        )
         for stream in ("states", "actions", "events")
     }
     errors: list[str] = []
     warnings: list[str] = []
     for result in results.values():
         errors.extend(result.errors)
+        warnings.extend(result.warnings)
     errors.extend(_cross_stream_errors(results["states"], results["actions"]))
     # Contract: count mismatches are errors only for cleanly finalized
     # sessions; a crash-terminated (incomplete=true) session's manifest is a

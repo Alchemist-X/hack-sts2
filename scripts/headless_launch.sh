@@ -91,16 +91,49 @@ done
 [[ -n "$INSTANCE" ]] || { usage; die "instance number (or 'all' with --stop) required"; }
 
 # --------------------------------------------------------------------------
-# --stop mode: pkill by the instance's unique clone path.
+# --stop mode: graceful shutdown by the instance's unique clone path.
+#
+# SIGTERM first: Godot treats it as a quit request, so the game runs its
+# normal shutdown path and the recorder's CleanUp/Dispose flushes the JSONL
+# streams + manifest (no torn final line). Only if the process is still
+# alive after STOP_GRACE_S seconds do we escalate to SIGKILL, which can
+# leave the recorder's in-flight line torn (manifest stays incomplete=true;
+# `sts2rec validate` tolerates that torn final line as a warning).
 # --------------------------------------------------------------------------
+STOP_GRACE_S=15
+
 stop_instance() {
     local inst_dir="$1"
     local pattern="$inst_dir/SlayTheSpire2.app"
-    if pkill -f "$pattern" 2>/dev/null; then
-        log "stopped process(es) matching $pattern"
-    else
+    local pids
+    pids="$(pgrep -f "$pattern" 2>/dev/null || true)"
+    if [[ -z "$pids" ]]; then
         log "no running process matched $pattern"
+        return 0
     fi
+
+    log "sending SIGTERM to pid(s) ${pids//$'\n'/ } (graceful quit; recorder flushes on Dispose)"
+    # shellcheck disable=SC2086  # pids is intentionally word-split
+    kill -TERM $pids 2>/dev/null || true
+
+    local waited=0
+    while (( waited < STOP_GRACE_S * 10 )); do
+        if ! pgrep -f "$pattern" >/dev/null 2>&1; then
+            log "STOPPED via SIGTERM after ~$((waited / 10))s: $pattern"
+            return 0
+        fi
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+
+    log "still alive after ${STOP_GRACE_S}s; escalating to SIGKILL: $pattern"
+    pkill -9 -f "$pattern" 2>/dev/null || true
+    sleep 0.5
+    if pgrep -f "$pattern" >/dev/null 2>&1; then
+        log "WARNING: process(es) still present after SIGKILL: $pattern"
+        return 1
+    fi
+    log "STOPPED via SIGKILL (recorder flush did NOT run; expect a torn final JSONL line): $pattern"
 }
 
 if [[ "$MODE" == "stop" ]]; then

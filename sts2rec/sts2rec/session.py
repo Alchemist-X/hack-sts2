@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
@@ -234,30 +234,51 @@ def _resolve_jsonl_path(path: Path) -> Path:
     return path
 
 
-def iter_jsonl(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
+def iter_jsonl(
+    path: Path,
+    *,
+    on_torn_final: Callable[[int, JsonlError], None] | None = None,
+) -> Iterator[tuple[int, dict[str, Any]]]:
     """Stream (line_number, record) pairs from a JSONL file.
 
     Accepts plain .jsonl and gzip-compressed .jsonl.gz transparently; given a
     plain path whose file is missing, the .gz twin is read instead.
     Raises JsonlError naming the file and 1-based line on the first malformed
     line (including a truncated final line). Blank lines are skipped.
+
+    Torn-final-line tolerance: when `on_torn_final` is provided, a malformed
+    FINAL line — the signature of the recorder's single in-flight write at
+    SIGKILL (crash-terminated session) — is skipped instead of raising, and
+    the callback receives (line_no, the JsonlError that would have been
+    raised). A malformed NON-final line raises regardless: mid-stream
+    corruption is never a torn write. Callers must only pass the callback
+    when manifest.incomplete is true.
     """
     path = _resolve_jsonl_path(Path(path))
     if not path.is_file():
         raise JsonlError(f"stream file not found: {path}")
+    pending_torn: tuple[int, JsonlError] | None = None
     try:
         with _open_jsonl_text(path) as handle:
             for line_no, line in enumerate(handle, start=1):
                 stripped = line.strip()
                 if not stripped:
                     continue
+                if pending_torn is not None:
+                    # A non-blank line follows the malformed one: it was not
+                    # the final line, so it is corruption, not a torn write.
+                    raise pending_torn[1]
                 try:
                     record = json.loads(stripped)
                 except json.JSONDecodeError as error:
-                    raise JsonlError(
+                    malformed = JsonlError(
                         f"{path}:{line_no}: malformed JSON line "
                         f"(truncated write?): {error}"
-                    ) from error
+                    )
+                    if on_torn_final is None:
+                        raise malformed from error
+                    pending_torn = (line_no, malformed)
+                    continue
                 if not isinstance(record, dict):
                     raise JsonlError(
                         f"{path}:{line_no}: expected a JSON object, "
@@ -271,6 +292,9 @@ def iter_jsonl(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
         raise JsonlError(
             f"{path}: not valid UTF-8 (binary garbage?): {error}"
         ) from error
+    if pending_torn is not None:
+        # EOF confirmed the malformed line was final: torn in-flight write.
+        on_torn_final(*pending_torn)
 
 
 def _envelope(record: Mapping[str, Any], expected_type: str, where: str) -> tuple[int, float]:

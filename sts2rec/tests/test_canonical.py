@@ -159,10 +159,46 @@ def test_dangling_state_seq_raises(tmp_path: Path) -> None:
 
 
 def test_corrupt_stream_raises_canonical_error(session_dir: Path) -> None:
+    # session_dir is finalized (incomplete=false): a torn final line cannot
+    # be crash debris there, so it stays a hard error.
     with (session_dir / "states.jsonl").open("a", encoding="utf-8") as handle:
         handle.write("{truncated")
     with pytest.raises(CanonicalError, match="malformed JSON line"):
         build_canonical(session_dir)
+
+
+def test_torn_final_line_skipped_when_incomplete(tmp_path: Path) -> None:
+    """Torn-final-line contract: for a crash-terminated (incomplete=true)
+    session the torn in-flight line is dropped and the trajectory is built
+    from the intact records instead of raising."""
+    session = write_session(
+        tmp_path / "s",
+        manifest=make_manifest(
+            incomplete=True,
+            result=None,
+            counts={"states": 3, "actions": 2, "events": 3},
+        ),
+        with_native=False,
+    )
+    with (session / "states.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write("{truncated")
+    trajectory = build_canonical(session)
+    assert len(trajectory["steps"]) == 2
+    assert trajectory["meta"]["incomplete"] is True
+
+
+def test_torn_middle_line_raises_even_when_incomplete(tmp_path: Path) -> None:
+    session = write_session(
+        tmp_path / "s",
+        manifest=make_manifest(incomplete=True, result=None),
+        with_native=False,
+    )
+    states_path = session / "states.jsonl"
+    lines = states_path.read_text(encoding="utf-8").splitlines()
+    patched = [lines[0], "{truncated", *lines[1:]]
+    states_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
+    with pytest.raises(CanonicalError, match="malformed JSON line"):
+        build_canonical(session)
 
 
 def test_deterministic_output(session_dir: Path) -> None:

@@ -32,11 +32,15 @@ def test_unknown_schema_version(tmp_path: Path) -> None:
 
 
 def test_truncated_jsonl_line(session_dir: Path) -> None:
+    """Torn FINAL line in a cleanly finalized session (incomplete=false):
+    the recorder flushes and closes streams before finalizing, so a torn
+    line cannot be crash debris — it is a hard error."""
     with (session_dir / "events.jsonl").open("a", encoding="utf-8") as handle:
         handle.write('{"seq": 9, "t": 177')
     report = validate_session(session_dir)
     assert not report.ok
     assert any("malformed JSON line" in error for error in report.errors)
+    assert not any("torn final line" in warning for warning in report.warnings)
 
 
 def test_seq_regression(tmp_path: Path) -> None:
@@ -117,16 +121,41 @@ def test_count_mismatch_degrades_to_warning_when_incomplete(tmp_path: Path) -> N
     assert any("tolerated" in warning for warning in report.warnings)
 
 
-def test_line_level_integrity_still_errors_when_incomplete(tmp_path: Path) -> None:
-    """Contract: incomplete=true only relaxes manifest counts; a truncated
-    final line remains a hard error."""
+def test_torn_final_line_degrades_to_warning_when_incomplete(tmp_path: Path) -> None:
+    """Torn-final-line contract: incomplete=true means the session was
+    crash-terminated (e.g. SIGKILL), so a malformed FINAL line is the
+    recorder's single in-flight write — a warning, not an error, with the
+    intact records retained."""
     manifest = make_manifest(result=None, incomplete=True)
     session = write_session(tmp_path / "s", manifest=manifest, with_native=False)
     with (session / "events.jsonl").open("a", encoding="utf-8") as handle:
         handle.write('{"seq": 9, "t": 177')
     report = validate_session(session)
+    assert report.ok
+    assert not any("malformed JSON line" in error for error in report.errors)
+    assert any(
+        "events.jsonl:4: torn final line (crash-terminated session); "
+        "3 intact records retained" in warning
+        for warning in report.warnings
+    )
+    # The torn line is excluded from the line count: manifest counts still match.
+    assert report.counts["events"] == 3
+
+
+def test_torn_middle_line_still_errors_when_incomplete(tmp_path: Path) -> None:
+    """Contract: only the FINAL line can be a torn in-flight write; a
+    malformed line with intact lines after it is corruption and remains a
+    hard error even for crash-terminated (incomplete=true) sessions."""
+    manifest = make_manifest(result=None, incomplete=True)
+    session = write_session(tmp_path / "s", manifest=manifest, with_native=False)
+    events_path = session / "events.jsonl"
+    lines = events_path.read_text(encoding="utf-8").splitlines()
+    patched = [lines[0], '{"seq": 9, "t": 177', *lines[1:]]
+    events_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
+    report = validate_session(session)
     assert not report.ok
     assert any("malformed JSON line" in error for error in report.errors)
+    assert not any("torn final line" in warning for warning in report.warnings)
 
 
 def test_null_state_seq_before_first_snapshot_is_valid(tmp_path: Path) -> None:
