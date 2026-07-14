@@ -1,0 +1,20 @@
+# .NET
+mod/bin/
+mod/obj/
+*.user
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Recorded data (never commit trajectories)
+sessions/
+*.jsonl
+*.mcr
+
+# OS
+.DS_Store
