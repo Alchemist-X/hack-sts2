@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 
@@ -16,7 +17,9 @@ internal static class SessionMetaJson
         bool incomplete,
         RunResult? result,
         int part,
-        IReadOnlyCollection<string> degradedHooks)
+        IReadOnlyCollection<string> degradedHooks,
+        string? compression = null,
+        SessionPerf? perf = null)
     {
         var mods = new JsonArray();
         foreach (var mod in meta.Mods)
@@ -58,8 +61,33 @@ internal static class SessionMetaJson
             },
             ["incomplete"] = incomplete,
             ["part"] = part,
+            // null = plain JSONL streams; "gz" = streams compressed at Complete.
+            ["compression"] = compression,
+            ["perf"] = BuildPerf(perf ?? SessionPerf.Empty),
             ["degraded_hooks"] = hooks,
             ["mods"] = mods,
+        };
+    }
+
+    private static JsonObject BuildPerf(SessionPerf perf)
+    {
+        var avg = perf.SnapshotBuildCount > 0
+            ? perf.SnapshotBuildTotalMs / perf.SnapshotBuildCount
+            : 0;
+        return new JsonObject
+        {
+            ["snapshot_build_ms"] = new JsonObject
+            {
+                ["count"] = perf.SnapshotBuildCount,
+                ["avg"] = Math.Round(avg, 3),
+                ["max"] = Math.Round(perf.SnapshotBuildMaxMs, 3),
+            },
+            ["bytes_written"] = new JsonObject
+            {
+                ["states"] = perf.StatesBytes,
+                ["actions"] = perf.ActionsBytes,
+                ["events"] = perf.EventsBytes,
+            },
         };
     }
 

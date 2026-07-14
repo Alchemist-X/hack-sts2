@@ -34,7 +34,7 @@ from .session import (
     parse_action_record,
     parse_event_record,
     parse_state_record,
-    stream_path,
+    resolve_stream_path,
 )
 
 TIMESTAMP_TOLERANCE_SECONDS = 0.05
@@ -67,8 +67,8 @@ class _StreamResult:
 
 
 def _read_stream(session_dir: Path, stream: str) -> _StreamResult:
-    """Parse one stream, collecting per-line integrity errors."""
-    path = stream_path(session_dir, stream)
+    """Parse one stream (plain or .gz), collecting per-line integrity errors."""
+    path = resolve_stream_path(session_dir, stream)
     parser = _PARSERS[stream]
     records: list[Any] = []
     errors: list[str] = []

@@ -24,7 +24,8 @@ Two components, producer/analyzer split (balatrollm/balatrobench pattern):
                     writes to <output_root>/sessions/<run_id>/
 ┌──────────────────────────── offline tooling ─────────────────────────────┐
 │  sts2rec (Python CLI): list / validate / archive-fallback / canonical    │
-│  conversion to hack-balatro-style {meta, steps[]} trajectories           │
+│  conversion to hack-balatro-style {meta, steps[]} trajectories, plus     │
+│  report (markdown walkthrough) and pack (gzip old sessions)              │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,13 +60,17 @@ Key architectural decisions, and why:
 ```
 <output_root>/sessions/<run_id>/          # run_id = <start_unix>-<seed>
   manifest.json      # versions, run meta; finalized at run end (incomplete=true until)
-  states.jsonl       # full snapshots at stable decision points, hash-deduped
-  actions.jsonl      # hooked human actions
-  events.jsonl       # fine-grained combat/run history entries
+  states.jsonl[.gz]  # full snapshots at stable decision points, hash-deduped
+  actions.jsonl[.gz] # hooked human actions
+  events.jsonl[.gz]  # fine-grained combat/run history entries
   native/
     run_history.run  # copy of the game's own .run file (post-run)
     replay.mcr       # copy of replays/latest.mcr (post-run, before next run clobbers it)
 ```
+
+Streams are plain `.jsonl` while a run is live and become `.jsonl.gz` when the
+session finalizes cleanly (see "Compression" below); `manifest.json`, `native/`
+and `recorder.log` always stay plain.
 
 Every JSONL line shares the envelope `{seq, t, type, ...}`:
 `seq` = monotonically increasing per session (single writer thread), `t` = unix epoch
@@ -97,9 +102,15 @@ seconds (float). One session = one run (menu time between runs is not recorded).
 - `manifest.json`: `{schema_version, recorder_version, game:{version, commit,
   build_id, untested}, platform, profile, run:{seed, character, ascension,
   game_mode, start_time}, result:{win, abandoned, end_time}|null, counts,
-  incomplete, part, degraded_hooks, mods}` — `part` (optional, default 1):
-  resumed runs recorded across game restarts open a new session directory with
-  a `-part2`/`-part3`… suffix on the run_id and carry the part number here.
+  incomplete, part, compression, perf, degraded_hooks, mods}` — `part`
+  (optional, default 1): resumed runs recorded across game restarts open a new
+  session directory with a `-part2`/`-part3`… suffix on the run_id and carry
+  the part number here. `compression` (recorder ≥ 0.2): `"gz"` when the
+  streams were compressed at completion (or later by `sts2rec pack`), `null`
+  for plain streams. `perf` (recorder ≥ 0.2, see "Snapshot throttling & perf
+  counters"): `{snapshot_build_ms:{count, avg, max}, bytes_written:{states,
+  actions, events}}`, refreshed on every Flush/Complete manifest rewrite;
+  `bytes_written` counts uncompressed JSONL bytes.
   `seq` is session-global and strictly monotonic across all three streams.
   The canonical trajectory surfaces `status` as `steps[].info.action_status`
   (when recorded) and `part` as `meta.part`.
@@ -120,8 +131,89 @@ directories), and tooling should ignore it.
 
 Rationale: append-only JSONL per stream (NLE/MineRL/BASALT consensus + STS2MCP
 issue #91's proposed shape), raw-fidelity capture with derived views generated
-offline. Uncompressed on disk (sessions are MBs, not GBs); `sts2rec` can zstd-pack
-finished sessions for distribution.
+offline. Live streams stay uncompressed for appendability and crash salvage;
+finished sessions are gzip-packed (next section).
+
+## Compression (gzip-at-complete)
+
+When `Complete(result)` finalizes a session the recorder closes the three
+JSONL streams, compresses each to `<stream>.jsonl.gz`
+(`System.IO.Compression.GZipStream`, `CompressionLevel.Optimal`), decompresses
+the result and byte-compares it against the original, and deletes the plain
+files **only after every stream round-trips byte-identically**. On any failure
+(write error, verification mismatch) the partial `.gz` files are removed, the
+plain files are kept, the error is logged through the session's error channel
+(`recorder.log`), and the manifest records `compression: null`. `manifest.json`,
+`native/` and `recorder.log` are never compressed.
+
+- **Why gzip, not Brotli**: Python must read sessions with zero third-party
+  dependencies (repo policy — `sts2rec` is stdlib-only), and CPython has no
+  stdlib Brotli. gzip is stdlib on both sides (`GZipStream` / `gzip`); Brotli's
+  ~15% better ratio on JSONL does not beat keeping the toolchain
+  dependency-free. Measured on the FakeGame synthetic session: 66% saved
+  (2478 B → 836 B); real sessions with large repeated state payloads compress
+  substantially better.
+- **Crash-terminated sessions stay plain by design**: compression only runs on
+  the clean `Complete()` path, so a session that never finalized remains
+  directly greppable/salvageable plain JSONL. `sts2rec pack` (below) can
+  compress it later, after salvage.
+- **Post-Complete records are dropped**: once the streams are frozen and
+  compressed, a late-firing game handler (between `OnEnded` and `CleanUp`)
+  must not reopen them — such records are counted and the first drop leaves a
+  rate-limited `recorder.log` notice. The finalized manifest counts stay
+  authoritative.
+- **Python reads both forms transparently**: `iter_jsonl` accepts `.jsonl` and
+  `.jsonl.gz` (given a plain path whose file is missing it reads the `.gz`
+  twin), and `validate` / `canonical` / `watch` / `report` resolve each stream
+  via `resolve_stream_path`, preferring `.gz` when both exist (the compressed
+  copy is the byte-verified one). `watch` treats a `.gz` stream as immutable
+  and emits it once; if a live session compresses mid-watch, already-emitted
+  records are skipped by count.
+- `sts2rec pack <session> | --all [--root R] [--force]` applies the same
+  compress → verify → delete semantics to old plain sessions offline and sets
+  `manifest.compression = "gz"`. Incomplete sessions are refused without
+  `--force` (never pack while the game is writing). `sts2rec sessions` shows a
+  SIZE column and a COMP marker (`gz` / `-`).
+
+## Snapshot throttling & perf counters
+
+`StateTracker.CombatStateChanged` can burst many times per frame during action
+resolution. Snapshot builds are the recorder's main CPU cost, so bursts are
+**trailing-coalesced** (Core `SnapshotThrottle`, unit-tested without Godot):
+
+- Window = `snapshot_min_interval_ms` from `Sts2Recorder.conf` (default 150;
+  0 disables the throttle).
+- A throttled request outside the window is taken immediately. Inside the
+  window it is **never dropped**: the first one schedules exactly ONE trailing
+  snapshot via the existing main-thread ProcessFrame pump (re-deferred
+  frame-by-frame until the window expires); later requests inside the window
+  coalesce into it. The last state of a burst is therefore always recorded —
+  an action can at worst reference a snapshot ≤ window ms stale, and the
+  unconditional post-action snapshot still captures the settled state.
+- **Bypass list** (unconditional, throttle-free; they still reset the window):
+  the RunStarted header snapshot, CombatSetUp, TurnStarted/TurnEnded,
+  CombatEnded/CombatWon, RoomEntered/RoomExited, and the post-action deferred
+  snapshot. Only the CombatStateChanged poll path is throttled.
+
+Perf counters accumulate per session in Core and are written to the manifest
+`perf` object on every Flush/Complete: `snapshot_build_ms` (count/avg/max of
+the PassiveStateBuilder wall time per build, including builds whose snapshot
+hash-deduped) and `bytes_written` (uncompressed bytes appended per stream).
+
+## Run reports
+
+`sts2rec report <session> [-o out.md]` renders a human-readable markdown
+walkthrough (also printed to stdout): header (character, seed, ascension,
+result, duration, versions), per-floor timeline (from `room_entered` /
+`floor_summary` events + map/shop/rest actions), per-combat summaries
+(enemies, turns, cards played in order — cancelled plays excluded — damage
+dealt/taken, HP/gold from the first post-combat snapshot), acquisitions and
+deck evolution (from `*_obtained` / card-removal entries), and a counts +
+storage footprint table (records, on-disk vs raw bytes, compression format
+per stream). It is deliberately lenient: live/incomplete and crash-terminated
+sessions render with `(no … recorded)` placeholders and a partial-data note
+instead of failing, and unrecognized entry names simply do not populate the
+heuristic sections.
 
 ## Canonical trajectory (offline, derived)
 
@@ -174,6 +266,18 @@ STS2 moved v0.98.1 → v0.108.0 in 4 months and updates broke STS2MCP twice
 - HTTP API: none. This mod is write-only-to-disk by design. Live inspection =
   `sts2rec watch` tailing the JSONL. (Run STS2MCP alongside if an agent needs to
   *play*; the two mods are independent.)
+
+## Headless environments
+
+N isolated instances (`scripts/headless_provision.sh` + `headless_launch.sh`,
+`sts2rec.env.Sts2Env`/`launch_pool`): per-instance APFS clone of the .app with its own
+`mods/` (STS2_MCP.conf port `15600+i`, Sts2Recorder.conf output_root `inst<i>/recordings`)
+and an isolated `$HOME` with mod consent pre-seeded at both `default/1/` and
+`steam/<id>/` save paths (non-Steam boots use `default/1/` — UserDataPathProvider +
+NullPlatformUtilStrategy). Launch = `--headless --force-steam=off` (skips SteamAPI init;
+without it a failed init quits). Known unknowns, UNVERIFIED until first live run:
+Steam-less boot of the release binary (DRM/appid behavior), FMOD/audio under
+`--headless`, and whether the consent popup path stays fully suppressed.
 
 ## Provenance & licensing
 

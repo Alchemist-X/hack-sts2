@@ -19,3 +19,7 @@ sessions/
 # OS
 .DS_Store
 backups/
+level2-runs/
+mod/tests/bin/
+mod/tests/obj/
+.coverage

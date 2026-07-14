@@ -6,17 +6,22 @@ streaming JSONL reader. Contract: docs/design.md, "Session format".
 
 from __future__ import annotations
 
+import gzip
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from .errors import JsonlError, ManifestError, RecordError
 
 SESSION_SCHEMA_VERSION = 1
 MANIFEST_NAME = "manifest.json"
 STREAM_NAMES = ("states", "actions", "events")
+# Streams may be gzip-compressed at run completion (recorder >= 0.2 writes
+# <stream>.jsonl.gz; `sts2rec pack` compresses older sessions). gzip was
+# chosen over Brotli so both sides stay stdlib-only (docs/design.md).
+COMPRESSED_SUFFIX = ".gz"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +75,9 @@ class Manifest:
     # Resumed runs recorded across game restarts open a new session directory
     # with a -partN suffix; the manifest carries the part number (default 1).
     part: int = 1
+    # "gz" when the JSONL streams were compressed at completion (or by
+    # `sts2rec pack`); None/absent = plain streams (crash sessions stay plain).
+    compression: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,9 +188,18 @@ def parse_manifest(raw: Any, *, source: str = MANIFEST_NAME) -> Manifest:
             incomplete=bool(_require(raw, "incomplete", source)),
             degraded_hooks=tuple(raw.get("degraded_hooks", ())),
             part=int(raw.get("part", 1)),
+            compression=_parse_compression(raw.get("compression"), source),
         )
     except (TypeError, ValueError) as error:
         raise ManifestError(f"{source}: malformed field value: {error}") from error
+
+
+def _parse_compression(raw: Any, source: str) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ManifestError(f"{source}: 'compression' must be a string or null")
+    return raw
 
 
 def load_manifest(session_dir: Path) -> Manifest:
@@ -197,17 +214,39 @@ def load_manifest(session_dir: Path) -> Manifest:
     return parse_manifest(raw, source=str(path))
 
 
+def _open_jsonl_text(path: Path) -> IO[str]:
+    """Text handle for a plain or gzip-compressed JSONL file."""
+    if path.name.endswith(COMPRESSED_SUFFIX):
+        return gzip.open(path, "rt", encoding="utf-8")
+    return path.open("r", encoding="utf-8")
+
+
+def _resolve_jsonl_path(path: Path) -> Path:
+    """Transparent compressed twin: given foo.jsonl, fall back to foo.jsonl.gz
+    when the plain file is missing (and vice versa is a no-op — a .gz path is
+    used as given)."""
+    if path.is_file():
+        return path
+    if not path.name.endswith(COMPRESSED_SUFFIX):
+        twin = path.with_name(path.name + COMPRESSED_SUFFIX)
+        if twin.is_file():
+            return twin
+    return path
+
+
 def iter_jsonl(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
     """Stream (line_number, record) pairs from a JSONL file.
 
+    Accepts plain .jsonl and gzip-compressed .jsonl.gz transparently; given a
+    plain path whose file is missing, the .gz twin is read instead.
     Raises JsonlError naming the file and 1-based line on the first malformed
     line (including a truncated final line). Blank lines are skipped.
     """
-    path = Path(path)
+    path = _resolve_jsonl_path(Path(path))
     if not path.is_file():
         raise JsonlError(f"stream file not found: {path}")
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with _open_jsonl_text(path) as handle:
             for line_no, line in enumerate(handle, start=1):
                 stripped = line.strip()
                 if not stripped:
@@ -225,7 +264,8 @@ def iter_jsonl(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
                         f"got {type(record).__name__}"
                     )
                 yield line_no, record
-    except OSError as error:
+    except (OSError, EOFError) as error:
+        # gzip.BadGzipFile is an OSError; EOFError = truncated gzip stream.
         raise JsonlError(f"cannot read {path}: {error}") from error
     except UnicodeDecodeError as error:
         raise JsonlError(
@@ -316,7 +356,18 @@ def parse_event_record(record: Mapping[str, Any], *, where: str = "event record"
 
 
 def stream_path(session_dir: Path, stream: str) -> Path:
-    """Path of a stream file (states/actions/events) inside a session dir."""
+    """Path of the plain stream file (states/actions/events) in a session dir."""
     if stream not in STREAM_NAMES:
         raise ValueError(f"unknown stream name: {stream!r}")
     return Path(session_dir) / f"{stream}.jsonl"
+
+
+def resolve_stream_path(session_dir: Path, stream: str) -> Path:
+    """Actual on-disk stream file: prefers <stream>.jsonl.gz when it exists
+    (the compressed copy is the verified, authoritative one), else the plain
+    <stream>.jsonl path (which may or may not exist)."""
+    plain = stream_path(session_dir, stream)
+    compressed = plain.with_name(plain.name + COMPRESSED_SUFFIX)
+    if compressed.is_file():
+        return compressed
+    return plain

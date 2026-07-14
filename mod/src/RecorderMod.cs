@@ -42,11 +42,19 @@ public static class RecorderMod
     /// <summary>Root directory for session output; never under the game's mods/ tree.</summary>
     public static string OutputRoot { get; private set; } = DefaultOutputRoot();
 
+    /// <summary>
+    /// Trailing-coalesce window for StateTracker snapshot bursts, in ms
+    /// (Sts2Recorder.conf key "snapshot_min_interval_ms"; 0 disables the throttle).
+    /// </summary>
+    public static double SnapshotMinIntervalMs { get; private set; } = DefaultSnapshotMinIntervalMs;
+
+    public const double DefaultSnapshotMinIntervalMs = 150;
+
     public static void Initialize()
     {
         try
         {
-            OutputRoot = LoadOutputRoot();
+            LoadConfig();
             var harmony = new Harmony(HarmonyId);
             RunLifecycle.ApplyPatches(harmony);
             ActionPipeline.ApplyPatches(harmony);
@@ -210,32 +218,46 @@ public static class RecorderMod
             "Sts2Recorder");
     }
 
-    private static string LoadOutputRoot()
+    private static void LoadConfig()
     {
         try
         {
             var modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (modDir == null)
             {
-                return DefaultOutputRoot();
+                return;
             }
             var configPath = Path.Combine(modDir, ConfigFileName);
             if (!File.Exists(configPath))
             {
-                return DefaultOutputRoot();
+                return;
             }
             using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
             if (doc.RootElement.TryGetProperty("output_root", out var rootElem)
                 && rootElem.ValueKind == JsonValueKind.String
                 && !string.IsNullOrWhiteSpace(rootElem.GetString()))
             {
-                return rootElem.GetString()!;
+                OutputRoot = rootElem.GetString()!;
+            }
+            if (doc.RootElement.TryGetProperty("snapshot_min_interval_ms", out var intervalElem)
+                && intervalElem.ValueKind == JsonValueKind.Number)
+            {
+                var interval = intervalElem.GetDouble();
+                if (interval >= 0 && double.IsFinite(interval))
+                {
+                    SnapshotMinIntervalMs = interval;
+                }
+                else
+                {
+                    GD.PrintErr(
+                        $"[Sts2Recorder] Ignoring invalid snapshot_min_interval_ms={interval}; "
+                        + $"using {SnapshotMinIntervalMs} ms");
+                }
             }
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[Sts2Recorder] Failed to read {ConfigFileName}: {ex.Message}; using default output root");
+            GD.PrintErr($"[Sts2Recorder] Failed to read {ConfigFileName}: {ex.Message}; using defaults");
         }
-        return DefaultOutputRoot();
     }
 }

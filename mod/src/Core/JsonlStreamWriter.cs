@@ -20,11 +20,15 @@ internal sealed class JsonlStreamWriter : IDisposable
     /// <summary>Number of records written through this writer.</summary>
     public long LineCount { get; private set; }
 
+    /// <summary>Uncompressed bytes written through this writer (perf counter).</summary>
+    public long BytesWritten { get; private set; }
+
     public void WriteLine(JsonObject record)
     {
         var bytes = Encoding.UTF8.GetBytes(record.ToJsonString() + "\n");
         _stream.Write(bytes, 0, bytes.Length);
         LineCount++;
+        BytesWritten += bytes.Length;
     }
 
     /// <summary>Flush buffered bytes through to the OS and disk.</summary>

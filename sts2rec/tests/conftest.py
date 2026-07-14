@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 from typing import Any
@@ -122,9 +123,34 @@ def write_session(
     return session_dir
 
 
+def compress_streams(session_dir: Path, *, mark_manifest: bool = True) -> Path:
+    """Gzip a written session's streams in place, mirroring gzip-at-complete:
+    <stream>.jsonl -> <stream>.jsonl.gz with the plain file removed."""
+    for stream in ("states", "actions", "events"):
+        plain = session_dir / f"{stream}.jsonl"
+        if not plain.is_file():
+            continue
+        compressed = session_dir / f"{stream}.jsonl.gz"
+        compressed.write_bytes(gzip.compress(plain.read_bytes()))
+        plain.unlink()
+    if mark_manifest:
+        manifest_path = session_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compression"] = "gz"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return session_dir
+
+
 @pytest.fixture
 def session_dir(tmp_path: Path) -> Path:
     return write_session(tmp_path / "sessions" / f"1773034386-{SEED}")
+
+
+@pytest.fixture
+def compressed_session_dir(tmp_path: Path) -> Path:
+    return compress_streams(
+        write_session(tmp_path / "sessions" / f"1773034386-{SEED}")
+    )
 
 
 @pytest.fixture

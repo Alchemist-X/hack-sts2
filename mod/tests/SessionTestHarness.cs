@@ -38,15 +38,36 @@ public static class SessionTestHarness
 
     public static IReadOnlyList<JsonElement> ReadJsonl(string sessionDir, string stream)
     {
-        var path = Path.Combine(sessionDir, $"{stream}.jsonl");
-        if (!File.Exists(path))
-        {
-            return Array.Empty<JsonElement>();
-        }
-        return File.ReadAllLines(path)
+        return ReadJsonlLines(sessionDir, stream)
             .Where(line => line.Length > 0)
             .Select(line => JsonDocument.Parse(line).RootElement.Clone())
             .ToList();
+    }
+
+    /// <summary>Raw stream lines; reads the .jsonl.gz twin when the plain file is gone.</summary>
+    public static IReadOnlyList<string> ReadJsonlLines(string sessionDir, string stream)
+    {
+        var path = Path.Combine(sessionDir, $"{stream}.jsonl");
+        if (File.Exists(path))
+        {
+            return File.ReadAllLines(path);
+        }
+        var compressed = path + ".gz";
+        if (!File.Exists(compressed))
+        {
+            return Array.Empty<string>();
+        }
+        using var file = File.OpenRead(compressed);
+        using var gzip = new System.IO.Compression.GZipStream(
+            file, System.IO.Compression.CompressionMode.Decompress);
+        using var reader = new StreamReader(gzip);
+        var lines = new List<string>();
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            lines.Add(line);
+        }
+        return lines;
     }
 
     public static JsonElement ReadManifest(string sessionDir)

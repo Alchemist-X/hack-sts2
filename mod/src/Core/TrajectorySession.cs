@@ -32,6 +32,11 @@ public sealed class TrajectorySession : IDisposable
     private RunResult? _result;
     private bool _completed;
     private bool _disposed;
+    private string? _compression;
+    private long _droppedAfterComplete;
+    private long _snapshotBuildCount;
+    private double _snapshotBuildTotalMs;
+    private double _snapshotBuildMaxMs;
 
     private TrajectorySession(string directory, int part, SessionMeta meta, IClock clock)
     {
@@ -96,8 +101,11 @@ public sealed class TrajectorySession : IDisposable
     /// <summary>
     /// Records a state snapshot. Hash-dedup: when the serialized state is identical
     /// to the previous snapshot, nothing is written and the previous seq is returned.
+    /// <paramref name="buildMillis"/> (optional) is how long the state builder took;
+    /// it feeds the manifest "perf" counters and is accumulated even when the
+    /// snapshot dedupes (the build cost was paid either way).
     /// </summary>
-    public long RecordState(string trigger, string screen, JsonNode state)
+    public long RecordState(string trigger, string screen, JsonNode state, double? buildMillis = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(screen);
@@ -110,6 +118,17 @@ public sealed class TrajectorySession : IDisposable
         lock (_lock)
         {
             ThrowIfUnusable();
+            if (buildMillis is { } ms)
+            {
+                _snapshotBuildCount++;
+                _snapshotBuildTotalMs += ms;
+                _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, ms);
+            }
+            if (_completed)
+            {
+                NoteDroppedAfterCompleteLocked("RecordState");
+                return _latestStateSeq;
+            }
             if (hash == _lastStateHash)
             {
                 return _latestStateSeq;
@@ -155,6 +174,11 @@ public sealed class TrajectorySession : IDisposable
         lock (_lock)
         {
             ThrowIfUnusable();
+            if (_completed)
+            {
+                NoteDroppedAfterCompleteLocked("RecordAction");
+                return 0;
+            }
             var seq = _nextSeq++;
             var resolvedStateSeq = stateSeq ?? _latestStateSeq;
             _actions.WriteLine(new JsonObject
@@ -183,6 +207,11 @@ public sealed class TrajectorySession : IDisposable
         lock (_lock)
         {
             ThrowIfUnusable();
+            if (_completed)
+            {
+                NoteDroppedAfterCompleteLocked("RecordEvent");
+                return 0;
+            }
             var seq = _nextSeq++;
             _events.WriteLine(new JsonObject
             {
@@ -255,7 +284,15 @@ public sealed class TrajectorySession : IDisposable
         }
     }
 
-    /// <summary>Finalizes the session: result set, incomplete=false, counts final.</summary>
+    /// <summary>
+    /// Finalizes the session: result set, incomplete=false, counts final. The
+    /// three JSONL streams are closed and gzip-compressed (.jsonl.gz) with the
+    /// plain files deleted only after a byte-verified round-trip decompression;
+    /// on any compression failure the plain files are kept, the error goes to
+    /// recorder.log, and the manifest records compression=null. Records arriving
+    /// after Complete are dropped (counted, one recorder.log notice) — the
+    /// finalized counts/compressed bytes must stay authoritative.
+    /// </summary>
     public void Complete(RunResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -268,6 +305,16 @@ public sealed class TrajectorySession : IDisposable
             }
             _result = result;
             _completed = true;
+            // Freeze the streams (final flush + close) so the compressor sees
+            // stable bytes; LineCount/BytesWritten remain readable afterwards.
+            _states.Dispose();
+            _actions.Dispose();
+            _events.Dispose();
+            if (SessionCompressor.TryCompressStreams(
+                    Directory, (where, ex) => _errorLog.Record(where, ex)))
+            {
+                _compression = SessionCompressor.Format;
+            }
             WriteManifestLocked();
         }
     }
@@ -319,8 +366,34 @@ public sealed class TrajectorySession : IDisposable
             incomplete: !_completed,
             result: _result,
             part: _part,
-            degradedHooks: _degradedHooks);
+            degradedHooks: _degradedHooks,
+            compression: _compression,
+            perf: new SessionPerf(
+                SnapshotBuildCount: _snapshotBuildCount,
+                SnapshotBuildTotalMs: _snapshotBuildTotalMs,
+                SnapshotBuildMaxMs: _snapshotBuildMaxMs,
+                StatesBytes: _states?.BytesWritten ?? 0,
+                ActionsBytes: _actions?.BytesWritten ?? 0,
+                EventsBytes: _events?.BytesWritten ?? 0));
         ManifestWriter.WriteAtomic(Directory, manifest);
+    }
+
+    /// <summary>
+    /// Post-Complete records are dropped by design (streams are closed and
+    /// compressed); the first drop leaves a rate-limited recorder.log notice
+    /// so late-firing game handlers are visible without breaking finalized
+    /// counts.
+    /// </summary>
+    private void NoteDroppedAfterCompleteLocked(string where)
+    {
+        _droppedAfterComplete++;
+        if (_droppedAfterComplete == 1)
+        {
+            _errorLog.Record(
+                $"TrajectorySession.{where}",
+                new InvalidOperationException(
+                    "record arrived after Complete(); dropped (session finalized)"));
+        }
     }
 
     private void ThrowIfUnusable()

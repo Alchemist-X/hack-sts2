@@ -53,7 +53,7 @@ from .session import (
     parse_action_record,
     parse_event_record,
     parse_state_record,
-    stream_path,
+    resolve_stream_path,
 )
 
 REWARD_NOTE = (
@@ -63,7 +63,7 @@ REWARD_NOTE = (
 
 
 def _load_stream(session_dir: Path, stream: str, parser: Any) -> tuple[Any, ...]:
-    path = stream_path(session_dir, stream)
+    path = resolve_stream_path(session_dir, stream)
     try:
         return tuple(
             parser(raw, where=f"{path.name}:{line_no}")

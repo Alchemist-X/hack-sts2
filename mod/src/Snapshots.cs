@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using MegaCrit.Sts2.Core.Combat;
@@ -7,6 +8,7 @@ using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Runs.History;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.TestSupport;
+using Sts2Recorder.Core;
 
 namespace Sts2Recorder.Game;
 
@@ -18,11 +20,24 @@ namespace Sts2Recorder.Game;
 /// via the ProcessFrame pump so state_after exists for canonical alignment.
 /// All snapshots go through PassiveStateBuilder.TryBuildSnapshot + RecordState
 /// (hash-deduped by the session, so redundant triggers are cheap).
+///
+/// Throttle (docs/design.md, "Snapshot throttling"): StateTracker bursts are
+/// trailing-coalesced through a Core SnapshotThrottle with window
+/// snapshot_min_interval_ms (config, default 150 ms) — a request inside the
+/// window is never dropped, it defers ONE trailing snapshot via the
+/// main-thread pump. Unconditional triggers (RunStarted header, CombatSetUp,
+/// Turn/CombatEnded/Won, RoomEntered/Exited, post-action deferred) bypass the
+/// throttle by calling TakeSnapshot directly.
 /// </summary>
 public static class Snapshots
 {
     private static bool _staticSubscribed;
     private static bool _deferredPending;
+    private static SnapshotThrottle? _throttle;
+
+    private static SnapshotThrottle Throttle =>
+        _throttle ??= new SnapshotThrottle(
+            SystemClock.Instance, RecorderMod.SnapshotMinIntervalMs);
 
     /// <summary>
     /// RunManager.Instance and CombatManager.Instance are eager static
@@ -66,8 +81,10 @@ public static class Snapshots
     }
 
     /// <summary>
-    /// Builds and records one snapshot now. Never throws into game code; a
-    /// builder failure is reported and the snapshot skipped.
+    /// Builds and records one snapshot now, bypassing the throttle (but still
+    /// resetting its window). Never throws into game code; a builder failure
+    /// is reported and the snapshot skipped. The builder is timed and reported
+    /// into the session's perf counters (manifest "perf.snapshot_build_ms").
     /// </summary>
     public static void TakeSnapshot(string trigger)
     {
@@ -79,13 +96,62 @@ public static class Snapshots
             {
                 return;
             }
+            var stopwatch = Stopwatch.StartNew();
             PassiveStateBuilder.TryBuildSnapshot(runState, out var screen, out var state);
-            session.RecordState(trigger, screen, state);
+            stopwatch.Stop();
+            session.RecordState(trigger, screen, state, stopwatch.Elapsed.TotalMilliseconds);
+            Throttle.NoteSnapshotTaken();
         }
         catch (Exception ex)
         {
             RecorderMod.Report($"Snapshots.TakeSnapshot:{trigger}", ex);
         }
+    }
+
+    /// <summary>
+    /// Throttled snapshot entry point (StateTracker bursts). Inside the window
+    /// the request is trailing-coalesced: exactly one deferred snapshot is
+    /// scheduled via the main-thread pump and re-deferred frame-by-frame until
+    /// the window expires — the last state of a burst is never lost.
+    /// </summary>
+    internal static void RequestThrottledSnapshot(string trigger)
+    {
+        try
+        {
+            switch (Throttle.Request())
+            {
+                case SnapshotRequestOutcome.TakeNow:
+                    TakeSnapshot(trigger);
+                    break;
+                case SnapshotRequestOutcome.Deferred:
+                    ScheduleTrailingSnapshot(trigger);
+                    break;
+                case SnapshotRequestOutcome.Coalesced:
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report($"Snapshots.RequestThrottledSnapshot:{trigger}", ex);
+        }
+    }
+
+    private static void ScheduleTrailingSnapshot(string trigger)
+    {
+        RecorderMod.RunOnMainThread(() =>
+        {
+            if (Throttle.TryReleaseTrailing())
+            {
+                TakeSnapshot(trigger);
+            }
+            else if (Throttle.TrailingPending)
+            {
+                // Still inside the window: re-defer one more frame. If the
+                // session ends meanwhile, TakeSnapshot no-ops harmlessly once
+                // the window finally expires.
+                ScheduleTrailingSnapshot(trigger);
+            }
+        });
     }
 
     /// <summary>
@@ -108,7 +174,7 @@ public static class Snapshots
 
     private static void OnCombatStateChanged(CombatState state)
     {
-        TakeSnapshot("poll");
+        RequestThrottledSnapshot("poll");
     }
 
     private static void OnRoomEntered()

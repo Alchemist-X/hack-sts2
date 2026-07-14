@@ -1,6 +1,6 @@
 """sts2rec command-line interface.
 
-Subcommands: sessions, validate, canonical, watch, archive.
+Subcommands: sessions, validate, canonical, watch, archive, report, pack.
 Exit codes: 0 = ok, 1 = validation/operation errors, 2 = usage errors.
 """
 
@@ -16,8 +16,10 @@ from . import __version__
 from .archive import archive_native
 from .canonical import build_canonical
 from .errors import Sts2RecError
+from .pack import pack_session
 from .paths import profile_saves_dirs, recorder_output_root, sessions_root, user_data_dir
-from .session import Manifest, load_manifest
+from .report import build_report
+from .session import COMPRESSED_SUFFIX, STREAM_NAMES, Manifest, load_manifest, stream_path
 from .validate import validate_session
 from .watch import watch_session
 
@@ -44,6 +46,29 @@ def _format_table(rows: list[tuple[str, ...]], header: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
+def _format_size(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "K", "M", "G"):
+        if value < 1024 or unit == "G":
+            return f"{int(value)}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+        value /= 1024
+    return str(size)
+
+
+def _dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _compression_marker(session_dir: Path, manifest: Manifest) -> str:
+    if manifest.compression:
+        return manifest.compression
+    for stream in STREAM_NAMES:
+        plain = stream_path(session_dir, stream)
+        if plain.with_name(plain.name + COMPRESSED_SUFFIX).is_file():
+            return "gz"
+    return "-"
+
+
 def _cmd_sessions(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else sessions_root(recorder_output_root())
     if not root.is_dir():
@@ -51,10 +76,13 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
         return EXIT_ERRORS
     rows: list[tuple[str, ...]] = []
     for session_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        size = _format_size(_dir_size(session_dir))
         try:
             manifest = load_manifest(session_dir)
         except Sts2RecError as error:
-            rows.append((session_dir.name, "-", "-", f"invalid manifest: {error}"))
+            rows.append(
+                (session_dir.name, "-", "-", f"invalid manifest: {error}", size, "-")
+            )
             continue
         rows.append(
             (
@@ -62,12 +90,14 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
                 manifest.run.seed,
                 manifest.run.character,
                 _result_label(manifest),
+                size,
+                _compression_marker(session_dir, manifest),
             )
         )
     if not rows:
         print(f"no sessions found under {root}")
         return EXIT_OK
-    print(_format_table(rows, ("RUN_ID", "SEED", "CHARACTER", "RESULT")))
+    print(_format_table(rows, ("RUN_ID", "SEED", "CHARACTER", "RESULT", "SIZE", "COMP")))
     return EXIT_OK
 
 
@@ -122,6 +152,57 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     return EXIT_OK
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    try:
+        rendered = build_report(args.session_dir)
+    except Sts2RecError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_ERRORS
+    print(rendered)
+    if args.output:
+        try:
+            Path(args.output).write_text(rendered + "\n", encoding="utf-8")
+        except OSError as error:
+            print(f"error: cannot write {args.output}: {error}", file=sys.stderr)
+            return EXIT_ERRORS
+        print(f"(report written to {args.output})", file=sys.stderr)
+    return EXIT_OK
+
+
+def _pack_one(session_dir: Path, force: bool) -> bool:
+    try:
+        result = pack_session(session_dir, force=force)
+    except Sts2RecError as error:
+        print(f"SKIP  {session_dir.name}: {error}", file=sys.stderr)
+        return False
+    if result.packed:
+        saved = result.bytes_before - result.bytes_after
+        print(
+            f"PACKED {session_dir.name}: {', '.join(result.packed)} "
+            f"({_format_size(result.bytes_before)} -> "
+            f"{_format_size(result.bytes_after)}, saved {_format_size(saved)})"
+        )
+    else:
+        print(f"OK     {session_dir.name}: already packed")
+    return True
+
+
+def _cmd_pack(args: argparse.Namespace) -> int:
+    if bool(args.session_dir) == bool(args.all):
+        print("error: pass exactly one of <session_dir> or --all", file=sys.stderr)
+        return EXIT_USAGE
+    if args.session_dir:
+        return EXIT_OK if _pack_one(Path(args.session_dir), args.force) else EXIT_ERRORS
+    root = Path(args.root) if args.root else sessions_root(recorder_output_root())
+    if not root.is_dir():
+        print(f"no sessions directory: {root}", file=sys.stderr)
+        return EXIT_ERRORS
+    ok = True
+    for session_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        ok = _pack_one(session_dir, args.force) and ok
+    return EXIT_OK if ok else EXIT_ERRORS
 
 
 def _default_saves_dir() -> Path | None:
@@ -194,6 +275,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite", action="store_true", help="replace existing native/ copies"
     )
     archive.set_defaults(handler=_cmd_archive)
+
+    report = subparsers.add_parser(
+        "report", help="human-readable markdown walkthrough of a session"
+    )
+    report.add_argument("session_dir")
+    report.add_argument("-o", "--output", help="also write the markdown here")
+    report.set_defaults(handler=_cmd_report)
+
+    pack = subparsers.add_parser(
+        "pack", help="gzip a finished session's streams in place (verify-then-delete)"
+    )
+    pack.add_argument("session_dir", nargs="?", help="one session directory")
+    pack.add_argument("--all", action="store_true", help="pack every session under the root")
+    pack.add_argument("--root", help="sessions root for --all (default: recorder output root)")
+    pack.add_argument(
+        "--force",
+        action="store_true",
+        help="pack even when the manifest says incomplete (NOT while the game is running)",
+    )
+    pack.set_defaults(handler=_cmd_pack)
     return parser
 
 

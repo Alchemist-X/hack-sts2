@@ -33,3 +33,7 @@ class CanonicalError(Sts2RecError):
 
 class ArchiveError(Sts2RecError):
     """Native artifacts could not be archived into the session."""
+
+
+class PackError(Sts2RecError):
+    """A session's streams could not be gzip-packed safely."""

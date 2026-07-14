@@ -210,6 +210,15 @@ input, while `RequestEnqueue`-level hooks also catch MCP/AutoSlay/DevConsole.
 `AutoSlayer.IsActive` (public static, AutoSlayer.cs:53) tags bot trajectories; AutoSlay is gated
 by `!IsReleaseGame() && CommandLineHelper.HasArg("autoslay")` — irrelevant in release builds.
 
+> **2026-07-14 correction (level-2 live verification)** — two scoping fixes to the paragraph
+> above. (1) `PlayerCmd.EndTurn` does NOT go through `RequestEnqueue` at all: no
+> `EndPlayerTurnAction` is enqueued on that path, so the umbrella funnel recorded *nothing* for
+> MCP end-turns — see "end_turn capture gap" in the drift addendum. (2) "UI-level hooks isolate
+> genuine human input" holds only for the card/end-turn/potion/chest funnels; MCP drives the map
+> and event funnels through the SAME code path as a human (`NMapScreen.OnMapPointSelectedLocally`
+> called directly, `NEventOptionButton`/`NRewardButton` via Godot `ForceClick`) — see
+> "Attribution: UI-funnel 'human'" in the drift addendum.
+
 ---
 
 ## Event stream hooks (native, zero-Harmony layers)
@@ -608,6 +617,74 @@ synchronization) and **class → interface** (`CombatState` → `ICombatState`).
 5. `SyncLocal*` prefixes kept as the merchant/curse channel; the `IsShopContext` dedupe now
    suppresses what is effectively their main caller set (merchant purchases are recorded by the
    `OnTryPurchaseWrapper` hook).
+
+### end_turn capture gap — programmatic path invisible to the funnel (found + FIXED 2026-07-14)
+
+Level-2 live verification (session `1784043137-CPSVMWJPUL`, driver log
+`level2-runs/20260714T233658`): 5 STS2MCP-injected `end_turn` actions produced **zero**
+`end_turn` records (no cancelled records either) — only the automatic
+`ready_to_begin_enemy_turn` markers appeared, one per turn boundary.
+
+Root cause (v0.107.1 decompile):
+
+- **Human path**: `NEndTurnButton.CallReleaseLogic` (:589) / `SecretEndTurnLogicViaFtue` (:608)
+  are the ONLY constructors of `EndPlayerTurnAction` → `RequestEnqueue` → recorded by the
+  umbrella funnel.
+- **Programmatic path**: STS2MCP's `end_turn` calls `PlayerCmd.EndTurn(player, canBackOut:false)`
+  (McpMod.Actions.cs:163); `PlayerCmd.EndTurn` (PlayerCmd.cs:279) calls
+  `CombatManager.SetReadyToEndTurn` **directly** — no `GameAction` is ever enqueued, so
+  `ActionQueueSynchronizer.RequestEnqueue` never fires and the recorder saw nothing. The same
+  bypass applies to AutoSlay (CombatRoomHandler.cs:97), `VoidForm.cs:26`, `CreatureCmd.cs:478
+  (forced end on death effects)`, and the dead-player auto-ready at turn start
+  (CombatManager.cs:548).
+
+Fix (`mod/src/ActionPipeline.cs`, 2026-07-14): the authoritative end-turn tap is the native
+`CombatManager.PlayerEndedTurn` event (`Action<Player, bool>`, CombatManager.cs:260) — fired
+inside `SetReadyToEndTurn` (:694) AFTER its already-ready dedupe check, on BOTH paths.
+`CombatManager.Instance` is an eager static singleton (:80), so one static subscription works
+(same pattern as EventTap). Dedupe against the funnel record: a prefix/finalizer pair on
+`EndPlayerTurnAction.ExecuteAction` raises a flag for the enqueued (human) path — the event
+fires synchronously inside that window (`ExecuteAction` → `PlayerCmd.EndTurn` →
+`SetReadyToEndTurn`), and `BeforeExecuted` has already recorded the funnel record
+(GameAction.cs:122-123). Result: exactly one record per end-turn decision —
+human button → `end_turn` executed, source `hook:ActionQueueSynchronizer.RequestEnqueue`,
+`human:true`; programmatic → `end_turn` committed, source
+`event:CombatManager.PlayerEndedTurn`, params `{player, turn_number, can_back_out, human:false}`,
+filtered `LocalContext.IsMe`. The dead-player auto-ready also lands on the event tap
+(`human:false, can_back_out:false`) — that IS a real turn end for that player.
+
+Harness note: `scripts/level2_diff.py` classifies a pre-fix session's missing `end_turn` as
+**EXPECTED-FIXED** (warning, exit 0) only when the session contains zero `end_turn` records AND
+the `ready_to_begin_enemy_turn` marker confirms the turn boundary; any session that has
+`end_turn` records gets a hard FAIL for each miss. End-to-end verification needs a fresh
+recording with the patched mod.
+
+### Attribution: UI-funnel "human" ≠ human-at-the-keyboard (2026-07-14)
+
+The body's "UI-level hooks isolate genuine human input" claim holds for
+`TryManualPlay` / `NEndTurnButton` / `NPotionPopup` / chest — STS2MCP genuinely bypasses those.
+It does NOT hold for:
+
+- `NMapScreen.OnMapPointSelectedLocally` — MCP calls it directly (McpMod.Actions.cs:448), so MCP
+  map votes record `vote_for_map_coord` with `human:true` (observed in session
+  `1784043137-CPSVMWJPUL`, seqs 334/337/346).
+- `NEventRoom` option buttons / `NRewardButton` — MCP uses Godot `ForceClick`
+  (McpMod.Actions.cs:292, :485), indistinguishable from a human press, so
+  `event_proceed`/`event_option` and the `SelectLocalReward` human mark (`reward_taken`
+  `human:true`) fire for MCP too.
+
+Honest semantics: the recorded `human` flag from these funnels means **"came through the local
+UI code path"** (it still correctly excludes remote co-op players and engine auto-claims), not
+"a human made this decision". True human-vs-agent separation for benchmark purposes = record
+BOTH (a) the UI-funnel flag as today AND (b) whether an external controller (the STS2MCP mod)
+is loaded in the session, and let analysis decide.
+
+TODO (cheap improvement, not yet wired): `HumanFunnels` could probe once per run via
+`ModManager.GetLoadedMods()` for the STS2MCP mod id; stamping the result into the session
+(manifest field or one info record) touches `TrajectorySession`/`RecorderMod` outside the
+2026-07-14 change's owned files — deliberately left as a TODO rather than crossing ownership
+lines. The level-2 harness already reflects the honest semantics: shared UI-funnel sources on
+MCP-injected actions are info, and only human-EXCLUSIVE funnel hits fail.
 
 ### New surfaces noted (not yet wired)
 

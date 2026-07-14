@@ -2,6 +2,9 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
@@ -15,6 +18,17 @@ namespace Sts2Recorder.Game;
 /// the provisional-until-executed rule — every enqueued action is finalized via
 /// GameAction.BeforeExecuted / BeforeCancelled and only then recorded, with the
 /// status ("executed"/"cancelled") the game itself decided.
+///
+/// End-turn gap fix (2026-07-14, level-2 verification): programmatic end-turns
+/// (STS2MCP's PlayerCmd.EndTurn, AutoSlay, VoidForm, CreatureCmd forced ends,
+/// dead-player auto-ready) NEVER enqueue an EndPlayerTurnAction — PlayerCmd.EndTurn
+/// (PlayerCmd.cs:279) calls CombatManager.SetReadyToEndTurn directly, so the
+/// RequestEnqueue funnel cannot see them (only the automatic
+/// ReadyToBeginEnemyTurnAction that follows). The authoritative end-turn tap is
+/// therefore the native CombatManager.PlayerEndedTurn event (fired inside
+/// SetReadyToEndTurn, CombatManager.cs:694, both paths), deduped against the
+/// enqueue-funnel record via a flag raised while EndPlayerTurnAction.ExecuteAction
+/// runs (the human-button path, which the funnel already records).
 /// </summary>
 public static class ActionPipeline
 {
@@ -34,6 +48,16 @@ public static class ActionPipeline
     private static ConditionalWeakTable<GameAction, PendingAction> _pending = new();
 
     private static string? _humanScopeSource;
+
+    /// <summary>
+    /// True while EndPlayerTurnAction.ExecuteAction runs (main thread; the game
+    /// action executor is single-threaded). SetReadyToEndTurn — and therefore
+    /// the PlayerEndedTurn event — fires synchronously inside that window for
+    /// the enqueued (human button / FTUE) path, which the RequestEnqueue funnel
+    /// already recorded; the event tap skips those to keep one record per
+    /// end-turn decision.
+    /// </summary>
+    private static bool _endPlayerTurnActionExecuting;
 
     // Private-field readers for action params (guarded; null when a game update renames them).
     // v0.107.1: end-turn actions renamed _combatRound -> _turnNumber (per-player turn counter),
@@ -69,18 +93,38 @@ public static class ActionPipeline
             "patch:ActionQueueSynchronizer.RequestEnqueue",
             () => AccessTools.Method(typeof(ActionQueueSynchronizer), nameof(ActionQueueSynchronizer.RequestEnqueue)),
             prefix: new HarmonyMethod(typeof(ActionPipeline), nameof(RequestEnqueuePrefix)));
+
+        // End-turn gap fix (2026-07-14): mark the EndPlayerTurnAction execution
+        // window so the PlayerEndedTurn tap below can dedupe against the
+        // enqueue-funnel record (see class doc). Prefix/finalizer pair — a throw
+        // inside ExecuteAction cannot leave the flag stuck.
+        RecorderMod.TryPatch(
+            harmony,
+            "patch:EndPlayerTurnAction.ExecuteAction",
+            () => AccessTools.Method(typeof(EndPlayerTurnAction), "ExecuteAction"),
+            prefix: new HarmonyMethod(typeof(ActionPipeline), nameof(EndPlayerTurnExecutePrefix)),
+            finalizer: new HarmonyMethod(typeof(ActionPipeline), nameof(EndPlayerTurnExecuteFinalizer)));
+
+        // CombatManager.Instance is an eager static singleton (CombatManager.cs:80)
+        // — one static subscription, the handler no-ops without a session (same
+        // pattern as EventTap.SubscribeStaticEvents).
+        RecorderMod.TrySubscribe(
+            "event:CombatManager.PlayerEndedTurn",
+            () => CombatManager.Instance.PlayerEndedTurn += OnPlayerEndedTurn);
     }
 
     internal static void OnRunStarted()
     {
         _pending = new ConditionalWeakTable<GameAction, PendingAction>();
         _humanScopeSource = null;
+        _endPlayerTurnActionExecuting = false;
     }
 
     internal static void OnRunEnding()
     {
         _pending = new ConditionalWeakTable<GameAction, PendingAction>();
         _humanScopeSource = null;
+        _endPlayerTurnActionExecuting = false;
     }
 
     /// <summary>
@@ -156,6 +200,63 @@ public static class ActionPipeline
         catch (Exception ex)
         {
             RecorderMod.Report("ActionPipeline.Finalize", ex);
+        }
+    }
+
+    private static void EndPlayerTurnExecutePrefix()
+    {
+        _endPlayerTurnActionExecuting = true;
+    }
+
+    private static void EndPlayerTurnExecuteFinalizer()
+    {
+        _endPlayerTurnActionExecuting = false;
+    }
+
+    /// <summary>
+    /// Authoritative end-turn tap: fires inside CombatManager.SetReadyToEndTurn
+    /// (after its already-ready dedupe check) for BOTH the enqueued human-button
+    /// path and every programmatic PlayerCmd.EndTurn caller (STS2MCP, AutoSlay,
+    /// VoidForm, CreatureCmd, dead-player auto-ready at turn start). The
+    /// enqueued path is skipped via <see cref="_endPlayerTurnActionExecuting"/>
+    /// — the RequestEnqueue funnel already recorded it with human attribution —
+    /// so this records exactly the end-turns the funnel cannot see. Fires for
+    /// remote players too in co-op; filtered to the local player.
+    /// </summary>
+    private static void OnPlayerEndedTurn(Player player, bool canBackOut)
+    {
+        try
+        {
+            var session = RecorderMod.Session;
+            if (session == null || _endPlayerTurnActionExecuting)
+            {
+                return;
+            }
+            if (!JsonDescribe.Try<bool?>(() => LocalContext.IsMe(player)).GetValueOrDefault())
+            {
+                return;
+            }
+            var parameters = new JsonObject
+            {
+                ["player"] = JsonDescribe.Try<long?>(() => (long)player.NetId),
+                ["turn_number"] = JsonDescribe.Try<int?>(() => player.PlayerCombatState?.TurnNumber),
+                // false for every programmatic caller today; recorded for drift visibility.
+                ["can_back_out"] = canBackOut,
+                // No enqueued action => no UI handler scope => programmatic
+                // (the human button always goes through the enqueue path above).
+                ["human"] = _humanScopeSource != null,
+            };
+            // "committed": the game has already marked the player ready — there is
+            // no cancellable GameAction lifecycle on this path (an undo would be a
+            // separate first-class undo_end_turn record).
+            session.RecordAction(
+                "event:CombatManager.PlayerEndedTurn", "end_turn", parameters,
+                "committed", session.LatestStateSeq);
+            Snapshots.RequestDeferredSnapshot();
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("ActionPipeline.OnPlayerEndedTurn", ex);
         }
     }
 
