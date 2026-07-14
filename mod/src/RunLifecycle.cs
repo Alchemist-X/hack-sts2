@@ -36,27 +36,27 @@ public static class RunLifecycle
         RecorderMod.TryPatch(
             harmony,
             "patch:RunManager.OnEnded",
-            AccessTools.Method(typeof(RunManager), nameof(RunManager.OnEnded)),
+            () => AccessTools.Method(typeof(RunManager), nameof(RunManager.OnEnded)),
             postfix: new HarmonyMethod(typeof(RunLifecycle), nameof(OnEndedPostfix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:RunHistoryUtilities.CreateRunHistoryEntry",
-            AccessTools.Method(typeof(RunHistoryUtilities), nameof(RunHistoryUtilities.CreateRunHistoryEntry)),
+            () => AccessTools.Method(typeof(RunHistoryUtilities), nameof(RunHistoryUtilities.CreateRunHistoryEntry)),
             postfix: new HarmonyMethod(typeof(RunLifecycle), nameof(CreateRunHistoryEntryPostfix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:RunManager.CleanUp",
-            AccessTools.Method(typeof(RunManager), nameof(RunManager.CleanUp)),
+            () => AccessTools.Method(typeof(RunManager), nameof(RunManager.CleanUp)),
             prefix: new HarmonyMethod(typeof(RunLifecycle), nameof(CleanUpPrefix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:RunHistorySaveManager.SaveHistory",
-            AccessTools.Method(typeof(RunHistorySaveManager), nameof(RunHistorySaveManager.SaveHistory)),
+            () => AccessTools.Method(typeof(RunHistorySaveManager), nameof(RunHistorySaveManager.SaveHistory)),
             postfix: new HarmonyMethod(typeof(RunLifecycle), nameof(SaveHistoryPostfix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:CombatReplayWriter.WriteReplay",
-            AccessTools.Method(typeof(CombatReplayWriter), nameof(CombatReplayWriter.WriteReplay)),
+            () => AccessTools.Method(typeof(CombatReplayWriter), nameof(CombatReplayWriter.WriteReplay)),
             postfix: new HarmonyMethod(typeof(RunLifecycle), nameof(WriteReplayPostfix)));
     }
 

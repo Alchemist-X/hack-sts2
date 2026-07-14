@@ -1,0 +1,6 @@
+{
+  "stop_reason": "API errors for >60s: GET http://127.0.0.1:15526/api/v1/singleplayer failed: <urlopen error [Errno 61] Connection refused>\nIs the game running with the STS2MCP mod loaded? Run scripts/level2_preflight.sh first. (last good state dumped to /Users/Aincrad/dev-proj/hack-sts2/level2-runs/20260714T233152/stuck_state.json)",
+  "exit_code": 2,
+  "injected_actions": 47,
+  "out_dir": "/Users/Aincrad/dev-proj/hack-sts2/level2-runs/20260714T233152"
+}

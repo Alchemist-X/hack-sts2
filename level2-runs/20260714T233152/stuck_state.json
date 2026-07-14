@@ -1,0 +1,164 @@
+{
+  "reason": "ApiError persisted: GET http://127.0.0.1:15526/api/v1/singleplayer failed: <urlopen error [Errno 61] Connection refused>\nIs the game running with the STS2MCP mod loaded? Run scripts/level2_preflight.sh first.",
+  "state": {
+    "state_type": "monster",
+    "battle": {
+      "round": 5,
+      "turn": "player",
+      "is_play_phase": false,
+      "enemies": [
+        {
+          "entity_id": "LEAF_SLIME_S_0",
+          "combat_id": 3,
+          "name": "\u6811\u53f6\u53f2\u83b1\u59c6\uff08\u5c0f\uff09",
+          "hp": 14,
+          "max_hp": 14,
+          "block": 0,
+          "status": [],
+          "intents": [
+            {
+              "type": "StatusCard",
+              "label": "1",
+              "title": "\u7b56\u7565",
+              "description": "\u8fd9\u4e2a\u654c\u4eba\u5c06\u4f1a\u7ed9\u4f601\u5f20\u72b6\u6001\u724c\u3002"
+            }
+          ]
+        }
+      ]
+    },
+    "run": {
+      "act": 1,
+      "floor": 2,
+      "ascension": 0
+    },
+    "player": {
+      "character": "\u94c1\u7532\u6218\u58eb",
+      "hp": 56,
+      "max_hp": 80,
+      "block": 0,
+      "energy": 3,
+      "max_energy": 3,
+      "hand": [
+        {
+          "id": "DEFEND_IRONCLAD",
+          "name": "\u9632\u5fa1",
+          "type": "Skill",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u83b7\u5f975\u70b9\u683c\u6321\u3002",
+          "rarity": "Basic",
+          "is_upgraded": false,
+          "keywords": [
+            {
+              "name": "\u683c\u6321",
+              "description": "\u5728\u4e0b\u4e2a\u56de\u5408\u524d\uff0c\u963b\u6321\u4f24\u5bb3\u3002"
+            }
+          ],
+          "index": 0,
+          "target_type": "Self",
+          "can_play": true,
+          "unplayable_reason": null
+        }
+      ],
+      "draw_pile_count": 0,
+      "discard_pile_count": 11,
+      "exhaust_pile_count": 2,
+      "draw_pile": [],
+      "discard_pile": [
+        {
+          "name": "\u9884\u5907\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62107\u70b9\u4f24\u5bb3\u3002 \u5728\u672c\u56de\u5408\u5185\u83b7\u5f972\u70b9\u529b\u91cf\u3002"
+        },
+        {
+          "name": "\u9632\u5fa1",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u83b7\u5f975\u70b9\u683c\u6321\u3002"
+        },
+        {
+          "name": "\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62106\u70b9\u4f24\u5bb3\u3002"
+        },
+        {
+          "name": "\u75db\u51fb",
+          "cost": "2",
+          "star_cost": null,
+          "description": "\u9020\u62108\u70b9\u4f24\u5bb3\u3002 \u7ed9\u4e882\u5c42\u6613\u4f24\u3002"
+        },
+        {
+          "name": "\u9632\u5fa1",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u83b7\u5f975\u70b9\u683c\u6321\u3002"
+        },
+        {
+          "name": "\u9ecf\u6db2",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u62bd1\u5f20\u724c\u3002 \u6d88\u8017\u3002"
+        },
+        {
+          "name": "\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62106\u70b9\u4f24\u5bb3\u3002"
+        },
+        {
+          "name": "\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62106\u70b9\u4f24\u5bb3\u3002"
+        },
+        {
+          "name": "\u9632\u5fa1",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u83b7\u5f975\u70b9\u683c\u6321\u3002"
+        },
+        {
+          "name": "\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62106\u70b9\u4f24\u5bb3\u3002"
+        },
+        {
+          "name": "\u6253\u51fb",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u9020\u62106\u70b9\u4f24\u5bb3\u3002"
+        }
+      ],
+      "exhaust_pile": [
+        {
+          "name": "\u9ecf\u6db2",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u62bd1\u5f20\u724c\u3002 \u6d88\u8017\u3002"
+        },
+        {
+          "name": "\u9ecf\u6db2",
+          "cost": "1",
+          "star_cost": null,
+          "description": "\u62bd1\u5f20\u724c\u3002 \u6d88\u8017\u3002"
+        }
+      ],
+      "gold": 119,
+      "status": [],
+      "relics": [
+        {
+          "id": "BURNING_BLOOD",
+          "name": "\u71c3\u70e7\u4e4b\u8840",
+          "description": "\u5728\u6218\u6597\u7ed3\u675f\u65f6\uff0c\u56de\u590d6\u70b9\u751f\u547d\u3002",
+          "counter": null,
+          "keywords": []
+        }
+      ],
+      "potions": [],
+      "max_potion_slots": 3
+    }
+  }
+}

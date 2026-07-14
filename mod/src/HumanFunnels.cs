@@ -55,37 +55,37 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:CardModel.TryManualPlay",
-            AccessTools.Method(typeof(CardModel), nameof(CardModel.TryManualPlay)),
+            () => AccessTools.Method(typeof(CardModel), nameof(CardModel.TryManualPlay)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(TryManualPlayPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:NEndTurnButton.CallReleaseLogic",
-            AccessTools.Method(typeof(NEndTurnButton), nameof(NEndTurnButton.CallReleaseLogic)),
+            () => AccessTools.Method(typeof(NEndTurnButton), nameof(NEndTurnButton.CallReleaseLogic)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(CallReleaseLogicPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:NEndTurnButton.SecretEndTurnLogicViaFtue",
-            AccessTools.Method(typeof(NEndTurnButton), nameof(NEndTurnButton.SecretEndTurnLogicViaFtue)),
+            () => AccessTools.Method(typeof(NEndTurnButton), nameof(NEndTurnButton.SecretEndTurnLogicViaFtue)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SecretEndTurnPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:PotionModel.EnqueueManualUse",
-            AccessTools.Method(typeof(PotionModel), nameof(PotionModel.EnqueueManualUse)),
+            () => AccessTools.Method(typeof(PotionModel), nameof(PotionModel.EnqueueManualUse)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(EnqueueManualUsePrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:NPotionPopup.OnDiscardButtonPressed",
-            AccessTools.Method(typeof(NPotionPopup), "OnDiscardButtonPressed"),
+            () => AccessTools.Method(typeof(NPotionPopup), "OnDiscardButtonPressed"),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(DiscardPotionPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:NMapScreen.OnMapPointSelectedLocally",
-            AccessTools.Method(typeof(NMapScreen), nameof(NMapScreen.OnMapPointSelectedLocally)),
+            () => AccessTools.Method(typeof(NMapScreen), nameof(NMapScreen.OnMapPointSelectedLocally)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(MapPointSelectedPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
         // v0.107.1: PickRelicLocally(int?) also covers the NEW explicit treasure-relic
@@ -94,7 +94,7 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:TreasureRoomRelicSynchronizer.PickRelicLocally",
-            AccessTools.Method(typeof(TreasureRoomRelicSynchronizer), nameof(TreasureRoomRelicSynchronizer.PickRelicLocally)),
+            () => AccessTools.Method(typeof(TreasureRoomRelicSynchronizer), nameof(TreasureRoomRelicSynchronizer.PickRelicLocally)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(PickRelicLocallyPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
 
@@ -106,23 +106,28 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:NEventRoom.OptionButtonClicked",
-            AccessTools.Method(typeof(NEventRoom), nameof(NEventRoom.OptionButtonClicked)),
+            () => AccessTools.Method(typeof(NEventRoom), nameof(NEventRoom.OptionButtonClicked)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(EventOptionClickedPrefix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:EventSynchronizer.SaveEventOptionToHistory",
-            AccessTools.Method(typeof(EventSynchronizer), "SaveEventOptionToHistory"),
+            () => AccessTools.Method(typeof(EventSynchronizer), "SaveEventOptionToHistory"),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(SaveEventOptionPostfix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:MerchantEntry.OnTryPurchaseWrapper",
-            AccessTools.Method(typeof(MerchantEntry), nameof(MerchantEntry.OnTryPurchaseWrapper)),
+            () => AccessTools.Method(typeof(MerchantEntry), nameof(MerchantEntry.OnTryPurchaseWrapper)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(MerchantPurchasePostfix)));
         // Method HIDING (not override): the card-removal overload must be patched separately.
+        // Explicit parameter types: the class sees BOTH its own hiding 3-arg overload and
+        // the inherited 2-arg base method — a name-only lookup is ambiguous (v0.107.1).
         RecorderMod.TryPatch(
             harmony,
             "patch:MerchantCardRemovalEntry.OnTryPurchaseWrapper",
-            AccessTools.Method(typeof(MerchantCardRemovalEntry), nameof(MerchantCardRemovalEntry.OnTryPurchaseWrapper)),
+            () => AccessTools.Method(
+                typeof(MerchantCardRemovalEntry),
+                nameof(MerchantCardRemovalEntry.OnTryPurchaseWrapper),
+                new[] { typeof(MerchantInventory), typeof(bool), typeof(bool) }),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(CardRemovalPurchasePostfix)));
         // v0.107.1 reward claiming is synchronized (Reward.OnSelectWrapper removed):
         //   * RewardsSetSynchronizer.SelectLocalReward = the LOCAL player's explicit UI
@@ -134,12 +139,12 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:RewardsSetSynchronizer.SelectLocalReward",
-            AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SelectLocalReward)),
+            () => AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SelectLocalReward)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SelectLocalRewardPrefix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:Reward.SelectUnsynchronized",
-            AccessTools.Method(typeof(Reward), nameof(Reward.SelectUnsynchronized)),
+            () => AccessTools.Method(typeof(Reward), nameof(Reward.SelectUnsynchronized)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(RewardSelectPostfix)));
         // v0.107.1: reward-set skips are synchronized too. SkipLocalRewardsSet is the
         // ONE local human skip decision; the per-subclass Reward.OnSkipped overrides now
@@ -148,7 +153,7 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:RewardsSetSynchronizer.SkipLocalRewardsSet",
-            AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SkipLocalRewardsSet)),
+            () => AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SkipLocalRewardsSet)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SkipLocalRewardsSetPrefix)));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalObtainedCard), nameof(SyncObtainedCardPrefix));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalSkippedCard), nameof(SyncSkippedCardPrefix));
@@ -161,17 +166,17 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             "patch:PlayerChoiceSynchronizer.SyncLocalChoice",
-            AccessTools.Method(typeof(PlayerChoiceSynchronizer), nameof(PlayerChoiceSynchronizer.SyncLocalChoice)),
+            () => AccessTools.Method(typeof(PlayerChoiceSynchronizer), nameof(PlayerChoiceSynchronizer.SyncLocalChoice)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SyncLocalChoicePrefix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:PlayerChoiceContext.PushModel",
-            AccessTools.Method(typeof(PlayerChoiceContext), nameof(PlayerChoiceContext.PushModel)),
+            () => AccessTools.Method(typeof(PlayerChoiceContext), nameof(PlayerChoiceContext.PushModel)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(PushModelPostfix)));
         RecorderMod.TryPatch(
             harmony,
             "patch:NTreasureRoom.OnChestButtonReleased",
-            AccessTools.Method(typeof(NTreasureRoom), "OnChestButtonReleased"),
+            () => AccessTools.Method(typeof(NTreasureRoom), "OnChestButtonReleased"),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(ChestButtonPrefix)));
     }
 
@@ -180,7 +185,7 @@ public static class HumanFunnels
         RecorderMod.TryPatch(
             harmony,
             $"patch:RewardSynchronizer.{methodName}",
-            AccessTools.Method(typeof(RewardSynchronizer), methodName),
+            () => AccessTools.Method(typeof(RewardSynchronizer), methodName),
             prefix: new HarmonyMethod(typeof(HumanFunnels), patchName));
     }
 

@@ -67,7 +67,7 @@ public static class ActionPipeline
         RecorderMod.TryPatch(
             harmony,
             "patch:ActionQueueSynchronizer.RequestEnqueue",
-            AccessTools.Method(typeof(ActionQueueSynchronizer), nameof(ActionQueueSynchronizer.RequestEnqueue)),
+            () => AccessTools.Method(typeof(ActionQueueSynchronizer), nameof(ActionQueueSynchronizer.RequestEnqueue)),
             prefix: new HarmonyMethod(typeof(ActionPipeline), nameof(RequestEnqueuePrefix)));
     }
 

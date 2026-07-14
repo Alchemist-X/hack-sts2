@@ -69,19 +69,23 @@ public static class RecorderMod
     }
 
     /// <summary>
-    /// Applies one Harmony patch inside its own try/catch. A null original or a
-    /// patch failure registers the hook id as degraded and logs; it never throws.
+    /// Applies one Harmony patch inside its own try/catch. The target lookup is a
+    /// lazy resolver so that lookup failures (missing method after a game update,
+    /// AmbiguousMatchException on new overloads) are ALSO caught here — argument-side
+    /// evaluation at the call site would escape the isolation. A null/failed lookup
+    /// or a patch failure registers the hook id as degraded and logs; it never throws.
     /// </summary>
     internal static void TryPatch(
         Harmony harmony,
         string hookId,
-        MethodBase? original,
+        Func<MethodBase?> resolveOriginal,
         HarmonyMethod? prefix = null,
         HarmonyMethod? postfix = null,
         HarmonyMethod? finalizer = null)
     {
         try
         {
+            MethodBase? original = resolveOriginal();
             if (original == null)
             {
                 throw new MissingMethodException($"target method not found for {hookId}");
