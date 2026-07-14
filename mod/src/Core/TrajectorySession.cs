@@ -40,10 +40,28 @@ public sealed class TrajectorySession : IDisposable
         _meta = meta;
         _clock = clock;
         _errorLog = new ErrorLog(directory, clock);
-        _states = new JsonlStreamWriter(Path.Combine(directory, "states.jsonl"));
-        _actions = new JsonlStreamWriter(Path.Combine(directory, "actions.jsonl"));
-        _events = new JsonlStreamWriter(Path.Combine(directory, "events.jsonl"));
-        WriteManifestLocked();
+        // Dispose-on-throw: a failing constructor must not leak already-opened
+        // JSONL FileStream handles into game code.
+        JsonlStreamWriter? states = null;
+        JsonlStreamWriter? actions = null;
+        JsonlStreamWriter? events = null;
+        try
+        {
+            states = new JsonlStreamWriter(Path.Combine(directory, "states.jsonl"));
+            actions = new JsonlStreamWriter(Path.Combine(directory, "actions.jsonl"));
+            events = new JsonlStreamWriter(Path.Combine(directory, "events.jsonl"));
+            _states = states;
+            _actions = actions;
+            _events = events;
+            WriteManifestLocked();
+        }
+        catch
+        {
+            states?.Dispose();
+            actions?.Dispose();
+            events?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -81,9 +99,14 @@ public sealed class TrajectorySession : IDisposable
     /// </summary>
     public long RecordState(string trigger, string screen, JsonNode state)
     {
+        ArgumentNullException.ThrowIfNull(trigger);
+        ArgumentNullException.ThrowIfNull(screen);
         ArgumentNullException.ThrowIfNull(state);
         var serialized = state.ToJsonString();
-        var hash = Hashing.StateHash(serialized);
+        // Hash the canonical (key-sorted) form so dedup is independent of the
+        // state builder's key insertion order; the stored payload keeps the
+        // original serialization.
+        var hash = Hashing.StateHash(state);
         lock (_lock)
         {
             ThrowIfUnusable();
@@ -112,10 +135,16 @@ public sealed class TrajectorySession : IDisposable
     /// Records a hooked action. <paramref name="status"/> must be "committed"
     /// (already-final decisions), "executed" or "cancelled" (GameAction lifecycle).
     /// <paramref name="stateSeq"/> null means "the latest snapshot" (LatestStateSeq).
+    /// When no snapshot exists yet (LatestStateSeq == 0, or a caller passes a
+    /// stale 0), state_seq is written as JSON null — the contract for "action
+    /// fired before the first snapshot"; sts2rec canonical degrades gracefully
+    /// (next snapshot as best-effort state_before, flagged in info).
     /// </summary>
     public long RecordAction(
         string source, string kind, JsonNode parameters, string status, long? stateSeq)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(kind);
         if (!Contains(AllowedActionStatuses, status))
         {
             throw new ArgumentException(
@@ -127,6 +156,7 @@ public sealed class TrajectorySession : IDisposable
         {
             ThrowIfUnusable();
             var seq = _nextSeq++;
+            var resolvedStateSeq = stateSeq ?? _latestStateSeq;
             _actions.WriteLine(new JsonObject
             {
                 ["seq"] = seq,
@@ -139,7 +169,7 @@ public sealed class TrajectorySession : IDisposable
                     ["params"] = JsonNode.Parse(serializedParams),
                 },
                 ["status"] = status,
-                ["state_seq"] = stateSeq ?? _latestStateSeq,
+                ["state_seq"] = resolvedStateSeq > 0 ? (JsonNode)resolvedStateSeq : null,
             });
             return seq;
         }
@@ -148,6 +178,7 @@ public sealed class TrajectorySession : IDisposable
     /// <summary>Records a fine-grained history entry on the privileged events stream.</summary>
     public long RecordEvent(string entry, JsonNode data)
     {
+        ArgumentNullException.ThrowIfNull(entry);
         var serializedData = data?.ToJsonString() ?? "{}";
         lock (_lock)
         {
@@ -195,11 +226,22 @@ public sealed class TrajectorySession : IDisposable
         }
     }
 
-    /// <summary>Rate-limited error report; appended to recorder.log in the session dir.</summary>
+    /// <summary>
+    /// Rate-limited error report; appended to recorder.log in the session dir.
+    /// After Dispose this is a silent no-op (the error path must never throw
+    /// into game code, so it does not use the throwing disposed gate).
+    /// </summary>
     public void RecordError(string where, Exception ex)
     {
         ArgumentNullException.ThrowIfNull(where);
         ArgumentNullException.ThrowIfNull(ex);
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+        }
         _errorLog.Record(where, ex);
     }
 
@@ -209,7 +251,6 @@ public sealed class TrajectorySession : IDisposable
         lock (_lock)
         {
             ThrowIfUnusable();
-            FlushStreamsLocked();
             WriteManifestLocked();
         }
     }
@@ -227,7 +268,6 @@ public sealed class TrajectorySession : IDisposable
             }
             _result = result;
             _completed = true;
-            FlushStreamsLocked();
             WriteManifestLocked();
         }
     }
@@ -257,13 +297,20 @@ public sealed class TrajectorySession : IDisposable
 
     private void FlushStreamsLocked()
     {
-        _states.Flush();
-        _actions.Flush();
-        _events.Flush();
+        // Null-conditional: WriteManifestLocked runs once from the constructor,
+        // where a partially-constructed instance could have unassigned writers.
+        _states?.Flush();
+        _actions?.Flush();
+        _events?.Flush();
     }
 
     private void WriteManifestLocked()
     {
+        // Streams must be flushed BEFORE every manifest rewrite: the manifest
+        // counts reflect in-memory LineCount, so buffered-but-unflushed lines
+        // would make a crash-terminated session's manifest claim lines that
+        // never reached disk (or vice versa).
+        FlushStreamsLocked();
         var manifest = SessionMetaJson.BuildManifest(
             _meta,
             stateCount: _states?.LineCount ?? 0,

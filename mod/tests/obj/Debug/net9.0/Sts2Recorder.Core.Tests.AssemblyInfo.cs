@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Sts2Recorder.Core.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+95c81f19360ccab4c5bde07b5ebcd43cb9b87c19")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3070b6afd0173431e0fe8d1611a67f3fb1de78e6")]
 [assembly: System.Reflection.AssemblyProductAttribute("Sts2Recorder.Core.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Sts2Recorder.Core.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

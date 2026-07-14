@@ -3,7 +3,8 @@
   "name": "STS2 Trajectory Recorder",
   "author": "Alchemist-X",
   "description": "Passively records full game trajectories (states, actions, combat events) to local JSONL files for AI benchmark research. Observation-only: never plays the game for you and never uploads anything.",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "min_game_version": "0.107.1",
   "has_pck": false,
   "has_dll": true,
   "affects_gameplay": false

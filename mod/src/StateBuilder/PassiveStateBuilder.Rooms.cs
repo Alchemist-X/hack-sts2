@@ -1,8 +1,9 @@
 // Ported from STS2MCP (https://github.com/Gennadiyev/STS2MCP) — McpMod.StateBuilder.cs (room sections).
 // Copyright 2026 Yikun Ji (Kunologist). MIT License; this attribution is retained per license.
-// Sts2Recorder adaptations (game v0.99.1) — ALL UI side effects removed:
-//   * Shop: upstream auto-called NMerchantRoom.OpenInventory(); we read MerchantRoom.Inventory
-//     directly (populated model-side in MerchantRoom.Enter) and report inventory_open read-only.
+// Sts2Recorder adaptations (game v0.107.1) — ALL UI side effects removed:
+//   * Shop: upstream auto-called NMerchantRoom.OpenInventory(); we read the merchant model
+//     inventory directly (v0.107.1: MerchantRoom.GetLocalInventory(), populated model-side
+//     in MerchantRoom.Enter) and report inventory_open read-only.
 //   * FakeMerchant: upstream ForceClick()ed the merchant button; we read FakeMerchant.Inventory
 //     directly (populated model-side in BeforeEventStarted) and emit "not_opened" if absent.
 //   * Treasure: upstream ForceClick()ed the chest; we read the chest button state and emit
@@ -229,15 +230,16 @@ public static partial class PassiveStateBuilder
         var state = new Dictionary<string, object?>();
 
         // Passive adaptation: upstream auto-called NMerchantRoom.OpenInventory() before
-        // building this section. MerchantRoom.Inventory is populated model-side in
-        // MerchantRoom.Enter (v0.99.1, Rooms/MerchantRoom.cs), so it is readable without
-        // touching the UI. The inventory UI's open state is reported read-only.
+        // building this section. The inventory is populated model-side in MerchantRoom.Enter,
+        // so it is readable without touching the UI. v0.107.1: MerchantRoom.Inventory was
+        // replaced by per-player Inventories + GetLocalInventory() (indexes by local player
+        // slot; guarded — throws before the room is fully entered).
         bool inventoryUiOpen = false;
         try { inventoryUiOpen = NMerchantRoom.Instance?.Inventory?.IsOpen ?? false; } catch { }
         state["inventory_open"] = inventoryUiOpen;
 
         MerchantInventory? inventory = null;
-        try { inventory = merchantRoom.Inventory; } catch { }
+        try { inventory = merchantRoom.GetLocalInventory(); } catch { }
         if (inventory == null)
         {
             state["items"] = new List<Dictionary<string, object?>>();

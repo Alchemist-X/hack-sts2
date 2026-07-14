@@ -115,6 +115,68 @@ public sealed class TrajectorySessionTests
     }
 
     [Fact]
+    public void ActionBeforeAnySnapshotWritesNullStateSeq()
+    {
+        var root = NewTempRoot();
+        using var session = TrajectorySession.Begin(root, DefaultMeta(), new FakeClock(StartTime));
+        // No RecordState yet: both "use latest" (null) and a stale explicit 0
+        // must land as JSON null per the "no prior snapshot" contract.
+        session.RecordAction(
+            "hook:MapPatch", "map_choice", new JsonObject { ["node"] = "x0y0" },
+            "committed", null);
+        session.RecordAction(
+            "hook:MapPatch", "map_choice", new JsonObject { ["node"] = "x0y1" },
+            "committed", 0);
+        session.Flush();
+
+        var actions = ReadJsonl(session.Directory, "actions");
+        Assert.Equal(2, actions.Count);
+        Assert.All(actions, action =>
+            Assert.Equal(JsonValueKind.Null, action.GetProperty("state_seq").ValueKind));
+    }
+
+    [Fact]
+    public void HashDedupIsIndependentOfKeyInsertionOrder()
+    {
+        var root = NewTempRoot();
+        using var session = TrajectorySession.Begin(root, DefaultMeta(), new FakeClock(StartTime));
+        var first = session.RecordState("phase", "combat", new JsonObject
+        {
+            ["floor"] = 1,
+            ["energy"] = 3,
+            ["nested"] = new JsonObject { ["a"] = 1, ["b"] = 2 },
+        });
+        // Semantically identical state, different key insertion order at both depths.
+        var second = session.RecordState("poll", "combat", new JsonObject
+        {
+            ["energy"] = 3,
+            ["nested"] = new JsonObject { ["b"] = 2, ["a"] = 1 },
+            ["floor"] = 1,
+        });
+        session.Flush();
+
+        Assert.Equal(first, second);
+        Assert.Single(ReadJsonl(session.Directory, "states"));
+    }
+
+    [Fact]
+    public void RecordArgumentsMustNotBeNull()
+    {
+        var root = NewTempRoot();
+        using var session = TrajectorySession.Begin(root, DefaultMeta(), new FakeClock(StartTime));
+        Assert.Throws<ArgumentNullException>(
+            () => session.RecordState(null!, "combat", new JsonObject()));
+        Assert.Throws<ArgumentNullException>(
+            () => session.RecordState("phase", null!, new JsonObject()));
+        Assert.Throws<ArgumentNullException>(
+            () => session.RecordAction(null!, "play_card", new JsonObject(), "executed", null));
+        Assert.Throws<ArgumentNullException>(
+            () => session.RecordAction("hook:X", null!, new JsonObject(), "executed", null));
+        Assert.Throws<ArgumentNullException>(
+            () => session.RecordEvent(null!, new JsonObject()));
+    }
+
+    [Fact]
     public void UnknownActionStatusIsRejected()
     {
         var root = NewTempRoot();
@@ -148,7 +210,28 @@ public sealed class TrajectorySessionTests
         Assert.Equal(Seed, manifest.GetProperty("run").GetProperty("seed").GetString());
         Assert.Equal(StartTime, manifest.GetProperty("run").GetProperty("start_time").GetInt64());
         Assert.Equal(1, manifest.GetProperty("part").GetInt32());
-        Assert.False(File.Exists(Path.Combine(session.Directory, "manifest.json.tmp")));
+        // No temp files may survive a manifest rewrite (unique names included).
+        Assert.Empty(Directory.GetFiles(session.Directory, "*.tmp"));
+    }
+
+    [Fact]
+    public void ManifestRewriteFlushesBufferedStreamLines()
+    {
+        // Regression: AddDegradedHook (and every other manifest rewrite) must
+        // flush the JSONL streams first, or the manifest would claim buffered
+        // lines that never reached disk — a crash right after would leave a
+        // manifest inconsistent with the files.
+        var root = NewTempRoot();
+        using var session = TrajectorySession.Begin(root, DefaultMeta(), new FakeClock(StartTime));
+        session.RecordState("phase", "combat", State(1, 3));
+        session.RecordEvent("card_drawn", new JsonObject { ["card"] = "CARD.ZAP" });
+        session.AddDegradedHook("hook:MapPatch"); // no explicit Flush()
+
+        var counts = ReadManifest(session.Directory).GetProperty("counts");
+        Assert.Equal(1, counts.GetProperty("states").GetInt64());
+        Assert.Equal(1, counts.GetProperty("events").GetInt64());
+        Assert.Single(ReadJsonl(session.Directory, "states"));
+        Assert.Single(ReadJsonl(session.Directory, "events"));
     }
 
     [Fact]
@@ -269,5 +352,17 @@ public sealed class TrajectorySessionTests
         session.Dispose(); // idempotent
         Assert.Throws<ObjectDisposedException>(
             () => session.RecordEvent("card_drawn", new JsonObject()));
+    }
+
+    [Fact]
+    public void RecordErrorAfterDisposeIsSilentNoOp()
+    {
+        var root = NewTempRoot();
+        var session = TrajectorySession.Begin(root, DefaultMeta(), new FakeClock(StartTime));
+        session.Dispose();
+        // The error path must never throw into game code, so post-dispose
+        // reports are dropped instead of raising ObjectDisposedException.
+        session.RecordError("hook:X", new InvalidOperationException("late"));
+        Assert.False(File.Exists(Path.Combine(session.Directory, "recorder.log")));
     }
 }

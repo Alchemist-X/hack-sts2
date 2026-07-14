@@ -73,14 +73,25 @@ seconds (float). One session = one run (menu time between runs is not recorded).
 
 - `states.jsonl`: `{seq, t, type:"state", trigger:"action"|"poll"|"phase",
   screen:"combat"|"map"|…, hash, state:{…full passive StateBuilder output…}}` —
-  `hash` = first 16 hex chars of the SHA-256 of the serialized state JSON;
-  consecutive identical snapshots are hash-deduped (not re-written).
+  `hash` = first 16 hex chars of the SHA-256 of the CANONICAL serialization of
+  the state (object keys sorted ordinally at every depth, arrays preserved), so
+  hash equality — and therefore snapshot dedup — is independent of the state
+  builder's key insertion order; consecutive identical snapshots are
+  hash-deduped (not re-written). The stored `state` payload keeps the builder's
+  original key order.
 - `actions.jsonl`: `{seq, t, type:"action", source:"hook:<PatchId>",
   action:{kind, params:{…}}, status, state_seq:<seq of latest snapshot before
   the action>}` — `status` (recorder ≥ 0.1, optional for older sessions) is the
   GameAction lifecycle: `"committed"` (already-final decisions such as map/shop
   picks) | `"executed"` | `"cancelled"` (enqueued then backed out). `sts2rec`
   accepts both the nested `params` object and the older inline spread.
+  `state_seq` is `null` when the action fired before the first snapshot of the
+  session (legacy recorders wrote `0` for this; `sts2rec` normalizes 0 → null).
+  This is valid data, not a dangling reference: `sts2rec validate` accepts it,
+  and `sts2rec canonical` uses the NEXT snapshot after the action as a
+  best-effort `state_before`, flagging the step with
+  `info.state_before_estimated = true` (`state_before` is null when the session
+  has no later snapshot).
 - `events.jsonl`: `{seq, t, type:"event", entry:"card_drawn"|"damage_received"|…,
   data:{…}}` — privileged channel (true draw order lives here, never in states).
 - `manifest.json`: `{schema_version, recorder_version, game:{version, commit,
@@ -92,6 +103,20 @@ seconds (float). One session = one run (menu time between runs is not recorded).
   `seq` is session-global and strictly monotonic across all three streams.
   The canonical trajectory surfaces `status` as `steps[].info.action_status`
   (when recorded) and `part` as `meta.part`.
+
+Validation contract for crash-terminated sessions: the recorder flushes all
+JSONL streams before every manifest rewrite, but between rewrites the OS may
+persist more lines than the last manifest checkpoint recorded (and a hard crash
+can truncate the final line). Therefore `sts2rec validate` treats manifest
+count mismatches as **errors only when `incomplete=false`** (cleanly finalized —
+counts must match exactly); when `incomplete=true` the manifest is a periodic
+checkpoint and count mismatches degrade to **warnings**, preserving the
+crash-salvage story. Line-level integrity violations (malformed/truncated
+lines, seq regressions, dangling `state_seq` references) remain errors in both
+cases. Each session directory also contains a zero-byte `.claim` marker: it is
+created with O_EXCL semantics by the recorder to atomically claim the directory
+(two concurrent `Begin()` calls with the same run id get distinct `-partN`
+directories), and tooling should ignore it.
 
 Rationale: append-only JSONL per stream (NLE/MineRL/BASALT consensus + STS2MCP
 issue #91's proposed shape), raw-fidelity capture with derived views generated

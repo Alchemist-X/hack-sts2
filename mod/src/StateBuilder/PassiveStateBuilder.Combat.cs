@@ -20,9 +20,11 @@ public static partial class PassiveStateBuilder
 {
     private static Dictionary<string, object?> BuildBattleState(RunState runState, CombatRoom combatRoom)
     {
-        // v0.99.1 adaptation: read the CombatState passively via the local player's
-        // creature instead of CombatManager.Instance.DebugOnlyGetState().
-        var combatState = LocalContext.GetMe(runState)?.Creature.CombatState;
+        // Read the CombatState passively via the local player's creature instead of
+        // CombatManager.Instance.DebugOnlyGetState(). v0.107.1: the property is now the
+        // ICombatState interface; everything read below is on the interface.
+        var me = LocalContext.GetMe(runState);
+        var combatState = me?.Creature.CombatState;
         var battle = new Dictionary<string, object?>();
 
         if (combatState == null)
@@ -33,7 +35,10 @@ public static partial class PassiveStateBuilder
 
         battle["round"] = combatState.RoundNumber;
         battle["turn"] = combatState.CurrentSide.ToString().ToLowerInvariant();
-        battle["is_play_phase"] = CombatManager.Instance.IsPlayPhase;
+        // v0.107.1: CombatManager.IsPlayPhase was removed in the global->per-player
+        // refactor; the equivalent is the local player's turn phase.
+        battle["is_play_phase"] = me?.PlayerCombatState?.Phase == PlayerTurnPhase.Play;
+        battle["player_turn_number"] = me?.PlayerCombatState?.TurnNumber;
 
         // Enemies
         var enemies = new List<Dictionary<string, object?>>();

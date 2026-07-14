@@ -6,18 +6,24 @@ namespace Sts2Recorder.Core;
 
 /// <summary>
 /// Rate-limited error sink writing to recorder.log inside the session directory.
-/// At most <see cref="MaxEntriesPerSite"/> entries per call site are logged; one
-/// suppression notice follows, then further errors from that site are dropped.
+/// Limits are per call site per time window: at most <see cref="MaxEntriesPerSite"/>
+/// entries are logged per site per <see cref="WindowSeconds"/>. The first dropped
+/// entry in a window logs one suppression notice; when the window expires and the
+/// site errors again, the number of suppressed entries is reported and logging
+/// resumes — so a later, different failure at the same site is never invisible.
 /// Never throws: a failing error logger must not take the recorder down.
 /// </summary>
 internal sealed class ErrorLog
 {
     public const int MaxEntriesPerSite = 5;
+    public const double WindowSeconds = 600;
+
+    private sealed record SiteWindow(double StartedAt, int Logged, long Suppressed);
 
     private readonly string _path;
     private readonly IClock _clock;
     private readonly object _lock = new();
-    private readonly Dictionary<string, int> _countsBySite = new();
+    private readonly Dictionary<string, SiteWindow> _windowsBySite = new();
 
     public ErrorLog(string sessionDir, IClock clock)
     {
@@ -29,28 +35,47 @@ internal sealed class ErrorLog
     {
         lock (_lock)
         {
-            var count = _countsBySite.TryGetValue(where, out var existing) ? existing : 0;
-            _countsBySite[where] = count + 1;
-            if (count >= MaxEntriesPerSite)
+            var now = _clock.Now;
+            var window = _windowsBySite.TryGetValue(where, out var existing)
+                ? existing
+                : null;
+            if (window is not null && now - window.StartedAt >= WindowSeconds)
             {
-                if (count == MaxEntriesPerSite)
+                if (window.Suppressed > 0)
                 {
-                    Append($"[{where}] further errors suppressed (limit {MaxEntriesPerSite})");
+                    Append(
+                        now,
+                        $"[{where}] {window.Suppressed} error(s) suppressed in the "
+                        + $"previous {WindowSeconds:F0}s window");
                 }
+                window = null;
+            }
+            window ??= new SiteWindow(StartedAt: now, Logged: 0, Suppressed: 0);
+            if (window.Logged < MaxEntriesPerSite)
+            {
+                var detail = OneLine($"{exception.GetType().Name}: {exception.Message}");
+                Append(now, $"[{where}] {detail}");
+                _windowsBySite[where] = window with { Logged = window.Logged + 1 };
                 return;
             }
-            var detail = OneLine($"{exception.GetType().Name}: {exception.Message}");
-            Append($"[{where}] {detail}");
+            if (window.Suppressed == 0)
+            {
+                Append(
+                    now,
+                    $"[{where}] further errors suppressed for {WindowSeconds:F0}s "
+                    + $"(limit {MaxEntriesPerSite} per window)");
+            }
+            _windowsBySite[where] = window with { Suppressed = window.Suppressed + 1 };
         }
     }
 
-    private void Append(string message)
+    private void Append(double now, string message)
     {
         try
         {
             File.AppendAllText(
                 _path,
-                FormattableString.Invariant($"{_clock.Now:F3} {message}\n"));
+                FormattableString.Invariant($"{now:F3} {message}\n"));
         }
         catch (Exception)
         {

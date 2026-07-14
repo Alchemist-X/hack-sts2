@@ -10,6 +10,11 @@ Semantics:
 - one step per hooked action, in seq order (seq is session-global, so it is a
   total order across streams);
 - state_before  = payload of the snapshot the action references (state_seq);
+                  when state_seq is null (the action fired before the first
+                  snapshot; legacy recorders wrote 0), the NEXT snapshot after
+                  the action is used as a best-effort state_before and the
+                  step is flagged with info.state_before_estimated = true
+                  (state_before is null if the session has no later snapshot);
 - state_after   = payload of the first snapshot with seq > action.seq
                   (null when the run ended before another snapshot);
 - info.events   = the events partitioned by action boundaries: step i holds
@@ -146,21 +151,32 @@ def _build_step(
     is_last: bool,
     manifest: Manifest,
 ) -> dict[str, Any]:
-    state_before = states_by_seq.get(action.state_seq)
-    if state_before is None:
-        raise CanonicalError(
-            f"action seq={action.seq} references state_seq={action.state_seq}, "
-            "which does not exist in states.jsonl (run `sts2rec validate` "
-            "for a full report)"
-        )
     after_index = bisect_right(state_seqs, action.seq)
     state_after = states[after_index] if after_index < len(states) else None
+    state_before_estimated = False
+    if action.state_seq is None:
+        # Contract: the action fired before any snapshot existed. Best effort:
+        # use the next snapshot after the action (i.e. state_after) as
+        # state_before, flagged so consumers can tell it is not a true
+        # pre-action observation.
+        state_before = state_after
+        state_before_estimated = True
+    else:
+        state_before = states_by_seq.get(action.state_seq)
+        if state_before is None:
+            raise CanonicalError(
+                f"action seq={action.seq} references state_seq={action.state_seq}, "
+                "which does not exist in states.jsonl (run `sts2rec validate` "
+                "for a full report)"
+            )
     info: dict[str, Any] = {
         "events": step_events,
         "action_source": action.source,
-        "state_before_seq": state_before.seq,
+        "state_before_seq": state_before.seq if state_before is not None else None,
         "state_after_seq": state_after.seq if state_after is not None else None,
     }
+    if state_before_estimated:
+        info["state_before_estimated"] = True
     if action.status is not None:
         info["action_status"] = action.status
     terminal = False
@@ -170,7 +186,7 @@ def _build_step(
     return {
         "step_idx": step_idx,
         "ts": action.t,
-        "state_before": state_before.state,
+        "state_before": state_before.state if state_before is not None else None,
         "action": _action_payload(action),
         "state_after": state_after.state if state_after is not None else None,
         "reward": None,

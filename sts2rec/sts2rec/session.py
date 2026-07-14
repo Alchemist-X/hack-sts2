@@ -88,7 +88,10 @@ class ActionRecord:
     t: float
     source: str
     action: Mapping[str, Any]
-    state_seq: int
+    # Seq of the latest snapshot before the action. None means the action fired
+    # before any snapshot existed (recorder >= 0.1 writes JSON null; older
+    # recorders wrote 0, which is normalized to None at parse time).
+    state_seq: int | None
     # Optional GameAction lifecycle marker written by recorder >= 0.1:
     # "committed" (already-final decisions) | "executed" | "cancelled".
     # None for sessions recorded before the field existed.
@@ -264,18 +267,39 @@ def parse_action_record(record: Mapping[str, Any], *, where: str = "action recor
     for key in ("source", "action", "state_seq"):
         if key not in record:
             raise RecordError(f"{where}: missing key {key!r}")
+    source = record["source"]
+    if not isinstance(source, str):
+        raise RecordError(
+            f"{where}: 'source' must be a string, got {type(source).__name__}"
+        )
     action = record["action"]
     if not isinstance(action, Mapping) or "kind" not in action:
         raise RecordError(f"{where}: 'action' must be an object with a 'kind'")
+    if not isinstance(action["kind"], str):
+        raise RecordError(
+            f"{where}: action 'kind' must be a string, "
+            f"got {type(action['kind']).__name__}"
+        )
     status = record.get("status")
     return ActionRecord(
         seq=seq,
         t=t,
-        source=str(record["source"]),
+        source=source,
         action=action,
-        state_seq=int(record["state_seq"]),
+        state_seq=_parse_state_seq(record["state_seq"], where),
         status=str(status) if status is not None else None,
     )
+
+
+def _parse_state_seq(raw: Any, where: str) -> int | None:
+    """state_seq contract: null (or legacy 0) = no snapshot existed yet."""
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as error:
+        raise RecordError(f"{where}: malformed state_seq: {error}") from error
+    return value if value != 0 else None
 
 
 def parse_event_record(record: Mapping[str, Any], *, where: str = "event record") -> EventRecord:
@@ -283,7 +307,12 @@ def parse_event_record(record: Mapping[str, Any], *, where: str = "event record"
     for key in ("entry", "data"):
         if key not in record:
             raise RecordError(f"{where}: missing key {key!r}")
-    return EventRecord(seq=seq, t=t, entry=str(record["entry"]), data=record["data"])
+    entry = record["entry"]
+    if not isinstance(entry, str):
+        raise RecordError(
+            f"{where}: 'entry' must be a string, got {type(entry).__name__}"
+        )
+    return EventRecord(seq=seq, t=t, entry=entry, data=record["data"])
 
 
 def stream_path(session_dir: Path, stream: str) -> Path:

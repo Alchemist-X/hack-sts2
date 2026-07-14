@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Json.Nodes;
 using Sts2Recorder.Core;
@@ -10,6 +11,51 @@ namespace Sts2Recorder.Core.Tests;
 
 public sealed class ConcurrencyTests
 {
+    [Fact]
+    public async Task ParallelBeginsWithSameRunIdClaimDistinctDirectories()
+    {
+        // Regression: Directory.Exists + CreateDirectory is check-then-act;
+        // two Begin() calls with the same run id must never share a session
+        // directory (shared JSONL files, manifest temp-file races, leaked
+        // FileStreams on the loser). The .claim file (CreateNew) arbitrates.
+        var root = NewTempRoot();
+        var meta = DefaultMeta();
+        const int contenders = 8;
+        using var barrier = new Barrier(contenders);
+        var tasks = Enumerable.Range(0, contenders)
+            .Select(_ => Task.Factory.StartNew(
+                () =>
+                {
+                    barrier.SignalAndWait();
+                    return TrajectorySession.Begin(root, meta, new FakeClock(StartTime));
+                },
+                TaskCreationOptions.LongRunning))
+            .ToArray();
+        var sessions = await Task.WhenAll(tasks);
+        try
+        {
+            var directories = sessions.Select(session => session.Directory).ToArray();
+            Assert.Equal(contenders, directories.Distinct().Count());
+            var parts = directories
+                .Select(dir => ReadManifest(dir).GetProperty("part").GetInt32())
+                .OrderBy(part => part);
+            Assert.Equal(Enumerable.Range(1, contenders), parts);
+            // Every winner must be independently usable.
+            foreach (var session in sessions)
+            {
+                session.RecordEvent("card_drawn", new JsonObject { ["card"] = "CARD.ZAP" });
+                session.Flush();
+            }
+        }
+        finally
+        {
+            foreach (var session in sessions)
+            {
+                session.Dispose();
+            }
+        }
+    }
+
     [Fact]
     public async Task ParallelWritersProduceGaplessGlobalSeq()
     {

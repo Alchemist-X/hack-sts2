@@ -36,30 +36,33 @@ public static class ActionPipeline
     private static string? _humanScopeSource;
 
     // Private-field readers for action params (guarded; null when a game update renames them).
-    private static AccessTools.FieldRef<EndPlayerTurnAction, int>? _endTurnRound;
-    private static AccessTools.FieldRef<UndoEndPlayerTurnAction, int>? _undoEndTurnRound;
+    // v0.107.1: end-turn actions renamed _combatRound -> _turnNumber (per-player turn counter),
+    // vote source is the new MapLocation struct (was RunLocation), pick-relic index is int?
+    // (null = explicit treasure-relic skip via TreasureRoomRelicSynchronizer.SkipRelicLocally).
+    private static AccessTools.FieldRef<EndPlayerTurnAction, int>? _endTurnNumber;
+    private static AccessTools.FieldRef<UndoEndPlayerTurnAction, int>? _undoEndTurnNumber;
     private static AccessTools.FieldRef<DiscardPotionGameAction, uint>? _discardSlotIndex;
-    private static AccessTools.FieldRef<VoteForMapCoordAction, RunLocation>? _voteSource;
+    private static AccessTools.FieldRef<VoteForMapCoordAction, MapLocation>? _voteSource;
     private static AccessTools.FieldRef<VoteForMapCoordAction, MapVote?>? _voteDestination;
     private static AccessTools.FieldRef<MoveToMapCoordAction, MegaCrit.Sts2.Core.Map.MapCoord>? _moveDestination;
-    private static AccessTools.FieldRef<PickRelicAction, int>? _pickRelicIndex;
+    private static AccessTools.FieldRef<PickRelicAction, int?>? _pickRelicIndex;
 
     internal static void ApplyPatches(Harmony harmony)
     {
-        _endTurnRound = JsonDescribe.Try(
-            () => AccessTools.FieldRefAccess<EndPlayerTurnAction, int>("_combatRound"));
-        _undoEndTurnRound = JsonDescribe.Try(
-            () => AccessTools.FieldRefAccess<UndoEndPlayerTurnAction, int>("_combatRound"));
+        _endTurnNumber = JsonDescribe.Try(
+            () => AccessTools.FieldRefAccess<EndPlayerTurnAction, int>("_turnNumber"));
+        _undoEndTurnNumber = JsonDescribe.Try(
+            () => AccessTools.FieldRefAccess<UndoEndPlayerTurnAction, int>("_turnNumber"));
         _discardSlotIndex = JsonDescribe.Try(
             () => AccessTools.FieldRefAccess<DiscardPotionGameAction, uint>("_potionSlotIndex"));
         _voteSource = JsonDescribe.Try(
-            () => AccessTools.FieldRefAccess<VoteForMapCoordAction, RunLocation>("_source"));
+            () => AccessTools.FieldRefAccess<VoteForMapCoordAction, MapLocation>("_source"));
         _voteDestination = JsonDescribe.Try(
             () => AccessTools.FieldRefAccess<VoteForMapCoordAction, MapVote?>("_destination"));
         _moveDestination = JsonDescribe.Try(
             () => AccessTools.FieldRefAccess<MoveToMapCoordAction, MegaCrit.Sts2.Core.Map.MapCoord>("_destination"));
         _pickRelicIndex = JsonDescribe.Try(
-            () => AccessTools.FieldRefAccess<PickRelicAction, int>("_relicIndex"));
+            () => AccessTools.FieldRefAccess<PickRelicAction, int?>("_relicIndex"));
 
         RecorderMod.TryPatch(
             harmony,
@@ -182,19 +185,21 @@ public static class ActionPipeline
                     ["in_combat"] = JsonDescribe.Try<bool?>(() => use.WasEnqueuedInCombat),
                 });
             case EndPlayerTurnAction end:
+                // v0.107.1: per-player turn counter (PlayerCombatState.TurnNumber), not
+                // the shared combat round; key renamed accordingly.
                 return ("end_turn", new JsonObject
                 {
                     ["player"] = JsonDescribe.Try<long?>(() => (long)end.OwnerId),
-                    ["combat_round"] = _endTurnRound != null
-                        ? JsonDescribe.Try<int?>(() => _endTurnRound(end))
+                    ["turn_number"] = _endTurnNumber != null
+                        ? JsonDescribe.Try<int?>(() => _endTurnNumber(end))
                         : null,
                 });
             case UndoEndPlayerTurnAction undo:
                 return ("undo_end_turn", new JsonObject
                 {
                     ["player"] = JsonDescribe.Try<long?>(() => (long)undo.OwnerId),
-                    ["combat_round"] = _undoEndTurnRound != null
-                        ? JsonDescribe.Try<int?>(() => _undoEndTurnRound(undo))
+                    ["turn_number"] = _undoEndTurnNumber != null
+                        ? JsonDescribe.Try<int?>(() => _undoEndTurnNumber(undo))
                         : null,
                 });
             case DiscardPotionGameAction discard:
@@ -269,8 +274,24 @@ public static class ActionPipeline
         };
         if (_pickRelicIndex != null)
         {
-            var index = JsonDescribe.Try<int?>(() => _pickRelicIndex(pick));
+            // v0.107.1: _relicIndex is int?; null = the player explicitly SKIPPED the
+            // treasure relic (TreasureRoomRelicSynchronizer.SkipRelicLocally -> PickRelicLocally(null)).
+            int? index = null;
+            var indexRead = false;
+            try
+            {
+                index = _pickRelicIndex(pick);
+                indexRead = true;
+            }
+            catch
+            {
+                // Field read failed; leave relic_index null without claiming a skip.
+            }
             obj["relic_index"] = index;
+            if (indexRead)
+            {
+                obj["skipped"] = !index.HasValue;
+            }
             if (index.HasValue)
             {
                 obj["relic_id"] = JsonDescribe.Try(() =>

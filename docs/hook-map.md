@@ -1,5 +1,9 @@
 # Hook Map (game v0.99.1, commit 7ac1f450)
 
+> **NOTE (2026-07-14):** the game moved to **v0.107.1** and the mod (v0.2.0) has been updated —
+> see the "**v0.107.1 drift addendum**" at the bottom. The body below is kept intact as the
+> v0.99.1 baseline; where the addendum contradicts it, the addendum wins.
+
 Definitive hook map for the Sts2Recorder mod. Every entry below was proposed by a
 static-analysis pass over the decompiled tree and then **adversarially re-verified against the
 decompiled source**. Only `confirmed` and `corrected` hooks are included; corrections from the
@@ -510,3 +514,115 @@ bool skip = type.IsMultiplayer()                  // true iff Host(2) or Client(
     history — the `NEventRoom.OptionButtonClicked` prefix is the only capture for those and for
     `IsProceed` clicks; bespoke event UIs (CrystalSphere cells, ancient dialogue-advance) are
     cosmetic-local and uncaptured by design.
+
+---
+
+## v0.107.1 drift addendum
+
+The body above is preserved as the **v0.99.1** map (history). This section records verified
+v0.99.1 → v0.107.1 drift and how the recorder (mod v0.2.0) responded. New-tree evidence root:
+`/private/tmp/claude-501/-Users-Aincrad-dev-proj/f08abf1e-4d55-4d44-a828-e4fef5f57aa5/scratchpad/sts2-decomp-v0107/MegaCrit/sts2/`.
+Dominant refactor family: **global → per-player** (turn phases, merchant inventories, reward
+synchronization) and **class → interface** (`CombatState` → `ICombatState`). Engine MegaDot m.8 → m.12.
+`KNOWN_GOOD_VERSIONS` in the mod is now `["v0.107.1"]`.
+
+### Renames / signature changes
+
+| Target | v0.99.1 | v0.107.1 | Recorder response |
+|---|---|---|---|
+| `RunManager.SetUpNewSinglePlayer` | `SetUpNewSinglePlayer(RunState, bool, DateTimeOffset?)` (:204) | **Renamed** `SetUpNewSingleplayer` (RunManager.cs:236) — whole `*Player` family re-cased | None needed — recorder attaches via `RunStarted`, not these. A patch by old name would silently fail to bind. |
+| `RunManager.SetUpSavedSinglePlayer` | `void SetUpSavedSinglePlayer(RunState, SerializableRun)` (:231) | **Renamed + async** `async Task SetUpSavedSingleplayer` (:285); awaits `IncrementNumReloads` BEFORE per-run objects exist | Same — `RunStarted` remains the attach point (a plain postfix here would now run too early). |
+| `RunManager.SetUpNewMultiPlayer` / `SetUpSavedMultiPlayer` | (:218 / :244) | `SetUpNewMultiplayer` (:264) / `async Task SetUpSavedMultiplayer` (:312) | None (MP not recorded). |
+| `ModManager.LoadedMods` / `AllMods` | `IReadOnlyList<Mod>` (:37-39) | **REMOVED** → `GetLoadedMods()` (ModManager.cs:938) filtering new `Mod.state == ModLoadState.Loaded`; `Mod.wasLoaded` → `state` + `errors:List<LocString>` + `version:SemanticVersion` | `RunLifecycle.ListLoadedMods` now calls `ModManager.GetLoadedMods()`. |
+| `EndPlayerTurnAction` / `UndoEndPlayerTurnAction` ctor+field | `(Player, int combatRound)`, private `_combatRound`; stale-check vs `CombatState.RoundNumber` | `(Player, int turnNumber)`, private `_turnNumber` (:29); stale-check vs `PlayerCombatState.TurnNumber` (per-player) | `ActionPipeline` FieldRefs renamed to `_turnNumber`; jsonl param key `combat_round` → `turn_number` (semantics changed: per-player counter). |
+| `VoteForMapCoordAction` ctor | `(Player, RunLocation source, MapVote?)` | `(Player, MapLocation source, MapVote?)` (:39) — NEW struct `Core/Runs/MapLocation.cs` (`actIndex`, `coord`; same member names) | `ActionPipeline._voteSource` FieldRef retyped to `MapLocation`. Harmony ctor-targeting by arg types would break (we don't). |
+| `PickRelicAction` ctor | `(Player, int relicIndex)` | `(Player, int? relicIndex)` (:28) — **null = explicit treasure-relic SKIP** (new `TreasureRoomRelicSynchronizer.SkipRelicLocally` :139 → `PickRelicLocally(null)` :151) | FieldRef retyped `int?`; `pick_relic` params gain `"skipped"`; the existing `PickRelicLocally` human-scope patch covers the new skip button for free. |
+| `CombatManager.IsPlayPhase` | `public bool IsPlayPhase` (:89) | **REMOVED** → `player.PlayerCombatState?.Phase == PlayerTurnPhase.Play` (new enum `Core/Combat/PlayerTurnPhase.cs`: None/Start/AutoPrePlay/Play/AutoPostPlay/End; `PlayerCombatState.Phase` at :44) | `PassiveStateBuilder.Combat` ported; also emits new `player_turn_number` from `PlayerCombatState.TurnNumber`. |
+| `Creature.CombatState` | `CombatState?` | `ICombatState?` (Creature.cs:124) — interface exposes everything read (Enemies, Players, RoundNumber, CurrentSide, PlayerCreatures, HittableEnemies, IsLiveCombat) | Source-compatible; no change beyond comments. Creature's 9 events unchanged. NEW `Creature.Pets` (:204). |
+| `LocalContext.GetMe(CombatState?)` | (:36) | `GetMe(ICombatState?)` (:52); NEW `GetMe(IEnumerable<Creature>)` (:76) | Source-compatible. |
+| `Hook.BeforeCardPlayed/AfterCardPlayed/AfterCardDrawn/AfterDamageReceived/ModifyShuffleOrder` | `CombatState` params | `ICombatState` params (Hook.cs :263/:278/:202/:417/:2004); names/order otherwise identical | Not currently patched; by-name patches would keep binding, but a postfix declaring `CombatState` args must switch to `ICombatState`. |
+| `MerchantRoom.Inventory` | single `MerchantInventory?` | **REMOVED** → `List<MerchantInventory> Inventories` (:27) + `GetLocalInventory()` (:46, per-player). `FakeMerchant.Inventory` UNCHANGED. Entry props intact; `CardEntries` now concat of `CharacterCardEntries`+`ColorlessCardEntries` | `PassiveStateBuilder.Rooms` shop section uses `GetLocalInventory()` (guarded). |
+| `CombatHistoryEntry.RoundNumber` / `.CurrentSide` | public | **PRIVATE** (:27/:36); ctor gained trailing `IEnumerable<Player> players` (per-player turn capture); `HappenedThisTurn(ICombatState?)`; NEW `HappenedLastPlayerTurn(Player)` (:99). `Actor`/`History`/`Description`/`HumanReadableString` still public | `EventTap` reads round/side via cached `AccessTools.PropertyGetter` reflection delegates (guarded; null → field omitted). |
+| `CardGeneratedEntry.GeneratedByPlayer` | `bool` | **REMOVED** → `Player? Creator` (:11) | `EventTap` emits `generated_by_player` = `(Creator != null)` (old semantics) + new `creator_player` net id. Other 16 entry payloads verified unchanged; no entry types added/removed. |
+| `PlayerChoiceResult.FromIndex` | `FromIndex(int)` (:241) | `FromIndex(int?)` (:246) — null encodes a skipped index-choice; NEW `AsIndexOrNull()` (:410); other members unchanged | `DecodeChoice` unaffected (uses `AsIndexes()`/`AsIndex()`; empty list already decodes as skip). |
+| `RunSaveManager.SaveRun` | did serialize+write+`Saved` inline (:73) | delegates to NEW overload `SaveRun(SerializableRun, bool isMultiplayer)` (:93) which writes and fires `Saved` (:110); also called outside live runs (IncrementNumReloads on resume) | None — recorder uses the `SaveManager.Instance.Saved` event, which still fires after every write. Heartbeat may now also fire on resume bookkeeping (harmless extra flush). |
+| manifest schema | `dependencies:List<string>`; no version enforcement | `dependencies:List<ModDependency{id,min_version}>` (string form auto-migrated w/ deprecation error); NEW `min_game_version` **ENFORCED** (unparseable or > game version → mod Failed, ModManager.cs:562-623); `version` parsed as SemanticVersion | `Sts2Recorder.json`: version bumped to `0.2.0`, added `"min_game_version": "0.107.1"`; `affects_gameplay:false` still honored (`GetGameplayRelevantModNameList` ModManager.cs:856-864, JoinFlow.cs:94-111 unchanged). |
+
+### Behavioral drift (signatures unchanged)
+
+| Target | Drift | Recorder response |
+|---|---|---|
+| `ChecksumTracker.ChecksumGenerated` | NEW gate `IsEnabled` (public setter, :60): `GenerateChecksum` returns default and fires NOTHING when disabled (:89-92). `RunManager.InitializeShared` enables ONLY for Host/Client/Replay (:391-399) — **"fires in SP too" is no longer true by default**. | `EventTap.OnRunStarted` sets `tracker.IsEnabled = true` per run (SP-only recording) to restore the v0.99.1-vanilla SP integrity stream. Call sites still execute unconditionally; observation-side only. |
+| `CombatHistory.Add` | Only appends (and fires `Changed`) when `combatState.IsLiveCombat()` (CombatHistory.cs:123-130); entries from simulated/scratch states silently dropped. All 17 logger methods take `ICombatState`; `CardGenerated` logger now `(ICombatState, CardModel, Player? creator)`. | None — live human combat unaffected; `Clear()` still fires `Changed`; flush-before-`CombatEnded` guidance still valid (Clear at CombatManager.cs:918/:989). |
+| `UsePotionAction` | Invalid potion/target now **self-Cancels** instead of throwing (new `IsValidTarget` gate; CancelAction :136) — `BeforeCancelled` fires in more situations. UI callback renamed `OnPotionUseCanceled` → `OnPotionUseOrDiscardCanceled` (NPotionContainer). | Already handled — ActionPipeline finalizes via `BeforeExecuted`/`BeforeCancelled` for every action. |
+| `DiscardPotionGameAction` | NEW `CancelAction()` override (:74) — discards are now cancellable like uses (null-slot discard cancels instead of throwing). | Same — `BeforeCancelled` is already a normal terminal for both potion action types. |
+| `NEndTurnButton.CallReleaseLogic` / `SecretEndTurnLogicViaFtue` | Moved (:577/:602); body reads `me.PlayerCombatState.TurnNumber` now. Guards (`CanTurnBeEnded`, `IsPlayerReadyToEndTurn` CombatManager.cs:791) intact; End-vs-Undo branch unchanged. | None — patched by name; still binds. |
+| `GetGameplayRelevantModNameList` null condition | old: null when `LoadedMods.Count==0`; new: null when `!IsRunningModded()` (Loaded OR Failed) | None for the recorder; noted for MP mod-mismatch behavior. |
+| `ActionQueueSet.ActionEnqueued` | NEW `ActionQueueChanged` event (:70); subscriber exceptions now try/caught and reported to **MegaCrit's Sentry** (:106-114) | Keep the recorder's own try/catch in every handler so failures never leak telemetry. |
+| Saved-run schema | `SerializableRun` latest v14 → **v16** (V14ToV15 adds `game_mode`; V15ToV16 ModelId renames); `RunHistory` v8 → **v9** (same `SharedMigrationHelper.V100Renames`: CARD.PREPARE→CARD.PREPARED, ENCOUNTER.TOADPOLES_NORMAL→ENCOUNTER.SEAPUNK_NORMAL, MONSTER.DOOR→MONSTER.DEPRECATED_MONSTER). NEW SavedMap-per-act + MapDrawings + ExtraFields in saves — resume restores exact map topology (seed-based map reproduction assumptions revisit). RunHistory entries persist per-player Badges. | Archived `.run`/save artifacts carry the new fields (additive for the recorder). v0.99.1 trajectories referencing renamed ModelIds need the V100Renames mapping when compared against v0.107.1 data. |
+| `PlayerMapPointHistoryEntry` | GAINED `stolen_loot` int (+ helpers); all old JSON fields retained | Additive — floor_summary jsonl gains one field automatically. |
+| `RunState` | NEW first-class `GameMode` enum property (None/Standard/Daily/Custom; persisted as `game_mode`) | `RunLifecycle.ComputeGameMode` reads `state.GameMode` (falls back to the old modifiers/DailyTime mirror for `None`). |
+
+### Reward capture: local → synchronizer refactor (REDESIGNED)
+
+`Reward.OnSelectWrapper` (v0.99.1 Reward.cs:80) **no longer exists**. v0.107.1 splits it:
+
+- `RewardsSetSynchronizer.SelectLocalReward(Reward)` (Core/Multiplayer/Game/RewardsSetSynchronizer.cs:194)
+  — LOCAL player's claim only (throws for non-local); sends `RewardSelectedMessage`. UI callers:
+  NRewardButton.cs:250; RewardsSet.cs:182 is **TestMode-only**.
+- `Reward.SelectUnsynchronized()` (Reward.cs:120) — executes the claim on EVERY machine
+  (local + remote via `HandleRewardSelectedMessage` :236) and for programmatic auto-claims
+  (`Draft.cs:29` run-start modifier). NEW `Reward.SuccessfullySelected` (:51).
+- `RewardsSetSynchronizer.SkipLocalRewardsSet()` (:221) — the ONE local skip decision
+  (NRewardsScreen.cs:588); `SkipRewardsSet` (:344-352) then invokes `OnSkipped` for every
+  unselected reward **on all machines**. `RewardsSet` gained `DisallowSkipping` (:53).
+- `RewardsSetSynchronizer` is per-run state (`RunManager.RewardsSetSynchronizer`, RunManager.cs:143),
+  recreated each run like the other synchronizers, and now feeds `CombatReplayWriter` (:414) —
+  reward selection joined the synchronized action surface.
+- **Caller-set inversion**: reward screens NO LONGER call `RewardSynchronizer.SyncLocalObtained*/
+  Skipped*` — remaining callers are merchant purchases (MerchantCardEntry.cs:142, MerchantRelicEntry.cs:63,
+  MerchantPotionEntry.cs:90) and CrystalSphereCurse.cs:23. `SyncLocalPaelsWingSacrifice` REMOVED
+  (Pael's Wing now injects a card-reward alternative via `Hook.ModifyCardRewardAlternatives`, so
+  its sacrifice arrives as a CardReward `SyncLocalChoice` alternative index).
+- Card reward redesigned around `CardRewardAlternative` (Skip/Reroll/hook-injected, max 2; UI
+  `NCardRewardSelectionScreen` + `NCardRewardAlternativeButton`): pick/skip/reroll is now a
+  synchronized PlayerChoice committed via `SyncLocalChoice` with `FromIndex` (index < cards.Count
+  = card; >= = alternative; null = none) — captured automatically by the existing
+  `SyncLocalChoice` hook. Reroll is no longer a separate async capture path.
+
+**Recorder v0.2.0 patch set** (also fixes the v0.99.1 review findings on double-records):
+
+1. `SelectLocalReward` prefix — marks the reward instance human-initiated
+   (ConditionalWeakTable; no record).
+2. `SelectUnsynchronized` postfix — the single committed `reward_taken` record: chains on
+   `Task<bool> __result`, filters `LocalContext.IsMe(reward.Player)` (fires for remote players
+   too), tags `human`/`programmatic` from the mark (Draft auto-claims → `programmatic:true`).
+3. `SkipLocalRewardsSet` prefix — one `rewards_skipped` record per human skip decision. The 5
+   per-subclass `OnSkipped` patches were REMOVED (they now fire per-reward on all machines —
+   would multi-count one decision; skipped items are visible in the preceding rewards-screen
+   state snapshot).
+4. `MoveToMapCoordAction.ExecuteAction` postfix REMOVED (review finding: the umbrella
+   `RequestEnqueue` funnel already records `move_to_map_coord` for the same action instance;
+   human attribution lives on `vote_for_map_coord`). One map click = `vote_for_map_coord`
+   (human) + `move_to_map_coord` (commit), no third record.
+5. `SyncLocal*` prefixes kept as the merchant/curse channel; the `IsShopContext` dedupe now
+   suppresses what is effectively their main caller set (merchant purchases are recorded by the
+   `OnTryPurchaseWrapper` hook).
+
+### New surfaces noted (not yet wired)
+
+- **Official hook-listener API**: `ModHelper.SubscribeForRunStateHooks(string id, RunHookSubscriptionDelegate)`
+  / `SubscribeForCombatStateHooks` (ModHelper.cs:94-183) — recorder-supplied models would receive
+  every `Hook.*` dispatch without Harmony, but returned models enter the `Modify*` pipelines, so
+  they must be strictly no-op observers (same caveat as the v0.99.1 relic-injection warning).
+- `GameAction.JustBeforeFinished` (GameAction.cs:69, fired before `AfterFinished`) — clean
+  per-action finalization hook matching checksum timing.
+- New in-combat pile card selection (`CardSelectCmd.FromCombatPile` :375, `NCombatPileCardSelectScreen`)
+  commits through `SyncLocalChoice` — captured automatically.
+- `Hook.AfterAutoPrePlayPhaseEntered` / `AfterAutoPostPlayPhaseEntered` + `PlayerCombatState.TurnNumber`
+  — per-player turn segmentation for co-op trajectories.
+- `ModManager.HasHarmonyPatches()` (:921) and `GetNonGameplayRelevantModNameList()` (:869) exist;
+  check consumers before shipping patch-heavy builds.
+- Meta-only new screens (no run-decision capture needed): Bestiary, daily-run leaderboards,
+  Phobia-mode / MP-map-drawings settings. Random-character button is not new drift (exists in
+  both trees; resolved at embark, run-start capture unaffected).

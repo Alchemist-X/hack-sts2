@@ -144,11 +144,24 @@ public static class RunLifecycle
             Mods: ListLoadedMods());
     }
 
-    /// <summary>Mirrors the private RunManager.GameMode property (verified v0.99.1).</summary>
+    /// <summary>
+    /// v0.107.1: RunState carries a first-class GameMode enum (None/Standard/Daily/Custom,
+    /// Core/Runs/GameMode.cs); saves persist it as game_mode since SerializableRun v15.
+    /// GameMode.None falls back to the v0.99.1 mirror of RunManager's private GameMode.
+    /// </summary>
     private static string ComputeGameMode(RunState state)
     {
         try
         {
+            switch (state.GameMode)
+            {
+                case GameMode.Daily:
+                    return "daily";
+                case GameMode.Custom:
+                    return "custom";
+                case GameMode.Standard:
+                    return "standard";
+            }
             if (state.Modifiers.Count > 0)
             {
                 return RunManager.Instance.DailyTime.HasValue ? "daily" : "custom";
@@ -199,7 +212,9 @@ public static class RunLifecycle
         var mods = new List<string>();
         try
         {
-            foreach (var mod in ModManager.LoadedMods)
+            // v0.107.1: ModManager.LoadedMods/AllMods removed; GetLoadedMods() filters
+            // ModManager.Mods by the new Mod.state == ModLoadState.Loaded.
+            foreach (var mod in ModManager.GetLoadedMods())
             {
                 var id = mod.manifest?.id ?? "unknown";
                 var version = mod.manifest?.version;

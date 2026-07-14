@@ -50,7 +50,7 @@ def make_state(seq: int, t: float, hash_: str, **payload: Any) -> dict[str, Any]
 def make_action(
     seq: int,
     t: float,
-    state_seq: int,
+    state_seq: int | None,
     kind: str = "play_card",
     *,
     status: str | None = None,

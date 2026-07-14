@@ -93,6 +93,63 @@ def test_no_terminal_when_result_null(tmp_path: Path) -> None:
     assert trajectory["meta"]["result"] is None
 
 
+def test_null_state_seq_uses_next_snapshot_as_estimated_state_before(
+    tmp_path: Path,
+) -> None:
+    """Contract: an action recorded before the first snapshot (state_seq=null)
+    gets the NEXT snapshot as best-effort state_before, flagged in info."""
+    t = START_TIME
+    records = {
+        "states": [make_state(2, t + 2.0, "h1", floor=1)],
+        "actions": [
+            make_action(1, t + 1.0, None, kind="map_choice", status="committed")
+        ],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    step = build_canonical(session)["steps"][0]
+    assert step["state_before"]["floor"] == 1
+    assert step["info"]["state_before_seq"] == 2
+    assert step["info"]["state_before_estimated"] is True
+    assert step["info"]["state_after_seq"] == 2
+    assert step["state_after"]["floor"] == 1
+
+
+def test_null_state_seq_with_no_snapshots_at_all(tmp_path: Path) -> None:
+    """A whole session without snapshots must still canonicalize: state_before
+    is null (flagged estimated), never a CanonicalError."""
+    t = START_TIME
+    records = {
+        "states": [],
+        "actions": [make_action(1, t + 1.0, None, kind="map_choice")],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    step = build_canonical(session)["steps"][0]
+    assert step["state_before"] is None
+    assert step["info"]["state_before_seq"] is None
+    assert step["info"]["state_before_estimated"] is True
+    assert step["state_after"] is None
+
+
+def test_legacy_zero_state_seq_canonicalizes_like_null(tmp_path: Path) -> None:
+    t = START_TIME
+    records = {
+        "states": [make_state(2, t + 2.0, "h1", floor=1)],
+        "actions": [make_action(1, t + 1.0, 0, kind="map_choice")],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    step = build_canonical(session)["steps"][0]
+    assert step["info"]["state_before_estimated"] is True
+    assert step["info"]["state_before_seq"] == 2
+
+
+def test_normal_steps_are_not_flagged_estimated(session_dir: Path) -> None:
+    steps = build_canonical(session_dir)["steps"]
+    assert all("state_before_estimated" not in step["info"] for step in steps)
+
+
 def test_dangling_state_seq_raises(tmp_path: Path) -> None:
     records = default_records()
     records["actions"].append(make_action(9, 1773034395.0, state_seq=999))

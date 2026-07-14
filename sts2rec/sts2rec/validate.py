@@ -2,11 +2,22 @@
 
 Errors  = data-integrity violations (corrupt line, seq regression, dangling
           or future-pointing state_seq, consecutive duplicate state hashes,
-          count mismatches, timestamp regression beyond tolerance, bad
-          manifest).
+          timestamp regression beyond tolerance, bad manifest).
 Warnings = recoverable gaps (missing native artifacts — the `archive`
           subcommand exists for exactly that — and manifest inconsistencies
           such as result set while incomplete=true).
+
+Manifest-count contract: when manifest.incomplete=false (cleanly finalized),
+counts must match the JSONL line counts exactly — a mismatch is an error.
+When incomplete=true (crash-terminated session), the manifest on disk is a
+periodic checkpoint while the OS may have flushed more (or fewer) buffered
+JSONL lines than the checkpoint recorded, so count mismatches degrade to
+warnings; line-level integrity violations (malformed/truncated lines, seq
+regressions, dangling state_seq) remain errors either way.
+
+state_seq contract: an action's state_seq is null (legacy: 0, normalized at
+parse time) when the action fired before the first snapshot; that is valid
+data, not a dangling reference — `canonical` degrades gracefully.
 """
 
 from __future__ import annotations
@@ -102,6 +113,10 @@ def _cross_stream_errors(
     errors: list[str] = []
     state_seqs = frozenset(record.seq for record in states.records)
     for action in actions.records:
+        if action.state_seq is None:
+            # Contract: the action fired before any snapshot existed
+            # (recorder writes null; legacy 0 is normalized at parse time).
+            continue
         if action.state_seq not in state_seqs:
             errors.append(
                 f"actions.jsonl: action seq={action.seq} references "
@@ -131,18 +146,25 @@ def _cross_stream_errors(
     return tuple(errors)
 
 
-def _count_errors(
+def _count_mismatches(
     manifest: Manifest, results: Mapping[str, _StreamResult]
 ) -> tuple[str, ...]:
-    errors: list[str] = []
+    """Count mismatches; errors when incomplete=false, warnings otherwise."""
+    mismatches: list[str] = []
     for stream, result in results.items():
         expected = manifest.counts.for_stream(stream)
         if expected != result.line_count:
-            errors.append(
+            message = (
                 f"manifest counts.{stream}={expected} but {stream}.jsonl "
                 f"has {result.line_count} lines"
             )
-    return tuple(errors)
+            if manifest.incomplete:
+                message += (
+                    " (tolerated: incomplete=true, manifest counts are a "
+                    "checkpoint for crash-terminated sessions)"
+                )
+            mismatches.append(message)
+    return tuple(mismatches)
 
 
 def _native_warnings(session_dir: Path, manifest: Manifest) -> tuple[str, ...]:
@@ -186,14 +208,23 @@ def validate_session(session_dir: Path | str) -> ValidationReport:
         for stream in ("states", "actions", "events")
     }
     errors: list[str] = []
+    warnings: list[str] = []
     for result in results.values():
         errors.extend(result.errors)
     errors.extend(_cross_stream_errors(results["states"], results["actions"]))
-    errors.extend(_count_errors(manifest, results))
+    # Contract: count mismatches are errors only for cleanly finalized
+    # sessions; a crash-terminated (incomplete=true) session's manifest is a
+    # periodic checkpoint, so mismatches degrade to warnings there.
+    count_mismatches = _count_mismatches(manifest, results)
+    if manifest.incomplete:
+        warnings.extend(count_mismatches)
+    else:
+        errors.extend(count_mismatches)
+    warnings.extend(_native_warnings(session_dir, manifest))
     return ValidationReport(
         session_dir=str(session_dir),
         errors=tuple(errors),
-        warnings=_native_warnings(session_dir, manifest),
+        warnings=tuple(warnings),
         counts={
             stream: result.line_count for stream, result in results.items()
         },

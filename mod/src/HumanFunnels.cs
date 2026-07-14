@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using HarmonyLib;
@@ -39,13 +40,17 @@ public static class HumanFunnels
     private static TrajectorySession? _restSiteSession;
     private static Action<RestSiteOption, bool, ulong>? _restSiteHandler;
     private static string? _lastChoiceContextModel;
-    private static AccessTools.FieldRef<MoveToMapCoordAction, MegaCrit.Sts2.Core.Map.MapCoord>? _moveDestination;
+
+    /// <summary>
+    /// Rewards whose claim was initiated by the LOCAL player's explicit UI selection
+    /// (RewardsSetSynchronizer.SelectLocalReward). Reward.SelectUnsynchronized fires for
+    /// remote claims and programmatic auto-claims too (Draft run-start, v0.107.1) — this
+    /// table is how the committed-claim record gets its human/programmatic attribution.
+    /// </summary>
+    private static ConditionalWeakTable<Reward, object> _locallySelectedRewards = new();
 
     internal static void ApplyPatches(Harmony harmony)
     {
-        _moveDestination = JsonDescribe.Try(
-            () => AccessTools.FieldRefAccess<MoveToMapCoordAction, MegaCrit.Sts2.Core.Map.MapCoord>("_destination"));
-
         // --- (a) annotation hooks: human scope around action-enqueuing UI handlers ---
         RecorderMod.TryPatch(
             harmony,
@@ -83,6 +88,9 @@ public static class HumanFunnels
             AccessTools.Method(typeof(NMapScreen), nameof(NMapScreen.OnMapPointSelectedLocally)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(MapPointSelectedPrefix)),
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
+        // v0.107.1: PickRelicLocally(int?) also covers the NEW explicit treasure-relic
+        // skip button — SkipRelicLocally() is sugar that calls PickRelicLocally(null),
+        // so this one scope tags both picks and skips as human.
         RecorderMod.TryPatch(
             harmony,
             "patch:TreasureRoomRelicSynchronizer.PickRelicLocally",
@@ -91,11 +99,10 @@ public static class HumanFunnels
             finalizer: new HarmonyMethod(typeof(HumanFunnels), nameof(EndScopeFinalizer)));
 
         // --- (b) post-commit funnels recorded with status "committed" ---
-        RecorderMod.TryPatch(
-            harmony,
-            "patch:MoveToMapCoordAction.ExecuteAction",
-            AccessTools.Method(typeof(MoveToMapCoordAction), "ExecuteAction"),
-            postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(MoveToMapCoordExecutedPostfix)));
+        // (MoveToMapCoordAction.ExecuteAction is deliberately NOT patched: the umbrella
+        // RequestEnqueue funnel already records move_to_map_coord for the same action
+        // instance, and the human decision carries human=true on vote_for_map_coord —
+        // a second travel_to_map_coord record double-counted every floor transition.)
         RecorderMod.TryPatch(
             harmony,
             "patch:NEventRoom.OptionButtonClicked",
@@ -117,18 +124,32 @@ public static class HumanFunnels
             "patch:MerchantCardRemovalEntry.OnTryPurchaseWrapper",
             AccessTools.Method(typeof(MerchantCardRemovalEntry), nameof(MerchantCardRemovalEntry.OnTryPurchaseWrapper)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(CardRemovalPurchasePostfix)));
+        // v0.107.1 reward claiming is synchronized (Reward.OnSelectWrapper removed):
+        //   * RewardsSetSynchronizer.SelectLocalReward = the LOCAL player's explicit UI
+        //     claim (NRewardButton) — prefix only MARKS the reward as human-initiated.
+        //   * Reward.SelectUnsynchronized = the executed claim on EVERY machine (local,
+        //     remote, and programmatic auto-claims like the Draft modifier) — the single
+        //     committed "reward_taken" record, filtered to the local player and tagged
+        //     human/programmatic via the mark. One record per claim, no double-count.
         RecorderMod.TryPatch(
             harmony,
-            "patch:Reward.OnSelectWrapper",
-            AccessTools.Method(typeof(Reward), nameof(Reward.OnSelectWrapper)),
+            "patch:RewardsSetSynchronizer.SelectLocalReward",
+            AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SelectLocalReward)),
+            prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SelectLocalRewardPrefix)));
+        RecorderMod.TryPatch(
+            harmony,
+            "patch:Reward.SelectUnsynchronized",
+            AccessTools.Method(typeof(Reward), nameof(Reward.SelectUnsynchronized)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(RewardSelectPostfix)));
-        // Reward.OnSkipped is virtual and overridden — patching the base does NOT
-        // intercept overrides; each override is patched individually.
-        PatchOnSkipped(harmony, typeof(CardReward));
-        PatchOnSkipped(harmony, typeof(PotionReward));
-        PatchOnSkipped(harmony, typeof(SpecialCardReward));
-        PatchOnSkipped(harmony, typeof(RelicReward));
-        PatchOnSkipped(harmony, typeof(LinkedRewardSet));
+        // v0.107.1: reward-set skips are synchronized too. SkipLocalRewardsSet is the
+        // ONE local human skip decision; the per-subclass Reward.OnSkipped overrides now
+        // fire on all machines for every unselected reward (RewardsSetSynchronizer.
+        // SkipRewardsSet) and are no longer patched — one decision, one record.
+        RecorderMod.TryPatch(
+            harmony,
+            "patch:RewardsSetSynchronizer.SkipLocalRewardsSet",
+            AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SkipLocalRewardsSet)),
+            prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SkipLocalRewardsSetPrefix)));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalObtainedCard), nameof(SyncObtainedCardPrefix));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalSkippedCard), nameof(SyncSkippedCardPrefix));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalObtainedRelic), nameof(SyncObtainedRelicPrefix));
@@ -154,15 +175,6 @@ public static class HumanFunnels
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(ChestButtonPrefix)));
     }
 
-    private static void PatchOnSkipped(Harmony harmony, Type rewardType)
-    {
-        RecorderMod.TryPatch(
-            harmony,
-            $"patch:{rewardType.Name}.OnSkipped",
-            AccessTools.DeclaredMethod(rewardType, "OnSkipped"),
-            postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(RewardSkippedPostfix)));
-    }
-
     private static void PatchSyncLocal(Harmony harmony, string methodName, string patchName)
     {
         RecorderMod.TryPatch(
@@ -176,6 +188,7 @@ public static class HumanFunnels
     internal static void OnRunStarted(TrajectorySession session)
     {
         _lastChoiceContextModel = null;
+        _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
         try
         {
             var synchronizer = RunManager.Instance.RestSiteSynchronizer;
@@ -206,6 +219,7 @@ public static class HumanFunnels
         _restSiteHandler = null;
         _restSiteSession = null;
         _lastChoiceContextModel = null;
+        _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
     }
 
     private static void RecordCommitted(string source, string kind, JsonObject parameters)
@@ -221,7 +235,12 @@ public static class HumanFunnels
         }
     }
 
-    /// <summary>Merchant purchases fire SyncLocalObtained* too — dedupe by room context.</summary>
+    /// <summary>
+    /// v0.107.1: SyncLocalObtained*/Skipped* is now effectively the MERCHANT channel
+    /// (reward screens moved to RewardsSetSynchronizer) — the shop-context dedupe keeps
+    /// purchases single-recorded by the merchant purchase hook; the remaining non-shop
+    /// caller (CrystalSphereCurse gaining Doubt) still records here.
+    /// </summary>
     private static bool IsShopContext()
     {
         try
@@ -295,35 +314,6 @@ public static class HumanFunnels
     }
 
     // --- committed funnels ---
-
-    /// <summary>Committed map destination (runs at commit, before the travel animation).</summary>
-    private static void MoveToMapCoordExecutedPostfix(MoveToMapCoordAction __instance)
-    {
-        try
-        {
-            if (RecorderMod.Session == null)
-            {
-                return;
-            }
-            var parameters = new JsonObject
-            {
-                ["player"] = JsonDescribe.Try<long?>(() => (long)__instance.OwnerId),
-            };
-            if (_moveDestination != null)
-            {
-                parameters["destination"] = JsonDescribe.Try(() =>
-                {
-                    var coord = _moveDestination(__instance);
-                    return (JsonNode?)new JsonObject { ["col"] = coord.col, ["row"] = coord.row };
-                });
-            }
-            RecordCommitted("hook:MoveToMapCoordAction.ExecuteAction", "travel_to_map_coord", parameters);
-        }
-        catch (Exception ex)
-        {
-            RecorderMod.Report("HumanFunnels.MoveToMapCoordExecutedPostfix", ex);
-        }
-    }
 
     /// <summary>
     /// IsProceed options run option.Chosen() directly and bypass the synchronizer —
@@ -495,14 +485,48 @@ public static class HumanFunnels
         return parameters;
     }
 
-    /// <summary>Non-virtual wrapper — one patch covers all Reward subclasses.</summary>
+    /// <summary>
+    /// LOCAL-intent marker (v0.107.1): SelectLocalReward is only reachable from the local
+    /// player's own UI claim (NRewardButton; the RewardsSet.Offer caller is TestMode-only,
+    /// and recording never runs under TestMode). No record here — SelectUnsynchronized
+    /// carries the committed record and reads this mark for human attribution.
+    /// </summary>
+    private static void SelectLocalRewardPrefix(Reward reward)
+    {
+        try
+        {
+            if (RecorderMod.Session == null || reward == null)
+            {
+                return;
+            }
+            _locallySelectedRewards.AddOrUpdate(reward, new object());
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("HumanFunnels.SelectLocalRewardPrefix", ex);
+        }
+    }
+
+    /// <summary>
+    /// Non-virtual async wrapper — one patch covers all Reward subclasses. Executes on
+    /// EVERY machine (local + remote claims) and for programmatic auto-claims (Draft
+    /// run-start modifier), so filter to the local player and tag the source.
+    /// </summary>
     private static void RewardSelectPostfix(Reward __instance, Task<bool> __result)
     {
         try
         {
-            if (RecorderMod.Session == null || __result == null)
+            if (RecorderMod.Session == null || __result == null
+                || !JsonDescribe.Try<bool?>(() => LocalContext.IsMe(__instance.Player)).GetValueOrDefault())
             {
                 return;
+            }
+            // Attribution decided now (the mark was set synchronously before this call);
+            // consume the mark so it cannot leak onto a later claim.
+            var human = _locallySelectedRewards.TryGetValue(__instance, out _);
+            if (human)
+            {
+                _locallySelectedRewards.Remove(__instance);
             }
             __result.ContinueWith(task =>
             {
@@ -514,8 +538,13 @@ public static class HumanFunnels
                     }
                     // Claimed-item fields are only set after the task completes;
                     // serialize on the main thread via the pump.
-                    RecorderMod.RunOnMainThread(() => RecordCommitted(
-                        "hook:Reward.OnSelectWrapper", "reward_taken", DescribeReward(__instance)));
+                    RecorderMod.RunOnMainThread(() =>
+                    {
+                        var parameters = DescribeReward(__instance);
+                        parameters["human"] = human;
+                        parameters["programmatic"] = !human; // e.g. Draft modifier auto-claims
+                        RecordCommitted("hook:Reward.SelectUnsynchronized", "reward_taken", parameters);
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -529,7 +558,12 @@ public static class HumanFunnels
         }
     }
 
-    private static void RewardSkippedPostfix(Reward __instance)
+    /// <summary>
+    /// The ONE local human skip decision for the whole rewards set (NRewardsScreen skip
+    /// button). The unselected items are visible in the preceding rewards-screen state
+    /// snapshot; per-reward OnSkipped callbacks are deliberately not recorded.
+    /// </summary>
+    private static void SkipLocalRewardsSetPrefix()
     {
         try
         {
@@ -537,12 +571,16 @@ public static class HumanFunnels
             {
                 return;
             }
-            RecordCommitted("hook:" + __instance.GetType().Name + ".OnSkipped", "reward_skipped",
-                DescribeReward(__instance));
+            RecordCommitted("hook:RewardsSetSynchronizer.SkipLocalRewardsSet", "rewards_skipped", new JsonObject
+            {
+                ["player"] = JsonDescribe.Try<long?>(
+                    () => LocalContext.NetId is { } netId ? (long)netId : null),
+                ["human"] = true,
+            });
         }
         catch (Exception ex)
         {
-            RecorderMod.Report("HumanFunnels.RewardSkippedPostfix", ex);
+            RecorderMod.Report("HumanFunnels.SkipLocalRewardsSetPrefix", ex);
         }
     }
 
@@ -570,7 +608,9 @@ public static class HumanFunnels
         return parameters;
     }
 
-    // --- RewardSynchronizer.SyncLocal* prefixes (final committed acquisitions) ---
+    // --- RewardSynchronizer.SyncLocal* prefixes ---
+    // v0.107.1 caller-set drift: reward screens NO LONGER call these; remaining callers
+    // are merchant purchases (deduped via IsShopContext) and CrystalSphereCurse.
 
     private static void SyncObtainedCardPrefix(CardModel card) =>
         RecordSyncLocal("card_reward_obtained", new JsonObject { ["card_id"] = JsonDescribe.Model(card) });

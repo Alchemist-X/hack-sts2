@@ -101,6 +101,94 @@ def test_count_mismatch(tmp_path: Path) -> None:
     assert any("counts.states=99" in error for error in report.errors)
 
 
+def test_count_mismatch_degrades_to_warning_when_incomplete(tmp_path: Path) -> None:
+    """Contract: incomplete=true means the manifest counts are a periodic
+    checkpoint (crash-terminated session); mismatches are warnings, not
+    errors, so crash salvage still validates."""
+    manifest = make_manifest(
+        result=None,
+        incomplete=True,
+        counts={"states": 0, "actions": 0, "events": 0},
+    )
+    session = write_session(tmp_path / "s", manifest=manifest, with_native=False)
+    report = validate_session(session)
+    assert report.ok
+    assert any("counts.states=0" in warning for warning in report.warnings)
+    assert any("tolerated" in warning for warning in report.warnings)
+
+
+def test_line_level_integrity_still_errors_when_incomplete(tmp_path: Path) -> None:
+    """Contract: incomplete=true only relaxes manifest counts; a truncated
+    final line remains a hard error."""
+    manifest = make_manifest(result=None, incomplete=True)
+    session = write_session(tmp_path / "s", manifest=manifest, with_native=False)
+    with (session / "events.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write('{"seq": 9, "t": 177')
+    report = validate_session(session)
+    assert not report.ok
+    assert any("malformed JSON line" in error for error in report.errors)
+
+
+def test_null_state_seq_before_first_snapshot_is_valid(tmp_path: Path) -> None:
+    """Contract: state_seq=null (action before the first snapshot) is valid
+    data, not a dangling reference."""
+    t = START_TIME
+    records = {
+        "states": [{"seq": 2, "t": t + 2.0, "type": "state", "trigger": "phase",
+                    "screen": "map", "hash": "h1", "state": {"floor": 1}}],
+        "actions": [
+            make_action(1, t + 1.0, None, kind="map_choice", status="committed"),
+            make_action(3, t + 3.0, 2, card="CARD.ZAP"),
+        ],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert report.ok
+
+
+def test_legacy_zero_state_seq_treated_as_null(tmp_path: Path) -> None:
+    """Sessions from older recorders wrote state_seq=0 for 'no snapshot yet';
+    it must be normalized to null, not flagged as dangling."""
+    t = START_TIME
+    records = {
+        "states": [],
+        "actions": [make_action(1, t + 1.0, 0, kind="map_choice")],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert not any("state_seq=0" in error for error in report.errors)
+    assert report.ok
+
+
+def test_null_action_source_is_error(tmp_path: Path) -> None:
+    records = default_records()
+    records["actions"][0]["source"] = None
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert not report.ok
+    assert any("'source' must be a string" in error for error in report.errors)
+
+
+def test_null_action_kind_is_error(tmp_path: Path) -> None:
+    records = default_records()
+    records["actions"][0]["action"] = {"kind": None}
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert not report.ok
+    assert any("'kind' must be a string" in error for error in report.errors)
+
+
+def test_null_event_entry_is_error(tmp_path: Path) -> None:
+    records = default_records()
+    records["events"][0]["entry"] = None
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert not report.ok
+    assert any("'entry' must be a string" in error for error in report.errors)
+
+
 def test_missing_native_artifacts_warn_when_result_set(tmp_path: Path) -> None:
     session = write_session(tmp_path / "s", with_native=False)
     report = validate_session(session)

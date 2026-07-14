@@ -1,7 +1,8 @@
 // Ported from STS2MCP (https://github.com/Gennadiyev/STS2MCP) — McpMod.StateBuilder.cs (player/card sections).
 // Copyright 2026 Yikun Ji (Kunologist). MIT License; this attribution is retained per license.
-// Sts2Recorder adaptations (game v0.99.1): PowerModel.Type does not exist in v0.99.1 —
-// replaced with PowerModel.TypeForCurrentAmount. Draw pile stays SORTED (rarity, then id):
+// Sts2Recorder adaptations: PowerModel.TypeForCurrentAmount is used for the buff/debuff
+// tag (reflects the CURRENT amount, e.g. negative Strength reads as Debuff; PowerModel.Type
+// exists too but is the static declaration). Draw pile stays SORTED (rarity, then id):
 // true draw order is hidden information and never appears in the observation channel.
 
 using System;
@@ -286,8 +287,8 @@ public static partial class PassiveStateBuilder
                     ["id"] = power.Id.Entry,
                     ["name"] = SafeGetText(() => power.Title),
                     ["amount"] = power.DisplayAmount,
-                    // v0.99.1 adaptation: PowerModel.Type does not exist in this build;
-                    // TypeForCurrentAmount is the equivalent (Buff/Debuff for current amount).
+                    // TypeForCurrentAmount = Buff/Debuff for the CURRENT amount (e.g.
+                    // negative Strength reads as Debuff), unlike the static PowerModel.Type.
                     ["type"] = power.TypeForCurrentAmount.ToString(),
                     ["description"] = resolvedDesc,
                     ["keywords"] = BuildHoverTips(extraTips)
