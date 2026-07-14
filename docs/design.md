@@ -72,14 +72,26 @@ Every JSONL line shares the envelope `{seq, t, type, ...}`:
 seconds (float). One session = one run (menu time between runs is not recorded).
 
 - `states.jsonl`: `{seq, t, type:"state", trigger:"action"|"poll"|"phase",
-  screen:"combat"|"map"|…, hash, state:{…full passive StateBuilder output…}}`
+  screen:"combat"|"map"|…, hash, state:{…full passive StateBuilder output…}}` —
+  `hash` = first 16 hex chars of the SHA-256 of the serialized state JSON;
+  consecutive identical snapshots are hash-deduped (not re-written).
 - `actions.jsonl`: `{seq, t, type:"action", source:"hook:<PatchId>",
-  action:{kind, params…}, state_seq:<seq of latest snapshot before the action>}`
+  action:{kind, params:{…}}, status, state_seq:<seq of latest snapshot before
+  the action>}` — `status` (recorder ≥ 0.1, optional for older sessions) is the
+  GameAction lifecycle: `"committed"` (already-final decisions such as map/shop
+  picks) | `"executed"` | `"cancelled"` (enqueued then backed out). `sts2rec`
+  accepts both the nested `params` object and the older inline spread.
 - `events.jsonl`: `{seq, t, type:"event", entry:"card_drawn"|"damage_received"|…,
   data:{…}}` — privileged channel (true draw order lives here, never in states).
 - `manifest.json`: `{schema_version, recorder_version, game:{version, commit,
-  build_id}, platform, profile, run:{seed, character, ascension, game_mode,
-  start_time}, result:{win, abandoned, end_time}|null, counts, incomplete}`
+  build_id, untested}, platform, profile, run:{seed, character, ascension,
+  game_mode, start_time}, result:{win, abandoned, end_time}|null, counts,
+  incomplete, part, degraded_hooks, mods}` — `part` (optional, default 1):
+  resumed runs recorded across game restarts open a new session directory with
+  a `-part2`/`-part3`… suffix on the run_id and carry the part number here.
+  `seq` is session-global and strictly monotonic across all three streams.
+  The canonical trajectory surfaces `status` as `steps[].info.action_status`
+  (when recorded) and `part` as `meta.part`.
 
 Rationale: append-only JSONL per stream (NLE/MineRL/BASALT consensus + STS2MCP
 issue #91's proposed shape), raw-fidelity capture with derived views generated

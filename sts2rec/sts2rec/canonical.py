@@ -32,6 +32,7 @@ Output is deterministic: same session bytes -> same trajectory dict.
 from __future__ import annotations
 
 from bisect import bisect_right
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,7 @@ def _build_meta(manifest: Manifest, session_dir: Path) -> dict[str, Any]:
         "recorder_version": manifest.recorder_version,
         "platform": manifest.platform,
         "incomplete": manifest.incomplete,
+        "part": manifest.part,
         "degraded_hooks": list(manifest.degraded_hooks),
         "result": _result_payload(manifest.result),
         "reward_note": REWARD_NOTE,
@@ -105,7 +107,13 @@ def _event_payload(event: EventRecord) -> dict[str, Any]:
 
 
 def _action_payload(action: ActionRecord) -> dict[str, Any]:
-    params = {key: value for key, value in action.action.items() if key != "kind"}
+    extras = {key: value for key, value in action.action.items() if key != "kind"}
+    # Recorder >= 0.1 nests parameters as action.params ({kind, params:{...}});
+    # earlier synthetic sessions spread them inline ({kind, ...}). Accept both.
+    if set(extras) == {"params"} and isinstance(extras["params"], Mapping):
+        params = dict(extras["params"])
+    else:
+        params = extras
     return {"type": action.action["kind"], "params": params}
 
 
@@ -153,6 +161,8 @@ def _build_step(
         "state_before_seq": state_before.seq,
         "state_after_seq": state_after.seq if state_after is not None else None,
     }
+    if action.status is not None:
+        info["action_status"] = action.status
     terminal = False
     if is_last and manifest.result is not None:
         terminal = True

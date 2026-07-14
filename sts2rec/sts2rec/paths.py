@@ -6,6 +6,10 @@ touch the real filesystem layout. Observed real layout (macOS, 2026-07):
     <user_data>/steam/<steamid>/profileN/
         saves/history/<start_time>.run   # native run summaries
         replays/latest.mcr               # native command replay (sibling of saves/)
+
+Modded game runs relocate the whole profile tree one level deeper (verified in
+decompile): <user_data>/steam/<steamid>/modded/profileN/... — discovery covers
+both trees.
 """
 
 from __future__ import annotations
@@ -67,7 +71,12 @@ def sessions_root(output_root: Path) -> Path:
 
 
 def profile_dirs(base: Path) -> tuple[Path, ...]:
-    """All steam/<steamid>/profileN directories under the user-data root."""
+    """All steam/<steamid>/[modded/]profileN directories under the user-data root.
+
+    Vanilla runs write to steam/<steamid>/profileN; modded game runs relocate
+    saves to steam/<steamid>/modded/profileN. Both are discovered, vanilla
+    first per steam id.
+    """
     steam_root = base / "steam"
     if not steam_root.is_dir():
         return ()
@@ -75,7 +84,9 @@ def profile_dirs(base: Path) -> tuple[Path, ...]:
         profile
         for steam_id in sorted(steam_root.iterdir())
         if steam_id.is_dir()
-        for profile in sorted(steam_id.glob("profile*"))
+        for profile_root in (steam_id, steam_id / "modded")
+        if profile_root.is_dir()
+        for profile in sorted(profile_root.glob("profile*"))
         if profile.is_dir()
     )
     return tuple(found)

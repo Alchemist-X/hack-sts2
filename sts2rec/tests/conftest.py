@@ -47,8 +47,16 @@ def make_state(seq: int, t: float, hash_: str, **payload: Any) -> dict[str, Any]
     }
 
 
-def make_action(seq: int, t: float, state_seq: int, kind: str = "play_card", **params: Any) -> dict[str, Any]:
-    return {
+def make_action(
+    seq: int,
+    t: float,
+    state_seq: int,
+    kind: str = "play_card",
+    *,
+    status: str | None = None,
+    **params: Any,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
         "seq": seq,
         "t": t,
         "type": "action",
@@ -56,6 +64,9 @@ def make_action(seq: int, t: float, state_seq: int, kind: str = "play_card", **p
         "action": {"kind": kind, **params},
         "state_seq": state_seq,
     }
+    if status is not None:
+        record["status"] = status
+    return record
 
 
 def make_event(seq: int, t: float, entry: str = "card_drawn", **data: Any) -> dict[str, Any]:

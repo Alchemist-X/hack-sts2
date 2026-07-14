@@ -223,3 +223,48 @@ def test_zero_action_session_keeps_result(tmp_path: Path) -> None:
         "end_time": 1773034486.0,
     }
     assert [event["seq"] for event in trajectory["prelude_events"]] == [1]
+
+
+def test_nested_params_object_is_unwrapped(tmp_path: Path) -> None:
+    """Recorder >= 0.1 writes action:{kind, params:{...}}; canonical must not
+    double-nest ({"params": {"params": ...}})."""
+    t = START_TIME
+    records = {
+        "states": [make_state(1, t + 1.0, "h1", floor=1)],
+        "actions": [
+            {
+                "seq": 2,
+                "t": t + 2.0,
+                "type": "action",
+                "source": "hook:ActionQueuePatch",
+                "action": {"kind": "play_card", "params": {"card": "CARD.ZAP"}},
+                "status": "executed",
+                "state_seq": 1,
+            }
+        ],
+        "events": [],
+    }
+    session = write_session(tmp_path / "s", records=records)
+    steps = build_canonical(session)["steps"]
+    assert steps[0]["action"] == {"type": "play_card", "params": {"card": "CARD.ZAP"}}
+    assert steps[0]["info"]["action_status"] == "executed"
+
+
+def test_action_status_absent_from_info_when_not_recorded(session_dir: Path) -> None:
+    steps = build_canonical(session_dir)["steps"]
+    assert all("action_status" not in step["info"] for step in steps)
+
+
+def test_meta_carries_part(tmp_path: Path) -> None:
+    records = default_records()
+    manifest = make_manifest(
+        part=2,
+        counts={stream: len(lines) for stream, lines in records.items()},
+    )
+    session = write_session(tmp_path / "s-part2", manifest=manifest, records=records)
+    meta = build_canonical(session)["meta"]
+    assert meta["part"] == 2
+
+
+def test_meta_part_defaults_to_one(session_dir: Path) -> None:
+    assert build_canonical(session_dir)["meta"]["part"] == 1

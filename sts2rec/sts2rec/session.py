@@ -67,6 +67,9 @@ class Manifest:
     counts: StreamCounts
     incomplete: bool
     degraded_hooks: tuple[str, ...]
+    # Resumed runs recorded across game restarts open a new session directory
+    # with a -partN suffix; the manifest carries the part number (default 1).
+    part: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +89,10 @@ class ActionRecord:
     source: str
     action: Mapping[str, Any]
     state_seq: int
+    # Optional GameAction lifecycle marker written by recorder >= 0.1:
+    # "committed" (already-final decisions) | "executed" | "cancelled".
+    # None for sessions recorded before the field existed.
+    status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +176,7 @@ def parse_manifest(raw: Any, *, source: str = MANIFEST_NAME) -> Manifest:
             counts=_parse_counts(_require(raw, "counts", source)),
             incomplete=bool(_require(raw, "incomplete", source)),
             degraded_hooks=tuple(raw.get("degraded_hooks", ())),
+            part=int(raw.get("part", 1)),
         )
     except (TypeError, ValueError) as error:
         raise ManifestError(f"{source}: malformed field value: {error}") from error
@@ -259,12 +267,14 @@ def parse_action_record(record: Mapping[str, Any], *, where: str = "action recor
     action = record["action"]
     if not isinstance(action, Mapping) or "kind" not in action:
         raise RecordError(f"{where}: 'action' must be an object with a 'kind'")
+    status = record.get("status")
     return ActionRecord(
         seq=seq,
         t=t,
         source=str(record["source"]),
         action=action,
         state_seq=int(record["state_seq"]),
+        status=str(status) if status is not None else None,
     )
 
 

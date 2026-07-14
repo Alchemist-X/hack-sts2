@@ -64,3 +64,25 @@ def test_history_and_replays_dirs(tmp_path: Path) -> None:
     assert paths.history_dir(saves) == saves / "history"
     # replays/ is a sibling of saves/ (observed real layout)
     assert paths.replays_dir(saves) == tmp_path / "profile1" / "replays"
+
+
+def test_profile_dirs_include_modded_tree(tmp_path: Path) -> None:
+    """Modded game runs relocate saves to steam/<id>/modded/profileN/saves."""
+    steam_id = tmp_path / "steam" / "76500000000000001"
+    vanilla = steam_id / "profile1"
+    modded = steam_id / "modded" / "profile1"
+    (vanilla / "saves").mkdir(parents=True)
+    (modded / "saves").mkdir(parents=True)
+    assert paths.profile_dirs(tmp_path) == (vanilla, modded)
+    assert paths.profile_saves_dirs(tmp_path) == (
+        vanilla / "saves",
+        modded / "saves",
+    )
+
+
+def test_modded_only_profile_discovered(tmp_path: Path) -> None:
+    modded_saves = (
+        tmp_path / "steam" / "76500000000000001" / "modded" / "profile2" / "saves"
+    )
+    modded_saves.mkdir(parents=True)
+    assert paths.profile_saves_dirs(tmp_path) == (modded_saves,)

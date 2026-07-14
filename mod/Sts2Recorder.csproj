@@ -15,6 +15,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- tests/ is its own project (Sts2Recorder.Core.Tests.csproj); keep it out of the mod DLL -->
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="sts2">
       <HintPath>$(STS2GameDataDir)/sts2.dll</HintPath>
       <Private>false</Private>

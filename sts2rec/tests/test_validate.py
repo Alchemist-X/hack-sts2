@@ -139,3 +139,21 @@ def test_never_raises_on_garbage(tmp_path: Path) -> None:
     (session / "states.jsonl").write_bytes(b"\x00\xff garbage")
     report = validate_session(session)  # must not raise
     assert not report.ok
+
+
+def test_unknown_action_status_is_error(tmp_path: Path) -> None:
+    records = default_records()
+    records["actions"][0]["status"] = "pending"
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert not report.ok
+    assert any("unknown" in error and "status" in error for error in report.errors)
+
+
+def test_known_action_statuses_are_accepted(tmp_path: Path) -> None:
+    records = default_records()
+    records["actions"][0]["status"] = "cancelled"
+    records["actions"][1]["status"] = "committed"
+    session = write_session(tmp_path / "s", records=records)
+    report = validate_session(session)
+    assert report.ok

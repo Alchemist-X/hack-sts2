@@ -27,6 +27,7 @@ from .session import (
 )
 
 TIMESTAMP_TOLERANCE_SECONDS = 0.05
+ACTION_STATUSES = frozenset({"committed", "executed", "cancelled"})
 
 _PARSERS: dict[str, Callable[..., Any]] = {
     "states": parse_state_record,
@@ -112,6 +113,13 @@ def _cross_stream_errors(
                 f"actions.jsonl: action seq={action.seq} references "
                 f"state_seq={action.state_seq} at or after its own seq "
                 "(state_seq must be the latest snapshot before the action)"
+            )
+    for action in actions.records:
+        if action.status is not None and action.status not in ACTION_STATUSES:
+            errors.append(
+                f"actions.jsonl: action seq={action.seq} has unknown "
+                f"status {action.status!r} (expected one of "
+                f"{sorted(ACTION_STATUSES)})"
             )
     for previous, current in zip(states.records, states.records[1:]):
         if previous.hash == current.hash:

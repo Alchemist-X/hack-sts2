@@ -123,6 +123,28 @@ class TestRecordParsing:
         with pytest.raises(dataclasses.FrozenInstanceError):
             record.seq = 2  # type: ignore[misc]
 
+    def test_action_status_parsed_when_present(self) -> None:
+        record = parse_action_record(make_action(5, 6.0, 4, status="cancelled"))
+        assert record.status == "cancelled"
+
+    def test_action_status_defaults_to_none(self) -> None:
+        record = parse_action_record(make_action(5, 6.0, 4))
+        assert record.status is None
+
+
+class TestManifestOptionalFields:
+    def test_part_parsed_when_present(self) -> None:
+        manifest = parse_manifest(make_manifest(part=3))
+        assert manifest.part == 3
+
+    def test_part_defaults_to_one(self) -> None:
+        manifest = parse_manifest(make_manifest())
+        assert manifest.part == 1
+
+    def test_degraded_hooks_parsed(self) -> None:
+        manifest = parse_manifest(make_manifest(degraded_hooks=["hook:MapPatch"]))
+        assert manifest.degraded_hooks == ("hook:MapPatch",)
+
 
 def test_stream_path_rejects_unknown_stream(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unknown stream"):
