@@ -24,3 +24,4 @@ mod/tests/bin/
 mod/tests/obj/
 .coverage
 headless-instances/
+.mcp-stashed/
