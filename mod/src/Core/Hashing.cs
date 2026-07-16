@@ -16,9 +16,17 @@ internal static class Hashing
     /// of the key insertion order used by the state builder. Array order is
     /// semantic and preserved.
     /// </summary>
-    public static string StateHash(JsonNode state)
+    public static string StateHash(JsonNode state) => HashFromCanonical(CanonicalJson(state));
+
+    /// <summary>
+    /// The dedup hash of an already-computed canonical serialization (see
+    /// <see cref="CanonicalJson"/>). Lets a caller canonicalize the state ONCE and
+    /// reuse the string for both the hash and (indirectly) its own bookkeeping,
+    /// instead of canonicalizing twice.
+    /// </summary>
+    public static string HashFromCanonical(string canonicalJson)
     {
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalJson(state)));
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson));
         return Convert.ToHexString(digest, 0, 8).ToLowerInvariant();
     }
 

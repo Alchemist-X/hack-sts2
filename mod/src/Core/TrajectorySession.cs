@@ -52,9 +52,9 @@ public sealed class TrajectorySession : IDisposable
         JsonlStreamWriter? events = null;
         try
         {
-            states = new JsonlStreamWriter(Path.Combine(directory, "states.jsonl"));
-            actions = new JsonlStreamWriter(Path.Combine(directory, "actions.jsonl"));
-            events = new JsonlStreamWriter(Path.Combine(directory, "events.jsonl"));
+            states = new JsonlStreamWriter(Path.Combine(directory, "states.jsonl"), OnStreamError);
+            actions = new JsonlStreamWriter(Path.Combine(directory, "actions.jsonl"), OnStreamError);
+            events = new JsonlStreamWriter(Path.Combine(directory, "events.jsonl"), OnStreamError);
             _states = states;
             _actions = actions;
             _events = events;
@@ -110,11 +110,16 @@ public sealed class TrajectorySession : IDisposable
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(screen);
         ArgumentNullException.ThrowIfNull(state);
+        // Two serializations of the state, both on the caller thread and both
+        // unavoidable: ONE canonical (key-sorted) form for the dedup hash — so
+        // dedup is independent of the builder's key insertion order — and ONE
+        // original-order form for the stored payload (the state keeps the
+        // builder's key order). The former envelope did THREE full state
+        // serializations (direct, canonical-hash, and the writer's re-serialize)
+        // plus a JsonNode.Parse round trip; those extras are gone.
+        var canonical = Hashing.CanonicalJson(state);
+        var hash = Hashing.HashFromCanonical(canonical);
         var serialized = state.ToJsonString();
-        // Hash the canonical (key-sorted) form so dedup is independent of the
-        // state builder's key insertion order; the stored payload keeps the
-        // original serialization.
-        var hash = Hashing.StateHash(state);
         lock (_lock)
         {
             ThrowIfUnusable();
@@ -134,16 +139,12 @@ public sealed class TrajectorySession : IDisposable
                 return _latestStateSeq;
             }
             var seq = _nextSeq++;
-            _states.WriteLine(new JsonObject
-            {
-                ["seq"] = seq,
-                ["t"] = _clock.Now,
-                ["type"] = "state",
-                ["trigger"] = trigger,
-                ["screen"] = screen,
-                ["hash"] = hash,
-                ["state"] = JsonNode.Parse(serialized),
-            });
+            // Build the exact envelope bytes here (still cheap, no re-serialize of
+            // the state) and enqueue; the write+flush syscall runs off-thread.
+            // LatestStateSeq is updated synchronously below, so a subsequent
+            // RecordAction sees this seq regardless of whether the bytes have
+            // physically been written yet.
+            _states.Enqueue(JsonlLine.State(seq, _clock.Now, trigger, screen, hash, serialized));
             _latestStateSeq = seq;
             _lastStateHash = hash;
             return seq;
@@ -181,20 +182,8 @@ public sealed class TrajectorySession : IDisposable
             }
             var seq = _nextSeq++;
             var resolvedStateSeq = stateSeq ?? _latestStateSeq;
-            _actions.WriteLine(new JsonObject
-            {
-                ["seq"] = seq,
-                ["t"] = _clock.Now,
-                ["type"] = "action",
-                ["source"] = source,
-                ["action"] = new JsonObject
-                {
-                    ["kind"] = kind,
-                    ["params"] = JsonNode.Parse(serializedParams),
-                },
-                ["status"] = status,
-                ["state_seq"] = resolvedStateSeq > 0 ? (JsonNode)resolvedStateSeq : null,
-            });
+            _actions.Enqueue(JsonlLine.Action(
+                seq, _clock.Now, source, kind, serializedParams, status, resolvedStateSeq));
             return seq;
         }
     }
@@ -213,14 +202,7 @@ public sealed class TrajectorySession : IDisposable
                 return 0;
             }
             var seq = _nextSeq++;
-            _events.WriteLine(new JsonObject
-            {
-                ["seq"] = seq,
-                ["t"] = _clock.Now,
-                ["type"] = "event",
-                ["entry"] = entry,
-                ["data"] = JsonNode.Parse(serializedData),
-            });
+            _events.Enqueue(JsonlLine.Event(seq, _clock.Now, entry, serializedData));
             return seq;
         }
     }
@@ -341,6 +323,14 @@ public sealed class TrajectorySession : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Bridges a background writer-thread fault into the session error channel
+    /// (recorder.log). Invoked from the writer thread; ErrorLog is thread-safe and
+    /// uses an independent lock, and the writer already fell back to synchronous
+    /// writes so no data is dropped — the game thread is never touched.
+    /// </summary>
+    private void OnStreamError(string where, Exception ex) => _errorLog.Record(where, ex);
 
     private void FlushStreamsLocked()
     {

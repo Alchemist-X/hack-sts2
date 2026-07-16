@@ -7,12 +7,13 @@ using static Sts2Recorder.Core.Tests.SessionTestHarness;
 namespace Sts2Recorder.Core.Tests;
 
 /// <summary>
-/// Torn-write contract (SIGKILL mid-run): every WriteLine must hand its whole
-/// line + newline to the OS before returning — no .NET-internal buffering that
-/// coalesces lines and tears one at a 4096-byte buffer boundary on SIGKILL.
-/// The tests read the file through a second handle WITHOUT calling
-/// Flush()/Dispose() on the writer, so any bytes still held in a FileStream
-/// buffer would be invisible and fail the assertions.
+/// Async ordered-writer contract. The write+flush syscall runs on a dedicated
+/// background thread draining a FIFO queue, so a line reaches disk after
+/// Flush()/Dispose() (which block until the queue is drained + fsync'd) rather
+/// than synchronously inside WriteLine. The torn-write guarantee still holds on
+/// the writer thread: each line is one buffer in one Write + per-line OS flush,
+/// so no line is ever split at a buffer boundary — verified by reading through a
+/// second handle after a drain.
 /// </summary>
 public sealed class JsonlStreamWriterTests
 {
@@ -35,8 +36,8 @@ public sealed class JsonlStreamWriterTests
 
     private static string ReadAllThroughSecondHandle(string path)
     {
-        // FileShare.Read on the writer allows a concurrent reader; what this
-        // sees is exactly what would survive a SIGKILL of the writer process.
+        // FileShare.Read on the writer allows a concurrent reader; what this sees
+        // after a drain is exactly what would survive a SIGKILL of the process.
         using var stream = new FileStream(
             path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -44,13 +45,14 @@ public sealed class JsonlStreamWriterTests
     }
 
     [Fact]
-    public void LineIsOnDiskImmediatelyAfterWriteLineWithoutFlush()
+    public void LineIsOnDiskAfterFlush()
     {
         var path = NewJsonlPath();
         using var writer = new JsonlStreamWriter(path);
         var record = Record(seq: 1, payloadChars: 100);
 
         writer.WriteLine(record);
+        writer.Flush(); // blocks until the queue is drained + fsync'd
 
         var onDisk = ReadAllThroughSecondHandle(path);
         Assert.Equal(record.ToJsonString() + "\n", onDisk);
@@ -60,15 +62,16 @@ public sealed class JsonlStreamWriterTests
     public void LinesLargerThanDefaultFileStreamBufferAreNeverSplit()
     {
         // Regression for the observed torn write: ~2.7 KiB state lines were
-        // coalesced by the default 4096-byte FileStream buffer and cut
-        // mid-line at buffer-full boundaries. Multiple > 4 KiB lines with no
-        // explicit flush must all be complete on disk after each WriteLine.
+        // coalesced by the default 4096-byte FileStream buffer and cut mid-line
+        // at buffer-full boundaries. Multiple > 4 KiB lines must all be complete
+        // on disk after the drain.
         var path = NewJsonlPath();
         using var writer = new JsonlStreamWriter(path);
         for (var seq = 1; seq <= 5; seq++)
         {
             writer.WriteLine(Record(seq, payloadChars: 5000));
         }
+        writer.Flush();
 
         var lines = ReadAllThroughSecondHandle(path)
             .Split('\n', System.StringSplitOptions.RemoveEmptyEntries);
@@ -81,15 +84,63 @@ public sealed class JsonlStreamWriterTests
     }
 
     [Fact]
-    public void CountersTrackWholeLines()
+    public void CountersAreUpdatedSynchronouslyAtEnqueue()
     {
         var path = NewJsonlPath();
         using var writer = new JsonlStreamWriter(path);
-        var record = Record(seq: 1, payloadChars: 10);
-        writer.WriteLine(record);
+        writer.WriteLine(Record(seq: 1, payloadChars: 10));
         writer.WriteLine(Record(seq: 2, payloadChars: 10));
 
+        // Counts reflect accepted lines immediately, before any drain — so a
+        // manifest rewrite that follows Flush() sees exact counts.
         Assert.Equal(2, writer.LineCount);
+
+        writer.Flush();
         Assert.Equal(new FileInfo(path).Length, writer.BytesWritten);
+    }
+
+    [Fact]
+    public void DisposeDrainsQueuedLinesToDisk()
+    {
+        // Invariant: Dispose() drains + joins the writer thread and fsyncs, so a
+        // burst of lines followed immediately by Dispose (no explicit Flush) all
+        // reach disk.
+        var path = NewJsonlPath();
+        const int n = 200;
+        using (var writer = new JsonlStreamWriter(path))
+        {
+            for (var seq = 1; seq <= n; seq++)
+            {
+                writer.WriteLine(Record(seq, payloadChars: 40));
+            }
+        }
+
+        var lines = File.ReadAllLines(path);
+        Assert.Equal(n, lines.Length);
+        for (var i = 0; i < n; i++)
+        {
+            Assert.Equal(i + 1, JsonNode.Parse(lines[i])!["seq"]!.GetValue<int>());
+        }
+    }
+
+    [Fact]
+    public void EnqueuedLinesReachDiskInFifoOrder()
+    {
+        // The single writer thread consuming one FIFO queue guarantees file order
+        // == enqueue order.
+        var path = NewJsonlPath();
+        using var writer = new JsonlStreamWriter(path);
+        for (var seq = 1; seq <= 50; seq++)
+        {
+            writer.Enqueue(Encoding.UTF8.GetBytes($"{{\"seq\":{seq}}}\n"));
+        }
+        writer.Flush();
+
+        var lines = File.ReadAllLines(path);
+        Assert.Equal(50, lines.Length);
+        for (var i = 0; i < 50; i++)
+        {
+            Assert.Equal(i + 1, JsonNode.Parse(lines[i])!["seq"]!.GetValue<int>());
+        }
     }
 }
