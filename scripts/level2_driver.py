@@ -248,6 +248,35 @@ class DriverContext:
     start_floor: int | None = None
     floors_target: int = DEFAULT_FLOORS
     last_failed_action: str = ""
+    pending_action: str = ""
+    pending_progress: tuple[Any, ...] = ()
+
+
+def _progress_token(state: dict[str, Any], action: dict[str, Any]) -> tuple[Any, ...]:
+    """Observable completion token for asynchronous Godot UI actions."""
+    state_type = state.get("state_type")
+    run = state.get("run") if isinstance(state.get("run"), dict) else {}
+    player = state.get("player") if isinstance(state.get("player"), dict) else {}
+    battle = state.get("battle") if isinstance(state.get("battle"), dict) else {}
+    name = action.get("action")
+    if name == "choose_map_node":
+        return (state_type, run.get("act"), run.get("floor"))
+    if name == "end_turn":
+        return (
+            state_type,
+            battle.get("round"),
+            battle.get("turn"),
+            battle.get("is_play_phase"),
+            player.get("energy"),
+        )
+    return (json.dumps(summarize_state(state), sort_keys=True, ensure_ascii=False),)
+
+
+def _action_has_settled(state: dict[str, Any], ctx: DriverContext) -> bool:
+    if not ctx.pending_action:
+        return True
+    action = json.loads(ctx.pending_action)
+    return _progress_token(state, action) != ctx.pending_progress
 
 
 def _option_names(options: Any) -> list[str]:
@@ -592,6 +621,11 @@ def run_driver(args: argparse.Namespace) -> int:
         try:
             state = api_get_state(args.port)
             last_state = state
+            if not _action_has_settled(state, ctx):
+                time.sleep(args.poll_interval)
+                continue
+            if ctx.pending_action:
+                ctx = replace(ctx, pending_action="", pending_progress=())
             floors_done, ctx = _floors_completed(state, ctx)
             if floors_done >= ctx.floors_target:
                 # The SP API exposes no abandon action (docs raw-full.md:
@@ -640,7 +674,12 @@ def run_driver(args: argparse.Namespace) -> int:
             )
             if ok:
                 last_progress = time.monotonic()
-                ctx = replace(ctx, last_failed_action="")
+                ctx = replace(
+                    ctx,
+                    last_failed_action="",
+                    pending_action=action_json,
+                    pending_progress=_progress_token(state, action),
+                )
             else:
                 ctx = replace(ctx, last_failed_action=action_json)
                 if time.monotonic() - last_progress > STUCK_TIMEOUT_S:

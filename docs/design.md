@@ -267,17 +267,22 @@ STS2 moved v0.98.1 → v0.108.0 in 4 months and updates broke STS2MCP twice
   `sts2rec watch` tailing the JSONL. (Run STS2MCP alongside if an agent needs to
   *play*; the two mods are independent.)
 
-## Headless environments
+## Headless text environments
 
-N isolated instances (`scripts/headless_provision.sh` + `headless_launch.sh`,
-`sts2rec.env.Sts2Env`/`launch_pool`): per-instance APFS clone of the .app with its own
-`mods/` (STS2_MCP.conf port `15600+i`, Sts2Recorder.conf output_root `inst<i>/recordings`)
-and an isolated `$HOME` with mod consent pre-seeded at both `default/1/` and
-`steam/<id>/` save paths (non-Steam boots use `default/1/` — UserDataPathProvider +
-NullPlatformUtilStrategy). Launch = `--headless --force-steam=off` (skips SteamAPI init;
-without it a failed init quits). Known unknowns, UNVERIFIED until first live run:
-Steam-less boot of the release binary (DRM/appid behavior), FMOD/audio under
-`--headless`, and whether the consent popup path stays fully suppressed.
+N isolated processes (`scripts/headless_provision.sh` + `headless_launch.sh`,
+`sts2rec.env.Sts2Env`/`launch_pool`) share one ~172 MiB overlay runtime. Its
+executable is an APFS clonefile and immutable Resources/Frameworks are symlinked
+from the configured game installation. Each worker owns
+only HOME, port, PID, log and trajectory directories. The sandbox MCP reads
+`STS2_MCP_PORT`; the recorder reads `STS2_RECORDER_*`, so per-worker app/mod
+clones are unnecessary. Launch is `--headless --force-steam=off`; policies use
+`Sts2TextEnv`/`VectorSts2TextEnv` observations and legal actions, never pixels.
+
+Verified on macOS arm64 v0.107.1: two concurrent workers bound ports 15601 and
+15602 from the same runtime, used isolated Godot user-data directories, exposed
+independent JSON states, and remained alive through a soak check at roughly
+383 MiB RSS each at the main menu. See `docs/text-environment.md` for commands, training API,
+information boundaries, and the explicit mid-combat checkpoint limitation.
 
 ## Provenance & licensing
 

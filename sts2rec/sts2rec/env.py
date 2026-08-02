@@ -4,7 +4,11 @@
 ``GET/POST /api/v1/singleplayer`` endpoint that ``scripts/level2_driver.py``
 drives) and exposes ``observe`` / ``step`` / ``reset`` / ``is_alive``.
 ``launch_pool`` shells out to ``scripts/headless_provision.sh`` +
-``scripts/headless_launch.sh`` to bring up N isolated headless instances.
+``scripts/headless_launch.sh`` to bring up N isolated headless processes over
+one shared runtime.  Workers have independent HOME/ports/logs but no private
+2.2 GiB app clone.  The provisioner builds a sandbox-only MCP binary which
+disables optional Harmony UI patches that deadlock during Godot's headless mod
+initialization and reads its port from the process environment.
 
 Stdlib only (urllib/subprocess) — request/error patterns mirror
 ``scripts/level2_driver.py``.
@@ -208,6 +212,16 @@ class Sts2Env:
         deadline = time.monotonic() + self.config.reset_timeout_s
         character_picked = False
         state = self.observe()
+        # A completed episode is safe to advance back to the menu.  Active
+        # rooms still cannot be abandoned through the public single-player API.
+        while state.get("state_type") == "game_over" and time.monotonic() < deadline:
+            try:
+                state = self.step({"action": "proceed"})
+            except Sts2EnvError:
+                time.sleep(self.config.reset_poll_interval_s)
+                state = self.observe()
+            if state.get("state_type") == "game_over":
+                time.sleep(self.config.reset_poll_interval_s)
         if state.get("state_type") not in ("menu", None):
             raise Sts2EnvError(
                 "reset() called mid-run (state_type="
@@ -221,7 +235,7 @@ class Sts2Env:
             state_type = state.get("state_type")
             if state_type != "menu":
                 return state  # embarked — first in-run state
-            action, character_picked = self._decide_reset_menu(
+            action, next_character_picked = self._decide_reset_menu(
                 state, wanted, character_picked
             )
             if action is None:
@@ -229,8 +243,16 @@ class Sts2Env:
                 continue
             try:
                 self.step(action)
+                character_picked = next_character_picked
+                # ForceClick/menu transitions are queued on Godot's main
+                # thread. Without a settle interval the next menu action can
+                # overtake character selection (observed as NECROBINDER reset
+                # embarking the default IRONCLAD).
+                time.sleep(self.config.reset_poll_interval_s)
             except Sts2EnvError:
                 # Menu may be animating; re-poll until the deadline.
+                # Do not commit character_picked: a locked/not-yet-loaded
+                # target can fail while the default IRONCLAD remains selected.
                 time.sleep(self.config.reset_poll_interval_s)
         raise Sts2EnvError(
             f"reset() did not reach an in-run state within "
@@ -266,11 +288,16 @@ class Sts2Env:
             if not character_picked:
                 pickable = [n for n in names if n.lower() not in _META_MENU_OPTIONS]
                 preferred = [n for n in pickable if character in n.upper()]
-                if preferred or pickable:
-                    return select((preferred or pickable)[0]), True
-            for choice in ("embark", "confirm"):
-                if choice in lowered:
-                    return select(choice), character_picked
+                # Character buttons stream in as assets finish loading. Never
+                # fall back to the first visible button: early in that window
+                # it is usually IRONCLAD, which silently defeated overrides
+                # such as NECROBINDER.
+                if preferred:
+                    return select(preferred[0]), True
+            if character_picked:
+                for choice in ("embark", "confirm"):
+                    if choice in lowered:
+                        return select(choice), character_picked
         if screen == "tutorial_prompt" and "no" in lowered:
             return select("no"), character_picked
         if screen == "popup" and lowered:
@@ -311,17 +338,19 @@ def launch_pool(
     base_dir: str | Path | None = None,
     *,
     config: PoolConfig | None = None,
+    recording: bool = False,
 ) -> list[Sts2Env]:
     """Provision + launch ``n`` isolated headless instances; return their envs.
 
     Shells out to scripts/headless_provision.sh and scripts/headless_launch.sh.
     Launches are started non-blocking (--no-wait) and then health-polled here
-    until every instance answers or ``boot_timeout_s`` elapses.
+    until every instance answers or ``boot_timeout_s`` elapses.  Full recorder
+    hooks are disabled by default because compact text trajectories should be
+    written by the training wrapper; set ``recording=True`` for diagnostics.
 
-    NOTE: headless boot of the real binary is UNVERIFIED (Steam-less boot,
-    FMOD/audio in --headless). If an instance never answers, this raises
-    Sts2EnvError pointing at <inst>/game.log and the instance godot.log —
-    that failure mode is expected until the first live validation pass.
+    Verified on macOS arm64 / game v0.107.1 with Steam disabled.  If an
+    instance never answers, this raises Sts2EnvError pointing at
+    <inst>/game.log and the instance godot.log.
     """
     if n < 1:
         raise ValueError(f"n must be >= 1, got {n}")
@@ -349,8 +378,18 @@ def launch_pool(
         "headless_provision.sh",
     )
     for i in range(1, n + 1):
+        launch_cmd = [
+            "bash",
+            str(launch),
+            str(i),
+            "--base",
+            str(config.base_dir),
+            "--no-wait",
+        ]
+        if recording:
+            launch_cmd.append("--record")
         _run_script(
-            ["bash", str(launch), str(i), "--base", str(config.base_dir), "--no-wait"],
+            launch_cmd,
             60.0,
             f"headless_launch.sh (instance {i})",
         )
@@ -380,12 +419,102 @@ def launch_pool(
             f"inst{i} (port {env.config.port})" for i, env in pending.items()
         )
         raise Sts2EnvError(
-            "NOT IMPLEMENTED YET IN PRACTICE: headless boot did not come up for "
-            f"{details} within {config.boot_timeout_s:.0f}s. Steam-less/--headless "
-            "boot of the real binary is UNVERIFIED — inspect "
+            "headless boot did not come up for "
+            f"{details} within {config.boot_timeout_s:.0f}s — inspect "
             f"{config.base_dir}/inst<i>/game.log and "
             f"{config.base_dir}/inst<i>/home/Library/Application Support/"
             "SlayTheSpire2/logs/godot.log to see how far boot got, then stop "
             "strays with scripts/headless_launch.sh all --stop."
         )
     return envs
+
+
+def stop_pool(
+    base_dir: str | Path | None = None,
+    *,
+    scripts_dir: str | Path | None = None,
+    timeout_s: float = 60.0,
+) -> None:
+    """Gracefully stop every worker using its process-local PID file."""
+    resolved_base = Path(
+        base_dir
+        if base_dir is not None
+        else _default_scripts_dir().parent / "headless-instances"
+    )
+    resolved_scripts = Path(scripts_dir) if scripts_dir else _default_scripts_dir()
+    launch = resolved_scripts / "headless_launch.sh"
+    if not launch.is_file():
+        raise Sts2EnvError(f"required script missing: {launch}")
+    _run_script(
+        ["bash", str(launch), "all", "--stop", "--base", str(resolved_base)],
+        timeout_s,
+        "headless_launch.sh --stop",
+    )
+
+
+def recycle_worker(
+    instance: int,
+    base_dir: str | Path,
+    *,
+    scripts_dir: str | Path | None = None,
+    clear_run: bool = False,
+    recording: bool = False,
+    boot_timeout_s: float = 180.0,
+) -> Sts2Env:
+    """Restart one worker, optionally discarding only its sandbox current run.
+
+    ``clear_run`` is the recovery/reset primitive for timed-out policies.  It
+    deletes ``current_run.save`` only below ``<base>/instN/home``; human saves
+    and progress/prefs are outside the target set.  It is not an exact
+    mid-combat checkpoint/restore mechanism.
+    """
+    if instance < 1:
+        raise ValueError(f"instance must be >= 1, got {instance}")
+    resolved_base = Path(base_dir).resolve()
+    resolved_scripts = Path(scripts_dir) if scripts_dir else _default_scripts_dir()
+    launch = resolved_scripts / "headless_launch.sh"
+    inst_dir = resolved_base / f"inst{instance}"
+    port_path = inst_dir / "port"
+    if not launch.is_file():
+        raise Sts2EnvError(f"required script missing: {launch}")
+    if not port_path.is_file():
+        raise Sts2EnvError(f"worker port file missing: {port_path}")
+    _run_script(
+        ["bash", str(launch), str(instance), "--stop", "--base", str(resolved_base)],
+        60.0,
+        f"stop worker {instance}",
+    )
+    if clear_run:
+        home = (inst_dir / "home").resolve()
+        if not home.is_dir() or resolved_base not in home.parents:
+            raise Sts2EnvError(f"unsafe or missing sandbox HOME: {home}")
+        for save in home.rglob("current_run.save"):
+            resolved_save = save.resolve()
+            if home not in resolved_save.parents:
+                raise Sts2EnvError(f"refusing to delete save outside sandbox HOME: {save}")
+            save.unlink()
+    command = [
+        "bash",
+        str(launch),
+        str(instance),
+        "--base",
+        str(resolved_base),
+        "--no-wait",
+    ]
+    if recording:
+        command.append("--record")
+    _run_script(command, 60.0, f"launch worker {instance}")
+    try:
+        port = int(port_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError) as error:
+        raise Sts2EnvError(f"invalid worker port file {port_path}: {error}") from error
+    env = Sts2Env(port)
+    deadline = time.monotonic() + boot_timeout_s
+    while time.monotonic() < deadline:
+        if env.is_alive():
+            return env
+        time.sleep(1.0)
+    raise Sts2EnvError(
+        f"recycled worker {instance} did not answer on port {port} within "
+        f"{boot_timeout_s:.0f}s; inspect {inst_dir / 'game.log'}"
+    )
