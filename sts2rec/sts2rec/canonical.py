@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import CanonicalError, JsonlError, RecordError
+from .legal_actions import audit_action_space, derive_legal_actions
 from .session import (
     ActionRecord,
     EventRecord,
@@ -184,10 +185,14 @@ def _build_step(
             )
     info: dict[str, Any] = {
         "events": step_events,
+        "action_seq": action.seq,
         "action_source": action.source,
         "state_before_seq": state_before.seq if state_before is not None else None,
         "state_after_seq": state_after.seq if state_after is not None else None,
     }
+    if state_before is not None:
+        info["legal_actions"] = derive_legal_actions(state_before.state)
+        info["action_space_audit"] = audit_action_space(state_before.state)
     if state_before_estimated:
         info["state_before_estimated"] = True
     if action.status is not None:

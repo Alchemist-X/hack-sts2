@@ -16,7 +16,14 @@ from typing import Any
 
 import pytest
 
-from sts2rec.env import Sts2Env, Sts2EnvConfig, Sts2EnvError, launch_pool
+from sts2rec.env import (
+    Sts2Env,
+    Sts2EnvConfig,
+    Sts2EnvError,
+    launch_pool,
+    recycle_worker,
+    stop_pool,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -230,6 +237,28 @@ class TestReset:
         assert excinfo.value.payload == {"state_type": "monster"}
         assert fake_mcp.posted == []
 
+    def test_completed_run_can_proceed_to_menu_and_reset(self, fake_mcp: FakeMcp) -> None:
+        game_over = {"state_type": "game_over", "game_over": {"win": True}}
+        main = menu("main", ["singleplayer"])
+        sp = menu("singleplayer", ["standard"])
+        chars = menu("character_select", ["Ironclad", "embark"])
+        fake_mcp.states = [
+            game_over,  # reset pre-check -> POST proceed
+            main,       # proceed step observe
+            main,       # menu loop -> singleplayer
+            sp,         # step observe
+            sp,         # loop -> standard
+            chars,      # step observe
+            chars,      # loop -> character
+            chars,      # step observe
+            chars,      # loop -> embark
+            {"state_type": "map", "map": {"next_options": []}},
+            {"state_type": "map", "map": {"next_options": []}},
+        ]
+        result = make_env(fake_mcp, reset_poll_interval_s=0.001).reset()
+        assert result["state_type"] == "map"
+        assert fake_mcp.posted[0] == {"action": "proceed"}
+
     def test_drives_menu_to_embark(self, fake_mcp: FakeMcp) -> None:
         main = menu("main", ["singleplayer", "multiplayer", "quit"])
         sp = menu("singleplayer", ["standard", "back"])
@@ -266,6 +295,15 @@ class TestReset:
         ]
         make_env(fake_mcp).reset(character="SILENT")
         assert fake_mcp.posted[0]["option"] == "Silent"
+
+    def test_waits_for_requested_character_instead_of_early_fallback(
+        self, fake_mcp: FakeMcp
+    ) -> None:
+        early = menu("character_select", ["Ironclad", "embark"])
+        ready = menu("character_select", ["Ironclad", "Necrobinder", "embark"])
+        fake_mcp.states = [early, early, ready, ready, ready, {"state_type": "map"}]
+        make_env(fake_mcp, reset_poll_interval_s=0.01).reset(character="NECROBINDER")
+        assert fake_mcp.posted[0]["option"] == "Necrobinder"
 
     def test_object_options_and_disabled_filtering(self, fake_mcp: FakeMcp) -> None:
         fake_mcp.states = [
@@ -331,7 +369,7 @@ class TestLaunchPool:
             launch_pool(1, config=config)
         assert "boom-stderr" in str(excinfo.value)
 
-    def test_boot_timeout_raises_unverified_message(
+    def test_boot_timeout_raises_diagnostic_message(
         self, tmp_path, fake_mcp: FakeMcp
     ) -> None:
         from sts2rec.env import PoolConfig
@@ -346,7 +384,7 @@ class TestLaunchPool:
             base_port=1,  # port 2: nothing listens there
             boot_timeout_s=0.5,
         )
-        with pytest.raises(Sts2EnvError, match="UNVERIFIED"):
+        with pytest.raises(Sts2EnvError, match="headless boot did not come up"):
             launch_pool(1, config=config)
 
     def test_pool_returns_envs_when_ports_answer(
@@ -373,3 +411,67 @@ class TestLaunchPool:
         assert len(envs) == 1
         assert envs[0].config.port == port
         assert envs[0].is_alive()
+
+    def test_recording_flag_is_forwarded_to_launch(self, tmp_path, fake_mcp: FakeMcp) -> None:
+        from sts2rec.env import PoolConfig
+
+        fake_mcp.states = [{"state_type": "menu"}]
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "headless_provision.sh").write_text("#!/bin/bash\nexit 0\n")
+        launch = scripts / "headless_launch.sh"
+        launch.write_text(
+            '#!/bin/bash\necho "$@" >> "$(dirname "$0")/launch_args.txt"\nexit 0\n'
+        )
+        port = fake_mcp.port  # type: ignore[attr-defined]
+        config = PoolConfig(
+            base_dir=tmp_path / "instances",
+            scripts_dir=scripts,
+            base_port=port - 1,
+            boot_timeout_s=2.0,
+        )
+        launch_pool(1, config=config, recording=True)
+        assert "--record" in (scripts / "launch_args.txt").read_text()
+
+    def test_stop_pool_uses_pid_safe_stop_script(self, tmp_path) -> None:
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        launch = scripts / "headless_launch.sh"
+        launch.write_text(
+            '#!/bin/bash\necho "$@" > "$(dirname "$0")/stop_args.txt"\nexit 0\n'
+        )
+        stop_pool(tmp_path / "instances", scripts_dir=scripts)
+        args = (scripts / "stop_args.txt").read_text()
+        assert args.startswith("all --stop --base")
+
+    def test_recycle_worker_clears_only_sandbox_run(
+        self, tmp_path, fake_mcp: FakeMcp
+    ) -> None:
+        fake_mcp.states = [{"state_type": "menu"}]
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        launch = scripts / "headless_launch.sh"
+        launch.write_text(
+            '#!/bin/bash\necho "$@" >> "$(dirname "$0")/recycle_args.txt"\nexit 0\n'
+        )
+        inst = tmp_path / "instances" / "inst1"
+        saves = inst / "home" / "Library" / "Application Support" / "SlayTheSpire2" / "default" / "1" / "modded" / "profile1" / "saves"
+        saves.mkdir(parents=True)
+        current_run = saves / "current_run.save"
+        progress = saves / "progress.save"
+        current_run.write_text("sandbox run")
+        progress.write_text("keep me")
+        (inst / "port").write_text(str(fake_mcp.port))  # type: ignore[attr-defined]
+        env = recycle_worker(
+            1,
+            tmp_path / "instances",
+            scripts_dir=scripts,
+            clear_run=True,
+            boot_timeout_s=2.0,
+        )
+        assert env.is_alive()
+        assert not current_run.exists()
+        assert progress.read_text() == "keep me"
+        commands = (scripts / "recycle_args.txt").read_text().splitlines()
+        assert "--stop" in commands[0]
+        assert "--no-wait" in commands[1]

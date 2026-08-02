@@ -25,3 +25,9 @@ mod/tests/obj/
 .coverage
 headless-instances/
 .mcp-stashed/
+scripts/McpHeadlessPatcher/bin/
+scripts/McpHeadlessPatcher/obj/
+
+# Generated evaluation reports and PDF render scratch
+output/
+tmp/

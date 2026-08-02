@@ -14,11 +14,13 @@ from typing import Sequence
 
 from . import __version__
 from .archive import archive_native
+from .audit import audit_lineage
 from .canonical import build_canonical
 from .errors import Sts2RecError
 from .pack import pack_session
 from .paths import profile_saves_dirs, recorder_output_root, sessions_root, user_data_dir
 from .report import build_report
+from .review import review_lineage, write_review
 from .session import COMPRESSED_SUFFIX, STREAM_NAMES, Manifest, load_manifest, stream_path
 from .validate import validate_session
 from .watch import watch_session
@@ -134,6 +136,35 @@ def _cmd_canonical(args: argparse.Namespace) -> int:
         print(f"wrote {len(trajectory['steps'])} steps to {args.output}")
     else:
         print(rendered)
+    return EXIT_OK
+
+
+def _cmd_audit_lineage(args: argparse.Namespace) -> int:
+    try:
+        report = audit_lineage(args.session_dir)
+    except Sts2RecError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_ERRORS
+    rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+    if args.output:
+        Path(args.output).write_text(rendered + "\n", encoding="utf-8")
+        print(f"wrote candidate/action-space audit to {args.output}")
+    else:
+        print(rendered)
+    return EXIT_OK
+
+
+def _cmd_review_lineage(args: argparse.Namespace) -> int:
+    try:
+        report = review_lineage(args.session_dir)
+    except Sts2RecError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_ERRORS
+    write_review(report, args.output, args.csv)
+    print(
+        f"wrote {report['summary']['steps']} reviewed steps to {args.output} "
+        f"and {args.csv}"
+    )
     return EXIT_OK
 
 
@@ -254,6 +285,21 @@ def build_parser() -> argparse.ArgumentParser:
     canonical.add_argument("session_dir")
     canonical.add_argument("-o", "--output", help="write JSON here instead of stdout")
     canonical.set_defaults(handler=_cmd_canonical)
+
+    audit_lineage_parser = subparsers.add_parser(
+        "audit-lineage", help="audit visible candidate/action coverage across resume parts"
+    )
+    audit_lineage_parser.add_argument("session_dir")
+    audit_lineage_parser.add_argument("-o", "--output")
+    audit_lineage_parser.set_defaults(handler=_cmd_audit_lineage)
+
+    review_lineage_parser = subparsers.add_parser(
+        "review-lineage", help="emit per-step diagnostic loss/score across resume parts"
+    )
+    review_lineage_parser.add_argument("session_dir")
+    review_lineage_parser.add_argument("-o", "--output", required=True)
+    review_lineage_parser.add_argument("--csv", required=True)
+    review_lineage_parser.set_defaults(handler=_cmd_review_lineage)
 
     watch = subparsers.add_parser("watch", help="tail a live session directory")
     watch.add_argument("session_dir")

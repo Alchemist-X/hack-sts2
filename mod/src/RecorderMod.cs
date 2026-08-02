@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -43,6 +44,13 @@ public static class RecorderMod
     public static string OutputRoot { get; private set; } = DefaultOutputRoot();
 
     /// <summary>
+    /// True when a lightweight training worker should expose MCP state/actions
+    /// without installing recorder hooks or writing duplicate trajectories.
+    /// Controlled per process by STS2_RECORDER_DISABLED.
+    /// </summary>
+    public static bool RecordingDisabled { get; private set; }
+
+    /// <summary>
     /// Trailing-coalesce window for StateTracker snapshot bursts, in ms
     /// (Sts2Recorder.conf key "snapshot_min_interval_ms"; 0 disables the throttle).
     /// </summary>
@@ -55,6 +63,12 @@ public static class RecorderMod
         try
         {
             LoadConfig();
+            if (RecordingDisabled)
+            {
+                GD.Print("[Sts2Recorder] disabled for this text worker "
+                    + "(STS2_RECORDER_DISABLED=1)");
+                return;
+            }
             var harmony = new Harmony(HarmonyId);
             RunLifecycle.ApplyPatches(harmony);
             ActionPipeline.ApplyPatches(harmony);
@@ -228,36 +242,69 @@ public static class RecorderMod
                 return;
             }
             var configPath = Path.Combine(modDir, ConfigFileName);
-            if (!File.Exists(configPath))
+            if (File.Exists(configPath))
             {
-                return;
-            }
-            using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
-            if (doc.RootElement.TryGetProperty("output_root", out var rootElem)
-                && rootElem.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(rootElem.GetString()))
-            {
-                OutputRoot = rootElem.GetString()!;
-            }
-            if (doc.RootElement.TryGetProperty("snapshot_min_interval_ms", out var intervalElem)
-                && intervalElem.ValueKind == JsonValueKind.Number)
-            {
-                var interval = intervalElem.GetDouble();
-                if (interval >= 0 && double.IsFinite(interval))
+                using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
+                if (doc.RootElement.TryGetProperty("output_root", out var rootElem)
+                    && rootElem.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(rootElem.GetString()))
                 {
-                    SnapshotMinIntervalMs = interval;
+                    OutputRoot = rootElem.GetString()!;
+                }
+                if (doc.RootElement.TryGetProperty("snapshot_min_interval_ms", out var intervalElem)
+                    && intervalElem.ValueKind == JsonValueKind.Number)
+                {
+                    SetSnapshotInterval(intervalElem.GetDouble(), ConfigFileName);
+                }
+            }
+
+            // Process-level overrides make one immutable mod/runtime directory
+            // safe to share across concurrent text workers.
+            var outputRoot = System.Environment.GetEnvironmentVariable(
+                "STS2_RECORDER_OUTPUT_ROOT");
+            if (!string.IsNullOrWhiteSpace(outputRoot))
+            {
+                OutputRoot = outputRoot;
+            }
+            var intervalText = System.Environment.GetEnvironmentVariable(
+                "STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS");
+            if (!string.IsNullOrWhiteSpace(intervalText))
+            {
+                if (double.TryParse(
+                    intervalText,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var interval))
+                {
+                    SetSnapshotInterval(interval, "STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS");
                 }
                 else
                 {
-                    GD.PrintErr(
-                        $"[Sts2Recorder] Ignoring invalid snapshot_min_interval_ms={interval}; "
-                        + $"using {SnapshotMinIntervalMs} ms");
+                    GD.PrintErr($"[Sts2Recorder] Ignoring invalid "
+                        + $"STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS={intervalText}");
                 }
             }
+            var disabled = System.Environment.GetEnvironmentVariable(
+                "STS2_RECORDER_DISABLED");
+            RecordingDisabled = string.Equals(disabled, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(disabled, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(disabled, "yes", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[Sts2Recorder] Failed to read {ConfigFileName}: {ex.Message}; using defaults");
         }
+    }
+
+    private static void SetSnapshotInterval(double interval, string source)
+    {
+        if (interval >= 0 && double.IsFinite(interval))
+        {
+            SnapshotMinIntervalMs = interval;
+            return;
+        }
+        GD.PrintErr(
+            $"[Sts2Recorder] Ignoring invalid snapshot interval {interval} from {source}; "
+            + $"using {SnapshotMinIntervalMs} ms");
     }
 }
