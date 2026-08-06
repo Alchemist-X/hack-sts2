@@ -337,8 +337,16 @@ def _parse_decision(
 ) -> _Decision | None:
     if not isinstance(record, Mapping):
         raise TypeError("each training record must be a mapping")
+    generic_eligible = record.get("eligible")
+    bc_eligible = record.get("bc_eligible", generic_eligible)
+    value_eligible = record.get("value_eligible", generic_eligible)
+    if isinstance(generic_eligible, bool) and isinstance(bc_eligible, bool):
+        if generic_eligible != bc_eligible:
+            raise ValueError("eligible and bc_eligible must agree")
+    if value_eligible is True and bc_eligible is not True:
+        raise ValueError("value_eligible requires bc_eligible")
     eligibility_key = "value_eligible" if require_outcome else "bc_eligible"
-    eligible = record.get(eligibility_key, record.get("eligible"))
+    eligible = value_eligible if require_outcome else bc_eligible
     if not isinstance(eligible, bool):
         raise ValueError(
             f"{eligibility_key} (or eligible fallback) must be an explicit bool"

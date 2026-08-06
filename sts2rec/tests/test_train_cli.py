@@ -108,7 +108,10 @@ def _decision(index: int) -> dict[str, Any]:
         "chosen_action_index": choice,
         "chosen_action": legal[choice],
         "wire_action": legal[choice],
-        "next_observation": {"state_type": "game_over"},
+        "next_observation": {
+            "state_type": "game_over",
+            "game_over": {"win": won},
+        },
         "next_legal_actions": [],
         "next_action_mask": [],
         "privileged_observation": None,
@@ -176,6 +179,7 @@ def test_dataset_build_human_uses_strict_offline_adapter(
 ) -> None:
     human_row = {
         **_decision(0),
+        "source_schema_version": "human-canonical-v1",
         "bc_eligible": True,
         "value_eligible": False,
         "outcome": None,
@@ -184,6 +188,11 @@ def test_dataset_build_human_uses_strict_offline_adapter(
         "next_action_mask": [],
         "privileged_observation": None,
         "next_privileged_observation": None,
+        "metadata": {
+            "source": "sts2-human-canonical",
+            "session_complete": False,
+            "terminal_outcome": None,
+        },
     }
     monkeypatch.setattr(
         "sts2rec.train_cli.iter_human_decision_rows",
@@ -328,6 +337,120 @@ def test_quality_gate_checks_cross_row_episode_invariants(
     assert report["issues"]["episode_sequence_non_monotonic"] == 1
     assert report["issues"]["episode_terminal_multiple"] == 1
     assert report["issues"]["episode_group_id_inconsistent"] == 1
+
+
+def test_quality_gate_rejects_terminal_flag_with_actionable_next_state(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["next_observation"] = row["observation"]
+    row["next_legal_actions"] = row["legal_actions"]
+    row["next_action_mask"] = row["action_mask"]
+    path = _write_jsonl(tmp_path / "terminal-map.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["terminal_state_mismatch"] == 1
+    assert report["issues"]["episode_terminal_state_mismatch"] == 1
+
+
+def test_quality_gate_rejects_nonhuman_terminal_without_next_state(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["next_observation"] = None
+    row["next_legal_actions"] = []
+    row["next_action_mask"] = []
+    path = _write_jsonl(tmp_path / "terminal-without-state.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["terminal_state_mismatch"] == 1
+    assert report["issues"]["episode_terminal_state_mismatch"] == 1
+
+
+def test_quality_gate_rejects_outcome_that_disagrees_with_terminal_snapshot(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["outcome"] = not row["outcome"]
+    path = _write_jsonl(tmp_path / "flipped-outcome.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["episode_terminal_outcome_mismatch"] == 1
+
+
+def test_quality_gate_rejects_inconsistent_eligibility_flags(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["eligible"] = False
+    row["bc_eligible"] = False
+    row["value_eligible"] = True
+    path = _write_jsonl(tmp_path / "eligibility-flags.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["eligibility_flags_inconsistent"] == 1
+
+
+def test_metadata_alone_cannot_impersonate_a_human_manifest(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["next_observation"] = None
+    row["next_legal_actions"] = []
+    row["next_action_mask"] = []
+    row["metadata"] = {
+        "source": "sts2-human-canonical",
+        "session_complete": True,
+        "terminal_outcome": row["outcome"],
+    }
+    path = _write_jsonl(tmp_path / "fake-human.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["terminal_state_mismatch"] == 1
+    assert report["issues"]["episode_terminal_outcome_unverified"] == 1
+
+
+def test_human_manifest_must_match_engine_outcome_when_both_exist(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["source_schema_version"] = "human-canonical-v1"
+    row["metadata"] = {
+        "source": "sts2-human-canonical",
+        "session_complete": True,
+        "terminal_outcome": row["outcome"],
+    }
+    row["next_observation"]["game_over"]["win"] = not row["outcome"]
+    path = _write_jsonl(tmp_path / "human-outcome-conflict.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["issues"]["human_engine_outcome_inconsistent"] == 1
+
+
+def test_complete_human_manifest_can_prove_terminal_without_next_state(
+    tmp_path: Path, capsys
+) -> None:
+    row = _decision(0)
+    row["source_schema_version"] = "human-canonical-v1"
+    row["next_observation"] = None
+    row["next_legal_actions"] = []
+    row["next_action_mask"] = []
+    row["metadata"] = {
+        "source": "sts2-human-canonical",
+        "session_complete": True,
+        "terminal_outcome": row["outcome"],
+    }
+    path = _write_jsonl(tmp_path / "human-terminal-manifest.jsonl", [row])
+
+    assert main(["dataset", "audit", str(path), "--task", "value"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["passed"] is True
 
 
 def test_same_seed_cannot_claim_multiple_split_groups(tmp_path: Path, capsys) -> None:

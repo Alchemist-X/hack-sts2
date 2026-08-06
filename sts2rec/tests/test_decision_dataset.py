@@ -237,13 +237,22 @@ def test_quality_contract_marks_each_required_ineligibility_reason(
         decision.episode_id: decision for decision in load_decision_dataset(path)
     }
 
-    assert "missing_terminal_outcome" in by_episode["missing"].ineligibility_reasons
+    assert "missing_terminal_outcome" in by_episode[
+        "missing"
+    ].value_ineligibility_reasons
+    assert by_episode["missing"].bc_eligible is True
+    assert by_episode["missing"].value_eligible is False
     assert "episode_truncated" in by_episode["truncated"].ineligibility_reasons
     assert "action_space_incomplete" in by_episode["audit"].ineligibility_reasons
     assert "action_not_legal" in by_episode["illegal"].ineligibility_reasons
     assert "limited_information_leakage" in by_episode["leak"].ineligibility_reasons
     assert by_episode["leak"].leakage_paths == ("observation.rng_state",)
-    assert not any(decision.eligible for decision in by_episode.values())
+    assert by_episode["missing"].eligible is True
+    assert not any(
+        decision.eligible
+        for episode_id, decision in by_episode.items()
+        if episode_id != "missing"
+    )
 
 
 def test_skip_and_raise_ineligible_modes(tmp_path: Path) -> None:
@@ -270,6 +279,67 @@ def test_outcomes_are_worker_qualified_and_conflicts_are_rejected(tmp_path: Path
     assert "conflicting_terminal_outcomes" in decisions[2].ineligibility_reasons
     summaries = scan_episode_outcomes(path)
     assert len(summaries) == 3
+
+
+def test_generic_metadata_cannot_supply_or_conflict_with_terminal_outcome(
+    tmp_path: Path,
+) -> None:
+    unknown = v2_record(
+        sequence=1,
+        episode_id="metadata-is-not-a-label",
+        win=None,
+        metadata={"result": "win"},
+    )
+    unknown["next_observation"] = {
+        "state_type": "game_over",
+        "game_over": {"message": "Run ended."},
+    }
+    # Old text writers inferred this False value from the message-only state.
+    # It is not valid evidence without the explicit provenance marker.
+    unknown["info"]["win"] = False
+    unknown["outcome"] = True
+    explicit = v2_record(
+        sequence=2,
+        episode_id="explicit-engine-label-wins",
+        win=True,
+        metadata={"result": "defeat"},
+    )
+    decisions = load_decision_dataset(
+        write_jsonl(tmp_path / "metadata-outcomes.jsonl", [unknown, explicit])
+    )
+
+    assert decisions[0].outcome is None
+    assert decisions[0].bc_eligible is True
+    assert decisions[0].value_eligible is False
+    assert "missing_terminal_outcome" in decisions[0].value_ineligibility_reasons
+    assert decisions[1].outcome is True
+    assert "conflicting_terminal_outcomes" not in decisions[1].ineligibility_reasons
+    assert decisions[1].eligible is True
+
+
+def test_terminal_flag_and_next_state_must_agree_for_the_entire_episode(
+    tmp_path: Path,
+) -> None:
+    first = v2_record(
+        sequence=1,
+        episode_id="terminal-map",
+        terminated=False,
+        win=None,
+    )
+    terminal = v2_record(sequence=2, episode_id="terminal-map", win=True)
+    terminal["next_observation"] = map_state()
+    terminal["next_legal_actions"] = legal_actions()
+    terminal["next_action_mask"] = [1]
+    path = write_jsonl(tmp_path / "terminal-map.jsonl", [first, terminal])
+
+    decisions = load_decision_dataset(path)
+    assert all(
+        "terminal_state_mismatch" in decision.ineligibility_reasons
+        for decision in decisions
+    )
+    summary = next(iter(scan_episode_outcomes(path).values()))
+    assert summary.terminal_state_consistent is False
+    assert summary.complete is False
 
 
 def test_split_is_deterministic_and_never_separates_a_group(tmp_path: Path) -> None:

@@ -53,6 +53,30 @@ class TrainCliError(ValueError):
     """A user-facing data or command error."""
 
 
+def _explicit_outcomes(block: Any) -> set[bool]:
+    """Extract only outcome fields present in an engine-facing snapshot."""
+
+    if not isinstance(block, Mapping):
+        return set()
+    found: set[bool] = set()
+    for key in ("outcome", "win", "won", "victory", "is_victory"):
+        value = block.get(key)
+        if isinstance(value, bool):
+            found.add(value)
+    result = block.get("result")
+    if isinstance(result, str):
+        lowered = result.casefold()
+        if lowered in {"win", "won", "victory"}:
+            found.add(True)
+        elif lowered in {"loss", "lost", "defeat", "defeated"}:
+            found.add(False)
+    for key in ("game_over", "result", "run"):
+        nested = block.get(key)
+        if isinstance(nested, Mapping):
+            found.update(_explicit_outcomes(nested))
+    return found
+
+
 def _print_json(value: Any) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False))
 
@@ -128,8 +152,16 @@ class _EpisodeAuditAccumulator:
                 "human": set(),
                 "session_complete": set(),
                 "terminal_outcomes": set(),
+                "engine_terminal_outcomes": set(),
                 "truncated": False,
+                "terminal_state_mismatch": False,
             },
+        )
+        metadata = row.get("metadata")
+        source = metadata.get("source") if isinstance(metadata, Mapping) else None
+        is_human = (
+            row.get("source_schema_version") == "human-canonical-v1"
+            and source == "sts2-human-canonical"
         )
 
         sequence = row.get("sequence")
@@ -151,18 +183,31 @@ class _EpisodeAuditAccumulator:
         if row.get("terminated") is True:
             state["terminal_records"] += 1
             state["seen_terminal"] = True
+            state["engine_terminal_outcomes"].update(
+                _explicit_outcomes(row.get("next_observation"))
+            )
+        next_observation = row.get("next_observation")
+        next_state_type = (
+            next_observation.get("state_type")
+            if isinstance(next_observation, Mapping)
+            else None
+        )
+        terminal_state_mismatch = False
+        if row.get("terminated") is True:
+            if isinstance(next_observation, Mapping):
+                terminal_state_mismatch = next_state_type != "game_over"
+            elif not is_human:
+                terminal_state_mismatch = True
+        elif row.get("terminated") is False and next_state_type == "game_over":
+            terminal_state_mismatch = True
+        if terminal_state_mismatch:
+            state["terminal_state_mismatch"] = True
         if row.get("truncated") is True:
             state["truncated"] = True
         outcome = row.get("outcome")
         if isinstance(outcome, bool):
             state["outcomes"].add(outcome)
 
-        metadata = row.get("metadata")
-        source = metadata.get("source") if isinstance(metadata, Mapping) else None
-        is_human = (
-            row.get("source_schema_version") == "human-canonical-v1"
-            or source == "sts2-human-canonical"
-        )
         state["human"].add(is_human)
         if isinstance(metadata, Mapping):
             session_complete = metadata.get("session_complete")
@@ -186,6 +231,8 @@ class _EpisodeAuditAccumulator:
                 issues["episode_group_id_inconsistent"] += 1
             if state["record_after_terminal"]:
                 issues["episode_terminal_not_last"] += 1
+            if state["terminal_state_mismatch"]:
+                issues["episode_terminal_state_mismatch"] += 1
             if len(state["human"]) != 1:
                 issues["episode_source_mixed"] += 1
                 continue
@@ -202,6 +249,9 @@ class _EpisodeAuditAccumulator:
                         or state["terminal_outcomes"] != state["outcomes"]
                     ):
                         issues["human_terminal_outcome_inconsistent"] += 1
+                    engine_outcomes = state["engine_terminal_outcomes"]
+                    if engine_outcomes and engine_outcomes != state["outcomes"]:
+                        issues["human_engine_outcome_inconsistent"] += 1
                 # A strict human adapter may omit the canonical terminal action
                 # after filtering an automatic/unmappable step.  Session-level
                 # completion metadata is the authoritative value-data proof.
@@ -215,6 +265,12 @@ class _EpisodeAuditAccumulator:
                 issues["episode_truncated"] += 1
             if task == "value" and len(state["outcomes"]) != 1:
                 issues["episode_outcome_missing"] += 1
+            if task == "value":
+                engine_outcomes = state["engine_terminal_outcomes"]
+                if len(engine_outcomes) != 1:
+                    issues["episode_terminal_outcome_unverified"] += 1
+                elif engine_outcomes != state["outcomes"]:
+                    issues["episode_terminal_outcome_mismatch"] += 1
         return issues
 
 
@@ -357,9 +413,18 @@ def _cmd_dataset_build(args: argparse.Namespace) -> int:
                     seen_decisions.add(decision.decision_id)
                     _write_json_line(handle, row)
                     counts["records"] += 1
-                    counts["eligible" if decision.eligible else "ineligible"] += 1
-                    for reason in decision.ineligibility_reasons:
-                        counts[f"reason:{reason}"] += 1
+                    counts[
+                        "bc_eligible" if decision.bc_eligible else "bc_ineligible"
+                    ] += 1
+                    counts[
+                        "value_eligible"
+                        if decision.value_eligible
+                        else "value_ineligible"
+                    ] += 1
+                    for reason in decision.bc_ineligibility_reasons:
+                        counts[f"bc_reason:{reason}"] += 1
+                    for reason in decision.value_ineligibility_reasons:
+                        counts[f"value_reason:{reason}"] += 1
         _commit_target(temporary, target, force=args.force)
     finally:
         if temporary.exists():
@@ -372,12 +437,21 @@ def _cmd_dataset_build(args: argparse.Namespace) -> int:
             "output": str(target),
             "output_sha256": _sha256_file(target),
             "records": counts["records"],
-            "eligible": counts["eligible"],
-            "ineligible": counts["ineligible"],
-            "ineligibility_reasons": {
-                key.removeprefix("reason:"): value
+            "eligible": counts["bc_eligible"],
+            "ineligible": counts["bc_ineligible"],
+            "bc_eligible": counts["bc_eligible"],
+            "bc_ineligible": counts["bc_ineligible"],
+            "value_eligible": counts["value_eligible"],
+            "value_ineligible": counts["value_ineligible"],
+            "bc_ineligibility_reasons": {
+                key.removeprefix("bc_reason:"): value
                 for key, value in sorted(counts.items())
-                if key.startswith("reason:")
+                if key.startswith("bc_reason:")
+            },
+            "value_ineligibility_reasons": {
+                key.removeprefix("value_reason:"): value
+                for key, value in sorted(counts.items())
+                if key.startswith("value_reason:")
             },
         }
     )
@@ -468,6 +542,12 @@ def _row_audit_issues(
         issues.append("terminated_not_boolean")
     if not isinstance(row.get("truncated"), bool):
         issues.append("truncated_not_boolean")
+    source_schema = row.get("source_schema_version")
+    metadata = row.get("metadata")
+    source = metadata.get("source") if isinstance(metadata, Mapping) else None
+    is_human = (
+        source_schema == "human-canonical-v1" and source == "sts2-human-canonical"
+    )
 
     observation = row.get("observation")
     legal_actions = row.get("legal_actions")
@@ -516,7 +596,6 @@ def _row_audit_issues(
         ):
             issues.append("chosen_action_mismatch")
     wire_action = row.get("wire_action")
-    source_schema = row.get("source_schema_version")
     wire_proof_required = source_schema in {2, "human-canonical-v1"}
     if wire_proof_required and not isinstance(wire_action, Mapping):
         issues.append("wire_action_missing_or_malformed")
@@ -535,19 +614,38 @@ def _row_audit_issues(
     if next_observation is None:
         if next_legal_actions:
             issues.append("next_actions_without_observation")
+        if row.get("terminated") is True and not is_human:
+            issues.append("terminal_state_mismatch")
     elif not isinstance(next_observation, Mapping):
         issues.append("next_observation_not_object")
-    elif _action_counter(derive_legal_actions(dict(next_observation))) != _action_counter(
-        next_legal_actions
-    ):
-        issues.append("next_legal_actions_do_not_match_public_observation")
+    else:
+        if (
+            row.get("terminated") is True
+            and next_observation.get("state_type") != "game_over"
+        ) or (
+            row.get("terminated") is False
+            and next_observation.get("state_type") == "game_over"
+        ):
+            issues.append("terminal_state_mismatch")
+        if _action_counter(
+            derive_legal_actions(dict(next_observation))
+        ) != _action_counter(next_legal_actions):
+            issues.append("next_legal_actions_do_not_match_public_observation")
 
+    generic_eligible = row.get("eligible")
+    bc_eligible = row.get("bc_eligible", generic_eligible)
+    value_eligible = row.get("value_eligible", generic_eligible)
     eligibility_key = "value_eligible" if task == "value" else "bc_eligible"
-    eligible = row.get(eligibility_key, row.get("eligible"))
+    eligible = value_eligible if task == "value" else bc_eligible
     if not isinstance(eligible, bool):
         issues.append("eligible_not_boolean")
     elif not eligible:
         issues.append("record_marked_ineligible")
+    if isinstance(generic_eligible, bool) and isinstance(bc_eligible, bool):
+        if generic_eligible != bc_eligible:
+            issues.append("eligibility_flags_inconsistent")
+    if value_eligible is True and bc_eligible is not True:
+        issues.append("eligibility_flags_inconsistent")
 
     leakage_paths = row.get("leakage_paths", [])
     if not isinstance(leakage_paths, list):
@@ -604,7 +702,14 @@ def _row_audit_issues(
     ):
         issues.append("omniscient_next_privileged_observation_missing")
 
-    ineligibility_reasons = row.get("ineligibility_reasons")
+    reason_key = (
+        "value_ineligibility_reasons"
+        if task == "value"
+        else "bc_ineligibility_reasons"
+    )
+    ineligibility_reasons = row.get(
+        reason_key, row.get("ineligibility_reasons")
+    )
     if not isinstance(ineligibility_reasons, list):
         issues.append("ineligibility_reasons_not_list")
     elif ineligibility_reasons:
@@ -630,7 +735,12 @@ def _cmd_dataset_audit(args: argparse.Namespace) -> int:
             group_ids.add(group_id)
         issue_counts.update(_row_audit_issues(row, task=args.task))
         episodes.update(row)
-        reasons = row.get("ineligibility_reasons")
+        reason_key = (
+            "value_ineligibility_reasons"
+            if args.task == "value"
+            else "bc_ineligibility_reasons"
+        )
+        reasons = row.get(reason_key, row.get("ineligibility_reasons"))
         if isinstance(reasons, list):
             issue_counts.update(
                 f"source:{reason}" for reason in reasons if isinstance(reason, str)

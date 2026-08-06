@@ -167,6 +167,13 @@ without a spec are never presented as qualified results.
 
 ### Current boundaries
 
+- The current text controller's native `game_over` snapshot does not expose an
+  authoritative win/loss field. Such terminal outcomes are recorded as `null`,
+  never guessed as defeats, and are rejected by the value-data quality gate;
+  otherwise valid demonstrated actions remain usable for behavior cloning.
+  Passive human sessions can still use their recorder manifest outcome. Online
+  headless value/RL qualification requires adding a verified engine outcome to
+  the controller contract.
 - The worker pool is currently verified on macOS arm64. Linux packaging remains a
   separate deployment task because the official Linux game build is x86_64.
 - Exact arbitrary **mid-combat clone/restore is not yet supported**. Independent
