@@ -110,11 +110,11 @@ def test_benchmark_spec_has_stable_canonical_json_and_fingerprint() -> None:
 
 
 def test_benchmark_case_validates_and_serializes() -> None:
-    case = BenchmarkCase("case-1", "seed-1", 13, 0)
+    case = BenchmarkCase("case-1", "seed-1", 10, 0)
     assert case.as_dict() == {
         "case_id": "case-1",
         "seed": "seed-1",
-        "ascension": 13,
+        "ascension": 10,
         "sequence_index": 0,
     }
     with pytest.raises(ValueError, match="case_id"):
@@ -123,6 +123,8 @@ def test_benchmark_case_validates_and_serializes() -> None:
         BenchmarkCase("case", " ", 0, 0)
     with pytest.raises(ValueError, match="ascension"):
         BenchmarkCase("case", "seed", -1, 0)
+    with pytest.raises(ValueError, match="0 through 10"):
+        BenchmarkCase("case", "seed", 11, 0)
     with pytest.raises(ValueError, match="sequence_index"):
         BenchmarkCase("case", "seed", 0, True)  # type: ignore[arg-type]
 
@@ -146,6 +148,7 @@ def test_benchmark_spec_normalizes_cases_into_predeclared_sequence() -> None:
         ({"ascensions": (1, 1)}, "strictly increasing"),
         ({"ascensions": (2, 1)}, "strictly increasing"),
         ({"ascensions": (False,)}, "integer"),
+        ({"ascensions": (11,)}, "0 through 10"),
         ({"information_mode": "cheat"}, "information_mode"),
         ({"save_load_mode": "maybe"}, "save_load_mode"),
         ({"sl_budgets": (2,)}, "empty for a nosl"),
@@ -241,6 +244,8 @@ def test_episode_outcome_validates_and_serializes() -> None:
         _outcome("episode-7", "seed-g", False, trajectory_complete=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="trajectory_hash"):
         _outcome("episode-8", "seed-h", False, trajectory_hash=" ")
+    with pytest.raises(ValueError, match="0 through 10"):
+        _outcome("episode-9", "seed-i", False, ascension=11)
 
 
 @pytest.mark.parametrize(

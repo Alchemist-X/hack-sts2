@@ -6,6 +6,9 @@ fight's survival probability: at every legal decision, the policy should choose
 the action that maximizes the probability of eventually completing the declared
 run objective.
 
+Ascension terminology is fixed throughout this repository: A10 is the highest
+difficulty, and A0 through A10 are the complete 11 difficulty levels.
+
 ## Safety and execution boundary
 
 The human-play installation and the research environment are separate systems.
@@ -311,21 +314,21 @@ Report:
 - wins / attempts and pass rate for every ascension;
 - a 95% Wilson confidence interval for each binomial pass rate;
 - observed maximum streak and the full distribution of streak lengths;
-- the strict A1-to-A13 qualification outcome and all attempts-to-first-streak;
+- the strict A0-to-A10 qualification outcome and all attempts-to-first-streak;
 - illegal-action, timeout, reload-detection, process-failure, and incomplete-
   trajectory rates;
 - decisions per second, wall time per episode, and bytes per transition.
 
 For per-ascension win probabilities `p_a`, the estimated probability of an
-A1-to-A13 streak is `product(p_a, a=1..13)`. Report the per-ascension estimates and
+A0-to-A10 streak is `product(p_a, a=0..10)`. Report the per-ascension estimates and
 uncertainty, not only this product. One successful streak demonstrates feasibility;
 a capability claim also requires the predeclared number of attempts and failures.
 
 The current portable aggregator implements frozen-case validation, pass rate,
 Wilson intervals, per-ascension slices, terminal reasons, and generic consecutive
-win streaks. A dedicated A1-to-A13 ladder runner, ladder-boundary statistics,
+win streaks. A dedicated A0-to-A10 ladder runner, ladder-boundary statistics,
 throughput/resource accounting, and attempts-to-first-qualification remain
-promotion-gate work; the generic streak field must not be presented as an A1-to-A13
+promotion-gate work; the generic streak field must not be presented as an A0-to-A10
 qualification result.
 
 ### SL search benchmark

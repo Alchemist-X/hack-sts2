@@ -1,4 +1,4 @@
-# No-SL Ascension 13 training and evaluation protocol
+# No-SL Ascension 10 training and evaluation protocol
 
 Status: proposed benchmark contract (2026-08-07)
 
@@ -10,9 +10,10 @@ agent win rate. The official game engine can run headlessly, expose structured
 observations and legal actions, execute arbitrary policy callables, and record
 compact transitions. Two concurrent workers have been verified on macOS arm64.
 
-The next credible milestone is not “claim A13” from a few selected runs. It is a
+The next credible milestone is not “claim A10” from a few selected runs. It is a
 version-locked, leakage-free, no-save/load ladder in which one frozen policy wins
-13 sequential ascension runs while every decision and terminal result is recorded.
+all 11 difficulty levels from A0 through A10 while every decision and terminal
+result is recorded.
 
 ## Current capability and missing pieces
 
@@ -31,19 +32,13 @@ version-locked, leakage-free, no-save/load ladder in which one frozen policy win
 | Exact arbitrary mid-combat clone/restore | **Not implemented** and not required for the ladder itself |
 
 Therefore the environment is ready for policy development, but no statement such
-as “the current model can beat A5/A13” is currently evidence-based.
+as “the current model can beat A5/A10” is currently evidence-based.
 
 ## Define the target before training
 
-“Pass ascension 13 times” has two plausible meanings and must not be left
-ambiguous in a benchmark report:
-
-1. **A1-to-A13 ladder (recommended):** win A1, A2, ..., A13 in order. This is
-   13 sequential wins and ends with an A13 victory.
-2. **Unlock-A13 ladder:** win A0, A1, ..., A12 in order. This is also 13 wins,
-   but only unlocks A13; it does not demonstrate an A13 victory.
-
-The remainder of this document uses the stricter A1-to-A13 definition.
+STS2 uses A10 for its highest ascension difficulty. The complete difficulty range
+is A0 through A10. Accordingly, the strict ladder in this document means winning
+A0, A1, ..., A10 in order: 11 sequential wins ending with an A10 victory.
 
 Qualification conditions:
 
@@ -54,7 +49,7 @@ Qualification conditions:
 - no seed rejection, manual intervention, run restart, or alternate branch;
 - ascension increases by exactly one only after a verified victory;
 - death, abandon, illegal action, policy timeout, or process crash ends the streak;
-- all 13 runs are sequential for qualification, even if training rollouts were parallel;
+- all 11 runs are sequential for qualification, even if training rollouts were parallel;
 - autosaving is allowed, but loading an earlier state or restarting a run is not.
 
 For a strict public result, infrastructure failures count as failures. A separate
@@ -65,22 +60,22 @@ headline streak.
 ## Why the goal requires a very strong per-run policy
 
 Let `p_a` be the policy's true win probability at ascension `a`. The probability
-of completing one A1-to-A13 attempt is
+of completing one A0-to-A10 attempt is
 
 \[
-P(\text{13-win streak})=\prod_{a=1}^{13}p_a.
+P(\text{11-win streak})=\prod_{a=0}^{10}p_a.
 \]
 
 If all ascensions had the same win probability `p`, then:
 
-| Per-run win rate | Chance of 13 consecutive wins |
+| Per-run win rate | Chance of 11 consecutive wins |
 |---:|---:|
-| 80% | 5.5% |
-| 90% | 25.4% |
-| 95% | 51.3% |
-| 98% | 76.9% |
+| 80% | 8.6% |
+| 90% | 31.4% |
+| 95% | 56.9% |
+| 98% | 80.1% |
 
-A 50% chance of completing a 13-run attempt requires approximately a 94.8%
+A 50% chance of completing an 11-run attempt requires approximately a 93.9%
 per-run win rate under the equal-rate simplification. In reality later ascensions
 will be harder, so an average win rate hides the exact weaknesses that destroy a
 streak. Report `p_a` and uncertainty separately for every ascension, then compute
@@ -150,7 +145,7 @@ to the legal-action set.
 
 Start at A0/A1 and unlock the next training band only after the current policy
 passes a predefined win-rate and reliability gate. Continue sampling earlier
-ascensions after promotion; otherwise optimizing A13 can destroy the consistency
+ascensions after promotion; otherwise optimizing A10 can destroy the consistency
 needed for the full ladder.
 
 For each ascension, maintain a fixed held-out seed suite and a separate calibration
@@ -164,12 +159,12 @@ Once the estimated ladder probability is credible:
 
 - freeze the policy/value/LLM versions and decoding settings;
 - freeze the game build and all environment code;
-- run A1 through A13 sequentially with recording always on;
+- run A0 through A10 sequentially with recording always on;
 - publish the complete attempt, including failed attempts, not only the first
   successful streak;
 - report attempts-to-first-streak and total successful streaks over total attempts.
 
-One certified 13-win streak demonstrates feasibility. A capability claim should
+One certified 11-win streak demonstrates feasibility. A capability claim should
 also report a denominator; for example, multiple successful ladders from a fixed
 number of predeclared attempts.
 
@@ -185,7 +180,7 @@ number of predeclared attempts.
 4. **Curriculum gate:** a frozen policy clears held-out evaluation suites through
    progressively higher ascensions without losing earlier-level performance.
 5. **Qualification gate:** one frozen limited-information policy completes the
-   strict A1-to-A13 ladder with all 13 trajectories and no load/retry event.
+   strict A0-to-A10 ladder with all 11 trajectories and no load/retry event.
 6. **Replication gate:** repeat predeclared ladder attempts and publish both
    successes and failures to estimate the true streak probability.
 

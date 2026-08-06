@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import NativeRunError
+from .game_rules import validate_ascension
 
 # Compatibility alias retained for callers that historically imported the
 # single fixture-backed schema version.
@@ -181,7 +182,7 @@ def parse_run_summary(raw: Any, *, source: str = "run file") -> RunSummary:
             build_id=str(raw["build_id"]),
             win=bool(raw["win"]),
             was_abandoned=bool(raw["was_abandoned"]),
-            ascension=int(raw["ascension"]),
+            ascension=validate_ascension(raw["ascension"]),
             game_mode=str(raw["game_mode"]),
             platform_type=(
                 str(raw["platform_type"]) if raw.get("platform_type") is not None else None

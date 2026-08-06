@@ -29,7 +29,7 @@ def write_minimal_session(session: Path, state: dict[str, Any]) -> Path:
         "run": {
             "seed": "SESSION-SEED",
             "character": "CHARACTER.DEFECT",
-            "ascension": 13,
+            "ascension": 10,
             "game_mode": "standard",
             "start_time": START_TIME,
         },
@@ -183,7 +183,7 @@ def trajectory(
             "run_id": run_id,
             "seed": seed,
             "character": "CHARACTER.DEFECT",
-            "ascension": 13,
+            "ascension": 10,
             "game_version": "0.107.1",
             "incomplete": incomplete,
             "result": result,

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from .errors import JsonlError, ManifestError, RecordError
+from .game_rules import validate_ascension
 
 SESSION_SCHEMA_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -134,10 +135,16 @@ def _parse_game(raw: Any) -> GameInfo:
 def _parse_run(raw: Any) -> RunInfo:
     if not isinstance(raw, Mapping):
         raise ManifestError("manifest 'run' must be an object")
+    try:
+        ascension = validate_ascension(
+            _require(raw, "ascension", "manifest.run"), "manifest.run.ascension"
+        )
+    except ValueError as error:
+        raise ManifestError(str(error)) from error
     return RunInfo(
         seed=str(_require(raw, "seed", "manifest.run")),
         character=str(_require(raw, "character", "manifest.run")),
-        ascension=int(_require(raw, "ascension", "manifest.run")),
+        ascension=ascension,
         game_mode=str(_require(raw, "game_mode", "manifest.run")),
         start_time=float(_require(raw, "start_time", "manifest.run")),
     )

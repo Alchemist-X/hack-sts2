@@ -87,6 +87,14 @@ class TestErrorHandling:
         with pytest.raises(NativeRunError, match="unsupported native schema_version 10"):
             parse_run_summary(raw)
 
+    def test_ascension_must_be_between_a0_and_a10(
+        self, real_run_paths: list[Path]
+    ) -> None:
+        raw = json.loads(real_run_paths[0].read_text(encoding="utf-8"))
+        raw["ascension"] = 11
+        with pytest.raises(NativeRunError, match="0 through 10"):
+            parse_run_summary(raw)
+
     def test_missing_required_keys(self) -> None:
         with pytest.raises(NativeRunError, match="missing required keys"):
             parse_run_summary({"schema_version": 8, "seed": "X"})
