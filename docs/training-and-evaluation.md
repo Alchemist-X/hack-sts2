@@ -23,11 +23,11 @@ The human-play installation and the research environment are separate systems.
 
 The existing Google Cloud node is **ARM64**. It can run the portable Python
 dataset, training, and offline-evaluation stages, but it cannot run the official
-Linux STS2 engine: that build is `x86_64`, and executing it on the ARM node has
-already produced an `exec format error`. Online rollouts on Google Cloud therefore
-remain blocked until an `x86_64` worker is provisioned and the Linux headless
-packaging is verified. Architecture emulation is not an accepted benchmark
-configuration.
+Linux STS2 engine because the available game binary is built for `x86_64`, which
+is incompatible with the node's architecture and executable format. Online
+rollouts on Google Cloud therefore remain blocked until an `x86_64` worker is
+provisioned and the Linux headless packaging is verified. Architecture emulation
+is not an accepted benchmark configuration.
 
 | Machine | Allowed now | Not allowed / blocked |
 |---|---|---|
@@ -73,9 +73,15 @@ uv run sts2train dataset build \
   ../headless-instances/inst2/trajectories/transitions.jsonl \
   -o ../datasets/limited-all.jsonl
 
+# Convert passive human-recorder sessions. Only uniquely aligned, confirmed
+# decisions pass the BC quality gate; unfinished runs have no value labels.
+uv run sts2train dataset build-human <session-dir> \
+  -o ../datasets/human-all.jsonl
+
 # Fail fast on malformed transitions, leakage, illegal chosen actions, or broken
 # episode boundaries, then produce run-level splits.
 uv run sts2train dataset audit ../datasets/limited-all.jsonl
+uv run sts2train dataset audit ../datasets/limited-all.jsonl --task value
 uv run sts2train dataset split ../datasets/limited-all.jsonl \
   --output-dir ../datasets/splits
 
@@ -94,11 +100,39 @@ uv run sts2train evaluate value ../datasets/splits/test.jsonl \
 # does not launch a worker.
 uv run sts2train benchmark nosl ../artifacts/nosl-outcomes.jsonl
 uv run sts2train benchmark sl ../artifacts/sl-outcomes.jsonl --budget 8
+
+# Formal reports additionally bind every outcome to an exact, frozen case
+# manifest. Missing/extra cases or a fingerprint mismatch fail the command.
+uv run sts2train benchmark nosl ../artifacts/nosl-outcomes.jsonl \
+  --spec ../artifacts/nosl-spec.json
 ```
 
 These commands form the stable portable boundary. More expensive neural or RL
 trainers may consume the same split files and emit richer checkpoints without
 changing the dataset and benchmark contracts.
+
+Without `--spec`, benchmark commands are exploratory aggregations only. A formal
+NoSL/SL result requires one `spec_fingerprint` on every outcome and an exact match
+to the supplied manifest's game build, environment, policy, ordered seeds,
+ascensions, information mode, victory condition, timeout, maximum step count,
+mod/unlock state, controller version, and retry budget. A spec-bound NoSL outcome
+must also declare `reload_count: 0`, `trajectory_complete: true`, and a non-empty
+`trajectory_hash`; missing evidence fails the command. A spec-bound SL report
+requires a complete trajectory hash for every attempt, rejects attempts beyond
+the declared maximum budget, and rejects any attempt recorded after that case's
+first victory.
+
+The formal CLI also requires each outcome to name a `trajectory_path`. It hashes
+the referenced file and compares it with `trajectory_hash`; a self-reported hash
+without an artifact is insufficient. Outcomes must declare `steps` and
+`elapsed_s`, both within the spec's frozen `max_steps` and `timeout_s` limits.
+
+`dataset audit` and `dataset split` default to the behavior-cloning eligibility
+gate. Pass `--task value` when preparing terminal-value data; this rejects
+unfinished human sessions and every row without a terminal win/loss target.
+Omniscient baselines are opt-in via `train ... --use-privileged` and reject mixed
+limited rows. The privileged observation remains physically separate in both the
+trajectory and checkpoint contracts.
 
 ### Storage discipline
 
@@ -124,7 +158,17 @@ Canonicalize human and worker trajectories into transitions of the form
 `(observation, legal_actions, chosen_action, reward, next_observation, done)`.
 Audit every transition for schema validity, leakage, a chosen action present in
 the legal set, a mask aligned one-to-one with that set, monotonic episode order,
-and exactly one declared terminal outcome per completed episode.
+one stable split group per seed/episode, and exactly one final terminal transition
+per completed text-worker episode.
+For passive human data whose final canonical action is filtered out, value
+eligibility instead requires consistent session-level completion and terminal
+outcome metadata; incomplete human runs remain BC-only.
+
+Passive recorder actions use a different vocabulary from text-worker commands.
+The human adapter currently aligns only confirmed, unique mappings (including
+end turn, card play by card model and target, map movement, event choices, and
+rest-site choices). Unsupported or ambiguous actions remain visible as rejected
+rows with an explicit reason; they are never silently coerced into a label.
 
 Do not proceed to online RL until at least 100 unattended headless episodes can be
 completed with zero illegal actions, zero human-save writes, and a reported
@@ -238,9 +282,10 @@ recorded player and can reward imitation of a bad move.
 Before evaluation, freeze the game build, environment commit, policy/checkpoint,
 seed list, character, ascension, information mode, timeout, and victory condition.
 Commit each seed before its episode starts. Each seed receives exactly one attempt;
-death, abandon, illegal action, timeout, reload, unapproved restart, or process
-crash is a failed attempt in the strict headline result. Preserve every trajectory,
-including failures.
+death, abandon, illegal action, timeout, or process crash is a failed attempt.
+A detected reload or missing trajectory proof invalidates formal NoSL
+qualification instead of being silently omitted or replaced with another run.
+Preserve every trajectory, including failures and invalid attempts.
 
 Report:
 
@@ -256,6 +301,13 @@ For per-ascension win probabilities `p_a`, the estimated probability of an
 A1-to-A13 streak is `product(p_a, a=1..13)`. Report the per-ascension estimates and
 uncertainty, not only this product. One successful streak demonstrates feasibility;
 a capability claim also requires the predeclared number of attempts and failures.
+
+The current portable aggregator implements frozen-case validation, pass rate,
+Wilson intervals, per-ascension slices, terminal reasons, and generic consecutive
+win streaks. A dedicated A1-to-A13 ladder runner, ladder-boundary statistics,
+throughput/resource accounting, and attempts-to-first-qualification remain
+promotion-gate work; the generic streak field must not be presented as an A1-to-A13
+qualification result.
 
 ### SL search benchmark
 

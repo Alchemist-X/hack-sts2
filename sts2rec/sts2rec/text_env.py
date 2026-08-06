@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
@@ -58,6 +59,7 @@ class TextTimeStep:
     terminated: bool
     truncated: bool
     info: dict[str, Any] = field(default_factory=dict)
+    privileged_observation: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -160,7 +162,6 @@ class Sts2TextEnv:
             "episode_step": self.episode_steps,
             "information_mode": self.config.information_mode.value,
             "action_space_audit": view["action_space_audit"],
-            "privileged": view["privileged"],
             "settled": settled,
             "win": _result_is_win(raw) if terminated else None,
         }
@@ -173,6 +174,7 @@ class Sts2TextEnv:
             terminated=terminated,
             truncated=truncated,
             info=info,
+            privileged_observation=view["privileged"],
         )
 
     def observe(self, *, wait_actionable: bool = True) -> TextTimeStep:
@@ -194,26 +196,57 @@ class Sts2TextEnv:
     def _resolve_action(
         self, action: Action, current: TextTimeStep
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if isinstance(action, bool):
+            raise TypeError("action index must be an integer, not bool")
         if isinstance(action, int):
             if action < 0 or action >= len(current.legal_actions):
                 raise IndexError(
                     f"action index {action} outside [0, {len(current.legal_actions)})"
                 )
             selected = current.legal_actions[action]
+            requested_index: int | None = action
         elif isinstance(action, dict):
             selected = action
+            raw_index = action.get("action_index")
+            if isinstance(raw_index, bool) or (
+                raw_index is not None and not isinstance(raw_index, int)
+            ):
+                raise ValueError("action_index must be an integer")
+            requested_index = raw_index
         else:
             raise TypeError(f"action must be int or dict, got {type(action).__name__}")
+        if len(current.action_mask) != len(current.legal_actions):
+            raise ValueError("action_mask length does not match the legal-action set")
         wire = _wire_action(selected)
         if not isinstance(wire.get("action"), str):
             raise ValueError(f"action has no string action name: {selected!r}")
+        legal_wire_actions = [_wire_action(item) for item in current.legal_actions]
+        matches = [
+            index for index, candidate in enumerate(legal_wire_actions) if candidate == wire
+        ]
         if self.config.strict_action_validation:
-            legal_wire_actions = [_wire_action(item) for item in current.legal_actions]
-            if wire not in legal_wire_actions:
+            if not matches:
                 raise ValueError(
                     "action is not in the current public legal-action set: "
                     f"{wire!r}"
                 )
+        if requested_index is not None:
+            if requested_index < 0 or requested_index >= len(current.legal_actions):
+                raise IndexError(
+                    f"action index {requested_index} outside "
+                    f"[0, {len(current.legal_actions)})"
+                )
+            if matches and requested_index not in matches:
+                raise ValueError(
+                    "action_index does not identify the matching legal action"
+                )
+            selected_index = requested_index
+        elif matches:
+            selected_index = matches[0]
+        else:
+            selected_index = None
+        if selected_index is not None and current.action_mask[selected_index] != 1:
+            raise ValueError(f"action index {selected_index} is masked out")
         return deepcopy(selected), wire
 
     def step(self, action: Action) -> TextTimeStep:
@@ -316,11 +349,108 @@ class VectorSts2TextEnv:
 class JsonlTrajectoryWriter:
     """Thread-safe compact transition sink for training/evaluation pipelines."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._sequence = 0
+        if metadata is not None and not isinstance(metadata, Mapping):
+            raise TypeError("metadata must be a mapping or None")
+        try:
+            # Keep a JSON snapshot rather than the caller's mutable object.  Parsing
+            # it for each record also prevents one emitted record from sharing
+            # nested values with another.
+            self._metadata_json = (
+                json.dumps(
+                    deepcopy(dict(metadata)),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                if metadata is not None
+                else None
+            )
+        except (TypeError, ValueError) as error:
+            raise TypeError("metadata must be JSON-serializable") from error
+
+    @staticmethod
+    def _resolve_recorded_action(
+        previous: TextTimeStep,
+        action: Action,
+    ) -> tuple[dict[str, Any], int, dict[str, Any]]:
+        legal_actions = previous.legal_actions
+        if len(previous.action_mask) != len(legal_actions):
+            raise ValueError(
+                "action_mask length does not match the current legal-action set"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value not in (0, 1)
+            for value in previous.action_mask
+        ):
+            raise ValueError("action_mask values must be integer 0 or 1")
+
+        for position, candidate in enumerate(legal_actions):
+            if not isinstance(candidate, dict):
+                raise ValueError(f"legal action {position} is not an object")
+            candidate_index = candidate.get("action_index", position)
+            if isinstance(candidate_index, bool) or candidate_index != position:
+                raise ValueError(
+                    "legal actions must have contiguous action_index values matching "
+                    "their list positions"
+                )
+            candidate_wire = _wire_action(candidate)
+            if not isinstance(candidate_wire.get("action"), str):
+                raise ValueError(f"legal action {position} has no string action name")
+
+        if isinstance(action, bool):
+            raise TypeError("action index must be an integer, not bool")
+        if isinstance(action, int):
+            position = action
+            if position < 0 or position >= len(legal_actions):
+                raise IndexError(
+                    f"action index {position} outside [0, {len(legal_actions)})"
+                )
+        elif isinstance(action, dict):
+            requested_wire = _wire_action(action)
+            if not isinstance(requested_wire.get("action"), str):
+                raise ValueError(f"action has no string action name: {action!r}")
+            matches = [
+                position
+                for position, candidate in enumerate(legal_actions)
+                if _wire_action(candidate) == requested_wire
+            ]
+            if not matches:
+                raise ValueError(
+                    "recorded action is not in the current legal-action set: "
+                    f"{requested_wire!r}"
+                )
+            requested_index = action.get("action_index")
+            if requested_index is None:
+                # Duplicate wire actions are unusual but possible in imperfect
+                # snapshots.  Choosing the lowest canonical index is stable.
+                position = matches[0]
+            elif isinstance(requested_index, bool) or not isinstance(
+                requested_index, int
+            ):
+                raise ValueError("recorded action_index must be an integer")
+            elif requested_index not in matches:
+                raise ValueError(
+                    "recorded action_index does not identify the matching legal action"
+                )
+            else:
+                position = requested_index
+        else:
+            raise TypeError(f"action must be int or dict, got {type(action).__name__}")
+
+        if previous.action_mask[position] != 1:
+            raise ValueError(f"recorded action index {position} is masked out")
+        selected = deepcopy(legal_actions[position])
+        wire = _wire_action(selected)
+        return selected, position, wire
 
     def append(
         self,
@@ -331,23 +461,82 @@ class JsonlTrajectoryWriter:
         action: Action,
         current: TextTimeStep,
     ) -> None:
+        selected, selected_index, wire = self._resolve_recorded_action(previous, action)
+        if len(current.action_mask) != len(current.legal_actions):
+            raise ValueError(
+                "next action_mask length does not match the next legal-action set"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value not in (0, 1)
+            for value in current.action_mask
+        ):
+            raise ValueError("next action_mask values must be integer 0 or 1")
+        executed_wire = current.info.get("wire_action")
+        if executed_wire is not None:
+            if not isinstance(executed_wire, dict) or _wire_action(executed_wire) != wire:
+                raise ValueError(
+                    "recorded action does not match the environment's executed wire_action"
+                )
+        information_mode = previous.info.get("information_mode")
+        privileged_observation = previous.privileged_observation
+        next_privileged_observation = current.privileged_observation
+        if information_mode == InformationMode.LIMITED.value:
+            if privileged_observation is not None:
+                raise ValueError(
+                    "limited trajectory must not contain privileged_observation"
+                )
+        elif information_mode == InformationMode.OMNISCIENT.value:
+            if not isinstance(privileged_observation, dict):
+                raise ValueError(
+                    "omniscient trajectory requires a privileged_observation object"
+                )
+        else:
+            raise ValueError(f"unknown information_mode: {information_mode!r}")
+        next_mode = current.info.get("information_mode")
+        if next_mode != information_mode:
+            raise ValueError("information_mode changed within one transition")
+        if next_mode == InformationMode.LIMITED.value:
+            if next_privileged_observation is not None:
+                raise ValueError(
+                    "limited trajectory must not contain next_privileged_observation"
+                )
+        elif not isinstance(next_privileged_observation, dict):
+            raise ValueError(
+                "omniscient trajectory requires a next_privileged_observation object"
+            )
         with self._lock:
             self._sequence += 1
             record = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "sequence": self._sequence,
                 "time": time.time(),
                 "worker_id": worker_id,
                 "episode_id": episode_id,
-                "observation": previous.observation,
-                "legal_actions": previous.legal_actions,
-                "action": action,
+                "information_mode": information_mode,
+                "observation": deepcopy(previous.observation),
+                "privileged_observation": deepcopy(privileged_observation),
+                "legal_actions": deepcopy(previous.legal_actions),
+                "action_mask": deepcopy(previous.action_mask),
+                "action_space_audit": deepcopy(
+                    previous.info.get("action_space_audit")
+                ),
+                "action": selected,
+                "chosen_action_index": selected_index,
+                "wire_action": wire,
+                "policy_action": deepcopy(action),
                 "reward": current.reward,
-                "next_observation": current.observation,
+                "next_observation": deepcopy(current.observation),
+                "next_privileged_observation": deepcopy(
+                    next_privileged_observation
+                ),
+                "next_legal_actions": deepcopy(current.legal_actions),
+                "next_action_mask": deepcopy(current.action_mask),
                 "terminated": current.terminated,
                 "truncated": current.truncated,
-                "info": current.info,
+                "info": deepcopy(current.info),
             }
+            if self._metadata_json is not None:
+                record["metadata"] = json.loads(self._metadata_json)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(
                     json.dumps(record, ensure_ascii=False, separators=(",", ":"))

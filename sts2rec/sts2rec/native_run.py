@@ -1,4 +1,9 @@
-"""Parser for the game's own .run history files (native schema_version 8).
+"""Parser for the game's own ``.run`` history files.
+
+Schema version 8 is covered by checked-in game fixtures. Schema version 9 is
+accepted on a best-effort compatibility basis because its known changes are
+additive/identifier migrations, but this repository does not yet include a real
+version-9 fixture.
 
 These live at <user_data>/steam/<steamid>/profileN/saves/history/<start>.run
 and are plain JSON written by the game at run end. They are treated strictly
@@ -18,7 +23,11 @@ from typing import Any
 
 from .errors import NativeRunError
 
+# Compatibility alias retained for callers that historically imported the
+# single fixture-backed schema version.
 NATIVE_RUN_SCHEMA_VERSION = 8
+
+SUPPORTED_NATIVE_RUN_SCHEMA_VERSIONS = frozenset({NATIVE_RUN_SCHEMA_VERSION, 9})
 
 _REQUIRED_KEYS = (
     "schema_version",
@@ -157,10 +166,13 @@ def parse_run_summary(raw: Any, *, source: str = "run file") -> RunSummary:
     if missing:
         raise NativeRunError(f"{source}: missing required keys: {missing}")
     schema_version = raw["schema_version"]
-    if schema_version != NATIVE_RUN_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_NATIVE_RUN_SCHEMA_VERSIONS:
+        supported = ", ".join(
+            str(version) for version in sorted(SUPPORTED_NATIVE_RUN_SCHEMA_VERSIONS)
+        )
         raise NativeRunError(
             f"{source}: unsupported native schema_version {schema_version!r} "
-            f"(this tool supports {NATIVE_RUN_SCHEMA_VERSION})"
+            f"(this tool supports {supported})"
         )
     try:
         return RunSummary(
