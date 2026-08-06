@@ -111,8 +111,15 @@ targets only `instN/home/**/current_run.save`; it never touches human saves.
   provider. Privileged data cannot flow into limited training records by
   construction.
 
-The environment is ready for independent seeded rollouts and learned Q-value
-callbacks. Exact **mid-combat clone/restore** is not claimed: the public game
+The environment is ready for independent text rollouts and learned policy/value
+callbacks, subject to one terminal-label boundary: the current controller may
+return only a `game_over` message without a verified win/loss field. That outcome
+is recorded as unknown and is not eligible for terminal-value training. Passive
+human manifests already carry an explicit outcome. Valid text-worker action
+labels remain behavior-cloning eligible, but headless online value/RL
+qualification must wait for the controller to expose the equivalent signal.
+
+Exact **mid-combat clone/restore** is not claimed: the public game
 API does not serialize every in-memory combat object, and `current_run.save`
 is only a room-level recovery artifact. A future exact counterfactual runner
 must add an in-engine checkpoint serializer or replay a deterministic action

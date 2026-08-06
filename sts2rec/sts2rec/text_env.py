@@ -78,26 +78,44 @@ def _wire_action(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _result_is_win(state: dict[str, Any]) -> bool:
+def _result_is_win(state: dict[str, Any]) -> bool | None:
+    """Return an explicit terminal outcome, never infer a loss from silence.
+
+    The native ``game_over`` snapshot currently may contain only a human-readable
+    message.  Treating that shape as ``False`` would turn every unlabeled victory
+    into a defeat target, so an absent or conflicting outcome is represented by
+    ``None`` and must fail closed at the value-dataset boundary.
+    """
+
     blocks = [state]
     for key in ("game_over", "result", "run"):
         value = state.get(key)
         if isinstance(value, dict):
             blocks.append(value)
+    outcomes: set[bool] = set()
     for block in blocks:
-        for key in ("win", "won", "victory", "is_victory"):
+        for key in ("outcome", "win", "won", "victory", "is_victory"):
             value = block.get(key)
             if isinstance(value, bool):
-                return value
+                outcomes.add(value)
         result = block.get("result")
-        if isinstance(result, str) and result.lower() in {"win", "victory", "won"}:
-            return True
-    return False
+        if isinstance(result, str):
+            lowered = result.casefold()
+            if lowered in {"win", "victory", "won"}:
+                outcomes.add(True)
+            elif lowered in {"loss", "lost", "defeat", "defeated"}:
+                outcomes.add(False)
+    return next(iter(outcomes)) if len(outcomes) == 1 else None
 
 
 def _default_reward(previous: dict[str, Any], current: dict[str, Any]) -> float:
     del previous
-    return 1.0 if current.get("state_type") == "game_over" and _result_is_win(current) else 0.0
+    return (
+        1.0
+        if current.get("state_type") == "game_over"
+        and _result_is_win(current) is True
+        else 0.0
+    )
 
 
 def _indexed(actions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -157,13 +175,17 @@ class Sts2TextEnv:
             and self.episode_steps >= self.config.max_episode_steps
             and not terminated
         )
+        terminal_outcome = _result_is_win(raw) if terminated else None
         info = {
             "worker_id": self.worker_id,
             "episode_step": self.episode_steps,
             "information_mode": self.config.information_mode.value,
             "action_space_audit": view["action_space_audit"],
             "settled": settled,
-            "win": _result_is_win(raw) if terminated else None,
+            "win": terminal_outcome,
+            "terminal_outcome_known": (
+                terminal_outcome is not None if terminated else None
+            ),
         }
         info.update(extra_info or {})
         return TextTimeStep(

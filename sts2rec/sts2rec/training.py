@@ -30,7 +30,11 @@ class EpisodeResult:
 
 def _terminal_reason(step: TextTimeStep) -> str:
     if step.terminated:
-        return "victory" if step.info.get("win") is True else "defeat"
+        if step.info.get("win") is True:
+            return "victory"
+        if step.info.get("win") is False:
+            return "defeat"
+        return "unknown_outcome"
     if step.truncated:
         return "step_limit"
     return "incomplete"

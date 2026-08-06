@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 
+from sts2rec.baseline import BinaryWinValueModel
+from sts2rec.decision_dataset import load_decision_dataset
 from sts2rec.information import InformationMode
 from sts2rec.text_env import (
     JsonlTrajectoryWriter,
@@ -62,6 +64,13 @@ def map_state() -> dict[str, Any]:
 
 def terminal_state(win: bool = True) -> dict[str, Any]:
     return {"state_type": "game_over", "game_over": {"win": win}}
+
+
+def unlabeled_terminal_state() -> dict[str, Any]:
+    return {
+        "state_type": "game_over",
+        "game_over": {"message": "Run ended."},
+    }
 
 
 class ScriptedEnv:
@@ -161,6 +170,35 @@ def test_terminal_sparse_reward_and_render() -> None:
     assert result.info["win"] is True
     rendered = render_text(result)
     assert "TERMINAL win=True reward=1.0" in rendered
+
+
+def test_unlabeled_terminal_is_unknown_instead_of_a_defeat(tmp_path: Path) -> None:
+    env = text_env(ScriptedEnv(combat_state(), [unlabeled_terminal_state()]))
+    output = tmp_path / "unknown-outcome.jsonl"
+    result = run_episode(
+        env,
+        lambda step: 1,
+        episode_id="unknown-outcome",
+        writer=JsonlTrajectoryWriter(output),
+    )
+
+    assert result.terminated is True
+    assert result.win is None
+    assert result.terminal_reason == "unknown_outcome"
+    assert result.total_reward == 0.0
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["info"]["win"] is None
+    assert record["info"]["terminal_outcome_known"] is False
+    assert record["reward"] == 0.0
+    decision = load_decision_dataset(output)[0]
+    assert decision.outcome is None
+    assert decision.bc_eligible is True
+    assert decision.value_eligible is False
+    assert decision.eligible is True
+    assert decision.ineligibility_reasons == ()
+    assert "missing_terminal_outcome" in decision.value_ineligibility_reasons
+    with pytest.raises(ValueError, match="without eligible examples"):
+        BinaryWinValueModel().fit([decision.as_dict()])
 
 
 def test_vector_steps_workers_concurrently() -> None:

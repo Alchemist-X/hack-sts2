@@ -164,16 +164,35 @@ For passive human data whose final canonical action is filtered out, value
 eligibility instead requires consistent session-level completion and terminal
 outcome metadata; incomplete human runs remain BC-only.
 
+The present text controller may emit a terminal snapshot containing only
+`{"state_type":"game_over","game_over":{"message":"Run ended."}}`. This proves
+that the episode ended, but not whether it was a victory. The environment writes
+`info.win: null` and zero sparse reward for this unknown case; the dataset gate
+then rejects the episode from terminal-value training while retaining otherwise
+sound chosen-action labels for behavior cloning. Generic experiment fields such
+as `metadata.result`, and self-reported top-level transition labels, are never
+accepted as substitutes. A text-worker run becomes value-eligible only after the
+controller supplies a verified explicit outcome. Human-manifest proof requires
+both the canonical human schema and source marker. Do not reinterpret an unknown
+outcome as a loss.
+
+Legacy text-worker files may contain an inferred `info.win: false` for the same
+message-only terminal shape. The converter intentionally ignores that field
+unless `info.terminal_outcome_known: true` is present or the engine snapshot
+itself carries an explicit result. Consequently, pre-fix terminal value labels
+fail closed instead of silently preserving contaminated losses.
+
 Passive recorder actions use a different vocabulary from text-worker commands.
 The human adapter currently aligns only confirmed, unique mappings (including
 end turn, card play by card model and target, map movement, event choices, and
 rest-site choices). Unsupported or ambiguous actions remain visible as rejected
 rows with an explicit reason; they are never silently coerced into a label.
 
-Do not proceed to online RL until at least 100 unattended headless episodes can be
-completed with zero illegal actions, zero human-save writes, and a reported
-timeout/process-failure rate. Environment failures and gameplay losses are
-different outcomes and must remain distinguishable.
+Do not proceed to online RL until the controller exposes authoritative terminal
+outcomes and at least 100 unattended headless episodes can be completed with zero
+illegal actions, zero human-save writes, and a reported timeout/process-failure
+rate. Unknown outcomes, environment failures, and gameplay losses are three
+different cases and must remain distinguishable.
 
 ### Stage 1: behavior cloning
 

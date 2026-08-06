@@ -120,6 +120,7 @@ class EpisodeOutcome:
     sequence_monotonic: bool
     terminal_is_last: bool
     group_consistent: bool
+    terminal_state_consistent: bool
 
     @property
     def complete(self) -> bool:
@@ -133,6 +134,7 @@ class EpisodeOutcome:
             and self.sequence_monotonic
             and self.terminal_is_last
             and self.group_consistent
+            and self.terminal_state_consistent
         )
 
 
@@ -166,7 +168,11 @@ class DecisionRecord:
     action_space_audit: dict[str, Any]
     metadata: dict[str, Any]
     eligible: bool
+    bc_eligible: bool
+    value_eligible: bool
     ineligibility_reasons: tuple[str, ...]
+    bc_ineligibility_reasons: tuple[str, ...]
+    value_ineligibility_reasons: tuple[str, ...]
     leakage_paths: tuple[str, ...]
 
     @property
@@ -208,7 +214,13 @@ class DecisionRecord:
             "action_space_audit": deepcopy(self.action_space_audit),
             "metadata": deepcopy(self.metadata),
             "eligible": self.eligible,
+            "bc_eligible": self.bc_eligible,
+            "value_eligible": self.value_eligible,
             "ineligibility_reasons": list(self.ineligibility_reasons),
+            "bc_ineligibility_reasons": list(self.bc_ineligibility_reasons),
+            "value_ineligibility_reasons": list(
+                self.value_ineligibility_reasons
+            ),
             "leakage_paths": list(self.leakage_paths),
         }
 
@@ -225,6 +237,7 @@ class _MutableEpisodeOutcome:
     terminal_is_last: bool = True
     last_sequence: int | None = None
     group_ids: set[str] | None = None
+    terminal_state_consistent: bool = True
 
     def __post_init__(self) -> None:
         if self.outcomes is None:
@@ -324,7 +337,7 @@ def _outcome_from_block(block: Any) -> set[bool]:
     if not isinstance(block, Mapping):
         return set()
     found: set[bool] = set()
-    for key in ("win", "won", "victory", "is_victory"):
+    for key in ("outcome", "win", "won", "victory", "is_victory"):
         value = block.get(key)
         if isinstance(value, bool):
             found.add(value)
@@ -341,7 +354,17 @@ def _outcome_from_block(block: Any) -> set[bool]:
 def _terminal_outcomes(record: Mapping[str, Any]) -> set[bool]:
     """Collect explicit terminal labels without guessing from shaped reward."""
 
-    blocks: list[Any] = [record, record.get("info"), record.get("metadata")]
+    # Caller-provided top-level labels and generic experiment metadata are
+    # deliberately excluded.  They are provenance, not authoritative engine
+    # outcomes.
+    # Legacy text writers also materialized unknown terminal states as
+    # ``info.win=false``.  Trust that field only when the producer explicitly
+    # proves that the terminal outcome was observed; an outcome embedded in the
+    # next engine snapshot remains independently authoritative below.
+    blocks: list[Any] = []
+    info = record.get("info")
+    if isinstance(info, Mapping) and info.get("terminal_outcome_known") is True:
+        blocks.append(info)
     next_observation = record.get("next_observation")
     blocks.append(next_observation)
     if isinstance(next_observation, Mapping):
@@ -379,6 +402,16 @@ def scan_episode_outcomes(
             summary.last_sequence = sequence
         truncated = _boolean_field(record, "truncated", where=where)
         terminated = _boolean_field(record, "terminated", where=where)
+        next_observation = record.get("next_observation")
+        next_state_type = (
+            next_observation.get("state_type")
+            if isinstance(next_observation, Mapping)
+            else None
+        )
+        if (terminated and next_state_type != "game_over") or (
+            not terminated and next_state_type == "game_over"
+        ):
+            summary.terminal_state_consistent = False
         summary.truncated = summary.truncated or truncated
         if terminated:
             summary.terminal_records += 1
@@ -403,6 +436,7 @@ def scan_episode_outcomes(
             sequence_monotonic=summary.sequence_monotonic,
             terminal_is_last=summary.terminal_is_last,
             group_consistent=len(summary.group_ids or ()) == 1,
+            terminal_state_consistent=summary.terminal_state_consistent,
         )
     return result
 
@@ -864,6 +898,8 @@ def _build_decision(
         reasons.append("terminal_not_last")
     if not episode.group_consistent:
         reasons.append("episode_group_identity_inconsistent")
+    if not episode.terminal_state_consistent:
+        reasons.append("terminal_state_mismatch")
     if (
         episode.terminal_records == 0
         or episode.outcome is None
@@ -961,7 +997,13 @@ def _build_decision(
         chosen_action_index=chosen_index,
         chosen_action=chosen_action,
     )
-    unique_reasons = tuple(dict.fromkeys(reasons))
+    value_reasons = tuple(dict.fromkeys(reasons))
+    # A missing terminal outcome invalidates the value target, not an otherwise
+    # sound demonstrated action.  Other episode-integrity failures remain shared
+    # gates because they can indicate merged/corrupted trajectories.
+    bc_reasons = tuple(
+        reason for reason in value_reasons if reason != "missing_terminal_outcome"
+    )
     sequence = record.get("sequence")
     if isinstance(sequence, bool) or not isinstance(sequence, int):
         sequence = None
@@ -998,8 +1040,12 @@ def _build_decision(
         information_mode=mode,
         action_space_audit=audit,
         metadata=metadata,
-        eligible=not unique_reasons,
-        ineligibility_reasons=unique_reasons,
+        eligible=not bc_reasons,
+        bc_eligible=not bc_reasons,
+        value_eligible=not value_reasons,
+        ineligibility_reasons=bc_reasons,
+        bc_ineligibility_reasons=bc_reasons,
+        value_ineligibility_reasons=value_reasons,
         leakage_paths=leakage_paths,
     )
 
@@ -1029,11 +1075,11 @@ def iter_decision_dataset(
             episode=outcomes[key],
             required_information_mode=information_mode,
         )
-        if decision.eligible or on_ineligible == "mark":
+        if decision.bc_eligible or on_ineligible == "mark":
             yield decision
         elif on_ineligible == "raise":
             raise IneligibleDecisionError(
-                decision.decision_id, decision.ineligibility_reasons
+                decision.decision_id, decision.bc_ineligibility_reasons
             )
 
 

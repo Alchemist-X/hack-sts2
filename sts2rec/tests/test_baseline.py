@@ -224,3 +224,14 @@ def test_incomplete_human_rows_train_bc_but_are_skipped_for_value() -> None:
     assert LinearBehaviorCloningPolicy().fit([record]).examples == 1
     with pytest.raises(ValueError, match="without eligible examples"):
         BinaryWinValueModel().fit([record])
+
+
+def test_value_eligibility_cannot_bypass_bc_quality_gate() -> None:
+    record = {
+        **_records()[0],
+        "eligible": False,
+        "bc_eligible": False,
+        "value_eligible": True,
+    }
+    with pytest.raises(ValueError, match="value_eligible requires bc_eligible"):
+        BinaryWinValueModel().fit([record])
