@@ -13,6 +13,9 @@ dist/
 
 # Recorded data (never commit trajectories)
 sessions/
+datasets/
+artifacts/
+checkpoints/
 *.jsonl
 *.mcr
 

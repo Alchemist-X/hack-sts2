@@ -1,0 +1,40 @@
+name: Python CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pure-python:
+    name: Pure Python (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: sts2rec
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: sts2rec/uv.lock
+      - name: Install Python test dependencies
+        run: uv sync --locked --dev
+      - name: Run pure-Python tests
+        # CI deliberately never builds the mod or starts an official-game worker.
+        run: uv run --no-sync pytest -q
