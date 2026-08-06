@@ -154,6 +154,9 @@ uv run sts2train evaluate bc ../datasets/limited.jsonl --model ../checkpoints/bc
 
 See the [training and evaluation protocol](docs/training-and-evaluation.md) for
 run-level splitting, value training, NoSL/SL aggregation, and promotion gates.
+The benchmark vocabulary follows the game: A10 is the maximum ascension and
+A0-A10 denotes the complete difficulty range. The strict ladder definition is in
+the [NoSL A0-to-A10 protocol](docs/no-sl-ascension-10.md).
 The human adapter rejects ambiguous, automatic, cancelled, estimated-state, and
 incomplete-action-space decisions instead of guessing labels. Incomplete runs can
 contribute behavior-cloning examples but never terminal value targets.

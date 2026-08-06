@@ -50,6 +50,12 @@ class TestLoadManifest:
         assert manifest.result is None
         assert manifest.incomplete is True
 
+    def test_ascension_must_be_between_a0_and_a10(self) -> None:
+        raw = make_manifest()
+        raw["run"]["ascension"] = 11
+        with pytest.raises(ManifestError, match="0 through 10"):
+            parse_manifest(raw)
+
     def test_non_object_top_level(self) -> None:
         with pytest.raises(ManifestError, match="must be a JSON object"):
             parse_manifest([1, 2])

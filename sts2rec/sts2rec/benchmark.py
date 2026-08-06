@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
+from .game_rules import validate_ascension
+
 
 _WILSON_95_Z = 1.959963984540054
 _INFORMATION_MODES = frozenset({"limited", "omniscient"})
@@ -125,7 +127,7 @@ class BenchmarkCase:
     def __post_init__(self) -> None:
         _nonempty_text(self.case_id, "case_id")
         _nonempty_text(self.seed, "seed")
-        _integer(self.ascension, "ascension", minimum=0)
+        validate_ascension(self.ascension)
         _integer(self.sequence_index, "sequence_index", minimum=0)
 
     def as_dict(self) -> dict[str, Any]:
@@ -185,6 +187,8 @@ class BenchmarkSpec:
         _integer(self.max_steps, "max_steps", minimum=1)
 
         ascensions = _ordered_unique_ints(self.ascensions, "ascensions", minimum=0)
+        for ascension in ascensions:
+            validate_ascension(ascension, "ascensions")
         object.__setattr__(self, "ascensions", ascensions)
 
         if isinstance(self.cases, (str, bytes)):
@@ -303,7 +307,7 @@ class EpisodeOutcome:
         _nonempty_text(self.episode_id, "episode_id")
         _nonempty_text(self.case_id, "case_id")
         _nonempty_text(self.seed, "seed")
-        _integer(self.ascension, "ascension", minimum=0)
+        validate_ascension(self.ascension)
         if not isinstance(self.won, bool):
             raise ValueError("won must be a bool")
         _nonempty_text(self.terminal_reason, "terminal_reason")
