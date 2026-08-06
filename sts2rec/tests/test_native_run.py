@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from sts2rec.errors import NativeRunError
-from sts2rec.native_run import load_run_file, parse_run_summary
+from sts2rec.native_run import (
+    NATIVE_RUN_SCHEMA_VERSION,
+    SUPPORTED_NATIVE_RUN_SCHEMA_VERSIONS,
+    load_run_file,
+    parse_run_summary,
+)
 
 
 class TestRealFixtures:
@@ -51,6 +56,10 @@ class TestRealFixtures:
         assert isinstance(summary.players, tuple)
         assert isinstance(summary.players[0].deck, tuple)
 
+    def test_schema_constants_preserve_the_fixture_backed_alias(self) -> None:
+        assert NATIVE_RUN_SCHEMA_VERSION == 8
+        assert SUPPORTED_NATIVE_RUN_SCHEMA_VERSIONS == frozenset({8, 9})
+
 
 class TestErrorHandling:
     def test_missing_file(self, tmp_path: Path) -> None:
@@ -63,10 +72,19 @@ class TestErrorHandling:
         with pytest.raises(NativeRunError, match="cannot read"):
             load_run_file(path)
 
-    def test_unknown_schema_version(self, real_run_paths: list[Path]) -> None:
+    def test_schema_version_9_best_effort_compatibility(
+        self, real_run_paths: list[Path]
+    ) -> None:
+        # This verifies compatibility with the common v8 field set, not a real
+        # v9 fixture. A checked-in native v9 run is still needed for full coverage.
         raw = json.loads(real_run_paths[0].read_text(encoding="utf-8"))
         raw["schema_version"] = 9
-        with pytest.raises(NativeRunError, match="unsupported native schema_version 9"):
+        assert parse_run_summary(raw).schema_version == 9
+
+    def test_unknown_schema_version(self, real_run_paths: list[Path]) -> None:
+        raw = json.loads(real_run_paths[0].read_text(encoding="utf-8"))
+        raw["schema_version"] = 10
+        with pytest.raises(NativeRunError, match="unsupported native schema_version 10"):
             parse_run_summary(raw)
 
     def test_missing_required_keys(self) -> None:

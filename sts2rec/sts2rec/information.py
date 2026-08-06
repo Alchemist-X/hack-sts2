@@ -17,14 +17,24 @@ class InformationMode(str, Enum):
 _HIDDEN_KEYS = frozenset(
     {
         "seed",
+        "engine_seed",
+        "random_seed",
+        "rng_seed",
         "rng",
         "rng_state",
+        "rng_position",
+        "rng_stream",
         "true_draw_order",
+        "draw_order",
         "future_rooms",
+        "future_map",
         "future_shops",
         "future_rewards",
+        "future_events",
+        "hidden_state",
     }
 )
+_HIDDEN_KEY_FRAGMENTS = ("future_", "hidden_", "privileged_", "rng_")
 
 
 def _strip_hidden(value: Any) -> Any:
@@ -33,7 +43,10 @@ def _strip_hidden(value: Any) -> Any:
             key: _strip_hidden(item)
             for key, item in value.items()
             if str(key).lower() not in _HIDDEN_KEYS
-            and not str(key).lower().startswith("privileged_")
+            and not any(
+                fragment in str(key).lower()
+                for fragment in _HIDDEN_KEY_FRAGMENTS
+            )
         }
     if isinstance(value, list):
         return [_strip_hidden(item) for item in value]

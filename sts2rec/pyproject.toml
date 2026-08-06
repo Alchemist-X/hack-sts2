@@ -1,7 +1,7 @@
 [project]
 name = "sts2rec"
 version = "0.1.0"
-description = "Offline tooling for Slay the Spire 2 recorder sessions: list, validate, archive, canonicalize."
+description = "Recorder, text environment, dataset, training, and evaluation tools for Slay the Spire 2."
 readme = { text = "Offline tooling for hack-sts2 recorder sessions.", content-type = "text/plain" }
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -10,6 +10,7 @@ dependencies = []
 [project.scripts]
 sts2rec = "sts2rec.cli:main"
 sts2text = "sts2rec.text_cli:main"
+sts2train = "sts2rec.train_cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov>=5"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -20,6 +21,19 @@ class EpisodeResult:
     terminated: bool
     truncated: bool
     win: bool | None
+    terminal_reason: str
+    elapsed_s: float
+    policy_time_s: float
+    settle_failures: int
+    incomplete_action_spaces: int
+
+
+def _terminal_reason(step: TextTimeStep) -> str:
+    if step.terminated:
+        return "victory" if step.info.get("win") is True else "defeat"
+    if step.truncated:
+        return "step_limit"
+    return "incomplete"
 
 
 def run_episode(
@@ -31,16 +45,27 @@ def run_episode(
     writer: JsonlTrajectoryWriter | None = None,
 ) -> EpisodeResult:
     """Reset, execute one policy episode, and optionally stream JSONL."""
+    started = time.monotonic()
     previous = env.reset(character=character)
     total_reward = 0.0
     steps = 0
+    policy_time_s = 0.0
+    settle_failures = 0
+    incomplete_action_spaces = 0
     while not previous.terminated and not previous.truncated:
         if not previous.legal_actions:
             raise RuntimeError(
                 "environment did not expose an actionable state before settle timeout"
             )
+        audit = previous.info.get("action_space_audit")
+        if isinstance(audit, dict) and not audit.get("complete", False):
+            incomplete_action_spaces += 1
+        policy_started = time.monotonic()
         action = policy(previous)
+        policy_time_s += time.monotonic() - policy_started
         current = env.step(action)
+        if not current.info.get("settled", True):
+            settle_failures += 1
         if writer is not None:
             writer.append(
                 worker_id=env.worker_id,
@@ -60,6 +85,11 @@ def run_episode(
         terminated=previous.terminated,
         truncated=previous.truncated,
         win=previous.info.get("win"),
+        terminal_reason=_terminal_reason(previous),
+        elapsed_s=time.monotonic() - started,
+        policy_time_s=policy_time_s,
+        settle_failures=settle_failures,
+        incomplete_action_spaces=incomplete_action_spaces,
     )
 
 

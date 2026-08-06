@@ -11,8 +11,9 @@ The project has two complementary modes:
    append-only artifacts.
 2. **Evaluation and training** — isolated, text-only workers run the official game
    engine with rendering and Steam disabled, exposing structured observations,
-   complete legal-action candidates, action masks, rewards, and episode boundaries
-   to RL policies, search procedures, or LLM controllers.
+   enumerated action candidates, action masks, rewards, episode boundaries, and
+   action-space audit metadata to RL policies, search procedures, or LLM
+   controllers.
 
 The text environment does not approximate or reimplement STS2 rules: the official
 game process remains the state-transition engine.
@@ -32,9 +33,9 @@ game process remains the state-transition engine.
   own `.run` summary and `latest.mcr` deterministic replay alongside our streams.
   This recorder is observation-only and declares `affects_gameplay: false`.
 - **`sts2rec/`** — Python recording, evaluation, and training APIs: list/validate
-  sessions, canonicalize human trajectories, enumerate legal actions, filter
+  sessions, canonicalize human trajectories, enumerate candidate actions, filter
   privileged information, drive one or many text workers, and stream compact
-  transition JSONL.
+  transition JSONL with coverage audits.
 - **`scripts/headless_provision.sh` / `scripts/headless_launch.sh`** — create one
   shared official-engine runtime plus lightweight per-worker homes, ports, logs,
   saves, and trajectory directories. Workers run with Godot `--headless` and
@@ -47,6 +48,8 @@ into the human-play environment.
 
 Full architecture and format spec: [docs/design.md](docs/design.md). Text-environment
 commands, API examples, and current limitations: [docs/text-environment.md](docs/text-environment.md).
+Dataset, training, and benchmark protocol:
+[docs/training-and-evaluation.md](docs/training-and-evaluation.md).
 
 ## Session layout
 
@@ -85,7 +88,7 @@ From `hack-sts2/sts2rec`:
 # Build/update one shared runtime and start four isolated text workers.
 uv run sts2text pool start 4 --base ../headless-instances
 
-# Inspect a structured state and all currently legal actions.
+# Inspect a structured state and the currently enumerated action candidates.
 uv run sts2text observe --port 15601
 uv run sts2text observe --port 15601 --json
 
@@ -118,26 +121,58 @@ with VectorSts2TextEnv(workers) as env:
     next_observations = env.step([policy(obs) for obs in observations])
 ```
 
-Every time step contains a leakage-filtered observation, indexed `legal_actions`,
-an `action_mask`, reward, `terminated` / `truncated`, and action-space audit data.
+Every time step contains a leakage-filtered observation, indexed `legal_actions`
+(the API name for the current candidate set), an `action_mask`, reward,
+`terminated` / `truncated`, and action-space audit data. The audit can flag known
+incompleteness; the current implementation does not certify that its candidates
+equal the engine's complete action space in every game screen.
 Two information contracts are available:
 
 - **`limited`** exposes only information available to a human at that decision.
 - **`omniscient`** adds a physically separate privileged channel for oracle
   evaluation and must not be mixed into limited-policy training data.
 
-Typical consumers include behavior cloning, offline/online RL, seeded policy
-evaluation, learned value functions, tree search, and LLM-controlled agents.
+Typical consumers include behavior cloning, offline/online RL, learned value
+functions, tree search, and LLM-controlled agents. Controlled online evaluation
+is possible after the reset, seed, and action-space qualification gates described
+in the training protocol are satisfied.
 Training trajectories contain structured `(s, A(s), a, r, s', done)` transitions;
 screenshots and frame extraction are not part of the loop.
+
+The portable dataset and baseline commands are pure Python and do not start the
+game:
+
+```bash
+cd sts2rec
+uv run sts2train dataset build transitions.jsonl -o ../datasets/limited.jsonl
+# Or strictly align confirmed actions from passive recorder sessions.
+uv run sts2train dataset build-human <session-dir> -o ../datasets/human.jsonl
+uv run sts2train dataset audit ../datasets/limited.jsonl
+uv run sts2train train bc ../datasets/limited.jsonl -o ../checkpoints/bc.json
+uv run sts2train evaluate bc ../datasets/limited.jsonl --model ../checkpoints/bc.json
+```
+
+See the [training and evaluation protocol](docs/training-and-evaluation.md) for
+run-level splitting, value training, NoSL/SL aggregation, and promotion gates.
+The human adapter rejects ambiguous, automatic, cancelled, estimated-state, and
+incomplete-action-space decisions instead of guessing labels. Incomplete runs can
+contribute behavior-cloning examples but never terminal value targets.
+Formal benchmark aggregation is spec-bound: the spec fingerprints the game,
+controller, policy, ordered seed cases, timeout/step limits, mod/unlock state, and
+SL budget. NoSL qualification additionally requires explicit zero-reload and
+complete trajectory-hash evidence, while strict SL requires one complete hashed
+trajectory per attempt. The formal CLI re-hashes every referenced trajectory
+artifact and enforces the frozen timeout and step limit; exploratory reports
+without a spec are never presented as qualified results.
 
 ### Current boundaries
 
 - The worker pool is currently verified on macOS arm64. Linux packaging remains a
   separate deployment task because the official Linux game build is x86_64.
 - Exact arbitrary **mid-combat clone/restore is not yet supported**. Independent
-  seeded episodes are supported, but precise counterfactual branching requires an
-  in-engine checkpoint serializer or deterministic action-prefix replay.
+  reset-driven episodes are supported, but benchmark-controlled seed injection and
+  verification are not yet implemented. Precise counterfactual branching requires
+  an in-engine checkpoint serializer or deterministic action-prefix replay.
 - The environment requires a legally owned game installation and pins every
   trajectory to its exact game version/build. Game assets are not included here.
 - STS2 is in Early Access. Legal-action coverage, hooks, and model compatibility
