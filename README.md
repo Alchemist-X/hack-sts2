@@ -1,13 +1,26 @@
 # hack-sts2
 
-Passive full-trajectory recorder for **Slay the Spire 2** — the STS2 counterpart of
+Full-trajectory recorder and official-engine-backed text environment for
+**Slay the Spire 2** — the STS2 counterpart of
 [hack-balatro](https://github.com/Alchemist-X/hack-balatro)'s real-client pipeline.
 
-While you play the game normally, a mod records **every state and every action** to
-local, versioned, append-only artifacts, for building an AI benchmark dataset.
+The project has two complementary modes:
+
+1. **Passive recording** — while a human plays normally, a first-party mod-loader
+   mod records every observable state and committed action to local, versioned,
+   append-only artifacts.
+2. **Evaluation and training** — isolated, text-only workers run the official game
+   engine with rendering and Steam disabled, exposing structured observations,
+   complete legal-action candidates, action masks, rewards, and episode boundaries
+   to RL policies, search procedures, or LLM controllers.
+
+The text environment does not approximate or reimplement STS2 rules: the official
+game process remains the state-transition engine.
 
 > Research project. Data-cooperation agreement with the developer is in place;
-> the game copy is legally owned. Recording is local-only — nothing is uploaded.
+> the game copy is legally owned. Human recording is local-only — nothing is
+> uploaded. Sandbox workers use isolated save directories and never touch human
+> saves.
 
 ## How it works
 
@@ -17,14 +30,23 @@ local, versioned, append-only artifacts, for building an AI benchmark dataset.
   events (true draw order, damage, energy); a throttled snapshotter writes full
   hash-deduped state JSON at every decision point. At run end it archives the game's
   own `.run` summary and `latest.mcr` deterministic replay alongside our streams.
-- **`sts2rec/`** — a Python CLI for the offline side: list/validate sessions, tail a
-  live run, convert sessions into hack-balatro-style canonical trajectories.
+  This recorder is observation-only and declares `affects_gameplay: false`.
+- **`sts2rec/`** — Python recording, evaluation, and training APIs: list/validate
+  sessions, canonicalize human trajectories, enumerate legal actions, filter
+  privileged information, drive one or many text workers, and stream compact
+  transition JSONL.
+- **`scripts/headless_provision.sh` / `scripts/headless_launch.sh`** — create one
+  shared official-engine runtime plus lightweight per-worker homes, ports, logs,
+  saves, and trajectory directories. Workers run with Godot `--headless` and
+  `--force-steam=off`.
 
 State serialization is adapted from [STS2MCP](https://github.com/Gennadiyev/STS2MCP)
-(MIT) with its action-injection and HTTP surface removed — this mod is
-**observation-only, write-only-to-disk** (`affects_gameplay: false`).
+(MIT). The human recorder keeps its action-injection and HTTP surface removed; the
+isolated training runtime uses a separate controller build and is never installed
+into the human-play environment.
 
-Full architecture and format spec: [docs/design.md](docs/design.md).
+Full architecture and format spec: [docs/design.md](docs/design.md). Text-environment
+commands, API examples, and current limitations: [docs/text-environment.md](docs/text-environment.md).
 
 ## Session layout
 
@@ -39,7 +61,7 @@ Full architecture and format spec: [docs/design.md](docs/design.md).
 
 Default `<output_root>`: `~/Library/Application Support/Sts2Recorder` (macOS).
 
-## Install (macOS)
+## Passive recorder (macOS)
 
 ```bash
 brew install dotnet@9
@@ -54,6 +76,72 @@ cd sts2rec && uv run sts2rec sessions      # list recorded runs
 uv run sts2rec validate <session-dir>      # schema + consistency checks
 uv run sts2rec canonical <session-dir>     # emit canonical trajectory JSON
 ```
+
+## Evaluation and training environment
+
+From `hack-sts2/sts2rec`:
+
+```bash
+# Build/update one shared runtime and start four isolated text workers.
+uv run sts2text pool start 4 --base ../headless-instances
+
+# Inspect a structured state and all currently legal actions.
+uv run sts2text observe --port 15601
+uv run sts2text observe --port 15601 --json
+
+# Play through the same interface manually from a terminal.
+uv run sts2text play --port 15601 --character NECROBINDER
+
+# Inspect resource usage, then stop workers without touching human saves.
+uv run sts2text pool status --base ../headless-instances
+uv run sts2text pool stop --base ../headless-instances
+```
+
+The Python interface supports arbitrary policy callables and concurrent episodes:
+
+```python
+from sts2rec.env import Sts2Env
+from sts2rec.information import InformationMode
+from sts2rec.text_env import Sts2TextEnv, TextEnvConfig, VectorSts2TextEnv
+
+workers = [
+    Sts2TextEnv(
+        Sts2Env(15601 + i),
+        config=TextEnvConfig(information_mode=InformationMode.LIMITED),
+        worker_id=i + 1,
+    )
+    for i in range(4)
+]
+
+with VectorSts2TextEnv(workers) as env:
+    observations = env.reset(character="NECROBINDER")
+    next_observations = env.step([policy(obs) for obs in observations])
+```
+
+Every time step contains a leakage-filtered observation, indexed `legal_actions`,
+an `action_mask`, reward, `terminated` / `truncated`, and action-space audit data.
+Two information contracts are available:
+
+- **`limited`** exposes only information available to a human at that decision.
+- **`omniscient`** adds a physically separate privileged channel for oracle
+  evaluation and must not be mixed into limited-policy training data.
+
+Typical consumers include behavior cloning, offline/online RL, seeded policy
+evaluation, learned value functions, tree search, and LLM-controlled agents.
+Training trajectories contain structured `(s, A(s), a, r, s', done)` transitions;
+screenshots and frame extraction are not part of the loop.
+
+### Current boundaries
+
+- The worker pool is currently verified on macOS arm64. Linux packaging remains a
+  separate deployment task because the official Linux game build is x86_64.
+- Exact arbitrary **mid-combat clone/restore is not yet supported**. Independent
+  seeded episodes are supported, but precise counterfactual branching requires an
+  in-engine checkpoint serializer or deterministic action-prefix replay.
+- The environment requires a legally owned game installation and pins every
+  trajectory to its exact game version/build. Game assets are not included here.
+- STS2 is in Early Access. Legal-action coverage, hooks, and model compatibility
+  must be regression-tested whenever the game version changes.
 
 ## Version compatibility
 
