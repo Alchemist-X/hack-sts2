@@ -38,8 +38,9 @@ game process remains the state-transition engine.
   transition JSONL with coverage audits.
 - **`scripts/headless_provision.sh` / `scripts/headless_launch.sh`** — create one
   shared official-engine runtime plus lightweight per-worker homes, ports, logs,
-  saves, and trajectory directories. Workers run with Godot `--headless` and
-  `--force-steam=off`.
+  saves, and trajectory directories. Workers normally run with Godot `--headless`
+  and `--force-steam=off`; `--visible` shows one isolated worker without changing
+  its HOME, save tree, port, or recording directory.
 
 State serialization is adapted from [STS2MCP](https://github.com/Gennadiyev/STS2MCP)
 (MIT). The human recorder keeps its action-injection and HTTP surface removed; the
@@ -99,6 +100,39 @@ uv run sts2text play --port 15601 --character NECROBINDER
 uv run sts2text pool status --base ../headless-instances
 uv run sts2text pool stop --base ../headless-instances
 ```
+
+To supervise a single isolated game window, provision normally and launch it
+directly with recording enabled:
+
+```bash
+./scripts/headless_provision.sh 1
+./scripts/headless_launch.sh 1 --visible --record
+./scripts/headless_launch.sh 1 --stop
+```
+
+Only one visible worker is allowed. `scripts/hash_human_saves.sh` can be run
+before and after a smoke test to verify that the real Steam save tree did not
+change.
+
+For supervised agent play, `scripts/sts2_action_executor.py` is deliberately a
+single-action transport, not a combat policy. The external reasoner must inspect
+the full public state, choose every card/target/end-turn decision, and provide a
+reason plus the observed state hash. The executor rejects stale decisions,
+waits for semantic card commitment and a quiet settlement window, and writes a
+durable intent before injection followed by a linked outcome:
+
+```bash
+python3 scripts/sts2_action_executor.py --port 15601 observe --full
+python3 scripts/sts2_action_executor.py --port 15601 act \
+  --expected-hash STATE_SHA256 \
+  --json '{"action":"play_card","card_index":3,"target":"ENEMY_0"}' \
+  --reason 'Externally chosen after comparing the full turn state.' \
+  --controller llm --log output/decisions.jsonl
+```
+
+There is intentionally no generic heuristic combat driver. Training and
+benchmark policies remain separate interfaces and must identify their own
+controller provenance.
 
 The Python interface supports arbitrary policy callables and concurrent episodes:
 

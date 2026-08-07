@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/Gennadiyev/STS2MCP.git",
+  "commit": "55e064850a68f3b4cde7e5fd525bf9b2dec4e885",
+  "upstream_version": "0.4.0",
+  "compatible_game_version": "0.107.1",
+  "compatible_game_commit": "59260271",
+  "release_channel": "stable",
+  "artifact": {
+    "path": "artifacts/mcp/55e064850a68f3b4cde7e5fd525bf9b2dec4e885/STS2_MCP.dll",
+    "sha256": "4de1ca6f53f1cc0ec2ef434696772825e6c3fa09035e2ad0f0df5ebfd7f2eb5b"
+  },
+  "build": {
+    "dotnet_sdk": "9.0.117",
+    "configuration": "Release",
+    "deterministic": true
+  },
+  "sandbox_patch": {
+    "purpose": "Disable optional Harmony UI patches and read the worker port from STS2_MCP_PORT.",
+    "source": "scripts/McpHeadlessPatcher/Program.cs",
+    "patched_dll_sha256": "2b65f6cf4b81739a93aebf7355775364da041b23d71b0410a83687e851b513eb"
+  },
+  "verified_2026_08_07": {
+    "http": [
+      "GET /api/v1/singleplayer",
+      "GET /api/v1/compendium",
+      "GET /api/v1/wiki?query=SLEIGHT_OF_FLESH&type=card&limit=1",
+      "POST menu_select singleplayer",
+      "POST menu_select back"
+    ],
+    "visible_window": true,
+    "isolated_home": "headless-instances/inst1/home",
+    "isolated_port": 15601,
+    "human_save_tree_unchanged": true
+  }
+}

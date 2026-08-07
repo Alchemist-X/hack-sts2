@@ -19,6 +19,9 @@ checkpoints/
 *.jsonl
 *.mcr
 
+# Versioned, reviewable game knowledge is source data, not trajectory output.
+!knowledge/**/*.jsonl
+
 # OS
 .DS_Store
 backups/

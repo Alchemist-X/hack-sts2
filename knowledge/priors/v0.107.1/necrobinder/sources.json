@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-08-07",
+  "target_game_version": "0.107.1",
+  "sources": [
+    {
+      "id": "spire-codex-offensive-necrobinder",
+      "title": "Offensive Necrobinder Guide",
+      "url": "https://spire-codex.com/guides/offensive-necrobinder",
+      "author": "Slow Dancer",
+      "kind": "curated_guide",
+      "branch_context": "The page explicitly discusses beta balance.",
+      "version_risk": "high_for_exact_numbers_medium_for_strategy"
+    },
+    {
+      "id": "reddit-a10-necrobinder-tips",
+      "title": "Any tips for A10 Necrobinder?",
+      "url": "https://www.reddit.com/r/slaythespire/comments/1ssmb7g/any_tips_for_a10_necrobinder/",
+      "published": "2026-05 approximately",
+      "kind": "community_discussion",
+      "branch_context": "Mixed or unstated; individual comments may be from different patches.",
+      "version_risk": "medium"
+    },
+    {
+      "id": "reddit-necrobinder-act1-cards",
+      "title": "Necrobinder good cards to look out for in act 1?",
+      "url": "https://www.reddit.com/r/slaythespire/comments/1tzsjis/necrobinder_good_cards_to_look_out_for_in_act_1/",
+      "published": "2026-06 approximately",
+      "kind": "community_discussion",
+      "branch_context": "Unstated; close in time to stable v0.107.1 but not guaranteed identical.",
+      "version_risk": "medium"
+    },
+    {
+      "id": "reddit-bone-shards-necro",
+      "title": "Bone Shards Necro",
+      "url": "https://www.reddit.com/r/slaythespire/comments/1snxh79/bone_shards_necro/",
+      "published": "2026-04-17",
+      "kind": "card_discussion",
+      "branch_context": "Unstated and older than v0.107.1.",
+      "version_risk": "medium_high"
+    },
+    {
+      "id": "steam-necrobinder-beta-balance",
+      "title": "The Necrobinder in the beta version is way too weak",
+      "url": "https://steamcommunity.com/app/2868840/discussions/0/798966028860149207/",
+      "published": "2026-04",
+      "kind": "community_discussion",
+      "branch_context": "Explicit beta branch discussion.",
+      "version_risk": "high"
+    },
+    {
+      "id": "youtube-a10-necrobinder-top-player",
+      "title": "How to Beat Ascension 10 as Necrobinder | Top Player Guide",
+      "url": "https://www.youtube.com/watch?v=xg8JoZW4oJ4",
+      "published": "2026-03-18",
+      "kind": "long_form_video_guide",
+      "branch_context": "Early-access launch balance; use concepts, not exact ratings.",
+      "version_risk": "high_for_exact_ratings"
+    },
+    {
+      "id": "bilibili-v103-necrobinder-card-analysis",
+      "title": "103版本亡灵契约师全卡牌应用分析+对局详解",
+      "url": "https://www.bilibili.com/video/BV1gnd5BhEv1",
+      "author": "无人使用的梦歌奈亚",
+      "published": "2026-04",
+      "kind": "versioned_card_analysis_and_run_commentary",
+      "branch_context": "The title explicitly identifies game version 103. Compared with v0.107.1, exact values for Death March, Sic 'Em, The Scythe, and Debilitate must be re-read from the local fact corpus.",
+      "version_risk": "low_for_strategy_medium_for_four_changed_cards"
+    },
+    {
+      "id": "bilibili-a10-osty-guide",
+      "title": "杀戮尖塔2 亡灵契约师进阶10教学——奥斯提的暴力美学",
+      "url": "https://www.bilibili.com/video/BV1phdYBiE3p/",
+      "published": "2026-04-16",
+      "kind": "a10_practical_run_guide",
+      "branch_context": "Published in the same v103-era window as the versioned guide. Public audio was locally transcribed; noisy card-name tokens were accepted only when corroborated by visible context or the v0.107.1 fact corpus.",
+      "version_risk": "low_for_route_and_drafting_principles_medium_for_exact_numbers"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "target_game_version": "0.107.1",
+  "matchups": [
+    {
+      "enemy_id": "INFESTED_PRISM",
+      "fact_ref": "knowledge/source/v0.107.1/enemies.jsonl#MONSTER.INFESTED_PRISM",
+      "verified_a9_facts": {
+        "hp": 171,
+        "move_cycle": ["JAB", "RADIATE", "WHIRLWIND", "PULSATE"],
+        "whirlwind": "6 damage x 3 before dynamic modifiers",
+        "vital_spark": "3 at A9; each played Tainted Skill applies 3 Tainted to the player",
+        "tainted": "Adds its amount to every powered attack hit targeting the player, then clears after the enemy turn"
+      },
+      "decision_policy": [
+        "After every Skill, re-observe the intent; never reuse the pre-card number.",
+        "On Whirlwind, one Tainted Skill raises the three-hit total by 9 and two raise it by 18 before Block.",
+        "Compare a defensive Skill's Block against the extra incoming damage it creates; a nominal Defend can be net-negative.",
+        "Pulsate increases Vital Spark, so refresh all Tainted assumptions after it resolves."
+      ],
+      "confidence": 1.0,
+      "basis": "Local v0.107.1 InfestedPrism, VitalSparkPower, and TaintedPower source; not a forum opinion."
+    },
+    {
+      "enemy_id": "ACT1_GENERAL",
+      "decision_policy": [
+        "Treat early HP as already scarce at high ascension; speculative scaling must still pass the next two-fight test.",
+        "Prioritize at least one reliable AoE answer and one efficient defensive answer before narrow engine pieces.",
+        "Do not force a named archetype when the offered cards solve current checks better."
+      ],
+      "confidence": 0.8,
+      "source_ids": ["reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards", "spire-codex-offensive-necrobinder"]
+    }
+  ]
+}

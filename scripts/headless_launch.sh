@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# headless_launch.sh — launch/stop one text-only STS2 worker.
+# headless_launch.sh — launch/stop one isolated STS2 worker.
 #
 # Launch:
-#   headless_launch.sh <i> [--base DIR] [--wait-s N] [--no-wait] [--record]
+#   headless_launch.sh <i> [--base DIR] [--visible] [--wait-s N] [--no-wait] [--record]
 # Stop:
 #   headless_launch.sh <i|all> --stop [--base DIR]
 #
 # All workers execute one shared runtime.  HOME, MCP port, recorder root, log
 # and PID are process-local.  Default training mode disables the full recorder;
-# --record enables it for diagnostic/human-comparison runs.  There is never a
-# display server or screenshot/keyframe path.
+# --record enables it for diagnostic/human-comparison runs. --visible removes
+# only Godot's --headless argument; all worker isolation remains in force. At
+# most one visible worker may run at a time.
 
 set -euo pipefail
 
@@ -17,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 FORBIDDEN_PORT=15526
 
-usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 log()   { printf '[launch] %s\n' "$*"; }
 die()   { printf '[launch] ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -26,6 +27,7 @@ BASE_DIR="$REPO_ROOT/headless-instances"
 WAIT_S=120
 MODE="launch"
 RECORDING="${STS2_HEADLESS_RECORDING:-0}"
+DISPLAY_MODE="headless"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --wait-s)  WAIT_S="${2:?--wait-s needs a value}"; shift 2 ;;
         --no-wait) WAIT_S=0; shift ;;
         --record)  RECORDING=1; shift ;;
+        --visible) DISPLAY_MODE="visible"; shift ;;
         --stop)    MODE="stop"; shift ;;
         -h|--help) usage; exit 0 ;;
         *)         [[ -z "$INSTANCE" ]] || die "unexpected argument: $1"
@@ -114,11 +117,26 @@ if [[ -f "$PID_FILE" ]]; then
     unlink "$PID_FILE"
 fi
 
+if [[ "$DISPLAY_MODE" == "visible" ]]; then
+    while IFS= read -r running_command; do
+        if [[ "$running_command" == *"Slay the Spire 2"* \
+              && "$running_command" == *"--sts2-worker="* \
+              && "$running_command" != *"--headless"* ]]; then
+            die "another visible sandbox worker is already running: $running_command"
+        fi
+    done < <(ps -axo command=)
+fi
+
 RECORDER_DISABLED=1
 if [[ "$RECORDING" == "1" ]]; then
     RECORDER_DISABLED=0
 fi
-log "worker $INSTANCE: shared runtime, HOME=$INST_HOME, port=$PORT, recorder=$RECORDING"
+log "worker $INSTANCE: mode=$DISPLAY_MODE, shared runtime, HOME=$INST_HOME, port=$PORT, recorder=$RECORDING"
+
+GAME_ARGS=(--force-steam=off "--sts2-worker=$INSTANCE")
+if [[ "$DISPLAY_MODE" == "headless" ]]; then
+    GAME_ARGS=(--headless "${GAME_ARGS[@]}")
+fi
 
 nohup env \
     HOME="$INST_HOME" \
@@ -126,7 +144,7 @@ nohup env \
     STS2_RECORDER_OUTPUT_ROOT="$INST_DIR/recordings" \
     STS2_RECORDER_DISABLED="$RECORDER_DISABLED" \
     STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS="${STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS:-800}" \
-    "$BIN" --headless --force-steam=off --sts2-worker="$INSTANCE" \
+    "$BIN" "${GAME_ARGS[@]}" \
     >"$GAME_LOG" 2>&1 &
 GAME_PID=$!
 printf '%d\n' "$GAME_PID" > "$PID_FILE"
