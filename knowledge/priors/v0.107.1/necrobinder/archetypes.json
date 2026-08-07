@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "target_game_version": "0.107.1",
+  "decision_rule": "Treat archetypes as signals, not commitments. Solve the next damage, defense, AoE, and scaling checks before adding narrow synergy pieces.",
+  "archetypes": [
+    {
+      "id": "debuff_control_sleight",
+      "core": ["SLEIGHT_OF_FLESH", "DEFY", "DEBILITATE", "ENFEEBLING_TOUCH", "NEGATIVE_PULSE"],
+      "strengths": ["Defense and scaling can share the same debuff actions", "AoE debuffs multiply Sleight triggers"],
+      "failure_modes": ["A 2-energy setup power can lose short fights", "Low debuff density makes the power inert"]
+    },
+    {
+      "id": "ethereal_offense",
+      "core": ["DEFY", "LETHALITY", "FEAR", "PULL_FROM_BELOW", "SPIRIT_OF_ASH"],
+      "strengths": ["Strong per-card rates", "Natural overlap between defense and a scaling finisher"],
+      "failure_modes": ["Poor draw order in Act 2", "Friendship can reduce Strength-scaled payoff"]
+    },
+    {
+      "id": "osty_scaling",
+      "core": ["SUMMON_FORTH", "BODYGUARD", "SIC_EM", "NECRO_MASTERY"],
+      "strengths": ["Osty can preserve effective Block and contribute damage", "Summon improves multiple starter actions"],
+      "failure_modes": ["Enemy pressure can keep Osty at 1 HP", "Bone Shards and other sacrifice lines conflict with preserving a large Osty"]
+    },
+    {
+      "id": "soul_cycle",
+      "core": ["HAUNT", "SEVERANCE", "CAPTURE_SPIRIT", "WISP"],
+      "strengths": ["Can replay a small set of high-value cards", "Supports block-ignoring damage"],
+      "failure_modes": ["Narrow pieces are weak before draw and Soul generation are online", "Over-drafting engine pieces can fail immediate fights"]
+    },
+    {
+      "id": "energy_shell",
+      "core": ["FRIENDSHIP", "DEMESNE", "WISP", "INVOKE"],
+      "strengths": ["Lets expensive or repeatable cards define the win condition later"],
+      "failure_modes": ["Energy without draw or useful sinks does nothing", "Friendship has a real Strength opportunity cost"]
+    }
+  ],
+  "source_ids": ["spire-codex-offensive-necrobinder", "reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards", "youtube-a10-necrobinder-top-player"]
+}

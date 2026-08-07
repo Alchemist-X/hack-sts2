@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-07",
+  "target_game_version": "0.107.1",
+  "policy": "These are conditional opinions. Re-check the v0.107.1 fact record and the current deck before every pick.",
+  "cards": [
+    {
+      "id": "SLEIGHT_OF_FLESH",
+      "prior": "High-ceiling scaling power and a reasonable speculative early pick because many Necrobinder cards apply debuffs.",
+      "pick_when": ["The deck already applies Weak, Vulnerable, Doom, Hang, or other debuffs", "The route can afford a 2-energy setup turn", "AoE debuff application is available"],
+      "avoid_when": ["The next fights demand immediate front-loaded output and the deck cannot create a setup window", "The deck has almost no debuff density and cannot add it soon"],
+      "interactions": ["Defy", "Debilitate", "Enfeebling Touch", "Fear", "Negative Pulse", "Deathbringer", "Hang"],
+      "confidence": 0.88,
+      "source_ids": ["reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards", "steam-necrobinder-beta-balance"]
+    },
+    {
+      "id": "FRIENDSHIP",
+      "prior": "Premium repeatable energy when the deck's important damage does not depend heavily on Strength.",
+      "pick_when": ["Doom, fixed power damage, Souls, or utility consume the extra energy", "The deck has expensive cards or replay loops"],
+      "avoid_when": ["Multi-hit or Strength-scaled attacks are the main win condition", "The immediate Strength loss creates a near-term damage failure"],
+      "interactions": ["Demesne as an alternative", "Poor with Pull From Below unless upgrades/enhancements offset the Strength loss"],
+      "confidence": 0.82,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-a10-necrobinder-tips", "steam-necrobinder-beta-balance"]
+    },
+    {
+      "id": "BONE_SHARDS",
+      "prior": "Very strong Act 1 and Act 2 stabilizer: one card supplies AoE and Block at unusually high rates, but consumes a living Osty.",
+      "pick_when": ["AoE or immediate defense is missing", "Osty is often small or already expected to die", "A Summon can be played after Bone Shards"],
+      "avoid_when": ["A large persistent Osty is the deck's central scaling engine and cannot be restored", "The deck already solves AoE and cannot tolerate losing Osty"],
+      "interactions": ["Play before a same-turn Summon", "Community reports a Necro Mastery interaction; verify live/source semantics before relying on it"],
+      "confidence": 0.9,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-necrobinder-act1-cards", "reddit-bone-shards-necro"]
+    },
+    {
+      "id": "DEFY",
+      "prior": "Top-tier flexible defense because Weak reduces future attack pressure while Ethereal supports the character's payoff package.",
+      "pick_when": ["Early defense is needed", "Weak, Ethereal, or Sleight of Flesh synergies matter"],
+      "avoid_when": ["Only when the deck already has excessive conditional defense or the matchup punishes Skill plays"],
+      "confidence": 0.9,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "DEBILITATE",
+      "prior": "Premium long-fight control and a core enabler for debuff scaling; much stronger when Weak can be extended or reapplied.",
+      "pick_when": ["Boss/elite scaling is unresolved", "The deck contains Sleight of Flesh or reliable Weak"],
+      "avoid_when": ["The deck cannot pay its setup cost before the next immediate damage check"],
+      "confidence": 0.87,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "DEMESNE",
+      "prior": "High-value energy engine when Friendship's Strength penalty would damage the current attack plan.",
+      "pick_when": ["Energy is the bottleneck", "The deck needs to preserve Strength"],
+      "avoid_when": ["The deck cannot exploit recurring energy or needs immediate defense/damage instead"],
+      "confidence": 0.78,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-a10-necrobinder-tips", "steam-necrobinder-beta-balance"]
+    },
+    {
+      "id": "DELAY",
+      "prior": "Often underrated defensive scaling; upgrade access materially affects how quickly it becomes reliable.",
+      "pick_when": ["The route has an upgrade window", "Long fights and delayed defense are expected"],
+      "avoid_when": ["Immediate block is the only unmet need and no upgrade is available"],
+      "confidence": 0.76,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "ENFEEBLING_TOUCH",
+      "prior": "Strong defensive pickup that also feeds debuff and Ethereal packages.",
+      "pick_when": ["The deck needs defense with scaling relevance", "Sleight of Flesh or Ethereal payoffs are present"],
+      "avoid_when": ["The deck is overloaded with slow setup and lacks immediate output"],
+      "confidence": 0.85,
+      "source_ids": ["spire-codex-offensive-necrobinder", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "NEGATIVE_PULSE",
+      "prior": "High-value AoE debuff application, especially with Sleight of Flesh and Doom payoffs.",
+      "pick_when": ["AoE is missing", "The deck has debuff triggers"],
+      "avoid_when": ["Energy/setup density is already too high and the next fights are single-target races"],
+      "confidence": 0.82,
+      "source_ids": ["reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "DEATHBRINGER",
+      "prior": "Strong general damage and a useful AoE answer; community reports particularly good Act 2 performance.",
+      "pick_when": ["AoE remains unsolved", "Doom or debuff support exists"],
+      "avoid_when": ["The deck already has enough damage and needs block/energy consistency"],
+      "confidence": 0.79,
+      "source_ids": ["reddit-a10-necrobinder-tips", "reddit-necrobinder-act1-cards"]
+    },
+    {
+      "id": "PULL_FROM_BELOW",
+      "prior": "A serviceable scaling finisher that improves with deck cycles, but is conditional and can conflict with Friendship.",
+      "pick_when": ["Ethereal density is already high", "The deck can cycle or replay it", "No stronger finisher is offered"],
+      "avoid_when": ["Friendship's Strength loss is unmitigated", "The deck cannot survive long enough to cycle"],
+      "confidence": 0.8,
+      "source_ids": ["spire-codex-offensive-necrobinder"]
+    },
+    {
+      "id": "HAUNT",
+      "prior": "A synergy-dependent scaling component rather than an automatic early pick; rises with Soul generation and reliable cycling.",
+      "pick_when": ["Soul generation and draw are already functional", "The deck needs block-ignoring scaling"],
+      "avoid_when": ["Taken only as a speculative archetype label without a Soul engine", "Immediate Act 1 output is missing"],
+      "confidence": 0.7,
+      "source_ids": ["steam-necrobinder-beta-balance", "youtube-a10-necrobinder-top-player"]
+    }
+  ]
+}
