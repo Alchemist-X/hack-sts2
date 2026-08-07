@@ -192,9 +192,17 @@ fi
 RUNTIME_BIN="$RUNTIME_APP/Contents/MacOS/Slay the Spire 2"
 [[ -x "$RUNTIME_BIN" ]] || die "runtime executable missing: $RUNTIME_BIN"
 
-log "building process-configurable text-worker mods"
+MCP_LOCK_FILE="$REPO_ROOT/config/sts2mcp.lock.json"
+MCP_COMMIT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' "$MCP_LOCK_FILE")"
+MCP_SOURCE_DLL="$REPO_ROOT/artifacts/mcp/$MCP_COMMIT/STS2_MCP.dll"
+if [[ ! -f "$MCP_SOURCE_DLL" ]]; then
+    log "pinned upstream MCP artifact is missing; building it now"
+    "$SCRIPT_DIR/build_upstream_mcp.sh"
+fi
+
+log "building process-configurable worker MCP from pinned commit $MCP_COMMIT"
 MCP_BUILD="$RUNTIME_BUILD/mcp"
-"$SCRIPT_DIR/build_headless_mcp.sh" "$REPO_ROOT/.mcp-stashed/STS2_MCP.dll" "$MCP_BUILD"
+"$SCRIPT_DIR/build_headless_mcp.sh" "$MCP_SOURCE_DLL" "$MCP_BUILD"
 dotnet build "$REPO_ROOT/mod/Sts2Recorder.csproj" -c Release --nologo >/dev/null
 
 RUNTIME_MODS="$RUNTIME_APP/Contents/MacOS/mods"

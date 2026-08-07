@@ -5,7 +5,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-INPUT="${1:-$REPO_ROOT/.mcp-stashed/STS2_MCP.dll}"
+if [[ -f "$REPO_ROOT/config/sts2mcp.lock.json" ]]; then
+  PINNED_COMMIT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' "$REPO_ROOT/config/sts2mcp.lock.json")"
+else
+  PINNED_COMMIT=""
+fi
+INPUT="${1:-$REPO_ROOT/artifacts/mcp/$PINNED_COMMIT/STS2_MCP.dll}"
 OUTPUT_DIR="${2:-$REPO_ROOT/headless-instances/mcp-headless}"
 export STS2_GAME_DATA_DIR="${STS2_GAME_DATA_DIR:-$HOME/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64}"
 
