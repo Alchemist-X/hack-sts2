@@ -68,6 +68,19 @@ def build_information_view(
     """
     selected = InformationMode(mode)
     observation = _strip_hidden(state)
+    # Engine list order must not become an oracle for a shuffled draw pile.
+    pile = observation.get("player", {}).get("draw_pile")
+    if isinstance(pile, list):
+        import json
+        for card in pile:
+            if isinstance(card, dict):
+                card.pop("index", None)
+        pile.sort(key=lambda c: json.dumps(c, sort_keys=True, ensure_ascii=False))
+    selection = observation.get("card_select", {})
+    if selection.get("screen_type") == "transform" and selection.get("preview_showing"):
+        selection.pop("preview_cards", None)
+        selection.pop("preview_examples", None)
+        selection["preview_semantics"] = "random_examples_not_committed_rewards"
     view: dict[str, Any] = {
         "mode": selected.value,
         "observation": observation,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Search versioned STS2 facts and Necrobinder priors without loading the corpus."""
+"""Search versioned STS2 facts and explicitly selected character priors."""
 
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ def searchable_text(record: dict[str, Any]) -> str:
         pieces.extend(
             str(runtime.get(key, "")) for key in ("id", "name", "description")
         )
+        for variant in ("base", "upgraded"):
+            pieces.append(json.dumps(runtime.get(variant, {}), ensure_ascii=False))
     return " ".join(pieces)
 
 
@@ -72,6 +74,7 @@ def main() -> None:
         ),
     )
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--character", default="ironclad")
     args = parser.parse_args()
 
     kinds = [args.kind] if args.kind else [
@@ -119,7 +122,7 @@ def main() -> None:
 
     prior_path = (
         args.root.parents[1]
-        / "priors/v0.107.1/necrobinder/cards.json"
+        / "priors" / args.root.name / args.character / "cards.json"
     )
     priors: list[dict[str, Any]] = []
     if prior_path.is_file():
@@ -137,6 +140,7 @@ def main() -> None:
             for _, kind, record in matches[: max(1, args.limit)]
         ],
         "community_priors": priors,
+        "community_memory_files": [str(p.resolve()) for p in prior_path.parent.glob("*.md")],
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
 

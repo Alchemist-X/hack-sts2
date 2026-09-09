@@ -20,6 +20,14 @@
     "source": "scripts/McpHeadlessPatcher/Program.cs",
     "patched_dll_sha256": "2b65f6cf4b81739a93aebf7355775364da041b23d71b0410a83687e851b513eb"
   },
+  "selection_state_patch": {
+    "purpose": "Expose intermediate selected cards and label uncommitted random transform previews in the isolated runtime.",
+    "source": "patches/sts2mcp-selection-state.patch",
+    "build_script": "scripts/build_selection_mcp.sh",
+    "sandbox_dll_sha256_at_validation": "4cfe9a5dd5925310f98c5e671fc306a877546918984c9a9aa5282a6376494519",
+    "validation": "C# build passed; synthetic observation tests passed; live multi-select regression pending",
+    "human_game_installed": false
+  },
   "verified_2026_08_07": {
     "http": [
       "GET /api/v1/singleplayer",
@@ -32,5 +40,14 @@
     "isolated_home": "headless-instances/inst1/home",
     "isolated_port": 15601,
     "human_save_tree_unchanged": true
+  },
+  "rule_evidence_patch": {
+    "purpose": "Expose actual build fingerprint, current engine intent/variable previews, card decorations and pile identities; support versioned rule retrieval.",
+    "source": "patches/sts2mcp-rule-evidence.patch",
+    "build_script": "scripts/build_selection_mcp.sh",
+    "sandbox_dll_sha256_at_validation": "e9eea68018f3599974f01c3c5382a94a40eedb4ba1ba32692fd33da438376fb6",
+    "validation": "C# build: 0 warnings/errors; 22 Python tests; isolated TestSubject checkpoint: intent 22->18 and card target preview 6->9 after Shockwave; live multiselect pending",
+    "human_game_installed": false,
+    "upstream_issue": "https://github.com/Gennadiyev/STS2MCP/issues/133"
   }
 }

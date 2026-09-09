@@ -30,6 +30,7 @@ mod/tests/bin/
 mod/tests/obj/
 .coverage
 headless-instances/
+a10-eval-instances/
 .mcp-stashed/
 scripts/McpHeadlessPatcher/bin/
 scripts/McpHeadlessPatcher/obj/

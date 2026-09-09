@@ -50,10 +50,29 @@ def digest(state: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def decision_digest(state: dict[str, Any]) -> str:
+    """Exclude animated transform examples, retaining the selected originals.
+
+    NTransformPreview cycles replacement examples every 0.2 seconds. They are
+    presentation, not the committed random outcome. Raw audit hashes use digest.
+    """
+    selection = state.get("card_select", {})
+    if selection.get("screen_type") == "transform" and selection.get("preview_showing"):
+        state = dict(state)
+        selection = dict(selection)
+        # Explicit original/selected fields from the patched MCP are retained.
+        # Legacy preview_cards has no trustworthy role tags: exclude it all,
+        # rather than guessing that the first half are the original cards.
+        selection.pop("preview_cards", None)
+        selection.pop("preview_examples", None)
+        state["card_select"] = selection
+    return digest(state)
+
+
 def summary(state: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {"state_type": state.get("state_type")}
     for key in ("run", "player", "battle", "rewards", "card_reward", "map", "event",
-                "rest_site", "shop", "treasure", "game_over", "menu_screen", "options"):
+                "rest_site", "shop", "treasure", "card_select", "hand_select", "game_over", "menu_screen", "options"):
         if key in state:
             result[key] = state[key]
     return result
@@ -145,6 +164,22 @@ def _action_committed(
     before: dict[str, Any], current: dict[str, Any], action: dict[str, Any]
 ) -> bool:
     name = action.get("action")
+    if name == "select_card" and before.get("state_type") == "card_select":
+        if current.get("state_type") != "card_select":
+            return True
+        pre, post = before.get("card_select", {}), current.get("card_select", {})
+        if pre.get("screen_type") != post.get("screen_type"):
+            return True
+        if pre.get("selection_tracking") == "available" and post.get("selection_tracking") == "available":
+            # A toggle of this exact index is the witness, not another card or animation.
+            index = action.get("index")
+            return (index in pre.get("selected_indices", [])) != (index in post.get("selected_indices", []))
+        return not pre.get("preview_showing") and bool(post.get("preview_showing"))
+    if name == "confirm_selection" and before.get("state_type") == "card_select":
+        pre, post = before.get("card_select", {}), current.get("card_select", {})
+        return (current.get("state_type") != "card_select"
+                or pre.get("screen_type") != post.get("screen_type")
+                or (bool(pre.get("preview_showing")) and not post.get("preview_showing")))
     if name == "play_card":
         return _play_card_committed(before, current, action)
     if name == "end_turn":
@@ -160,6 +195,8 @@ def _action_committed(
             current_run.get("floor") != before_run.get("floor")
         )
     if name == "menu_select" and before.get("menu_screen") == "character_select":
+        if action.get("option") in {"embark", "confirm"}:
+            return current.get("state_type") != "menu"
         # STS2MCP exposes the character list but not the currently highlighted
         # character. Selecting one is therefore intentionally state-silent;
         # embark is the subsequent semantic verification of character and
@@ -168,7 +205,7 @@ def _action_committed(
             "IRONCLAD", "SILENT", "REGENT", "NECROBINDER", "DEFECT",
             "RANDOM_CHARACTER",
         }
-    return digest(current) != digest(before)
+    return decision_digest(current) != decision_digest(before)
 
 
 def settled_state(
@@ -182,11 +219,11 @@ def settled_state(
     latest = before
     committed = False
     stable_since: float | None = None
-    latest_hash = digest(latest)
+    latest_hash = decision_digest(latest)
     while time.monotonic() < deadline:
         time.sleep(0.1)
         newer = request(port)
-        newer_hash = digest(newer)
+        newer_hash = decision_digest(newer)
         now = time.monotonic()
         if not committed and _action_committed(before, newer, action):
             committed = True
@@ -194,7 +231,12 @@ def settled_state(
         elif committed:
             if newer_hash != latest_hash:
                 stable_since = now
-            elif stable_since is not None and now - stable_since >= quiet_window:
+            elif stable_since is not None and now - stable_since >= (
+                0.2 if action.get("action") == "select_card"
+                and newer.get("card_select", {}).get("selection_tracking") == "available"
+                and (not newer.get("card_select", {}).get("preview_showing")
+                     or newer.get("card_select", {}).get("can_confirm")) else quiet_window
+            ):
                 return newer
         latest, latest_hash = newer, newer_hash
     if not committed:
@@ -215,6 +257,14 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
         handle.write(
             json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
         )
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def append_live(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n[{datetime.now().astimezone().isoformat(timespec='seconds')}] {text}\n")
         handle.flush()
         os.fsync(handle.fileno())
 
@@ -241,12 +291,14 @@ def main() -> None:
 
     pre = request(args.port)
     pre_hash = digest(pre)
+    decision_hash = decision_digest(pre)
     if args.command == "observe":
         print(json.dumps(pre if args.full else summary(pre), ensure_ascii=False, indent=2))
         print(f"state_sha256={pre_hash}")
+        print(f"decision_hash={decision_hash}")
         return
 
-    if args.expected_hash and args.expected_hash != pre_hash:
+    if args.expected_hash and args.expected_hash not in {pre_hash, decision_hash}:
         raise SystemExit(
             f"stale decision: expected {args.expected_hash}, observed {pre_hash}; re-observe"
         )
@@ -258,6 +310,7 @@ def main() -> None:
         raise SystemExit("action JSON must be an object with a string 'action'")
 
     decision_id = args.decision_id or uuid.uuid4().hex
+    append_live(args.log.parent / "live.log", f"{decision_id} | {args.reason}\n执行：{json.dumps(action, ensure_ascii=False)}")
     append_jsonl(
         args.log,
         {
@@ -273,6 +326,7 @@ def main() -> None:
     )
     action_response = request(args.port, action)
     post = settled_state(args.port, pre, action)
+    append_live(args.log.parent / "live.log", f"{decision_id} | 结算：{post.get('state_type')}，HP {post.get('player', {}).get('hp')}")
     append_jsonl(
         args.log,
         {

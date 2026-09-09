@@ -1,0 +1,230 @@
+--- a/McpMod.StateBuilder.cs
++++ b/McpMod.StateBuilder.cs
+@@ -60,14 +60,17 @@
+ {
+     private static Dictionary<string, object?> BuildGameState()
+     {
+-        var result = new Dictionary<string, object?>();
++        var result = new Dictionary<string, object?> { ["rules_context"] = BuildRulesContext() };
+         var tree = (Godot.Engine.GetMainLoop()) as SceneTree;
+ 
+         if (tree?.Root != null)
+         {
+             var ftueState = BuildVisibleFtueState(tree.Root);
+             if (ftueState != null)
++            {
++                ftueState["rules_context"] = BuildRulesContext();
+                 return ftueState;
++            }
+         }
+ 
+         if (!RunManager.Instance.IsInProgress)
+@@ -1073,6 +1076,7 @@
+         battle["round"] = combatState.RoundNumber;
+         battle["turn"] = combatState.CurrentSide.ToString().ToLower();
+         battle["is_play_phase"] = IsPlayPhase(combatState);
++        battle["is_over_or_ending"] = CombatManager.Instance.IsOverOrEnding;
+ 
+         // Enemies
+         var enemies = new List<Dictionary<string, object?>>();
+@@ -1085,6 +1089,10 @@
+             }
+         }
+         battle["enemies"] = enemies;
++        // Preserve legacy live-enemy aliases; dead/reviving creatures are not legal targets.
++        var inactiveCounts = new Dictionary<string, int>();
++        battle["inactive_enemies"] = combatState.Enemies.Where(c => !c.IsAlive)
++            .Select(c => BuildEnemyState(c, inactiveCounts)).ToList();
+ 
+         return battle;
+     }
+@@ -1243,6 +1251,21 @@
+         return new Dictionary<string, object?>
+         {
+             ["id"] = card.Id.Entry,
++            ["model_id"] = card.Id.ToString(),
++            ["enchantment"] = card.Enchantment == null ? null : new Dictionary<string, object?>
++            {
++                ["id"] = card.Enchantment.Id.Entry,
++                ["model_id"] = card.Enchantment.Id.ToString(),
++                ["amount"] = card.Enchantment.Amount,
++                ["description"] = SafeGetText(() => card.Enchantment.DynamicDescription)
++            },
++            ["affliction"] = card.Affliction == null ? null : new Dictionary<string, object?>
++            {
++                ["id"] = card.Affliction.Id.Entry,
++                ["model_id"] = card.Affliction.Id.ToString(),
++                ["amount"] = card.Affliction.Amount,
++                ["description"] = SafeGetText(() => card.Affliction.DynamicDescription)
++            },
+             ["name"] = SafeGetText(() => card.Title),
+             ["type"] = card.Type.ToString(),
+             ["cost"] = GetCostDisplay(card),
+@@ -1260,6 +1283,7 @@
+ 
+         var state = BuildCardInfo(card);
+         state["index"] = index;
++        state["rule_preview"] = BuildCardRulePreview(card);
+         state["description"] = SafeGetCardDescription(card); // hand cards use default pile
+         state["target_type"] = card.TargetType.ToString();
+         state["can_play"] = unplayableReason == UnplayableReason.None;
+@@ -1305,14 +1329,8 @@
+         var list = new List<Dictionary<string, object?>>();
+         foreach (var card in cards)
+         {
+-            // Pile cards only need a subset - keep it lightweight
+-            list.Add(new Dictionary<string, object?>
+-            {
+-                ["name"] = SafeGetText(() => card.Title),
+-                ["cost"] = GetCostDisplay(card),
+-                ["star_cost"] = GetStarCostDisplay(card),
+-                ["description"] = SafeGetCardDescription(card, pile)
+-            });
++            // Piles must retain identity, upgrades and decorations for rule lookup.
++            list.Add(BuildCardInfo(card, pile));
+         }
+         return list;
+     }
+@@ -1331,6 +1349,10 @@
+         var state = new Dictionary<string, object?>
+         {
+             ["entity_id"] = entityId,
++            ["id"] = baseId,
++            ["model_id"] = monster?.Id.ToString(),
++            ["is_alive"] = creature.IsAlive,
++            ["is_targetable"] = creature.IsAlive && creature.IsHittable,
+             ["combat_id"] = creature.CombatId,
+             ["name"] = SafeGetText(() => monster?.Title),
+             ["hp"] = creature.CurrentHp,
+@@ -1340,8 +1362,9 @@
+         };
+ 
+         // Intents
+-        if (monster?.NextMove is MoveState moveState)
+-        {
++        if (creature.IsAlive && monster?.NextMove is MoveState moveState)
++        {
++            state["current_move_id"] = moveState.Id;
+             var intents = new List<Dictionary<string, object?>>();
+             foreach (var intent in moveState.Intents)
+             {
+@@ -1354,6 +1377,14 @@
+                     var targets = creature.CombatState?.PlayerCreatures;
+                     if (targets != null)
+                     {
++                        if (intent is AttackIntent attack)
++                        {
++                            intentData["damage_per_hit"] = attack.GetSingleDamage(targets, creature);
++                            intentData["hits"] = attack.Repeats;
++                            intentData["total_damage"] = attack.GetTotalDamage(targets, creature);
++                            intentData["damage_source"] = "engine_intent_preview";
++                            intentData["damage_scope"] = "local_player_before_block; current_state_only";
++                        }
+                         string label = intent.GetIntentLabel(targets, creature).GetFormattedText();
+                         intentData["label"] = StripRichTextTags(label);
+ 
+@@ -2417,6 +2448,7 @@
+                 powers.Add(new Dictionary<string, object?>
+                 {
+                     ["id"] = power.Id.Entry,
++                    ["model_id"] = power.Id.ToString(),
+                     ["name"] = SafeGetText(() => power.Title),
+                     ["amount"] = power.DisplayAmount,
+                     ["type"] = power.Type.ToString(),
+--- /dev/null
++++ b/McpMod.RuleEvidence.cs
+@@ -0,0 +1,94 @@
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using System.Security.Cryptography;
++using MegaCrit.Sts2.Core.Debug;
++using MegaCrit.Sts2.Core.Entities.Cards;
++using MegaCrit.Sts2.Core.Hooks;
++using MegaCrit.Sts2.Core.Localization.DynamicVars;
++using MegaCrit.Sts2.Core.Models;
++
++namespace STS2_MCP;
++
++public static partial class McpMod
++{
++    private static readonly Lazy<string?> RulesAssemblySha = new(() =>
++    {
++        try
++        {
++            using var stream = File.OpenRead(typeof(CardModel).Assembly.Location);
++            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
++        }
++        catch { return null; }
++    });
++
++    private static Dictionary<string, object?> BuildRulesContext()
++    {
++        var release = ReleaseInfoManager.Instance.ReleaseInfo;
++        return new Dictionary<string, object?>
++        {
++            ["schema_version"] = 1,
++            ["game_version"] = release?.Version,
++            ["game_commit"] = release?.Commit,
++            ["game_assembly_sha256"] = RulesAssemblySha.Value,
++            ["source_priority"] = "live_engine_preview > matching_game_rules > community_reference",
++            ["limitations"] = "Previews are not action simulations. Other gameplay mods can change rules. No RNG or hidden draw order exported."
++        };
++    }
++
++    private static Dictionary<string, object?> BuildCardRulePreview(CardModel card)
++    {
++        var variables = new List<Dictionary<string, object?>>();
++        foreach (var pair in card.DynamicVars)
++        {
++            var value = pair.Value;
++            var item = new Dictionary<string, object?>
++            {
++                ["name"] = pair.Key, ["type"] = value.GetType().Name,
++                ["base_value"] = value.BaseValue,
++                ["coverage"] = "variable_only; read_card_rules_for_trigger_and_repeats"
++            };
++            try
++            {
++                // Mirror the engine's UI hooks without mutating the shared PreviewValue or target.
++                // Only exact built-in variable types are supported; derived/calculated values
++                // may have their own formulas and must not be silently treated as plain damage.
++                if (value.GetType() == typeof(DamageVar) && card.CombatState != null)
++                {
++                    var damage = (DamageVar)value;
++                    item["damage_by_target"] = card.CombatState.HittableEnemies.Select(target =>
++                    {
++                        decimal amount = Hook.ModifyDamage(card.Owner.RunState, card.CombatState,
++                            target, card.Owner.Creature, damage.BaseValue, damage.Props, card,
++                            ModifyDamageHookType.All, CardPreviewMode.Normal, out _);
++                        return new Dictionary<string, object?>
++                        {
++                            ["combat_id"] = target.CombatId,
++                            ["before_block"] = (int)Math.Max(0m, amount),
++                            ["unrounded"] = amount
++                        };
++                    }).ToList();
++                    item["coverage"] = "engine_damage_variable_preview; current_state_single_hit_before_block";
++                }
++                else if (value.GetType() == typeof(BlockVar) && card.CombatState != null)
++                {
++                    var block = (BlockVar)value;
++                    decimal amount = Hook.ModifyBlock(card.CombatState, card.Owner.Creature,
++                        block.BaseValue, block.Props, card, null, out _);
++                    item["block_preview"] = (int)Math.Max(0m, amount);
++                    item["unrounded"] = amount;
++                    item["coverage"] = "engine_block_variable_preview; read_rules_for_trigger";
++                }
++            }
++            catch { item["coverage"] = "unavailable; engine_preview_failed"; }
++            variables.Add(item);
++        }
++        return new Dictionary<string, object?>
++        {
++            ["source"] = "engine_ui_hooks",
++            ["scope"] = "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
++            ["variables"] = variables
++        };
++    }
++}

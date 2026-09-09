@@ -30,6 +30,7 @@ SUPPORTED_TYPES = frozenset(
         "relic_select",
         "crystal_sphere",
         "game_over",
+        "menu",
     }
 )
 
@@ -53,7 +54,7 @@ def _combat_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
     enemies = [
         enemy
         for enemy in _items(battle, "enemies")
-        if int(enemy.get("hp", 0) or 0) > 0
+        if int(enemy.get("hp", 0) or 0) > 0 and enemy.get("is_targetable", True)
     ]
     actions: list[dict[str, Any]] = []
     if battle.get("is_play_phase"):
@@ -106,6 +107,13 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(state, dict):
         return []
     state_type = str(state.get("state_type", "unknown"))
+    if state_type == "menu":
+        actions = []
+        for option in state.get("options", []):
+            item = {'name':option, 'enabled':True} if isinstance(option,str) else option
+            if isinstance(item,dict) and item.get('name') and item.get('enabled',True):
+                actions.append(_candidate('menu_select',item,option=item['name']))
+        return actions
     if state_type in COMBAT_TYPES:
         return _combat_actions(state)
     if state_type == "hand_select":
@@ -188,6 +196,7 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
         actions = [
             _candidate("select_card", card, index=card.get("index"))
             for card in _items(block, "cards")
+            if not (isinstance(block, dict) and block.get("preview_showing"))
         ]
         if isinstance(block, dict) and block.get("can_confirm"):
             actions.append(_candidate("confirm_selection"))
@@ -244,6 +253,7 @@ def audit_action_space(state: dict[str, Any] | None) -> dict[str, Any]:
         "state_type": state_type,
         "supported": state_type in SUPPORTED_TYPES,
         "complete": not issues,
+        "coverage_scope": "snapshot_derived_only; not proof of complete game UI coverage",
         "action_count": len(actions),
         "candidate_action_count": candidate_actions,
         "issues": issues,
