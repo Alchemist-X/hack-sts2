@@ -1,0 +1,31 @@
+{
+  "retrieved_on": "2026-09-09",
+  "authority": "secondary_reference_only; live engine and matching local source take precedence",
+  "spire_codex_revision": "43af6997e02c28894e1ca516116778fc25914c09",
+  "models": {
+    "MONSTER.PHROG_PARASITE": [
+      {
+        "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2%3APhrog_Parasite",
+        "version_status": "community page, not pinned to the running build",
+        "crosscheck": "交替 Infect/Lash、A10 的5×4、死亡生成4只幼虫，与本地v0.107.1相关规则一致。"
+      },
+      {
+        "url": "https://github.com/ptrlrd/spire-codex/blob/43af6997e02c28894e1ca516116778fc25914c09/data-beta/v0.107.1/eng/monsters.json",
+        "record_id": "PHROG_PARASITE",
+        "crosscheck": "attack_pattern.type=random 不应直接采用：本地初始可达链为 INFECT_MOVE↔LASH_MOVE，源码中的RAND节点不在该链中。"
+      }
+    ],
+    "MONSTER.AEONGLASS": [
+      {
+        "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2%3AAeonglass",
+        "version_status": "community page with beta warning; differs from local v0.107.1",
+        "crosscheck": "行动周期与激光两段相符；本次访问页面的Ebb A9数值为26，本地v0.107.1为32，不能将网页当前数值用于旧版本。"
+      },
+      {
+        "url": "https://github.com/ptrlrd/spire-codex/blob/43af6997e02c28894e1ca516116778fc25914c09/data-beta/v0.107.1/eng/monsters.json",
+        "record_id": "AEONGLASS",
+        "crosscheck": "周期及Ebb伤害可交叉核对；EyeLasers的hit_count缺失，本地源码明确为2。缺字段不是单段攻击。"
+      }
+    ]
+  }
+}

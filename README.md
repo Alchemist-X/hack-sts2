@@ -134,6 +134,15 @@ There is intentionally no generic heuristic combat driver. Training and
 benchmark policies remain separate interfaces and must identify their own
 controller provenance.
 
+For per-game live narration, version-checked rule retrieval, pending-action
+recovery, and reward/potion/token audits, use `scripts/sts2_live.py`. Read the
+[live-play protocol](docs/sts2-live-protocol.md) for setup and commands, and the
+[live harness architecture](docs/live-harness-architecture.md) for its decision
+and improvement workflow. The live controller does not load the offline learned
+policy or value models. The [A10 case-study release](https://github.com/Alchemist-X/hack-sts2/releases/tag/sts2-a10-gpt6-2026-09-09)
+contains separately archived gameplay evidence and saves; these are not Git
+source files or a qualified independent benchmark.
+
 The Python interface supports arbitrary policy callables and concurrent episodes:
 
 ```python

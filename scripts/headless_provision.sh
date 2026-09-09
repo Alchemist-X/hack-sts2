@@ -202,7 +202,7 @@ fi
 
 log "building process-configurable worker MCP from pinned commit $MCP_COMMIT"
 MCP_BUILD="$RUNTIME_BUILD/mcp"
-"$SCRIPT_DIR/build_headless_mcp.sh" "$MCP_SOURCE_DLL" "$MCP_BUILD"
+"$SCRIPT_DIR/build_selection_mcp.sh" "$MCP_BUILD"
 dotnet build "$REPO_ROOT/mod/Sts2Recorder.csproj" -c Release --nologo >/dev/null
 
 RUNTIME_MODS="$RUNTIME_APP/Contents/MacOS/mods"
