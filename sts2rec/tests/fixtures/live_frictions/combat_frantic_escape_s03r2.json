@@ -1,0 +1,437 @@
+{
+ "state_type": "boss",
+ "battle": {
+  "round": 11,
+  "turn": "player",
+  "is_play_phase": true,
+  "is_over_or_ending": false,
+  "enemies": [
+   {
+    "entity_id": "THE_INSATIABLE_0",
+    "id": "THE_INSATIABLE",
+    "model_id": "MONSTER.THE_INSATIABLE",
+    "is_alive": true,
+    "is_targetable": true,
+    "combat_id": 1,
+    "name": "The Insatiable",
+    "hp": 137,
+    "max_hp": 341,
+    "block": 0,
+    "status": [
+     {
+      "id": "SANDPIT_POWER",
+      "model_id": "POWER.SANDPIT_POWER",
+      "name": "Sandpit",
+      "amount": 1,
+      "type": "Buff",
+      "description": "When The Insatiable takes its turn, you will be eaten and die.",
+      "keywords": []
+     },
+     {
+      "id": "STRENGTH_POWER",
+      "model_id": "POWER.STRENGTH_POWER",
+      "name": "Strength",
+      "amount": 6,
+      "type": "Buff",
+      "description": "Increases attack damage by 6.",
+      "keywords": []
+     }
+    ],
+    "current_move_id": "LUNGING_BITE_MOVE",
+    "intents": [
+     {
+      "type": "Attack",
+      "damage_per_hit": 37,
+      "hits": 1,
+      "total_damage": 37,
+      "damage_source": "engine_intent_preview",
+      "damage_scope": "local_player_before_block; current_state_only",
+      "label": "37",
+      "title": "Aggressive",
+      "description": "This enemy intends to Attack for 37 damage."
+     }
+    ]
+   }
+  ],
+  "inactive_enemies": [],
+  "player_turn": 11
+ },
+ "run": {
+  "act": 2,
+  "floor": 33,
+  "ascension": 10
+ },
+ "player": {
+  "character": "The Ironclad",
+  "hp": 7,
+  "max_hp": 80,
+  "block": 16,
+  "energy": 2,
+  "max_energy": 3,
+  "hand": [
+   {
+    "id": "FRANTIC_ESCAPE",
+    "model_id": "CARD.FRANTIC_ESCAPE",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Frantic Escape",
+    "type": "Status",
+    "cost": "3",
+    "star_cost": null,
+    "description": "Get farther away. Increase Sandpit by 1. Increase the cost of this card by 1.",
+    "rarity": "Status",
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "name": "Sandpit",
+      "description": "When The Insatiable takes its turn, you will be eaten and die."
+     }
+    ],
+    "index": 0,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": []
+    },
+    "target_type": "Self",
+    "can_play": false,
+    "unplayable_reason": "EnergyCostTooHigh"
+   },
+   {
+    "id": "TWIN_STRIKE",
+    "model_id": "CARD.TWIN_STRIKE",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Twin Strike",
+    "type": "Attack",
+    "cost": "1",
+    "star_cost": null,
+    "description": "Deal 8 damage twice.",
+    "rarity": "Common",
+    "is_upgraded": false,
+    "keywords": [],
+    "index": 1,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": [
+      {
+       "name": "Damage",
+       "type": "DamageVar",
+       "base_value": 5,
+       "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+       "damage_by_target": [
+        {
+         "combat_id": 1,
+         "before_block": 8,
+         "unrounded": 8
+        }
+       ]
+      }
+     ]
+    },
+    "target_type": "AnyEnemy",
+    "can_play": true,
+    "unplayable_reason": null
+   },
+   {
+    "id": "FRANTIC_ESCAPE",
+    "model_id": "CARD.FRANTIC_ESCAPE",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Frantic Escape",
+    "type": "Status",
+    "cost": "2",
+    "star_cost": null,
+    "description": "Get farther away. Increase Sandpit by 1. Increase the cost of this card by 1.",
+    "rarity": "Status",
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "name": "Sandpit",
+      "description": "When The Insatiable takes its turn, you will be eaten and die."
+     }
+    ],
+    "index": 2,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": []
+    },
+    "target_type": "Self",
+    "can_play": true,
+    "unplayable_reason": null
+   },
+   {
+    "id": "BREAKTHROUGH",
+    "model_id": "CARD.BREAKTHROUGH",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Breakthrough+",
+    "type": "Attack",
+    "cost": "1",
+    "star_cost": null,
+    "description": "Lose 1 HP. Deal 16 damage to ALL enemies.",
+    "rarity": "Common",
+    "is_upgraded": true,
+    "keywords": [],
+    "index": 3,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": [
+      {
+       "name": "Damage",
+       "type": "DamageVar",
+       "base_value": 13,
+       "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+       "damage_by_target": [
+        {
+         "combat_id": 1,
+         "before_block": 16,
+         "unrounded": 16
+        }
+       ]
+      },
+      {
+       "name": "HpLoss",
+       "type": "HpLossVar",
+       "base_value": 1,
+       "coverage": "variable_only; read_card_rules_for_trigger_and_repeats"
+      }
+     ]
+    },
+    "target_type": "AllEnemies",
+    "can_play": true,
+    "unplayable_reason": null
+   },
+   {
+    "id": "BREAKTHROUGH",
+    "model_id": "CARD.BREAKTHROUGH",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Breakthrough",
+    "type": "Attack",
+    "cost": "1",
+    "star_cost": null,
+    "description": "Lose 1 HP. Deal 12 damage to ALL enemies.",
+    "rarity": "Common",
+    "is_upgraded": false,
+    "keywords": [],
+    "index": 4,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": [
+      {
+       "name": "Damage",
+       "type": "DamageVar",
+       "base_value": 9,
+       "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+       "damage_by_target": [
+        {
+         "combat_id": 1,
+         "before_block": 12,
+         "unrounded": 12
+        }
+       ]
+      },
+      {
+       "name": "HpLoss",
+       "type": "HpLossVar",
+       "base_value": 1,
+       "coverage": "variable_only; read_card_rules_for_trigger_and_repeats"
+      }
+     ]
+    },
+    "target_type": "AllEnemies",
+    "can_play": true,
+    "unplayable_reason": null
+   },
+   {
+    "id": "STRIKE_IRONCLAD",
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "enchantment": null,
+    "affliction": null,
+    "name": "Strike",
+    "type": "Attack",
+    "cost": "1",
+    "star_cost": null,
+    "description": "Deal 9 damage.",
+    "rarity": "Basic",
+    "is_upgraded": false,
+    "keywords": [],
+    "index": 5,
+    "rule_preview": {
+     "source": "engine_ui_hooks",
+     "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+     "variables": [
+      {
+       "name": "Damage",
+       "type": "DamageVar",
+       "base_value": 6,
+       "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+       "damage_by_target": [
+        {
+         "combat_id": 1,
+         "before_block": 9,
+         "unrounded": 9
+        }
+       ]
+      }
+     ]
+    },
+    "target_type": "AnyEnemy",
+    "can_play": true,
+    "unplayable_reason": null
+   }
+  ],
+  "draw_pile_count": 9,
+  "discard_pile_count": 11,
+  "exhaust_pile_count": 1,
+  "draw_pile": [],
+  "discard_pile": [],
+  "exhaust_pile": [],
+  "gold": 58,
+  "status": [
+   {
+    "id": "STRENGTH_POWER",
+    "model_id": "POWER.STRENGTH_POWER",
+    "name": "Strength",
+    "amount": 3,
+    "type": "Buff",
+    "description": "Increases attack damage by 3.",
+    "keywords": []
+   },
+   {
+    "id": "CRIMSON_MANTLE_POWER",
+    "model_id": "POWER.CRIMSON_MANTLE_POWER",
+    "name": "Crimson Mantle",
+    "amount": 8,
+    "type": "Buff",
+    "description": "At the start of your turn, lose 1 HP and gain 8 Block.",
+    "keywords": [
+     {
+      "name": "Block",
+      "description": "Until next turn, prevents damage."
+     }
+    ]
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood",
+    "description": "At the end of combat, heal 6 HP.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "LARGE_CAPSULE",
+    "name": "Large Capsule",
+    "description": "Upon pickup, obtain 2 random Relics. Add an additional Strike and Defend to your Deck.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "RIPPLE_BASIN",
+    "name": "Ripple Basin",
+    "description": "If you did not play any Attacks during your turn, gain 4 Block.",
+    "counter": null,
+    "keywords": [
+     {
+      "name": "Block",
+      "description": "Until next turn, prevents damage."
+     }
+    ]
+   },
+   {
+    "id": "GORGET",
+    "name": "Gorget",
+    "description": "At the start of each combat, gain 4 Plating.",
+    "counter": null,
+    "keywords": [
+     {
+      "name": "Plating",
+      "description": "At the end of your turn, gain Block. Plating is reduced by 1 at the start of your turn."
+     },
+     {
+      "name": "Block",
+      "description": "Until next turn, prevents damage."
+     }
+    ]
+   },
+   {
+    "id": "CENTENNIAL_PUZZLE",
+    "name": "Centennial Puzzle",
+    "description": "The first time you lose HP each combat, draw 3 cards.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "STONE_CRACKER",
+    "name": "Stone Cracker",
+    "description": "At the start of each combat, Upgrade 2 random cards in your Draw Pile for the rest of combat.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "WHETSTONE",
+    "name": "Whetstone",
+    "description": "Upon pickup, Upgrade 2 random Attacks.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "VAMBRACE",
+    "name": "Vambrace",
+    "description": "The first time you gain Block from a card each combat, double the amount gained.",
+    "counter": null,
+    "keywords": [
+     {
+      "name": "Block",
+      "description": "Until next turn, prevents damage."
+     }
+    ]
+   },
+   {
+    "id": "PAELS_BLOOD",
+    "name": "Pael's Blood",
+    "description": "At the start of your turn, draw 1 additional card.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "FESTIVE_POPPER",
+    "name": "Festive Popper",
+    "description": "At the start of each combat, deal 9 damage to ALL enemies.",
+    "counter": null,
+    "keywords": []
+   },
+   {
+    "id": "PEN_NIB",
+    "name": "Pen Nib",
+    "description": "Every 10th Attack you play deals double damage.",
+    "counter": 7,
+    "keywords": []
+   }
+  ],
+  "potions": [],
+  "max_potion_slots": 2
+ },
+ "execution": {
+  "schema_version": 1,
+  "request_id": "e10458bfcaee4821a68133a09ba6ac0e",
+  "action": "play_card",
+  "ready_for_next_action": true,
+  "game_action_id": 288,
+  "game_action_state": "Finished",
+  "scope": "public action completion; no RNG or future state",
+  "queue_idle": true,
+  "player_turn": 11,
+  "player_phase": "Play",
+  "completion_kind": "game_action_finished",
+  "submitted_player_turn": 11,
+  "completion_confirmed": true
+ }
+}
