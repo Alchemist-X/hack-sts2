@@ -42,9 +42,9 @@ act 发送前等待“可行动”帧：战斗需 is_play_phase、queue_idle 且
 
 所有失败都以退出码 2 输出 JSON：`{"ok":false,"error":<kind>,"message":...,"observation":<最新观察>}`。kind：`stale_hash`（附 diff，未发送任何动作）、`not_settled`、`unresolvable_action`（附 available 与 failed_step）、`selection_incomplete`、`action_rejected`、`action_unresolved`、`pending_unresolved`、`rule_authority_unverified`、`reason_required`、`hash_required`、`bad_request`。
 
-`act ... --expect-state-version N`：发送前读取 eval API 的 `state_version`，与观察时不同则以 `stale_state_version` 拒绝（未发送任何动作）；无 eval API 的旧 MCP 只返回 warning，仍由决策 hash 把关。observe 与 act 结果在有 eval API 时带 `state_version`。
+`act ... --expect-state-version N`：发送前读取 eval API 的 `state_version`，与观察时不同则以 `stale_state_version` 拒绝（未发送任何动作）；无 eval API 的旧 MCP 只返回 warning，仍由决策 hash 把关。observe 与 act 结果在有 eval API 时带 `state_version`。`state_version` 也会因决策 hash 有意忽略的变化（宝箱开启动画、执行簿记）而递增：若同时给出 `--expect-legal-digest D`（观察列表中合法动作 ref 的摘要，`sts2_action_refs.legal_digest`），且决策 hash 与合法动作列表都未变，则接受并以 warning 记录重绑定（`re-bound to N`），不再拒绝。
 
-交互式 LLM 代理用 `scripts/bench/agent_step.py`（obs / act）：位置编号必须绑定到它出自的列表，写作 `3@<token>` 或 `[1,4]@<token>`（token = 该观察 hash 前 8 位，随每个列表打印）。裸编号以 `index_unbound` 拒绝，旧列表的编号（例如领取一个奖励后编号整体移位）以 `stale_index` 拒绝，均不发送动作并重新列出；绑定成功后 act 同时带观察 hash 与 `--expect-state-version`。`act obs` 视为观察，不是动作。
+交互式 LLM 代理用 `scripts/bench/agent_step.py`（obs / act）：位置编号必须绑定到它出自的列表，写作 `3@<token>` 或 `[1,4]@<token>`（token = 该观察 hash 前 8 位，随每个列表打印）。裸编号以 `index_unbound` 拒绝，旧列表的编号（例如领取一个奖励后编号整体移位）以 `stale_index` 拒绝，均不发送动作并重新列出；绑定成功后 act 同时带观察 hash、`--expect-state-version` 与 `--expect-legal-digest`。若仍以 `stale_state_version` 拒绝（例如宝箱开启后多出 `proceed`、列表移位），但重新观察的决策 hash 未变且所选 ref 仍在合法动作中，agent_step 自动按新版本重绑定并重试一次（结果 warning 记 `auto-rebound state_version A->B`）。任何被拒绝或失败的 act 都会阻断后续所有 act（`blocked_after_refusal`，不发送），直到显式运行 `obs`：shell 中 `act A; act proceed` 链式调用在 A 被拒后不会执行 proceed。`act obs` 视为观察，不是动作。
 
 规则来源校验：评测局任何不匹配都停止；练习局只有在 start 或 act 传 `--allow-unverified-authority` 时继续，每条意图记录 `authority_verified:false`。
 

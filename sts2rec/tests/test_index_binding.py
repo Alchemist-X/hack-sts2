@@ -91,7 +91,7 @@ def test_act_args_carry_hash_and_state_version(listings):
     before, _ = listings
     args, extra = agent_step.act_args(before, {'action': 'proceed'}, 'leave')
     assert args == ['{"action": "proceed"}', 'leave', before['hash']]
-    assert extra == ['--expect-state-version', '41']
+    assert extra[:2] == ['--expect-state-version', '41']
     no_version = {k: v for k, v in before.items() if k != 'state_version'}
     assert agent_step.act_args(no_version, 'proceed', 'leave')[1] == []
     assert 'state_version 41' in agent_step.listing_header(before)
@@ -151,7 +151,8 @@ def test_runner_sends_bound_index_with_hash_and_version(tmp_path, listings, caps
     command, args, extra = runner.calls[0]
     assert command == 'act'
     assert json.loads(args[0]) == {'action': 'claim_reward', 'reward': 'potion:LIQUID_BRONZE'}
-    assert args[2] == before['hash'] and extra == ('--expect-state-version', '41')
+    assert args[2] == before['hash'] and extra[:2] == ('--expect-state-version', '41')
+    assert extra[2:] == ('--expect-legal-digest', refs.legal_digest(before['legal_actions']))
     record = json.loads((tmp_path / 'trajectory.jsonl').read_text().splitlines()[0])
     assert record['type'] == 'decision' and record['state_ref']['state_version'] == 41
     assert 'Index token: @' + agent_step.listing_token(after) in capsys.readouterr().out

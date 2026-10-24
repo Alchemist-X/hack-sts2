@@ -360,24 +360,36 @@ def state_version(port):
     return version if isinstance(version, int) and not isinstance(version, bool) else None
 
 
-def check_state_version(port, expected, observed_hash, pre, out, knowledge_root):
+def check_state_version(port, expected, observed_hash, pre, out, knowledge_root, expected_legal=None):
     """Refuse when the eval API's state_version moved past the one the caller observed.
 
     This is the eval MCP's ``expect_state_version`` guard applied to the
     singleplayer act path: positional choices (``3``, ``[1,4]``) read from one
     listing must never land on a later one (e.g. after a reward claim shifted
     every index by one).  Returns a warning when the guard is unavailable.
+
+    ``state_version`` also ticks on changes the decision hash deliberately
+    ignores (chest-open animation, execution bookkeeping).  When the caller
+    passes the legal-action digest of the listing it decided from
+    (``expected_legal``) and both that digest and the decision hash
+    (checked by the caller) are unchanged, the decision is still valid: it is
+    re-bound to the current version with a warning instead of refused.
     """
     if expected is None:
         return None
     current = state_version(port)
     if current is None:
         return 'expect_state_version given but this MCP has no eval state_version; decision hash guard only'
-    if current != expected:
-        fail('stale_state_version', f'Game state_version is {current}, the action was chosen at {expected}; '
-             'nothing was sent. Decide again from the fresh observation below.', expected_state_version=expected,
-             observed_state_version=current, observed=observed_hash, state=pre, out=out,
-             knowledge_root=knowledge_root)
+    if current == expected:
+        return None
+    current_legal = refs.legal_digest(refs.observe_actions(pre))
+    if expected_legal and expected_legal == current_legal:
+        return (f'state_version advanced {expected}->{current} with unchanged decision hash and legal actions; '
+                f're-bound to {current}')
+    fail('stale_state_version', f'Game state_version is {current}, the action was chosen at {expected}; '
+         'nothing was sent. Decide again from the fresh observation below.', expected_state_version=expected,
+         observed_state_version=current, expected_legal_digest=expected_legal, observed_legal_digest=current_legal,
+         observed=observed_hash, state=pre, out=out, knowledge_root=knowledge_root)
     return None
 
 
@@ -410,7 +422,8 @@ def run_act(a, out, meta, knowledge_root):
         fail('stale_hash', f'Observed state changed since hash {a.expected_hash}; nothing was sent. '
              'Decide again from the fresh observation below.', expected=a.expected_hash,
              observed=observed_hash, diff=diff, state=pre, out=out, knowledge_root=knowledge_root)
-    version_warning = check_state_version(a.port, a.expect_state_version, observed_hash, pre, out, knowledge_root)
+    version_warning = check_state_version(a.port, a.expect_state_version, observed_hash, pre, out, knowledge_root,
+                                          getattr(a, 'expect_legal_digest', None))
     session = Session(out, meta, a.port, knowledge_root, a.reason, json.loads((out/'plan.json').read_text()))
     session.authority_verified = check_authority(meta, snapshot(out, pre, knowledge_root), a.allow_unverified_authority)
     observed_entities = refs.entity_map(pre)
@@ -502,6 +515,9 @@ def main():
     p.add_argument('--settle-timeout', type=float, default=20.0)
     p.add_argument('--expect-state-version', type=int,
                    help='act only: refuse (send nothing) unless the eval API state_version still equals this')
+    p.add_argument('--expect-legal-digest',
+                   help='act only: legal-action digest of the listing the action was chosen from; a moved '
+                        'state_version is accepted (re-bound) when this and the decision hash are unchanged')
     p.add_argument('--wiki-facts', action='store_true',
                    help='start only: include public wiki/codex facts (knowledge/facts) in every observation')
     a = p.parse_args()
