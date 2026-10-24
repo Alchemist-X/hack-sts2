@@ -89,6 +89,13 @@ def decision_digest(state: dict[str, Any]) -> str:
         # changes on every call without changing the decision. Hashing it made
         # observe->act hashes go stale for no gameplay reason.
         state = {k: v for k, v in state.items() if k != "execution"}
+    treasure = state.get("treasure")
+    if state.get("state_type") == "treasure" and isinstance(treasure, dict) and treasure.get("relics"):
+        # The chest-open animation flips can_proceed false->true a moment after
+        # the room loads while the same relics stay offered; that made the
+        # observe->act hash go stale for no decision reason.
+        state = dict(state)
+        state["treasure"] = {k: v for k, v in treasure.items() if k != "can_proceed"}
     selection = state.get("card_select", {})
     if selection.get("screen_type") == "transform" and selection.get("preview_showing"):
         state = dict(state)

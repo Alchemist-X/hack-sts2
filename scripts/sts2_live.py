@@ -148,6 +148,30 @@ def check_authority(meta, observed, allow_unverified):
 
 
 TREASURE_FIRST_CLICK_S = 4.0
+# How long an end_turn may show no visible effect before it is treated as
+# dropped by the game and re-sent once (see Session.settle).
+END_TURN_FIRST_WAIT_S = 6.0
+MIN_REASON_CHARS = 4
+SHORT_REASON_PAD = ' [short rationale, auto-padded]'
+
+
+def normalize_reason(reason, live_log=None, what='reason'):
+    """Accept short public rationales instead of refusing the whole call.
+
+    Only an empty/whitespace reason is refused.  A 1-3 character rationale
+    ("end", "ok") is padded so the log stays readable, and the padding is
+    reported back (returned warning + live.log) so nothing happens silently.
+    Returns ``(reason, warning_or_None)``.
+    """
+    text = (reason or '').strip()
+    if not text:
+        return None, None
+    if len(text) >= MIN_REASON_CHARS:
+        return text, None
+    warning = f'{what} {text!r} shorter than {MIN_REASON_CHARS} chars; auto-padded'
+    if live_log is not None:
+        executor.append_live(live_log, f'harness: {warning}')
+    return text + SHORT_REASON_PAD, warning
 
 SELECT_SCREENS = {'hand_select': ('combat_select_card', 'combat_confirm_selection'),
                   'card_select': ('select_card', 'confirm_selection')}
@@ -270,6 +294,8 @@ class Session:
         return post
 
     def settle(self, pre, wire):
+        if wire.get('action') == 'end_turn':
+            return self.settle_end_turn(pre, wire)
         if wire.get('action') != 'claim_treasure_relic':
             return executor.settled_state(self.port, pre, wire)
         # The first treasure click is sometimes swallowed by the opening chest
@@ -284,6 +310,30 @@ class Session:
             executor.append_live(self.out/'live.log', 'treasure: first claim not registered; re-clicking the same relic')
             executor.request(self.port, wire)
             self.steps.append({'harness_followup': 'treasure_reclick', 'action': wire})
+            return executor.settled_state(self.port, pre, wire)
+
+    def settle_end_turn(self, pre, wire):
+        """end_turn is occasionally dropped by the game (no enemy phase, nothing moves).
+
+        After a short wait, if the decision state is byte-for-byte unchanged and
+        it is still the player's play phase, the request provably did nothing,
+        so it is re-sent exactly once (logged as ``end_turn_retry``).  Any
+        visible change means the turn is resolving: keep waiting, never resend.
+        """
+        try:
+            return executor.settled_state(self.port, pre, wire, timeout=END_TURN_FIRST_WAIT_S)
+        except SystemExit:
+            current = executor.request(self.port)
+            unchanged = executor.decision_digest(current) == executor.decision_digest(pre)
+            play_phase = (current.get('battle') or {}).get('is_play_phase')
+            if executor._action_committed(pre, current, wire) or not (unchanged and play_phase):
+                return executor.settled_state(self.port, pre, wire)
+            executor.append_live(self.out/'live.log', 'end_turn: first request had no effect (state unchanged, '
+                                 'still play phase); re-sending once')
+            executor.append_jsonl(self.out/'decisions.jsonl', {'type': 'harness_retry', 'kind': 'end_turn_retry',
+                'reason': 'state unchanged after first end_turn', 'wait_s': END_TURN_FIRST_WAIT_S})
+            executor.request(self.port, wire)
+            self.steps.append({'harness_followup': 'end_turn_retry', 'action': wire})
             return executor.settled_state(self.port, pre, wire)
 
 
@@ -308,8 +358,9 @@ def run_act(a, out, meta, knowledge_root):
         pending = (out/'pending-action.json').read_text().strip()
         fail('pending_unresolved', 'Previous action unresolved. Inspect the state, then run '
              '`reconcile "<what happened>"`; never blindly retry.', pending=pending)
-    if not a.reason or len(a.reason.strip()) < 4:
-        fail('reason_required', 'A public decision summary (>=4 chars) is required')
+    a.reason, reason_warning = normalize_reason(a.reason, out/'live.log')
+    if not a.reason:
+        fail('reason_required', 'A public decision summary is required (any non-empty text)')
     if not a.expected_hash:
         fail('hash_required', 'Pass the hash printed by observe (or the previous act)')
     try:
@@ -334,7 +385,10 @@ def run_act(a, out, meta, knowledge_root):
     session = Session(out, meta, a.port, knowledge_root, a.reason, json.loads((out/'plan.json').read_text()))
     session.authority_verified = check_authority(meta, snapshot(out, pre, knowledge_root), a.allow_unverified_authority)
     observed_entities = refs.entity_map(pre)
-    state, step, notes, warnings = pre, 0, [], []
+    state, step, notes, warnings = pre, 0, [], [reason_warning] if reason_warning else []
+    # Pin "Name#k" / "card#3" to what they name on the observed screen, so
+    # renumbering after earlier steps of this chain cannot redirect them.
+    requests = [refs.anchor_request(pre, r) if isinstance(r, dict) else r for r in requests]
     for position, original in enumerate(requests):
         try:
             items = expand(state, original)
@@ -382,7 +436,8 @@ def run_reconcile(a, out, knowledge_root):
     path = out/'pending-action.json'
     if not path.exists():
         fail('nothing_pending', 'No pending action to reconcile')
-    if not a.payload or len(a.payload.strip()) < 4:
+    a.payload, _ = normalize_reason(a.payload, out/'live.log', 'reconcile note')
+    if not a.payload:
         fail('reason_required', 'Describe what actually happened (from the observation/visual evidence)')
     pending = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
     current, settled = executor.wait_settled(a.port, a.settle_timeout)

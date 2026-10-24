@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -71,6 +72,13 @@ class FactDB:
         kw = data["keywords"]
         self.index["powers"] = {e["id"]: e for e in kw.get("powers", [])}
         self.index["card_keywords"] = {e["id"]: e for e in kw.get("card_keywords", [])}
+        # Powers are keyed STEAM_ERUPTION_POWER, but enemy data says "SteamEruption"
+        # and people/agents write STEAM_ERUPTION or "Steam Eruption".
+        self.power_aliases: dict[str, str] = {}
+        for pid, p in self.index["powers"].items():
+            for alias in (pid, pid.removesuffix("_POWER"), p.get("name")):
+                if alias:
+                    self.power_aliases.setdefault(_alias_key(alias), pid)
 
     @classmethod
     @lru_cache(maxsize=4)
@@ -109,8 +117,15 @@ class FactDB:
         p = self.index["potions"].get(_strip_model(pid))
         return f"[potion] {p['name']} ({p['id']}, {p.get('usage')}, target {p.get('target')}): {p.get('description')}" if p else None
 
+    def power_id(self, any_id: str) -> str | None:
+        """Canonical power id for STEAM_ERUPTION_POWER / STEAM_ERUPTION / SteamEruption / 'Steam Eruption'."""
+        i = _strip_model(any_id)
+        if i in self.index["powers"]:
+            return i
+        return self.power_aliases.get(_alias_key(i))
+
     def power_line(self, pid: str) -> str | None:
-        p = self.index["powers"].get(_strip_model(pid))
+        p = self.index["powers"].get(self.power_id(pid) or "")
         return f"[power] {p['name']} ({p.get('type')}, {p.get('stack_type')}): {p.get('description')}" if p else None
 
     def enemy_lines(self, mid: str) -> list[str]:
@@ -124,9 +139,26 @@ class FactDB:
             out.append(f"  move {mv['id']} '{mv.get('title')}' [{'/'.join(mv.get('intents', []))}]: {mv.get('summary') or '-'}{nxt}")
         if e.get("pattern"):
             out.append(f"  pattern: {e['pattern']}")
+        for pid in self.enemy_power_ids(e["id"]):
+            line = self.power_line(pid)
+            if line:
+                out.append("  " + line)
         notes = (e.get("wiki_notes") or {}).get("pattern") or []
         if notes:
             out.append("  wiki pattern notes: " + " / ".join(notes[:8]))
+        return out
+
+    def enemy_power_ids(self, mid: str) -> list[str]:
+        """Powers an enemy starts with or applies to itself in any move (boss mechanics)."""
+        e = self.index["enemies"].get(_strip_model(mid)) or {}
+        names = [p.get("power", "") for p in e.get("starting_powers") or []]
+        for mv in e.get("moves") or []:
+            names += re.findall(r"apply (\w+) [^;]*?to self", mv.get("summary") or "")
+        out: list[str] = []
+        for name in names:
+            pid = self.power_id(name)
+            if pid and pid not in out:
+                out.append(pid)
         return out
 
     def event_lines(self, eid: str) -> list[str]:
@@ -198,6 +230,11 @@ class FactDB:
         if max_chars and len(text) > max_chars:
             text = text[: max_chars - 15].rsplit("\n", 1)[0] + "\n...[truncated]"
         return text
+
+
+def _alias_key(text: str) -> str:
+    """SteamEruption / STEAM_ERUPTION / 'Steam Eruption' / steam-eruption -> 'steameruption'."""
+    return re.sub(r"[^0-9a-z]", "", str(text).casefold())
 
 
 def _strip_model(i: str) -> str:

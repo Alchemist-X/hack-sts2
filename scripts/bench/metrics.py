@@ -7,6 +7,7 @@ fallback (and the only source when a run is cut off by a limit).
 import collections
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 COMBAT_TYPES = {'monster', 'elite', 'boss'}
 FRICTION_ERRORS = ('stale_hash', 'not_settled', 'unresolvable_action', 'selection_incomplete',
@@ -14,8 +15,31 @@ FRICTION_ERRORS = ('stale_hash', 'not_settled', 'unresolvable_action', 'selectio
                    'reason_required', 'hash_required', 'bad_request', 'policy_error', 'harness_crash')
 
 
+class HistoryMatch(NamedTuple):
+    """A run-history file found by :func:`find_history`.
+
+    It is a plain 2-tuple, so ``path, data = find_history(...)`` keeps working,
+    and also has names: ``match.path`` (the ``.run`` file) and ``match.data``
+    (its parsed JSON dict, the input of :func:`history_metrics`).
+    """
+    path: Path
+    data: dict
+
+
+def normalize_seed(seed):
+    """Seed as the game stores it: upper case, letter O read as zero (BENCHAOS05 == BENCHA0S05)."""
+    return str(seed or '').strip().upper().replace('O', '0')
+
+
 def find_history(history_dir, seed, not_before=None):
-    """Newest history file for ``seed`` (optionally started at/after ``not_before`` epoch s)."""
+    """Newest history file for ``seed``.
+
+    Returns a :class:`HistoryMatch` ``(path, data)`` or ``None`` when the
+    directory is missing or nothing matches; it never returns a bare dict or
+    path.  ``seed`` is compared with :func:`normalize_seed` on both sides.
+    ``not_before`` (epoch seconds, 5 s slack) skips runs started earlier, e.g.
+    a previous attempt with the same seed.
+    """
     history_dir = Path(history_dir)
     if not history_dir.is_dir():
         return None
@@ -25,12 +49,12 @@ def find_history(history_dir, seed, not_before=None):
             data = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
             continue
-        if str(data.get('seed', '')).upper() != seed.upper():
+        if not isinstance(data, dict) or normalize_seed(data.get('seed')) != normalize_seed(seed):
             continue
         if not_before is not None and int(data.get('start_time') or 0) < int(not_before) - 5:
             continue
-        if best is None or int(data.get('start_time') or 0) > int(best[1].get('start_time') or 0):
-            best = (path, data)
+        if best is None or int(data.get('start_time') or 0) > int(best.data.get('start_time') or 0):
+            best = HistoryMatch(path, data)
     return best
 
 
