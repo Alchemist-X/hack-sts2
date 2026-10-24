@@ -82,6 +82,10 @@ class Graph:
         return (k == self.boss or self.types.get(k) == 'Boss' or k not in self.types
                 or (self.boss_row is not None and isinstance(k[1], int) and k[1] >= self.boss_row))
 
+    def is_boss(self, k):
+        return k == self.boss or self.types.get(k) == 'Boss' or (
+            self.boss_row is not None and isinstance(k[1], int) and k[1] >= self.boss_row)
+
     def children(self, k):
         # map edges always go up a row; ignoring anything else makes cycles impossible
         return [c for c in self.kids.get(k, []) if isinstance(c[1], int) and isinstance(k[1], int) and c[1] > k[1]]
@@ -124,7 +128,10 @@ def summarize(m, key):
 
     paths, info = agg(key)
     if info is None:
-        return {'node': list(key), 'type': g.types.get(key), 'paths': 0}
+        out = {'node': list(key), 'type': g.types.get(key), 'paths': 0}
+        if g.is_boss(key):
+            out['boss'] = True
+        return out
     forced = sorted(r for r, ts in info['rows'].items() if ts == frozenset({'Elite'}))
     return {'node': list(key), 'type': g.types.get(key), 'paths': paths,
             'counts': {s: list(v) for s, v in info['rng'].items()},
@@ -161,6 +168,8 @@ def lookahead(m):
 def fmt(s):
     n = s['node']
     head = f'Look {n[0]},{n[1]}{SHORT.get(s.get("type"), "?")}:'
+    if s.get('boss'):
+        return head + ' boss'
     if not s.get('paths'):
         return head + ' no path to boss'
     c = s['counts']
