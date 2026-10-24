@@ -1,0 +1,52 @@
+{
+ "cards": {
+  "total": 585,
+  "with_wiki": 576,
+  "with_codex": 577,
+  "ironclad": 87,
+  "wiki_only": 19
+ },
+ "relics": {
+  "total": 298,
+  "with_wiki": 296,
+  "wiki_only": 2
+ },
+ "potions": {
+  "total": 65,
+  "with_wiki": 63,
+  "wiki_only": 1
+ },
+ "enemies": {
+  "total": 114,
+  "with_wiki": 104,
+  "encounters": 88,
+  "moves": 330,
+  "wiki_only": 6
+ },
+ "bosses_elites": {
+  "boss_encounters": 12,
+  "elite_encounters": 12
+ },
+ "events": {
+  "total": 66,
+  "ancients": 8,
+  "with_wiki": 65,
+  "wiki_only": 0
+ },
+ "keywords": {
+  "card_keywords": 14,
+  "powers": 260,
+  "afflictions": 7,
+  "enchantments": 22,
+  "status_cards": 12
+ },
+ "conflicts": {
+  "total": 158,
+  "cards/codex": 1,
+  "cards/wiki": 111,
+  "enemies/wiki": 11,
+  "events/wiki": 1,
+  "potions/wiki": 4,
+  "relics/wiki": 30
+ }
+}

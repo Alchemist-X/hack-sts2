@@ -1,0 +1,6896 @@
+{
+ "meta": {
+  "schema": "schema.json",
+  "schema_version": 1,
+  "category": "keywords",
+  "game_version": "0.107.1",
+  "generated": "2026-10-23",
+  "authority": "game (sts2.dll + pck localization) > wiki.gg > spire-codex",
+  "sources": {
+   "game": "Slay the Spire 2 v0.107.1 (read-only extraction)",
+   "wiki": {
+    "url": "https://slaythespire.wiki.gg/",
+    "fetched": "2026-10-23"
+   },
+   "codex": {
+    "url": "https://spire-codex.com",
+    "fetched": "2026-10-23",
+    "note": "tracks latest stable build; may differ from pinned version",
+    "api_meta": {
+     "version": "v0.1.0",
+     "url": "https://spire-codex.com",
+     "sts2_tested": "v0.103.3"
+    }
+   }
+  }
+ },
+ "card_keywords": [
+  {
+   "id": "BOUND",
+   "name": "Bound",
+   "description": "Only 1 Bound card can be played each turn. Cards are un-Bound at end of turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Afflictions%23Bound",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Only 1 Bound card can be played each turn. Cards are un-Bound at end of turn."
+   }
+  },
+  {
+   "id": "ETHEREAL",
+   "name": "Ethereal",
+   "description": "If this card is in your Hand at the end of this turn, it is Exhausted.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ethereal",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If an Ethereal card is in your hand at the end of your turn, it is Exhausted."
+   }
+  },
+  {
+   "id": "EXHAUST",
+   "name": "Exhaust",
+   "description": "Removed until the end of combat.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Exhaust",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Removed until the end of combat."
+   }
+  },
+  {
+   "id": "FATAL",
+   "name": "Fatal",
+   "description": "Triggers whenever this card kills a non-minion enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fatal",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Triggers when this card kills a non-minion enemy."
+   }
+  },
+  {
+   "id": "INNATE",
+   "name": "Innate",
+   "description": "Start each combat with this card in your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Innate",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Start each combat with this card in your hand."
+   }
+  },
+  {
+   "id": "RETAIN",
+   "name": "Retain",
+   "description": "Retained cards are not discarded at the end of turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Retain",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Retained cards are not discarded at the end of turn."
+   }
+  },
+  {
+   "id": "SLY",
+   "name": "Sly",
+   "description": "If this card is discarded from your Hand before the end of your turn, play it for free.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Discard%23Sly",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If this card is discarded from your Hand before the end of the turn, play it for free."
+   }
+  },
+  {
+   "id": "SOUL",
+   "name": "Soul",
+   "description": "Draw {Cards:diff()} {Cards:plural:card|cards}.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TAINTED",
+   "name": "Tainted",
+   "description": "Gain {Amount} Tainted when played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Afflictions%23Tainted",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Take X additional damage from Attacks this turn."
+   }
+  },
+  {
+   "id": "UNPLAYABLE",
+   "name": "Unplayable",
+   "description": "Unplayable cards cannot be played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Unplayable",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Cannot be played from your Hand."
+   }
+  },
+  {
+   "id": "VULNERABLE",
+   "name": "Vulnerable",
+   "description": "Vulnerable creatures take 50% more damage from Attacks.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "WEAK",
+   "name": "Weak",
+   "description": "Weakened creatures deal 25% less damage with Attacks.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "STRENGTH",
+   "name": "Strength",
+   "description": "Strength adds additional damage to Attacks.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "knowledge/source/v0.107.1/keywords.jsonl",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ETERNAL",
+   "name": "Eternal",
+   "description": "Cannot be removed or transformed from your Deck.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "SlayTheSpire2.pck card_keywords",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Eternal",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Cannot be removed or transformed from your Deck."
+   }
+  }
+ ],
+ "powers": [
+  {
+   "id": "ACCELERANT_POWER",
+   "name": "Accelerant",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Poison is triggered X additional times.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AccelerantPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Accelerant",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Poison is triggered X additional times.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ACCURACY_POWER",
+   "name": "Accuracy",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Shivs deal X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AccuracyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Accuracy",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Shivs deal X additional damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ADAPTABLE_POWER",
+   "name": "Adaptable",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When X would be defeated, it instead revives even stronger.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AdaptablePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Test_Subject",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When it would be defeated, it instead revives even stronger.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "AFTERIMAGE_POWER",
+   "name": "Afterimage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AfterimagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Afterimage",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "AGGRESSION_POWER",
+   "name": "Aggression",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, put X random Attacks from your Discard Pile into your Hand and Upgrade them for the rest of combat.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AggressionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Aggression",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, put X random Attacks from your Discard Pile into your Hand and Upgrade them for the rest of combat.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ANTICIPATE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AnticipatePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ARSENAL_POWER",
+   "name": "Arsenal",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you create a card, gain X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ArsenalPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Arsenal",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you create a card, gain X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ARTIFACT_POWER",
+   "name": "Artifact",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Negates X debuffs.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ArtifactPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Artifact",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Negates X debuffs.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "ASLEEP_POWER",
+   "name": "Asleep",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Awakens upon losing HP or after X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AsleepPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Lagavulin_Matriarch",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Awakens upon losing HP or after X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "AUTOMATION_POWER",
+   "name": "Automation",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Every X cards you draw, gain X[E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.AutomationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Automation",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Every 10 cards you draw, gain 1[E].",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "BACK_ATTACK_LEFT_POWER",
+   "name": "Back Attack",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Deals 50% more damage when it is attacking you from behind.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BackAttackLeftPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Kaiser_Crab",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Deals 50% more damage when it is attacking you from behind.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "BACK_ATTACK_RIGHT_POWER",
+   "name": "Back Attack",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Deals 50% more damage when it is attacking you from behind.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BackAttackRightPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Kaiser_Crab",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Deals 50% more damage when it is attacking you from behind.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "BARRICADE_POWER",
+   "name": "Barricade",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Block is not removed at the start of your turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BarricadePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Barricade",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Block is not removed at the start of your turn.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "BATTLEWORN_DUMMY_TIME_LIMIT_POWER",
+   "name": "Time Limit",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "You have X more turns to defeat the Battleworn Dummy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BattlewornDummyTimeLimitPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Battle_Friend",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You have X more turns to defeat the Battleworn Dummy.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "BEACON_OF_HOPE_POWER",
+   "name": "Beacon of Hope",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Whenever you gain Block on your turn, other players gain half that much Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BeaconOfHopePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Beacon_of_Hope",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you gain Block on your turn, other players gain half that much Block X times.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "BIASED_COGNITION_POWER",
+   "name": "Biased Cognition",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, lose X Focus.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BiasedCognitionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Biased_Cognition",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, lose X Focus.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "BLACK_HOLE_POWER",
+   "name": "Black Hole",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you spend or gain [Star], deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BlackHolePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Black_Hole",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you spend or gain 1[Star], deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "BLOCK_NEXT_TURN_POWER",
+   "name": "Block Next Turn",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your next turn, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BlockNextTurnPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Next_Turn_Effects%23Block_Next_Turn",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your next turn, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "BLUR_POWER",
+   "name": "Blur",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Block is not removed at the start of your next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BlurPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Blur",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Block is not removed at the start of your next X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "BORROWED_TIME_POWER",
+   "name": "Borrowed Time",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Cards cost an additional X[E] this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BorrowedTimePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Borrowed_Time",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Cards cost an additional 1[E] this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "BUFFER_POWER",
+   "name": "Buffer",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Prevent the next X times you would lose HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BufferPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Buffer",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Prevent the next X times you would lose HP.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "BURROWED_POWER",
+   "name": "Burrowed",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Block is not removed at the start of X's turn. Stunned if all Block is removed.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BurrowedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tunneler",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Block is not removed at the start of its turn. Stunned if all Block is removed.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "BURST_POWER",
+   "name": "Burst",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Your next X Skills are played an extra time this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.BurstPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Burst",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next X Skills are played an extra time this turn.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "CALAMITY_POWER",
+   "name": "Calamity",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play an Attack, add X random Attacks into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CalamityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Calamity",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play an Attack, add X random Attacks into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CALCIFY_POWER",
+   "name": "Calcify",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Osty's attacks deal X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CalcifyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Calcify",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Osty's attacks deal X additional damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CALL_OF_THE_VOID_POWER",
+   "name": "Call of the Void",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X random cards into your Hand and apply Ethereal to them.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CallOfTheVoidPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Call_of_the_Void",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X random cards into your Hand and apply Ethereal to them.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CHAINS_OF_BINDING_POWER",
+   "name": "Chains of Binding",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "The first X cards drawn each turn are Afflicted with Bound.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ChainsOfBindingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Queen",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X cards drawn each turn are Afflicted with Bound.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "CHILD_OF_THE_STARS_POWER",
+   "name": "Child of the Stars",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X Block for each [Star] spent.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ChildOfTheStarsPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Child_of_the_Stars",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X Block for each 1[Star] spent.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CLARITY_POWER",
+   "name": "Clarity",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your next X turns, draw 1 additional card.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ClarityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Clarity_Extract",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your next X turns, draw 1 additional card.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "COLOSSUS_POWER",
+   "name": "Colossus",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "You receive % less damage from Vulnerable enemies for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ColossusPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Colossus",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You receive 50% less damage from Vulnerable enemies for X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "CONFUSED_POWER",
+   "name": "Confused",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "The costs of your cards are randomized on draw, from 0 to 3.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ConfusedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Snecko_Eye",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The costs of your cards are randomized on draw, from 0 to 3.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CONQUEROR_POWER",
+   "name": "Conqueror",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Sovereign Blade deals double damage to X for the next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ConquerorPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Conqueror",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Sovereign Blade deals double damage to it for the next X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "CONSTRICT_POWER",
+   "name": "Constrict",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "While the Slithering Strangler is alive, at the end of your turn, take X damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ConstrictPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Slithering_Strangler",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "While the Slithering Strangler is alive, at the end of your turn, take X damage.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "CONSUMING_SHADOW_POWER",
+   "name": "Consuming Shadow",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, Evoke your X leftmost Orbs.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ConsumingShadowPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Consuming_Shadow",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, Evoke your X leftmost Orbs.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "COOLANT_POWER",
+   "name": "Coolant",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, gain X Block for each unique Orb you have.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CoolantPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Coolant",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, gain X Block for each unique Orb you have.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "COORDINATE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CoordinatePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "CORROSIVE_WAVE_POWER",
+   "name": "Corrosive Wave",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you draw a card this turn, apply X Poison to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CorrosiveWavePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Corrosive_Wave",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you draw a card this turn, apply X Poison to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "CORRUPTION_POWER",
+   "name": "Corruption",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Skills cost 0. Whenever you play a Skill, Exhaust it.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CorruptionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Corruption",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Skills cost 0. Whenever you play a Skill, Exhaust it.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "COUNTDOWN_POWER",
+   "name": "Countdown",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, apply X Doom to a random enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CountdownPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Countdown",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, apply X Doom to a random enemy.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "COVERED_POWER",
+   "name": "Covered",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "X is covering you. All attacks that would be directed to you are redirected to them instead.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CoveredPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Intercept",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "An ally is covering you. All attacks that would be directed to you are redirected to them instead.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "CRAB_RAGE_POWER",
+   "name": "Crab Rage",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When an ally dies, X gains X Strength and X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CrabRagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Kaiser_Crab",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When an ally dies, it gains 6 Strength and 99 Block.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CREATIVE_AI_POWER",
+   "name": "Creative AI",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X random Powers into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CreativeAiPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Creative_AI",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X random Powers into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CRIMSON_MANTLE_POWER",
+   "name": "Crimson Mantle",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, lose X HP and gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CrimsonMantlePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Crimson_Mantle",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, lose X HP and gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CRUELTY_POWER",
+   "name": "Cruelty",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Vulnerable enemies take an additional X% damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CrueltyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Cruelty",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Vulnerable enemies take an additional X% damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CRUSH_UNDER_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CrushUnderPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "CURIOUS_POWER",
+   "name": "Curious",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Powers cost X [E] less.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CuriousPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Mad_Science%23Curious-0",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Powers cost X 1[E] less.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "CURL_UP_POWER",
+   "name": "Curl Up",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gains X Block upon first being hit.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.CurlUpPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Louse_Progenitor",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gains X Block upon first being hit.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "DAMPEN_POWER",
+   "name": "Dampen",
+   "type": "Debuff",
+   "stack_type": "None",
+   "description": "While Magi Knight is alive, ALL your cards are Downgraded.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DampenPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knight_Gang",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "While Magi Knight is alive, ALL your cards are Downgraded.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "DANSE_MACABRE_POWER",
+   "name": "Danse Macabre",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card that costs X[E] or more, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DanseMacabrePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Danse_Macabre",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card that costs 2 1[E] or more, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DARK_EMBRACE_POWER",
+   "name": "Dark Embrace",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever a card is Exhausted, draw X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DarkEmbracePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Dark_Embrace",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever a card is Exhausted, draw X cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DARK_SHACKLES_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DarkShacklesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "DEBILITATE_POWER",
+   "name": "Debilitate",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Vulnerable and Weak are twice as effective for the next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DebilitatePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Debilitate",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Vulnerable and Weak are twice as effective for the next X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "DEMESNE_POWER",
+   "name": "Demesne",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, gain X[E] and draw X additional cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DemesnePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Demesne",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, gain 1[E] and draw X additional cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DEMISE_POWER",
+   "name": "Demise",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the end of X's turn, it loses X HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DemisePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Powdered_Demise",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of its turn, it loses X HP.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DEMON_FORM_POWER",
+   "name": "Demon Form",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, gain X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DemonFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Demon_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, gain X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DEVOUR_LIFE_POWER",
+   "name": "Devour Life",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a Soul, Summon X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DevourLifePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Devour_Life",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a Soul, Summon X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DEXTERITY_POWER",
+   "name": "Dexterity",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Increases Block gained from cards by .",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DexterityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Dexterity",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Increases Block gained from cards by X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DIAMOND_DIADEM_POWER",
+   "name": "Diamond Diadem",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Enemies deal 50% less damage this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DiamondDiademPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "DIE_FOR_YOU_POWER",
+   "name": "Die for You",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Osty absorbs all unblocked attack damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DieForYouPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Osty",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Osty absorbs all unblocked attack damage.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DISINTEGRATION_POWER",
+   "name": "Disintegration",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, take X damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DisintegrationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Disintegration",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, take X damage.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DOOM_POWER",
+   "name": "Doom",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the end of the enemy turn, if X has X or less HP, it dies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DoomPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Doom",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of the enemy turn, if it has X or less HP, it dies.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "DOUBLE_DAMAGE_POWER",
+   "name": "Double Damage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "For the next X turns, Attacks deal double damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DoubleDamagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Shadow_Step",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "For the next X turns, Attacks deal double damage.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "DRAW_CARDS_NEXT_TURN_POWER",
+   "name": "Draw Cards Next Turn",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your next turn, draw X additional cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DrawCardsNextTurnPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Next_Turn_Effects%23Draw_Cards_Next_Turn",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your next turn, draw X additional cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "DUPLICATION_POWER",
+   "name": "Duplication",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Your next X cards are played an extra time.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DuplicationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Duplicator",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next X cards are played an extra time.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "DYING_STAR_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.DyingStarPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ECHO_FORM_POWER",
+   "name": "Echo Form",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first X cards you play each turn are played an extra time.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EchoFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Echo_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X cards you play each turn are played an extra time.",
+    "type": "Buff",
+    "stacks": "Intensity and Counter",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ENERGY_NEXT_TURN_POWER",
+   "name": "Energy Next Turn",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X additional [E] next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EnergyNextTurnPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Next_Turn_Effects%23Energy_Next_Turn",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X additional 1[E] next turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "ENFEEBLING_TOUCH_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EnfeeblingTouchPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ENRAGE_POWER",
+   "name": "Enrage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a Skill, gains X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EnragePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Test_Subject",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a Skill, gains X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ENTROPY_POWER",
+   "name": "Entropy",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, Transform X cards in your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EntropyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Entropy",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, Transform X cards in your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ENVENOM_POWER",
+   "name": "Envenom",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you deal unblocked attack damage, apply X Poison.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EnvenomPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Envenom",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you deal unblocked attack damage, apply X Poison.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ESCAPE_ARTIST_POWER",
+   "name": "Escape Artist",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Tries to escape the combat after X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.EscapeArtistPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Thieving_Hopper",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Tries to escape the combat after X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "FAN_OF_KNIVES_POWER",
+   "name": "Fan of Knives",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Shivs hit ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FanOfKnivesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fan_of_Knives",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Shivs hit ALL enemies.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FASTEN_POWER",
+   "name": "Fasten",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain an additional X Block from Defend cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FastenPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fasten",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain an additional X Block from Defend cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FEEDING_FRENZY_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FeedingFrenzyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "FEEL_NO_PAIN_POWER",
+   "name": "Feel No Pain",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever a card is Exhausted, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FeelNoPainPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Feel_No_Pain",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever a card is Exhausted, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FERAL_POWER",
+   "name": "Feral",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first X times you play a 0[E] Attack each turn, return it to your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FeralPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Feral",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X times you play a 0 1[E] Attack each turn, return it to your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FLAME_BARRIER_POWER",
+   "name": "Flame Barrier",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you are attacked this turn, deal X damage back.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FlameBarrierPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Flame_Barrier",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you are attacked this turn, deal X damage back.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "FLANKING_POWER",
+   "name": "Flanking",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Other allies deal Xx the attack damage to this enemy this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FlankingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Flanking",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Other allies deal X times more damage to this enemy this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "FLEX_POTION_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FlexPotionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "FLUTTER_POWER",
+   "name": "Flutter",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Receives X% less damage from Attacks. Deal attack damage X times to Stun it.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FlutterPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Thieving_Hopper",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Receives 50% less damage from Attacks. Deal attack damage X times to Stun it.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FOCUS_POWER",
+   "name": "Focus",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Increases the effectiveness of Orbs by .",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FocusPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Orbs",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Increases the effectiveness of Orbs by X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FOCUSED_STRIKE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FocusedStrikePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "FORBIDDEN_GRIMOIRE_POWER",
+   "name": "Forbidden Grimoire",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of combat, remove X cards from your Deck.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ForbiddenGrimoirePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Forbidden_Grimoire",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of combat, remove X cards from your Deck.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FOREGONE_CONCLUSION_POWER",
+   "name": "Foregone Conclusion",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Next turn, put X cards from your Draw Pile into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ForegoneConclusionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Foregone_Conclusion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Next turn, put X cards from your Draw Pile into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "FRAIL_POWER",
+   "name": "Frail",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Gain 25% less Block from cards for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FrailPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Frail",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain 25% less Block from cards for X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "FREE_ATTACK_POWER",
+   "name": "Free Attack",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Your next X Attacks cost 0 [E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FreeAttackPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Unrelenting",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next X Attacks cost 0 1[E].",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "FREE_POWER_POWER",
+   "name": "Free Power",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X Powers you play cost 0 [E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FreePowerPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Synthesis",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X Powers you play cost 0 1[E].",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "FREE_SKILL_POWER",
+   "name": "Free Skill",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X Skills you play cost 0 [E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FreeSkillPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pounce",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X Skills you play cost 0 1[E].",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "FRIENDSHIP_POWER",
+   "name": "Friendship",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X[E] at the start of each turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FriendshipPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Friendship",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X 1[E] at the start of each turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "FURNACE_POWER",
+   "name": "Furnace",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, Forge X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.FurnacePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Furnace",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, Forge X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "GALVANIC_POWER",
+   "name": "Galvanic",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Powers are afflicted with X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.GalvanicPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Globe_Head",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Powers are afflicted with Galvanized.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "GENESIS_POWER",
+   "name": "Genesis",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, gain X[Star].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.GenesisPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Genesis",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, gain X 1[Star].",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "GIGANTIFICATION_POWER",
+   "name": "Gigantification",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X Attacks you play deal triple damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.GigantificationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gigantification_Potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X Attacks you play deal triple damage.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "GRAVITY_POWER",
+   "name": "Gravity",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card this turn, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.GravityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "GUARDED_POWER",
+   "name": "Guarded",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Take half damage from enemies. Removed if X dies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.GuardedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tank",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Take half damage from enemies. Removed if the Tank dies.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HAILSTORM_POWER",
+   "name": "Hailstorm",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, if you have Frost, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HailstormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hailstorm",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, if you have Frost, deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HAMMER_TIME_POWER",
+   "name": "Hammer Time",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Whenever you Forge, all allies Forge as well.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HammerTimePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hammer_Time",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you Forge, all allies Forge as well.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HANG_POWER",
+   "name": "Hang",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "All Hangs deal X times more damage to this enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HangPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hang",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "All Hangs deal X times more damage to this enemy.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HARD_TO_KILL_POWER",
+   "name": "Hard to Kill",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Reduce all damage taken and HP lost by X to X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HardToKillPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Exoskeleton",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Reduce all damage taken and HP lost by it to 9.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HARDENED_SHELL_POWER",
+   "name": "Hardened Shell",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "X cannot lose more than X HP each turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HardenedShellPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Skulking_Colony",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "It cannot lose more than X HP each turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Reset"
+   }
+  },
+  {
+   "id": "HATCH_POWER",
+   "name": "Hatch",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Hatches after X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HatchPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ovicopter",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Hatches after X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "HAUNT_POWER",
+   "name": "Haunt",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a Soul, a random enemy loses X HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HauntPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Haunt",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a Soul, a random enemy loses X HP.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HEIST_POWER",
+   "name": "Heist",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "When killed, returns all the stolen Gold.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HeistPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gremlin_Merc",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When killed, returns all the stolen Gold.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HELICAL_DART_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HelicalDartPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "HELLO_WORLD_POWER",
+   "name": "Hello World",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X random Common cards into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HelloWorldPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hello_World",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X random Common cards into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HELLRAISER_POWER",
+   "name": "Hellraiser",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Whenever you draw a card containing \"Strike\", it is played against a random enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HellraiserPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hellraiser",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you draw a card containing \"Strike\", it is played against a random enemy.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HEX_POWER",
+   "name": "Hex",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "While Spectral Knight is alive, ALL your cards are Ethereal.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HexPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knight_Gang",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "While Spectral Knight is alive, ALL your cards are Ethereal.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "HIGH_VOLTAGE_POWER",
+   "name": "High Voltage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of X's turn, it gains X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HighVoltagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fabricator",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of its turn, it gains X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "HOTFIX_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.HotfixPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ILLUSION_POWER",
+   "name": "Illusion",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When this dies, it revives next turn at full HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.IllusionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "IMBALANCED_POWER",
+   "name": "Imbalanced",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "If X's attacks are fully blocked, it becomes Stunned.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ImbalancedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bowlbugs",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If the enemy's attacks are fully blocked, it becomes Stunned.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "IMPROVEMENT_POWER",
+   "name": "Improvement",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of combat, Upgrade X random cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ImprovementPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Mad_Science%23Improvement-0",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of combat, Upgrade X random cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "INFERNO_POWER",
+   "name": "Inferno",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, lose X HP. Whenever you lose HP on your turn, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.InfernoPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Inferno",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, lose X HP. Whenever you lose HP on your turn, deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "INFESTED_POWER",
+   "name": "Infested",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Upon dying, summons... something.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.InfestedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phrog_Parasite",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Upon dying, summons... something.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "INFINITE_BLADES_POWER",
+   "name": "Infinite Blades",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X Shivs into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.InfiniteBladesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Infinite_Blades",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X Shivs into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "INTANGIBLE_POWER",
+   "name": "Intangible",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Reduce all damage taken and HP loss to 1. Lasts for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.IntangiblePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Intangible",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Reduce all damage taken and HP loss to 1. Lasts for X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "INTERCEPT_POWER",
+   "name": "Intercept",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "You are covering X. All attacks that would be directed towards them are redirected towards you.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.InterceptPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Intercept",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You are covering an ally. All attacks that would be directed towards them are redirected towards you.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "ITERATION_POWER",
+   "name": "Iteration",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first time you draw a Status each turn, draw X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.IterationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Iteration",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first time you draw a Status card each turn, draw X cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "JUGGERNAUT_POWER",
+   "name": "Juggernaut",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you gain Block, deal X damage to a random enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.JuggernautPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Juggernaut",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you gain Block, deal X damage to a random enemy.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "JUGGLING_POWER",
+   "name": "Juggling",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Add X copies of the third Attack you play each turn into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.JugglingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Juggling",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Add X copies of the third Attack you play each turn into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "KNOCKDOWN_POWER",
+   "name": "Knockdown",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Other allies deal X times more damage to this enemy this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.KnockdownPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knockdown",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Other allies deal X times more damage to this enemy this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "LEADERSHIP_POWER",
+   "name": "Leadership",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "All other allies deal X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.LeadershipPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "LETHALITY_POWER",
+   "name": "Lethality",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first Attack each turn deals X% additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.LethalityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Lethality",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first Attack each turn deals X% additional damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "LIGHTNING_ROD_POWER",
+   "name": "Lightning Rod",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of the next X turns, Channel 1 Lightning.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.LightningRodPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Lightning_Rod",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of the next X turns, Channel 1 Lightning.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "LOOP_POWER",
+   "name": "Loop",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, trigger the passive ability of your next Orb X times.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.LoopPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Loop",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, trigger the passive ability of your next Orb X times.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MACHINE_LEARNING_POWER",
+   "name": "Machine Learning",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, draw X additional cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MachineLearningPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Machine_Learning",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, draw X additional cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MAGIC_BOMB_POWER",
+   "name": "Magic Bomb",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Take X damage at the end of your turn. Is cleared if the Magi Knight dies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MagicBombPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "MANGLE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ManglePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "MASTER_PLANNER_POWER",
+   "name": "Master Planner",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When you play a Skill, it gains Sly.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MasterPlannerPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Master_Planner",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When you play a Skill, it gains Sly.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MAYHEM_POWER",
+   "name": "Mayhem",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, play the next X top cards of your Draw Pile.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MayhemPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Mayhem",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, play the next X top cards of your Draw Pile.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MIND_ROT_POWER",
+   "name": "Mind Rot",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Draw X fewer cards each turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MindRotPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Mind_Rot",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Draw X fewer cards each turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MINION_POWER",
+   "name": "Minion",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Minions abandon combat without their leader.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MinionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Minions",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Minions abandon combat without their leader.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MONARCHS_GAZE_POWER",
+   "name": "Monarch's Gaze",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you attack an enemy, it loses X Strength this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MonarchsGazePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Monarch%26%2339;s_Gaze",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you attack an enemy, it loses X Strength this turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "MONARCHS_GAZE_STRENGTH_DOWN_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MonarchsGazeStrengthDownPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "MONOLOGUE_POWER",
+   "name": "Monologue",
+   "type": "Buff",
+   "stack_type": null,
+   "description": "Whenever you play a card this turn, gain X Strength this turn. Currently granting X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.MonologuePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Monologue",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card this turn, gain 1 Strength this turn.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "NECRO_MASTERY_POWER",
+   "name": "Necro Mastery",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever Osty loses HP, ALL enemies lose X times that much HP as well.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NecroMasteryPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Necro_Mastery",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever Osty loses HP, ALL enemies lose X times that much HP as well.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "NEMESIS_POWER",
+   "name": "Nemesis",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "At the end of every other turn, gains Intangible 1.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NemesisPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Test_Subject",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of every other turn, gains Intangible 1.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "NEUROSURGE_POWER",
+   "name": "Neurosurge",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, apply X Doom to yourself.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NeurosurgePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Neurosurge",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, apply X Doom to yourself.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "NIGHTMARE_POWER",
+   "name": "Nightmare",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Add X X cards into your Hand next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NightmarePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Nightmare",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Add X copies of a chosen card into your Hand next turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "NO_BLOCK_POWER",
+   "name": "No Block",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "You cannot gain Block from cards for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NoBlockPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Panic_Button",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You cannot gain Block from cards for X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "NO_DRAW_POWER",
+   "name": "No Draw",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "You may not draw any more cards this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NoDrawPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:No_Draw",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You may not draw any more cards this turn.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "NO_ENERGY_GAIN_POWER",
+   "name": "No Energy Gain",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "You cannot gain additional [E] this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NoEnergyGainPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "NOSTALGIA_POWER",
+   "name": "Nostalgia",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first X Attacks or Skills you play each turn are placed on top of your Draw Pile.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NostalgiaPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Nostalgia",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X Attacks or Skills you play each turn are placed on top of your Draw Pile.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "NOXIOUS_FUMES_POWER",
+   "name": "Noxious Fumes",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, apply X Poison to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.NoxiousFumesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Noxious_Fumes",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, apply X Poison to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "OBLIVION_POWER",
+   "name": "Oblivion",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, this enemy gains X Doom.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.OblivionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Oblivion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, this enemy gains X Doom.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "ONE_TWO_PUNCH_POWER",
+   "name": "One-Two Punch",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Your next X Attacks are played an extra time this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.OneTwoPunchPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:One-Two_Punch",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next X Attacks are played an extra time this turn.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "ORBIT_POWER",
+   "name": "Orbit",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Every X[E] you spend, gain X[E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.OrbitPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Orbit",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Every 4 1[E] you spend, gain X 1[E].",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "OUTBREAK_POWER",
+   "name": "Outbreak",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Every X times you apply Poison, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.OutbreakPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "PAGESTORM_POWER",
+   "name": "Pagestorm",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you draw an Ethereal card, draw X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PagestormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pagestorm",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you draw an Ethereal card, draw X cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PAINFUL_STABS_POWER",
+   "name": "Painful Stabs",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Shuffle X Wounds into your Discard Pile each time you receive unblocked attack damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PainfulStabsPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Test_Subject",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Shuffle X Wounds into your Discard Pile each time you receive unblocked attack damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PALE_BLUE_DOT_POWER",
+   "name": "Pale Blue Dot",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "If you play X or more cards in a turn, draw X additional cards at the start of your next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PaleBlueDotPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pale_Blue_Dot",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If you play 5 or more cards in a turn, draw X additional cards at the start of your next turn.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PANACHE_POWER",
+   "name": "Panache",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "If you play X more cards this turn, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PanachePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Panache",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If you play 5 more cards this turn, deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Reset"
+   }
+  },
+  {
+   "id": "PAPER_CUTS_POWER",
+   "name": "Paper Cuts",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever X deals unblocked attack damage to you, you lose X Max HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PaperCutsPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Scroll_of_Biting",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever it deals unblocked attack damage to you, you lose X Max HP.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PARRY_POWER",
+   "name": "Parry",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Sovereign Blade now gains X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ParryPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Parry",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Sovereign Blade now gains X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PERSONAL_HIVE_POWER",
+   "name": "Personal Hive",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever this enemy is hit by an Attack, add X Dazed into your Draw Pile.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PersonalHivePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Entomancer",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever this enemy is hit by an Attack, add X Dazed into your Draw Pile.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PHANTOM_BLADES_POWER",
+   "name": "Phantom Blades",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Shivs gain Retain. The first Shiv you play each turn deals X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PhantomBladesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phantom_Blades",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Shivs gain Retain. The first Shiv you play each turn deals X additional damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PIERCING_WAIL_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PiercingWailPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "PILLAR_OF_CREATION_POWER",
+   "name": "Pillar of Creation",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you create a card, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PillarOfCreationPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pillar_of_Creation",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you create a card, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PLATING_POWER",
+   "name": "Plating",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, gain X Block. Plating is reduced by X at the start of your turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PlatingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Plating",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, gain X Block. Plating is reduced by 1 at the start of your turn.",
+    "type": "Buff",
+    "stacks": "Intensity and Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "PLOW_POWER",
+   "name": "Plow",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "The first time X's HP reaches X or below, it becomes Stunned and loses all its Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PlowPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ceremonial_Beast",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first time this enemy's HP reaches X or below, it becomes Stunned and loses all its Strength.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "POISON_POWER",
+   "name": "Poison",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the start of its turn, loses X HP, then reduce Poison by 1.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PoisonPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Poison",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of its turn, loses X HP, then reduce Poison by 1.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "POSSESS_SPEED_POWER",
+   "name": "Possess Speed",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When killed, return all stolen Dexterity to the player.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PossessSpeedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Lost_and_Forgotten",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When killed, return all stolen Dexterity to the player.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "POSSESS_STRENGTH_POWER",
+   "name": "Possess Strength",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "When killed, return all stolen Strength to the player.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PossessStrengthPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Lost_and_Forgotten",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When killed, return all stolen Strength to the player.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PREP_TIME_POWER",
+   "name": "Prep Time",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, gain X Vigor.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PrepTimePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Prep_Time",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, gain X Vigor.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "PYRE_POWER",
+   "name": "Pyre",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X[E] at the start of each turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.PyrePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pyre",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain 1[E] at the start of each turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "RADIANCE_POWER",
+   "name": "Radiance",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain additional X[E] for the next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RadiancePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Radiant_Tincture",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain additional 1[E] for the next X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "RAGE_POWER",
+   "name": "Rage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play an Attack this turn, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Rage",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play an Attack this turn, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "RAMPART_POWER",
+   "name": "Rampart",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of the player's turn, Turret Operator gains X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RampartPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Turret_Operator",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of the player's turn, Turret Operator gains X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "RAVENOUS_POWER",
+   "name": "Ravenous",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "When an enemy dies, Corpse Slug immediately eats it, becoming Stunned and gaining X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RavenousPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Corpse_Slug",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When an enemy dies, Corpse Slug immediately eats it, becoming Stunned and gaining X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "REAPER_FORM_POWER",
+   "name": "Reaper Form",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever Attacks deal damage, apply X times that much Doom.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ReaperFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Reaper_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever Attacks deal damage, they also apply X times that much Doom.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "REATTACH_POWER",
+   "name": "Reattach",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "If other segments are still alive, revives in 2 turns with X HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ReattachPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Decimillipede",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If other segments are still alive, revives in 2 turns with X HP.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "REBOUND_POWER",
+   "name": "Rebound",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X cards you play this turn are placed on the top of your Draw Pile.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ReboundPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Rebound",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X cards you play this turn are placed on the top of your Draw Pile.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "REFLECT_POWER",
+   "name": "Reflect",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Blocked damage is reflected to your attacker for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ReflectPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Reflect",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Blocked damage is reflected to your attacker for X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "REGEN_POWER",
+   "name": "Regen",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, heal X HP, then reduce Regen by 1.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RegenPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Regen_Potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, heal X HP, then reduce Regen by 1.",
+    "type": "Buff",
+    "stacks": "Intensity and Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "REPTILE_TRINKET_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ReptileTrinketPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "RETAIN_HAND_POWER",
+   "name": "Retain Hand",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Retain your Hand for the next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RetainHandPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Retain",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Retain your Hand for the next X turns.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "RINGING_POWER",
+   "name": "Ringing",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "You can only play X cards this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RingingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ceremonial_Beast",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You can only play 1 card this turn.",
+    "type": "Debuff",
+    "stacks": "Removed",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "RITUAL_POWER",
+   "name": "Ritual",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of its turn, gains X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RitualPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ritual",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of its turn, gains X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ROLLING_BOULDER_POWER",
+   "name": "Rolling Boulder",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, deal X damage to ALL enemies and increase this damage by X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RollingBoulderPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Rolling_Boulder",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, deal X damage to ALL enemies and increase this damage by 5.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "ROYALTIES_POWER",
+   "name": "Royalties",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of combat, gain X Gold.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RoyaltiesPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Royalties",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of combat, gain X Gold.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "RUPTURE_POWER",
+   "name": "Rupture",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you lose HP on your turn, gain X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.RupturePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Rupture",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you lose HP on your turn, gain X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SANDPIT_POWER",
+   "name": "Sandpit",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "In X turns, you will be eaten and die.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SandpitPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Insatiable",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "In X turns, you will be eaten and die.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "SEEKING_EDGE_POWER",
+   "name": "Seeking Edge",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Sovereign Blade now hits ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SeekingEdgePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Seeking_Edge",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Sovereign Blade now hits ALL enemies.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SELF_FORMING_CLAY_POWER",
+   "name": "Self-Forming Clay",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X Block next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SelfFormingClayPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Self-Forming_Clay",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X Block next turn.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "SENTRY_MODE_POWER",
+   "name": "Sentry Mode",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X Sweeping Gaze into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SentryModePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sentry_Mode",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X Sweeping Gaze into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SERPENT_FORM_POWER",
+   "name": "Serpent Form",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, deal X damage to a random enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SerpentFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Serpent_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, deal X damage to a random enemy.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SETUP_STRIKE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SetupStrikePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SHACKLING_POTION_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShacklingPotionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SHADOW_STEP_POWER",
+   "name": "Shadow Step",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "For the next X turns after this one, Attacks deal double damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShadowStepPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Shadow_Step",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "For the next X turns after this one, Attacks deal double damage.",
+    "type": "Buff",
+    "stacks": "Duration",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "SHADOWMELD_POWER",
+   "name": "Shadowmeld",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Double your Block gain this turn X times.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShadowmeldPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Shadowmeld",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Double your Block gain this turn X times.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "SHRIEK_POWER",
+   "name": "Shriek",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "The first time X's HP reaches X or below, it becomes Stunned.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShriekPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Terror_Eel",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first time this enemy's HP reaches X or below, it becomes Stunned.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "SHRINK_POWER",
+   "name": "Shrink",
+   "type": "Debuff",
+   "stack_type": null,
+   "description": "X's Attacks deal X% less damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShrinkPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SHROUD_POWER",
+   "name": "Shroud",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you apply Doom, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ShroudPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Shroud",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you apply Doom, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SIC_EM_POWER",
+   "name": "Sic 'Em",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Whenever Osty hits this enemy this turn, Summon X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SicEmPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sic_%26%2339;Em",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever Osty hits this enemy this turn, Summon X.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "SIGNAL_BOOST_POWER",
+   "name": "Signal Boost",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Your next X Powers are played an extra time.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SignalBoostPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Signal_Boost",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next X Powers are played an extra time.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "SKITTISH_POWER",
+   "name": "Skittish",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first time X is hit each turn, it gains X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SkittishPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phantasmal_Gardener",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first time it is hit each turn, it gains X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Reset"
+   }
+  },
+  {
+   "id": "SLEIGHT_OF_FLESH_POWER",
+   "name": "Sleight of Flesh",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you apply a debuff to an enemy, they take X damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SleightOfFleshPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sleight_of_Flesh",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you apply a debuff to an enemy, they take X damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SLIPPERY_POWER",
+   "name": "Slippery",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X times X loses HP, it only loses 1 HP instead.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SlipperyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vantom",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X times it loses HP, it only loses 1 HP instead.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "SLOTH_POWER",
+   "name": "Sloth",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "You cannot play more than X cards each turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SlothPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sloth",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You cannot play more than X cards each turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SLOW_POWER",
+   "name": "Slow",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, this enemy receives 10% more damage from Attacks this turn. (Receives X% more damage)",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SlowPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bygone_Effigy",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, this enemy receives 10% more damage from Attacks this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SLUMBER_POWER",
+   "name": "Slumber",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Awakens upon taking turns or losing HP X times.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SlumberPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Slumbering_Beetle",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Awakens upon taking turns or losing HP X times.",
+    "type": "Buff",
+    "stacks": "Counter and Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "SMOGGY_POWER",
+   "name": "Smoggy",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "You can only play X Skill per turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SmoggyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Living_Fog",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "You can only play 1 Skill per turn.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SMOKESTACK_POWER",
+   "name": "Smokestack",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you create a Status, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SmokestackPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Smokestack",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you create a Status, deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SNEAKY_POWER",
+   "name": "Sneaky",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever another player attacks an enemy, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SneakyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sneaky",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever another player attacks an enemy, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SOAR_POWER",
+   "name": "Soar",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Receives X% less attack damage until it lands.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SoarPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Owl_Magistrate",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Receives 50% less attack damage until it lands.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "SPECTRUM_SHIFT_POWER",
+   "name": "Spectrum Shift",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, add X random Colorless cards into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SpectrumShiftPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Spectrum_Shift",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, add X random Colorless cards into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SPEED_POTION_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SpeedPotionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SPEEDSTER_POWER",
+   "name": "Speedster",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you draw a card during your turn, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SpeedsterPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Speedster",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you draw a card during your turn, deal X damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SPINNER_POWER",
+   "name": "Spinner",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, Channel X Glass.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SpinnerPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Spinner",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, Channel X Glass.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SPIRIT_OF_ASH_POWER",
+   "name": "Spirit of Ash",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play an Ethereal card, gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SpiritOfAshPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Spirit_of_Ash",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play an Ethereal card, gain X Block.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "STAMPEDE_POWER",
+   "name": "Stampede",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, X random Attacks in your Hand are played against a random enemy.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StampedePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Stampede",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, X random Attacks in your Hand are played against a random enemy.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "STAR_NEXT_TURN_POWER",
+   "name": "Star Next Turn",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X [Star] next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StarNextTurnPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_The_Spire_2:Next_Turn_Effects%23Star_Next_Turn",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X 1[Star] next turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "STEAM_ERUPTION_POWER",
+   "name": "Steam Eruption",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "When killed, deals X damage at the end of your next turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SteamEruptionPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Waterfall_Giant",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When killed, deals X damage at the end of your next turn.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "STOCK_POWER",
+   "name": "Stock",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "When killed, a new Axebot is summoned in its place.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StockPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Axebot",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When killed, a new Axebot is summoned in its place.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "STORM_POWER",
+   "name": "Storm",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a Power, Channel X Lightning.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Storm",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a Power, Channel X Lightning.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "STRANGLE_POWER",
+   "name": "Strangle",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card this turn, this enemy loses X HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StranglePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Strangle",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card this turn, this enemy loses X HP.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "STRATAGEM_POWER",
+   "name": "Stratagem",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you shuffle your Draw Pile, choose X cards from it to put into your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StratagemPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Stratagem",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you shuffle your Draw Pile, choose X cards from it to put into your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "STRENGTH_POWER",
+   "name": "Strength",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Increases attack damage by .",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.StrengthPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Strength",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Increases attack damage by X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SUBROUTINE_POWER",
+   "name": "Subroutine",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a Power, gain X X[E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SubroutinePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Subroutine",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a Power, gain X 1[E].",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SUCK_POWER",
+   "name": "Suck",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever X deals unblocked attack damage, it gains X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SuckPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fossil_Stalker",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever it deals unblocked attack damage, it gains X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SUMMON_NEXT_TURN_POWER",
+   "name": "Summon Next Turn",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your next turn, Summon X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SummonNextTurnPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Next_Turn_Effects",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your next turn, Summon X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Consumed"
+   }
+  },
+  {
+   "id": "SURPRISE_POWER",
+   "name": "Surprise",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Something is off about this creature...",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SurprisePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gremlin_Merc",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Something is off about this creature...",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SURROUNDED_POWER",
+   "name": "Surrounded",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "Receive 50% more damage if attacked from behind. Use targeting cards or potions to change your orientation.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SurroundedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SWIPE_POWER",
+   "name": "Swipe",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Upon killing this enemy, the stolen card is returned.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SwipePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Thieving_Hopper",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Upon killing this enemy, the stolen card is returned.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SWORD_SAGE_POWER",
+   "name": "Sword Sage",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Sovereign Blade gains Replay X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SwordSagePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sword_Sage",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Sovereign Blade gains Replay X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "SYNCHRONIZE_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": null,
+   "description": null,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.SynchronizePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TAG_TEAM_POWER",
+   "name": "Tag Team",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "The next Attack another player plays on the enemy is played an extra time.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TagTeamPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tag_Team",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next Attack another player plays on the enemy is played an extra X times.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "TAINTED_POWER",
+   "name": "Tainted",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Take X additional damage from Attacks this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TaintedPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Infested_Prism",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Take X additional damage from Attacks this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Removed"
+   }
+  },
+  {
+   "id": "TANGLED_POWER",
+   "name": "Tangled",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Attacks cost an additional X[E] for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TangledPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TANK_POWER",
+   "name": "Tank",
+   "type": "Buff",
+   "stack_type": "Single",
+   "description": "Take double damage from enemies. Allies take half damage from enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TankPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tank",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Take double damage from enemies. Allies take half damage from enemies.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TEMPORARY_DEXTERITY_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": "Counter",
+   "description": "Gain X Dexterity until the end of this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TemporaryDexterityPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TEMPORARY_FOCUS_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": "Counter",
+   "description": "Gain X Focus until the end of this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TemporaryFocusPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TEMPORARY_STRENGTH_POWER",
+   "name": null,
+   "type": null,
+   "stack_type": "Counter",
+   "description": "Gain X Strength until the end of this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TemporaryStrengthPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TENDER_POWER",
+   "name": "Tender",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, lose X Strength and X Dexterity this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TenderPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hunter_Killer",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, lose X Strength and X Dexterity this turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TERRITORIAL_POWER",
+   "name": "Territorial",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of X's turn, it gains X Strength.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TerritorialPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Byrdonis",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of its turn, gains X Strength.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THE_BOMB_POWER",
+   "name": "The Bomb",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of X turns, deal X damage to ALL enemies.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TheBombPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Bomb",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of X turns, deal 40 damage to ALL enemies.",
+    "type": "Buff",
+    "stacks": "Duration, multiple plays create separate stacks",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "THE_GAMBIT_POWER",
+   "name": "The Gambit",
+   "type": "Debuff",
+   "stack_type": "Single",
+   "description": "If you take unblocked attack damage this combat, die.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TheGambitPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Gambit",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "If you take unblocked attack damage this combat, die.",
+    "type": "Debuff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THE_HUNT_POWER",
+   "name": "The Hunt",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X additional card rewards at the end of combat.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TheHuntPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Hunt",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X additional card rewards at the end of combat.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THE_SEALED_THRONE_POWER",
+   "name": "The Sealed Throne",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you play a card, gain X[Star].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TheSealedThronePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Sealed_Throne",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you play a card, gain 1 1[Star].",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THIEVERY_POWER",
+   "name": "Thievery",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Steals X Gold when Attacking.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ThieveryPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gremlin_Merc",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Steals X Gold when Attacking.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THORNS_POWER",
+   "name": "Thorns",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "When hit by an attack, deal X damage back.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ThornsPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Thorns",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "When hit by an attack, deal X damage back.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "THUNDER_POWER",
+   "name": "Thunder",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you Evoke Lightning, deal X damage to each enemy hit.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ThunderPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Thunder",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you Evoke Lightning, deal X damage to each enemy hit.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TOOLS_OF_THE_TRADE_POWER",
+   "name": "Tools of the Trade",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, draw X cards and discard X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ToolsOfTheTradePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tools_of_the_Trade",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, draw X cards and discard X cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TORIC_TOUGHNESS_POWER",
+   "name": "Toric Toughness",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Gain X Block at the start of the next X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ToricToughnessPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Toric_Toughness",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain N Block at the start of the next X turns.",
+    "type": "Buff",
+    "stacks": "Duration/Intensity",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "TRACKING_POWER",
+   "name": "Tracking",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Weak enemies take X times more damage from Attacks.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TrackingPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tracking",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Weak enemies take X times more damage from Attacks.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TRASH_TO_TREASURE_POWER",
+   "name": "Trash to Treasure",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you create a Status, Channel X random Orbs.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TrashToTreasurePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Trash_to_Treasure",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you create a Status, Channel X random Orbs.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "TYRANNY_POWER",
+   "name": "Tyranny",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, draw X cards and Exhaust X cards from your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.TyrannyPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tyranny",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, draw X cards and Exhaust X cards from your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "UNMOVABLE_POWER",
+   "name": "Unmovable",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first X times you gain Block from a card each turn, double the amount gained.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.UnmovablePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Unmovable",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X times you gain Block from a card each turn, double the amount gained.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "VEILPIERCER_POWER",
+   "name": "Veilpiercer",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The next X Ethereal cards you play cost 0.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.VeilpiercerPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Veilpiercer",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The next X Ethereal cards you play cost 0.",
+    "type": "Buff",
+    "stacks": "Counter",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "VICIOUS_POWER",
+   "name": "Vicious",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Whenever you apply Vulnerable, draw X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.ViciousPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vicious",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Whenever you apply Vulnerable, draw X cards.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "VIGOR_POWER",
+   "name": "Vigor",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "X's next Attack deals X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.VigorPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vigor",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Your next Attack deals X additional damage.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Conserved"
+   }
+  },
+  {
+   "id": "VITAL_SPARK_POWER",
+   "name": "Vital Spark",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "ALL Skills are Tainted X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.VitalSparkPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Infested_Prism",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "All Skills are Tainted X.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "VOID_FORM_POWER",
+   "name": "Void Form",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "The first X cards you play each turn are free to play.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.VoidFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Void_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "The first X cards you play each turn are free to play.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "VULNERABLE_POWER",
+   "name": "Vulnerable",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Receive X% more damage from Attacks for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.VulnerablePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vulnerable",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Receive 50% more damage from Attacks for X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "WASTE_AWAY_POWER",
+   "name": "Waste Away",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Gain X less [E] per turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.WasteAwayPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Waste_Away",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Gain X less 1[E] per turn.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "WEAK_POWER",
+   "name": "Weak",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "Attacks deal 25% less damage for X turns.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.WeakPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Weak",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Attacks deal 25% less damage for X turns.",
+    "type": "Debuff",
+    "stacks": "Duration",
+    "between_turns": "Decremented"
+   }
+  },
+  {
+   "id": "WELL_LAID_PLANS_POWER",
+   "name": "Well-Laid Plans",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "At the end of your turn, Retain up to X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.WellLaidPlansPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Well-Laid_Plans",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the end of your turn, you no longer discard your Hand.",
+    "type": "Buff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "WITHERING_PRESENCE_POWER",
+   "name": "Withering Presence",
+   "type": "Buff",
+   "stack_type": "Counter",
+   "description": "Every 6 cards you play, add a Wither to your Hand.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.WitheringPresencePower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Aeonglass",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "Every 6 cards you play, add a Wither to your Hand.",
+    "type": "Buff",
+    "stacks": "Does not stack",
+    "between_turns": "Permanent"
+   }
+  },
+  {
+   "id": "WRAITH_FORM_POWER",
+   "name": "Wraith Form",
+   "type": "Debuff",
+   "stack_type": "Counter",
+   "description": "At the start of your turn, lose X Dexterity.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Powers.WraithFormPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Wraith_Form",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "description": "At the start of your turn, lose X Dexterity.",
+    "type": "Debuff",
+    "stacks": "Intensity",
+    "between_turns": "Permanent"
+   }
+  }
+ ],
+ "afflictions": [
+  {
+   "id": "BOUND",
+   "class": "Bound",
+   "name": "Bound",
+   "description": "Only 1 Bound card can be played each turn. Cards are un-Bound at end of turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Bound + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ENTANGLED",
+   "class": "Entangled",
+   "name": "Entangled",
+   "description": "Costs an additional X[E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Entangled + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "GALVANIZED",
+   "class": "Galvanized",
+   "name": "Galvanized",
+   "description": "Take X damage when this card is played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Galvanized + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "HEXED",
+   "class": "Hexed",
+   "name": "Hexed",
+   "description": "Add Ethereal to this card.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Hexed + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "RINGING",
+   "class": "Ringing",
+   "name": "Ringing",
+   "description": "You can only play 1 card this turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Ringing + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SMOG",
+   "class": "Smog",
+   "name": "Smog",
+   "description": "You cannot play additional Skills this turn. Clears at the end of the turn.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Smog + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TAINTED",
+   "class": "Tainted",
+   "name": "Tainted",
+   "description": "Gain X Tainted when played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Afflictions.Tainted + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  }
+ ],
+ "enchantments": [
+  {
+   "id": "ADROIT",
+   "class": "Adroit",
+   "name": "Adroit",
+   "description": "Gain X Block.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Adroit + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "CLONE",
+   "class": "Clone",
+   "name": "Clone",
+   "description": "This card can be duplicated at Rest Sites.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Clone + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "CORRUPTED",
+   "class": "Corrupted",
+   "name": "Corrupted",
+   "description": "Deal 50% more damage, but lose 2 HP.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Corrupted + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "GLAM",
+   "class": "Glam",
+   "name": "Glam",
+   "description": "This card has Replay once per combat.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Glam + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "GOOPY",
+   "class": "Goopy",
+   "name": "Goopy",
+   "description": "This card gains Exhaust. When played, permanently increase this card's Block by 1.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Goopy + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "IMBUED",
+   "class": "Imbued",
+   "name": "Imbued",
+   "description": "This card is played automatically at the start of each combat.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Imbued + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "INKY",
+   "class": "Inky",
+   "name": "Inky",
+   "description": "This card deals X additional damage and applies X Weak.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Inky + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "INSTINCT",
+   "class": "Instinct",
+   "name": "Instinct",
+   "description": "This card's attack damage is doubled.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Instinct + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "MOMENTUM",
+   "class": "Momentum",
+   "name": "Momentum",
+   "description": "Increase this card's attack damage by X this combat when played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Momentum + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "NIMBLE",
+   "class": "Nimble",
+   "name": "Nimble",
+   "description": "Increases Block gained from this card by X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Nimble + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "PERFECT_FIT",
+   "class": "PerfectFit",
+   "name": "Perfect Fit",
+   "description": "Whenever this would be shuffled into your Draw Pile, place it on the top instead.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.PerfectFit + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ROYALLY_APPROVED",
+   "class": "RoyallyApproved",
+   "name": "Royally Approved",
+   "description": "This card has Innate and Retain.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.RoyallyApproved + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SHARP",
+   "class": "Sharp",
+   "name": "Sharp",
+   "description": "Increases damage on this card by X.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Sharp + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SLITHER",
+   "class": "Slither",
+   "name": "Slither",
+   "description": "When you draw this card, randomize its cost from 0 to 3.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Slither + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SLUMBERING_ESSENCE",
+   "class": "SlumberingEssence",
+   "name": "Slumbering Essence",
+   "description": "If this card is in your hand at the end of turn, reduce its cost by 1 until it is played.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.SlumberingEssence + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SOULS_POWER",
+   "class": "SoulsPower",
+   "name": "Soul's Power",
+   "description": "This card loses Exhaust.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.SoulsPower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SOWN",
+   "class": "Sown",
+   "name": "Sown",
+   "description": "The first time you play this card each combat, gain X[E].",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Sown + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SPIRAL",
+   "class": "Spiral",
+   "name": "Spiral",
+   "description": "This card gains Replay 1.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Spiral + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "STEADY",
+   "class": "Steady",
+   "name": "Steady",
+   "description": "This card gains Retain.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Steady + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "SWIFT",
+   "class": "Swift",
+   "name": "Swift",
+   "description": "The first time you play this card, draw X cards.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Swift + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "TEZCATARAS_EMBER",
+   "class": "TezcatarasEmber",
+   "name": "Tezcatara's Ember",
+   "description": "Costs 0, deals X additional damage, and gains Eternal.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.TezcatarasEmber + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "VIGOROUS",
+   "class": "Vigorous",
+   "name": "Vigorous",
+   "description": "The first time this card is played, it deals X additional damage.",
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Enchantments.Vigorous + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  }
+ ],
+ "status_cards": [
+  "BECKON",
+  "BURN",
+  "DAZED",
+  "DEBRIS",
+  "FRANTIC_ESCAPE",
+  "INFECTION",
+  "SLIMED",
+  "SOOT",
+  "TOXIC",
+  "VOID",
+  "WITHER",
+  "WOUND"
+ ],
+ "curse_cards": [
+  "ASCENDERS_BANE",
+  "BAD_LUCK",
+  "CLUMSY",
+  "CURSE_OF_THE_BELL",
+  "DEBT",
+  "DECAY",
+  "DOUBT",
+  "ENTHRALLED",
+  "FOLLY",
+  "GREED",
+  "GUILTY",
+  "INJURY",
+  "NORMALITY",
+  "POOR_SLEEP",
+  "REGRET",
+  "SHAME",
+  "SPORE_MIND",
+  "WRITHE"
+ ],
+ "ascension": [
+  {
+   "level": 1,
+   "wiki_description": "Elites spawn more often."
+  },
+  {
+   "level": 2,
+   "wiki_description": "Ancients only heal 80% of your missing HP."
+  },
+  {
+   "level": 3,
+   "wiki_description": "Enemies and Treasure Chests drop 25% less Gold."
+  },
+  {
+   "level": 4,
+   "wiki_description": "Start each run with 1 less potion slot."
+  },
+  {
+   "level": 5,
+   "wiki_description": "Start each run cursed."
+  },
+  {
+   "level": 6,
+   "wiki_description": "Removing cards from your deck at the Merchant is more expensive."
+  },
+  {
+   "level": 7,
+   "wiki_description": "Rare and Upgraded cards appear less often."
+  },
+  {
+   "level": 8,
+   "wiki_description": "All enemies are harder to kill."
+  },
+  {
+   "level": 9,
+   "wiki_description": "All enemies have deadlier attacks."
+  },
+  {
+   "level": 10,
+   "wiki_description": "(Max Level) Fight two Bosses at the end of Act 3."
+  }
+ ],
+ "ascension_game_enum": {
+  "1": "SwarmingElites",
+  "2": "WearyTraveler",
+  "3": "Poverty",
+  "4": "TightBelt",
+  "5": "AscendersBane",
+  "6": "Inflation",
+  "7": "Scarcity",
+  "8": "ToughEnemies (enemy HP)",
+  "9": "DeadlyEnemies (enemy damage)",
+  "10": "DoubleBoss"
+ }
+}

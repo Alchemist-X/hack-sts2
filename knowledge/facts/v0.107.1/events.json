@@ -1,0 +1,5833 @@
+{
+ "meta": {
+  "schema": "schema.json",
+  "schema_version": 1,
+  "category": "events",
+  "game_version": "0.107.1",
+  "generated": "2026-10-23",
+  "authority": "game (sts2.dll + pck localization) > wiki.gg > spire-codex",
+  "sources": {
+   "game": "Slay the Spire 2 v0.107.1 (read-only extraction)",
+   "wiki": {
+    "url": "https://slaythespire.wiki.gg/",
+    "fetched": "2026-10-23"
+   },
+   "codex": {
+    "url": "https://spire-codex.com",
+    "fetched": "2026-10-23",
+    "note": "tracks latest stable build; may differ from pinned version",
+    "api_meta": {
+     "version": "v0.1.0",
+     "url": "https://spire-codex.com",
+     "sts2_tested": "v0.103.3"
+    }
+   }
+  },
+  "wiki_only": [],
+  "shared_events": [
+   "BRAIN_LEECH",
+   "CRYSTAL_SPHERE",
+   "DOLL_ROOM",
+   "FAKE_MERCHANT",
+   "POTION_COURIER",
+   "RANWID_THE_ELDER",
+   "RELIC_TRADER",
+   "ROOM_FULL_OF_CHEESE",
+   "SELF_HELP_BOOK",
+   "SLIPPERY_BRIDGE",
+   "STONE_OF_ALL_TIME",
+   "SYMBIOTE",
+   "TEA_MASTER",
+   "THE_FUTURE_OF_POTIONS",
+   "THE_LEGENDS_WERE_TRUE",
+   "THIS_OR_THAT",
+   "WAR_HISTORIAN_REPY",
+   "WELCOME_TO_WONGOS"
+  ]
+ },
+ "entries": [
+  {
+   "id": "ABYSSAL_BATHS",
+   "name": "Abyssal Baths",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "MaxHp": 2,
+    "Damage": 3,
+    "Heal": 10,
+    "BaseDamage": 3,
+    "DamageScaling": 1
+   },
+   "options": [
+    {
+     "id": "ABSTAIN",
+     "title": "Abstain",
+     "description": "Heal 10 HP."
+    },
+    {
+     "id": "IMMERSE",
+     "title": "Immerse",
+     "description": "Gain 2 Max HP. Take 3 damage."
+    }
+   ],
+   "pages": [
+    {
+     "id": "ALL",
+     "options": [
+      {
+       "id": "EXIT_BATHS",
+       "title": "Exit Baths",
+       "description": ""
+      },
+      {
+       "id": "LINGER",
+       "title": "Linger",
+       "description": "Gain 2 Max HP. Take 3 damage."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.AbyssalBaths + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Abyssal_Baths",
+     "fetched": "2026-10-23",
+     "revid": 60220
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/abyssal_baths",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You find a secluded area with a strange pool of liquid. You can either immerse yourself in it, increasing your Max HP at the cost of taking damage as many times as you wish, or gather the salts around the pool to recover some HP.",
+    "options": [
+     {
+      "title": "Immerse",
+      "text": "Gain 2 Max HP. Take 3 damage."
+     },
+     {
+      "title": "Abstain",
+      "text": "Heal 10 HP."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "IMMERSE",
+     "title": "Immerse",
+     "description": "Gain 2 Max HP. Take 3 damage."
+    },
+    {
+     "id": "ABSTAIN",
+     "title": "Abstain",
+     "description": "Heal 10 HP."
+    }
+   ]
+  },
+  {
+   "id": "AMALGAMATOR",
+   "name": "Amalgamator",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": "all players(p => p.Deck.Cards.Count(c => IsValid(CardTag.Strike, c)) >= 2 and p.Deck.Cards.Count(c => IsValid(CardTag.Defend, c)) >= 2)",
+   "vars": {},
+   "options": [
+    {
+     "id": "COMBINE_DEFENDS",
+     "title": "Combine Defends",
+     "description": "Remove 2 Defends. Add X to your Deck."
+    },
+    {
+     "id": "COMBINE_STRIKES",
+     "title": "Combine Strikes",
+     "description": "Remove 2 Strikes. Add X to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "ULTIMATE_DEFEND",
+    "ULTIMATE_STRIKE"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Amalgamator + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Amalgamator",
+     "fetched": "2026-10-23",
+     "revid": 62769
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/amalgamator",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You discover and enter a workshop where a strange figure was waiting for you. You may combine two of your Strikes or Defends into an Ultimate Strike or Defend respectively.",
+    "options": [
+     {
+      "title": "Combine Strikes",
+      "text": "Remove 2 Strikes. Add Ultimate Strike to your Deck."
+     },
+     {
+      "title": "Combine Defends",
+      "text": "Remove 2 Defends. Add Ultimate Defend to your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 2 Strike cards and 2 Defend cards in your deck that can be removed."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "COMBINE_STRIKES",
+     "title": "Combine Strikes",
+     "description": "Remove 2 Strikes. Add Ultimate Strike to your Deck."
+    },
+    {
+     "id": "COMBINE_DEFENDS",
+     "title": "Combine Defends",
+     "description": "Remove 2 Defends. Add Ultimate Defend to your Deck."
+    }
+   ]
+  },
+  {
+   "id": "AROMA_OF_CHAOS",
+   "name": "Aroma of Chaos",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "LET_GO",
+     "title": "Let Go",
+     "description": "Transform a card in your Deck."
+    },
+    {
+     "id": "MAINTAIN_CONTROL",
+     "title": "Maintain Control",
+     "description": "Upgrade a card in your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.AromaOfChaos + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Aroma_of_Chaos",
+     "fetched": "2026-10-23",
+     "revid": 60254
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/aroma_of_chaos",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You begin hallucinating upon smelling a strange mix of scents in the air. You may either let the illusions cloud your mind to transform a card in your deck, or resist them to upgrade a card in your deck.",
+    "options": [
+     {
+      "title": "Let Go",
+      "text": "Transform a card in your Deck."
+     },
+     {
+      "title": "Maintain Control",
+      "text": "Upgrade a card in your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "LET_GO",
+     "title": "Let Go",
+     "description": "Transform a card in your Deck."
+    },
+    {
+     "id": "MAINTAIN_CONTROL",
+     "title": "Maintain Control",
+     "description": "Upgrade a card in your Deck."
+    }
+   ]
+  },
+  {
+   "id": "BATTLEWORN_DUMMY",
+   "name": "Battleworn Dummy",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "SETTING_1",
+     "title": "Setting 1",
+     "description": "Fight a X HP dummy. Procure 1 random Potion."
+    },
+    {
+     "id": "SETTING_2",
+     "title": "Setting 2",
+     "description": "Fight a X HP dummy. Upgrade 2 random cards."
+    },
+    {
+     "id": "SETTING_3",
+     "title": "Setting 3",
+     "description": "Fight a X HP dummy. Obtain a random Relic."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.BattlewornDummy + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Battleworn_Dummy",
+     "fetched": "2026-10-23",
+     "revid": 60278
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/battleworn_dummy",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You approach a training dummy when it suddenly activates, offering a selection of battle options for you to test your might on. You have 3 turns to defeat the dummy, and if you fail to defeat them in that time, you get nothing. If you win, you gain a reward depending on the option you chose.",
+    "options": [
+     {
+      "title": "Setting 1",
+      "text": "Fight a 75 HP dummy. Procure 1 random Potion."
+     },
+     {
+      "title": "Setting 2",
+      "text": "Fight a 150 HP dummy. Upgrade 2 random cards."
+     },
+     {
+      "title": "Setting 3",
+      "text": "Fight a 300 HP dummy. Obtain a random Relic."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "SETTING_1",
+     "title": "Setting 1",
+     "description": "Fight a 75 HP dummy. Procure 1 random Potion."
+    },
+    {
+     "id": "SETTING_2",
+     "title": "Setting 2",
+     "description": "Fight a 150 HP dummy. Upgrade 2 random cards."
+    },
+    {
+     "id": "SETTING_3",
+     "title": "Setting 3",
+     "description": "Fight a 300 HP dummy. Obtain a random Relic."
+    }
+   ]
+  },
+  {
+   "id": "BRAIN_LEECH",
+   "name": "Brain Leech",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "act_index(0-based) < 2",
+   "vars": {
+    "RipHpLoss": 5,
+    "RewardCount": 1,
+    "CardChoiceCount": 1,
+    "FromCardChoiceCount": 5
+   },
+   "options": [
+    {
+     "id": "RIP",
+     "title": "Rip the Leech Off",
+     "description": "Lose 5 HP. Gain a Colorless card reward."
+    },
+    {
+     "id": "SHARE_KNOWLEDGE",
+     "title": "Share Knowledge",
+     "description": "Choose 1 of 5 random cards to add to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.BrainLeech + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Brain_Leech",
+     "fetched": "2026-10-23",
+     "revid": 63144
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/brain_leech",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "1 - Overgrowth",
+     "1 - Underdocks",
+     "2 - Hive"
+    ],
+    "summary": "You contract a Brain Leech seeking knowledge. You may choose to share knowledge with it to add 1 of 5 cards to your deck, or rip it out to earn a colorless card reward at the cost of some HP.",
+    "options": [
+     {
+      "title": "Share Knowledge",
+      "text": "Choose 1 of 5 random cards to add to your deck."
+     },
+     {
+      "title": "Rip the Leech Off",
+      "text": "Lose 5 HP. Gain a Colorless card reward."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "SHARE_KNOWLEDGE",
+     "title": "Share Knowledge",
+     "description": "Choose 1 of 5 random cards to add to your Deck."
+    },
+    {
+     "id": "RIP",
+     "title": "Rip the Leech Off",
+     "description": "Lose 5 HP. Gain a Colorless card reward."
+    }
+   ]
+  },
+  {
+   "id": "BUGSLAYER",
+   "name": "Bugslayer",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "EXTERMINATION",
+     "title": "Learn Extermination Technique",
+     "description": "Add X to your Deck."
+    },
+    {
+     "id": "SQUASH",
+     "title": "Learn Squash Technique",
+     "description": "Add X to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "EXTERMINATE",
+    "SQUASH"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Bugslayer + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bugslayer",
+     "fetched": "2026-10-23",
+     "revid": 60351
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/bugslayer",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You fight a group of insects when a warrior offers his assistance. After the fight, he offers to teach you one of his techniques, allowing you to add one of two special cards to your deck.",
+    "options": [
+     {
+      "title": "Learn Extermination Technique",
+      "text": "Add Exterminate to your Deck."
+     },
+     {
+      "title": "Learn Squash Technique",
+      "text": "Add Squash to your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "EXTERMINATION",
+     "title": "Learn Extermination Technique",
+     "description": "Add Exterminate to your Deck."
+    },
+    {
+     "id": "SQUASH",
+     "title": "Learn Squash Technique",
+     "description": "Add Squash to your Deck."
+    }
+   ]
+  },
+  {
+   "id": "BYRDONIS_NEST",
+   "name": "Byrdonis Nest",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => !p.HasEventPet())",
+   "vars": {
+    "MaxHp": 7
+   },
+   "options": [
+    {
+     "id": "EAT",
+     "title": "Eat the Egg",
+     "description": "Gain 7 Max HP."
+    },
+    {
+     "id": "TAKE",
+     "title": "Take the Egg",
+     "description": "Add X to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "BYRDONIS_EGG"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.ByrdonisNest + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Byrdonis_Nest",
+     "fetched": "2026-10-23",
+     "revid": 60367
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/byrdonis_nest",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "A large byrd flees from an enormous beast, leaving its nest and egg unattended for you to sneak in and steal from. You may either consume the egg to increase your Max HP, or stash it away to add it into your deck.",
+    "options": [
+     {
+      "title": "Eat the Egg",
+      "text": "Gain 7 Max HP."
+     },
+     {
+      "title": "Take the Egg",
+      "text": "Add Byrdonis Egg to deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "EAT",
+     "title": "Eat the Egg",
+     "description": "Gain 7 Max HP."
+    },
+    {
+     "id": "TAKE",
+     "title": "Take the Egg",
+     "description": "Add Byrdonis Egg to your Deck."
+    }
+   ]
+  },
+  {
+   "id": "COLORFUL_PHILOSOPHERS",
+   "name": "Colorful Philosophers",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": "all players(p => p.UnlockState.CharacterCardPools.Count() > 1)",
+   "vars": {
+    "Cards": 3
+   },
+   "options": [
+    {
+     "id": "DEFECT",
+     "title": "Blue",
+     "description": "Obtain 3 Defect cards."
+    },
+    {
+     "id": "EQUALITY",
+     "title": "Equality",
+     "description": "Obtain Prismatic Shard."
+    },
+    {
+     "id": "IRONCLAD",
+     "title": "Red",
+     "description": "Obtain 3 Ironclad cards."
+    },
+    {
+     "id": "NECROBINDER",
+     "title": "Pink",
+     "description": "Obtain 3 Necrobinder cards."
+    },
+    {
+     "id": "REGENT",
+     "title": "Orange",
+     "description": "Obtain 3 Regent cards."
+    },
+    {
+     "id": "SILENT",
+     "title": "Green",
+     "description": "Obtain 3 Silent cards."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.ColorfulPhilosophers + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Colorful_Philosophers",
+     "fetched": "2026-10-23",
+     "revid": 66097
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/colorful_philosophers",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You stumble upon a group of colored statues arguing over which color is the best. You may join in and obtain three card rewards of varying rarities from a different character of your choice.",
+    "options": [
+     {
+      "title": "Red",
+      "text": "Obtain 3 Ironclad cards."
+     },
+     {
+      "title": "Green",
+      "text": "Obtain 3 Silent cards."
+     },
+     {
+      "title": "Blue",
+      "text": "Obtain 3 Defect cards."
+     },
+     {
+      "title": "Pink",
+      "text": "Obtain 3 Necrobinder cards."
+     },
+     {
+      "title": "Orange",
+      "text": "Obtain 3 Regent cards."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have unlocked more than one character."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "DEFECT",
+     "title": "Blue",
+     "description": "Obtain 3 Defect cards."
+    },
+    {
+     "id": "IRONCLAD",
+     "title": "Red",
+     "description": "Obtain 3 Ironclad cards."
+    },
+    {
+     "id": "NECROBINDER",
+     "title": "Pink",
+     "description": "Obtain 3 Necrobinder cards."
+    },
+    {
+     "id": "REGENT",
+     "title": "Orange",
+     "description": "Obtain 3 Regent cards."
+    },
+    {
+     "id": "SILENT",
+     "title": "Green",
+     "description": "Obtain 3 Silent cards."
+    }
+   ]
+  },
+  {
+   "id": "COLOSSAL_FLOWER",
+   "name": "Colossal Flower",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": "all players(p => p.CurrentHp >= 19)",
+   "vars": {},
+   "options": [
+    {
+     "id": "EXTRACT_CURRENT_PRIZE_1",
+     "title": "Extract Nectar",
+     "description": "Gain X Gold."
+    },
+    {
+     "id": "REACH_DEEPER_1",
+     "title": "Reach Deeper",
+     "description": "Enter deeper. Lose 5 HP."
+    }
+   ],
+   "pages": [
+    {
+     "id": "REACH_DEEPER_1",
+     "options": [
+      {
+       "id": "EXTRACT_CURRENT_PRIZE_2",
+       "title": "Extract Nectar",
+       "description": "Gain X Gold."
+      },
+      {
+       "id": "REACH_DEEPER_2",
+       "title": "Reach Deeper",
+       "description": "Enter even deeper. Lose 6 HP."
+      }
+     ]
+    },
+    {
+     "id": "REACH_DEEPER_2",
+     "options": [
+      {
+       "id": "EXTRACT_INSTEAD",
+       "title": "Extract Nectar",
+       "description": "Gain X Gold."
+      },
+      {
+       "id": "POLLINOUS_CORE",
+       "title": "Enter the Center",
+       "description": "Lose 7 HP. Obtain Pollinous Core."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.ColossalFlower + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Colossal_Flower",
+     "fetched": "2026-10-23",
+     "revid": 62785
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/colossal_flower",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You come across an enormous flower with sharp, venomous petals growing on a mountain of bones. You can grab the nectar dripping off of it to obtain some gold, or climb deeper into it to obtain more at the cost of some HP, or obtain the unique Pollinous Core relic.",
+    "options": [
+     {
+      "title": "Extract Nectar",
+      "text": "Gain 35 Gold."
+     },
+     {
+      "title": "Reach Deeper",
+      "text": "Lose 5 HP. Advance to the next level."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 19 HP."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "EXTRACT_CURRENT_PRIZE_1",
+     "title": "Extract Nectar",
+     "description": "Gain 35 Gold."
+    },
+    {
+     "id": "REACH_DEEPER_1",
+     "title": "Reach Deeper",
+     "description": "Enter deeper. Lose 5 HP."
+    }
+   ]
+  },
+  {
+   "id": "CRYSTAL_SPHERE",
+   "name": "Crystal Sphere",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(all players(p => p.Gold >= 100)) and (act_index(0-based) > 0)",
+   "vars": {
+    "UncoverFutureCost": 50,
+    "UncoverFutureProphesizeCount": 3,
+    "PaymentPlanCount": 6,
+    "UncoverFutureRandomMin": 1,
+    "UncoverFutureRandomMax": 50
+   },
+   "options": [
+    {
+     "id": "PAYMENT_PLAN",
+     "title": "Payment Plan",
+     "description": "Gain a X. Divine 6 times."
+    },
+    {
+     "id": "UNCOVER_FUTURE",
+     "title": "Uncover Future",
+     "description": "Pay 50 Gold. Divine 3 times."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "DEBT"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.CrystalSphere + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Crystal_Sphere",
+     "fetched": "2026-10-23",
+     "revid": 60439
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/crystal_sphere",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "summary": "You meet a Fortune Teller offering to divine your future. you pick a plan to Uncover your] Future and earn rewards.",
+    "options": [
+     {
+      "title": "Uncover Future",
+      "text": "Pay 51-99 Gold. Divine 3 times."
+     },
+     {
+      "title": "Payment Plan",
+      "text": "Gain a Debt. Divine 6 times."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 100 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "UNCOVER_FUTURE",
+     "title": "Uncover Future",
+     "description": "Pay 51-99 Gold. Divine 3 times."
+    },
+    {
+     "id": "PAYMENT_PLAN",
+     "title": "Payment Plan",
+     "description": "Gain a Debt. Divine 6 times."
+    }
+   ]
+  },
+  {
+   "id": "DARV",
+   "name": "Darv",
+   "is_ancient": true,
+   "epithet": "The Hoarder",
+   "acts": [],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "ASTROLABE",
+    "BLACK_STAR",
+    "CALLING_BELL",
+    "DUSTY_TOME",
+    "ECTOPLASM",
+    "EMPTY_CAGE",
+    "PANDORAS_BOX",
+    "PHILOSOPHERS_STONE",
+    "RUNIC_PYRAMID",
+    "SNECKO_EYE",
+    "SOZU",
+    "VELVET_CHOKER"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Darv + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Darv",
+     "fetched": "2026-10-23",
+     "revid": 66055
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/darv",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 2 and 3",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "DENSE_VEGETATION",
+   "name": "Dense Vegetation",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "if (Players.Count == 1) { true } foreach (Player player in Players) { if (player.CurrentHp <= var:HpLoss) { false } } true",
+   "vars": {
+    "Gold": 0,
+    "Heal": 0,
+    "HpLoss": 8
+   },
+   "options": [
+    {
+     "id": "REST",
+     "title": "Rest",
+     "description": "Heal 0 HP. Fight some enemies."
+    },
+    {
+     "id": "TRUDGE_ON",
+     "title": "Trudge On",
+     "description": "Gain 0 Gold. Lose 8 HP."
+    }
+   ],
+   "pages": [
+    {
+     "id": "REST",
+     "options": [
+      {
+       "id": "FIGHT",
+       "title": "Fight!",
+       "description": ""
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.DenseVegetation + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Dense_Vegetation",
+     "fetched": "2026-10-23",
+     "revid": 60542
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/dense_vegetation",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You get lost in the jungle, while exhaustion sets in. You can either press onwards to either remove a card from your deck, or gain some gold at the cost of some HP, or take a rest and battle a group of Wrigglers.",
+    "options": [
+     {
+      "title": "Trudge On",
+      "text": "Gain 61-99 gold Lose 8 HP."
+     },
+     {
+      "title": "Rest",
+      "text": "Heal HP (rest site amount). Fight 4 Wrigglers."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "In Multiplayer can only appear if every player has more than 8 HP. This does not apply to Singleplayer."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "TRUDGE_ON",
+     "title": "Trudge On",
+     "description": "Gain 61-99 Gold. Lose 8 HP."
+    },
+    {
+     "id": "REST",
+     "title": "Rest",
+     "description": "Heal 30% Max HP. Fight some enemies."
+    }
+   ]
+  },
+  {
+   "id": "DOLL_ROOM",
+   "name": "Doll Room",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "act_index(0-based) == 1",
+   "vars": {
+    "TakeTimeHpLoss": 5,
+    "ExamineHpLoss": 15
+   },
+   "options": [
+    {
+     "id": "EXAMINE",
+     "title": "Examine Each and Make the Best Choice",
+     "description": "Lose 15 HP. Choose 1 of 3 Doll Relics."
+    },
+    {
+     "id": "RANDOM",
+     "title": "Pick at Random",
+     "description": "Obtain a random Doll Relic."
+    },
+    {
+     "id": "TAKE_SOME_TIME",
+     "title": "Take Some Time",
+     "description": "Lose 5 HP. Choose 1 of 2 Doll Relics."
+    }
+   ],
+   "pages": [
+    {
+     "id": "TAKE",
+     "options": [
+      {
+       "id": "TAKE",
+       "title": null,
+       "description": "Receive X."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [
+    "BING_BONG",
+    "DAUGHTER_OF_THE_WIND",
+    "MR_STRUGGLES"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.DollRoom + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Doll_Room",
+     "fetched": "2026-10-23",
+     "revid": 60559
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/doll_room",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You stumbled upon a room of dolls. You may pick one at random to obtain either Bing Bong, Daughter of the Wind, or Mr. Struggles, or take the time to make a decision to give yourself a choice of which at the cost of some HP.",
+    "options": [
+     {
+      "title": "Pick at Random",
+      "text": "Obtain a random Doll Relic"
+     },
+     {
+      "title": "Take Some Time",
+      "text": "Lose 5 HP. Choose 1 of 2 Doll Relics"
+     },
+     {
+      "title": "Examine Each and Make the Best Choice",
+      "text": "Lose 15 HP. Choose 1 of 3 Doll Relics"
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "RANDOM",
+     "title": "Pick at Random",
+     "description": "Obtain a random Doll Relic."
+    },
+    {
+     "id": "TAKE_SOME_TIME",
+     "title": "Take Some Time",
+     "description": "Lose 5 HP. Choose 1 of 2 Doll Relics."
+    },
+    {
+     "id": "EXAMINE",
+     "title": "Examine Each and Make the Best Choice",
+     "description": "Lose 15 HP. Choose 1 of 3 Doll Relics."
+    }
+   ]
+  },
+  {
+   "id": "DOORS_OF_LIGHT_AND_DARK",
+   "name": "Doors of Light and Dark",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Cards": 2
+   },
+   "options": [
+    {
+     "id": "DARK",
+     "title": "Dark Door",
+     "description": "Remove 1 card from your Deck."
+    },
+    {
+     "id": "LIGHT",
+     "title": "Light Door",
+     "description": "Upgrade 2 random cards."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.DoorsOfLightAndDark + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Doors_of_Light_and_Dark",
+     "fetched": "2026-10-23",
+     "revid": 60564
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/doors_of_light_and_dark",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You enter into a doorway that takes you to a mysterious plane with an equally mysterious doorman. You may either enter the light door to upgrade 2 random cards, or enter the dark door to remove a card from your deck.",
+    "options": [
+     {
+      "title": "Light Door",
+      "text": "Upgrade 2 random cards."
+     },
+     {
+      "title": "Dark Door",
+      "text": "Remove 1 card from Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "LIGHT",
+     "title": "Light Door",
+     "description": "Upgrade 2 random cards."
+    },
+    {
+     "id": "DARK",
+     "title": "Dark Door",
+     "description": "Remove 1 card from your Deck."
+    }
+   ]
+  },
+  {
+   "id": "DROWNING_BEACON",
+   "name": "Drowning Beacon",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "HpLoss": 13
+   },
+   "options": [
+    {
+     "id": "BOTTLE",
+     "title": "Bottle",
+     "description": "Procure X."
+    },
+    {
+     "id": "CLIMB",
+     "title": "Climb",
+     "description": "Obtain X. Lose 13 Max HP."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "FRESNEL_LENS"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.DrowningBeacon + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Drowning_Beacon",
+     "fetched": "2026-10-23",
+     "revid": 60576
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/drowning_beacon",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You come across a sinking lighthouse that emits anti-light from the lens at the top. You can either bottle the water around the lighthouse to obtain a Glowwater Potion, or pry the lens out of the lighthouse to obtain the unique Fresnel Lens relic at the cost of some max HP.",
+    "options": [
+     {
+      "title": "Bottle",
+      "text": "Procure 1 Glowwater Potion."
+     },
+     {
+      "title": "Climb",
+      "text": "Lose 13 Max HP. Obtain Fresnel Lens (relic)."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "BOTTLE",
+     "title": "Bottle",
+     "description": "Procure Glowwater Potion."
+    },
+    {
+     "id": "CLIMB",
+     "title": "Climb",
+     "description": "Obtain Fresnel Lens. Lose 13 Max HP."
+    }
+   ]
+  },
+  {
+   "id": "ENDLESS_CONVEYOR",
+   "name": "Endless Conveyor",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= 120)",
+   "vars": {
+    "Gold": 40,
+    "GoldenFyshGold": 75,
+    "ClamRollHeal": 10,
+    "CaviarMaxHp": 4
+   },
+   "options": [
+    {
+     "id": "OBSERVE_CHEF",
+     "title": "Observe the Chef",
+     "description": "Upgrade a random card in your Deck."
+    }
+   ],
+   "pages": [
+    {
+     "id": "ALL",
+     "options": [
+      {
+       "id": "CAVIAR",
+       "title": "Grab Caviar off the Belt",
+       "description": "Pay 40 Gold. Gain 4 Max HP. Continue feasting!"
+      },
+      {
+       "id": "CLAM_ROLL",
+       "title": "Grab Clam Roll off the Belt",
+       "description": "Pay 40 Gold. Heal 10 HP. Continue feasting!"
+      },
+      {
+       "id": "FRIED_EEL",
+       "title": "Grab Fried Eel off the Belt",
+       "description": "Pay 40 Gold. Add a random Colorless Card to your Deck. Continue feasting!"
+      },
+      {
+       "id": "GOLDEN_FYSH",
+       "title": "Grab Golden Fysh off the Belt",
+       "description": "LUCKY WINNER! Gain 75 Gold."
+      },
+      {
+       "id": "JELLY_LIVER",
+       "title": "Grab Jelly Liver off the Belt",
+       "description": "Pay 40 Gold. Transform a card. Continue feasting!"
+      },
+      {
+       "id": "LOCKED",
+       "title": "Broke",
+       "description": "You could eat more but you are out of Gold."
+      },
+      {
+       "id": "SEAPUNK_SALAD",
+       "title": "Grab Seapunk Salad off the Belt",
+       "description": "Pay 40 Gold. Add Feeding Frenzy to your Deck. Continue feasting!"
+      },
+      {
+       "id": "SPICY_SNAPPY",
+       "title": "Grab Spicy Snappy off the Belt",
+       "description": "Pay 40 Gold. Upgrade a random card. Continue feasting!"
+      },
+      {
+       "id": "SUSPICIOUS_CONDIMENT",
+       "title": "Grab Suspicious Condiment off the Belt",
+       "description": "Pay 40 Gold. Procure a random Potion. Continue feasting!"
+      }
+     ]
+    },
+    {
+     "id": "GRAB_SOMETHING_OFF_THE_BELT",
+     "options": [
+      {
+       "id": "LEAVE",
+       "title": "Leave",
+       "description": ""
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.EndlessConveyor + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Endless_Conveyor",
+     "fetched": "2026-10-23",
+     "revid": 65985
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/endless_conveyor",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "conflicts": [
+    {
+     "field": "options",
+     "game": [
+      "Broke",
+      "Grab Caviar off the Belt",
+      "Grab Clam Roll off the Belt",
+      "Grab Fried Eel off the Belt",
+      "Grab Golden Fysh off the Belt",
+      "Grab Jelly Liver off the Belt",
+      "Grab Seapunk Salad off the Belt",
+      "Grab Spicy Snappy off the Belt",
+      "Grab Suspicious Condiment off the Belt",
+      "Leave",
+      "Observe the Chef"
+     ],
+     "wiki": [
+      "Grab Something Off the Belt"
+     ],
+     "authoritative": "game",
+     "note": "wiki option titles not found in game localization"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You find a shack where a chef is skillfully preparing food and placing it onto a conveyor belt. You can either pay gold to gain various benefits as many times as you wish, or hold back and upgrade a card instead.",
+    "options": [
+     {
+      "title": "Grab Something Off the Belt",
+      "text": "Pay 40 Gold. Receive a random dish (see below)."
+     },
+     {
+      "title": "Observe the Chef",
+      "text": "Upgrade a random card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Requires you to have at least 120 Gold to appear."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "OBSERVE_CHEF",
+     "title": "Observe the Chef",
+     "description": "Upgrade a random card in your Deck."
+    }
+   ]
+  },
+  {
+   "id": "FAKE_MERCHANT",
+   "name": "The Merchant???",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "if (act_index(0-based) < 1) { false } if (Players.Count > 1) { false } all players(player => player.Gold >= 100 or player.Potions.Any(potion => potion is FoulPotion))",
+   "vars": {
+    "RelicCost": 50
+   },
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "FAKE_ANCHOR",
+    "FAKE_BLOOD_VIAL",
+    "FAKE_HAPPY_FLOWER",
+    "FAKE_LEES_WAFFLE",
+    "FAKE_MANGO",
+    "FAKE_MERCHANTS_RUG",
+    "FAKE_ORICHALCUM",
+    "FAKE_SNECKO_EYE",
+    "FAKE_STRIKE_DUMMY",
+    "FAKE_VENERABLE_TEA_SET"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.FakeMerchant + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Merchant???",
+     "fetched": "2026-10-23",
+     "revid": 66344
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/fake_merchant",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "summary": "You meet a strange man selling a variety of cheap imitations of various Relics. If you have a Foul Potion, you can throw it at them to start a fight with them for great rewards.",
+    "options": [],
+    "mechanics": [],
+    "conditions": [
+     "Cannot appear in Multiplayer.",
+     "Only appears in Acts 2 and 3.",
+     "Only appears if the player has at least 100 Gold or if one of the currently held potions is Foul Potion."
+    ]
+   },
+   "codex_options": []
+  },
+  {
+   "id": "FIELD_OF_MAN_SIZED_HOLES",
+   "name": "Field of Man-Sized Holes",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": "all players(p => p.Deck.Cards.Any(PerfectFit.CanEnchant))",
+   "vars": {
+    "Gold": 75,
+    "Cards": 2
+   },
+   "options": [
+    {
+     "id": "ENTER_YOUR_HOLE",
+     "title": "Enter Your Hole",
+     "description": "Enchant a card with X."
+    },
+    {
+     "id": "RESIST",
+     "title": "Resist",
+     "description": "Remove 2 cards from your Deck. Add X to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "NORMALITY"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.FieldOfManSizedHoles + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Field_of_Man-Sized_Holes",
+     "fetched": "2026-10-23",
+     "revid": 60632
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/field_of_man_sized_holes",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "options": [
+     {
+      "title": "Enter Your Hole",
+      "text": "Enchant]] a card with Perfect Fit."
+     },
+     {
+      "title": "Resist",
+      "text": "Remove 2 cards from your Deck. Add Normality (curse) to your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 1 card that can be enchanted with Perfect Fit."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "RESIST",
+     "title": "Resist",
+     "description": "Remove 2 cards from your Deck. Add Normality to your Deck."
+    },
+    {
+     "id": "ENTER_YOUR_HOLE",
+     "title": "Enter Your Hole",
+     "description": "Enchant a card with Perfect Fit."
+    }
+   ]
+  },
+  {
+   "id": "GRAVE_OF_THE_FORGOTTEN",
+   "name": "Grave of the Forgotten",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": "all players(HasEnchantableCards)",
+   "vars": {},
+   "options": [
+    {
+     "id": "ACCEPT",
+     "title": "Accept the X",
+     "description": "Obtain X."
+    },
+    {
+     "id": "CONFRONT",
+     "title": "Confront with Truth",
+     "description": "Add X to your Deck. Enchant a card that Exhausts with X."
+    },
+    {
+     "id": "CONFRONT_LOCKED",
+     "title": "Locked",
+     "description": "You have no cards with Exhaust that can be Enchanted."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "FORGOTTEN_SOUL"
+   ],
+   "cards_referenced": [
+    "DECAY"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.GraveOfTheForgotten + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Grave_of_the_Forgotten",
+     "fetched": "2026-10-23",
+     "revid": 60713
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/grave_of_the_forgotten",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You sight a grave with the soul of a warrior who still longs for battle. You may either take it with you as a unique Relic, or confront it with the truth of the matter to add a highly powerful enchantment to a card that Exhausts, at the cost of become Cursed.",
+    "options": [
+     {
+      "title": "Accept the Forgotten Soul",
+      "text": "Obtain Forgotten Soul (relic)."
+     },
+     {
+      "title": "Confront with Truth",
+      "text": "Add Decay (curse) to your Deck. Enchant a card that 2 with Soul's Power."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 1 card that can be 2 with Soul's Power."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "CONFRONT_LOCKED",
+     "title": "Locked",
+     "description": "You have no cards with Exhaust that can be Enchanted."
+    },
+    {
+     "id": "CONFRONT",
+     "title": "Confront with Truth",
+     "description": "Add Decay to your Deck. Enchant a card that Exhausts with Soul's Power."
+    },
+    {
+     "id": "ACCEPT",
+     "title": "Accept the Forgotten Soul",
+     "description": "Obtain Forgotten Soul."
+    }
+   ]
+  },
+  {
+   "id": "HUNGRY_FOR_MUSHROOMS",
+   "name": "Hungry for Mushrooms",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "BIG_MUSHROOM",
+     "title": "Big Mushroom",
+     "description": null
+    },
+    {
+     "id": "FRAGRANT_MUSHROOM",
+     "title": "Fragrant Mushroom",
+     "description": null
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "BIG_MUSHROOM",
+    "FRAGRANT_MUSHROOM"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.HungryForMushrooms + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Hungry_for_Mushrooms",
+     "fetched": "2026-10-23",
+     "revid": 60759
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/hungry_for_mushrooms",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "options": [
+     {
+      "title": "Big Mushroom",
+      "text": "Obtain Big Mushroom (relic)."
+     },
+     {
+      "title": "Fragrant Mushroom",
+      "text": "Obtain Fragrant Mushroom (relic)."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "BIG_MUSHROOM",
+     "title": "Big Mushroom",
+     "description": "Obtain Big Mushroom. Upon pickup, raise your Max HP by 20. At the start of each combat, draw 2 fewer cards."
+    },
+    {
+     "id": "FRAGRANT_MUSHROOM",
+     "title": "Fragrant Mushroom",
+     "description": "Obtain Fragrant Mushroom. Upon pickup, lose 15 HP and Upgrade 2 random cards."
+    }
+   ]
+  },
+  {
+   "id": "INFESTED_AUTOMATON",
+   "name": "Infested Automaton",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "STUDY",
+     "title": "Study",
+     "description": "Obtain a random Power."
+    },
+    {
+     "id": "TOUCH_CORE",
+     "title": "Touch the Core",
+     "description": "Obtain a random 0 cost card."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.InfestedAutomaton + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Infested_Automaton",
+     "fetched": "2026-10-23",
+     "revid": 60772
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/infested_automaton",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "options": [
+     {
+      "title": "Study",
+      "text": "Obtain a random 2."
+     },
+     {
+      "title": "Touch the Core",
+      "text": "Obtain a random 0 cost card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "STUDY",
+     "title": "Study",
+     "description": "Obtain a random Power."
+    },
+    {
+     "id": "TOUCH_CORE",
+     "title": "Touch the Core",
+     "description": "Obtain a random 0 cost card."
+    }
+   ]
+  },
+  {
+   "id": "JUNGLE_MAZE_ADVENTURE",
+   "name": "Jungle Maze Adventure",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "SoloGold": 150,
+    "SoloHp": 18,
+    "JoinForcesGold": 50
+   },
+   "options": [
+    {
+     "id": "JOIN_FORCES",
+     "title": "Join Forces",
+     "description": "Gain 50 Gold."
+    },
+    {
+     "id": "SOLO_QUEST",
+     "title": "Solo Quest",
+     "description": "Gain 150 Gold. Lose 18 HP."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.JungleMazeAdventure + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Jungle_Maze_Adventure",
+     "fetched": "2026-10-23",
+     "revid": 60794
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/jungle_maze_adventure",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You encounter a group of adventurers gearing up to head into a dangerous dungeon. You may either join forces with them to gain a small amount of gold, or enter alone to gain more at the cost of some HP.",
+    "options": [
+     {
+      "title": "Solo Quest",
+      "text": "Gain 135-165 Gold. Lose 18 HP."
+     },
+     {
+      "title": "Join Forces",
+      "text": "Gain 35-65 Gold."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "In Multiplayer can only appear if every player has more than 18 HP. This does not apply to Singleplayer."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "SOLO_QUEST",
+     "title": "Solo Quest",
+     "description": "Gain 135-165 Gold. Lose 18 HP."
+    },
+    {
+     "id": "JOIN_FORCES",
+     "title": "Join Forces",
+     "description": "Gain 35-65 Gold."
+    }
+   ]
+  },
+  {
+   "id": "LOST_WISP",
+   "name": "The Lost Wisp",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Gold": 60,
+    "BaseGold": 60,
+    "GoldVariance": 15
+   },
+   "options": [
+    {
+     "id": "CLAIM",
+     "title": "Capture the Wisp",
+     "description": "Add X to your Deck. Obtain the X."
+    },
+    {
+     "id": "CLAIM_LOCKED",
+     "title": "Locked",
+     "description": "Your Max HP is too low."
+    },
+    {
+     "id": "SEARCH",
+     "title": "Search the Nearby Area",
+     "description": "Gain 60 Gold."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "DECAY"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.LostWisp + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Lost_Wisp",
+     "fetched": "2026-10-23",
+     "revid": 61285
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/lost_wisp",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "options": [
+     {
+      "title": "Capture the Wisp",
+      "text": "Add Decay (curse) to Deck. Obtain the Lost Wisp (relic)."
+     },
+     {
+      "title": "Search the Nearby Area",
+      "text": "Gain 45-75 Gold."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "CLAIM",
+     "title": "Capture the Wisp",
+     "description": "Add Decay to your Deck. Obtain the Lost Wisp."
+    },
+    {
+     "id": "SEARCH",
+     "title": "Search the Nearby Area",
+     "description": "Gain 45-75 Gold."
+    }
+   ]
+  },
+  {
+   "id": "LUMINOUS_CHOIR",
+   "name": "Luminous Choir",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= var:Gold and p.RelicGrabBag.HasAvailableRelics(runState))",
+   "vars": {
+    "Gold": 149
+   },
+   "options": [
+    {
+     "id": "OFFER_TRIBUTE",
+     "title": "Offer Tribute",
+     "description": "Pay 149 Gold. Obtain a random Relic."
+    },
+    {
+     "id": "OFFER_TRIBUTE_LOCKED",
+     "title": "Locked",
+     "description": "Requires 149 Gold."
+    },
+    {
+     "id": "REACH_INTO_THE_FLESH",
+     "title": "Reach into the Flesh",
+     "description": "Remove 2 cards from your Deck. Add Spore Mind to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.LuminousChoir + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Luminous_Choir",
+     "fetched": "2026-10-23",
+     "revid": 60850
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/luminous_choir",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You discover a patch of glowing, singing mushrooms, noticing a relic within them. You may try reaching into the mushrooms to remove two cards for your deck while adding a curse in the process, or pay a sum of gold to obtain the relic.",
+    "options": [
+     {
+      "title": "Reach into the Flesh",
+      "text": "Remove 2 cards from Deck. Add Spore Mind (curse) to Deck."
+     },
+     {
+      "title": "Offer Tribute",
+      "text": "Pay 100-149 Gold. Obtain a random Relic."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 149 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "REACH_INTO_THE_FLESH",
+     "title": "Reach into the Flesh",
+     "description": "Remove 2 cards from your Deck. Add Spore Mind to your Deck."
+    },
+    {
+     "id": "OFFER_TRIBUTE",
+     "title": "Offer Tribute",
+     "description": "Pay 100-149 Gold. Obtain a random Relic."
+    },
+    {
+     "id": "OFFER_TRIBUTE_LOCKED",
+     "title": "Locked",
+     "description": "Requires 100-149 Gold."
+    }
+   ]
+  },
+  {
+   "id": "MORPHIC_GROVE",
+   "name": "Morphic Grove",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= 100 and p.Deck.Cards.Count(c => c.IsTransformable) >= 2)",
+   "vars": {
+    "MaxHp": 5,
+    "TransformCount": 2
+   },
+   "options": [
+    {
+     "id": "GROUP",
+     "title": "Group",
+     "description": "Lose ALL of your Gold. Transform 2 cards."
+    },
+    {
+     "id": "LONER",
+     "title": "Loner",
+     "description": "Gain 5 Max HP."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.MorphicGrove + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Morphic_Grove",
+     "fetched": "2026-10-23",
+     "revid": 60896
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/morphic_grove",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You enter a crystaline forest inhabited by crystal spirits that excitedly hover around you. You may interact with the group to transform two cards in your deck at the cost of all your gold, or interact with the lone one away from the group to gain some Max HP.",
+    "options": [
+     {
+      "title": "Group",
+      "text": "Lose ALL of your Gold. Transform 2 cards."
+     },
+     {
+      "title": "Loner",
+      "text": "Gain 5 Max HP."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 100 Gold and 2 cards that can be Transformed."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "GROUP",
+     "title": "Group",
+     "description": "Lose ALL of your Gold. Transform 2 cards."
+    },
+    {
+     "id": "LONER",
+     "title": "Loner",
+     "description": "Gain 5 Max HP."
+    }
+   ]
+  },
+  {
+   "id": "NEOW",
+   "name": "Neow",
+   "is_ancient": true,
+   "epithet": "Mother of Resurrection (Exiled)",
+   "acts": [
+    "OVERGROWTH",
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "ARCANE_SCROLL",
+    "BOOMING_CONCH",
+    "CURSED_PEARL",
+    "FISHING_ROD",
+    "GOLDEN_PEARL",
+    "HEFTY_TABLET",
+    "KALEIDOSCOPE",
+    "LARGE_CAPSULE",
+    "LAVA_ROCK",
+    "LEAD_PAPERWEIGHT",
+    "LEAFY_POULTICE",
+    "LOST_COFFER",
+    "MASSIVE_SCROLL",
+    "NEOWS_BONES",
+    "NEOWS_TALISMAN",
+    "NEOWS_TORMENT",
+    "NEW_LEAF",
+    "NUTRITIOUS_OYSTER",
+    "PHIAL_HOLSTER",
+    "POMANDER",
+    "PRECARIOUS_SHEARS",
+    "PRECISE_SCISSORS",
+    "SCROLL_BOXES",
+    "SILKEN_TRESS",
+    "SILVER_CRUCIBLE",
+    "SMALL_CAPSULE",
+    "STONE_HUMIDIFIER",
+    "WINGED_BOOTS"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Neow + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Neow",
+     "fetched": "2026-10-23",
+     "revid": 65972
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/neow",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 1",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "NONUPEIPE",
+   "name": "Nonupeipe",
+   "is_ancient": true,
+   "epithet": "Serendipity Incarnate",
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "BEAUTIFUL_BRACELET",
+    "BLESSED_ANTLER",
+    "BRILLIANT_SCARF",
+    "DELICATE_FROND",
+    "DIAMOND_DIADEM",
+    "FUR_COAT",
+    "GLITTER",
+    "JEWELRY_BOX",
+    "LOOMING_FRUIT",
+    "SIGNET_RING"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Nonupeipe + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Nonupeipe",
+     "fetched": "2026-10-23",
+     "revid": 65461
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/nonupeipe",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 3",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "OROBAS",
+   "name": "Orobas",
+   "is_ancient": true,
+   "epithet": "Living Rainbow",
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "PrismaticOdds": 0.3333333
+   },
+   "options": [
+    {
+     "id": "OPTION_POOL_3_LOCKED",
+     "title": "Locked",
+     "description": "You have no starter relics or cards."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "ALCHEMICAL_COFFER",
+    "ARCHAIC_TOOTH",
+    "DRIFTWOOD",
+    "ELECTRIC_SHRYMP",
+    "GLASS_EYE",
+    "PRISMATIC_GEM",
+    "RADIANT_PEARL",
+    "SAND_CASTLE",
+    "SEA_GLASS",
+    "TOUCH_OF_OROBAS"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Orobas + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Orobas",
+     "fetched": "2026-10-23",
+     "revid": 65473
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/orobas",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 2",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "PAEL",
+   "name": "Pael",
+   "is_ancient": true,
+   "epithet": "Melting Dragon",
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "PAELS_BLOOD",
+    "PAELS_CLAW",
+    "PAELS_EYE",
+    "PAELS_FLESH",
+    "PAELS_GROWTH",
+    "PAELS_HORN",
+    "PAELS_LEGION",
+    "PAELS_TEARS",
+    "PAELS_TOOTH",
+    "PAELS_WING"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Pael + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pael",
+     "fetched": "2026-10-23",
+     "revid": 65480
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/pael",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 2",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "POTION_COURIER",
+   "name": "Potion Courier",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "act_index(0-based) > 0",
+   "vars": {
+    "FoulPotions": 3
+   },
+   "options": [
+    {
+     "id": "GRAB_POTIONS",
+     "title": "Grab Potions",
+     "description": "Procure 3 Foul Potions."
+    },
+    {
+     "id": "RANSACK",
+     "title": "Ransack",
+     "description": "Procure 1 random Uncommon Potion."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.PotionCourier + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Potion_Courier",
+     "fetched": "2026-10-23",
+     "revid": 63684
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/potion_courier",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "summary": "You discover the corpse of a courier who has a batch of particularly foul potions by his body, along with a note intending for the recipient to be the Merchant. You may take the Foul Potions, or ransack his bag to obtain a random uncommon potion.",
+    "options": [
+     {
+      "title": "Grab Potions",
+      "text": "Procure 3 2."
+     },
+     {
+      "title": "Ransack",
+      "text": "Procure 1 random Uncommon Potion."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "GRAB_POTIONS",
+     "title": "Grab Potions",
+     "description": "Procure 3 Foul Potions."
+    },
+    {
+     "id": "RANSACK",
+     "title": "Ransack",
+     "description": "Procure 1 random Uncommon Potion."
+    }
+   ]
+  },
+  {
+   "id": "PUNCH_OFF",
+   "name": "Punch Off",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": "TotalFloor >= 6",
+   "vars": {
+    "Gold": 0
+   },
+   "options": [
+    {
+     "id": "I_CAN_TAKE_THEM",
+     "title": "I Can Take Them",
+     "description": "Fight them for Greater Rewards."
+    },
+    {
+     "id": "NAB",
+     "title": "Nab",
+     "description": "Add Injury to your Deck. Obtain a random Relic."
+    }
+   ],
+   "pages": [
+    {
+     "id": "I_CAN_TAKE_THEM",
+     "options": [
+      {
+       "id": "FIGHT",
+       "title": "Fight",
+       "description": ""
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.PunchOff + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Punch_Off",
+     "fetched": "2026-10-23",
+     "revid": 61036
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/punch_off",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You find two Punch Constructs in a fighting match over a Relic. You can either steal the relic, adding a curse into your deck in the process, or enter combat against them to obtain it with various other rewards.",
+    "options": [
+     {
+      "title": "Nab",
+      "text": "Add Injury (curse) to Deck. Obtain a random Relic."
+     },
+     {
+      "title": "I Can Take Them",
+      "text": "Enter combat against 2 2 for greater rewards."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears at Floor 6 or later."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "NAB",
+     "title": "Nab",
+     "description": "Add Injury to your Deck. Obtain a random Relic."
+    },
+    {
+     "id": "I_CAN_TAKE_THEM",
+     "title": "I Can Take Them",
+     "description": "Fight them for Greater Rewards."
+    }
+   ]
+  },
+  {
+   "id": "RANWID_THE_ELDER",
+   "name": "Ranwid the Elder",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "if (act_index(0-based) == 0) { false } if (any player(p => !GetValidRelics(p).Any())) { false } if (any player(p => p.Gold < 100)) { false } if (any player(p => !p.Potions.Any())) { false } true",
+   "vars": {
+    "Gold": 100
+   },
+   "options": [
+    {
+     "id": "GOLD",
+     "title": "Give 100 Gold",
+     "description": "Obtain a random Relic."
+    },
+    {
+     "id": "POTION",
+     "title": "Give X",
+     "description": "Obtain a random Relic."
+    },
+    {
+     "id": "POTION_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Potions that can be given."
+    },
+    {
+     "id": "RELIC",
+     "title": "Give X",
+     "description": "Obtain 2 random Relics."
+    },
+    {
+     "id": "RELIC_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Relics that can be given."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.RanwidTheElder + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ranwid_the_Elder",
+     "fetched": "2026-10-23",
+     "revid": 61051
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/ranwid_the_elder",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "summary": "You meet an extremely old person that recognizes you, despite you having no recollection of knowing them. You may trade a random potion or 100 gold to obtain a random relic, or exchange a relic for two random relics.",
+    "options": [
+     {
+      "title": "Give <specific> Potion",
+      "text": "Obtain a random Relic."
+     },
+     {
+      "title": "Give 100 Gold",
+      "text": "Obtain a random Relic."
+     },
+     {
+      "title": "Give <specific Relic>",
+      "text": "Obtain 2 random Relics."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears in Acts 2 and 3.",
+     "Only appears if you have at least 1 tradable relic.",
+     "Only appears if you have at least 100 Gold.",
+     "Only appears if you have at least 1 Potion."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "POTION",
+     "title": "Give Potion",
+     "description": "Obtain a random Relic."
+    },
+    {
+     "id": "POTION_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Potions that can be given."
+    },
+    {
+     "id": "GOLD",
+     "title": "Give 100 Gold",
+     "description": "Obtain a random Relic."
+    },
+    {
+     "id": "RELIC",
+     "title": "Give Relic",
+     "description": "Obtain 2 random Relics."
+    },
+    {
+     "id": "RELIC_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Relics that can be given."
+    }
+   ]
+  },
+  {
+   "id": "REFLECTIONS",
+   "name": "Reflections snoitcelfeR",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [
+    {
+     "id": "SHATTER",
+     "title": "Shatter",
+     "description": "Duplicate your Deck. Receive Bad Luck."
+    },
+    {
+     "id": "TOUCH_A_MIRROR",
+     "title": "Touch a Mirror",
+     "description": "Downgrade 2 random cards. Upgrade 4 random cards."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Reflections + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Reflections_snoitcelfeR",
+     "fetched": "2026-10-23",
+     "revid": 61065
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/reflections",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "options": [
+     {
+      "title": "Touch a Mirror",
+      "text": "Downgrade 2 random cards. Upgrade 4 random cards."
+     },
+     {
+      "title": "Shatter",
+      "text": "Duplicate your entire Deck. Add Bad Luck (curse) to your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "TOUCH_A_MIRROR",
+     "title": "Touch a Mirror",
+     "description": "Downgrade 2 random cards. Upgrade 4 random cards."
+    },
+    {
+     "id": "SHATTER",
+     "title": "Shatter",
+     "description": "Duplicate your Deck. Receive Bad Luck."
+    }
+   ]
+  },
+  {
+   "id": "RELIC_TRADER",
+   "name": "Relic Trader",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "if (act_index(0-based) == 0) { false } all players(p => GetValidRelics(p).Count() >= 5)",
+   "vars": {},
+   "options": [
+    {
+     "id": "BOTTOM",
+     "title": "Take the Bottom One",
+     "description": "Trade X for X."
+    },
+    {
+     "id": "MIDDLE",
+     "title": "Take the Middle One",
+     "description": "Trade X for X."
+    },
+    {
+     "id": "TOP",
+     "title": "Take the Top One",
+     "description": "Trade X for X."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.RelicTrader + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Relic_Trader",
+     "fetched": "2026-10-23",
+     "revid": 63742
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/relic_trader",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "summary": "You meet a man who offers to trade his collection of relics with yours. You may select one of three trade offers, losing a relic and obtaining one in return.",
+    "options": [
+     {
+      "title": "Take the Top One",
+      "text": "Trade for ."
+     },
+     {
+      "title": "Take the Middle One",
+      "text": "Trade for ."
+     },
+     {
+      "title": "Take the Bottom One",
+      "text": "Trade for ."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears in Acts 2 and 3.",
+     "Only appears if you have at least 5 tradable relics."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "TOP",
+     "title": "Take the Top One",
+     "description": "Trade one of your Relics for a random Relic."
+    },
+    {
+     "id": "MIDDLE",
+     "title": "Take the Middle One",
+     "description": "Trade one of your Relics for a random Relic."
+    },
+    {
+     "id": "BOTTOM",
+     "title": "Take the Bottom One",
+     "description": "Trade one of your Relics for a random Relic."
+    }
+   ]
+  },
+  {
+   "id": "ROOM_FULL_OF_CHEESE",
+   "name": "Room Full of Cheese",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "act_index(0-based) < 2",
+   "vars": {
+    "Damage": 14
+   },
+   "options": [
+    {
+     "id": "GORGE",
+     "title": "Gorge",
+     "description": "Choose 2 of 8 random Common cards to add to your Deck."
+    },
+    {
+     "id": "SEARCH",
+     "title": "Search",
+     "description": "Lose 14 HP. Obtain the Chosen Cheese."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.RoomFullOfCheese + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Room_Full_of_Cheese",
+     "fetched": "2026-10-23",
+     "revid": 63754
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/room_full_of_cheese",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "1 - Overgrowth",
+     "1 - Underdocks",
+     "2 - Hive"
+    ],
+    "summary": "You stumble into a room made completely out of cheese. You may gorge yourself on the cheese to obtain 2 common cards out of a pool of 8, or search the strange room to obtain the unique Chosen Cheese relic at the cost of some HP.",
+    "options": [
+     {
+      "title": "Gorge",
+      "text": "Choose 2 of 8 random Common cards to add to your Deck."
+     },
+     {
+      "title": "Search",
+      "text": "Lose 14 HP. Obtain The Chosen Cheese (relic)."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "GORGE",
+     "title": "Gorge",
+     "description": "Choose 2 of 8 random Common cards to add to your Deck."
+    },
+    {
+     "id": "SEARCH",
+     "title": "Search",
+     "description": "Lose 14 HP. Obtain the Chosen Cheese."
+    }
+   ]
+  },
+  {
+   "id": "ROUND_TEA_PARTY",
+   "name": "The Round Tea Party",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": "all players(p => p.CurrentHp >= 12)",
+   "vars": {
+    "Damage": 11
+   },
+   "options": [
+    {
+     "id": "ENJOY_TEA",
+     "title": "Enjoy Your Tea",
+     "description": "Obtain X. Heal to full HP."
+    },
+    {
+     "id": "PICK_FIGHT",
+     "title": "Pick a Fight",
+     "description": "Lose 11 HP. Obtain a random Relic."
+    }
+   ],
+   "pages": [
+    {
+     "id": "PICK_FIGHT",
+     "options": [
+      {
+       "id": "CONTINUE_FIGHT",
+       "title": "Continue",
+       "description": ""
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [
+    "ROYAL_POISON"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.RoundTeaParty + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Round_Tea_Party",
+     "fetched": "2026-10-23",
+     "revid": 61297
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/round_tea_party",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You show up to a tea party in the stead of a knight with a party of powerful figures. You can either drink the tea, fully healing you, but giving you a negative relic for the rest of the run, or start a fight to obtain a relic at the cost of some HP.",
+    "options": [
+     {
+      "title": "Enjoy Your Tea",
+      "text": "Obtain Royal Poison (relic). Heal to full HP."
+     },
+     {
+      "title": "Pick a Fight",
+      "text": "Lose 11 HP. Obtain a random Relic."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 12 HP."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "ENJOY_TEA",
+     "title": "Enjoy Your Tea",
+     "description": "Obtain Royal Poison. Heal to full HP."
+    },
+    {
+     "id": "PICK_FIGHT",
+     "title": "Pick a Fight",
+     "description": "Lose 11 HP. Obtain a random Relic."
+    }
+   ]
+  },
+  {
+   "id": "SAPPHIRE_SEED",
+   "name": "Sapphire Seed",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Heal": 9
+   },
+   "options": [
+    {
+     "id": "EAT",
+     "title": "Consume",
+     "description": "Heal 9 HP. Upgrade a card in your Deck."
+    },
+    {
+     "id": "PLANT",
+     "title": "Plant and Nourish",
+     "description": "Enchant a card with X."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SapphireSeed + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sapphire_Seed",
+     "fetched": "2026-10-23",
+     "revid": 61103
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/sapphire_seed",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You barely avoid stepping on a magical seed thought to have gone extinct. You can consume the seed to heal some HP and upgrade a card, or nurture it to apply a unique enchantment to a card in your deck.",
+    "options": [
+     {
+      "title": "Consume",
+      "text": "Heal 9 HP. Upgrade a card in your Deck."
+     },
+     {
+      "title": "Plant and Nourish",
+      "text": "Enchant a card with Sown."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "EAT",
+     "title": "Consume",
+     "description": "Heal 9 HP. Upgrade a card in your Deck."
+    },
+    {
+     "id": "PLANT",
+     "title": "Plant and Nourish",
+     "description": "Enchant a card with Sown."
+    }
+   ]
+  },
+  {
+   "id": "SELF_HELP_BOOK",
+   "name": "Self-Help Book",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Enchantment1Amount": 2,
+    "Enchantment2Amount": 2,
+    "Enchantment3Amount": 2,
+    "SharpAmount": 2,
+    "NimbleAmount": 2,
+    "SwiftAmount": 2
+   },
+   "options": [
+    {
+     "id": "NO_OPTIONS",
+     "title": "Move On",
+     "description": "You don't have any cards that can be Enchanted."
+    },
+    {
+     "id": "READ_ENTIRE_BOOK",
+     "title": "Read the Entire Book",
+     "description": "Choose a Power to Enchant with X 2."
+    },
+    {
+     "id": "READ_ENTIRE_BOOK_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Powers that can be Enchanted."
+    },
+    {
+     "id": "READ_PASSAGE",
+     "title": "Read a Random Passage",
+     "description": "Choose a Skill to Enchant with X 2."
+    },
+    {
+     "id": "READ_PASSAGE_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Skills that can be Enchanted."
+    },
+    {
+     "id": "READ_THE_BACK",
+     "title": "Read the Back",
+     "description": "Choose an Attack to Enchant with X 2."
+    },
+    {
+     "id": "READ_THE_BACK_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Attacks that can be Enchanted."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SelfHelpBook + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Self-Help_Book",
+     "fetched": "2026-10-23",
+     "revid": 63782
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/self_help_book",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": null,
+    "summary": "You stumble upon a bloody book. You may study its contents to enchant an Attack, Skill, or Power card in your deck.",
+    "options": [
+     {
+      "title": "Read the Back",
+      "text": "Choose an Attack to 2 with 2 2."
+     },
+     {
+      "title": "Read a Random Passage",
+      "text": "Choose a Skill to 2 with 2 2."
+     },
+     {
+      "title": "Read the Entire Book",
+      "text": "Choose a Power to 2 with 2 2."
+     },
+     {
+      "title": "Move On",
+      "text": "Nothing happens."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "READ_THE_BACK",
+     "title": "Read the Back",
+     "description": "Choose an Attack to Enchant with Sharp 2."
+    },
+    {
+     "id": "READ_THE_BACK_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Attacks that can be Enchanted."
+    },
+    {
+     "id": "READ_PASSAGE",
+     "title": "Read a Random Passage",
+     "description": "Choose a Skill to Enchant with Nimble 2."
+    },
+    {
+     "id": "READ_PASSAGE_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Skills that can be Enchanted."
+    },
+    {
+     "id": "READ_ENTIRE_BOOK",
+     "title": "Read the Entire Book",
+     "description": "Choose a Power to Enchant with Swift 2."
+    },
+    {
+     "id": "READ_ENTIRE_BOOK_LOCKED",
+     "title": "Locked",
+     "description": "You don't have any Powers that can be Enchanted."
+    },
+    {
+     "id": "NO_OPTIONS",
+     "title": "Move On",
+     "description": "You don't have any cards that can be Enchanted."
+    }
+   ]
+  },
+  {
+   "id": "SLIPPERY_BRIDGE",
+   "name": "Slippery Bridge",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(TotalFloor > 6) and (all players(p => p.Deck.Cards.Any(c => c.IsRemovable)))",
+   "vars": {
+    "InitialHpLoss": 3
+   },
+   "options": [
+    {
+     "id": "HOLD_ON_0",
+     "title": "Hold On",
+     "description": "Lose X HP. The card in the above option is randomized."
+    },
+    {
+     "id": "OVERCOME",
+     "title": "Overcome",
+     "description": "X is removed from your Deck."
+    }
+   ],
+   "pages": [
+    {
+     "id": "HOLD_ON_0",
+     "options": [
+      {
+       "id": "HOLD_ON_1",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_1",
+     "options": [
+      {
+       "id": "HOLD_ON_2",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_2",
+     "options": [
+      {
+       "id": "HOLD_ON_3",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_3",
+     "options": [
+      {
+       "id": "HOLD_ON_4",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_4",
+     "options": [
+      {
+       "id": "HOLD_ON_5",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_5",
+     "options": [
+      {
+       "id": "HOLD_ON_6",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_6",
+     "options": [
+      {
+       "id": "HOLD_ON_LOOP",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    },
+    {
+     "id": "HOLD_ON_LOOP",
+     "options": [
+      {
+       "id": "HOLD_ON_LOOP",
+       "title": "Hold On",
+       "description": "Lose X HP. The card in the above option is randomized."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SlipperyBridge + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Slippery_Bridge",
+     "fetched": "2026-10-23",
+     "revid": 61164
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/slippery_bridge",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": null,
+    "summary": "You cross a rickety bridge only to be threatened by a sudden tempest attempting to blow you away. You must overcome this obstacle by sacrificing a random card in your deck, or hang on to randomize which card to lose.",
+    "options": [
+     {
+      "title": "Overcome",
+      "text": "[Specific card] is removed from your deck."
+     },
+     {
+      "title": "Hold On",
+      "text": "Lose 3 HP. The card in the above option is randomized."
+     }
+    ],
+    "mechanics": [
+     "Choosing Hold On replaces the listed card with another chosen at random, and the event continues to ask you to choose between these options until you choose Overcome.",
+     "Each time Hold On is selected, the HP cost increases by 1.",
+     "The card is chosen randomly from all your cards without Eternal.",
+     "The first card chosen will never be Basic rarity (unless all of your cards are Basic). Basic cards can be chosen during rerolls.",
+     "The same card will never be chosen twice (unless it has already offered to remove all other cards in your deck at least once)."
+    ],
+    "conditions": [
+     "Only appears from floor 7 onward, and only if you have at least 1 card that can be removed."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "OVERCOME",
+     "title": "Overcome",
+     "description": "a random Card is removed from your Deck."
+    },
+    {
+     "id": "HOLD_ON_0",
+     "title": "Hold On",
+     "description": "Lose 3 HP. The card in the above option is randomized."
+    }
+   ]
+  },
+  {
+   "id": "SPIRALING_WHIRLPOOL",
+   "name": "Spiraling Whirlpool",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": "all players(p => p.Deck.Cards.Any(Spiral.CanEnchant))",
+   "vars": {
+    "Heal": 0
+   },
+   "options": [
+    {
+     "id": "DRINK",
+     "title": "Drink",
+     "description": "Heal 0 HP."
+    },
+    {
+     "id": "OBSERVE",
+     "title": "Observe",
+     "description": "Enchant a Basic Strike or Defend with Spiral."
+    },
+    {
+     "id": "REACH_IN",
+     "title": "Reach In",
+     "description": "Obtain a random Relic. Add Writhe to your Deck."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SpiralingWhirlpool + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Spiraling_Whirlpool",
+     "fetched": "2026-10-23",
+     "revid": 61197
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/spiraling_whirlpool",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You encounter and are captivated by a beautiful, pristine whirlpool. You can take in its beauty to enchant a Strike or Defend in your deck, or drink from the water to recover some HP.",
+    "options": [
+     {
+      "title": "Observe",
+      "text": "Enchant a Basic Strike or Defend with Spiral."
+     },
+     {
+      "title": "Drink",
+      "text": "Heal 33% of Max HP."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 1 card that can be enchanted with Spiral (Strike or Defend cards)."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "OBSERVE",
+     "title": "Observe",
+     "description": "Enchant a Basic Strike or Defend with Spiral."
+    },
+    {
+     "id": "DRINK",
+     "title": "Drink",
+     "description": "Heal 33% Max HP."
+    }
+   ]
+  },
+  {
+   "id": "SPIRIT_GRAFTER",
+   "name": "Spirit Grafter",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "RejectionHpLoss": 10,
+    "LetItInHealAmount": 25
+   },
+   "options": [
+    {
+     "id": "LET_IT_IN",
+     "title": "Let It In",
+     "description": "Heal 25 HP. Add Metamorphosis to your Deck."
+    },
+    {
+     "id": "REJECTION",
+     "title": "Rejection",
+     "description": "Lose 10 HP. Upgrade a card."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SpiritGrafter + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Spirit_Grafter",
+     "fetched": "2026-10-23",
+     "revid": 61198
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/spirit_grafter",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "options": [
+     {
+      "title": "Let It In",
+      "text": "Heal 25 HP. Add Metamorphosis to Deck."
+     },
+     {
+      "title": "Rejection",
+      "text": "Lose 10 HP. Upgrade a card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "LET_IT_IN",
+     "title": "Let It In",
+     "description": "Heal 25 HP. Add Metamorphosis to your Deck."
+    },
+    {
+     "id": "REJECTION",
+     "title": "Rejection",
+     "description": "Lose 10 HP. Upgrade a card."
+    }
+   ]
+  },
+  {
+   "id": "STONE_OF_ALL_TIME",
+   "name": "Stone of All Time",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(act_index(0-based) == 1) and (all players(player => player.Potions.Any()))",
+   "vars": {
+    "DrinkMaxHpGain": 10,
+    "PushHpLoss": 6,
+    "PushVigorousAmount": 8
+   },
+   "options": [
+    {
+     "id": "LIFT",
+     "title": "Drink and Lift",
+     "description": "Lose X. Gain 10 Max HP."
+    },
+    {
+     "id": "LIFT_LOCKED",
+     "title": "Locked",
+     "description": "Requires a Potion."
+    },
+    {
+     "id": "PUSH",
+     "title": "Push",
+     "description": "Lose 6 HP. Enchant an Attack with Vigorous 8."
+    },
+    {
+     "id": "PUSH_LOCKED",
+     "title": "Locked",
+     "description": "Requires an Attack."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.StoneOfAllTime + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Stone_of_All_Time",
+     "fetched": "2026-10-23",
+     "revid": 61219
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/stone_of_all_time",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You come across an enormous boulder in an abandoned courtyard. You can attempt to lift the boulder, increasing your max HP while losing a potion, or push it to enchant an attack in your deck at the cost of some HP.",
+    "options": [
+     {
+      "title": "Drink and Lift",
+      "text": "Lose a random potion. Gain 10 max HP."
+     },
+     {
+      "title": "Push",
+      "text": "Lose 6 HP. Enchant an attack with Vigorous 8."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears in Act 2.",
+     "Only appears if you have at least one Potion."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "LIFT",
+     "title": "Drink and Lift",
+     "description": "Lose a random Potion. Gain 10 Max HP."
+    },
+    {
+     "id": "LIFT_LOCKED",
+     "title": "Locked",
+     "description": "Requires a Potion."
+    },
+    {
+     "id": "PUSH_LOCKED",
+     "title": "Locked",
+     "description": "Requires an Attack."
+    },
+    {
+     "id": "PUSH",
+     "title": "Push",
+     "description": "Lose 6 HP. Enchant an Attack with Vigorous 8."
+    }
+   ]
+  },
+  {
+   "id": "SUNKEN_STATUE",
+   "name": "The Sunken Statue",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH",
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Gold": 111,
+    "HpLoss": 7,
+    "GoldVariance": 10
+   },
+   "options": [
+    {
+     "id": "DIVE_INTO_WATER",
+     "title": "Dive into the Water",
+     "description": "Gain 111 Gold. Lose 7 HP."
+    },
+    {
+     "id": "GRAB_SWORD",
+     "title": "Grab the Sword",
+     "description": "Obtain the X."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "SWORD_OF_STONE"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SunkenStatue + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Sunken_Statue",
+     "fetched": "2026-10-23",
+     "revid": 61302
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/sunken_statue",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "1 - Overgrowth",
+     "1 - Underdocks"
+    ],
+    "summary": "You find a crumbling stone statue submerged in the waters of the Underdocks, clutching a sword of stone. You can either take the sword as a unique relic, or claim the offerings of gold at the foot of the statue at the cost of some HP.",
+    "options": [
+     {
+      "title": "Grab the Sword",
+      "text": "Obtain Sword of Stone (relic)."
+     },
+     {
+      "title": "Dive into the Water",
+      "text": "Gain 101-121 Gold. Lose 7 HP."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "GRAB_SWORD",
+     "title": "Grab the Sword",
+     "description": "Obtain the Sword of Stone."
+    },
+    {
+     "id": "DIVE_INTO_WATER",
+     "title": "Dive into the Water",
+     "description": "Gain 101-121 Gold. Lose 7 HP."
+    }
+   ]
+  },
+  {
+   "id": "SUNKEN_TREASURY",
+   "name": "Sunken Treasury",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "SmallChestGold": 60,
+    "LargeChestGold": 333
+   },
+   "options": [
+    {
+     "id": "FIRST_CHEST",
+     "title": "First Chest",
+     "description": "Gain 60 Gold."
+    },
+    {
+     "id": "SECOND_CHEST",
+     "title": "Second Chest",
+     "description": "Gain 333 Gold. Receive Greed."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.SunkenTreasury + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Sunken_Treasury",
+     "fetched": "2026-10-23",
+     "revid": 61239
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/sunken_treasury",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You discover a sunken vault with two treasure chests and a fragile key. You can open the small chest to get a bit of gold, or the large chest to get a lot of gold while adding a permanent curse to your deck.",
+    "options": [
+     {
+      "title": "First Chest",
+      "text": "Gain 52-68 Gold."
+     },
+     {
+      "title": "Second Chest",
+      "text": "Gain 303-363 Gold. Add Greed (curse) to Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "FIRST_CHEST",
+     "title": "First Chest",
+     "description": "Gain 52-67 Gold."
+    },
+    {
+     "id": "SECOND_CHEST",
+     "title": "Second Chest",
+     "description": "Gain 303-363 Gold. Receive Greed."
+    }
+   ]
+  },
+  {
+   "id": "SYMBIOTE",
+   "name": "Symbiote",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "act_index(0-based) > 0",
+   "vars": {
+    "Cards": 1
+   },
+   "options": [
+    {
+     "id": "APPROACH",
+     "title": "Approach",
+     "description": "Enchant an Attack with X."
+    },
+    {
+     "id": "APPROACH_LOCKED",
+     "title": "Locked",
+     "description": "None of your Attacks can be Enchanted."
+    },
+    {
+     "id": "KILL_WITH_FIRE",
+     "title": "Kill with Fire",
+     "description": "Choose a card to Transform."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Symbiote + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Symbiote",
+     "fetched": "2026-10-23",
+     "revid": 61250
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/symbiote",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "2 - Hive",
+     "3 - Glory"
+    ],
+    "options": [
+     {
+      "title": "Approach",
+      "text": "Enchant an Attack with Corrupted."
+     },
+     {
+      "title": "Kill with Fire",
+      "text": "Choose a card to Transform."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "APPROACH_LOCKED",
+     "title": "Locked",
+     "description": "None of your Attacks can be Enchanted."
+    },
+    {
+     "id": "APPROACH",
+     "title": "Approach",
+     "description": "Enchant an Attack with Corrupted."
+    },
+    {
+     "id": "KILL_WITH_FIRE",
+     "title": "Kill with Fire",
+     "description": "Choose a card to Transform."
+    }
+   ]
+  },
+  {
+   "id": "TABLET_OF_TRUTH",
+   "name": "Tablet of Truth",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "SmashHPGain": 20,
+    "DecipherMaxHpLoss": 3
+   },
+   "options": [
+    {
+     "id": "DECIPHER_1",
+     "title": "Decipher",
+     "description": "Lose 3 Max HP. Upgrade a random card."
+    },
+    {
+     "id": "SMASH",
+     "title": "Smash",
+     "description": "Heal 20 HP."
+    }
+   ],
+   "pages": [
+    {
+     "id": "DECIPHER",
+     "options": [
+      {
+       "id": "GIVE_UP",
+       "title": "Give Up",
+       "description": "Stop reading the text and leave."
+      }
+     ]
+    },
+    {
+     "id": "DECIPHER_1",
+     "options": [
+      {
+       "id": "DECIPHER",
+       "title": "Continue Deciphering",
+       "description": "Lose 3 Max HP. Upgrade a random card."
+      }
+     ]
+    },
+    {
+     "id": "DECIPHER_2",
+     "options": [
+      {
+       "id": "DECIPHER",
+       "title": "Keep Deciphering",
+       "description": "Lose 3 Max HP. Upgrade a random card."
+      }
+     ]
+    },
+    {
+     "id": "DECIPHER_3",
+     "options": [
+      {
+       "id": "DECIPHER",
+       "title": "KEEP DECIPHERING",
+       "description": "Lose 3 Max HP. Upgrade a random card."
+      }
+     ]
+    },
+    {
+     "id": "DECIPHER_4",
+     "options": [
+      {
+       "id": "DECIPHER",
+       "title": "Lose Everything",
+       "description": "Lose 3 Max HP. Upgrade ALL of your cards."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TabletOfTruth + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tablet_of_Truth",
+     "fetched": "2026-10-23",
+     "revid": 61508
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/tablet_of_truth",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "Swiftly defeating some foes, you discover a mysterious tablet. You may decipher its language to upgrade cards in your deck at the cost of increasing amounts of Max HP, or break it to recover some health.",
+    "options": [
+     {
+      "title": "Smash",
+      "text": "Heal 20 HP."
+     },
+     {
+      "title": "Decipher",
+      "text": "Lose 3 Max HP. Upgrade a random card."
+     },
+     {
+      "title": "Give Up",
+      "text": "can be chosen at any stage to leave."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "DECIPHER_1",
+     "title": "Decipher",
+     "description": "Lose 3 Max HP. Upgrade a random card."
+    },
+    {
+     "id": "SMASH",
+     "title": "Smash",
+     "description": "Heal 20 HP."
+    }
+   ]
+  },
+  {
+   "id": "TANX",
+   "name": "Tanx",
+   "is_ancient": true,
+   "epithet": "Khimera King",
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "TriBoomerangCount": 3
+   },
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "CLAWS",
+    "CROSSBOW",
+    "IRON_CLUB",
+    "MEAT_CLEAVER",
+    "SAI",
+    "SPIKED_GAUNTLETS",
+    "TANXS_WHISTLE",
+    "THROWING_AXE",
+    "TRI_BOOMERANG",
+    "WAR_HAMMER"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Tanx + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tanx",
+     "fetched": "2026-10-23",
+     "revid": 65654
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/tanx",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 3",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "TEA_MASTER",
+   "name": "Tea Master",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(act_index(0-based) < 2) and (all players(p => p.Gold >= 150))",
+   "vars": {
+    "BoneTeaCost": 50,
+    "EmberTeaCost": 150
+   },
+   "options": [
+    {
+     "id": "BONE_TEA",
+     "title": "Bone Tea",
+     "description": "Pay 50 Gold. X"
+    },
+    {
+     "id": "BONE_TEA_LOCKED",
+     "title": "Locked",
+     "description": "Requires 50 Gold."
+    },
+    {
+     "id": "EMBER_TEA",
+     "title": "Ember Tea",
+     "description": "Pay 150 Gold. X"
+    },
+    {
+     "id": "EMBER_TEA_LOCKED",
+     "title": "Locked",
+     "description": "Requires 150 Gold."
+    },
+    {
+     "id": "TEA_OF_DISCOURTESY",
+     "title": "Tea of Discourtesy",
+     "description": "X"
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "BONE_TEA",
+    "EMBER_TEA",
+    "TEA_OF_DISCOURTESY"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TeaMaster + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tea_Master",
+     "fetched": "2026-10-23",
+     "revid": 61260
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/tea_master",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "1 - Overgrowth",
+     "1 - Underdocks",
+     "2 - Hive"
+    ],
+    "options": [
+     {
+      "title": "Bone Tea",
+      "text": "Pay 50 Gold. At the start of the next combat, Upgrade your starting hand."
+     },
+     {
+      "title": "Ember Tea",
+      "text": "Pay 150 Gold. At the start of the next 5 combats, gain 2 Strength."
+     },
+     {
+      "title": "Tea of Discourtesy",
+      "text": "At the start of the next combat, shuffle 2 Dazed into your Draw Pile."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 150 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "BONE_TEA",
+     "title": "Bone Tea",
+     "description": "Pay 50 Gold. At the start of the next combat, Upgrade your starting hand."
+    },
+    {
+     "id": "BONE_TEA_LOCKED",
+     "title": "Locked",
+     "description": "Requires 50 Gold."
+    },
+    {
+     "id": "EMBER_TEA",
+     "title": "Ember Tea",
+     "description": "Pay 150 Gold. At the start of the next 5 combats, gain 2 Strength."
+    },
+    {
+     "id": "EMBER_TEA_LOCKED",
+     "title": "Locked",
+     "description": "Requires 150 Gold."
+    },
+    {
+     "id": "TEA_OF_DISCOURTESY",
+     "title": "Tea of Discourtesy",
+     "description": "At the start of the next combat, shuffle 2 Dazed into your Draw Pile."
+    }
+   ]
+  },
+  {
+   "id": "TEZCATARA",
+   "name": "Tezcatara",
+   "is_ancient": true,
+   "epithet": "It Which Feeds the Fire",
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "BIIIG_HUG",
+    "GOLDEN_COMPASS",
+    "NUTRITIOUS_SOUP",
+    "PUMPKIN_CANDLE",
+    "SEAL_OF_GOLD",
+    "STORYBOOK",
+    "TOASTY_MITTENS",
+    "TOY_BOX",
+    "VERY_HOT_COCOA",
+    "YUMMY_COOKIE"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Tezcatara + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tezcatara",
+     "fetched": "2026-10-23",
+     "revid": 65983
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/tezcatara",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 2",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "THE_ARCHITECT",
+   "name": "The Architect",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [],
+   "allowed_condition": null,
+   "vars": {},
+   "options": [],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TheArchitect + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/the_architect",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "codex_options": []
+  },
+  {
+   "id": "THE_FUTURE_OF_POTIONS",
+   "name": "The Future of Potions?",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "all players(p => p.Potions.Count() >= 2)",
+   "vars": {},
+   "options": [
+    {
+     "id": "POTION",
+     "title": "Insert X Potion",
+     "description": "Lose X. Obtain an Upgraded X X."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TheFutureOfPotions + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Future_of_Potions?",
+     "fetched": "2026-10-23",
+     "revid": 63907
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/the_future_of_potions",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": null,
+    "summary": "You discover a strange machine that can transform a potion into a card reward depending on its rarity.",
+    "options": [
+     {
+      "title": "Insert Common Potion",
+      "text": "Lose a specified Common potion. Obtain an Upgraded Common [Attack/Skill] card reward."
+     },
+     {
+      "title": "Insert Uncommon Potion",
+      "text": "Lose a specified Uncommon potion. Obtain an Upgraded Uncommon [Attack/Skill/Power] card reward."
+     },
+     {
+      "title": "Insert Rare Potion",
+      "text": "Lose a specified Rare potion. Obtain an Upgraded Rare [Attack/Skill/Power] card reward."
+     },
+     {
+      "title": "Insert Event Potion",
+      "text": "Lose a specified Event potion. Obtain an Upgraded Rare [Attack/Skill/Power] card reward."
+     },
+     {
+      "title": "Insert Token Potion",
+      "text": "Lose a specified Token potion. Obtain an Upgraded Common [Attack/Skill] card reward."
+     }
+    ],
+    "mechanics": [
+     "The first 3 potions in your potion slots are chosen as options to insert, prioritizing the leftmost potions. This can include multiple potions of the same rarity.",
+     "The rarity of the card reward depends on the rarity of the potion inserted.",
+     "Each option randomly specifies whether it gives an Attack, Skill, or Power card reward."
+    ],
+    "conditions": [
+     "Only appears if you have at least 2 Potions."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "POTION_COMMON",
+     "title": "Insert Common Potion",
+     "description": "Lose a Potion. Obtain an Upgraded Common Attack/Skill."
+    },
+    {
+     "id": "POTION_UNCOMMON",
+     "title": "Insert Uncommon Potion",
+     "description": "Lose a Potion. Obtain an Upgraded Uncommon Attack/Skill/Power."
+    },
+    {
+     "id": "POTION_RARE",
+     "title": "Insert Rare Potion",
+     "description": "Lose a Potion. Obtain an Upgraded Rare Attack/Skill/Power."
+    },
+    {
+     "id": "POTION_EVENT",
+     "title": "Insert Event Potion",
+     "description": "Lose a Potion. Obtain an Upgraded Rare Attack/Skill/Power."
+    },
+    {
+     "id": "POTION_TOKEN",
+     "title": "Insert Token Potion",
+     "description": "Lose a Potion. Obtain an Upgraded Common Attack/Skill."
+    }
+   ]
+  },
+  {
+   "id": "THE_LANTERN_KEY",
+   "name": "The Lantern Key",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Gold": 100
+   },
+   "options": [
+    {
+     "id": "KEEP_THE_KEY",
+     "title": "Keep the Key",
+     "description": "Fight to obtain the Key."
+    },
+    {
+     "id": "RETURN_THE_KEY",
+     "title": "Return the Key",
+     "description": "Gain 100 Gold."
+    }
+   ],
+   "pages": [
+    {
+     "id": "DONE",
+     "options": [
+      {
+       "id": "RETURN_THE_KEY",
+       "title": null,
+       "description": "The stranger thanks you for your help, and rewards you handsomely."
+      }
+     ]
+    },
+    {
+     "id": "KEEP_THE_KEY",
+     "options": [
+      {
+       "id": "FIGHT",
+       "title": "Fight",
+       "description": ""
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TheLanternKey + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Lantern_Key",
+     "fetched": "2026-10-23",
+     "revid": 65784
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/the_lantern_key",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You stumble upon a strange key when a heavily armored knight asks you to give it to them. You may oblige and obtain some gold, or take the key by force by facing the knight head-on.",
+    "options": [
+     {
+      "title": "Return the Key",
+      "text": "Gain 100 Gold."
+     },
+     {
+      "title": "Keep the Key",
+      "text": "Enter combat against a Mysterious Knight for the Lantern Key card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "RETURN_THE_KEY",
+     "title": "Return the Key",
+     "description": "Gain 100 Gold."
+    },
+    {
+     "id": "KEEP_THE_KEY",
+     "title": "Keep the Key",
+     "description": "Fight to obtain the Key."
+    }
+   ]
+  },
+  {
+   "id": "THE_LEGENDS_WERE_TRUE",
+   "name": "The Legends Were True",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(act_index(0-based) == 0 and all players(p => p.Deck.Cards.Count > 0)) and (all players(p => p.CurrentHp >= 10))",
+   "vars": {
+    "Damage": 8
+   },
+   "options": [
+    {
+     "id": "NAB_THE_MAP",
+     "title": "Nab the Map",
+     "description": "Receive the Spoils Map."
+    },
+    {
+     "id": "SLOWLY_FIND_AN_EXIT",
+     "title": "Slowly Find an Exit",
+     "description": "Lose 8 HP. Procure 1 random Potion."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TheLegendsWereTrue + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Legends_Were_True",
+     "fetched": "2026-10-23",
+     "revid": 61282
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/the_legends_were_true",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": [
+     "1 - Overgrowth",
+     "1 - Underdocks"
+    ],
+    "summary": "You enter a suspicious chamber with a light shining on a treasure map sitting on a pedestal. You may take the map, adding it to your deck to obtain its treasure later, or look around the room, resulting in the chamber collapsing, obtaining a potion at the cost of some HP in the process.",
+    "options": [
+     {
+      "title": "Nab the Map",
+      "text": "Receive the Spoils Map."
+     },
+     {
+      "title": "Slowly Find an Exit",
+      "text": "Lose 8 HP. Procure 1 random Potion."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 1 card in your deck and at least 10 HP."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "NAB_THE_MAP",
+     "title": "Nab the Map",
+     "description": "Receive the Spoils Map."
+    },
+    {
+     "id": "SLOWLY_FIND_AN_EXIT",
+     "title": "Slowly Find an Exit",
+     "description": "Lose 8 HP. Procure 1 random Potion."
+    }
+   ]
+  },
+  {
+   "id": "THIS_OR_THAT",
+   "name": "This or That?",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "HpLoss": 6,
+    "Gold": 0
+   },
+   "options": [
+    {
+     "id": "ORNATE",
+     "title": "That",
+     "description": "Add X to your Deck. Obtain a random Relic."
+    },
+    {
+     "id": "PLAIN",
+     "title": "This",
+     "description": "Lose 6 HP. Gain 0 Gold."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "CLUMSY"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.ThisOrThat + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:This_or_That?",
+     "fetched": "2026-10-23",
+     "revid": 66352
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/this_or_that",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": null,
+    "summary": "Two arms suddenly burst out from a hole in the wall, carrying a bag of gold in one hand and a relic in another. You can take the gold at the cost of some HP, or the relic at the cost of becoming cursed.",
+    "options": [
+     {
+      "title": "This",
+      "text": "Lose 6 HP. Gain 41-68 Gold."
+     },
+     {
+      "title": "That",
+      "text": "Add Clumsy to your Deck. Obtain a random Relic."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "PLAIN",
+     "title": "This",
+     "description": "Lose 6 HP. Gain 41-68 Gold."
+    },
+    {
+     "id": "ORNATE",
+     "title": "That",
+     "description": "Add Clumsy to your Deck. Obtain a random Relic."
+    }
+   ]
+  },
+  {
+   "id": "TINKER_TIME",
+   "name": "Tinker Time",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Damage": 12,
+    "Block": 8,
+    "SappingWeak": 2,
+    "SappingVulnerable": 2,
+    "ViolenceHits": 3,
+    "ChokingDamage": 6,
+    "EnergizedEnergy": 2,
+    "WisdomCards": 3,
+    "ExpertiseStrength": 2,
+    "ExpertiseDexterity": 2,
+    "CuriousReduction": 1,
+    "energyPrefix": 1
+   },
+   "options": [
+    {
+     "id": "CHOOSE_CARD_TYPE",
+     "title": "Accept",
+     "description": "Create a custom card to add to your Deck."
+    }
+   ],
+   "pages": [
+    {
+     "id": "CHOOSE_CARD_TYPE",
+     "options": [
+      {
+       "id": "ATTACK",
+       "title": "Weapon",
+       "description": "Make an Attack."
+      },
+      {
+       "id": "POWER",
+       "title": "Gadget",
+       "description": "Make a Power."
+      },
+      {
+       "id": "SKILL",
+       "title": "Protector",
+       "description": "Make a Skill."
+      }
+     ]
+    },
+    {
+     "id": "CHOOSE_RIDER",
+     "options": [
+      {
+       "id": "CHAOS",
+       "title": "Chaos",
+       "description": "Add a random card into your Hand. It's free to play this turn."
+      },
+      {
+       "id": "CHOKING",
+       "title": "Choking",
+       "description": "Whenever you play a card this turn, the enemy loses 6 HP."
+      },
+      {
+       "id": "CURIOUS",
+       "title": "Curious",
+       "description": "Powers cost 1 [E] less."
+      },
+      {
+       "id": "ENERGIZED",
+       "title": "Energized",
+       "description": "Gain 2[E]."
+      },
+      {
+       "id": "EXPERTISE",
+       "title": "Expertise",
+       "description": "Gain 2 Strength. Gain 2 Dexterity."
+      },
+      {
+       "id": "IMPROVEMENT",
+       "title": "Improvement",
+       "description": "At the end of combat, Upgrade a random card."
+      },
+      {
+       "id": "SAPPING",
+       "title": "Sapping",
+       "description": "Apply 2 Weak. Apply 2 Vulnerable."
+      },
+      {
+       "id": "VIOLENCE",
+       "title": "Violence",
+       "description": "Hits 2 additional times."
+      },
+      {
+       "id": "WISDOM",
+       "title": "Wisdom",
+       "description": "Draw 3 cards."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TinkerTime + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Tinker_Time",
+     "fetched": "2026-10-23",
+     "revid": 61319
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/tinker_time",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You meet a scientist who offers to create you a powerful card of your chosing. You can 2 of 3 categories of cards, and then 2 of 3 unique effects added onto the card.",
+    "options": [
+     {
+      "title": "Weapon",
+      "text": "Create an Attack. (Deal 12 damage.)"
+     },
+     {
+      "title": "Protector",
+      "text": "Create a Skill. (Gain 8 Block.)"
+     },
+     {
+      "title": "Gadget",
+      "text": "Create a Power."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "CHOOSE_CARD_TYPE",
+     "title": "Accept",
+     "description": "Create a custom card to add to your Deck."
+    }
+   ]
+  },
+  {
+   "id": "TRASH_HEAP",
+   "name": "Trash Heap",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": "all players(player => player.CurrentHp > 5)",
+   "vars": {
+    "HpLoss": 8,
+    "Gold": 100
+   },
+   "options": [
+    {
+     "id": "DIVE_IN",
+     "title": "Dive In",
+     "description": "Lose 8 HP. Obtain a random forgotten Relic from the past."
+    },
+    {
+     "id": "GRAB",
+     "title": "Grab Random Junk",
+     "description": "Gain 100 Gold. Obtain a random forgotten card from the past."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [
+    "DARKSTONE_PERIAPT",
+    "DREAM_CATCHER",
+    "HAND_DRILL",
+    "MAW_BANK",
+    "THE_BOOT"
+   ],
+   "cards_referenced": [
+    "CALTROPS",
+    "CLASH",
+    "DISTRACTION",
+    "DUAL_WIELD",
+    "ENTRENCH",
+    "HELLO_WORLD",
+    "OUTMANEUVER",
+    "REBOUND",
+    "RIP_AND_TEAR",
+    "STACK"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.TrashHeap + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Trash_Heap",
+     "fetched": "2026-10-23",
+     "revid": 61336
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/trash_heap",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You find an enormous tower of discarded matter. You can rummage through the waste to obtain one of several unique Relics at the cost of some HP, or scavenge around the garbage to obtain some gold and add a unique card to your deck.",
+    "options": [
+     {
+      "title": "Dive In",
+      "text": "Lose 8 HP. Obtain a random Relic."
+     },
+     {
+      "title": "Grab Random Junk",
+      "text": "Gain 100 Gold. Obtain a random card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have more than 5 HP."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "DIVE_IN",
+     "title": "Dive In",
+     "description": "Lose 8 HP. Obtain a random forgotten Relic from the past."
+    },
+    {
+     "id": "GRAB",
+     "title": "Grab Random Junk",
+     "description": "Gain 100 Gold. Obtain a random forgotten card from the past."
+    }
+   ]
+  },
+  {
+   "id": "TRIAL",
+   "name": "The Trial",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "EntrantNumber": -1
+   },
+   "options": [
+    {
+     "id": "ACCEPT",
+     "title": "Accept",
+     "description": "Serve as today's Decider."
+    },
+    {
+     "id": "REJECT",
+     "title": "Reject",
+     "description": "You are not allowed to Reject."
+    }
+   ],
+   "pages": [
+    {
+     "id": "MERCHANT",
+     "options": [
+      {
+       "id": "GUILTY",
+       "title": "DECIDE: Guilty",
+       "description": "Add Regret to your Deck. Obtain 2 random Relics."
+      },
+      {
+       "id": "INNOCENT",
+       "title": "DECIDE: Innocent",
+       "description": "Add Shame to your Deck. Upgrade 2 cards."
+      }
+     ]
+    },
+    {
+     "id": "NOBLE",
+     "options": [
+      {
+       "id": "GUILTY",
+       "title": "DECIDE: Guilty",
+       "description": "Heal 10 HP."
+      },
+      {
+       "id": "INNOCENT",
+       "title": "DECIDE: Innocent",
+       "description": "Add Regret to your Deck. Obtain 300 Gold."
+      }
+     ]
+    },
+    {
+     "id": "NONDESCRIPT",
+     "options": [
+      {
+       "id": "GUILTY",
+       "title": "DECIDE: Guilty",
+       "description": "Add Doubt to your Deck. Gain 2 card rewards."
+      },
+      {
+       "id": "INNOCENT",
+       "title": "DECIDE: Innocent",
+       "description": "Add Doubt to your Deck. Transform 2 cards."
+      }
+     ]
+    },
+    {
+     "id": "REJECT",
+     "options": [
+      {
+       "id": "ACCEPT",
+       "title": "Accept",
+       "description": "Give in. Serve as today's Decider."
+      },
+      {
+       "id": "DOUBLE_DOWN",
+       "title": "Double Down",
+       "description": "Face lethal repercussions."
+      }
+     ]
+    }
+   ],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Trial + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Trial",
+     "fetched": "2026-10-23",
+     "revid": 61304
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/trial",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You join a line of people and are forced into becoming the judge for a trial that you may not refuse. You may either declare the defendant guilty or innocent to obtain various rewards, though most often also resulting in you becoming Cursed.",
+    "options": [
+     {
+      "title": "Accept",
+      "text": "Serve as today's Decider."
+     },
+     {
+      "title": "DECIDE: Guilty",
+      "text": "Add Regret (curse) to your Deck. Obtain 2 random Relics."
+     },
+     {
+      "title": "DECIDE: Innocent",
+      "text": "Add Shame (curse) to your Deck. Upgrade 2 cards."
+     },
+     {
+      "title": "DECIDE: Guilty",
+      "text": "Heal 10 HP."
+     },
+     {
+      "title": "DECIDE: Innocent",
+      "text": "Add Regret (curse) to your Deck. Gain 300 Gold."
+     },
+     {
+      "title": "DECIDE: Guilty",
+      "text": "Add Doubt (curse) to your Deck. Gain 2 card rewards."
+     },
+     {
+      "title": "DECIDE: Innocent",
+      "text": "Add Doubt (curse) to your Deck. Transform 2 cards."
+     },
+     {
+      "title": "Reject",
+      "text": "You are not allowed to Reject."
+     },
+     {
+      "title": "Double Down",
+      "text": "Face lethal repercussions."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "ACCEPT",
+     "title": "Accept",
+     "description": "Serve as today's Decider."
+    },
+    {
+     "id": "REJECT",
+     "title": "Reject",
+     "description": "You are not allowed to Reject."
+    }
+   ]
+  },
+  {
+   "id": "UNREST_SITE",
+   "name": "Unrest Site",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => p.CurrentHp <= p.MaxHp * 0.70m)",
+   "vars": {
+    "Heal": 0,
+    "MaxHpLoss": 8
+   },
+   "options": [
+    {
+     "id": "KILL",
+     "title": "Kill the Trees",
+     "description": "Lose 8 Max HP. Obtain a random Relic."
+    },
+    {
+     "id": "REST",
+     "title": "Rest Anyways",
+     "description": "Heal to full HP. Receive Poor Sleep."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "POOR_SLEEP"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.UnrestSite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Unrest_Site",
+     "fetched": "2026-10-23",
+     "revid": 61368
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/unrest_site",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You start a fire to take a rest when the fire grows and flickers towards a forest of oil-soaked trees. You may either sleep anyways to fully heal yourself at the cost of adding a curse to your deck, or destroy the trees to obtain a relic at the cost of some Max HP.",
+    "options": [
+     {
+      "title": "Rest Anyways",
+      "text": "Heal to full HP. Receive Poor Sleep (curse)."
+     },
+     {
+      "title": "Kill the Trees",
+      "text": "Lose 8 Max HP. Obtain a random Relic."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have 70% of your max HP or less."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "REST",
+     "title": "Rest Anyways",
+     "description": "Heal to full HP. Receive Poor Sleep."
+    },
+    {
+     "id": "KILL",
+     "title": "Kill the Trees",
+     "description": "Lose 8 Max HP. Obtain a random Relic."
+    }
+   ]
+  },
+  {
+   "id": "VAKUU",
+   "name": "Vakuu",
+   "is_ancient": true,
+   "epithet": "The First Demon",
+   "acts": [
+    "GLORY"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "Visits": 0
+   },
+   "options": [],
+   "pages": [],
+   "relics_referenced": [
+    "BLOOD_SOAKED_ROSE",
+    "CHOICES_PARADOX",
+    "DISTINGUISHED_CAPE",
+    "FIDDLE",
+    "JEWELED_MASK",
+    "LORDS_PARASOL",
+    "MUSIC_BOX",
+    "PRESERVED_FOG",
+    "SERE_TALON",
+    "WHISPERING_EARRING"
+   ],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Vakuu + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vakuu",
+     "fetched": "2026-10-23",
+     "revid": 65704
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/vakuu",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "Act 3",
+    "options": [],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": []
+  },
+  {
+   "id": "WAR_HISTORIAN_REPY",
+   "name": "War Historian, Repy",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "false",
+   "vars": {},
+   "options": [
+    {
+     "id": "UNLOCK_CAGE",
+     "title": "Unlock the Cage",
+     "description": "Lose Lantern Key. Obtain History Course."
+    },
+    {
+     "id": "UNLOCK_CHEST",
+     "title": "Unlock the Chest",
+     "description": "Lose Lantern Key. Procure 2 random Potions. Obtain 2 random Relics."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.WarHistorianRepy + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:War_Historian,_Repy",
+     "fetched": "2026-10-23",
+     "revid": 61396
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/war_historian_repy",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "3 - Glory",
+    "summary": "You find someone trapped in a cage next to a chest filled with loot. You may either unlock the chest to obtain its loot or free the scholar for the powerful History Course Relic.",
+    "options": [
+     {
+      "title": "Unlock the Cage",
+      "text": "Lose Lantern Key. Obtain History Course."
+     },
+     {
+      "title": "Unlock the Chest",
+      "text": "Lose Lantern Key. Procure 2 random Potions. Obtain 2 random Relics."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "If you have at least one Lantern Key in your deck (via the The Lantern Key) and you have not already encountered this event, every room in the Glory will be this event. Otherwise, this event will never appear."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "UNLOCK_CAGE",
+     "title": "Unlock the Cage",
+     "description": "Lose Lantern Key. Obtain History Course."
+    },
+    {
+     "id": "UNLOCK_CHEST",
+     "title": "Unlock the Chest",
+     "description": "Lose Lantern Key. Procure 2 random Potions. Obtain 2 random Relics."
+    }
+   ]
+  },
+  {
+   "id": "WATERLOGGED_SCRIPTORIUM",
+   "name": "Waterlogged Scriptorium",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= 55)",
+   "vars": {
+    "MaxHp": 6,
+    "Gold": 55,
+    "PricklySpongeGold": 99,
+    "Cards": 2,
+    "SpawnGoldRequirement": 55
+   },
+   "options": [
+    {
+     "id": "BLOODY_INK",
+     "title": "Bloody Ink",
+     "description": "Gain 6 Max HP."
+    },
+    {
+     "id": "PRICKLY_SPONGE",
+     "title": "Prickly Sponge",
+     "description": "Pay 99 Gold. Enchant 2 cards with Steady."
+    },
+    {
+     "id": "PRICKLY_SPONGE_LOCKED",
+     "title": "Locked",
+     "description": "Requires 99 Gold."
+    },
+    {
+     "id": "TENTACLE_QUILL",
+     "title": "Tentacle Quill",
+     "description": "Pay 55 Gold. Enchant a card with Steady."
+    },
+    {
+     "id": "TENTACLE_QUILL_LOCKED",
+     "title": "Locked",
+     "description": "Requires 55 Gold."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.WaterloggedScriptorium + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Waterlogged_Scriptorium",
+     "fetched": "2026-10-23",
+     "revid": 61402
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/waterlogged_scriptorium",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Underdocks",
+    "summary": "You discover a small, run-down shop filled with various scrolls and trinkets. You can pay gold to enchant 1 or 2 cards with an enchantment that allows you to retain the card, or you may not buy anything and get a boost to Max HP instead.",
+    "options": [
+     {
+      "title": "Bloody Ink",
+      "text": "Gain 6 Max HP."
+     },
+     {
+      "title": "Tentacle Quill",
+      "text": "Pay 55 Gold. Enchant a card with Steady."
+     },
+     {
+      "title": "Prickly Sponge",
+      "text": "Pay 99 Gold. Enchant 2 cards with Steady."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 55 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "BLOODY_INK",
+     "title": "Bloody Ink",
+     "description": "Gain 6 Max HP."
+    },
+    {
+     "id": "TENTACLE_QUILL",
+     "title": "Tentacle Quill",
+     "description": "Pay 55 Gold. Enchant a card with Steady."
+    },
+    {
+     "id": "TENTACLE_QUILL_LOCKED",
+     "title": "Locked",
+     "description": "Requires 55 Gold."
+    },
+    {
+     "id": "PRICKLY_SPONGE",
+     "title": "Prickly Sponge",
+     "description": "Pay 99 Gold. Enchant 2 cards with Steady."
+    },
+    {
+     "id": "PRICKLY_SPONGE_LOCKED",
+     "title": "Locked",
+     "description": "Requires 99 Gold."
+    }
+   ]
+  },
+  {
+   "id": "WELCOME_TO_WONGOS",
+   "name": "Welcome to Wongo's",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "SHARED"
+   ],
+   "allowed_condition": "(act_index(0-based) == 1) and (all players(p => p.Gold >= 100))",
+   "vars": {
+    "BargainBinCost": 100,
+    "MysteryBoxCost": 300,
+    "FeaturedItemCost": 200,
+    "MysteryBoxRelicCount": 3,
+    "MysteryBoxCombatCount": 5,
+    "WongoPointAmount": 0,
+    "RemainingWongoPointAmount": 0,
+    "TotalWongoBadgeAmount": 0,
+    "WongoPointsForBadge": 2000
+   },
+   "options": [
+    {
+     "id": "BARGAIN_BIN",
+     "title": "Wongo's Bargain Bin",
+     "description": "Pay 100 Gold. Obtain 1 random Common Relic."
+    },
+    {
+     "id": "BARGAIN_BIN_LOCKED",
+     "title": "Locked",
+     "description": "Requires 100 Gold."
+    },
+    {
+     "id": "FEATURED_ITEM",
+     "title": "Wongo's Featured Item",
+     "description": "Pay 200 Gold. Obtain X."
+    },
+    {
+     "id": "FEATURED_ITEM_LOCKED",
+     "title": "Locked",
+     "description": "Requires 200 Gold."
+    },
+    {
+     "id": "LEAVE",
+     "title": "Leave",
+     "description": "Downgrade a random card."
+    },
+    {
+     "id": "MYSTERY_BOX",
+     "title": "Wongo's Mystery Box",
+     "description": "Pay 300 Gold. Obtain 3 random Relics after 5 combats."
+    },
+    {
+     "id": "MYSTERY_BOX_LOCKED",
+     "title": "Locked",
+     "description": "Requires 300 Gold."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.WelcomeToWongos + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Welcome_to_Wongo's",
+     "fetched": "2026-10-23",
+     "revid": 61407
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/welcome_to_wongos",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "summary": "You meet an extremely unenthusiastic clerk in a shop selling a variety of Relics. You can purchase a random common relic, a specific rare relic, or a ticket that gives you multiple random relics after enough combat encounters. You may also refuse to purchase anything, downgrading a card in the process.",
+    "options": [
+     {
+      "title": "Wongo's Bargain Bin",
+      "text": "Pay 100 Gold. Obtain 1 random Common Relic."
+     },
+     {
+      "title": "Wongo's Featured Item",
+      "text": "Pay 200 Gold. Obtain [Rare Relic]."
+     },
+     {
+      "title": "Wongo's Mystery Box",
+      "text": "Pay 300 Gold. Obtain 3 random Relics after 5 combats."
+     },
+     {
+      "title": "Leave",
+      "text": "Downgrade]] a random card."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 100 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "BARGAIN_BIN",
+     "title": "Wongo's Bargain Bin",
+     "description": "Pay 100 Gold. Obtain 1 random Common Relic."
+    },
+    {
+     "id": "BARGAIN_BIN_LOCKED",
+     "title": "Locked",
+     "description": "Requires 100 Gold."
+    },
+    {
+     "id": "FEATURED_ITEM",
+     "title": "Wongo's Featured Item",
+     "description": "Pay 200 Gold. Obtain a random Relic."
+    },
+    {
+     "id": "FEATURED_ITEM_LOCKED",
+     "title": "Locked",
+     "description": "Requires 200 Gold."
+    },
+    {
+     "id": "MYSTERY_BOX",
+     "title": "Wongo's Mystery Box",
+     "description": "Pay 300 Gold. Obtain 3 random Relics after 5 combats."
+    },
+    {
+     "id": "MYSTERY_BOX_LOCKED",
+     "title": "Locked",
+     "description": "Requires 300 Gold."
+    },
+    {
+     "id": "LEAVE",
+     "title": "Leave",
+     "description": "Downgrade a random card."
+    }
+   ]
+  },
+  {
+   "id": "WELLSPRING",
+   "name": "Wellspring",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": null,
+   "vars": {
+    "BatheCurses": 1
+   },
+   "options": [
+    {
+     "id": "BATHE",
+     "title": "Bathe",
+     "description": "Remove 1 card from your Deck. Add 1 Guilty to your Deck."
+    },
+    {
+     "id": "BOTTLE",
+     "title": "Bottle",
+     "description": "Procure 1 random Potion."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "GUILTY"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.Wellspring + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Wellspring",
+     "fetched": "2026-10-23",
+     "revid": 61410
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/wellspring",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You follow a low rumble to its source to encounter a spring with emerald-colored water. You can bottle up the water to gain a random potion, or bathe in it to remove a card from your deck at the cost of adding a temporary curse to your deck.",
+    "options": [
+     {
+      "title": "Bottle",
+      "text": "Procure 1 random Potion."
+     },
+     {
+      "title": "Bathe",
+      "text": "Remove 1 card from Deck. Add 1 Guilty (curse) to Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": []
+   },
+   "codex_options": [
+    {
+     "id": "BOTTLE",
+     "title": "Bottle",
+     "description": "Procure 1 random Potion."
+    },
+    {
+     "id": "BATHE",
+     "title": "Bathe",
+     "description": "Remove 1 card from your Deck. Add 1 Guilty to your Deck."
+    }
+   ]
+  },
+  {
+   "id": "WHISPERING_HOLLOW",
+   "name": "Whispering Hollow",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= 44)",
+   "vars": {
+    "Gold": 35,
+    "HpLoss": 9,
+    "BaseGold": 35,
+    "GoldVariance": 9
+   },
+   "options": [
+    {
+     "id": "GOLD",
+     "title": "Exchange Gold",
+     "description": "Lose 35 Gold. Procure 2 random Potions."
+    },
+    {
+     "id": "HUG",
+     "title": "Hug the Tree",
+     "description": "Lose 9 HP. Choose a card to Transform."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.WhisperingHollow + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Whispering_Hollow",
+     "fetched": "2026-10-23",
+     "revid": 61415
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/whispering_hollow",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You discover a creepy, whispering tree with clay vessels hanging from its branches. You may give some gold to the tree to obtain two potions, or hug the tree to transform a card in your deck at the cost of some HP.",
+    "options": [
+     {
+      "title": "Exchange Gold",
+      "text": "Lose 26-44 Gold. Procure 2 random Potions."
+     },
+     {
+      "title": "Hug the Tree",
+      "text": "Lose 9 HP. Choose a card to Transform."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 44 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "GOLD",
+     "title": "Exchange Gold",
+     "description": "Lose 26-44 Gold. Procure 2 random Potions."
+    },
+    {
+     "id": "HUG",
+     "title": "Hug the Tree",
+     "description": "Lose 9 HP. Choose a card to Transform."
+    }
+   ]
+  },
+  {
+   "id": "WOOD_CARVINGS",
+   "name": "Wood Carvings",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "allowed_condition": "all players(p => p.Deck.Cards.Any(c => c != null and c.Rarity == CardRarity.Basic and c.IsRemovable))",
+   "vars": {},
+   "options": [
+    {
+     "id": "BIRD",
+     "title": "Bird",
+     "description": "Choose 1 starter card to Transform into X."
+    },
+    {
+     "id": "SNAKE",
+     "title": "Snake",
+     "description": "Enchant 1 card with X."
+    },
+    {
+     "id": "SNAKE_LOCKED",
+     "title": "Locked",
+     "description": "None of your cards can be Enchanted with Slither."
+    },
+    {
+     "id": "TORUS",
+     "title": "Torus",
+     "description": "Choose 1 starter card to Transform into X."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [
+    "PECK",
+    "TORIC_TOUGHNESS"
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.WoodCarvings + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Wood_Carvings",
+     "fetched": "2026-10-23",
+     "revid": 61429
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/wood_carvings",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "1 - Overgrowth",
+    "summary": "You open a with three wooden carvings next to a pedestal indented with the shape of the carvings. You can transform a starter card into a unique attack or skill card, or enchant a card with an enchantment that randomizes its cost.",
+    "options": [
+     {
+      "title": "Bird",
+      "text": "Choose 1 starter card to Transform into Peck."
+     },
+     {
+      "title": "Snake",
+      "text": "Enchant 1 card with Slither. (Locked if no cards can be enchanted with Slither)"
+     },
+     {
+      "title": "Torus",
+      "text": "Choose 1 starter card to Transform into Toric Toughness."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 1 basic card."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "BIRD",
+     "title": "Bird",
+     "description": "Choose 1 starter card to Transform into Peck."
+    },
+    {
+     "id": "SNAKE",
+     "title": "Snake",
+     "description": "Enchant 1 card with Slither."
+    },
+    {
+     "id": "SNAKE_LOCKED",
+     "title": "Locked",
+     "description": "None of your cards can be Enchanted with Slither."
+    },
+    {
+     "id": "TORUS",
+     "title": "Torus",
+     "description": "Choose 1 starter card to Transform into Toric Toughness."
+    }
+   ]
+  },
+  {
+   "id": "ZEN_WEAVER",
+   "name": "Zen Weaver",
+   "is_ancient": false,
+   "epithet": null,
+   "acts": [
+    "HIVE"
+   ],
+   "allowed_condition": "all players(p => p.Gold >= var:EmotionalAwarenessCost)",
+   "vars": {
+    "BreathingTechniquesCost": 50,
+    "EmotionalAwarenessCost": 125,
+    "ArachnidAcupunctureCost": 250
+   },
+   "options": [
+    {
+     "id": "ARACHNID_ACUPUNCTURE",
+     "title": "Arachnid Acupuncture",
+     "description": "Pay 250 Gold. Remove 2 cards from your Deck."
+    },
+    {
+     "id": "BREATHING_TECHNIQUES",
+     "title": "Breathing Techniques",
+     "description": "Pay 50 Gold. Add 2 Enlightenment to your Deck."
+    },
+    {
+     "id": "EMOTIONAL_AWARENESS",
+     "title": "Emotional Awareness",
+     "description": "Pay 125 Gold. Remove 1 card from your Deck."
+    },
+    {
+     "id": "LOCKED",
+     "title": "Locked",
+     "description": "Not enough Gold."
+    }
+   ],
+   "pages": [],
+   "relics_referenced": [],
+   "cards_referenced": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Events.ZenWeaver + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Zen_Weaver",
+     "fetched": "2026-10-23",
+     "revid": 61436
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/events/zen_weaver",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "wiki": {
+    "acts": "2 - Hive",
+    "options": [
+     {
+      "title": "Breathing Techniques",
+      "text": "Pay 50 Gold. Add 2 Enlightenment to your Deck."
+     },
+     {
+      "title": "Emotional Awareness",
+      "text": "Pay 125 Gold. Remove 1 card from your Deck."
+     },
+     {
+      "title": "Arachnid Acupuncture",
+      "text": "Pay 250 Gold. Remove 2 cards from your Deck."
+     }
+    ],
+    "mechanics": [],
+    "conditions": [
+     "Only appears if you have at least 125 Gold."
+    ]
+   },
+   "codex_options": [
+    {
+     "id": "BREATHING_TECHNIQUES",
+     "title": "Breathing Techniques",
+     "description": "Pay 50 Gold. Add 2 Enlightenment to your Deck."
+    },
+    {
+     "id": "EMOTIONAL_AWARENESS",
+     "title": "Emotional Awareness",
+     "description": "Pay 125 Gold. Remove 1 card from your Deck."
+    },
+    {
+     "id": "ARACHNID_ACUPUNCTURE",
+     "title": "Arachnid Acupuncture",
+     "description": "Pay 250 Gold. Remove 2 cards from your Deck."
+    },
+    {
+     "id": "LOCKED",
+     "title": "Locked",
+     "description": "Not enough Gold."
+    }
+   ]
+  }
+ ]
+}
