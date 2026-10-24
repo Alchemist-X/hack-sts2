@@ -1,0 +1,2404 @@
+{
+ "meta": {
+  "schema": "schema.json",
+  "schema_version": 1,
+  "category": "potions",
+  "game_version": "0.107.1",
+  "generated": "2026-10-23",
+  "authority": "game (sts2.dll + pck localization) > wiki.gg > spire-codex",
+  "sources": {
+   "game": "Slay the Spire 2 v0.107.1 (read-only extraction)",
+   "wiki": {
+    "url": "https://slaythespire.wiki.gg/",
+    "fetched": "2026-10-23"
+   },
+   "codex": {
+    "url": "https://spire-codex.com",
+    "fetched": "2026-10-23",
+    "note": "tracks latest stable build; may differ from pinned version",
+    "api_meta": {
+     "version": "v0.1.0",
+     "url": "https://spire-codex.com",
+     "sts2_tested": "v0.103.3"
+    }
+   }
+  },
+  "wiki_only": [
+   "Ambergris"
+  ]
+ },
+ "entries": [
+  {
+   "id": "ASHWATER",
+   "name": "Ashwater",
+   "pools": [],
+   "rarity": "Uncommon",
+   "description": "Exhaust any number of cards in your Hand.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.Ashwater + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ashwater",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/ashwater",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Exhaust any number of cards in your Hand.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Ironclad"
+   }
+  },
+  {
+   "id": "ATTACK_POTION",
+   "name": "Attack Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Choose 1 of 3 random Attack cards to add into your Hand. It's free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.AttackPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Attack_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/attack_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose 1 of 3 random Attack cards to add into your Hand. It's free to play this turn.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "BEETLE_JUICE",
+   "name": "Beetle Juice",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Enemy's attacks deal 30% less damage for the next 4 turns.",
+   "vars": {
+    "DamageDecrease": 30,
+    "Repeat": 4
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BeetleJuice + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Beetle_Juice",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/beetle_juice",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Enemy's attacks deal 30% less damage for the next 4 turns.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "BLESSING_OF_THE_FORGE",
+   "name": "Blessing of the Forge",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Upgrade all cards in your Hand for the rest of combat.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BlessingOfTheForge + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Blessing_of_the_Forge",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/blessing_of_the_forge",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Upgrade all cards in your Hand for the rest of combat.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "BLOCK_POTION",
+   "name": "Block Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 12 Block.",
+   "vars": {
+    "Block": 12
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BlockPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Block_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/block_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 12 Block.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "BLOOD_POTION",
+   "name": "Blood Potion",
+   "pools": [],
+   "rarity": "Common",
+   "description": "Heal for 20% of your Max HP.",
+   "vars": {
+    "HealPercent": 20
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BloodPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Blood_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/blood_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "AnyTime",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Heal for 20% of your Max HP.",
+    "rarity": "Common",
+    "exclusive_to": "Ironclad"
+   }
+  },
+  {
+   "id": "BONE_BREW",
+   "name": "Bone Brew",
+   "pools": [],
+   "rarity": "Uncommon",
+   "description": "Summon 15.",
+   "vars": {
+    "Summon": 15
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BoneBrew + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bone_Brew",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/bone_brew",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Summon 15.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Necrobinder"
+   }
+  },
+  {
+   "id": "BOTTLED_POTENTIAL",
+   "name": "Bottled Potential",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Shuffle ALL your cards into your Draw Pile. Draw 5 cards.",
+   "vars": {
+    "Cards": 5
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.BottledPotential + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bottled_Potential",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/bottled_potential",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Shuffle ALL your cards into your Draw Pile. Draw 5 cards.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "CLARITY",
+   "name": "Clarity Extract",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Draw 1 card. At the start of your next 3 turns, draw 1 additional card.",
+   "vars": {
+    "ClarityPower": 3,
+    "Clarity": 3,
+    "Cards": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.Clarity + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Clarity_Extract",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/clarity",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Draw 1 card. At the start of your next 3 turns, draw 1 additional card.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "COLORLESS_POTION",
+   "name": "Colorless Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Choose 1 of 3 random Colorless cards to add into your Hand. It's free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.ColorlessPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Colorless_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/colorless_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose 1 of 3 random Colorless cards to add into your Hand. It's free to play this turn.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "COSMIC_CONCOCTION",
+   "name": "Cosmic Concoction",
+   "pools": [],
+   "rarity": "Rare",
+   "description": "Add 3 Upgraded Colorless cards into your Hand.",
+   "vars": {
+    "Cards": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.CosmicConcoction + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Cosmic_Concoction",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/cosmic_concoction",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Add 3 Upgraded Colorless cards into your Hand.",
+    "rarity": "Rare",
+    "exclusive_to": "Regent"
+   }
+  },
+  {
+   "id": "CUNNING_POTION",
+   "name": "Cunning Potion",
+   "pools": [],
+   "rarity": "Uncommon",
+   "description": "Add 3 Upgraded Shivs into your Hand.",
+   "vars": {
+    "Cards": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.CunningPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Cunning_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/cunning_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Add 3 Upgraded Shivs into your Hand.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Silent"
+   }
+  },
+  {
+   "id": "CURE_ALL",
+   "name": "Cure All",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 1[E]. Draw 2 cards.",
+   "vars": {
+    "Energy": 1,
+    "Cards": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.CureAll + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Cure_All",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/cure_all",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1[E]. Draw 2 cards.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "DEPRECATED_POTION",
+   "name": "Deprecated Potion",
+   "pools": [
+    "Deprecated"
+   ],
+   "rarity": "None",
+   "description": "This potion has been removed from the game.",
+   "vars": {},
+   "internal_or_undiscovered": true,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.DeprecatedPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy"
+  },
+  {
+   "id": "DEXTERITY_POTION",
+   "name": "Dexterity Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 2 Dexterity.",
+   "vars": {
+    "DexterityPower": 2,
+    "Dexterity": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.DexterityPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Dexterity_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/dexterity_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 2 Dexterity.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "DISTILLED_CHAOS",
+   "name": "Distilled Chaos",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Play the top 3 cards of your Draw Pile.",
+   "vars": {
+    "Repeat": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.DistilledChaos + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Distilled_Chaos",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/distilled_chaos",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Play the top 3 cards of your Draw Pile.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "DROPLET_OF_PRECOGNITION",
+   "name": "Droplet of Precognition",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Choose a card in your Draw Pile and add it into your Hand.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.DropletOfPrecognition + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Droplet_of_Precognition",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/droplet_of_precognition",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose a card in your Draw Pile and add it into your Hand.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "DUPLICATOR",
+   "name": "Duplicator",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "This turn, your next card is played an extra time.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.Duplicator + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Duplicator",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/duplicator",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "This turn, your next card is played an extra time.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "ENERGY_POTION",
+   "name": "Energy Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 2[E].",
+   "vars": {
+    "Energy": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.EnergyPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Energy_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/energy_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1[E] 1[E].",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "ENTROPIC_BREW",
+   "name": "Entropic Brew",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Fill all your empty potion slots with random potions.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.EntropicBrew + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Entropic_Brew",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/entropic_brew",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "AnyTime",
+   "target": "Self",
+   "wiki": {
+    "description": "Fill all your empty potion slots with random potions.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "ESSENCE_OF_DARKNESS",
+   "name": "Essence of Darkness",
+   "pools": [],
+   "rarity": "Rare",
+   "description": "Channel a Dark for each of your Orb Slots.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.EssenceOfDarkness + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Essence_of_Darkness",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/essence_of_darkness",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Channel a Dark for each of your Orb Slots.",
+    "rarity": "Rare",
+    "exclusive_to": "Defect"
+   }
+  },
+  {
+   "id": "EXPLOSIVE_AMPOULE",
+   "name": "Explosive Ampoule",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Deal 10 damage to ALL enemies.",
+   "vars": {
+    "Damage": 10
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.ExplosiveAmpoule + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Explosive_Ampoule",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/explosive_ampoule",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AllEnemies",
+   "wiki": {
+    "description": "Deal 10 damage to ALL enemies.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FAIRY_IN_A_BOTTLE",
+   "name": "Fairy in a Bottle",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "When your HP would be reduced to 0, instead this potion is discarded and you heal to 30% of your Max HP.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FairyInABottle + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fairy_in_a_Bottle",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/fairy_in_a_bottle",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "Automatic",
+   "target": "Self",
+   "wiki": {
+    "description": "When your HP would be reduced to 0, instead this potion is discarded and you heal to 30% of your Max HP.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FIRE_POTION",
+   "name": "Fire Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Deal 20 damage.",
+   "vars": {
+    "Damage": 20
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FirePotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fire_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/fire_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Deal 20 damage.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FLEX_POTION",
+   "name": "Flex Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 5 Strength. At the end of your turn, lose 5 Strength.",
+   "vars": {
+    "StrengthPower": 5,
+    "Strength": 5
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FlexPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Flex_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/flex_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 5 Strength. At the end of your turn, lose 5 Strength.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FOCUS_POTION",
+   "name": "Focus Potion",
+   "pools": [],
+   "rarity": "Common",
+   "description": "Gain 2 Focus.",
+   "vars": {
+    "FocusPower": 2,
+    "Focus": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FocusPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Focus_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/focus_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Gain 2 Focus.",
+    "rarity": "Common",
+    "exclusive_to": "Defect"
+   }
+  },
+  {
+   "id": "FORTIFIER",
+   "name": "Fortifier",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Triple your Block.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.Fortifier + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fortifier",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/fortifier",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Triple your Block.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FOUL_POTION",
+   "name": "Foul Potion",
+   "pools": [
+    "Event"
+   ],
+   "rarity": "Event",
+   "description": "Deal 12 damage to ALL players and enemies. Can be thrown at the Merchant for 100 Gold instead.",
+   "vars": {
+    "Damage": 12,
+    "Gold": 100
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FoulPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Foul_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/foul_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "conflicts": [
+    {
+     "field": "rarity",
+     "game": "Event",
+     "wiki": "Special",
+     "authoritative": "game"
+    }
+   ],
+   "usage": "AnyTime",
+   "target": null,
+   "wiki": {
+    "description": "Deal 12 damage to EVERYONE. Can be thrown at the Merchant for 100 Gold instead.",
+    "rarity": "Special",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FRUIT_JUICE",
+   "name": "Fruit Juice",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Gain 5 Max HP.",
+   "vars": {
+    "MaxHp": 5
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FruitJuice + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fruit_Juice",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/fruit_juice",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "AnyTime",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 5 Max HP.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "FYSH_OIL",
+   "name": "Fysh Oil",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 1 Strength and 1 Dexterity.",
+   "vars": {
+    "StrengthPower": 1,
+    "Strength": 1,
+    "DexterityPower": 1,
+    "Dexterity": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.FyshOil + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Fysh_Oil",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/fysh_oil",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1 Strength and 1 Dexterity.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "GAMBLERS_BREW",
+   "name": "Gambler's Brew",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Discard any number of cards, then draw that many.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.GamblersBrew + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gambler%26%2339;s_Brew",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/gamblers_brew",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Discard any number of cards, then draw that many.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "GHOST_IN_A_JAR",
+   "name": "Ghost in a Jar",
+   "pools": [],
+   "rarity": "Rare",
+   "description": "Gain 1 Intangible.",
+   "vars": {
+    "IntangiblePower": 1,
+    "Intangible": 1
+   },
+   "internal_or_undiscovered": true,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.GhostInAJar + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ghost_in_a_Jar",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/ghost_in_a_jar",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1 Intangible.",
+    "rarity": "Rare",
+    "exclusive_to": "Silent"
+   }
+  },
+  {
+   "id": "GIGANTIFICATION_POTION",
+   "name": "Gigantification Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "The next Attack you play deals triple damage.",
+   "vars": {
+    "GigantificationPower": 1,
+    "Gigantification": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.GigantificationPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Gigantification_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/gigantification_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "The next Attack you play deals triple damage.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "GLOWWATER_POTION",
+   "name": "Glowwater Potion",
+   "pools": [
+    "Event"
+   ],
+   "rarity": "Event",
+   "description": "Exhaust your Hand. Draw 10 cards.",
+   "vars": {
+    "Cards": 10
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.GlowwaterPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Glowwater_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/glowwater_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "conflicts": [
+    {
+     "field": "rarity",
+     "game": "Event",
+     "wiki": "Special",
+     "authoritative": "game"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Exhaust your Hand. Draw 10 cards.",
+    "rarity": "Special",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "HEART_OF_IRON",
+   "name": "Heart of Iron",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 7 Plating.",
+   "vars": {
+    "PlatingPower": 7,
+    "Plating": 7
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.HeartOfIron + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Heart_of_Iron",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/heart_of_iron",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 7 Plating.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "KINGS_COURAGE",
+   "name": "King's Courage",
+   "pools": [],
+   "rarity": "Uncommon",
+   "description": "Forge 15.",
+   "vars": {
+    "Forge": 15
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.KingsCourage + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:King%26%2339;s_Courage",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/kings_courage",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Forge 15.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Regent"
+   }
+  },
+  {
+   "id": "LIQUID_BRONZE",
+   "name": "Liquid Bronze",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 3 Thorns.",
+   "vars": {
+    "ThornsPower": 3,
+    "Thorns": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.LiquidBronze + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Liquid_Bronze",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/liquid_bronze",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 3 Thorns.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "LIQUID_MEMORIES",
+   "name": "Liquid Memories",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Put a card from your Discard Pile into your Hand. It's free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.LiquidMemories + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Liquid_Memories",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/liquid_memories",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "conflicts": [
+    {
+     "field": "description.numbers",
+     "game": [],
+     "wiki": [
+      0
+     ],
+     "authoritative": "game",
+     "note": "game: Put a card from your Discard Pile into your Hand. It's free to play this turn. | wiki: Put a card from your Discard Pile into your Hand. It costs 0 1[E] this turn."
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Put a card from your Discard Pile into your Hand. It costs 0 1[E] this turn.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "LUCKY_TONIC",
+   "name": "Lucky Tonic",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Gain 1 Buffer.",
+   "vars": {
+    "BufferPower": 1,
+    "Buffer": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.LuckyTonic + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Lucky_Tonic",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/lucky_tonic",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1 Buffer.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "MAZALETHS_GIFT",
+   "name": "Mazaleth's Gift",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Gain 1 Ritual.",
+   "vars": {
+    "RitualPower": 1,
+    "Ritual": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.MazalethsGift + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Mazaleth%26%2339;s_Gift",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/mazaleths_gift",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1 Ritual.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "MOCK_DISCARD_AND_ADD_SHIVS_POTION",
+   "name": "Mock Discard and Add Shivs Potion",
+   "pools": [
+    "Mock"
+   ],
+   "rarity": null,
+   "description": "",
+   "vars": {},
+   "internal_or_undiscovered": true,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.MockDiscardAndAddShivsPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ],
+   "usage": null,
+   "target": null
+  },
+  {
+   "id": "OROBIC_ACID",
+   "name": "Orobic Acid",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Add a random Attack, Skill, and Power into your Hand. They're free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.OrobicAcid + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Orobic_Acid",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/orobic_acid",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Add a random Attack, Skill, and Power into your Hand. They're free to play this turn.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "POISON_POTION",
+   "name": "Poison Potion",
+   "pools": [],
+   "rarity": "Common",
+   "description": "Apply 6 Poison.",
+   "vars": {
+    "PoisonPower": 6,
+    "Poison": 6
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PoisonPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Poison_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/poison_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Apply 6 Poison.",
+    "rarity": "Common",
+    "exclusive_to": "Silent"
+   }
+  },
+  {
+   "id": "POT_OF_GHOULS",
+   "name": "Pot of Ghouls",
+   "pools": [],
+   "rarity": "Rare",
+   "description": "Add 2 Souls into your Hand.",
+   "vars": {
+    "Cards": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PotOfGhouls + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Pot_of_Ghouls",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/pot_of_ghouls",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Add 2 Souls into your Hand.",
+    "rarity": "Rare",
+    "exclusive_to": "Necrobinder"
+   }
+  },
+  {
+   "id": "POTION_OF_BINDING",
+   "name": "Potion of Binding",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Apply 1 Weak and 1 Vulnerable to ALL enemies.",
+   "vars": {
+    "VulnerablePower": 1,
+    "Vulnerable": 1,
+    "WeakPower": 1,
+    "Weak": 1
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PotionOfBinding + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Potion_of_Binding",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/potion_of_binding",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AllEnemies",
+   "wiki": {
+    "description": "Apply 1 Weak and 1 Vulnerable to ALL enemies.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "POTION_OF_CAPACITY",
+   "name": "Potion of Capacity",
+   "pools": [],
+   "rarity": "Uncommon",
+   "description": "Gain 2 Orb Slots.",
+   "vars": {
+    "Repeat": 2
+   },
+   "internal_or_undiscovered": true,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PotionOfCapacity + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Potion_of_Capacity",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/potion_of_capacity",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Gain 2 Orb Slots.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Defect"
+   }
+  },
+  {
+   "id": "POTION_OF_DOOM",
+   "name": "Potion of Doom",
+   "pools": [],
+   "rarity": "Common",
+   "description": "Apply 33 Doom.",
+   "vars": {
+    "DoomPower": 33,
+    "Doom": 33
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PotionOfDoom + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Potion_of_Doom",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/potion_of_doom",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Apply 33 Doom.",
+    "rarity": "Common",
+    "exclusive_to": "Necrobinder"
+   }
+  },
+  {
+   "id": "POTION_SHAPED_ROCK",
+   "name": "Potion-Shaped Rock",
+   "pools": [
+    "Token"
+   ],
+   "rarity": "Token",
+   "description": "Deal 15 damage.",
+   "vars": {
+    "Damage": 15
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PotionShapedRock + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Potion-Shaped_Rock",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/potion_shaped_rock",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "conflicts": [
+    {
+     "field": "rarity",
+     "game": "Token",
+     "wiki": "Special",
+     "authoritative": "game"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Deal 15 damage.",
+    "rarity": "Special",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "POWDERED_DEMISE",
+   "name": "Powdered Demise",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Enemy loses 9 HP at the end of each of its turns.",
+   "vars": {
+    "Demise": 9
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PowderedDemise + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Powdered_Demise",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/powdered_demise",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Enemy loses 9 HP at the end of each of its turns.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "POWER_POTION",
+   "name": "Power Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Choose 1 of 3 random Power cards to add into your Hand. It's free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.PowerPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Power_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/power_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose 1 of 3 random Power cards to add into your Hand. It's free to play this turn.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "RADIANT_TINCTURE",
+   "name": "Radiant Tincture",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 1[E]. Gain an additional [E] at the start of your next 3 turns.",
+   "vars": {
+    "Energy": 1,
+    "RadiancePower": 3,
+    "Radiance": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.RadiantTincture + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Radiant_Tincture",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/radiant_tincture",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 1[E]. Gain an additional 1[E] at the start of your next 3 turns.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "REGEN_POTION",
+   "name": "Regen Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Gain 5 Regen.",
+   "vars": {
+    "RegenPower": 5,
+    "Regen": 5
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.RegenPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Regen_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/regen_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 5 Regen.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SHACKLING_POTION",
+   "name": "Shackling Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "ALL enemies lose 7 Strength this turn.",
+   "vars": {
+    "StrengthPower": 7,
+    "Strength": 7
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.ShacklingPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Shackling_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/shackling_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AllEnemies",
+   "wiki": {
+    "description": "ALL enemies lose 7 Strength this turn.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SHIP_IN_A_BOTTLE",
+   "name": "Ship in a Bottle",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Gain 10 Block. Next turn, gain 10 Block.",
+   "vars": {
+    "Block": 10
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.ShipInABottle + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ship_in_a_Bottle",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/ship_in_a_bottle",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 10 Block. Next turn, gain 10 Block.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SKILL_POTION",
+   "name": "Skill Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Choose 1 of 3 random Skill cards to add into your Hand. It's free to play this turn.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.SkillPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Skill_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/skill_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose 1 of 3 random Skill cards to add into your Hand. It's free to play this turn.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SNECKO_OIL",
+   "name": "Snecko Oil",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Rare",
+   "description": "Draw 7 cards. Randomize the cost of cards in your Hand this turn.",
+   "vars": {
+    "Cards": 7
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.SneckoOil + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Snecko_Oil",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/snecko_oil",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Draw 7 cards. Randomize the cost of cards in your Hand this turn.",
+    "rarity": "Rare",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SOLDIERS_STEW",
+   "name": "Soldier's Stew",
+   "pools": [],
+   "rarity": "Rare",
+   "description": "All cards containing Strike gain 1 Replay this combat.",
+   "vars": {},
+   "internal_or_undiscovered": true,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.SoldiersStew + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Soldier%26%2339;s_Stew",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/soldiers_stew",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "All cards containing Strike gain 1 Replay this combat.",
+    "rarity": "Rare",
+    "exclusive_to": "Ironclad"
+   }
+  },
+  {
+   "id": "SPEED_POTION",
+   "name": "Speed Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 5 Dexterity. At the end of your turn, lose 5 Dexterity.",
+   "vars": {
+    "DexterityPower": 5,
+    "Dexterity": 5
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.SpeedPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Speed_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/speed_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 5 Dexterity. At the end of your turn, lose 5 Dexterity.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "STABLE_SERUM",
+   "name": "Stable Serum",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Retain your Hand for 2 turns.",
+   "vars": {
+    "Repeat": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.StableSerum + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Stable_Serum",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/stable_serum",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Retain your Hand for 2 turns.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "STAR_POTION",
+   "name": "Star Potion",
+   "pools": [],
+   "rarity": "Common",
+   "description": "Gain 3[Star].",
+   "vars": {
+    "Stars": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.StarPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Star_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/star_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Gain 3[Star].",
+    "rarity": "Common",
+    "exclusive_to": "Regent"
+   }
+  },
+  {
+   "id": "STRENGTH_POTION",
+   "name": "Strength Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Gain 2 Strength.",
+   "vars": {
+    "StrengthPower": 2,
+    "Strength": 2
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.StrengthPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Strength_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/strength_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Gain 2 Strength.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "SWIFT_POTION",
+   "name": "Swift Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Draw 3 cards.",
+   "vars": {
+    "Cards": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.SwiftPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Swift_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/swift_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyPlayer",
+   "wiki": {
+    "description": "Draw 3 cards.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "TOUCH_OF_INSANITY",
+   "name": "Touch of Insanity",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Uncommon",
+   "description": "Choose a card in your Hand. It is free to play this combat.",
+   "vars": {},
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.TouchOfInsanity + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Touch_of_Insanity",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/touch_of_insanity",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "Self",
+   "wiki": {
+    "description": "Choose a card in your Hand. It is free to play this combat.",
+    "rarity": "Uncommon",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "VULNERABLE_POTION",
+   "name": "Vulnerable Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Apply 3 Vulnerable.",
+   "vars": {
+    "VulnerablePower": 3,
+    "Vulnerable": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.VulnerablePotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vulnerable_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/vulnerable_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Apply 3 Vulnerable.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  },
+  {
+   "id": "WEAK_POTION",
+   "name": "Weak Potion",
+   "pools": [
+    "Shared"
+   ],
+   "rarity": "Common",
+   "description": "Apply 3 Weak.",
+   "vars": {
+    "WeakPower": 3,
+    "Weak": 3
+   },
+   "internal_or_undiscovered": false,
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Potions.WeakPotion + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Weak_Potion",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/potions/weak_potion",
+     "fetched": "2026-10-23"
+    }
+   ],
+   "usage": "CombatOnly",
+   "target": "AnyEnemy",
+   "wiki": {
+    "description": "Apply 3 Weak.",
+    "rarity": "Common",
+    "exclusive_to": "Any"
+   }
+  }
+ ]
+}

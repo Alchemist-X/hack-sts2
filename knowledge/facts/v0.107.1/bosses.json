@@ -1,0 +1,2816 @@
+{
+ "meta": {
+  "schema": "schema.json",
+  "schema_version": 1,
+  "category": "bosses_and_elites",
+  "game_version": "0.107.1",
+  "generated": "2026-10-23",
+  "authority": "game (sts2.dll + pck localization) > wiki.gg > spire-codex",
+  "sources": {
+   "game": "Slay the Spire 2 v0.107.1 (read-only extraction)",
+   "wiki": {
+    "url": "https://slaythespire.wiki.gg/",
+    "fetched": "2026-10-23"
+   },
+   "codex": {
+    "url": "https://spire-codex.com",
+    "fetched": "2026-10-23",
+    "note": "tracks latest stable build; may differ from pinned version",
+    "api_meta": {
+     "version": "v0.1.0",
+     "url": "https://spire-codex.com",
+     "sts2_tested": "v0.103.3"
+    }
+   }
+  }
+ },
+ "entries": [
+  {
+   "id": "AEONGLASS_BOSS",
+   "name": "Aeonglass",
+   "room_type": "Boss",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [
+    "GLORY"
+   ],
+   "monsters": [
+    {
+     "id": "AEONGLASS",
+     "name": "Aeonglass",
+     "hp": {
+      "min": 512,
+      "max": 512,
+      "asc_min": 535,
+      "asc_max": 535,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Artifact",
+       "target": "self",
+       "amount": {
+        "base": 3
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "EBB_MOVE",
+       "title": "Ebb",
+       "summary": "attack 26 (A9: 32); block 33 (self)",
+       "intents": [
+        "SingleAttack",
+        "Defend"
+       ]
+      },
+      {
+       "id": "EYE_LASERS_MOVE",
+       "title": "Eye Lasers",
+       "summary": "attack 11 (A9: 12) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "INCREASING_INTENSITY_MOVE",
+       "title": "Increasing Intensity",
+       "summary": "apply Strength X to self; add X WITHER to Discard",
+       "intents": [
+        "Status",
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Ebb; Ebb -> Eye Lasers; Eye Lasers -> Increasing Intensity; Increasing Intensity -> Ebb",
+     "wiki_notes": {
+      "pattern": [
+       "The Aeonglass follows a repeating cycle:",
+       "Eye Lasers",
+       "Increasing Intensity",
+       "X equals the amount of times Increasing Intensity has been used.",
+       "Withering Presence adds the Withers to your hand after the card's effect has been resolved completely. When an exhaust card like Scavenge triggers Withering Presence, it cannot remove the status card whose creation it triggered."
+      ],
+      "notes": []
+     },
+     "conflicts": [
+      {
+       "field": "move.EBB_MOVE.damage",
+       "game": 26,
+       "wiki": 22,
+       "authoritative": "game",
+       "note": "Deals 22 ([A9: 26]) damage. Gains 33 Block."
+      },
+      {
+       "field": "move.EBB_MOVE.asc_damage",
+       "game": 32,
+       "wiki": 26,
+       "authoritative": "game",
+       "note": "Deals 22 ([A9: 26]) damage. Gains 33 Block."
+      }
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.AeonglassBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Aeonglass",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/aeonglass",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "BYGONE_EFFIGY_ELITE",
+   "name": "Bygone Effigy",
+   "room_type": "Elite",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "BYGONE_EFFIGY",
+     "name": "Bygone Effigy",
+     "hp": {
+      "min": 127,
+      "max": 127,
+      "asc_min": 132,
+      "asc_max": 132,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Slow",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "SLEEP_MOVE",
+       "title": "Sleep",
+       "summary": "",
+       "intents": [
+        "Sleep"
+       ]
+      },
+      {
+       "id": "WAKE_MOVE",
+       "title": "Wake",
+       "summary": "apply Strength 10 to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "SLEEP_MOVE_2",
+       "title": "Sleep Move",
+       "summary": "",
+       "intents": [
+        "Sleep"
+       ]
+      },
+      {
+       "id": "SLASHES_MOVE",
+       "title": "Slashes",
+       "summary": "attack 13 (A9: 15)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Sleep; Sleep -> Wake; Wake -> Slashes; Sleep Move -> Slashes; Slashes -> Slashes",
+     "wiki_notes": {
+      "pattern": [
+       "The Bygone Effigy starts asleep and follows this sequence:",
+       "Sleep — does nothing on its first turn.",
+       "Wake — wakes up and gains 10 Strength.",
+       "Slashes every turn after."
+      ],
+      "notes": [
+       "Bygone Effigy's Sleep phase does not feature an actual Debuff status, unlike Lagavulin Matriarch's Asleep or Slumbering Beetle's Slumber.",
+       "Because it gains 10 Strength before it begins attacking, the Bygone Effigy's attack always deals 23 ([A9: 25]) damage, although the attack itself technically deals only 13 ([A9: 15]).",
+       "Slow only increases damage from Attack cards, which means cards that apply effects to deal damage such as Poison, Doom, or Power effects like Serpent Form are unaffected.",
+       "When calculating damage for Slow, rounding always reduces damage down to the nearest whole number. For example, a Strike (base 6 damage) will deal:",
+       "6 damage at 0–1 Slow",
+       "7 damage at 2–3 Slow",
+       "8 damage at 4 Slow",
+       "9 damage at 5–6 Slow",
+       "10 damage at 7–8 Slow",
+       "11 damage at 9 Slow",
+       "12 damage at 10 Slow.",
+       "In the case of Multiplayer, each card played by any player will increase Slow for all players for the turn."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.BygoneEffigyElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Bygone_Effigy",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/bygone_effigy",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "BYRDONIS_ELITE",
+   "name": "Byrdonis",
+   "room_type": "Elite",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "BYRDONIS",
+     "name": "Byrdonis",
+     "hp": {
+      "min": 81,
+      "max": 84,
+      "asc_min": 90,
+      "asc_max": 90,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Territorial",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "PECK_MOVE",
+       "title": "Peck",
+       "summary": "attack 3 (A9: 4) x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "SWOOP_MOVE",
+       "title": "Swoop",
+       "summary": "attack 17 (A9: 19)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Swoop; Peck -> Swoop; Swoop -> Peck",
+     "wiki_notes": {
+      "pattern": [
+       "Byrdonis alternates between its two moves in a fixed pattern:",
+       "Swoop.",
+       "Peck.",
+       "Back to Swoop, and so on."
+      ],
+      "notes": [
+       "Peck hits 3 times, so each point of Strength adds 3 extra damage total on Peck turns."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.ByrdonisElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Byrdonis",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/byrdonis",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "CEREMONIAL_BEAST_BOSS",
+   "name": "Ceremonial Beast",
+   "room_type": "Boss",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [
+    "OVERGROWTH"
+   ],
+   "monsters": [
+    {
+     "id": "CEREMONIAL_BEAST",
+     "name": "Ceremonial Beast",
+     "hp": {
+      "min": 252,
+      "max": 252,
+      "asc_min": 262,
+      "asc_max": 262,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "STAMP_MOVE",
+       "title": "Stamp",
+       "summary": "apply Plow 150 (A9: 160) to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "PLOW_MOVE",
+       "title": "Plow",
+       "summary": "attack 18 (A9: 20); apply Strength 2 to self",
+       "intents": [
+        "SingleAttack",
+        "Buff"
+       ]
+      },
+      {
+       "id": "STUN_MOVE",
+       "title": "Stun",
+       "summary": "",
+       "intents": [
+        "Stun"
+       ]
+      },
+      {
+       "id": "BEAST_CRY_MOVE",
+       "title": "Beast Cry",
+       "summary": "apply Ringing 1 to player",
+       "intents": [
+        "Debuff"
+       ]
+      },
+      {
+       "id": "STOMP_MOVE",
+       "title": "Stomp",
+       "summary": "attack 15 (A9: 17)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "CRUSH_MOVE",
+       "title": "Crush",
+       "summary": "attack 17 (A9: 19); apply Strength 3 (A9: 4) to self",
+       "intents": [
+        "SingleAttack",
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Stamp; Stamp -> Plow; Plow -> Plow; Stun -> Beast Cry; Beast Cry -> Stomp; Stomp -> Crush; Crush -> Beast Cry",
+     "wiki_notes": {
+      "pattern": [
+       "The Ceremonial Beast has two distinct phases.",
+       "Phase 1:",
+       "Uses Stamp on the first turn, gaining Plow.",
+       "Then uses Plow every turn.",
+       "When its HP drops to the Plow threshold (150, or [A9: 160]), it immediately becomes Stunned and loses all Strength.",
+       "Phase 2: After being stunned, repeats this three-move cycle:",
+       "Beast Cry",
+       "Stomp",
+       "Crush"
+      ],
+      "notes": [
+       "Plow acts as a HP threshold: when the Ceremonial Beast's HP drops to the Plow amount or below, it is Stunned and loses all accumulated Strength. This effectively gives the player a free turn.",
+       "If the Ceremonial Beast's HP is already below the Plow threshold on the first turn (before it gains Plow), it will not become Stunned when it gains Plow. Instead, it acts normally until it loses any amount of HP, which will trigger the Plow effect like normal.",
+       "Ringing from Beast Cry limits the player to playing only 1 card on that turn.",
+       "During Phase 1, each Plow gains 2 Strength, but all of it is lost when the Ceremonial Beast's HP drops to the threshold. In Phase 2, each Crush gains 3 ([A9: 4]) Strength that accumulates for the rest of the battle."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.CeremonialBeastBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Ceremonial_Beast",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/ceremonial_beast",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "DECIMILLIPEDE_ELITE",
+   "name": "The Decimillipede",
+   "room_type": "Elite",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [],
+   "monsters": [],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.DecimillipedeElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    }
+   ]
+  },
+  {
+   "id": "ENTOMANCER_ELITE",
+   "name": "Entomancer",
+   "room_type": "Elite",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "ENTOMANCER",
+     "name": "Entomancer",
+     "hp": {
+      "min": 145,
+      "max": 145,
+      "asc_min": 155,
+      "asc_max": 155,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "PersonalHive",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "PHEROMONE_SPIT_MOVE",
+       "title": "Pheromone Spit",
+       "summary": "apply PersonalHive 1 to self; apply Strength 1 to self; apply Strength 2 to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "BEES_MOVE",
+       "title": "Beeeees!",
+       "summary": "attack 3 x7 (A9: 8)",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "SPEAR_MOVE",
+       "title": "Spear!",
+       "summary": "attack 18 (A9: 20)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Beeeees!; Pheromone Spit -> Beeeees!",
+     "wiki_notes": {
+      "pattern": [
+       "The Entomancer repeats a fixed three-move cycle: Beeeees!, then Spear!, then Pheromone Spit, and back to the start."
+      ],
+      "notes": [
+       "Personal Hive triggers whever the Entomancer takes attack damage, rather than whenever an attack is played. This means that it will trigger multiple times against cards like Sword Boomerang or Ricochet."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.EntomancerElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Entomancer",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/entomancer",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "INFESTED_PRISMS_ELITE",
+   "name": "Infested Prism",
+   "room_type": "Elite",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "INFESTED_PRISM",
+     "name": "Infested Prism",
+     "hp": {
+      "min": 161,
+      "max": 161,
+      "asc_min": 171,
+      "asc_max": 171,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "VitalSpark",
+       "target": "self",
+       "amount": {
+        "base": 2,
+        "asc": 3,
+        "asc_level": 9
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "JAB_MOVE",
+       "title": "Jab",
+       "summary": "attack 15 (A9: 17)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "RADIATE_MOVE",
+       "title": "Radiate",
+       "summary": "attack 11 (A9: 13); block 11 (A9: 13) (self)",
+       "intents": [
+        "SingleAttack",
+        "Defend"
+       ]
+      },
+      {
+       "id": "WHIRLWIND_MOVE",
+       "title": "Whirlwind",
+       "summary": "attack 5 (A9: 6) x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "PULSATE_MOVE",
+       "title": "Pulsate",
+       "summary": "attack 8 (A9: 10); apply VitalSpark 2 (A9: 3) to self; block 20 (A8: 22) (self)",
+       "intents": [
+        "SingleAttack",
+        "Buff",
+        "Defend"
+       ]
+      }
+     ],
+     "pattern": "starts with Jab; Jab -> Radiate; Radiate -> Whirlwind; Whirlwind -> Pulsate; Pulsate -> Jab",
+     "wiki_notes": {
+      "pattern": [
+       "The Infested Prism repeats a fixed four-move cycle:",
+       "Radiate",
+       "Whirlwind",
+       "Pulsate"
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.InfestedPrismsElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Infested_Prism",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/infested_prism",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "KAISER_CRAB_BOSS",
+   "name": "Kaiser Crab",
+   "room_type": "Boss",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [
+    "HIVE"
+   ],
+   "monsters": [
+    {
+     "id": "CRUSHER",
+     "name": "Crusher",
+     "hp": {
+      "min": 209,
+      "max": 209,
+      "asc_min": 219,
+      "asc_max": 219,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "BackAttackLeft",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      },
+      {
+       "power": "CrabRage",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "THRASH_MOVE",
+       "title": "Thrash",
+       "summary": "attack 12 (A9: 14)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "ENLARGING_STRIKE_MOVE",
+       "title": "Enlarging Strike",
+       "summary": "attack 4",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "BUG_STING_MOVE",
+       "title": "Bug Sting",
+       "summary": "attack 6 (A9: 7) x2; apply Weak 2 to player; apply Frail 2 to player",
+       "intents": [
+        "MultiAttack",
+        "Debuff"
+       ]
+      },
+      {
+       "id": "ADAPT_MOVE",
+       "title": "Adapt",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "GUARDED_STRIKE_MOVE",
+       "title": "Guarded Strike",
+       "summary": "attack 12 (A9: 14); block 18 (self)",
+       "intents": [
+        "SingleAttack",
+        "Defend"
+       ]
+      }
+     ],
+     "pattern": "starts with Thrash; Thrash -> Enlarging Strike; Enlarging Strike -> Bug Sting; Bug Sting -> Adapt; Adapt -> Guarded Strike; Guarded Strike -> Thrash",
+     "wiki_notes": null,
+     "conflicts": null
+    },
+    {
+     "id": "ROCKET",
+     "name": "Rocket",
+     "hp": {
+      "min": 199,
+      "max": 199,
+      "asc_min": 209,
+      "asc_max": 209,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Surrounded",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      },
+      {
+       "power": "BackAttackRight",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      },
+      {
+       "power": "CrabRage",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "TARGETING_RETICLE_MOVE",
+       "title": "Targeting Reticle",
+       "summary": "attack 3 (A9: 4)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "PRECISION_BEAM_MOVE",
+       "title": "Precision Beam",
+       "summary": "attack 18 (A9: 20)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "CHARGE_UP_MOVE",
+       "title": "Charge Up",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "LASER_MOVE",
+       "title": "Laser",
+       "summary": "attack 31 (A9: 35)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "RECHARGE_MOVE",
+       "title": "Recharge",
+       "summary": "",
+       "intents": [
+        "Sleep"
+       ]
+      }
+     ],
+     "pattern": "starts with Targeting Reticle; Targeting Reticle -> Precision Beam; Precision Beam -> Charge Up; Charge Up -> Laser; Laser -> Recharge; Recharge -> Targeting Reticle",
+     "wiki_notes": null,
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.KaiserCrabBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Kaiser_Crab#Crusher",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/crusher",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Kaiser_Crab#Rocket",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/rocket",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "KNIGHTS_ELITE",
+   "name": "Knight Gang",
+   "room_type": "Elite",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "FLAIL_KNIGHT",
+     "name": "Flail Knight",
+     "hp": {
+      "min": 101,
+      "max": 101,
+      "asc_min": 108,
+      "asc_max": 108,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "WAR_CHANT",
+       "title": "War Chant",
+       "summary": "apply Strength 3 to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "FLAIL_MOVE",
+       "title": "Flail",
+       "summary": "attack 9 (A9: 10) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "RAM_MOVE",
+       "title": "Ram",
+       "summary": "attack 15 (A9: 17)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Ram; random branch RAND: ",
+     "wiki_notes": null,
+     "conflicts": null
+    },
+    {
+     "id": "MAGI_KNIGHT",
+     "name": "Magi Knight",
+     "hp": {
+      "min": 82,
+      "max": 82,
+      "asc_min": 89,
+      "asc_max": 89,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "POWER_SHIELD_MOVE",
+       "title": "Power Shield",
+       "summary": "attack 6 (A9: 7); block 5 (A8: 9) (self)",
+       "intents": [
+        "SingleAttack",
+        "Defend"
+       ]
+      },
+      {
+       "id": "DAMPEN_MOVE",
+       "title": "Dampen",
+       "summary": "",
+       "intents": [
+        "Debuff"
+       ]
+      },
+      {
+       "id": "PREP_MOVE",
+       "title": "Prep",
+       "summary": "block 5 (A8: 9) (self)",
+       "intents": [
+        "Defend"
+       ]
+      },
+      {
+       "id": "MAGIC_BOMB",
+       "title": "Magic Bomb",
+       "summary": "attack 35 (A9: 40)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "RAM_MOVE",
+       "title": "Ram",
+       "summary": "attack 10 (A9: 11)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Power Shield; Power Shield -> Dampen; Dampen -> Ram; Prep -> Magic Bomb; Magic Bomb -> Ram; Ram -> Prep",
+     "wiki_notes": null,
+     "conflicts": null
+    },
+    {
+     "id": "SPECTRAL_KNIGHT",
+     "name": "Spectral Knight",
+     "hp": {
+      "min": 93,
+      "max": 93,
+      "asc_min": 97,
+      "asc_max": 97,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "HEX",
+       "title": "Hex",
+       "summary": "apply Hex 2 to target",
+       "intents": [
+        "Debuff"
+       ]
+      },
+      {
+       "id": "SOUL_SLASH",
+       "title": "Soul Slash",
+       "summary": "attack 15 (A9: 17)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "SOUL_FLAME",
+       "title": "Soul Flame",
+       "summary": "attack 3 (A9: 4) x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Hex; Hex -> Soul Slash; Soul Slash -> <random branch RAND>; Soul Flame -> <random branch RAND>; random branch RAND: Soul Slash [2] | Soul Flame [CannotRepeat]",
+     "wiki_notes": null,
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.KnightsElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knight_Gang#Flail_Knight",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/flail_knight",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knight_Gang#Magi_Knight",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/magi_knight",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knight_Gang#Spectral_Knight",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/spectral_knight",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "KNOWLEDGE_DEMON_BOSS",
+   "name": "Knowledge Demon",
+   "room_type": "Boss",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [
+    "HIVE"
+   ],
+   "monsters": [
+    {
+     "id": "KNOWLEDGE_DEMON",
+     "name": "Knowledge Demon",
+     "hp": {
+      "min": 379,
+      "max": 379,
+      "asc_min": 399,
+      "asc_max": 399,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "CURSE_OF_KNOWLEDGE_MOVE",
+       "title": "Curse of Knowledge",
+       "summary": "",
+       "intents": [
+        "Debuff"
+       ]
+      },
+      {
+       "id": "SLAP_MOVE",
+       "title": "Slap",
+       "summary": "attack 17 (A9: 18)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "KNOWLEDGE_OVERWHELMING_MOVE",
+       "title": "Knowledge Overwhelming",
+       "summary": "attack 8 (A9: 9) x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "PONDER_MOVE",
+       "title": "Ponder",
+       "summary": "attack 11 (A9: 13); apply Strength 2 (A9: 3) to self; heal X (self)",
+       "intents": [
+        "SingleAttack",
+        "Heal",
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Curse of Knowledge; Curse of Knowledge -> Slap; Slap -> Knowledge Overwhelming; Knowledge Overwhelming -> Ponder; Ponder -> <conditional branch CurseOfKnowledgeBranch>; conditional branch CurseOfKnowledgeBranch: Curse of Knowledge if _curseOfKnowledgeCounter < 3 | Slap if _curseOfKnowledgeCounter >= 3",
+     "wiki_notes": {
+      "pattern": [
+       "Knowledge Demon repeats a fixed four-move cycle:",
+       "Curse of Knowledge",
+       "Slap",
+       "Knowledge Overwhelming",
+       "Ponder",
+       "After the third Curse of Knowledge (once all three status sets have been offered), the cycle changes: Curse of Knowledge is skipped, and the remaining three moves repeat in order."
+      ],
+      "notes": [
+       "Curse of Knowledge status sets:",
+       "Set 1: Disintegration (6 damage/turn) or Mind Rot (draw 1 fewer card/turn)",
+       "Set 2: Disintegration (7 damage/turn) or Sloth (max 3 cards/turn)",
+       "Set 3: Disintegration (8 damage/turn) or Waste Away (1 less Energy/turn)",
+       "The debuffs from Curse of Knowledge are shown as cards, but are never added to the player's hand or deck. Once chosen, they are instantly played and removed from the game."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.KnowledgeDemonBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Knowledge_Demon",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/knowledge_demon",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "LAGAVULIN_MATRIARCH_BOSS",
+   "name": "Lagavulin Matriarch",
+   "room_type": "Boss",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [
+    "UNDERDOCKS"
+   ],
+   "monsters": [
+    {
+     "id": "LAGAVULIN_MATRIARCH",
+     "name": "Lagavulin Matriarch",
+     "hp": {
+      "min": 222,
+      "max": 222,
+      "asc_min": 233,
+      "asc_max": 233,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "SLEEP_MOVE",
+       "title": "Sleep",
+       "summary": "",
+       "intents": [
+        "Sleep"
+       ]
+      },
+      {
+       "id": "SLASH_MOVE",
+       "title": "Slash",
+       "summary": "attack 19 (A9: 21)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "SLASH2_MOVE",
+       "title": "Slash2",
+       "summary": "attack 12 (A9: 14); block 12 (A8: 14) (self)",
+       "intents": [
+        "SingleAttack",
+        "Defend"
+       ]
+      },
+      {
+       "id": "DISEMBOWEL_MOVE",
+       "title": "Disembowel",
+       "summary": "attack 9 (A9: 10) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "SOUL_SIPHON_MOVE",
+       "title": "Soul Siphon",
+       "summary": "apply Strength -2 to player; apply Dexterity -2 to player; apply Strength 2 to self",
+       "intents": [
+        "Debuff",
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Sleep; Slash -> Disembowel; Slash2 -> Soul Siphon; Disembowel -> Slash2; Soul Siphon -> Slash; conditional branch SLEEP_BRANCH: ",
+     "wiki_notes": {
+      "pattern": [
+       "The Lagavulin Matriarch starts Asleep with 12 Plating. It sleeps for 3 turns or until it takes unblocked damage, whichever comes first. When it wakes up, it loses its Plating.",
+       "After waking, it repeats this four-move cycle:",
+       "Slash",
+       "Disembowel",
+       "Slash2",
+       "Soul Siphon"
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.LagavulinMatriarchBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Lagavulin_Matriarch",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/lagavulin_matriarch",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "MECHA_KNIGHT_ELITE",
+   "name": "Mecha Knight",
+   "room_type": "Elite",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "MECHA_KNIGHT",
+     "name": "Mecha Knight",
+     "hp": {
+      "min": 300,
+      "max": 300,
+      "asc_min": 320,
+      "asc_max": 320,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Artifact",
+       "target": "self",
+       "amount": {
+        "base": 3
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "CHARGE_MOVE",
+       "title": "Charge",
+       "summary": "attack 25 (A9: 30)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "FLAMETHROWER_MOVE",
+       "title": "Flamethrower",
+       "summary": "add X BURN to Hand",
+       "intents": [
+        "Status"
+       ]
+      },
+      {
+       "id": "WINDUP_MOVE",
+       "title": "Windup",
+       "summary": "apply Strength 5 to self; block 15 (self)",
+       "intents": [
+        "Defend",
+        "Buff"
+       ]
+      },
+      {
+       "id": "HEAVY_CLEAVE_MOVE",
+       "title": "Heavy Cleave",
+       "summary": "attack 35 (A9: 40)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Charge; Charge -> Flamethrower; Flamethrower -> Windup; Windup -> Heavy Cleave; Heavy Cleave -> Flamethrower",
+     "wiki_notes": {
+      "pattern": [
+       "Starts with Charge and then repeats this cycle for the rest of combat:",
+       "Flamethrower",
+       "Windup",
+       "Heavy Cleave"
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.MechaKnightElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Mecha_Knight",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/mecha_knight",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "PHANTASMAL_GARDENERS_ELITE",
+   "name": "Phantasmal Gardeners",
+   "room_type": "Elite",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "PHANTASMAL_GARDENER",
+     "name": "Phantasmal Gardener",
+     "hp": {
+      "min": 26,
+      "max": 31,
+      "asc_min": 27,
+      "asc_max": 32,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Skittish",
+       "target": "self",
+       "amount": {
+        "base": 6,
+        "asc": 7,
+        "asc_level": 8
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "BITE_MOVE",
+       "title": "Bite",
+       "summary": "attack 5",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "LASH_MOVE",
+       "title": "Lash",
+       "summary": "attack 7",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "FLAIL_MOVE",
+       "title": "Flail",
+       "summary": "attack 1 x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "ENLARGE_MOVE",
+       "title": "Enlarge",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with <conditional branch INIT_MOVE>; Bite -> Lash; Lash -> Flail; Flail -> Enlarge; Enlarge -> Bite; conditional branch INIT_MOVE: Flail if base.Creature.SlotName == \"first\" | Bite if base.Creature.SlotName == \"second\" | Lash if base.Creature.SlotName == \"third\" | Enlarge if base.Creature.SlotName == \"fourth\"",
+     "wiki_notes": {
+      "pattern": [
+       "All four Gardeners cycle through the same four moves in a fixed order:",
+       "Bite",
+       "Lash",
+       "Flail",
+       "Enlarge",
+       "From the left, the first Gardener starts with Flail, the second with Bite, the third with Lash, and the fourth with Enlarge."
+      ],
+      "notes": [
+       "Phantasmal Gardeners gain Block after the first attack played against them resolves. For example, playing Twin Strike will deal 5 damage twice, then the Phantasmal Gardener will gain Block.",
+       "However, cards with Replay count as being played multiple times, so if an attack with Replay is played against a Phantasmal Gardener then it will gain Block after the first play and before the second one."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.PhantasmalGardenersElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phantasmal_Gardener",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/phantasmal_gardener",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "PHROG_PARASITE_ELITE",
+   "name": "Phrog Parasite",
+   "room_type": "Elite",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "PHROG_PARASITE",
+     "name": "Phrog Parasite",
+     "hp": {
+      "min": 61,
+      "max": 64,
+      "asc_min": 66,
+      "asc_max": 68,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Infested",
+       "target": "self",
+       "amount": {
+        "base": 4
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "INFECT_MOVE",
+       "title": "Infect",
+       "summary": "add X INFECTION to Discard",
+       "intents": [
+        "Status"
+       ]
+      },
+      {
+       "id": "LASH_MOVE",
+       "title": "Lash",
+       "summary": "attack 4 (A9: 5) x4",
+       "intents": [
+        "MultiAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Infect; Infect -> Lash; Lash -> Infect; random branch RAND: Infect [CannotRepeat] | Lash [CannotRepeat]",
+     "wiki_notes": {
+      "pattern": [
+       "Phrog Parasite alternates between its two moves:",
+       "Infect",
+       "Lash",
+       "Back to Infect, and so on.",
+       "When Phrog Parasite dies, Infested triggers and 4 2 are summoned. They will be Stunned and do nothing on their first turn. The fight continues until all Wrigglers are defeated."
+      ],
+      "notes": [
+       "Whether the Wrigglers are Stunned on the player's next turn depends on if the Phrog Parasite dies during the player turn or the enemy turn:",
+       "If the Phrog Parasite is killed with an Attack card or damage from an Orb, the Wrigglers will be Stunned during this turn, not the player's next turn.",
+       "If the Phrog Parasite dies to Poison or Doom, then the Wrigglers will have no Intent when spawned. They will be Stunned during the player's next turn.",
+       "This also applies if the Phrog Parasite dies as a result of its own attack, such as by Thorns or Necro Mastery.",
+       "<!--",
+       "Confirm this is all correct, I've tested but may have missed something or made a mistake",
+       "Infections deal damage during the player turn, so the damage will activate cards like Inferno or Rupture.",
+       "Omnislice damages the target, then damages all other enemies afterwards. If the first hit kills the Phrog Parasite, then it will spawn Wrigglers before the card resolves and the Wrigglers will also take damage."
+      ]
+     },
+     "conflicts": null
+    },
+    {
+     "id": "WRIGGLER",
+     "name": "Wriggler",
+     "hp": {
+      "min": 17,
+      "max": 21,
+      "asc_min": 18,
+      "asc_max": 22,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "NASTY_BITE_MOVE",
+       "title": "Nasty Bite",
+       "summary": "attack 6 (A9: 7)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "WRIGGLE_MOVE",
+       "title": "Wriggle",
+       "summary": "apply Strength 2 to self; add X INFECTION to Discard",
+       "intents": [
+        "Buff",
+        "Status"
+       ]
+      },
+      {
+       "id": "SPAWNED_MOVE",
+       "title": "Spawned",
+       "summary": "",
+       "intents": [
+        "Stun"
+       ]
+      }
+     ],
+     "pattern": "Nasty Bite -> Wriggle; Wriggle -> Nasty Bite; Spawned -> <conditional branch INIT_MOVE>; conditional branch INIT_MOVE: Nasty Bite if base.Creature.SlotName == \"wriggler1\" | Wriggle if base.Creature.SlotName == \"wriggler2\" | Nasty Bite if base.Creature.SlotName == \"wriggler3\" | Wriggle if base.Creature.SlotName == \"wriggler4\"",
+     "wiki_notes": null,
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.PhrogParasiteElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phrog_Parasite",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/phrog_parasite",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Phrog_Parasite%23Wriggler",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Overgrowth"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/wriggler",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "QUEEN_BOSS",
+   "name": "Queen",
+   "room_type": "Boss",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [
+    "GLORY"
+   ],
+   "monsters": [
+    {
+     "id": "QUEEN",
+     "name": "Queen",
+     "hp": {
+      "min": 400,
+      "max": 400,
+      "asc_min": 419,
+      "asc_max": 419,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "PUPPET_STRINGS_MOVE",
+       "title": "Puppet Strings",
+       "summary": "apply ChainsOfBinding 3 to player",
+       "intents": [
+        "CardDebuff"
+       ]
+      },
+      {
+       "id": "YOU_ARE_MINE_MOVE",
+       "title": "You Are Mine",
+       "summary": "apply Frail 99 to player; apply Weak 99 to player; apply Vulnerable 99 to player",
+       "intents": [
+        "Debuff"
+       ]
+      },
+      {
+       "id": "BURN_BRIGHT_FOR_ME_MOVE",
+       "title": "Burn Bright for Me",
+       "summary": "apply Strength X to ally/other; block 20 (self)",
+       "intents": [
+        "Buff",
+        "Defend"
+       ]
+      },
+      {
+       "id": "OFF_WITH_YOUR_HEAD_MOVE",
+       "title": "Off with Your Head",
+       "summary": "attack 3 (A9: 4) x5",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "EXECUTION_MOVE",
+       "title": "Execution",
+       "summary": "attack 15 (A9: 18)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "ENRAGE_MOVE",
+       "title": "Enrage",
+       "summary": "apply Strength 2 to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Puppet Strings; Puppet Strings -> You Are Mine; You Are Mine -> <conditional branch YOURE_MINE_NOW_BRANCH>; Burn Bright for Me -> <conditional branch BURN_BRIGHT_FOR_ME_BRANCH>; Off with Your Head -> Execution; Execution -> Enrage; Enrage -> Off with Your Head; conditional branch YOURE_MINE_NOW_BRANCH: Burn Bright for Me if !HasAmalgamDied | Off with Your Head if HasAmalgamDied; conditional branch BURN_BRIGHT_FOR_ME_BRANCH: Burn Bright for Me if !HasAmalgamDied | Off with Your Head if HasAmalgamDied; interrupt -> Enrage (in AfterDeath)",
+     "wiki_notes": {
+      "pattern": [
+       "The Queen's pattern depends on whether the Torch Head Amalgam is alive:",
+       "Opening (always):",
+       "Puppet Strings",
+       "You're Mine",
+       "While the Amalgam is alive:",
+       "Repeats Burn Bright for Me.",
+       "After the Amalgam dies:",
+       "If the Queen is currently using Burn Bright for Me, she immediately switches to Enrage, then enters the enraged loop:",
+       "Off with Your Head",
+       "Execution",
+       "Enrage",
+       "Back to Off with Your Head",
+       "Keep in mind that Queen will have gained 2 Strength and that the player will likely be permanently Vulnerable from You're Mine, making these the actual damage amounts:",
+       "Off with Your Head: 7x5 / [A9: 9x5]",
+       "Execution: 25 / [A9: 30]"
+      ],
+      "notes": [
+       "After a Bound card is played, other Bound cards cannot be played that turn even with effects like Sly or a Duplicator.",
+       "Similarly, playing a Sly card that has Bound will prevent other Bound cards from being played.",
+       "Bound cards duplicated by effects like Music Box or Dual Wield will also be bound.",
+       "2 a Bound card during battle will remove Bound from it, allowing it to be played freely.",
+       "Bound cards are still unbound at the end of your turn even when Retained, allowing you to use cards such as Well-Laid Plans to play other bound cards on a later turn.",
+       "If a Bound card is played once, then returned to your hand in some way (ex. being redrawn), it still won't able to be played until end of turn.",
+       "If the Torch Head Amalgam dies after its turn to an effect like Doom, the Queen will immediately switch intents to Off with Your Head, skipping the usual Enrage .",
+       "If the Torch Head Amalgam is killed on Turn 2 or earlier, the Queen will not use Enrage on her first cycle."
+      ]
+     },
+     "conflicts": null
+    },
+    {
+     "id": "TORCH_HEAD_AMALGAM",
+     "name": "Torch Head Amalgam",
+     "hp": {
+      "min": 199,
+      "max": 199,
+      "asc_min": 211,
+      "asc_max": 211,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Minion",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "TACKLE_MOVE",
+       "title": "Tackle",
+       "summary": "attack 18 (A9: 19)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "TACKLE_2_MOVE",
+       "title": "Tackle",
+       "summary": "attack 18 (A9: 19)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "BEAM_MOVE",
+       "title": "Beam",
+       "summary": "attack 8 x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "TACKLE_3_MOVE",
+       "title": "Tackle",
+       "summary": "attack 14 (A9: 15)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "TACKLE_4_MOVE",
+       "title": "Tackle",
+       "summary": "attack 14 (A9: 15)",
+       "intents": [
+        "SingleAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Tackle; Tackle -> Tackle; Tackle -> Beam; Beam -> Tackle; Tackle -> Tackle; Tackle -> Beam",
+     "wiki_notes": {
+      "pattern": [
+       "The Torch Head Amalgam follows a fixed sequence:",
+       "Strong Tackle",
+       "Tackle",
+       "Beam",
+       "Weak Tackle",
+       "Weak Tackle",
+       "Back to Beam (repeats steps 3-5)"
+      ],
+      "notes": [
+       "After a Bound card is played, other Bound cards cannot be played that turn even with effects like Sly or a Duplicator.",
+       "Similarly, playing a Sly card that has Bound will prevent other Bound cards from being played.",
+       "Bound cards duplicated by effects like Music Box or Dual Wield will also be bound.",
+       "2 a Bound card during battle will remove Bound from it, allowing it to be played freely.",
+       "Bound cards are still unbound at the end of your turn even when Retained, allowing you to use cards such as Well-Laid Plans to play other bound cards on a later turn.",
+       "If a Bound card is played once, then returned to your hand in some way (ex. being redrawn), it still won't able to be played until end of turn.",
+       "If the Torch Head Amalgam dies after its turn to an effect like Doom, the Queen will immediately switch intents to Off with Your Head, skipping the usual Enrage .",
+       "If the Torch Head Amalgam is killed on Turn 2 or earlier, the Queen will not use Enrage on her first cycle."
+      ]
+     },
+     "conflicts": [
+      {
+       "field": "move.TACKLE_MOVE.asc_damage",
+       "game": 19,
+       "wiki": 22,
+       "authoritative": "game",
+       "note": "Deals 18 ([A9: 22]) damage."
+      }
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.QueenBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Queen",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/queen",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Queen#Torch_Head_Amalgam",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/torch_head_amalgam",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "SKULKING_COLONY_ELITE",
+   "name": "Skulking Colony",
+   "room_type": "Elite",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "SKULKING_COLONY",
+     "name": "Skulking Colony",
+     "hp": {
+      "min": 75,
+      "max": 75,
+      "asc_min": 80,
+      "asc_max": 80,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "HardenedShell",
+       "target": "self",
+       "amount": {
+        "base": 20
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "ZOOM_MOVE",
+       "title": "Zoom",
+       "summary": "attack 14 (A9: 16)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "ZOOM_MOVE_2",
+       "title": "Zoom Move",
+       "summary": "attack 14 (A9: 16)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "INERTIA_MOVE",
+       "title": "Inertia",
+       "summary": "attack 9 (A9: 11); apply Strength 2 (A9: 4) to self",
+       "intents": [
+        "SingleAttack",
+        "Buff"
+       ]
+      },
+      {
+       "id": "PIERCING_STABS_MOVE",
+       "title": "Piercing Stabs",
+       "summary": "attack 7 (A9: 8) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      }
+     ],
+     "pattern": "starts with Zoom; Zoom -> Zoom Move; Zoom Move -> Inertia; Inertia -> Piercing Stabs; Piercing Stabs -> Zoom",
+     "wiki_notes": {
+      "pattern": [
+       "The Skulking Colony repeats the same four moves in order:",
+       "Zoom",
+       "Zoom",
+       "Inertia",
+       "Piercing Stabs"
+      ],
+      "notes": [
+       "Hardened Shell resets on both the start of the player's turn as well as the start of the Skulking Colony's turn. Since Poison deals damage at the start of an enemy's turn, it is possible to deal a maximum of 40 damage in a single turn by doing 20 attack damage and having 20 stacks of Poison on it at",
+       "Thorns, Reflect, Flame Barrier, Necro Mastery, and Demise also trigger on the enemy turn.",
+       "Hardened Shell can be partially bypassed by The Boot. If the enemy can only lose 1 to 4 more HP this turn, hitting it with an Attack will cause it to take 5 damage instead of the limited amount.",
+       "Any further Attacks this turn will still deal 0 damage and will not be affected."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.SkulkingColonyElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Skulking_Colony",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/skulking_colony",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "SOUL_FYSH_BOSS",
+   "name": "Soul Fysh",
+   "room_type": "Boss",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [
+    "UNDERDOCKS"
+   ],
+   "monsters": [
+    {
+     "id": "SOUL_FYSH",
+     "name": "Soul Fysh",
+     "hp": {
+      "min": 211,
+      "max": 211,
+      "asc_min": 221,
+      "asc_max": 221,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "BECKON_MOVE",
+       "title": "Beckon",
+       "summary": "",
+       "intents": [
+        "Status"
+       ]
+      },
+      {
+       "id": "DE_GAS_MOVE",
+       "title": "De-Gas",
+       "summary": "attack 16 (A9: 17)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "GAZE_MOVE",
+       "title": "Gaze",
+       "summary": "attack 7 (A9: 8)",
+       "intents": [
+        "SingleAttack",
+        "Status"
+       ]
+      },
+      {
+       "id": "FADE_MOVE",
+       "title": "Fade",
+       "summary": "apply Intangible 2 to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "SCREAM_MOVE",
+       "title": "Scream",
+       "summary": "attack 13 (A9: 15); apply Vulnerable 3 to player",
+       "intents": [
+        "SingleAttack",
+        "Debuff"
+       ]
+      }
+     ],
+     "pattern": "starts with Beckon; Beckon -> De-Gas; De-Gas -> Gaze; Gaze -> Fade; Fade -> Scream; Scream -> Beckon",
+     "wiki_notes": {
+      "pattern": [
+       "The Soul Fysh repeats the same five moves in order:",
+       "Beckon",
+       "De-Gas",
+       "Gaze",
+       "Fade",
+       "Scream"
+      ],
+      "notes": [
+       "The first iteration of Fade's Intangible fades instantly during the transition from Soul Fysh's turn to the player's. It effectively gains just 1 Intangible."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.SoulFyshBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Soul_Fysh",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/soul_fysh",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "SOUL_NEXUS_ELITE",
+   "name": "Soul Nexus",
+   "room_type": "Elite",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "SOUL_NEXUS",
+     "name": "Soul Nexus",
+     "hp": {
+      "min": 234,
+      "max": 234,
+      "asc_min": 254,
+      "asc_max": 254,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "SOUL_BURN_MOVE",
+       "title": "Soul Burn",
+       "summary": "attack 29 (A9: 31)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "MAELSTROM_MOVE",
+       "title": "Maelstrom",
+       "summary": "attack 6 (A9: 7) x4",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "DRAIN_LIFE_MOVE",
+       "title": "Drain Life",
+       "summary": "attack 18 (A9: 19); apply Vulnerable 2 to player; apply Weak 2 to player",
+       "intents": [
+        "SingleAttack",
+        "Debuff"
+       ]
+      }
+     ],
+     "pattern": "starts with Soul Burn; random branch RAND: ",
+     "wiki_notes": {
+      "pattern": [
+       "Opens with Soul Burn, then randomly uses Soul Burn, Maelstrom, or Drain Life each turn. No move can be used two turns in a row. All three moves are equally weighted."
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.SoulNexusElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Soul_Nexus",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/soul_nexus",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "TERROR_EEL_ELITE",
+   "name": "Terror Eel",
+   "room_type": "Elite",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [],
+   "monsters": [
+    {
+     "id": "TERROR_EEL",
+     "name": "Terror Eel",
+     "hp": {
+      "min": 140,
+      "max": 140,
+      "asc_min": 150,
+      "asc_max": 150,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Shriek",
+       "target": "self",
+       "amount": {
+        "base": 70,
+        "asc": 75,
+        "asc_level": 8
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "CRASH_MOVE",
+       "title": "Crash",
+       "summary": "attack 16 (A9: 18)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "THRASH_MOVE",
+       "title": "Thrash",
+       "summary": "attack 3 (A9: 4) x3; apply Vigor 6 to self",
+       "intents": [
+        "MultiAttack",
+        "Buff"
+       ]
+      },
+      {
+       "id": "STUN_MOVE",
+       "title": "Stun",
+       "summary": "",
+       "intents": [
+        "Stun"
+       ]
+      },
+      {
+       "id": "TERROR_MOVE",
+       "title": "Terrorize",
+       "summary": "apply Vulnerable 99 to player",
+       "intents": [
+        "Debuff"
+       ]
+      }
+     ],
+     "pattern": "starts with Crash; Crash -> Thrash; Thrash -> Crash; Stun -> Terrorize; Terrorize -> Crash",
+     "wiki_notes": {
+      "pattern": [
+       "The Terror Eel alternates between Crash and Thrash, starting with Crash. Because Thrash gives the Terror Eel 6 Vigor, Crash always deals 22([A9: 24]) damage from turn 3 onwards.",
+       "When its HP drops to its Shriek threshold (70, or [A8: 75]), it becomes Stunned and then uses Terror before resuming the Crash/Thrash cycle.",
+       "Terror applies 99 Vulnerable, which effectively makes the player take 50% more damage from attacks for the rest of the fight."
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.TerrorEelElite + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Terror_Eel",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Elites"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/terror_eel",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "TEST_SUBJECT_BOSS",
+   "name": "Test Subject",
+   "room_type": "Boss",
+   "acts": [
+    "GLORY"
+   ],
+   "boss_slot_order": [
+    "GLORY"
+   ],
+   "monsters": [
+    {
+     "id": "TEST_SUBJECT",
+     "name": "Test Subject #C{Count}",
+     "hp": {
+      "min": 100,
+      "max": 100,
+      "asc_min": 111,
+      "asc_max": 111,
+      "asc_level": 8,
+      "forms": {
+       "FirstForm": {
+        "base": 100,
+        "asc": 111,
+        "asc_level": 8
+       },
+       "SecondForm": {
+        "base": 200,
+        "asc": 212,
+        "asc_level": 8
+       },
+       "ThirdForm": {
+        "base": 300,
+        "asc": 313,
+        "asc_level": 8
+       }
+      }
+     },
+     "starting_powers": [
+      {
+       "power": "Adaptable",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      },
+      {
+       "power": "Enrage",
+       "target": "self",
+       "amount": {
+        "base": 2,
+        "asc": 3,
+        "asc_level": 9
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "RESPAWN_MOVE",
+       "title": "Respawn",
+       "summary": "apply PainfulStabs 1 to self; apply Nemesis 1 to self",
+       "intents": [
+        "Heal",
+        "Buff"
+       ]
+      },
+      {
+       "id": "BITE_MOVE",
+       "title": "Bite",
+       "summary": "attack 20 (A9: 22)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "SKULL_BASH_MOVE",
+       "title": "Skull Bash",
+       "summary": "attack 14 (A9: 16); apply Vulnerable 1 to player",
+       "intents": [
+        "SingleAttack",
+        "Debuff"
+       ]
+      },
+      {
+       "id": "MULTI_CLAW_MOVE",
+       "title": "Multi-Claw",
+       "summary": "attack 10 (A9: 11) xX",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "PHASE3_LACERATE_MOVE",
+       "title": "Lacerate",
+       "summary": "attack 10 (A9: 11) x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "BIG_POUNCE",
+       "title": "Big Pounce",
+       "summary": "attack 45",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "BURNING_GROWL_MOVE",
+       "title": "Burning Growl",
+       "summary": "apply Strength 2 (A9: 3) to self; add X BURN to Discard",
+       "intents": [
+        "Status",
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Bite; Respawn -> <conditional branch REVIVE_BRANCH>; Bite -> Skull Bash; Skull Bash -> Bite; Multi-Claw -> Multi-Claw; Lacerate -> Big Pounce; Big Pounce -> Burning Growl; Burning Growl -> Lacerate; conditional branch REVIVE_BRANCH: Multi-Claw if Respawns < 2 | Lacerate if Respawns >= 2",
+     "wiki_notes": {
+      "pattern": [],
+      "notes": [
+       "Each of Test Subject's phases will lose all status effects when transitioning to the next phase, including the Strength gained from Enrage in the first phase.",
+       "Cards with on-kill or Fatal triggers (Feed, The Hunt, Knockout Blow, Sunder, and Hand of Greed) will trigger successfully during any of the Test Subject's phases.",
+       "Because the Test Subject is a Boss in Act 3, after which there are no opportunities to spend Gold or earn card rewards, Feed, Knockout Blow, and Sunder are the only cards with an on-kill or Fatal trigger that matters.",
+       "After Test Subject loses all its HP in a phase, it cannot be targeted by any cards until it revives into the next phase.",
+       "Cards with no targets can still be played, including Attack cards that hit all enemies or random enemies (such as Sword Boomerang or Sweeping Beam), but they will deal no damage. All other possible effects will still occur (for instance, Sweeping Beam will still draw a card)."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.TestSubjectBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Test_Subject#Phase_1",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/test_subject",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "THE_INSATIABLE_BOSS",
+   "name": "The Insatiable",
+   "room_type": "Boss",
+   "acts": [
+    "HIVE"
+   ],
+   "boss_slot_order": [
+    "HIVE"
+   ],
+   "monsters": [
+    {
+     "id": "THE_INSATIABLE",
+     "name": "The Insatiable",
+     "hp": {
+      "min": 321,
+      "max": 321,
+      "asc_min": 341,
+      "asc_max": 341,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "LIQUIFY_GROUND_MOVE",
+       "title": "Liquify Ground",
+       "summary": "",
+       "intents": [
+        "Buff",
+        "Status"
+       ]
+      },
+      {
+       "id": "THRASH_MOVE",
+       "title": "Thrash",
+       "summary": "attack 8 (A9: 9) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "THRASH_MOVE_2",
+       "title": "Thrash Move",
+       "summary": "attack 8 (A9: 9) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "LUNGING_BITE_MOVE",
+       "title": "Lunging Bite",
+       "summary": "attack 28 (A9: 31)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "SALIVATE_MOVE",
+       "title": "Salivate",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Liquify Ground; Liquify Ground -> Thrash; Thrash -> Lunging Bite; Thrash Move -> Thrash; Lunging Bite -> Salivate; Salivate -> Thrash Move",
+     "wiki_notes": {
+      "pattern": [
+       "The Insatiable always opens with Liquify Ground, then repeats the following cycle:",
+       "Thrash",
+       "Lunging Bite",
+       "Salivate",
+       "Thrash",
+       "Back to the first 2"
+      ],
+      "notes": [
+       "Sandpit acts like a Debuff on each player, it was likely placed on The Insatiable to improve visibility of the debuff",
+       "Fairy in a Bottle and Lizard Tail will not prevent the death stemming from Sandpit"
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.TheInsatiableBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Insatiable",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/the_insatiable",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "THE_KIN_BOSS",
+   "name": "The Kin",
+   "room_type": "Boss",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [
+    "OVERGROWTH"
+   ],
+   "monsters": [
+    {
+     "id": "KIN_FOLLOWER",
+     "name": "Kin Follower",
+     "hp": {
+      "min": 58,
+      "max": 59,
+      "asc_min": 62,
+      "asc_max": 63,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Minion",
+       "target": "self",
+       "amount": {
+        "base": 1
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "QUICK_SLASH_MOVE",
+       "title": "Quick Slash",
+       "summary": "attack 5",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "BOOMERANG_MOVE",
+       "title": "Boomerang",
+       "summary": "attack 2 x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "POWER_DANCE_MOVE",
+       "title": "Power Dance",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "Quick Slash -> Boomerang; Boomerang -> Power Dance; Power Dance -> Quick Slash",
+     "wiki_notes": {
+      "pattern": [
+       "Each Kin Follower cycles through three moves in a fixed order:",
+       "Quick Slash",
+       "Boomerang",
+       "Power Dance",
+       "The two Kin Followers start offset from each other: one begins with Quick Slash and the other begins with Power Dance."
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    },
+    {
+     "id": "KIN_PRIEST",
+     "name": "Kin Priest",
+     "hp": {
+      "min": 190,
+      "max": 190,
+      "asc_min": 199,
+      "asc_max": 199,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "ORB_OF_FRAILTY_MOVE",
+       "title": "Orb of Frailty",
+       "summary": "attack 8 (A9: 9); apply Frail 1 to player",
+       "intents": [
+        "SingleAttack",
+        "Debuff"
+       ]
+      },
+      {
+       "id": "ORB_OF_WEAKNESS_MOVE",
+       "title": "Orb of Weakness",
+       "summary": "attack 8 (A9: 9); apply Weak 1 to player",
+       "intents": [
+        "SingleAttack",
+        "Debuff"
+       ]
+      },
+      {
+       "id": "BEAM_MOVE",
+       "title": "Soul Beam",
+       "summary": "attack 3 x3",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "RITUAL_MOVE",
+       "title": "Dark Ritual",
+       "summary": "apply Strength 2 (A9: 3) to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Orb of Frailty; Orb of Frailty -> Orb of Weakness; Orb of Weakness -> Soul Beam; Soul Beam -> Dark Ritual; Dark Ritual -> Orb of Frailty",
+     "wiki_notes": {
+      "pattern": [
+       "The Kin Priest cycles through four moves in a fixed order:",
+       "Orb of Frailty",
+       "Orb of Weakness",
+       "Soul Beam",
+       "Dark Ritual"
+      ],
+      "notes": []
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.TheKinBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Kin#Kin_Follower",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/kin_follower",
+     "fetched": "2026-10-23"
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:The_Kin#Kin_Priest",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/kin_priest",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "VANTOM_BOSS",
+   "name": "Vantom",
+   "room_type": "Boss",
+   "acts": [
+    "OVERGROWTH"
+   ],
+   "boss_slot_order": [
+    "OVERGROWTH"
+   ],
+   "monsters": [
+    {
+     "id": "VANTOM",
+     "name": "Vantom",
+     "hp": {
+      "min": 173,
+      "max": 173,
+      "asc_min": 183,
+      "asc_max": 183,
+      "asc_level": 8
+     },
+     "starting_powers": [
+      {
+       "power": "Slippery",
+       "target": "self",
+       "amount": {
+        "base": 8,
+        "asc": 9,
+        "asc_level": 8
+       }
+      }
+     ],
+     "moves": [
+      {
+       "id": "INK_BLOT_MOVE",
+       "title": "Ink Blot",
+       "summary": "attack 7 (A9: 8)",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "INKY_LANCE_MOVE",
+       "title": "Inky Lance",
+       "summary": "attack 6 (A9: 7) x2",
+       "intents": [
+        "MultiAttack"
+       ]
+      },
+      {
+       "id": "DISMEMBER_MOVE",
+       "title": "Dismember",
+       "summary": "attack 26 (A9: 30); add X WOUND to Discard",
+       "intents": [
+        "SingleAttack",
+        "Status"
+       ]
+      },
+      {
+       "id": "PREPARE_MOVE",
+       "title": "Prepare",
+       "summary": "apply Strength 2 to self",
+       "intents": [
+        "Buff"
+       ]
+      }
+     ],
+     "pattern": "starts with Ink Blot; Ink Blot -> Inky Lance; Inky Lance -> Dismember; Dismember -> Prepare; Prepare -> Ink Blot",
+     "wiki_notes": {
+      "pattern": [
+       "The Vantom cycles through its four moves in a fixed order, repeating forever:",
+       "Ink Blot",
+       "Inky Lance",
+       "Dismember",
+       "Prepare"
+      ],
+      "notes": []
+     },
+     "conflicts": [
+      {
+       "field": "move.DISMEMBER_MOVE.damage",
+       "game": 26,
+       "wiki": 27,
+       "authoritative": "game",
+       "note": "Deals 27 ([A9: 30]) damage. Shuffles 3 Wound into your discard pile."
+      }
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.VantomBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Vantom",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/vantom",
+     "fetched": "2026-10-23"
+    }
+   ]
+  },
+  {
+   "id": "WATERFALL_GIANT_BOSS",
+   "name": "Waterfall Giant",
+   "room_type": "Boss",
+   "acts": [
+    "UNDERDOCKS"
+   ],
+   "boss_slot_order": [
+    "UNDERDOCKS"
+   ],
+   "monsters": [
+    {
+     "id": "WATERFALL_GIANT",
+     "name": "Waterfall Giant",
+     "hp": {
+      "min": 240,
+      "max": 240,
+      "asc_min": 250,
+      "asc_max": 250,
+      "asc_level": 8
+     },
+     "starting_powers": [],
+     "moves": [
+      {
+       "id": "PRESSURIZE_MOVE",
+       "title": "Pressurize",
+       "summary": "apply SteamEruption 15 (A9: 20) to self",
+       "intents": [
+        "Buff"
+       ]
+      },
+      {
+       "id": "STOMP_MOVE",
+       "title": "Stomp",
+       "summary": "attack 15 (A9: 16); apply Weak 1 to player; apply SteamEruption 3 to self",
+       "intents": [
+        "SingleAttack",
+        "Debuff",
+        "Buff"
+       ]
+      },
+      {
+       "id": "RAM_MOVE",
+       "title": "Ram",
+       "summary": "attack 10 (A9: 11); apply SteamEruption 3 to self",
+       "intents": [
+        "SingleAttack",
+        "Buff"
+       ]
+      },
+      {
+       "id": "SIPHON_MOVE",
+       "title": "Siphon",
+       "summary": "apply SteamEruption 3 to self; heal X (self)",
+       "intents": [
+        "Heal",
+        "Buff"
+       ]
+      },
+      {
+       "id": "PRESSURE_GUN_MOVE",
+       "title": "Pressure Gun",
+       "summary": "attack X; apply SteamEruption 3 to self",
+       "intents": [
+        "SingleAttack"
+       ]
+      },
+      {
+       "id": "PRESSURE_UP_MOVE",
+       "title": "Pressure Up",
+       "summary": "attack 13 (A9: 14); apply SteamEruption 3 to self",
+       "intents": [
+        "SingleAttack",
+        "Buff"
+       ]
+      },
+      {
+       "id": "ABOUT_TO_BLOW_MOVE",
+       "title": "About to Blow",
+       "summary": "",
+       "intents": [
+        "Stun"
+       ]
+      },
+      {
+       "id": "EXPLODE_MOVE",
+       "title": "Explode",
+       "summary": "attack X",
+       "intents": [
+        "DeathBlow"
+       ]
+      }
+     ],
+     "pattern": "starts with Pressurize; Pressurize -> Stomp; Stomp -> Ram; Ram -> Siphon; Siphon -> Pressure Gun; Pressure Gun -> Pressure Up; Pressure Up -> Stomp; About to Blow -> Explode; Explode -> Explode",
+     "wiki_notes": {
+      "pattern": [
+       "The Waterfall Giant uses Pressurize on its first turn, then follows a repeating cycle:",
+       "Stomp",
+       "Siphon",
+       "Pressure Gun",
+       "Pressure Up",
+       "Back to Stomp",
+       "Almost every move also adds 3 Steam Eruption. When the Waterfall Giant is killed while it has Steam Eruption, it becomes invulnerable and uses About To Blow, cleansing all its buffs and debuffs. Next turn it will use Explode, dealing damage equal to its accumulated Steam Eruption before dying.",
+       "If the Waterfall Giant is killed when it has no Steam Eruption (e.g. via Doom), it dies normally without triggering the explosion sequence."
+      ],
+      "notes": [
+       "Even though the HP bar in the last phase shows as \"infinity\", it is actually set to the finite number of 999,999,999 HP. As such, it is theoretically possible to kill the Waterfall Giant in its last phase.",
+       "If a card both deals damage and applies a debuff like Neutralize, the damage can kill the Waterfall Giant and activate About To Blow, then the debuff will be applied."
+      ]
+     },
+     "conflicts": null
+    }
+   ],
+   "sources": [
+    {
+     "name": "game",
+     "ref": "sts2.dll v0.107.1 Encounters.WaterfallGiantBoss + SlayTheSpire2.pck eng localization",
+     "authoritative": true
+    },
+    {
+     "name": "slaythespire.wiki.gg",
+     "url": "https://slaythespire.wiki.gg/wiki/Slay_the_Spire_2:Waterfall_Giant",
+     "fetched": "2026-10-23",
+     "module": "Module:Enemies/StS2 data/Bosses"
+    },
+    {
+     "name": "spire-codex",
+     "url": "https://spire-codex.com/monsters/waterfall_giant",
+     "fetched": "2026-10-23"
+    }
+   ]
+  }
+ ]
+}

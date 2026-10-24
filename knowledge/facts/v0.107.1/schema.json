@@ -1,0 +1,695 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "knowledge/facts/v0.107.1/schema.json",
+ "title": "Slay the Spire 2 structured fact DB",
+ "description": "Each category file is {meta, entries[...] (+extras)}. Game data is authoritative; wiki/codex values are kept under 'wiki'/'codex' only where useful and every disagreement is listed in 'conflicts' (per-entry) and conflicts.json (global).",
+ "$defs": {
+  "source": {
+   "type": "object",
+   "required": [
+    "name"
+   ],
+   "properties": {
+    "name": {
+     "enum": [
+      "game",
+      "slaythespire.wiki.gg",
+      "spire-codex"
+     ]
+    },
+    "ref": {
+     "type": "string",
+     "description": "game: class / localization reference (no raw files committed)"
+    },
+    "url": {
+     "type": "string",
+     "format": "uri"
+    },
+    "fetched": {
+     "type": "string",
+     "format": "date"
+    },
+    "module": {
+     "type": "string",
+     "description": "wiki Lua data module the values came from"
+    },
+    "authoritative": {
+     "type": "boolean"
+    }
+   }
+  },
+  "conflict": {
+   "type": "object",
+   "required": [
+    "field",
+    "game",
+    "authoritative"
+   ],
+   "properties": {
+    "category": {
+     "type": "string"
+    },
+    "id": {
+     "type": "string"
+    },
+    "field": {
+     "type": "string"
+    },
+    "game": {},
+    "wiki": {},
+    "codex": {},
+    "source": {
+     "enum": [
+      "wiki",
+      "codex"
+     ]
+    },
+    "authoritative": {
+     "const": "game"
+    },
+    "note": {
+     "type": "string"
+    }
+   },
+   "description": "Per-entry conflicts omit category/id/source (implied by the entry and by which of wiki/codex key is present); conflicts.json items carry all."
+  },
+  "asc_value": {
+   "type": "object",
+   "description": "value that changes at an ascension threshold",
+   "properties": {
+    "base": {},
+    "asc": {},
+    "asc_level": {
+     "type": "integer"
+    },
+    "expr": {
+     "type": "string",
+     "description": "unresolved runtime expression"
+    }
+   }
+  },
+  "meta": {
+   "type": "object",
+   "required": [
+    "schema",
+    "game_version",
+    "category",
+    "authority",
+    "sources"
+   ],
+   "properties": {
+    "schema": {
+     "const": "schema.json"
+    },
+    "schema_version": {
+     "type": "integer"
+    },
+    "category": {
+     "type": "string"
+    },
+    "game_version": {
+     "type": "string"
+    },
+    "generated": {
+     "type": "string"
+    },
+    "authority": {
+     "type": "string"
+    },
+    "sources": {
+     "type": "object"
+    },
+    "wiki_only": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "card": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "cost",
+    "type",
+    "rarity",
+    "sources"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "null = no localized name (internal/test entry)"
+    },
+    "character": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "pools": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "cost": {
+     "type": [
+      "integer",
+      "string",
+      "null"
+     ],
+     "description": "integer energy, 'X', or 'unplayable'"
+    },
+    "upgraded_cost": {
+     "type": [
+      "integer",
+      "string",
+      "null"
+     ]
+    },
+    "type": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "rarity": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "target": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "keywords": {
+     "type": "array"
+    },
+    "upgraded_keywords": {
+     "type": "array"
+    },
+    "description": {
+     "type": "string",
+     "description": "normalized; [E]=energy icon, [Star]=star icon, X=runtime value"
+    },
+    "upgraded_description": {
+     "type": "string"
+    },
+    "vars": {
+     "type": "object"
+    },
+    "upgrade_deltas": {
+     "type": "object"
+    },
+    "upgradable": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "internal_or_undiscovered": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "dynamic_vars": {
+     "type": "array",
+     "description": "vars computed at runtime (description shows X)"
+    },
+    "wiki": {
+     "type": "object"
+    },
+    "wiki_variants": {
+     "type": "array"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/source"
+     }
+    },
+    "conflicts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/conflict"
+     }
+    }
+   }
+  },
+  "relic_or_potion": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "rarity",
+    "description",
+    "sources"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "null = no localized name (internal/test entry)"
+    },
+    "pools": {
+     "type": "array"
+    },
+    "rarity": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "description": {
+     "type": "string"
+    },
+    "vars": {
+     "type": "object"
+    },
+    "usage": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "target": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "dynamic_vars": {
+     "type": "array"
+    },
+    "wiki": {
+     "type": "object"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/source"
+     }
+    },
+    "conflicts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/conflict"
+     }
+    }
+   }
+  },
+  "effect": {
+   "type": "object",
+   "required": [
+    "op"
+   ],
+   "properties": {
+    "op": {
+     "enum": [
+      "attack",
+      "apply_power",
+      "block",
+      "heal",
+      "add_cards",
+      "summon",
+      "afflict",
+      "escape"
+     ]
+    },
+    "damage": {
+     "$ref": "#/$defs/asc_value"
+    },
+    "hits": {
+     "$ref": "#/$defs/asc_value"
+    },
+    "power": {
+     "type": "string"
+    },
+    "amount": {
+     "$ref": "#/$defs/asc_value"
+    },
+    "target": {
+     "type": "string"
+    },
+    "card": {
+     "type": "string"
+    },
+    "pile": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "count": {
+     "$ref": "#/$defs/asc_value"
+    },
+    "monster": {
+     "type": "string"
+    },
+    "affliction": {
+     "type": "string"
+    }
+   }
+  },
+  "move": {
+   "type": "object",
+   "required": [
+    "id",
+    "intents",
+    "effects"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "title_derived_from_id": {
+     "type": "boolean"
+    },
+    "intents": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "effects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/effect"
+     }
+    },
+    "summary": {
+     "type": "string"
+    },
+    "next": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "follow-up move or branch ids"
+    }
+   }
+  },
+  "enemy": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "hp",
+    "moves",
+    "sources"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "hp": {
+     "type": "object",
+     "properties": {
+      "min": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "max": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "asc_min": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "asc_max": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "asc_level": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "forms": {
+       "type": "object",
+       "description": "multi-phase HP (e.g. Test Subject)"
+      }
+     }
+    },
+    "tiers": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "Monster",
+       "Elite",
+       "Boss"
+      ]
+     }
+    },
+    "acts": {
+     "type": "array"
+    },
+    "encounters": {
+     "type": "array"
+    },
+    "starting_powers": {
+     "type": "array"
+    },
+    "initial_move": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "moves": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/move"
+     }
+    },
+    "branches": {
+     "type": "array",
+     "description": "conditional/random move selection nodes"
+    },
+    "pattern": {
+     "type": "string",
+     "description": "human-readable move graph"
+    },
+    "wiki": {
+     "type": "object"
+    },
+    "wiki_notes": {
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/source"
+     }
+    },
+    "conflicts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/conflict"
+     }
+    }
+   }
+  },
+  "encounter": {
+   "type": "object",
+   "required": [
+    "id",
+    "room_type",
+    "monsters"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "room_type": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "is_weak": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "monsters": {
+     "type": "array"
+    },
+    "acts": {
+     "type": "array"
+    }
+   }
+  },
+  "event": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "options",
+    "sources"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "is_ancient": {
+     "type": "boolean"
+    },
+    "epithet": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "acts": {
+     "type": "array"
+    },
+    "allowed_condition": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "normalized pseudo-expression of when the event can appear"
+    },
+    "vars": {
+     "type": "object"
+    },
+    "options": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "title": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "description": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     }
+    },
+    "pages": {
+     "type": "array"
+    },
+    "relics_referenced": {
+     "type": "array"
+    },
+    "cards_referenced": {
+     "type": "array"
+    },
+    "wiki": {
+     "type": "object"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/source"
+     }
+    },
+    "conflicts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/conflict"
+     }
+    }
+   }
+  }
+ },
+ "type": "object",
+ "required": [
+  "meta"
+ ],
+ "properties": {
+  "meta": {
+   "$ref": "#/$defs/meta"
+  },
+  "entries": {
+   "type": "array"
+  },
+  "encounters": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/encounter"
+   }
+  },
+  "acts": {
+   "type": "object",
+   "description": "act id -> {name, encounters, events, ...}"
+  }
+ },
+ "x-files": {
+  "cards.json": "entries: card[]",
+  "relics.json": "entries: relic_or_potion[]",
+  "potions.json": "entries: relic_or_potion[]",
+  "enemies.json": "entries: enemy[]; encounters: encounter[]; acts: act[] (id, name, encounters by tier, events)",
+  "bosses.json": "entries: boss/elite encounter with embedded monsters (hp, moves, pattern, wiki_notes)",
+  "events.json": "entries: event[] (includes Ancients with is_ancient=true)",
+  "keywords.json": "card_keywords, powers (type, stack_type, description), afflictions, enchantments, status_cards, curse_cards, ascension (wiki descriptions), ascension_game_enum",
+  "conflicts.json": "counts, total, items: conflict[]",
+  "stats.json": "coverage counts"
+ }
+}

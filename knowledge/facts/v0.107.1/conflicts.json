@@ -1,0 +1,2144 @@
+{
+ "meta": {
+  "schema": "schema.json",
+  "schema_version": 1,
+  "category": "conflicts",
+  "game_version": "0.107.1",
+  "generated": "2026-10-23",
+  "authority": "game (sts2.dll + pck localization) > wiki.gg > spire-codex",
+  "sources": {
+   "game": "Slay the Spire 2 v0.107.1 (read-only extraction)",
+   "wiki": {
+    "url": "https://slaythespire.wiki.gg/",
+    "fetched": "2026-10-23"
+   },
+   "codex": {
+    "url": "https://spire-codex.com",
+    "fetched": "2026-10-23",
+    "note": "tracks latest stable build; may differ from pinned version",
+    "api_meta": {
+     "version": "v0.1.0",
+     "url": "https://spire-codex.com",
+     "sts2_tested": "v0.103.3"
+    }
+   }
+  }
+ },
+ "counts": {
+  "cards/codex": 1,
+  "cards/wiki": 111,
+  "enemies/wiki": 11,
+  "events/wiki": 1,
+  "potions/wiki": 4,
+  "relics/wiki": 30
+ },
+ "total": 158,
+ "items": [
+  {
+   "category": "cards",
+   "id": "ACCELERANT",
+   "field": "rarity",
+   "game": "Rare",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ANTICIPATE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 3 Dexterity this turn. | wiki: Gain 4 Dexterity this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BEACON_OF_HOPE",
+   "field": "cost",
+   "game": 1,
+   "wiki": "2",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BIASED_COGNITION",
+   "field": "description.numbers",
+   "game": [
+    1,
+    4
+   ],
+   "wiki": [
+    1,
+    5
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 4 Focus. At the start of your turn, lose 1 Focus. | wiki: Gain 5 Focus. At the start of your turn, lose 1 Focus.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BIASED_COGNITION",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    5
+   ],
+   "wiki": [
+    1,
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 5 Focus. At the start of your turn, lose 1 Focus. | wiki: Gain 6 Focus. At the start of your turn, lose 1 Focus.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BLOODLETTING",
+   "field": "rarity",
+   "game": "Common",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BRIGHTEST_FLAME",
+   "field": "description.numbers",
+   "game": [
+    1,
+    2
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 2[E]. Draw 2 cards. Lose 1 Max HP. | wiki: Gain 2[E]. Draw 2 cards. Lose 2 Max HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "BRIGHTEST_FLAME",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    3
+   ],
+   "wiki": [
+    2,
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 3[E]. Draw 3 cards. Lose 1 Max HP. | wiki: Gain 2[E]1[E]. Draw 3 cards. Lose 2 Max HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "COLLISION_COURSE",
+   "field": "description.numbers",
+   "game": [
+    11
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 11 damage. Add a Debris into your Hand. | wiki: Deal 10 damage. Add a Debris into your Hand.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "COLLISION_COURSE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    15
+   ],
+   "wiki": [
+    14
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 15 damage. Add a Debris into your Hand. | wiki: Deal 14 damage. Add a Debris into your Hand.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "COLOSSUS",
+   "field": "description.numbers",
+   "game": [
+    5,
+    50
+   ],
+   "wiki": [
+    4,
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 5 Block. You receive 50% less damage from Vulnerable enemies this turn. | wiki: Gain 4 Block. You receive 50% less damage from Vulnerable enemies this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "COLOSSUS",
+   "field": "upgraded_description.numbers",
+   "game": [
+    8,
+    50
+   ],
+   "wiki": [
+    7,
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 8 Block. You receive 50% less damage from Vulnerable enemies this turn. | wiki: Gain 7 Block. You receive 50% less damage from Vulnerable enemies this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "CRIMSON_MANTLE",
+   "field": "description.numbers",
+   "game": [
+    1,
+    8
+   ],
+   "wiki": [
+    1,
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of your turn, lose 1 HP and gain 8 Block. | wiki: At the start of your turn, lose 1 HP and gain 7 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "CRUELTY",
+   "field": "rarity",
+   "game": "Rare",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "CRUSH_UNDER",
+   "field": "description.numbers",
+   "game": [
+    1,
+    7
+   ],
+   "wiki": [
+    1,
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 7 damage to ALL enemies. All enemies lose 1 Strength this turn. | wiki: Deal 8 damage to ALL enemies. All enemies lose 1 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "CRUSH_UNDER",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2,
+    8
+   ],
+   "wiki": [
+    2,
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 8 damage to ALL enemies. All enemies lose 2 Strength this turn. | wiki: Deal 9 damage to ALL enemies. All enemies lose 2 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DEMON_FORM",
+   "field": "description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of your turn, gain 2 Strength. | wiki: At the start of your turn, gain 3 Strength.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DEMON_FORM",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of your turn, gain 3 Strength. | wiki: At the start of your turn, gain 4 Strength.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DEVASTATE",
+   "field": "description.numbers",
+   "game": [
+    30
+   ],
+   "wiki": [
+    35
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 30 damage. | wiki: Deal 35 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DEVASTATE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    40
+   ],
+   "wiki": [
+    45
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 40 damage. | wiki: Deal 45 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DISINTEGRATION",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    6,
+    7,
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: At the end of your turn, take 6 damage. | wiki: At the end of your turn, take 6/7/8 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DISINTEGRATION",
+   "field": "upgraded_description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    6,
+    7,
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: At the end of your turn, take 6 damage. | wiki: At the end of your turn, take 6/7/8 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "DOMINATE",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ECHOING_SLASH",
+   "field": "rarity",
+   "game": "Rare",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EIDOLON",
+   "field": "description.numbers",
+   "game": [
+    1,
+    9
+   ],
+   "wiki": [],
+   "authoritative": "game",
+   "note": "game: Exhaust your Hand. If 9 cards were Exhausted this way, gain 1 Intangible. | wiki: Play ALL Ethereal cards in your Exhaust Pile. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EIDOLON",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    9
+   ],
+   "wiki": [],
+   "authoritative": "game",
+   "note": "game: Exhaust your Hand. If 9 cards were Exhausted this way, gain 1 Intangible. | wiki: Play ALL Ethereal cards in your Exhaust Pile. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EXPECT_A_FIGHT",
+   "field": "cost",
+   "game": 2,
+   "wiki": "3",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EXPECT_A_FIGHT",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    5,
+    15
+   ],
+   "authoritative": "game",
+   "note": "game: Gain [E] for each Attack in your Hand. You cannot gain additional [E] this turn. | wiki: Gain 15 Block. Gains 5 additional Block for each Strength you have.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EXPECT_A_FIGHT",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    8,
+    16
+   ],
+   "authoritative": "game",
+   "note": "game: Gain [E] for each Attack in your Hand. You cannot gain additional [E] this turn. | wiki: Gain 16 Block. Gains 8 additional Block for each Strength you have.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EXPERTISE",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Draw cards until you have 6 in your Hand. | wiki: Draw 2 cards. They gain Retain this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "EXPERTISE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    7
+   ],
+   "wiki": [
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Draw cards until you have 7 in your Hand. | wiki: Draw 3 cards. They gain Retain this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "FLANKING",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "FLICK_FLACK",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 6 damage to ALL enemies. | wiki: Sly. Deal 7 damage to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "FLICK_FLACK",
+   "field": "upgraded_description.numbers",
+   "game": [
+    8
+   ],
+   "wiki": [
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 8 damage to ALL enemies. | wiki: Sly. Deal 9 damage to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "FUEL",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    2
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 1[E]. Draw 2 cards. | wiki: Gain 1[E]1[E]. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "GIANT_ROCK",
+   "field": "description.numbers",
+   "game": [
+    16
+   ],
+   "wiki": [
+    20
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 16 damage. | wiki: Deal 20 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "GIANT_ROCK",
+   "field": "upgraded_description.numbers",
+   "game": [
+    20
+   ],
+   "wiki": [
+    24
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 20 damage. | wiki: Deal 24 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HAUNT",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you play a Soul, a random enemy loses 6 HP. | wiki: Whenever you play a Soul, a random enemy loses 7 HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HAUNT",
+   "field": "upgraded_description.numbers",
+   "game": [
+    8
+   ],
+   "wiki": [
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you play a Soul, a random enemy loses 8 HP. | wiki: Whenever you play a Soul, a random enemy loses 9 HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HAZE",
+   "field": "cost",
+   "game": 3,
+   "wiki": "2",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HAZE",
+   "field": "description.numbers",
+   "game": [
+    4
+   ],
+   "wiki": [
+    1,
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Apply 4 Poison to ALL enemies. | wiki: Apply 4 Poison and 1 Weak to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HAZE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    2,
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: Apply 6 Poison to ALL enemies. | wiki: Apply 6 Poison and 2 Weak to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HOWL_FROM_BEYOND",
+   "field": "description.numbers",
+   "game": [
+    16
+   ],
+   "wiki": [
+    18
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 16 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it. | wiki: Deal 18 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HOWL_FROM_BEYOND",
+   "field": "upgraded_description.numbers",
+   "game": [
+    21
+   ],
+   "wiki": [
+    24
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 21 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it. | wiki: Deal 24 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HYPERBEAM",
+   "field": "description.numbers",
+   "game": [
+    3,
+    28
+   ],
+   "wiki": [
+    3,
+    24
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 28 damage to ALL enemies. Lose 3 Focus. | wiki: Deal 24 damage to ALL enemies. Lose 3 Focus this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "HYPERBEAM",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    36
+   ],
+   "wiki": [
+    3,
+    30
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 36 damage to ALL enemies. Lose 3 Focus. | wiki: Deal 30 damage to ALL enemies. Lose 3 Focus this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "IGNITION",
+   "field": "rarity",
+   "game": "Rare",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MAD_SCIENCE",
+   "field": "type",
+   "game": "None",
+   "wiki": "Skill",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MANGLE",
+   "field": "description.numbers",
+   "game": [
+    10,
+    15
+   ],
+   "wiki": [
+    10,
+    20
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 15 damage. Enemy loses 10 Strength this turn. | wiki: Deal 20 damage. Enemy loses 10 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MANGLE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    15,
+    20
+   ],
+   "wiki": [
+    15,
+    26
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 20 damage. Enemy loses 15 Strength this turn. | wiki: Deal 26 damage. Enemy loses 15 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MAUL",
+   "field": "description.numbers",
+   "game": [
+    1,
+    5
+   ],
+   "wiki": [
+    2,
+    5
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 5 damage twice. Increase the damage of ALL Maul cards by 1 this combat. | wiki: Deal 5 damage twice. Increase the damage of ALL Maul cards by 2 this combat.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MAUL",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2,
+    6
+   ],
+   "wiki": [
+    3,
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 6 damage twice. Increase the damage of ALL Maul cards by 2 this combat. | wiki: Deal 6 damage twice. Increase the damage of ALL Maul cards by 3 this combat.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MINION_SACRIFICE",
+   "field": "description.numbers",
+   "game": [
+    8
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 8 Block. | wiki: Gain 7 Block. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MINION_SACRIFICE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    11
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 11 Block. | wiki: Gain 10 Block. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MOMENTUM_STRIKE",
+   "field": "description.numbers",
+   "game": [
+    0,
+    10
+   ],
+   "wiki": [
+    0,
+    11
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 10 damage. Reduce this card's cost to 0 [E]. | wiki: Deal 11 damage. Reduce this card's cost to 0 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "MOMENTUM_STRIKE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    0,
+    13
+   ],
+   "wiki": [
+    0,
+    15
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 13 damage. Reduce this card's cost to 0 [E]. | wiki: Deal 15 damage. Reduce this card's cost to 0 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "NULL",
+   "field": "description.numbers",
+   "game": [
+    1,
+    2,
+    10
+   ],
+   "wiki": [
+    1,
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 10 damage. Apply 2 Weak. Channel 1 Dark. | wiki: Deal 10 damage. Apply 1 Weak. Channel 1 Dark.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "NULL",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    3,
+    13
+   ],
+   "wiki": [
+    1,
+    2,
+    13
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 13 damage. Apply 3 Weak. Channel 1 Dark. | wiki: Deal 13 damage. Apply 2 Weak. Channel 1 Dark.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ORBIT",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    1,
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Every [E] you spend, gain 1[E]. | wiki: Every 4 1[E] you spend, gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ORBIT",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    1,
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Every [E] you spend, gain 1[E]. | wiki: Every 4 1[E] you spend, gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ORBIT",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "codex": [
+    1,
+    4
+   ],
+   "authoritative": "game",
+   "note": "codex: Every 4[E] you spend, gain 1[E].",
+   "source": "codex"
+  },
+  {
+   "category": "cards",
+   "id": "OUTBREAK",
+   "field": "cost",
+   "game": 1,
+   "wiki": "3",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "OUTBREAK",
+   "field": "type",
+   "game": "Power",
+   "wiki": "Skill",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "OUTBREAK",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "OUTBREAK",
+   "field": "description.numbers",
+   "game": [
+    3,
+    11
+   ],
+   "wiki": [
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Every 3 times you apply Poison, deal 11 damage to ALL enemies. | wiki: Apply 9 Poison to ALL enemies. Poison triggers immediately.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "OUTBREAK",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    15
+   ],
+   "wiki": [
+    12
+   ],
+   "authoritative": "game",
+   "note": "game: Every 3 times you apply Poison, deal 15 damage to ALL enemies. | wiki: Apply 12 Poison to ALL enemies. Poison triggers immediately.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "PACTS_END",
+   "field": "description.numbers",
+   "game": [
+    3,
+    17
+   ],
+   "wiki": [
+    3,
+    18
+   ],
+   "authoritative": "game",
+   "note": "game: If you have 3 or more cards in your Exhaust Pile, deal 17 damage to ALL enemies. | wiki: If you have 3 or more cards in your Exhaust Pile, deal 18 damage to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "PACTS_END",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    23
+   ],
+   "wiki": [
+    3,
+    24
+   ],
+   "authoritative": "game",
+   "note": "game: If you have 3 or more cards in your Exhaust Pile, deal 23 damage to ALL enemies. | wiki: If you have 3 or more cards in your Exhaust Pile, deal 24 damage to ALL enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "PILLAR_OF_CREATION",
+   "field": "description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you create a card, gain 3 Block. | wiki: Whenever you create a card, gain 2 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "PILLAR_OF_CREATION",
+   "field": "upgraded_description.numbers",
+   "game": [
+    4
+   ],
+   "wiki": [
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you create a card, gain 4 Block. | wiki: Whenever you create a card, gain 3 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "RAMPAGE",
+   "field": "description.numbers",
+   "game": [
+    5,
+    9
+   ],
+   "wiki": [
+    5,
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 9 damage. Increase this card's damage by 5 this combat. | wiki: Deal 10 damage. Increase this card's damage by 5 this combat.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "RAMPAGE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    9
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 9 damage. Increase this card's damage by 9 this combat. | wiki: Deal 10 damage. Increase this card's damage by 10 this combat.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REAVE",
+   "field": "description.numbers",
+   "game": [
+    9
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 9 damage. Add a Soul into your Draw Pile. | wiki: Deal 10 damage. Add a Soul into your Draw Pile.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REAVE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    11
+   ],
+   "wiki": [
+    13
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 11 damage. Add a Soul+ into your Draw Pile. | wiki: Deal 13 damage. Add a Soul+ into your Draw Pile.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REFINE_BLADE",
+   "field": "description.numbers",
+   "game": [
+    1,
+    9
+   ],
+   "wiki": [
+    1,
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: Forge 9. Next turn, gain 1[E]. | wiki: Forge 8. Next turn, gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REFINE_BLADE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    1,
+    13
+   ],
+   "wiki": [
+    1,
+    12
+   ],
+   "authoritative": "game",
+   "note": "game: Forge 13. Next turn, gain 1[E]. | wiki: Forge 12. Next turn, gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REFRACT",
+   "field": "description.numbers",
+   "game": [
+    2,
+    9
+   ],
+   "wiki": [
+    2,
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 9 damage twice. Channel 2 Glass. | wiki: Deal 10 damage twice. Channel 2 Glass.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REFRACT",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2,
+    12
+   ],
+   "wiki": [
+    2,
+    13
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 12 damage twice. Channel 2 Glass. | wiki: Deal 13 damage twice. Channel 2 Glass.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "RELAX",
+   "field": "description.numbers",
+   "game": [
+    2,
+    15
+   ],
+   "wiki": [
+    2,
+    16
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 15 Block. Next turn, draw 2 cards and gain 2[E]. | wiki: Gain 16 Block. Next turn, draw 2 cards and gain 2[E]. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "RELAX",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    17
+   ],
+   "wiki": [
+    3,
+    18
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 17 Block. Next turn, draw 3 cards and gain 3[E]. | wiki: Gain 18 Block. Next turn, draw 3 cards and gain 2[E]1[E]. Exhaust.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "REND",
+   "field": "cost",
+   "game": 2,
+   "wiki": "1",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ROCKET_PUNCH",
+   "field": "description.numbers",
+   "game": [
+    0,
+    1,
+    13
+   ],
+   "wiki": [
+    1,
+    13
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 13 damage. Draw 1 card. Whenever you create a Status, reduce this card's cost to 0 [E] until played. | wiki: Deal 13 damage. Draw 1 card. Whenever you create a Status, reduce this card's cost by 1 1[E] until played.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "ROCKET_PUNCH",
+   "field": "upgraded_description.numbers",
+   "game": [
+    0,
+    2,
+    14
+   ],
+   "wiki": [
+    1,
+    2,
+    14
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 14 damage. Draw 2 cards. Whenever you create a Status, reduce this card's cost to 0 [E] until played. | wiki: Deal 14 damage. Draw 2 cards. Whenever you create a Status, reduce this card's cost by 1 1[E] until played.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SALVO",
+   "field": "rarity",
+   "game": "Rare",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SETUP_STRIKE",
+   "field": "description.numbers",
+   "game": [
+    2,
+    7
+   ],
+   "wiki": [
+    3,
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 7 damage. Gain 2 Strength this turn. | wiki: Deal 7 damage. Gain 3 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SETUP_STRIKE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    9
+   ],
+   "wiki": [
+    4,
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 9 damage. Gain 3 Strength this turn. | wiki: Deal 9 damage. Gain 4 Strength this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SHROUD",
+   "field": "description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you apply Doom, gain 2 Block. | wiki: Whenever you apply Doom, gain 3 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SHROUD",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you apply Doom, gain 3 Block. | wiki: Whenever you apply Doom, gain 4 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SPLASH",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SPOILS_OF_BATTLE",
+   "field": "description.numbers",
+   "game": [
+    2,
+    5
+   ],
+   "wiki": [
+    2,
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: Forge 5. Draw 2 cards. | wiki: Forge 6. Draw 2 cards.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SPOILS_OF_BATTLE",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2,
+    8
+   ],
+   "wiki": [
+    2,
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Forge 8. Draw 2 cards. | wiki: Forge 9. Draw 2 cards.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SUNDER",
+   "field": "description.numbers",
+   "game": [
+    3,
+    24
+   ],
+   "wiki": [
+    3,
+    26
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 24 damage. If this kills an enemy, gain 3[E]. | wiki: Deal 26 damage. If this kills an enemy, gain 3[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SUNDER",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3,
+    32
+   ],
+   "wiki": [
+    3,
+    34
+   ],
+   "authoritative": "game",
+   "note": "game: Deal 32 damage. If this kills an enemy, gain 3[E]. | wiki: Deal 34 damage. If this kills an enemy, gain 3[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "SYNCHRONIZE",
+   "field": "description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [
+    1
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 2 Focus this turn for each unique Orb you have. | wiki: Gain 1 Focus this turn for each unique Orb you have.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TANK",
+   "field": "description.numbers",
+   "game": [],
+   "wiki": [
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Take double damage from enemies. Allies take half damage from enemies. | wiki: Take 50% additional damage from enemies. Allies take 50% less damage from enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TANK",
+   "field": "upgraded_description.numbers",
+   "game": [],
+   "wiki": [
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Take double damage from enemies. Allies take half damage from enemies. | wiki: Take 50% additional damage from enemies. Allies take 50% less damage from enemies.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TAUNT",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TAUNT",
+   "field": "description.numbers",
+   "game": [
+    1,
+    7
+   ],
+   "wiki": [
+    1,
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 7 Block. Apply 1 Vulnerable. | wiki: Gain 6 Block. Apply 1 Vulnerable.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TAUNT",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2,
+    8
+   ],
+   "wiki": [
+    2,
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 8 Block. Apply 2 Vulnerable. | wiki: Gain 7 Block. Apply 2 Vulnerable.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TERRAFORMING",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 6 Vigor. | wiki: Gain 7 Vigor.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TERRAFORMING",
+   "field": "upgraded_description.numbers",
+   "game": [
+    8
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Gain 8 Vigor. | wiki: Gain 10 Vigor.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "THUNDER",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you Evoke Lightning, deal 6 damage to each enemy hit. | wiki: Whenever you Evoke Lightning, deal 8 damage to each enemy hit.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "THUNDER",
+   "field": "upgraded_description.numbers",
+   "game": [
+    8
+   ],
+   "wiki": [
+    11
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you Evoke Lightning, deal 8 damage to each enemy hit. | wiki: Whenever you Evoke Lightning, deal 11 damage to each enemy hit.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TRACKING",
+   "field": "description.numbers",
+   "game": [],
+   "wiki": [
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Weak enemies take double damage from Attacks. | wiki: Weak enemies take 50% more damage from Attacks.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TRACKING",
+   "field": "upgraded_description.numbers",
+   "game": [],
+   "wiki": [
+    50
+   ],
+   "authoritative": "game",
+   "note": "game: Weak enemies take double damage from Attacks. | wiki: Weak enemies take 50% more damage from Attacks.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "TRASH_TO_TREASURE",
+   "field": "upgraded_cost",
+   "game": 1,
+   "wiki": "0",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WELL_LAID_PLANS",
+   "field": "cost",
+   "game": 1,
+   "wiki": "2",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WELL_LAID_PLANS",
+   "field": "rarity",
+   "game": "Uncommon",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WELL_LAID_PLANS",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [],
+   "authoritative": "game",
+   "note": "game: At the end of your turn, Retain up to 1 card. | wiki: At the end of your turn, you no longer discard your Hand.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WELL_LAID_PLANS",
+   "field": "upgraded_description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [],
+   "authoritative": "game",
+   "note": "game: At the end of your turn, Retain up to 2 cards. | wiki: At the end of your turn, you no longer discard your Hand.",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WHISTLE",
+   "field": "cost",
+   "game": 3,
+   "wiki": "2",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "cards",
+   "id": "WITHER",
+   "field": "upgraded_description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: At the end of your turn, if this is in your Hand, take 3 damage. | wiki: Unplayable. At the end of your turn, if this is in your Hand, take 6 damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "BEAUTIFUL_BRACELET",
+   "field": "description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    2,
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, choose 3 cards in your Deck. Enchant them with Swift 3. | wiki: Upon pickup, Enchant 4 random cards in your Deck with Swift 2.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "CIRCLET",
+   "field": "rarity",
+   "game": "None",
+   "wiki": "Special",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "DIAMOND_DIADEM",
+   "field": "description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [
+    2,
+    20
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you play 2 or fewer cards in a turn, take half damage from enemies. | wiki: Start combat with 20 Block. Your Block is not removed at the start of your 2nd turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "DISTINGUISHED_CAPE",
+   "field": "description.numbers",
+   "game": [
+    3,
+    9
+   ],
+   "wiki": [
+    2,
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, lose 9 Max HP. Add 3 Apparitions to your Deck. | wiki: Upon pickup, add 2 random Curses and 3 Apparitions to your Deck.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "DIVINE_DESTINY",
+   "field": "description.numbers",
+   "game": [
+    6
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of each combat, gain 6[Star]. | wiki: At the start of each combat, gain 7[Star].",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_ANCHOR",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_ANCHOR",
+   "field": "description.numbers",
+   "game": [
+    4
+   ],
+   "wiki": [
+    10
+   ],
+   "authoritative": "game",
+   "note": "game: Start each combat with 4 Block. | wiki: Start each combat with 10 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_BLOOD_VIAL",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_BLOOD_VIAL",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of each combat, heal 1 HP. | wiki: At the start of each combat, heal 2 HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_HAPPY_FLOWER",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_HAPPY_FLOWER",
+   "field": "description.numbers",
+   "game": [
+    1,
+    5
+   ],
+   "wiki": [
+    1,
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Every 5 turns, gain 1[E]. | wiki: Every 3 turns, gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_LEES_WAFFLE",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Shop",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_LEES_WAFFLE",
+   "field": "description.numbers",
+   "game": [
+    10
+   ],
+   "wiki": [
+    7
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, heal 10% of your HP. | wiki: Upon pickup, raise your Max HP by 7 and heal all of your HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_MANGO",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Rare",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_MANGO",
+   "field": "description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    14
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, raise your Max HP by 3. | wiki: Upon pickup, raise your Max HP by 14.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_ORICHALCUM",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Uncommon",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_ORICHALCUM",
+   "field": "description.numbers",
+   "game": [
+    3
+   ],
+   "wiki": [
+    6
+   ],
+   "authoritative": "game",
+   "note": "game: If you end your turn without Block, gain 3 Block. | wiki: If you end your turn without Block, gain 6 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_SNECKO_EYE",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Ancient",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_SNECKO_EYE",
+   "field": "description.numbers",
+   "game": [],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Start each combat Confused. | wiki: At the start of your turn, draw 2 additional cards. Start each combat Confused.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_STRIKE_DUMMY",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_STRIKE_DUMMY",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: Cards containing “Strike” deal 1 additional damage. | wiki: Cards containing “Strike” deal 3 additional damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_VENERABLE_TEA_SET",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Common",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FAKE_VENERABLE_TEA_SET",
+   "field": "description.numbers",
+   "game": [
+    1
+   ],
+   "wiki": [
+    2
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you enter a Rest Site, start the next combat with an additional 1[E]. | wiki: Whenever you enter a Rest Site, start the next combat with an additional 1[E] 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "FUR_COAT",
+   "field": "description.numbers",
+   "game": [
+    1,
+    7
+   ],
+   "wiki": [
+    1,
+    8
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, mark 7 random combats. Enemies in those rooms have 1 HP. | wiki: Upon pickup, mark 8 random combats. Enemies in those rooms have 1 HP.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "ICE_CREAM",
+   "field": "description.numbers",
+   "game": [],
+   "wiki": [
+    1
+   ],
+   "authoritative": "game",
+   "note": "game: Energy is now conserved between turns. | wiki: 1[E] Energy is now conserved between turns.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "REGALITE",
+   "field": "description.numbers",
+   "game": [
+    2
+   ],
+   "wiki": [
+    4
+   ],
+   "authoritative": "game",
+   "note": "game: Whenever you create a card, gain 2 Block. | wiki: The first time you create a card each turn, gain 4 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "SEAL_OF_GOLD",
+   "field": "description.numbers",
+   "game": [
+    1,
+    5
+   ],
+   "wiki": [
+    1,
+    3
+   ],
+   "authoritative": "game",
+   "note": "game: At the start of your turn, spend 5 Gold to gain 1[E]. | wiki: At the start of your turn, spend 3 Gold to gain 1[E].",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "SERE_TALON",
+   "field": "description.numbers",
+   "game": [
+    2,
+    3
+   ],
+   "wiki": [
+    3,
+    9
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, add 2 random Curses and 3 Wishes to your Deck. | wiki: Upon pickup, lose 9 Max HP. Add 3 Wishes to your Deck.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "SIGNET_RING",
+   "field": "description.numbers",
+   "game": [
+    999
+   ],
+   "wiki": [
+    888
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, gain 999 Gold. | wiki: Upon pickup, gain 888 Gold.",
+   "source": "wiki"
+  },
+  {
+   "category": "relics",
+   "id": "TOY_BOX",
+   "field": "description.numbers",
+   "game": [
+    3,
+    4
+   ],
+   "wiki": [
+    3,
+    5
+   ],
+   "authoritative": "game",
+   "note": "game: Upon pickup, obtain 4 Wax Relics. Every 3 combats, your left-most Wax Relic will melt away. | wiki: Upon pickup, obtain 5 Wax Relics. Every 3 combats, your left-most Wax Relic will melt away.",
+   "source": "wiki"
+  },
+  {
+   "category": "potions",
+   "id": "FOUL_POTION",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Special",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "potions",
+   "id": "GLOWWATER_POTION",
+   "field": "rarity",
+   "game": "Event",
+   "wiki": "Special",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "potions",
+   "id": "LIQUID_MEMORIES",
+   "field": "description.numbers",
+   "game": [],
+   "wiki": [
+    0
+   ],
+   "authoritative": "game",
+   "note": "game: Put a card from your Discard Pile into your Hand. It's free to play this turn. | wiki: Put a card from your Discard Pile into your Hand. It costs 0 1[E] this turn.",
+   "source": "wiki"
+  },
+  {
+   "category": "potions",
+   "id": "POTION_SHAPED_ROCK",
+   "field": "rarity",
+   "game": "Token",
+   "wiki": "Special",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "AEONGLASS",
+   "field": "move.EBB_MOVE.damage",
+   "game": 26,
+   "wiki": 22,
+   "authoritative": "game",
+   "note": "Deals 22 ([A9: 26]) damage. Gains 33 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "AEONGLASS",
+   "field": "move.EBB_MOVE.asc_damage",
+   "game": 32,
+   "wiki": 26,
+   "authoritative": "game",
+   "note": "Deals 22 ([A9: 26]) damage. Gains 33 Block.",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "AXEBOT",
+   "field": "asc_hp",
+   "game": [
+    76,
+    86
+   ],
+   "wiki": "78-86",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "OWL_MAGISTRATE",
+   "field": "hp",
+   "game": [
+    231,
+    231
+   ],
+   "wiki": "234",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "OWL_MAGISTRATE",
+   "field": "asc_hp",
+   "game": [
+    247,
+    247
+   ],
+   "wiki": "243",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "SCROLL_OF_BITING",
+   "field": "hp",
+   "game": [
+    30,
+    37
+   ],
+   "wiki": "31-38",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "SCROLL_OF_BITING",
+   "field": "asc_hp",
+   "game": [
+    33,
+    39
+   ],
+   "wiki": "32-39",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "SLIMED_BERSERKER",
+   "field": "hp",
+   "game": [
+    261,
+    261
+   ],
+   "wiki": "266",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "SLIMED_BERSERKER",
+   "field": "asc_hp",
+   "game": [
+    281,
+    281
+   ],
+   "wiki": "276",
+   "authoritative": "game",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "TORCH_HEAD_AMALGAM",
+   "field": "move.TACKLE_MOVE.asc_damage",
+   "game": 19,
+   "wiki": 22,
+   "authoritative": "game",
+   "note": "Deals 18 ([A9: 22]) damage.",
+   "source": "wiki"
+  },
+  {
+   "category": "enemies",
+   "id": "VANTOM",
+   "field": "move.DISMEMBER_MOVE.damage",
+   "game": 26,
+   "wiki": 27,
+   "authoritative": "game",
+   "note": "Deals 27 ([A9: 30]) damage. Shuffles 3 Wound into your discard pile.",
+   "source": "wiki"
+  },
+  {
+   "category": "events",
+   "id": "ENDLESS_CONVEYOR",
+   "field": "options",
+   "game": [
+    "Broke",
+    "Grab Caviar off the Belt",
+    "Grab Clam Roll off the Belt",
+    "Grab Fried Eel off the Belt",
+    "Grab Golden Fysh off the Belt",
+    "Grab Jelly Liver off the Belt",
+    "Grab Seapunk Salad off the Belt",
+    "Grab Spicy Snappy off the Belt",
+    "Grab Suspicious Condiment off the Belt",
+    "Leave",
+    "Observe the Chef"
+   ],
+   "wiki": [
+    "Grab Something Off the Belt"
+   ],
+   "authoritative": "game",
+   "note": "wiki option titles not found in game localization",
+   "source": "wiki"
+  }
+ ]
+}
