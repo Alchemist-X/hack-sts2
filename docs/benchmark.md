@@ -1,4 +1,4 @@
-# Fixed-seed benchmark (Ironclad A0, 10 seeds)
+# Fixed-seed benchmark (Ironclad A0 / A10, 10 seeds)
 
 `scripts/bench/run_bench.py` plays a fixed seed list through the same live
 harness agents use (`scripts/sts2_live.py`), from an identical frozen save, so
@@ -10,6 +10,26 @@ policies (stub, LLM, with/without wiki facts) can be compared run-for-run.
 ascension 0, standard mode, seeds `BENCHA0S01` ... `BENCHA0S10`.
 Limits per run: 3000 decisions, 5400 s wall time, 6 consecutive harness/policy
 errors (`--max-decisions` / `--max-wall-s` override).
+
+`config/bench/ironclad-a10-10seed.json` (`ironclad-a10-10seed-v1`): IRONCLAD,
+**ascension 10**, standard mode, the **same** seed strings `BENCHA0S01` ...
+`BENCHA0S10` (kept deliberately so A0 and A10 results compare seed-for-seed;
+the `A0` in the name is historical), same limits. It only accepts baseline
+`v2-a10` (`default_baseline`, so `--baseline` can be omitted).
+
+### Ascension 10 (interim, until the MCP has `start_run(ascension)`)
+
+The MCP has no ascension control, so A10 comes from the save: the standard
+lobby starts at `min(preferred_ascension, max_ascension)` of the character
+(`StartRunLobby`, logged as `ascension set to preferred: 10`). Baseline
+`v2-a10` is v2 with every character's `preferred_ascension` = 10 (nothing
+else differs). The embark path is unchanged. The runner verifies the
+ascension for every seed: `verify_seed` requires both the game.log
+`Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: ...` line and
+`current_run.save` `ascension` to equal the config `ascension`, else the run
+fails with `seed/ascension not verified` (evidence in `run_start.seed_evidence`,
+`ascension_verified`). When a native `start_run(character, ascension, seed)`
+lands, swap `start_seeded_run` for it and drop the `v2-a10` baseline.
 
 ## Frozen save baseline
 
@@ -26,12 +46,13 @@ Every run (including each determinism start) begins with
 
 The baselines live outside the repo in `/workspace/private/bench-baseline/`
 (override with `STS2_BENCH_BASELINE_ROOT`). Pick one with `--baseline v1|v2`
-(default **v2**), or pass a baseline dir / manifest file:
+(default **v2**, or the config's `default_baseline`), or pass a baseline dir / manifest file:
 
 | label | manifest | tarball | what it is |
 |---|---|---|---|
 | `v1` | `manifest.json` | `sts2-bench-baseline-v1.tar.gz` | original worker profile with the `IRONCLAD3_EPOCH` reveal (4/57 epochs, 106 cards, 76 relics, 34 potions) |
 | `v2` | `manifest-v2-unlocked.json` | `sts2-bench-baseline-v2-unlocked.tar.gz` | a copy of v1, fully unlocked: 57/57 epochs revealed (incl. `CUSTOM_AND_SEEDS_EPOCH`, daily), all 5 characters, 578 cards, 297 relics, 65 potions, 61 events, 4 acts, max ascension 10 (preferred 0), all FTUEs done, no pending reveals |
+| `v2-a10` | `manifest-v2-a10.json` | `sts2-bench-baseline-v2-a10.tar.gz` | v2 with `preferred_ascension` 10 for every character (lobby starts at A10); `make_unlocked_save.py --preferred-ascension 10` on a restored v2; progress.save `3ab4b56c...` |
 
 The config pins every baseline it accepts (`baselines.v1` / `baselines.v2`,
 name + sha256) and the runner refuses any other name or a sha mismatch.
@@ -74,6 +95,10 @@ standard/daily/custom enabled, timeline 57/57 revealed with nothing pending,
 all characters selectable, lobby ascension 0. Determinism on v2:
 `--determinism BENCHA0S01 --starts 2` gave identical Neow (Nutritious Oyster /
 Phial Holster / Cursed Pearl), 50-node act-1 map and first fight (Nibbit 44 HP).
+
+`v2-a10` was validated the same way: game.log `ascension set to preferred: 10`
+and `Ascension: 10 Seed: BENCHA0S01`, `current_run.save` ascension 10, and
+`--determinism BENCHA0S01 --starts 2` identical across starts.
 
 ## Seeded start
 
