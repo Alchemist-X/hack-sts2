@@ -64,6 +64,7 @@ class Instance:
         self.dir = self.pool / f'inst{self.number}'
         self.port = int((self.dir / 'port').read_text().strip())
         self.env = {**os.environ, **(env or {})}
+        self.unusable = None  # set when stop/restore fails; the instance takes no more seeds
         if self.port in (15601, 15602, 15603) or 'worker-pool-v2' in str(self.pool):
             raise BenchError('refusing to use worker-pool-v2 / ports 15601-15603 for benchmarks')
 
@@ -375,6 +376,7 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
             inst.stop()
         except BenchError as exc:
             log(inst.name, 'stop failed', exc)
+            inst.unusable = str(exc)
     wall = round(time.monotonic() - began, 1)
     result = {'seed': seed, 'instance': inst.name, 'policy': policy_name, 'wiki_facts': bool(args.wiki_facts),
               'benchmark': args.config['name'], 'error': error, 'seed_evidence': seed_evidence,
@@ -518,6 +520,17 @@ def main(argv=None):
                 seed = todo.get_nowait()
             except queue.Empty:
                 return
+            if inst.unusable is None:
+                try:  # a seed is only claimed by an instance that can be stopped/restored
+                    inst.stop()
+                except BenchError as exc:
+                    inst.unusable = str(exc)
+            if inst.unusable is not None:
+                # e.g. the launcher's PID-identity guard after a host clock jump:
+                # never let one broken instance drain the queue with instant failures.
+                todo.put(seed)
+                log(inst.name, seed, f'instance unusable, retiring it and returning the seed: {inst.unusable[:200]}')
+                return
             result = run_seed(inst, seed, a, policy_name, policy, out)
             with lock:
                 results.append(result)
@@ -535,9 +548,12 @@ def main(argv=None):
     for t in threads:
         while t.is_alive():
             t.join(1.0)
-    log('all done:', out)
-    print(json.dumps({'out': str(out), 'runs': len(results)}))
-    return 0
+    unrun = []
+    while not todo.empty():
+        unrun.append(todo.get_nowait())
+    log('all done:', out, f'unrun seeds: {unrun}' if unrun else '')
+    print(json.dumps({'out': str(out), 'runs': len(results), 'unrun': unrun}))
+    return 1 if unrun else 0
 
 
 if __name__ == '__main__':
