@@ -164,9 +164,20 @@ def match_card(cards: list[dict[str, Any]], ref: Any, *, what: str = "card") -> 
         matches = loose
     if occurrence is not None:
         occurrence = int(occurrence)
-        if occurrence < 1 or occurrence > len(matches):
+        identical = len({_card_identity(c) for c in matches}) == 1
+        if occurrence == 0:
+            # ``#k`` is 1-based; ``#0`` can only mean "the first copy".
+            notes.append(f"{what} {query!r}#0 read as the first copy ({what} refs use 1-based #k)")
+            occurrence = 1
+        if occurrence < 0 or (occurrence > len(matches) and not identical):
             raise ActionRefError(f"{what} {query!r}#{occurrence}: only {len(matches)} match(es)",
                                  available=card_refs(cards))
+        if occurrence > len(matches):
+            # Identical copies are interchangeable: a #k that outlived an earlier
+            # play of the same card still names the same choice.
+            notes.append(f"{what} {query!r}#{occurrence}: only {len(matches)} identical copy(ies) left; "
+                         "used the first")
+            occurrence = 1
         return matches[occurrence - 1], notes
     if len({_card_identity(c) for c in matches}) > 1:
         raise ActionRefError(f"{what} {query!r} is ambiguous: copies differ; add #k", available=card_refs(cards))
@@ -298,8 +309,39 @@ def _ref_with_occurrence(refs: list[str]) -> list[str]:
     return out
 
 
+def _without_index(item: dict[str, Any]) -> str:
+    return json.dumps({k: v for k, v in item.items() if k != "index"}, sort_keys=True, default=str)
+
+
+def _occurrence_fallback(items: list[dict[str, Any]], refs: list[str], text: str, what: str,
+                         notes: list[str] | None) -> list[dict[str, Any]]:
+    """``kind#k`` whose numbering moved (an earlier item was claimed) or a 0-based ``#0``.
+
+    Only resolves when the answer is unambiguous: ``#0`` means the first such
+    item, and an out-of-range ``#k`` resolves only when every remaining item of
+    that kind is identical (so any of them is the same choice).
+    """
+    match = re.match(r"^(.*?)#(\d+)$", text)
+    if not match:
+        return []
+    base, k = match.group(1).strip().casefold(), int(match.group(2))
+    same = [item for item, key in zip(items, refs) if key.casefold() == base]
+    if not same:
+        return []
+    if k == 0:
+        if notes is not None:
+            notes.append(f"{what} {text!r}: #0 read as the first one (refs use 1-based #k)")
+        return same[:1]
+    if k > len(same) and len({_without_index(i) for i in same}) == 1:
+        if notes is not None:
+            notes.append(f"{what} {text!r}: numbering shifted after an earlier claim; "
+                         f"{len(same)} identical one(s) left, used the first")
+        return same[:1]
+    return []
+
+
 def _match_keyed(items: list[dict[str, Any]], refs: list[str], ref: Any, what: str,
-                 names: Iterable[str] = ()) -> dict[str, Any]:
+                 names: Iterable[str] = (), notes: list[str] | None = None) -> dict[str, Any]:
     unique = _ref_with_occurrence(refs)
     text = str(ref).strip()
     folded = text.casefold()
@@ -313,6 +355,8 @@ def _match_keyed(items: list[dict[str, Any]], refs: list[str], ref: Any, what: s
     if not hits:
         query = normalize_text(text)
         hits = [item for item in items if any(normalize_text(item.get(n)) == query for n in names if item.get(n))]
+    if not hits:
+        hits = _occurrence_fallback(items, refs, text, what, notes)
     if not hits:
         raise ActionRefError(f"no {what} matches {text!r}", available=unique)
     if len(hits) > 1 and len({json.dumps(h, sort_keys=True, default=str) for h in
@@ -492,11 +536,49 @@ def expect_matches(expected: Any, candidate: dict[str, Any] | None) -> bool:
     return len(query) >= 3 and any(query in normalize_text(t) for t in texts if t)
 
 
+# ------------------------------------------------------------------ anchors
+def card_anchor(card: dict[str, Any]) -> str:
+    """Content identity of a card that survives other plays (no index/can_play/cost)."""
+    keep = {k: card.get(k) for k in ("id", "model_id", "is_upgraded", "description", "enchantment",
+                                     "affliction", "target_type", "type")}
+    keep["label"] = card_label(card)
+    return json.dumps(keep, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def anchor_request(state: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+    """Pin a positional-looking ref (``Name#k``, ``card#3``) to the item it names *now*.
+
+    Called once per request on the state the caller observed, before anything
+    is sent.  Later steps of the same chain then find that exact item by
+    content, so ``#k`` numbering that shifts after an earlier play/claim cannot
+    redirect them.  Requests that do not resolve are returned unchanged (the
+    real resolution reports the error at its own step).
+    """
+    request = dict(request)
+    name = request.get("action")
+    try:
+        if name == "play_card" and isinstance(request.get("card"), (str, dict)):
+            card, _ = match_card(_hand(state), request["card"])
+            request["_card_anchor"] = card_anchor(card)
+        elif name == "claim_reward" and request.get("reward") is not None:
+            items = [i for i in _block(state, "rewards").get("items", []) or [] if isinstance(i, dict)]
+            item = _match_keyed(items, [reward_ref(i) for i in items], request["reward"], "reward",
+                                ("potion_name", "relic_name", "description"), [])
+            request["_reward_anchor"] = _without_index(item)
+    except ActionRefError:
+        pass
+    return request
+
+
 # --------------------------------------------------------------- resolution
 SHORTHANDS = {
     "end": {"action": "end_turn"}, "end_turn": {"action": "end_turn"},
     "proceed": {"action": "proceed"}, "skip": {"action": "skip"},
     "confirm": {"action": "confirm"}, "cancel": {"action": "cancel"},
+    # Treasure has a single relic in normal chests; the resolver refuses the
+    # shorthand when more than one relic is offered (no choice is made for you).
+    "claim_treasure_relic": {"action": "claim_treasure_relic"}, "claim_treasure": {"action": "claim_treasure_relic"},
+    "treasure": {"action": "claim_treasure_relic"}, "take_relic": {"action": "claim_treasure_relic"},
 }
 
 
@@ -555,6 +637,10 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
     expect = request.pop("expect", None)
     request.pop("ref", None)
     notes: list[str] = []
+    if name not in {"play_card"}:
+        request.pop("_card_anchor", None)
+    if name != "claim_reward":
+        request.pop("_reward_anchor", None)
 
     # Context-dependent shorthands -------------------------------------------
     if name == "skip":
@@ -591,7 +677,17 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
             # different copies, never deselect the one already chosen.
             chosen_indices = set(_block(state, "card_select").get("selected_indices") or [])
             cards = [c for c in cards if not c.get("is_selected") and c.get("index") not in chosen_indices]
-        card, card_notes = match_card(cards, request.pop("card"))
+        card_ref = request.pop("card")
+        anchor = request.pop("_card_anchor", None)
+        anchored = [c for c in cards if anchor is not None and card_anchor(c) == anchor]
+        if anchored:
+            # Chained plays: the copy named on the observed hand, found again by
+            # content after earlier plays renumbered "Name#k".
+            card, card_notes = anchored[0], []
+            if card_refs(cards)[cards.index(card)] != card_ref:
+                card_notes.append(f"card {card_ref!r} re-resolved by content after earlier plays shifted #k")
+        else:
+            card, card_notes = match_card(cards, card_ref)
         notes += card_notes
         field = "index" if name == "select_card" else "card_index"
         params = {field: card.get("index")}
@@ -636,10 +732,27 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
         if blocked:
             raise ActionRefError(f"cannot buy {shop_item_ref(item)}: {blocked[0]['reason']}")
         chosen = _pick(legal, name, index=item.get("index"))
+    elif name == "claim_treasure_relic" and not ({"relic", "index"} & set(request)):
+        relics = [r for r in _block(state, "treasure").get("relics", []) or [] if isinstance(r, dict)]
+        if len(relics) != 1:
+            raise ActionRefError(f"claim_treasure_relic without a relic needs exactly one offered relic; "
+                                 f"{len(relics)} offered, name one", available=[str(r.get("id")) for r in relics])
+        chosen = _pick(legal, name, index=relics[0].get("index"))
+        notes.append(f"claim_treasure_relic: the only offered relic {relics[0].get('id')}")
     elif name == "claim_reward" and "reward" in request:
         items = [i for i in _block(state, "rewards").get("items", []) or [] if isinstance(i, dict)]
-        item = _match_keyed(items, [reward_ref(i) for i in items], request.pop("reward"), "reward",
-                            ("potion_name", "relic_name", "description"))
+        anchor = request.pop("_reward_anchor", None)
+        ref = request.pop("reward")
+        anchored = [i for i in items if anchor is not None and _without_index(i) == anchor]
+        if anchored:
+            # Chained claims: the reward the caller named on the observed screen,
+            # found again by content after earlier claims renumbered the list.
+            item = anchored[0]
+            if reward_ref(item) != ref:
+                notes.append(f"reward {ref!r} re-resolved by content after earlier claims shifted the list")
+        else:
+            item = _match_keyed(items, [reward_ref(i) for i in items], ref, "reward",
+                                ("potion_name", "relic_name", "description"), notes)
         blocked = [b for b in blocked_actions(state) if b["action"] == name and b["ref"] == reward_ref(item)]
         if blocked:
             raise ActionRefError(f"cannot claim {reward_ref(item)}: {blocked[0]['reason']}; {blocked[0]['hint']}")
