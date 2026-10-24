@@ -328,6 +328,8 @@ def actionable(state: dict[str, Any]) -> bool:
 
 
 PLAYER_CHOICE_SCREENS = frozenset({"hand_select", "card_select"})
+# None: execution record of a select already sent on the same choice screen.
+PLAYER_CHOICE_ACTION_STATES = frozenset({"GatheringPlayerChoice", None})
 
 
 def awaiting_player_choice(state: dict[str, Any], probe: dict[str, Any] | None) -> bool:
@@ -339,11 +341,16 @@ def awaiting_player_choice(state: dict[str, Any], probe: dict[str, Any] | None) 
     player answers.  Treating that as busy deadlocks the harness: the action
     that would drain the queue is never sent.  Only that exact witness counts;
     any other busy reason still blocks.
+
+    After a ``combat_select_card`` on that screen the ``execution`` record
+    describes the select itself (``game_action_state`` None, queue still not
+    idle) while the screen keeps waiting for the confirm, so None is accepted
+    too.  A game action in any other state (Executing, ...) still blocks.
     """
     if state.get("state_type") not in PLAYER_CHOICE_SCREENS:
         return False
     execution = state.get("execution") if isinstance(state.get("execution"), dict) else {}
-    if execution.get("game_action_state") != "GatheringPlayerChoice":
+    if execution.get("game_action_state") not in PLAYER_CHOICE_ACTION_STATES:
         return False
     reason = (probe or {}).get("busy_reason")
     return reason in (None, "action_queue_not_empty")

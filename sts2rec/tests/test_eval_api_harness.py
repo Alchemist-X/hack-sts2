@@ -173,3 +173,13 @@ def test_busy_still_blocks_without_the_player_choice_witness(monkeypatch, mutate
 def test_other_busy_reasons_still_block_a_player_choice():
     state = json.loads((FIX / 'hand_select_upgrade.json').read_text())
     assert not executor.awaiting_player_choice(state, {'busy': True, 'busy_reason': 'scene_transition'})
+
+
+def test_player_choice_still_accepted_after_a_select_was_sent():
+    """S05 F13 again: after combat_select_card the execution record is the
+    select's own (game_action_state None, queue not idle) while the screen
+    waits for confirm; that must not deadlock either."""
+    state = json.loads((FIX / 'hand_select_upgrade.json').read_text())
+    state['execution'] = {'action': 'combat_select_card', 'game_action_state': None,
+                          'queue_idle': False, 'ready_for_next_action': False}
+    assert executor.awaiting_player_choice(state, {'busy': True, 'busy_reason': 'action_queue_not_empty'})
