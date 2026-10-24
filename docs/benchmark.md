@@ -150,6 +150,9 @@ python3 scripts/bench/score.py /workspace/private/bench-runs/<run> [<run> ...]
 
 ## Policies
 
+Multi-model LLM runs (text encoder, xAI/OpenAI-compatible policy, model
+comparison): see `docs/llm-eval.md`.
+
 `scripts/bench/policies.py`. A policy receives the `sts2_live observe` JSON
 (`hash`, `state`, `legal_actions[*].ref`, `decision_context`, optional
 `wiki_facts`) plus a context `{seed, index, policy, avoid, last_error,

@@ -1,0 +1,126 @@
+{
+ "legal_actions": [
+  {
+   "action": "choose_rest_option",
+   "index": 0,
+   "ref": {
+    "action": "choose_rest_option",
+    "option": "HEAL"
+   }
+  },
+  {
+   "action": "choose_rest_option",
+   "index": 1,
+   "ref": {
+    "action": "choose_rest_option",
+    "option": "SMITH"
+   }
+  },
+  {
+   "action": "discard_potion",
+   "ref": {
+    "action": "discard_potion",
+    "potion": "slot:0",
+    "potion_id": "LIQUID_BRONZE"
+   },
+   "slot": 0
+  },
+  {
+   "action": "discard_potion",
+   "ref": {
+    "action": "discard_potion",
+    "potion": "slot:1",
+    "potion_id": "FORTIFIER"
+   },
+   "slot": 1
+  }
+ ],
+ "state": {
+  "player": {
+   "block": 0,
+   "character": "The Ironclad",
+   "gold": 47,
+   "hp": 51,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [
+    {
+     "can_use_in_combat": true,
+     "description": "Gain 3 Thorns.",
+     "id": "LIQUID_BRONZE",
+     "keywords": [
+      {
+       "description": "When hit by an attack, deal damage back.",
+       "name": "Thorns"
+      }
+     ],
+     "name": "Liquid Bronze",
+     "slot": 0,
+     "target_type": "AnyPlayer"
+    },
+    {
+     "can_use_in_combat": true,
+     "description": "Triple your Block.",
+     "id": "FORTIFIER",
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "name": "Fortifier",
+     "slot": 1,
+     "target_type": "AnyPlayer"
+    }
+   ],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "Upon pickup, Transform 1 card.",
+     "id": "NEW_LEAF",
+     "keywords": [
+      {
+       "description": "Transformed cards become a random card of any rarity.",
+       "name": "Transform"
+      }
+     ],
+     "name": "New Leaf"
+    }
+   ],
+   "status": []
+  },
+  "rest_site": {
+   "can_proceed": false,
+   "options": [
+    {
+     "description": "Heal for 30% of your Max HP (24).",
+     "id": "HEAL",
+     "index": 0,
+     "is_enabled": true,
+     "name": "Rest"
+    },
+    {
+     "description": "Upgrade a card in your Deck.",
+     "id": "SMITH",
+     "index": 1,
+     "is_enabled": true,
+     "name": "Smith"
+    }
+   ]
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 8
+  },
+  "state_type": "rest_site"
+ },
+ "unavailable_actions": []
+}

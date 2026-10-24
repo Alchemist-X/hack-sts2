@@ -1,0 +1,94 @@
+{
+ "legal_actions": [
+  {
+   "action": "choose_event_option",
+   "index": 0,
+   "ref": {
+    "action": "choose_event_option",
+    "expect": "Group",
+    "index": 0
+   }
+  },
+  {
+   "action": "choose_event_option",
+   "index": 1,
+   "ref": {
+    "action": "choose_event_option",
+    "expect": "Loner",
+    "index": 1
+   }
+  }
+ ],
+ "state": {
+  "event": {
+   "body": null,
+   "event_id": "MORPHIC_GROVE",
+   "event_name": "Morphic Grove",
+   "in_dialogue": false,
+   "is_ancient": false,
+   "options": [
+    {
+     "description": "Lose ALL of your Gold. Transform 2 cards.",
+     "index": 0,
+     "is_locked": false,
+     "is_proceed": false,
+     "keywords": [
+      {
+       "description": "Transformed cards become a random card of any rarity.",
+       "name": "Transform"
+      }
+     ],
+     "title": "Group",
+     "was_chosen": false
+    },
+    {
+     "description": "Gain 5 Max HP.",
+     "index": 1,
+     "is_locked": false,
+     "is_proceed": false,
+     "keywords": [],
+     "title": "Loner",
+     "was_chosen": false
+    }
+   ]
+  },
+  "player": {
+   "block": 0,
+   "character": "The Ironclad",
+   "gold": 112,
+   "hp": 55,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "Upon pickup, Transform 1 card.",
+     "id": "NEW_LEAF",
+     "keywords": [
+      {
+       "description": "Transformed cards become a random card of any rarity.",
+       "name": "Transform"
+      }
+     ],
+     "name": "New Leaf"
+    }
+   ],
+   "status": []
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 4
+  },
+  "state_type": "event"
+ },
+ "unavailable_actions": []
+}
