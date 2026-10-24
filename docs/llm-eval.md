@@ -90,6 +90,8 @@ process per decision and therefore loses the recent-decision history.
 
 ## Pure text vs a headless simulator (v0.107.1)
 
+An offline engine now exists: `compare_models.py --engine sim` drives spire-mentor (pinned, external) with the same text_state + llm_policy path; seed BENCHA0S01 reproduces the live Neow, map and first fight exactly. See [sim-engine.md](sim-engine.md).
+
 Live timing over 1715 stub decisions on the headless worker pool:
 
 | | per decision |

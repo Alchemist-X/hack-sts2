@@ -55,6 +55,14 @@ def check_pool(pool, numbers):
 
 
 def bench_cmd(a, model_dir, instances):
+    if getattr(a, 'engine', 'live') == 'sim':  # offline simulator: no pool, ports or game (docs/sim-engine.md)
+        cmd = [a.sim_python or sys.executable, str(HERE / 'sim_engine.py'), '--policy', 'py:llm_policy:policy',
+               '--out', str(model_dir)]
+        for flag, value in (('--seeds', a.seeds), ('--config', a.config), ('--max-decisions', a.max_decisions),
+                            ('--max-wall-s', a.max_wall_s)):
+            if value is not None:
+                cmd += [flag, str(value)]
+        return cmd + (['--wiki-facts'] if a.wiki_facts else [])
     cmd = [sys.executable, str(HERE / 'run_bench.py'), '--pool', str(a.pool), '--instances',
            ','.join(map(str, instances)), '--policy', 'py:llm_policy:policy', '--out', str(model_dir)]
     for flag, value in (('--seeds', a.seeds), ('--config', a.config), ('--baseline', a.baseline),
@@ -72,8 +80,12 @@ def run_models(a, out):
     if k < 1 or k > 3 or len(numbers) < k:
         raise SystemExit('--instances-per-model must be 1-3 and <= the number of --instances')
     groups = [numbers[i:i + k] for i in range(0, len(numbers) - k + 1, k)]
+    sim = getattr(a, 'engine', 'live') == 'sim'
+    if sim:
+        groups = [['sim'] for _ in a.models]  # every model runs in parallel; nothing to share
     if not a.dry_run:
-        check_pool(a.pool, numbers)
+        if not sim:
+            check_pool(a.pool, numbers)
         key_env = os.environ.get('LLM_API_KEY_ENV') or 'XAI_API_KEY'
         if not os.environ.get(key_env):
             raise SystemExit(f'{key_env} is not set; export it before a model comparison')
@@ -217,6 +229,10 @@ def main(argv=None):
     ap.add_argument('--max-wall-s', type=float)
     ap.add_argument('--out', type=Path)
     ap.add_argument('--dry-run', action='store_true', help='print the run_bench commands only')
+    ap.add_argument('--engine', choices=('live', 'sim'), default='live',
+                    help='live = run_bench.py on the game pool; sim = sim_engine.py on the spire-mentor simulator')
+    ap.add_argument('--sim-python', default=os.environ.get('STS2_SIM_PYTHON'),
+                    help='python with sts2_rs installed for --engine sim (default: $STS2_SIM_PYTHON or this one)')
     a = ap.parse_args(argv)
     if a.aggregate:
         print(write_summary(a.aggregate))
