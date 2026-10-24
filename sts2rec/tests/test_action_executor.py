@@ -42,12 +42,12 @@ def _combat_state(*, card_ids: list[str], energy: int = 3) -> dict:
 def test_executor_exposes_no_gameplay_decision_policy() -> None:
     assert not hasattr(MODULE, "decide")
     assert "quiet_window" in inspect.signature(MODULE.settled_state).parameters
-    assert (
-        inspect.signature(MODULE.settled_state)
-        .parameters["quiet_window"]
-        .default
-        == 2.5
-    )
+    # The quiet window is now adaptive (actionable-frame gated, see
+    # quiet_window_for); an explicit value still overrides it.
+    assert inspect.signature(MODULE.settled_state).parameters["quiet_window"].default is None
+    combat = _combat_state(card_ids=["STRIKE"])
+    assert MODULE.quiet_window_for({"action": "play_card"}, combat) >= 1.0
+    assert MODULE.quiet_window_for({"action": "proceed"}, {"state_type": "map"}) >= 0.5
 
 
 def test_play_card_commit_requires_the_selected_card_to_move() -> None:

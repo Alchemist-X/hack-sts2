@@ -1,0 +1,263 @@
+{
+ "battle": {
+  "enemies": [
+   {
+    "block": 0,
+    "combat_id": 1,
+    "current_move_id": "ILLUSION_MOVE",
+    "entity_id": "FOGMOG_0",
+    "hp": 74,
+    "id": "FOGMOG",
+    "intents": [
+     {
+      "description": "This enemy intends to summon Monsters.",
+      "label": "",
+      "title": "Summon",
+      "type": "Summon"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 74,
+    "model_id": "MONSTER.FOGMOG",
+    "name": "Fogmog",
+    "status": []
+   }
+  ],
+  "inactive_enemies": [],
+  "is_over_or_ending": false,
+  "is_play_phase": true,
+  "player_turn": 1,
+  "round": 1,
+  "turn": "player"
+ },
+ "execution": {
+  "action": "play_card",
+  "completion_confirmed": false,
+  "completion_kind": "game_action_finished",
+  "game_action_id": 63,
+  "game_action_state": "GatheringPlayerChoice",
+  "player_phase": "Play",
+  "player_turn": 1,
+  "queue_idle": false,
+  "ready_for_next_action": false,
+  "request_id": "7901be0160f04e8085a741966be1a119",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state",
+  "submitted_player_turn": 1
+ },
+ "hand_select": {
+  "can_confirm": false,
+  "cards": [
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 3,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   }
+  ],
+  "mode": "upgrade_select",
+  "prompt": "Confirm Card to Upgrade"
+ },
+ "player": {
+  "block": 5,
+  "character": "The Ironclad",
+  "discard_pile": [],
+  "discard_pile_count": 0,
+  "draw_pile": [],
+  "draw_pile_count": 8,
+  "energy": 2,
+  "exhaust_pile": [],
+  "exhaust_pile_count": 0,
+  "gold": 165,
+  "hand": [
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 3,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   }
+  ],
+  "hp": 62,
+  "max_energy": 3,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Apply 1 Weak and 1 Vulnerable to ALL enemies.",
+    "id": "POTION_OF_BINDING",
+    "keywords": [
+     {
+      "description": "Weakened creatures deal 25% less damage with Attacks.",
+      "name": "Weak"
+     },
+     {
+      "description": "Vulnerable creatures take 50% more damage from Attacks.",
+      "name": "Vulnerable"
+     }
+    ],
+    "name": "Potion of Binding",
+    "slot": 1,
+    "target_type": "AllEnemies"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 7
+ },
+ "state_type": "hand_select"
+}

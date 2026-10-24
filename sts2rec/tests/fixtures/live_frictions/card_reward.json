@@ -1,0 +1,125 @@
+{
+ "card_reward": {
+  "can_skip": true,
+  "cards": [
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block. Upgrade a card in your Hand.",
+    "enchantment": null,
+    "id": "ARMAMENTS",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.ARMAMENTS",
+    "name": "Armaments",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Apply 1 Vulnerable. Gain 1 Strength for each Vulnerable on the enemy. Exhaust.",
+    "enchantment": null,
+    "id": "DOMINATE",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Strength adds additional damage to Attacks.",
+      "name": "Strength"
+     },
+     {
+      "description": "Vulnerable creatures take 50% more damage from Attacks.",
+      "name": "Vulnerable"
+     },
+     {
+      "description": "Removed until the end of combat.",
+      "name": "Exhaust"
+     }
+    ],
+    "model_id": "CARD.DOMINATE",
+    "name": "Dominate",
+    "rarity": "Uncommon",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 7 damage. Gain 2 Strength this turn.",
+    "enchantment": null,
+    "id": "SETUP_STRIKE",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Strength adds additional damage to Attacks.",
+      "name": "Strength"
+     }
+    ],
+    "model_id": "CARD.SETUP_STRIKE",
+    "name": "Setup Strike",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Attack"
+   }
+  ]
+ },
+ "execution": {
+  "action": "claim_reward",
+  "game_action_id": null,
+  "game_action_state": null,
+  "ready_for_next_action": false,
+  "request_id": "e9740024288d44b8a3ff997af6406f4b",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 117,
+  "hp": 68,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Gain 3 Thorns.",
+    "id": "LIQUID_BRONZE",
+    "keywords": [
+     {
+      "description": "When hit by an attack, deal damage back.",
+      "name": "Thorns"
+     }
+    ],
+    "name": "Liquid Bronze",
+    "slot": 0,
+    "target_type": "AnyPlayer"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 2
+ },
+ "state_type": "card_reward"
+}
