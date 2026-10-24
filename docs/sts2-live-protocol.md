@@ -27,7 +27,7 @@
 
 observe 的每个 legal_action 带 `ref`，act 优先使用 ref 而不是位置索引。ref 每一步都在最新状态上重新解析并与 legal_actions 校验；位置索引只允许在单步/第一步使用，链式第 2 步起拒绝（索引会随出牌、击杀、购买移位）。
 
-- 卡牌：`{"action":"play_card","card":"Strike+","target":"Inklet@3"}`。卡名大小写、空白、`[markup]`、`++` 均规范化；`Strike` 与 `Strike+` 区分升级档；完全相同的复制品视为同一选择，不同的复制品需 `Strike#2`。也可用卡牌 id。
+- 卡牌：`{"action":"play_card","card":"Strike+","target":"Inklet@3"}`。卡名大小写、空白、`[markup]`、`++` 均规范化；`Strike` 与 `Strike+` 区分升级档；完全相同的复制品视为同一选择，不同的复制品需 `Strike#2`；若复制品只在费用/可打出性上不同（如 Frantic Escape 打出后费用上涨），裸名选可打出且最便宜的那张并返回 warning（`#k` 仍可指定）。也可用卡牌 id。
 - 目标：`名称@combat_id`、`cid:N` 或数字。发送给 MCP 的 target 一律是 combat_id（击杀后 entity_id 会重新编号，例如 INKLET_2 变成 INKLET_1）；链式步骤里旧 entity_id 按本次 act 开始时的映射翻译，目标已死则明确报错，绝不改打别的敌人。
 - 药水：`{"action":"use_potion","potion":"slot:1"}` 或 potion id，可加 `potion_id` 作守卫。不用英文名子串匹配；是否能在战斗中用看 can_use_in_combat。
 - 商店 `item:"card:SHRUG_IT_OFF"`/`"relic:LIZARD_TAIL"`/`"card_removal"`；奖励 `reward:"gold"`/`"potion:WEAK_POTION"`/`"card"`；地图 `node:"col,row"`（可加 `type`）；宝箱 `relic:<id>`；休息/事件用选项 id 或标题。
@@ -56,7 +56,7 @@ act 发送前等待“可行动”帧：战斗需 is_play_phase、queue_idle 且
 
 ## 多选、变化与快速 SL
 
-新的隔离 MCP 补丁输出 selection_tracking、每张 is_selected、selected_indices/count、min_select/max_select。hand_select 与 card_select 用一次 act 完成：`{"action":"select","cards":["Strike","Strike","Defend"]}`，harness 逐张按 ref 选择（重复名称会选不同复制品，不会取消已选），最后自动确认（意图记录 controller=harness、harness_followup=auto_confirm_selection）。数量少于 min_select 时发送前即拒绝；`"confirm":false` 保持界面打开以便逐张选择；单选即关闭的界面不发确认。存在预览时只确认或取消，不能继续点隐藏网格。
+新的隔离 MCP 补丁输出 selection_tracking、每张 is_selected、selected_indices/count、min_select/max_select。hand_select 与 card_select 用一次 act 完成：`{"action":"select","cards":["Strike","Strike","Defend"]}`，harness 逐张按 ref 选择（重复名称会选不同复制品，不会取消已选），最后自动确认（意图记录 controller=harness、harness_followup=auto_confirm_selection）。数量少于 min_select 时发送前即拒绝（例外：单张 `{"action":"select_card","card":"X"}` 落在多选界面时，按 `{"action":"select","cards":["X"],"confirm":false}` 处理并返回 warning，界面保持打开，再用 `cards` 选完余下的）；`"confirm":false` 保持界面打开以便逐张选择；单选即关闭的界面不发确认。存在预览时只确认或取消，不能继续点隐藏网格。
 
 变化预览保留 preview_originals；轮播示例牌不再作为 preview_cards 返回。cycles_random_examples 表示是否有随机轮播，result_committed=false，必须确认后比较真实牌组。缺选择字段的旧 MCP 仍需视觉兜底，不能伪造成功。非预览多选的可靠勾选变化可使用0.2秒短确认；空敌人列表不代表胜利。
 

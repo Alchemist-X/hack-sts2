@@ -95,14 +95,47 @@ def history_metrics(history):
             'game_mode': history.get('game_mode'), 'ascension': history.get('ascension')}
 
 
+BOSS_EXIT_TYPES = {'rewards', 'card_reward', 'map', 'treasure', 'event', 'rest_site', 'shop'}
+
+
+def boss_combats(records):
+    """One entry per boss combat seen in the trajectory: HP at combat start and whether it was won.
+
+    A boss combat is keyed by (act, floor): in-combat sub-screens (``hand_select``,
+    ``card_select`` from potions/cards) and a fresh ``state_version`` do not start a
+    new one.  ``hp`` is the HP on the first decision of that combat, i.e. after
+    start-of-combat relics but before any card is played -- the observed value,
+    not a reconstruction.
+    """
+    combats, current = [], None
+    for r in records:
+        if r.get('type') != 'decision':
+            continue
+        st = r.get('state_type')
+        key = (r.get('act'), r.get('floor'))
+        if st == 'boss' and (current is None or current['key'] != key):
+            current = {'key': key, 'act': key[0], 'floor': key[1], 'hp': r.get('hp'), 'killed': False}
+            combats.append(current)
+        elif current is not None and not current['killed']:
+            later_floor = isinstance(key[1], int) and isinstance(current['floor'], int) and key[1] > current['floor']
+            if st in BOSS_EXIT_TYPES or later_floor:
+                current['killed'] = True
+        if current is not None and st == 'boss' and current['key'] == key:
+            post = (r.get('outcome') or {}).get('post_state_type')
+            if post in BOSS_EXIT_TYPES:
+                current['killed'] = True
+    return [{k: v for k, v in c.items() if k != 'key'} for c in combats]
+
+
 def trajectory_metrics(records):
     """Fallback metrics plus harness friction counts from trajectory records."""
     decisions = [r for r in records if r.get('type') == 'decision']
     frictions = collections.Counter()
     followups = collections.Counter()
     floor = act = 0
-    boss_entry_hp, boss_kills = [], 0
-    in_boss = False
+    combats = boss_combats(records)
+    boss_entry_hp = [c['hp'] for c in combats]
+    boss_kills = sum(1 for c in combats if c['killed'])
     last_combat_enemies = None
     for r in decisions:
         floor = max(floor, r.get('floor') or 0)
@@ -110,13 +143,7 @@ def trajectory_metrics(records):
         st = r.get('state_type')
         if st in COMBAT_TYPES:
             last_combat_enemies = r.get('enemies') or last_combat_enemies
-        if st == 'boss' and not in_boss:
-            in_boss = True
-            boss_entry_hp.append(r.get('hp'))
         outcome = r.get('outcome') or {}
-        if in_boss and outcome.get('post_state_type') not in (None, 'boss', 'hand_select', 'game_over'):
-            in_boss = False
-            boss_kills += 1
         if outcome.get('error'):
             frictions[outcome['error']] += 1
         for f in outcome.get('harness_followups') or []:
@@ -139,6 +166,17 @@ def run_metrics(records, history=None, *, wall_time_s=None, end_reason=None):
            'harness_followups': traj['harness_followups']}
     if history is not None:
         out.update(history_metrics(history))
+        # The history only has per-floor end HP, damage_taken and hp_healed, so
+        # its reconstruction misses HP lost outside "damage" (Sandpit/instant
+        # death, self-HP-loss cards).  Prefer the HP observed at the first
+        # decision of each boss combat whenever the trajectory has it.
+        observed = traj['boss_entry_hp']
+        if observed and all(isinstance(v, int) for v in observed):
+            out['boss_entry_hp_history'] = out['boss_entry_hp']
+            out['boss_entry_hp'] = list(observed)
+            out['boss_entry_hp_source'] = 'trajectory_combat_start'
+        else:
+            out['boss_entry_hp_source'] = 'game_history'
     else:
         died = end_reason == 'game_over'
         cause = None
@@ -147,7 +185,7 @@ def run_metrics(records, history=None, *, wall_time_s=None, end_reason=None):
             cause = 'combat:' + '+'.join(sorted(enemies)) if enemies else 'unknown'
         out.update({'source': 'trajectory', 'win': None if not died else False, 'act': traj['act'],
                     'floor': traj['floor'], 'boss_kills': traj['boss_kills'],
-                    'boss_entry_hp': traj['boss_entry_hp'],
+                    'boss_entry_hp': traj['boss_entry_hp'], 'boss_entry_hp_source': 'trajectory_combat_start',
                     'death_cause': cause if died else f'not_finished:{end_reason}'})
     out['hp_at_boss_entry'] = out['boss_entry_hp'][0] if out.get('boss_entry_hp') else None
     return out

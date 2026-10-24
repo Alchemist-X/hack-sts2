@@ -196,14 +196,26 @@ def expand(state, request):
         raise refs.ActionRefError(f"card selection given but screen is {st!r}")
     select, _confirm = SELECT_SCREENS[st]
     cards = request.pop('cards', None)
-    if cards is None:
+    single = cards is None
+    if single:
         cards = [request.pop('card')]
     elif not isinstance(cards, list):
         cards = [cards]
+    explicit_confirm = 'confirm' in request
     confirm = request.pop('confirm', True)
     block = state.get(st) or {}
     already = len(block.get('selected_cards') or block.get('selected_indices') or [])
     minimum, maximum = block.get('min_select'), block.get('max_select')
+    warning = None
+    if (single and not explicit_confirm and confirm and isinstance(minimum, int)
+            and already + len(cards) < minimum):
+        # A bare single-card select (``select_card``/``card``) on a multi-pick
+        # screen: wrap it as ``{"action":"select","cards":[card],"confirm":false}``
+        # so the pick lands and the screen stays open for the rest.
+        confirm = False
+        warning = (f'{st} needs {minimum} card(s); single-card {request.get("action")} treated as '
+                   f'{{"action":"select","cards":[{json.dumps(cards[0], ensure_ascii=False)}],"confirm":false}}; '
+                   f'{minimum - already - 1} more to pick (send them in "cards")')
     if confirm and isinstance(minimum, int) and already + len(cards) < minimum:
         raise refs.ActionRefError(f'{st} needs at least {minimum} card(s); request selects {already + len(cards)} '
                                   '(list them all in "cards", or pass "confirm": false)')
@@ -212,6 +224,8 @@ def expand(state, request):
     extra = {k: v for k, v in request.items() if k not in {'action'}}
     steps = [{'action': select, 'card': card, **extra} for card in cards]
     steps[-1]['_confirm'] = bool(confirm)
+    if warning:
+        steps[0]['_warning'] = warning
     return steps
 
 
@@ -442,6 +456,10 @@ def run_act(a, out, meta, knowledge_root):
         for request in items:
             step += 1
             confirm = request.pop('_confirm', None)
+            expand_warning = request.pop('_warning', None)
+            if expand_warning:
+                warnings.append(expand_warning)
+                executor.append_live(out/'live.log', f'harness: {expand_warning}')
             try:
                 resolved = refs.resolve(state, request, allow_index=(step == 1), observed_entities=observed_entities)
             except refs.ActionRefError as error:
@@ -451,6 +469,10 @@ def run_act(a, out, meta, knowledge_root):
                      request=request, steps=session.steps, state=state, out=out, knowledge_root=knowledge_root,
                      **changed)
             notes += resolved['notes']
+            for note in resolved['notes']:
+                if note.startswith(refs.WARNING_PREFIX):
+                    warnings.append(note[len(refs.WARNING_PREFIX):])
+                    executor.append_live(out/'live.log', f'harness: {note}')
             before_type = state.get('state_type')
             state = session.execute(state, resolved['wire'], request, step=step, legal=resolved['legal'])
             session.steps[-1]['resolved'] = refs.describe(resolved)

@@ -5,6 +5,8 @@
 
 Reads ``results.jsonl`` (or per-seed ``*/result.json``) from each run directory
 and prints one per-seed table plus an aggregate row per (policy, wiki_facts).
+``boss_entry_hp`` is re-derived from ``<seed>/trajectory.jsonl`` when present (HP
+observed at each boss combat start); ``--rewrite`` persists that into result.json.
 """
 import argparse
 import json
@@ -13,18 +15,51 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import metrics  # noqa: E402
 
-def load_results(run_dir):
+
+def refresh_boss_entry(result, trajectory_path):
+    """Re-derive boss_entry_hp from the seed's trajectory (HP at each boss combat start).
+
+    Older result.json files reconstructed it from the game history, which misses
+    non-damage HP loss (e.g. S10 recorded 27 for an Act 2 boss entered at 63).
+    Returns True when the result changed.
+    """
+    if not trajectory_path.exists():
+        return False
+    try:
+        records = metrics.load_trajectory(trajectory_path)
+    except (OSError, ValueError):
+        return False
+    observed = [c['hp'] for c in metrics.boss_combats(records)]
+    if not observed or not all(isinstance(v, int) for v in observed):
+        return False
+    before = (result.get('boss_entry_hp'), result.get('hp_at_boss_entry'))
+    if result.get('boss_entry_hp') != observed and 'boss_entry_hp_history' not in result \
+            and result.get('source') == 'game_history':
+        result['boss_entry_hp_history'] = result.get('boss_entry_hp')
+    result['boss_entry_hp'] = observed
+    result['hp_at_boss_entry'] = observed[0]
+    result['boss_entry_hp_source'] = 'trajectory_combat_start'
+    return before != (observed, observed[0])
+
+
+def load_results(run_dir, *, refresh=True, rewrite=False):
     run_dir = Path(run_dir)
     rows = {}
     for path in sorted(run_dir.glob('*/result.json')):
         r = json.loads(path.read_text())
+        if refresh and refresh_boss_entry(r, path.parent / 'trajectory.jsonl') and rewrite:
+            path.write_text(json.dumps(r, ensure_ascii=False, indent=2) + '\n')
         rows[r['seed']] = r
     results = run_dir / 'results.jsonl'
     if results.exists():
         for line in results.read_text().splitlines():
             if line.strip():
                 r = json.loads(line)
+                if refresh:
+                    refresh_boss_entry(r, run_dir / str(r['seed']) / 'trajectory.jsonl')
                 rows[r['seed']] = r
     for r in rows.values():
         r.setdefault('run', run_dir.name)
@@ -98,8 +133,12 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('runs', nargs='+', type=Path)
     p.add_argument('--json', action='store_true')
+    p.add_argument('--no-refresh', action='store_true',
+                   help='use boss_entry_hp exactly as stored instead of re-deriving it from trajectory.jsonl')
+    p.add_argument('--rewrite', action='store_true',
+                   help='write re-derived boss_entry_hp back into each <seed>/result.json')
     a = p.parse_args(argv)
-    rows = [r for d in a.runs for r in load_results(d)]
+    rows = [r for d in a.runs for r in load_results(d, refresh=not a.no_refresh, rewrite=a.rewrite)]
     if not rows:
         print('no results found', file=sys.stderr)
         return 1

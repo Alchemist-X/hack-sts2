@@ -103,12 +103,31 @@ def card_label(card: dict[str, Any]) -> str:
     return f"{base}+" if level == 1 else f"{base}+{level}"
 
 
-def _card_identity(card: dict[str, Any]) -> str:
+WARNING_PREFIX = "warning: "
+# Fields that change with energy/cost modifiers but not with which card it is.
+COST_KEYS = frozenset({"cost", "star_cost", "can_play", "unplayable_reason"})
+
+
+def _card_identity(card: dict[str, Any], ignore: frozenset[str] = frozenset()) -> str:
     keep = {k: card.get(k) for k in (
         "id", "model_id", "is_upgraded", "cost", "star_cost", "description",
-        "enchantment", "affliction", "can_play", "target_type", "type")}
+        "enchantment", "affliction", "can_play", "target_type", "type") if k not in ignore}
     keep["label"] = card_label(card)
     return json.dumps(keep, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _cost_number(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return float("inf")  # "X" / unknown costs sort last
+    return number if number >= 0 else float("inf")
+
+
+def _playable_cost_key(card: dict[str, Any]) -> tuple[int, float, float]:
+    playable = card.get("can_play")
+    return (0 if playable is None or playable else 1, _cost_number(card.get("cost")),
+            _cost_number(card.get("star_cost")) if card.get("star_cost") is not None else 0.0)
 
 
 def card_refs(cards: list[dict[str, Any]]) -> list[str]:
@@ -180,6 +199,15 @@ def match_card(cards: list[dict[str, Any]], ref: Any, *, what: str = "card") -> 
             occurrence = 1
         return matches[occurrence - 1], notes
     if len({_card_identity(c) for c in matches}) > 1:
+        if len({_card_identity(c, ignore=COST_KEYS) for c in matches}) == 1:
+            # Copies differ only in cost (e.g. Frantic Escape after one play, a
+            # card discounted by a relic/power): they are the same card, so a
+            # bare name means the copy you can actually play, cheapest first.
+            pick = min(matches, key=_playable_cost_key)
+            costs = ", ".join(f"{card_refs(cards)[cards.index(c)]}={c.get('cost')}" for c in matches)
+            notes.append(f"{WARNING_PREFIX}{what} {query!r}: copies differ only in cost ({costs}); "
+                         f"used the playable/cheapest copy (cost {pick.get('cost')}); add #k to pick another")
+            return pick, notes
         raise ActionRefError(f"{what} {query!r} is ambiguous: copies differ; add #k", available=card_refs(cards))
     return matches[0], notes
 
@@ -693,7 +721,12 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
         card_ref = request.pop("card")
         anchor = request.pop("_card_anchor", None)
         anchored = [c for c in cards if anchor is not None and card_anchor(c) == anchor]
-        if anchored:
+        bare = isinstance(card_ref, str) and _parse_occurrence(card_ref)[1] is None
+        if len(anchored) > 1 and bare:
+            # Several copies share the anchored content (they differ only in
+            # cost/playability): let the bare name pick the playable/cheapest one.
+            card, card_notes = match_card(cards, card_ref)
+        elif anchored:
             # Chained plays: the copy named on the observed hand, found again by
             # content after earlier plays renumbered "Name#k".
             card, card_notes = anchored[0], []
