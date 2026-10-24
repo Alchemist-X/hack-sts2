@@ -12,7 +12,15 @@ listing they were read from: ``3@<token>`` or ``[1,4]@<token>``, where the
 token is printed with each listing.  The token is checked against the last
 observation, and the act is then guarded by that observation's decision hash
 and, when the eval API is available, its ``state_version``; a mismatch
-anywhere refuses the act without sending anything.
+anywhere refuses the act without sending anything.  A moved ``state_version``
+whose decision hash is unchanged is not a different decision (the version also
+ticks on animation and bookkeeping the hash ignores): sts2_live accepts it when
+the legal-action listing is also unchanged, and otherwise this script re-observes
+and re-binds the same choice once when it is still offered.
+
+Any refused or failed act blocks every later act until an explicit ``obs``:
+``act A ...; act proceed ...`` can never run the ``proceed`` after ``A`` was
+refused, because the agent has to look at the fresh state first.
 
 ``act obs`` (or ``act observe``) is an observation, never an action.
 """
@@ -107,13 +115,39 @@ def parse_action(obs: dict[str, Any], text: str) -> Any:
     return json.loads(text) if text[:1] in '{["' else text
 
 
+def legal_digest(obs: dict[str, Any]) -> str:
+    """Digest of the observation's legal-action refs (same function sts2_live checks against)."""
+    scripts = str(Path(__file__).resolve().parents[1])
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import sts2_action_refs  # noqa: PLC0415
+    return sts2_action_refs.legal_digest(obs.get('legal_actions') or [])
+
+
 def act_args(obs: dict[str, Any], action: Any, reason: str) -> tuple[list[str], list[str]]:
     """Positional args and extra flags for ``sts2_live act``, guarded by the observed hash/version."""
     payload = action if isinstance(action, str) else json.dumps(action, ensure_ascii=False)
     extra = []
     if isinstance(obs.get('state_version'), int):
-        extra = ['--expect-state-version', str(obs['state_version'])]
+        extra = ['--expect-state-version', str(obs['state_version']), '--expect-legal-digest', legal_digest(obs)]
     return [payload, reason, obs['hash']], extra
+
+
+def still_offered(action: Any, obs: dict[str, Any]) -> bool:
+    """Whether the first step of ``action`` is still among ``obs``'s legal actions.
+
+    Used only after the decision hash was confirmed unchanged, to re-bind a
+    choice whose state_version moved.  Dict refs must be listed exactly (or at
+    least their action kind must be offered); shorthands are resolved by
+    sts2_live against the same decision state.
+    """
+    first = action[0] if isinstance(action, list) and action else action
+    if not isinstance(first, dict):
+        return True
+    legal = [x.get('ref') for x in obs.get('legal_actions') or [] if isinstance(x.get('ref'), dict)]
+    if first in legal:
+        return True
+    return first.get('action') in {r.get('action') for r in legal}
 
 
 def discard_guard(action: Any, reason: str) -> str | None:
@@ -174,13 +208,40 @@ class Runner:
             print(json.dumps(obs.get('state'))[:4000])
         print(listing_header(obs))
 
+    def block(self, kind):
+        """Refuse every later act until an explicit ``obs`` (see clear_block)."""
+        self.s['blocked_after_refusal'] = {'kind': kind, 'index': self.s['index']}
+        self.save()
+
+    def clear_block(self):
+        if self.s.pop('blocked_after_refusal', None) is not None:
+            self.save()
+
     def refuse(self, kind, message):
         self.rec.write({'type': 'friction', 'kind': kind, 'index': self.s['index'], 'message': message[:300]})
         print(f'ACT REFUSED ({kind}): {message}')
+        self.block(kind)
         self.show(self.observe())
         return 3
 
+    def rebind(self, obs, action, result):
+        """After stale_state_version: the fresh observation, when the same choice is still valid there."""
+        if result.get('error') != 'stale_state_version':
+            return None
+        fresh = self.observe()
+        if fresh.get('hash') != obs.get('hash') or not still_offered(action, fresh):
+            return None
+        return fresh
+
     def act(self, text, reason):
+        blocked = self.s.get('blocked_after_refusal')
+        if blocked:
+            message = (f'an earlier act was refused/failed ({blocked.get("kind")}); nothing was sent. Run obs, '
+                       'read the fresh state and decide again (chained acts never run after a refusal)')
+            self.rec.write({'type': 'friction', 'kind': 'blocked_after_refusal', 'index': self.s['index'],
+                            'message': message[:300], 'blocked_by': blocked.get('kind')})
+            print(f'ACT REFUSED (blocked_after_refusal): {message}')
+            return 3
         obs = json.loads(self.last_obs.read_text())
         try:
             action = parse_action(obs, text)
@@ -189,10 +250,20 @@ class Runner:
         guard = discard_guard(action, reason)
         if guard:
             print('GUARD:', guard)
+            self.block('discard_guard')
             return 3
         args, extra = act_args(obs, action, reason)
         t0 = time.time()
         _, result = self.live('act', *args, extra=extra)
+        rebound = None
+        fresh = self.rebind(obs, action, result)
+        if fresh is not None:
+            # Same decision hash, same choice still offered: the version tick
+            # was not a different decision.  Re-bind once and retry.
+            rebound = (f'auto-rebound state_version {obs.get("state_version")}->{fresh.get("state_version")} '
+                       f'(decision hash unchanged)')
+            args, extra = act_args(fresh, action, reason)
+            _, result = self.live('act', *args, extra=extra)
         latency = time.time() - t0
         post = result.get('observation') or {}
         steps = result.get('steps') or []
@@ -200,7 +271,8 @@ class Runner:
                    'message': None if result.get('ok') else (result.get('message') or '')[:500],
                    'steps': len(steps),
                    'harness_followups': [x['harness_followup'] for x in steps if x.get('harness_followup')],
-                   'warnings': result.get('warnings') or [], 'authority_verified': result.get('authority_verified'),
+                   'warnings': [*([rebound] if rebound else []), *(result.get('warnings') or [])],
+                   'authority_verified': result.get('authority_verified'),
                    'post_hash': post.get('hash'), 'post_state_type': (post.get('state') or {}).get('state_type'),
                    'post_hp': ((post.get('state') or {}).get('player') or {}).get('hp')}
         self.rec.write({'type': 'decision', 'seed': self.a.seed, 'instance': self.a.instance, 'index': self.s['index'],
@@ -216,6 +288,7 @@ class Runner:
         self.save()
         if not outcome['ok']:
             print('ACT FAILED:', outcome['error'], outcome['message'])
+            self.block(outcome['error'] or 'act_failed')
             if outcome['error'] in ('action_unresolved', 'pending_unresolved'):
                 self.live('reconcile', f'agent: auto-reconcile after {outcome["error"]}')
                 print('reconciled')
@@ -255,6 +328,7 @@ def main(argv=None, runner_cls=Runner):
     kind = route(a)
     runner = runner_cls(a)
     if kind == 'observe':
+        runner.clear_block()
         runner.show(runner.observe())
         return 0
     return runner.act(a.action, a.reason)

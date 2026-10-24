@@ -490,6 +490,19 @@ def action_ref(state: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
     return plain
 
 
+def legal_digest(actions: Iterable[dict[str, Any]] | None) -> str:
+    """Short digest of a listing's legal-action refs, in order.
+
+    Two listings with the same digest offer the same choices at the same
+    positions, so a decision read from one is still valid against the other.
+    """
+    import hashlib  # noqa: PLC0415 - keep module import cheap
+
+    refs_only = [a.get("ref") if isinstance(a, dict) else a for a in (actions or [])]
+    blob = json.dumps(refs_only, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
 def observe_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Legal actions shown to the controller: wire form plus a stable ``ref``."""
     out, seen = [], set()
