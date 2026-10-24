@@ -18,6 +18,26 @@ sys.path.insert(0, str(ROOT / 'sts2rec'))
 from sts2rec.information import build_information_view
 from sts2rec.knowledge import visible_knowledge
 
+WIKI_FACTS_MAX_CHARS = 4000
+
+
+def wiki_facts(out, state):
+    """Public wiki/codex priors for this state, if the session opted in (start --wiki-facts).
+
+    Returns None when disabled so benchmark runs can A/B with and without facts.
+    """
+    session = out / 'session.json'
+    meta = json.loads(session.read_text()) if session.exists() else {}
+    if not meta.get('wiki_facts'):
+        return None
+    sys.path.insert(0, str(ROOT / 'scripts' / 'facts'))
+    from lookup import FactDB
+    try:
+        return FactDB.load(str(meta.get('knowledge_version', 'v0.107.1')).lstrip('v')).facts_for_state(
+            state, max_chars=WIKI_FACTS_MAX_CHARS)
+    except (OSError, KeyError, ValueError) as error:
+        return f'(wiki facts unavailable: {type(error).__name__}: {error})'
+
 
 def public_display(state):
     view = build_information_view(state, 'limited')
@@ -56,11 +76,15 @@ def snapshot(out, state, knowledge_root, decision_id=None):
     result['new_knowledge_ids'] = [f['model_id'] for f in new]
     result['knowledge_missing'] = knowledge['missing']
     result['decision_context'] = knowledge['decision_context']
+    facts = wiki_facts(out, state)
+    if facts is not None:
+        result['wiki_facts'] = facts
     result['knowledge_references'] = knowledge['references']
     return result
 
 
-def start_session(out, plan, memories, mode, port, version, codex_session, allow_unverified_authority=False):
+def start_session(out, plan, memories, mode, port, version, codex_session, allow_unverified_authority=False,
+                  use_wiki_facts=False):
     if (out / 'session.json').exists() or (out / 'decisions.jsonl').exists():
         raise SystemExit('Existing run directory; resume it without start, or use a new directory')
     # Read and preserve the exact working plan and memories before first gameplay.
@@ -76,7 +100,7 @@ def start_session(out, plan, memories, mode, port, version, codex_session, allow
         memory_refs.append({'path': str(path.resolve()), 'sha256': hashlib.sha256(content).hexdigest()})
     meta = {'started_at': datetime.now(timezone.utc).isoformat(), 'mode': mode, 'port': port,
             'knowledge_version': version, 'knowledge_version_status': 'caller_supplied; verify against actual game build',
-            'memory_inputs': memory_refs, 'allow_unverified_authority': bool(allow_unverified_authority), 'codex_session': str(codex_session.resolve()) if codex_session else None}
+            'memory_inputs': memory_refs, 'allow_unverified_authority': bool(allow_unverified_authority), 'wiki_facts': bool(use_wiki_facts), 'codex_session': str(codex_session.resolve()) if codex_session else None}
     (out / 'session.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2)+'\n')
     executor.append_live(out / 'live.log', f'开始新记录 | {mode} | 知识版本 {version}\n构筑计划：{json.dumps(plan_data, ensure_ascii=False)}')
     return meta
@@ -369,6 +393,8 @@ def main():
     p.add_argument('--allow-unverified-authority', action='store_true',
                    help='practice only: act even if the rule-source fingerprint does not match this build')
     p.add_argument('--settle-timeout', type=float, default=20.0)
+    p.add_argument('--wiki-facts', action='store_true',
+                   help='start only: include public wiki/codex facts (knowledge/facts) in every observation')
     a = p.parse_args()
     out = a.run_dir.resolve()
     try:
@@ -385,7 +411,7 @@ def _dispatch(a, out):
         if a.allow_unverified_authority and a.mode != 'practice':
             raise SystemExit('--allow-unverified-authority is only valid in practice mode')
         meta = start_session(out, a.plan, a.memory, a.mode, a.port, a.game_version, a.codex_session,
-                             a.allow_unverified_authority)
+                             a.allow_unverified_authority, a.wiki_facts)
         print(json.dumps(meta, ensure_ascii=False))
         return
     if a.command == 'report':

@@ -1,0 +1,29 @@
+{
+  "name": "ironclad-a0-10seed-v1",
+  "description": "Fixed 10-seed Ironclad A0 standard-mode evaluation set. Every run restores the frozen save baseline first.",
+  "game_version": "v0.107.1",
+  "character": "IRONCLAD",
+  "ascension": 0,
+  "game_mode": "standard",
+  "baseline": {
+    "name": "sts2-bench-baseline-v1",
+    "sha256": "72f1dd96e0edcff817cd6717368701cfe4e38eb2cd13a90277ebedbe9b697846"
+  },
+  "seeds": [
+    "BENCHA0S01",
+    "BENCHA0S02",
+    "BENCHA0S03",
+    "BENCHA0S04",
+    "BENCHA0S05",
+    "BENCHA0S06",
+    "BENCHA0S07",
+    "BENCHA0S08",
+    "BENCHA0S09",
+    "BENCHA0S10"
+  ],
+  "limits": {
+    "max_decisions": 3000,
+    "max_wall_s": 5400,
+    "max_consecutive_errors": 6
+  }
+}

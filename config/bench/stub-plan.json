@@ -1,0 +1,7 @@
+{
+  "immediate_threat": "benchmark stub: none tracked",
+  "deck_plan": "benchmark stub: take the first offered card",
+  "draw_plan": "benchmark stub: play the first playable card",
+  "potion_budget": "benchmark stub: never uses potions",
+  "stop_conditions": "game over, decision limit or wall-time limit"
+}
