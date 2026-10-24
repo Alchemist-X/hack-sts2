@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import sts2_act_lock as act_lock
 import sts2_action_executor as executor
 import sts2_action_refs as refs
 from sts2_run_audit import run_report, usage_report
@@ -407,6 +408,46 @@ def check_state_version(port, expected, observed_hash, pre, out, knowledge_root,
     return None
 
 
+# Cancelling/skipping a selection opened by a potion (Colorless/Attack/Skill/
+# Power Potion "choose a card") still consumes the potion: the S08 replay lost a
+# Colorless Potion that way.  Refuse unless explicitly allowed.
+SELECTION_ABANDON = {'cancel_selection', 'skip_card_selection', 'cancel_bundle_selection'}
+POTION_CANCEL_FLAG = 'allow_potion_cancel'
+
+
+def last_intent_action(out, tail_bytes=400_000):
+    """Wire action name of the most recent recorded decision intent, or None."""
+    path = out / 'decisions.jsonl'
+    if not path.exists():
+        return None
+    with path.open('rb') as handle:
+        handle.seek(0, 2)
+        size = handle.tell()
+        handle.seek(max(0, size - tail_bytes))
+        lines = handle.read().decode('utf-8', 'replace').splitlines()
+    for line in reversed(lines):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get('type') == 'decision_intent':
+            return (record.get('action') or {}).get('action')
+    return None
+
+
+def potion_selection_guard(out, wire, request, previous_wire, allow, **context):
+    """Refuse abandoning a potion-opened selection screen without an explicit flag."""
+    if wire.get('action') not in SELECTION_ABANDON or allow or request.get(POTION_CANCEL_FLAG) is True:
+        return
+    opener = (previous_wire or {}).get('action') if previous_wire is not None else last_intent_action(out)
+    if opener != 'use_potion':
+        return
+    fail('potion_selection_cancel',
+         f"{wire['action']} on a selection opened by a potion would consume the potion without its effect; "
+         f'nothing was sent. Pick a card, or resend with "{POTION_CANCEL_FLAG}": true '
+         '(or --allow-potion-cancel) if wasting the potion is intended.', out=out, **context)
+
+
 def run_act(a, out, meta, knowledge_root):
     if (out/'pending-action.json').exists():
         pending = (out/'pending-action.json').read_text().strip()
@@ -442,6 +483,7 @@ def run_act(a, out, meta, knowledge_root):
     session.authority_verified = check_authority(meta, snapshot(out, pre, knowledge_root), a.allow_unverified_authority)
     observed_entities = refs.entity_map(pre)
     state, step, notes = pre, 0, []
+    previous_wire = None  # wire of the previous step in this chain (None: look at decisions.jsonl)
     warnings = [w for w in (reason_warning, version_warning) if w]
     # Pin "Name#k" / "card#3" to what they name on the observed screen, so
     # renumbering after earlier steps of this chain cannot redirect them.
@@ -460,6 +502,7 @@ def run_act(a, out, meta, knowledge_root):
             if expand_warning:
                 warnings.append(expand_warning)
                 executor.append_live(out/'live.log', f'harness: {expand_warning}')
+            allow_potion_cancel = request.pop(POTION_CANCEL_FLAG, None) is True
             try:
                 resolved = refs.resolve(state, request, allow_index=(step == 1), observed_entities=observed_entities)
             except refs.ActionRefError as error:
@@ -473,7 +516,11 @@ def run_act(a, out, meta, knowledge_root):
                 if note.startswith(refs.WARNING_PREFIX):
                     warnings.append(note[len(refs.WARNING_PREFIX):])
                     executor.append_live(out/'live.log', f'harness: {note}')
+            potion_selection_guard(out, resolved['wire'], request, previous_wire,
+                                   allow_potion_cancel or getattr(a, 'allow_potion_cancel', False),
+                                   state=state, knowledge_root=knowledge_root, steps=session.steps, failed_step=step)
             before_type = state.get('state_type')
+            previous_wire = resolved['wire']
             state = session.execute(state, resolved['wire'], request, step=step, legal=resolved['legal'])
             session.steps[-1]['resolved'] = refs.describe(resolved)
             if resolved['wire']['action'] == 'proceed' and state.get('state_type') == 'card_reward':
@@ -540,6 +587,11 @@ def main():
     p.add_argument('--expect-legal-digest',
                    help='act only: legal-action digest of the listing the action was chosen from; a moved '
                         'state_version is accepted (re-bound) when this and the decision hash are unchanged')
+    p.add_argument('--lock-wait', type=float, default=0.0,
+                   help='act/reconcile: seconds to wait for another act on this port to finish '
+                        '(default 0 = fail fast with act_in_flight)')
+    p.add_argument('--allow-potion-cancel', action='store_true',
+                   help='act: permit cancel/skip of a selection screen opened by a potion (consumes the potion)')
     p.add_argument('--wiki-facts', action='store_true',
                    help='start only: include public wiki/codex facts (knowledge/facts) in every observation')
     a = p.parse_args()
@@ -599,10 +651,17 @@ def _dispatch(a, out):
             view['warning_pending'] = 'a previous action is unresolved; run reconcile before acting'
         print(json.dumps(view, ensure_ascii=False))
         return
-    if a.command == 'reconcile':
-        run_reconcile(a, out, knowledge_root)
-        return
-    post = run_act(a, out, meta, knowledge_root)
+    # Mutating commands hold the per-instance lock: concurrent acts on one port
+    # serialize (--lock-wait) or fail fast, and never interleave on the game.
+    try:
+        with act_lock.act_lock(a.port, wait_s=a.lock_wait, command=a.command, run_dir=out):
+            if a.command == 'reconcile':
+                run_reconcile(a, out, knowledge_root)
+                return
+            post = run_act(a, out, meta, knowledge_root)
+    except act_lock.ActInFlight as busy:
+        executor.append_live(out/'live.log', f'harness: {busy}')
+        fail('act_in_flight', str(busy), holder=busy.holder, port=busy.port, waited_s=busy.waited_s)
     if post.get('state_type') == 'game_over':
         report = run_report(out/'decisions.jsonl')
         source = meta.get('codex_session')

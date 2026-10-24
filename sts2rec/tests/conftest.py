@@ -156,3 +156,10 @@ def compressed_session_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def real_run_paths() -> list[Path]:
     return sorted(FIXTURES_DIR.glob("*.run"))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_act_locks(tmp_path_factory, monkeypatch):
+    """Per-test act-lock directory, so tests never contend with each other or a real worker."""
+    monkeypatch.setenv("STS2_ACT_LOCK_DIR", str(tmp_path_factory.mktemp("act-locks")))
+    monkeypatch.delenv("STS2_ACT_LOCK_HELD", raising=False)

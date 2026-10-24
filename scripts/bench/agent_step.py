@@ -23,6 +23,10 @@ Any refused or failed act blocks every later act until an explicit ``obs``:
 refused, because the agent has to look at the fresh state first.
 
 ``act obs`` (or ``act observe``) is an observation, never an action.
+
+Only one act may run per instance (port) at a time: a concurrent second act is
+refused with ``act_in_flight`` before anything is read or sent (``--lock-wait S``
+queues instead).  See scripts/sts2_act_lock.py.
 """
 from __future__ import annotations
 
@@ -306,6 +310,8 @@ def build_parser():
     p.add_argument('--instance', default='inst1')
     p.add_argument('--live-flag', action='append', default=[], help='extra sts2_live flag (repeatable)')
     p.add_argument('--facts', action='store_true', help='include wiki facts in the text view')
+    p.add_argument('--lock-wait', type=float, default=0.0,
+                   help='act: seconds to wait for another act on this port (default 0 = refuse immediately)')
     p.add_argument('command', choices=['obs', 'observe', 'act'])
     p.add_argument('action', nargs='?')
     p.add_argument('reason', nargs='?')
@@ -323,15 +329,43 @@ def route(a) -> str:
     return 'act'
 
 
+def act_lock_module():
+    scripts = str(Path(__file__).resolve().parents[1])
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import sts2_act_lock  # noqa: PLC0415
+    return sts2_act_lock
+
+
 def main(argv=None, runner_cls=Runner):
     a = build_parser().parse_args(argv)
     kind = route(a)
-    runner = runner_cls(a)
     if kind == 'observe':
+        runner = runner_cls(a)
         runner.clear_block()
         runner.show(runner.observe())
         return 0
-    return runner.act(a.action, a.reason)
+    # One act per instance at a time.  The lock is taken before this seed's
+    # state.json is even read, so a racing call can neither send anything nor
+    # overwrite the winner's bookkeeping; the child sts2_live inherits it.
+    lock = act_lock_module()
+    try:
+        with lock.act_lock(a.port, wait_s=a.lock_wait, command='agent_step act', run_dir=a.seed_dir):
+            return runner_cls(a).act(a.action, a.reason)
+    except lock.ActInFlight as busy:
+        record_in_flight(a, busy)
+        print(f'ACT REFUSED (act_in_flight): {busy}')
+        return 3
+
+
+def record_in_flight(a, busy):
+    """Append an act_in_flight friction without touching tools/state.json (the holder owns it)."""
+    path = Path(a.seed_dir) / 'trajectory.jsonl'
+    if not path.parent.exists():
+        return
+    with path.open('a', encoding='utf-8') as handle:
+        handle.write(json.dumps({'schema': 'sts2-bench-trajectory/v1', 'type': 'friction', 'kind': 'act_in_flight',
+                                 'message': str(busy)[:300], 'holder': busy.holder}, ensure_ascii=False) + '\n')
 
 
 if __name__ == '__main__':
