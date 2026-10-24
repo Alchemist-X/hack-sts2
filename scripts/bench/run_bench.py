@@ -176,7 +176,37 @@ def verify_seed(inst, active_profile, seed, log_offset):
 
 
 # ------------------------------------------------------------------ harness
-def live(command, run_dir, port, *args, extra=()):
+TRANSIENT_MARKERS = ('TimeoutError', 'timed out', 'ConnectionRefusedError', 'ConnectionResetError',
+                     'RemoteDisconnected', 'URLError')
+OBSERVE_RETRIES, OBSERVE_RETRY_WAIT_S = 3, 10.0
+
+
+def is_transient(error_text):
+    """A crashed observe whose cause is the game's HTTP endpoint not answering (e.g. a host stall)."""
+    return any(marker in error_text for marker in TRANSIENT_MARKERS)
+
+
+def live(command, run_dir, port, *args, extra=(), on_retry=None, retries=None, retry_wait_s=None):
+    """Run one sts2_live command and return (exit code, last JSON line).
+
+    Only ``observe`` is read-only, so only it is retried after a transient
+    HTTP failure; ``act`` failures are never re-sent (sts2_live's pending
+    mechanism and auto-reconcile handle those).
+    """
+    retries = (OBSERVE_RETRIES if command == 'observe' else 0) if retries is None else retries
+    wait = OBSERVE_RETRY_WAIT_S if retry_wait_s is None else retry_wait_s
+    for attempt in range(retries + 1):
+        try:
+            return _live_once(command, run_dir, port, *args, extra=extra)
+        except BenchError as error:
+            if attempt >= retries or not is_transient(str(error)):
+                raise
+            if on_retry:
+                on_retry(command, attempt + 1, str(error)[-300:])
+            time.sleep(wait * (attempt + 1))
+
+
+def _live_once(command, run_dir, port, *args, extra=()):
     cmd = [sys.executable, str(LIVE), command, *args, '--run-dir', str(run_dir), '--port', str(port), *extra]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
@@ -224,7 +254,9 @@ def play(inst, seed, run_dir, rec, policy_name, policy, args, began):
             return 'max_decisions'
         if time.monotonic() - began > limits['max_wall_s']:
             return 'max_wall_s'
-        code, obs = live('observe', run_dir, inst.port, extra=args.live_flags)
+        code, obs = live('observe', run_dir, inst.port, extra=args.live_flags,
+                         on_retry=lambda cmd, n, err: rec.write({'type': 'friction', 'kind': 'transient_observe_retry',
+                                                                  'attempt': n, 'message': err}))
         if obs.get('warning_pending'):
             live('reconcile', run_dir, inst.port, 'bench runner: auto-reconcile after re-observing', extra=args.live_flags)
             rec.write({'type': 'friction', 'kind': 'pending_unresolved', 'index': index})

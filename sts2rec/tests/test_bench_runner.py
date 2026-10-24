@@ -203,3 +203,34 @@ def test_wiki_facts_flag(tmp_path):
     (tmp_path / 'session.json').write_text(json.dumps({'knowledge_version': 'v0.107.1', 'wiki_facts': True}))
     facts = live.wiki_facts(tmp_path, state)
     assert isinstance(facts, str) and 0 < len(facts) <= live.WIKI_FACTS_MAX_CHARS
+
+
+def test_observe_retries_transient_http_failures_but_act_never(monkeypatch):
+    import run_bench
+    calls, retries = [], []
+
+    def flaky(command, *a, **k):
+        calls.append(command)
+        if len(calls) < 3:
+            raise run_bench.BenchError('sts2_live observe exit 1: ... TimeoutError: timed out')
+        return 0, {'ok': True}
+
+    monkeypatch.setattr(run_bench, '_live_once', flaky)
+    assert run_bench.live('observe', 'x', 1, retry_wait_s=0,
+                          on_retry=lambda c, n, e: retries.append(n)) == (0, {'ok': True})
+    assert calls == ['observe'] * 3 and retries == [1, 2]
+
+    calls.clear()
+    with pytest.raises(run_bench.BenchError):
+        run_bench.live('act', 'x', 1, '{}', 'reason', 'hash', retry_wait_s=0)
+    assert calls == ['act']  # an act is never re-sent
+
+    def broken(command, *a, **k):
+        calls.append(command)
+        raise run_bench.BenchError('sts2_live observe exit 1: KeyError: state')
+
+    calls.clear()
+    monkeypatch.setattr(run_bench, '_live_once', broken)
+    with pytest.raises(run_bench.BenchError):
+        run_bench.live('observe', 'x', 1, retry_wait_s=0)
+    assert calls == ['observe']  # real bugs are not masked

@@ -107,7 +107,7 @@ Every line has `schema` and `type`.
 |---|---|
 | `run_start` | `seed`, `instance`, `port`, `started_at`, `policy`, `wiki_facts`, `character`, `ascension`, `benchmark`, `baseline` (restore verification: tarball/progress/settings sha256), `embark` (MCP reply incl. `seed_mechanism`), `seed_evidence` (`log`, `save`, `verified`), `first_state_type`, `harness` |
 | `decision` | `index`, `t_wall_s`, `state_ref` (`run_dir`, `observations` file, `decision_hash` -> the full observation in `live/observations.jsonl`), `state_type`, `act`, `floor`, `hp`, `max_hp`, `gold`, `round`, `enemies`, `legal_actions` (refs), `wiki_facts_chars`, `chosen`, `rationale`, `policy`, `outcome`, `latency_s` (`policy`, `act`) |
-| `friction` | `kind` (`not_settled`, `pending_unresolved`, `policy_error`, `harness_crash`), `index`, `message` |
+| `friction` | `kind` (`not_settled`, `pending_unresolved`, `policy_error`, `harness_crash`, `transient_observe_retry`), `index`, `message` |
 | `terminal` | the `game_over` frame summary |
 | `history` | the game's run-history file name, `win`, `killed_by_encounter` |
 | `run_end` | `metrics` (same as `result.json`) |
@@ -155,3 +155,7 @@ mean act, boss kills, mean HP at boss entry, death causes, frictions per run
   runs from the same baseline sha256.
 * Each decision costs ~2-8 s of harness/game settling, so a full stub run is
   minutes, an LLM run dominated by model latency.
+
+### Transient HTTP stalls
+
+A crashed `observe` caused by the game's HTTP endpoint not answering (TimeoutError, connection refused/reset) is retried up to 3 times with 10/20/30 s back-off. Each retry is recorded as a `transient_observe_retry` friction. `observe` is read-only, so this is safe. An `act` is never re-sent. Non-transient crashes still end the seed as `runner_error`.
