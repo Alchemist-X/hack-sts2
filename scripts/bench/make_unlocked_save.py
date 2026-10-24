@@ -14,7 +14,8 @@ character are available without timeline reveals or first-time popups:
 * ``encounter_stats`` keys for every encounter (empty fight stats) so the
   standard-mode "first boss you have not seen" discovery-order override is a no-op;
 * every character ``max_ascension`` = 10 (and multiplayer max 10) while
-  ``preferred_ascension`` stays 0, so a default lobby is still Ascension 0;
+  ``preferred_ascension`` = ``--preferred-ascension`` (default 0), which is the
+  ascension a standard lobby starts at (``min(preferred, max)``, StartRunLobby);
 * every FTUE/popup id referenced by the game marked completed;
 * ``total_unlocks`` = length of the agnostic epoch unlock order;
 * ``pending_character_unlock`` = ``NONE.NONE``.
@@ -211,7 +212,9 @@ def _char_stats(cid: str) -> dict:
             "total_losses": 0, "total_wins": 0}
 
 
-def unlock(progress: dict, ids: dict) -> dict:
+def unlock(progress: dict, ids: dict, preferred_ascension: int = 0) -> dict:
+    if not 0 <= preferred_ascension <= MAX_ASCENSION:
+        raise SystemExit(f"preferred ascension must be 0..{MAX_ASCENSION}")
     p = json.loads(json.dumps(progress))
     if p.get("schema_version") != 21:
         raise SystemExit(f"unexpected progress schema_version {p.get('schema_version')} (expected 21)")
@@ -255,7 +258,7 @@ def unlock(progress: dict, ids: dict) -> dict:
             c = _char_stats(cid)
             p["character_stats"].append(c)
         c["max_ascension"] = MAX_ASCENSION
-        c["preferred_ascension"] = 0
+        c["preferred_ascension"] = preferred_ascension
     p["max_multiplayer_ascension"] = MAX_ASCENSION
     p["preferred_multiplayer_ascension"] = 0
 
@@ -275,6 +278,7 @@ def summary(before: dict, after: dict, ids: dict) -> dict:
         "epochs_revealed": f"{rev(before)} -> {rev(after)} / {len(ids['epochs'])}",
         "characters": [c["id"] for c in after["character_stats"]],
         "max_ascension": {c["id"]: c["max_ascension"] for c in after["character_stats"]},
+        "preferred_ascension": {c["id"]: c["preferred_ascension"] for c in after["character_stats"]},
         **{k: f"{n(before, k)} -> {n(after, k)}" for k in (
             "discovered_cards", "discovered_relics", "discovered_potions", "discovered_events",
             "discovered_acts", "encounter_stats", "enemy_stats", "ftue_completed")},
@@ -319,6 +323,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="use an existing ILSpy tree of the same sts2.dll instead of decompiling")
     ap.add_argument("--game-data-dir", type=Path, default=os.environ.get("STS2_GAME_DATA_DIR"))
     ap.add_argument("--dry-run", action="store_true", help="print the summary only")
+    ap.add_argument("--preferred-ascension", type=int, default=0,
+                    help="every character's preferred (= default lobby) ascension, 0..10; the "
+                         "standard lobby starts at min(preferred, max) (StartRunLobby)")
     ap.add_argument("--dump-ids", type=Path, help="write the derived id lists as JSON")
     args = ap.parse_args(argv)
 
@@ -344,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"refusing to edit {sd}: only worker-pool copies may be edited")
     prog = sd / "progress.save"
     before = json.loads(prog.read_text(encoding="utf-8"))
-    after = unlock(before, ids)
+    after = unlock(before, ids, args.preferred_ascension)
     out = {"game_version": args.version, "sts2_dll_sha256": dll, **summary(before, after, ids)}
     if not args.dry_run:
         data = dump(after)

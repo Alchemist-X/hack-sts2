@@ -212,6 +212,7 @@ def test_baseline_labels_resolve_to_manifest_files(tmp_path, monkeypatch):
     assert baseline.DEFAULT_BASELINE == 'v2'
     assert baseline.manifest_path('v2') == bdir / 'manifest-v2-unlocked.json'
     assert baseline.manifest_path('v1') == bdir / 'manifest.json'
+    assert baseline.manifest_path('v2-a10') == bdir / 'manifest-v2-a10.json'
     assert baseline.manifest_path(bdir / 'manifest-v2-unlocked.json') == bdir / 'manifest-v2-unlocked.json'
     with pytest.raises(baseline.BaselineError):
         baseline.load_manifest('v1')
@@ -230,6 +231,36 @@ def test_config_pins_each_allowed_baseline():
     with pytest.raises(SystemExit):
         run_bench.check_baseline(config, {'name': 'other', 'sha256': config['baselines']['v2']['sha256']})
     run_bench.check_baseline({'baseline': {'name': 'a', 'sha256': 'x'}}, {'name': 'a', 'sha256': 'x'})
+
+
+def test_a10_config_pins_the_a10_baseline_and_reuses_the_a0_seeds():
+    a0 = json.loads((ROOT / 'config/bench/ironclad-a0-10seed.json').read_text())
+    a10 = json.loads((ROOT / 'config/bench/ironclad-a10-10seed.json').read_text())
+    assert a10['ascension'] == 10 and a10['character'] == 'IRONCLAD'
+    assert a10['seeds'] == a0['seeds'] and len(a10['seeds']) == 10
+    assert a10['default_baseline'] in a10['baselines'] and a10['default_baseline'] in baseline.BASELINES
+    with pytest.raises(SystemExit):  # the A0 baselines are not allowed for the A10 benchmark
+        run_bench.check_baseline(a10, {'name': a0['baselines']['v2']['name'], 'sha256': a0['baselines']['v2']['sha256']})
+
+
+def test_verify_seed_requires_the_expected_ascension(tmp_path):
+    class Inst:
+        dir = tmp_path
+        run = {'rng': {'seed': 'S1'}, 'game_mode': 'standard', 'ascension': 10}
+
+        def current_run(self, _profile):
+            return self.run
+
+    (tmp_path / 'game.log').write_text('old\nEmbarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: S1\n')
+    inst = Inst()
+    assert run_bench.verify_seed(inst, 'p', 'S1', 0)['verified']
+    ev = run_bench.verify_seed(inst, 'p', 'S1', 0, 10)
+    assert ev['verified'] and ev['ascension_verified']
+    ev = run_bench.verify_seed(inst, 'p', 'S1', 0, 0)
+    assert not ev['verified'] and not ev['ascension_verified']
+    inst.run = dict(inst.run, ascension=0)  # log and save disagree
+    assert not run_bench.verify_seed(inst, 'p', 'S1', 0, 10)['verified']
+    assert not run_bench.verify_seed(inst, 'p', 'S2', 0, 0)['verified']
 
 
 # ---------------------------------------------------------- unlocked save
@@ -254,6 +285,12 @@ def test_make_unlocked_save_slugify_and_unlock_idempotent():
     assert all(c['preferred_ascension'] == 0 for c in after['character_stats'])
     assert after['total_unlocks'] == 18 and after['pending_character_unlock'] == 'NONE.NONE'
     assert mus.unlock(after, ids) == after
+    a10 = mus.unlock(after, ids, preferred_ascension=10)
+    assert [c['preferred_ascension'] for c in a10['character_stats']] == [10, 10]
+    assert {k: v for k, v in a10.items() if k != 'character_stats'} == {k: v for k, v in after.items() if k != 'character_stats'}
+    assert mus.unlock(a10, ids, preferred_ascension=10) == a10
+    with pytest.raises(SystemExit):
+        mus.unlock(after, ids, preferred_ascension=11)
     with pytest.raises(SystemExit):
         mus.unlock({'schema_version': 20}, ids)
 

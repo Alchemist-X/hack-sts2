@@ -156,8 +156,8 @@ def start_seeded_run(port, seed, character='IRONCLAD', ascension=0, timeout_s=90
     raise BenchError('timed out starting the seeded run')
 
 
-def verify_seed(inst, active_profile, seed, log_offset):
-    """The seed the game used, from its own log line and the run save."""
+def verify_seed(inst, active_profile, seed, log_offset, ascension=None):
+    """The seed (and, if given, ascension) the game used, from its own log line and the run save."""
     evidence = {}
     game_log = inst.dir / 'game.log'
     if game_log.exists():
@@ -173,6 +173,10 @@ def verify_seed(inst, active_profile, seed, log_offset):
                             'ascension': saved.get('ascension')}
     seeds = {v.get('seed') for v in evidence.values()}
     evidence['verified'] = bool(evidence) and seeds == {seed}
+    if ascension is not None:
+        ascensions = {v.get('ascension') for v in evidence.values() if isinstance(v, dict)}
+        evidence['ascension_verified'] = bool(ascensions) and ascensions == {ascension}
+        evidence['verified'] = evidence['verified'] and evidence['ascension_verified']
     return evidence
 
 
@@ -345,9 +349,9 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
         wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
         embark = start_seeded_run(inst.port, seed, args.config['character'], args.config['ascension'])
         first = wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
-        seed_evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset)
+        seed_evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'))
         if not seed_evidence['verified']:
-            raise BenchError(f'seed not verified: {seed_evidence}')
+            raise BenchError(f'seed/ascension not verified: {seed_evidence}')
         rec.write({'type': 'run_start', 'seed': seed, 'instance': inst.name, 'port': inst.port,
                    'started_at': wall_start.isoformat(), 'policy': policy_name, 'wiki_facts': bool(args.wiki_facts),
                    'character': args.config['character'], 'ascension': args.config['ascension'],
@@ -399,7 +403,7 @@ def fingerprint(inst, seed, args, out_dir):
     wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
     start_seeded_run(inst.port, seed, args.config['character'], args.config['ascension'])
     wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
-    evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset)
+    evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'))
     run_dir = out_dir / 'live'
     subprocess.run([sys.executable, str(LIVE), 'start', '--run-dir', str(run_dir), '--port', str(inst.port),
                     '--plan', str(args.plan), '--memory', str(args.memory[0]), *args.live_flags],
@@ -434,9 +438,9 @@ def parse_args(argv=None):
     p.add_argument('--seeds', help='comma-separated subset of config seeds (default: all)')
     p.add_argument('--policy', default='stub', help='stub | cmd:<command> | py:<module>:<func>')
     p.add_argument('--wiki-facts', action='store_true', help='include wiki_facts in every observation')
-    p.add_argument('--baseline', default=baseline_mod.DEFAULT_BASELINE,
+    p.add_argument('--baseline', default=None,
                    help=f'save baseline: {" | ".join(baseline_mod.BASELINES)} (default '
-                        f'{baseline_mod.DEFAULT_BASELINE}), a baseline dir or a manifest file')
+                        f'{baseline_mod.DEFAULT_BASELINE} or the config default_baseline), a baseline dir or a manifest file')
     p.add_argument('--launcher', default=os.environ.get('STS2_BENCH_LAUNCHER', DEFAULT_LAUNCHER))
     p.add_argument('--out', type=Path, help='output dir (default /workspace/private/bench-runs/<timestamp>-<policy>)')
     p.add_argument('--plan', type=Path, default=ROOT / 'config/bench/stub-plan.json')
@@ -450,6 +454,7 @@ def parse_args(argv=None):
     p.add_argument('--starts', type=int, default=2)
     a = p.parse_args(argv)
     a.config = json.loads(a.config.read_text())
+    a.baseline = a.baseline or a.config.get('default_baseline') or baseline_mod.DEFAULT_BASELINE
     a.memory = a.memory or [ROOT / 'config/bench/bench-memory.md']
     a.limits = dict(a.config.get('limits') or {})
     a.limits.setdefault('max_decisions', 3000)

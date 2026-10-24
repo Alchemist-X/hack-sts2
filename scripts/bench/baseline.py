@@ -20,8 +20,9 @@ HUMAN_SAVE = Path.home() / '.local/share/SlayTheSpire2'
 BASELINE_ROOT = Path(os.environ.get('STS2_BENCH_BASELINE_ROOT', '/workspace/private/bench-baseline'))
 # Named baselines -> manifest file inside BASELINE_ROOT.  v1 = the original
 # worker profile (IRONCLAD3 revealed); v2 = v1 fully unlocked by
-# scripts/bench/make_unlocked_save.py (all epochs/characters/cards/relics/potions).
-BASELINES = {'v1': 'manifest.json', 'v2': 'manifest-v2-unlocked.json'}
+# scripts/bench/make_unlocked_save.py (all epochs/characters/cards/relics/potions);
+# v2-a10 = v2 with every character's preferred ascension 10 (the lobby starts at A10).
+BASELINES = {'v1': 'manifest.json', 'v2': 'manifest-v2-unlocked.json', 'v2-a10': 'manifest-v2-a10.json'}
 DEFAULT_BASELINE = 'v2'
 
 

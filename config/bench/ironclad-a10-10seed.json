@@ -1,0 +1,32 @@
+{
+  "name": "ironclad-a10-10seed-v1",
+  "description": "Fixed 10-seed Ironclad A10 standard-mode evaluation set. Same 10 seed strings as ironclad-a0-10seed (seed-by-seed A0 vs A10 comparison). Baseline v2-a10 (v2 fully unlocked with preferred ascension 10, so the lobby starts at A10); the runner verifies ascension 10 from game.log and current_run.save for every seed.",
+  "game_version": "v0.107.1",
+  "character": "IRONCLAD",
+  "ascension": 10,
+  "game_mode": "standard",
+  "default_baseline": "v2-a10",
+  "baselines": {
+    "v2-a10": {
+      "name": "sts2-bench-baseline-v2-a10",
+      "sha256": "0e0be1223fdd566b36ad1a2fc6dab49b997227bbdf02aa8093c88e31dd93e4de"
+    }
+  },
+  "seeds": [
+    "BENCHA0S01",
+    "BENCHA0S02",
+    "BENCHA0S03",
+    "BENCHA0S04",
+    "BENCHA0S05",
+    "BENCHA0S06",
+    "BENCHA0S07",
+    "BENCHA0S08",
+    "BENCHA0S09",
+    "BENCHA0S10"
+  ],
+  "limits": {
+    "max_decisions": 3000,
+    "max_wall_s": 5400,
+    "max_consecutive_errors": 6
+  }
+}
