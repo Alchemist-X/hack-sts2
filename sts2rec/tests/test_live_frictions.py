@@ -382,3 +382,40 @@ def test_rejected_action_clears_pending_and_unresolved_requires_reconcile(harnes
     assert not (out / 'pending-action.json').exists()
     rows = [json.loads(l) for l in (out / 'decisions.jsonl').read_text().splitlines()]
     assert rows[-1]['type'] == 'decision_outcome_recovered'
+
+
+# ------------------------------------------- 2026-10-23 benchmark follow-ups
+def test_unplayable_hand_cards_are_listed_as_unavailable():
+    state = load('combat')
+    hand = state['player']['hand']
+    hand[0].update(can_play=False, unplayable_reason='NotEnoughEnergy')
+    for card in hand:
+        if card['name'] == 'Strike':
+            card['can_play'] = False  # identical copies, no reason given
+    blocked = [b for b in refs.blocked_actions(state) if b['action'] == 'play_card']
+    assert {b['ref']: b['reason'] for b in blocked} == {'Bash': 'NotEnoughEnergy', 'Strike': 'can_play=false'}
+    assert len(blocked) == 2  # two identical Strikes are one entry
+    assert not any(a['action'] == 'play_card' and a.get('card_index') in (0, 2, 3) for a in refs.legal_actions(state))
+    # Nothing is listed outside combat or when every card is playable.
+    assert not [b for b in refs.blocked_actions(load('combat')) if b['action'] == 'play_card']
+    assert not [b for b in refs.blocked_actions(load('map')) if b['action'] == 'play_card']
+
+
+def test_chain_error_says_when_an_earlier_step_changed_the_screen(harness, capsys):
+    out, act = harness
+    game = FakeGame(load('kill_before'), lambda s, a, n: load('rewards'))
+    payload_in = json.dumps([{'action': 'play_card', 'card': 'Twin Strike+', 'target': 'INKLET_1'},
+                             {'action': 'play_card', 'card': 'Strike', 'target': 'INKLET_2'}])
+    code, payload = run(act, capsys, game, payload_in)
+    assert code == 2 and payload['error'] == 'unresolvable_action' and payload['failed_step'] == 2
+    before = load('kill_before')['state_type']
+    assert payload['screen_changed'] == {'from': before, 'to': 'rewards', 'after_step': 1}
+    assert f"screen changed from {before!r} to 'rewards' after step 1" in payload['message']
+    assert len(game.posts) == 1  # the second step was never sent
+    # Same-screen failures keep the plain message.
+    game = FakeGame(load('kill_before'), lambda s, a, n: load('kill_after'))
+    code, payload = run(act, capsys, game, json.dumps([{'action': 'play_card', 'card': 'Twin Strike+',
+                                                         'target': 'INKLET_1'},
+                                                        {'action': 'play_card', 'card': 'Strike',
+                                                         'target': 'INKLET_1'}]))
+    assert code == 2 and 'screen_changed' not in payload and 'screen changed' not in payload['message']
