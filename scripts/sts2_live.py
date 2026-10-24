@@ -353,6 +353,34 @@ def chain_error(error, pre, state, step):
     return message, {}
 
 
+def state_version(port):
+    """The eval API's monotonic ``state_version`` (bumps only when the state fingerprint changes), or None."""
+    probe = executor.eval_probe(port)
+    version = (probe or {}).get('state_version')
+    return version if isinstance(version, int) and not isinstance(version, bool) else None
+
+
+def check_state_version(port, expected, observed_hash, pre, out, knowledge_root):
+    """Refuse when the eval API's state_version moved past the one the caller observed.
+
+    This is the eval MCP's ``expect_state_version`` guard applied to the
+    singleplayer act path: positional choices (``3``, ``[1,4]``) read from one
+    listing must never land on a later one (e.g. after a reward claim shifted
+    every index by one).  Returns a warning when the guard is unavailable.
+    """
+    if expected is None:
+        return None
+    current = state_version(port)
+    if current is None:
+        return 'expect_state_version given but this MCP has no eval state_version; decision hash guard only'
+    if current != expected:
+        fail('stale_state_version', f'Game state_version is {current}, the action was chosen at {expected}; '
+             'nothing was sent. Decide again from the fresh observation below.', expected_state_version=expected,
+             observed_state_version=current, observed=observed_hash, state=pre, out=out,
+             knowledge_root=knowledge_root)
+    return None
+
+
 def run_act(a, out, meta, knowledge_root):
     if (out/'pending-action.json').exists():
         pending = (out/'pending-action.json').read_text().strip()
@@ -382,10 +410,12 @@ def run_act(a, out, meta, knowledge_root):
         fail('stale_hash', f'Observed state changed since hash {a.expected_hash}; nothing was sent. '
              'Decide again from the fresh observation below.', expected=a.expected_hash,
              observed=observed_hash, diff=diff, state=pre, out=out, knowledge_root=knowledge_root)
+    version_warning = check_state_version(a.port, a.expect_state_version, observed_hash, pre, out, knowledge_root)
     session = Session(out, meta, a.port, knowledge_root, a.reason, json.loads((out/'plan.json').read_text()))
     session.authority_verified = check_authority(meta, snapshot(out, pre, knowledge_root), a.allow_unverified_authority)
     observed_entities = refs.entity_map(pre)
-    state, step, notes, warnings = pre, 0, [], [reason_warning] if reason_warning else []
+    state, step, notes = pre, 0, []
+    warnings = [w for w in (reason_warning, version_warning) if w]
     # Pin "Name#k" / "card#3" to what they name on the observed screen, so
     # renumbering after earlier steps of this chain cannot redirect them.
     requests = [refs.anchor_request(pre, r) if isinstance(r, dict) else r for r in requests]
@@ -428,6 +458,9 @@ def run_act(a, out, meta, knowledge_root):
     result = {'ok': True, 'steps': session.steps, 'notes': notes, 'warnings': warnings,
               'authority_verified': session.authority_verified,
               'observation': snapshot(out, state, knowledge_root, session.steps[-1]['step'] if session.steps else None)}
+    version = state_version(a.port)
+    if version is not None:
+        result['observation']['state_version'] = version
     print(json.dumps(result, ensure_ascii=False))
     return state
 
@@ -467,6 +500,8 @@ def main():
     p.add_argument('--allow-unverified-authority', action='store_true',
                    help='practice only: act even if the rule-source fingerprint does not match this build')
     p.add_argument('--settle-timeout', type=float, default=20.0)
+    p.add_argument('--expect-state-version', type=int,
+                   help='act only: refuse (send nothing) unless the eval API state_version still equals this')
     p.add_argument('--wiki-facts', action='store_true',
                    help='start only: include public wiki/codex facts (knowledge/facts) in every observation')
     a = p.parse_args()
@@ -517,6 +552,9 @@ def _dispatch(a, out):
         state, settled = executor.wait_settled(a.port, a.settle_timeout)
         view = snapshot(out, state, knowledge_root)
         view['settled'] = settled
+        version = state_version(a.port)
+        if version is not None:
+            view['state_version'] = version
         if not settled:
             view['warning'] = 'state still changing / not a decision point; observe again before acting'
         if (out/'pending-action.json').exists():
