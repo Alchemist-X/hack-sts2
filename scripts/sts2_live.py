@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import sts2_action_executor as executor
+import sts2_action_refs as refs
 from sts2_run_audit import run_report, usage_report
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +29,11 @@ def public_display(state):
             counts = collections.Counter(json.dumps({k:v for k,v in c.items() if k != 'index'},
                 ensure_ascii=False, sort_keys=True) for c in cards)
             public['player'][key] = [{**json.loads(card), 'count':count} for card,count in sorted(counts.items())]
-    actions = [{k:v for k,v in a.items() if k not in {'candidate', 'target_candidate'}} for a in view['legal_actions']]
-    return {'hash': executor.decision_digest(state), 'state': public, 'legal_actions': actions, 'audit': view['action_space_audit']}
+    # Every legal action carries a stable `ref` usable in `act`; positional
+    # fields are shown for reference but go stale after any action.
+    actions = refs.observe_actions(state)
+    return {'hash': executor.decision_digest(state), 'state': public, 'legal_actions': actions,
+            'unavailable_actions': refs.blocked_actions(state), 'audit': view['action_space_audit']}
 
 
 def snapshot(out, state, knowledge_root, decision_id=None):
@@ -56,7 +60,7 @@ def snapshot(out, state, knowledge_root, decision_id=None):
     return result
 
 
-def start_session(out, plan, memories, mode, port, version, codex_session):
+def start_session(out, plan, memories, mode, port, version, codex_session, allow_unverified_authority=False):
     if (out / 'session.json').exists() or (out / 'decisions.jsonl').exists():
         raise SystemExit('Existing run directory; resume it without start, or use a new directory')
     # Read and preserve the exact working plan and memories before first gameplay.
@@ -66,21 +70,292 @@ def start_session(out, plan, memories, mode, port, version, codex_session):
             raise SystemExit(f'plan missing: {field}')
     out.mkdir(parents=True, exist_ok=True)
     (out / 'plan.json').write_text(json.dumps(plan_data, ensure_ascii=False, indent=2)+'\n')
-    refs = []
+    memory_refs = []
     for path in memories:
         content = path.read_bytes()
-        refs.append({'path': str(path.resolve()), 'sha256': hashlib.sha256(content).hexdigest()})
+        memory_refs.append({'path': str(path.resolve()), 'sha256': hashlib.sha256(content).hexdigest()})
     meta = {'started_at': datetime.now(timezone.utc).isoformat(), 'mode': mode, 'port': port,
             'knowledge_version': version, 'knowledge_version_status': 'caller_supplied; verify against actual game build',
-            'memory_inputs': refs, 'codex_session': str(codex_session.resolve()) if codex_session else None}
+            'memory_inputs': memory_refs, 'allow_unverified_authority': bool(allow_unverified_authority), 'codex_session': str(codex_session.resolve()) if codex_session else None}
     (out / 'session.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2)+'\n')
     executor.append_live(out / 'live.log', f'开始新记录 | {mode} | 知识版本 {version}\n构筑计划：{json.dumps(plan_data, ensure_ascii=False)}')
     return meta
 
 
+class ActError(SystemExit):
+    """Explicit, machine-readable act failure (exit status 2)."""
+
+    def __init__(self, payload):
+        self.payload = payload
+        super().__init__(2)
+
+
+def fail(kind, message, *, state=None, out=None, knowledge_root=None, **extra):
+    payload = {'ok': False, 'error': kind, 'message': message, **extra}
+    if state is not None and out is not None:
+        payload['observation'] = snapshot(out, state, knowledge_root)
+    raise ActError(payload)
+
+
+def state_diff(before, after):
+    """Top-level description of what changed between two decision states."""
+    keys = sorted(set(before) | set(after))
+    changed = [k for k in keys if k != 'execution' and before.get(k) != after.get(k)]
+    detail = {'state_type': [before.get('state_type'), after.get('state_type')], 'changed_keys': changed}
+    for block, field in (('battle', 'round'), ('player', 'energy'), ('player', 'hp'), ('run', 'floor')):
+        b, a = (before.get(block) or {}).get(field), (after.get(block) or {}).get(field)
+        if b != a:
+            detail[f'{block}.{field}'] = [b, a]
+    return detail
+
+
+def check_authority(meta, observed, allow_unverified):
+    """Evaluation always fails closed; practice continues only on explicit opt-in."""
+    auth = observed['decision_context']['authority']
+    if auth.get('status') == 'verified':
+        return True
+    detail = auth.get('mismatches') or auth.get('source_errors') or auth.get('status')
+    if meta.get('mode') == 'practice' and (allow_unverified or meta.get('allow_unverified_authority')):
+        return False
+    hint = (' Practice runs may pass --allow-unverified-authority (recorded as authority_verified=false).'
+            if meta.get('mode') == 'practice' else ' Evaluation runs never bypass this check.')
+    fail('rule_authority_unverified',
+         f'Rule source mismatch or missing build fingerprint: {detail}.{hint}')
+
+
+TREASURE_FIRST_CLICK_S = 4.0
+
+SELECT_SCREENS = {'hand_select': ('combat_select_card', 'combat_confirm_selection'),
+                  'card_select': ('select_card', 'confirm_selection')}
+
+
+SELECT_ACTIONS = {'select', 'combat_select_card', 'select_card'}
+
+
+def expand(state, request):
+    """Turn a selection request into select steps plus an automatic confirm.
+
+    On hand_select / card_select the cards named in one act call (``card`` or
+    ``cards``) are the complete selection: the harness selects each by stable
+    ref, then confirms once the game allows it.  ``"confirm": false`` keeps
+    the screen open for incremental selection.
+    """
+    st = state.get('state_type')
+    request = dict(request)
+    if 'cards' not in request and not (request.get('action') in SELECT_ACTIONS and 'card' in request):
+        return [request]
+    if st not in SELECT_SCREENS:
+        raise refs.ActionRefError(f"card selection given but screen is {st!r}")
+    select, _confirm = SELECT_SCREENS[st]
+    cards = request.pop('cards', None)
+    if cards is None:
+        cards = [request.pop('card')]
+    elif not isinstance(cards, list):
+        cards = [cards]
+    confirm = request.pop('confirm', True)
+    block = state.get(st) or {}
+    already = len(block.get('selected_cards') or block.get('selected_indices') or [])
+    minimum, maximum = block.get('min_select'), block.get('max_select')
+    if confirm and isinstance(minimum, int) and already + len(cards) < minimum:
+        raise refs.ActionRefError(f'{st} needs at least {minimum} card(s); request selects {already + len(cards)} '
+                                  '(list them all in "cards", or pass "confirm": false)')
+    if isinstance(maximum, int) and maximum > 0 and already + len(cards) > maximum:
+        raise refs.ActionRefError(f'{st} allows at most {maximum} card(s); request selects {already + len(cards)}')
+    extra = {k: v for k, v in request.items() if k not in {'action'}}
+    steps = [{'action': select, 'card': card, **extra} for card in cards]
+    steps[-1]['_confirm'] = bool(confirm)
+    return steps
+
+
+def selection_open(state):
+    return state.get('state_type') in SELECT_SCREENS
+
+
+def needs_confirm(state):
+    st = state.get('state_type')
+    return st in SELECT_SCREENS and bool((state.get(st) or {}).get('can_confirm'))
+
+
+class Session:
+    def __init__(self, out, meta, port, knowledge_root, reason, plan, controller='llm'):
+        self.out, self.meta, self.port = out, meta, port
+        self.knowledge_root, self.reason, self.plan = knowledge_root, reason, plan
+        self.controller = controller
+        self.steps = []
+        self.authority_verified = None
+
+    def execute(self, pre, wire, request, *, step, controller=None, note=None, legal=None):
+        out = self.out
+        decision_id = f"{datetime.now(timezone.utc).isoformat()}#s{step}"
+        observed = snapshot(out, pre, self.knowledge_root, decision_id)
+        run, battle = pre.get('run', {}), pre.get('battle', {})
+        reason = self.reason if controller is None else f'[harness:{note}] {self.reason}'
+        executor.append_live(out/'live.log', f"层 {run.get('floor', '-')} / 回合 {battle.get('round', '-')}\n{reason}\n执行：{json.dumps(wire, ensure_ascii=False)}")
+        intent = {'type':'decision_intent', 'decision_id':decision_id, 'controller': controller or self.controller,
+                  'state':pre, 'state_sha256':executor.digest(pre), 'decision_hash':executor.decision_digest(pre),
+                  'action':wire, 'request':request, 'resolved_candidate': (legal or {}).get('candidate'),
+                  'resolved_target': (legal or {}).get('target_candidate'),
+                  'decision_reason':reason, 'plan_sha256':executor.digest(self.plan), 'plan':self.plan,
+                  'authority_verified': self.authority_verified,
+                  'knowledge_references': observed['knowledge_references'],
+                  'rule_checks': observed['decision_context']['rules'],
+                  'rule_authority': observed['decision_context']['authority'],
+                  'legal_actions': build_information_view(pre, 'limited')['legal_actions']}
+        if note:
+            intent['harness_followup'] = note
+        executor.append_jsonl(out/'decisions.jsonl', intent)
+        executor.append_jsonl(out/'pending-action.json', {'decision_id':decision_id, 'action':wire})
+        began = time.monotonic()
+        try:
+            response = executor.request(self.port, wire)
+        except (Exception, SystemExit) as error:
+            current = executor.request(self.port)
+            unchanged = executor.decision_digest(current) == executor.decision_digest(pre)
+            executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_error', 'decision_id':decision_id,
+                'error':str(error), 'stage':'request', 'state_unchanged':unchanged, 'retry_safe':False})
+            if unchanged:
+                # The game refused it and nothing moved: there is nothing to reconcile.
+                (out/'pending-action.json').unlink()
+                executor.append_live(out/'live.log', f'动作被拒绝（状态未变）：{error}')
+                fail('action_rejected', str(error), state=current, out=out, knowledge_root=self.knowledge_root,
+                     steps=self.steps, failed_step=step, wire=wire)
+            executor.append_live(out/'live.log', f'动作待核对：{error}；不自动重试。')
+            fail('action_unresolved', f'{error}; state changed, run `reconcile` after inspecting it',
+                 state=current, out=out, knowledge_root=self.knowledge_root, steps=self.steps,
+                 failed_step=step, wire=wire, pending_decision_id=decision_id)
+        acknowledged = time.monotonic()
+        try:
+            post = self.settle(pre, wire)
+        except (Exception, SystemExit) as error:
+            current = executor.request(self.port)
+            executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_error', 'decision_id':decision_id,
+                'error':str(error), 'stage':'settle', 'retry_safe':False})
+            executor.append_live(out/'live.log', f'动作待核对：{error}；不自动重试。')
+            fail('action_unresolved', f'{error}; inspect the state and run `reconcile` (never blind-retry)',
+                 state=current, out=out, knowledge_root=self.knowledge_root, steps=self.steps,
+                 failed_step=step, wire=wire, pending_decision_id=decision_id)
+        executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_outcome', 'decision_id':decision_id,
+            'controller': controller or self.controller, 'action_response':response, 'post_state':post,
+            'post_state_sha256':executor.digest(post),
+            'timing_s':{'request':acknowledged-began, 'settlement':time.monotonic()-acknowledged}})
+        (out/'pending-action.json').unlink()
+        player = post.get('player', {})
+        executor.append_live(out/'live.log', f"结算：{post.get('state_type')} | HP {player.get('hp','-')}/{player.get('max_hp','-')} | 能量 {player.get('energy','-')} | 格挡 {player.get('block','-')}")
+        self.steps.append({'step': step, 'action': wire, **({'harness_followup': note} if note else {}),
+                           'state_type': post.get('state_type'), 'hash': executor.decision_digest(post)})
+        return post
+
+    def settle(self, pre, wire):
+        if wire.get('action') != 'claim_treasure_relic':
+            return executor.settled_state(self.port, pre, wire)
+        # The first treasure click is sometimes swallowed by the opening chest
+        # animation. Re-click only while the very same relic is still offered,
+        # which cannot double-claim.
+        try:
+            return executor.settled_state(self.port, pre, wire, timeout=TREASURE_FIRST_CLICK_S)
+        except SystemExit:
+            current = executor.request(self.port)
+            if executor._action_committed(pre, current, wire):
+                raise
+            executor.append_live(self.out/'live.log', 'treasure: first claim not registered; re-clicking the same relic')
+            executor.request(self.port, wire)
+            self.steps.append({'harness_followup': 'treasure_reclick', 'action': wire})
+            return executor.settled_state(self.port, pre, wire)
+
+
+def run_act(a, out, meta, knowledge_root):
+    if (out/'pending-action.json').exists():
+        pending = (out/'pending-action.json').read_text().strip()
+        fail('pending_unresolved', 'Previous action unresolved. Inspect the state, then run '
+             '`reconcile "<what happened>"`; never blindly retry.', pending=pending)
+    if not a.reason or len(a.reason.strip()) < 4:
+        fail('reason_required', 'A public decision summary (>=4 chars) is required')
+    if not a.expected_hash:
+        fail('hash_required', 'Pass the hash printed by observe (or the previous act)')
+    try:
+        requests = refs.parse_request(a.payload)
+    except (refs.ActionRefError, json.JSONDecodeError) as error:
+        fail('bad_request', str(error))
+    pre, settled = executor.wait_settled(a.port, a.settle_timeout)
+    if not settled:
+        fail('not_settled', f'game did not reach a stable decision frame within {a.settle_timeout}s',
+             state=pre, out=out, knowledge_root=knowledge_root)
+    observed_hash = executor.decision_digest(pre)
+    if a.expected_hash != observed_hash:
+        try:
+            recorded = json.loads(next(l for l in reversed((out/'observations.jsonl').read_text().splitlines())
+                                       if json.loads(l).get('decision_hash') == a.expected_hash))
+        except (StopIteration, FileNotFoundError):
+            recorded = None
+        diff = state_diff(recorded['observation'], pre) if recorded else 'expected hash never observed in this run'
+        fail('stale_hash', f'Observed state changed since hash {a.expected_hash}; nothing was sent. '
+             'Decide again from the fresh observation below.', expected=a.expected_hash,
+             observed=observed_hash, diff=diff, state=pre, out=out, knowledge_root=knowledge_root)
+    session = Session(out, meta, a.port, knowledge_root, a.reason, json.loads((out/'plan.json').read_text()))
+    session.authority_verified = check_authority(meta, snapshot(out, pre, knowledge_root), a.allow_unverified_authority)
+    observed_entities = refs.entity_map(pre)
+    state, step, notes, warnings = pre, 0, [], []
+    for position, original in enumerate(requests):
+        try:
+            items = expand(state, original)
+        except refs.ActionRefError as error:
+            fail('unresolvable_action', str(error), failed_step=step + 1, request=original, steps=session.steps,
+                 state=state, out=out, knowledge_root=knowledge_root)
+        for request in items:
+            step += 1
+            confirm = request.pop('_confirm', None)
+            try:
+                resolved = refs.resolve(state, request, allow_index=(step == 1), observed_entities=observed_entities)
+            except refs.ActionRefError as error:
+                executor.append_live(out/'live.log', f'请求未发送（第 {step} 步）：{error}')
+                fail('unresolvable_action', str(error), available=error.available, failed_step=step,
+                     request=request, steps=session.steps, state=state, out=out, knowledge_root=knowledge_root)
+            notes += resolved['notes']
+            before_type = state.get('state_type')
+            state = session.execute(state, resolved['wire'], request, step=step, legal=resolved['legal'])
+            session.steps[-1]['resolved'] = refs.describe(resolved)
+            if resolved['wire']['action'] == 'proceed' and state.get('state_type') == 'card_reward':
+                warnings.append('proceed landed on card_reward: an unclaimed card reward reopened; use skip')
+            if confirm and selection_open(state):
+                if needs_confirm(state):
+                    step += 1
+                    confirm_wire = {'action': SELECT_SCREENS[state['state_type']][1]}
+                    state = session.execute(state, confirm_wire, {'action': 'confirm'}, step=step,
+                                            controller='harness', note='auto_confirm_selection')
+                else:
+                    fail('selection_incomplete', f"selection made but {state.get('state_type')} cannot confirm yet "
+                         '(more cards required?); add cards, or send {"action":"confirm"} when ready',
+                         steps=session.steps, state=state, out=out, knowledge_root=knowledge_root)
+            elif confirm and before_type in SELECT_SCREENS and not selection_open(state):
+                session.steps[-1]['note'] = 'screen closed on select (single-choice screen); no confirm needed'
+    result = {'ok': True, 'steps': session.steps, 'notes': notes, 'warnings': warnings,
+              'authority_verified': session.authority_verified,
+              'observation': snapshot(out, state, knowledge_root, session.steps[-1]['step'] if session.steps else None)}
+    print(json.dumps(result, ensure_ascii=False))
+    return state
+
+
+def run_reconcile(a, out, knowledge_root):
+    path = out/'pending-action.json'
+    if not path.exists():
+        fail('nothing_pending', 'No pending action to reconcile')
+    if not a.payload or len(a.payload.strip()) < 4:
+        fail('reason_required', 'Describe what actually happened (from the observation/visual evidence)')
+    pending = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    current, settled = executor.wait_settled(a.port, a.settle_timeout)
+    for item in pending:
+        executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_outcome_recovered',
+            'decision_id':item['decision_id'], 'controller':'llm', 'reconcile_note':a.payload,
+            'post_state':current, 'post_state_sha256':executor.digest(current), 'settled':settled})
+    path.unlink()
+    executor.append_live(out/'live.log', f'核对完成：{a.payload}')
+    print(json.dumps({'ok': True, 'reconciled': [p['decision_id'] for p in pending],
+                      'observation': snapshot(out, current, knowledge_root)}, ensure_ascii=False))
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['start', 'observe', 'act', 'note', 'report', 'annotate'])
+    p.add_argument('command', choices=['start', 'observe', 'act', 'reconcile', 'note', 'report', 'annotate'])
     p.add_argument('payload', nargs='?')
     p.add_argument('reason', nargs='?')
     p.add_argument('expected_hash', nargs='?')
@@ -91,12 +366,27 @@ def main():
     p.add_argument('--mode', choices=['practice', 'evaluation'], default='practice')
     p.add_argument('--game-version', default='v0.107.1')
     p.add_argument('--codex-session', type=Path)
+    p.add_argument('--allow-unverified-authority', action='store_true',
+                   help='practice only: act even if the rule-source fingerprint does not match this build')
+    p.add_argument('--settle-timeout', type=float, default=20.0)
     a = p.parse_args()
     out = a.run_dir.resolve()
+    try:
+        _dispatch(a, out)
+    except ActError as error:
+        print(json.dumps(error.payload, ensure_ascii=False))
+        sys.exit(2)
+
+
+def _dispatch(a, out):
     if a.command == 'start':
         if not a.plan or not a.memory:
             raise SystemExit('start requires --plan JSON and at least one --memory file; read these before playing')
-        print(json.dumps(start_session(out, a.plan, a.memory, a.mode, a.port, a.game_version, a.codex_session), ensure_ascii=False))
+        if a.allow_unverified_authority and a.mode != 'practice':
+            raise SystemExit('--allow-unverified-authority is only valid in practice mode')
+        meta = start_session(out, a.plan, a.memory, a.mode, a.port, a.game_version, a.codex_session,
+                             a.allow_unverified_authority)
+        print(json.dumps(meta, ensure_ascii=False))
         return
     if a.command == 'report':
         report = run_report(out / 'decisions.jsonl')
@@ -112,6 +402,8 @@ def main():
     meta = json.loads((out/'session.json').read_text())
     if a.port != meta['port']:
         raise SystemExit('Port differs from run session; select the correct run/port')
+    if a.allow_unverified_authority and meta.get('mode') != 'practice':
+        fail('rule_authority_unverified', '--allow-unverified-authority is refused in evaluation mode')
     if a.command in {'note', 'annotate'}:
         if not a.payload: raise SystemExit('payload required')
         if a.command == 'annotate':
@@ -120,50 +412,21 @@ def main():
             executor.append_jsonl(out/'annotations.jsonl', {'timestamp': datetime.now(timezone.utc).isoformat(), **annotation})
         executor.append_live(out/'live.log', a.payload)
         return
-    pre = executor.request(a.port)
     knowledge_root = ROOT/'knowledge/source'/meta['knowledge_version']
     if a.command == 'observe':
-        print(json.dumps(snapshot(out, pre, knowledge_root), ensure_ascii=False))
+        state, settled = executor.wait_settled(a.port, a.settle_timeout)
+        view = snapshot(out, state, knowledge_root)
+        view['settled'] = settled
+        if not settled:
+            view['warning'] = 'state still changing / not a decision point; observe again before acting'
+        if (out/'pending-action.json').exists():
+            view['warning_pending'] = 'a previous action is unresolved; run reconcile before acting'
+        print(json.dumps(view, ensure_ascii=False))
         return
-    if not a.expected_hash or a.expected_hash != executor.decision_digest(pre):
-        raise SystemExit('Stale or missing hash; re-observe before acting')
-    action = json.loads(a.payload)
-    if not isinstance(action, dict) or not isinstance(action.get('action'), str) or not a.reason:
-        raise SystemExit('One explicit action and public decision summary required')
-    if (out/'pending-action.json').exists():
-        raise SystemExit('Previous action unresolved. Inspect observation/visual evidence and reconcile its outcome before removing pending-action.json; never blindly retry.')
-    plan = json.loads((out/'plan.json').read_text())
-    decision_id = datetime.now(timezone.utc).isoformat()
-    observed = snapshot(out, pre, knowledge_root, decision_id)
-    if observed['decision_context']['authority']['status'] != 'verified':
-        raise SystemExit('Rule source mismatch or missing build fingerprint; inspect decision_context.authority before acting')
-    run, battle = pre.get('run', {}), pre.get('battle', {})
-    executor.append_live(out/'live.log', f"层 {run.get('floor', '-')} / 回合 {battle.get('round', '-')}\n{a.reason}\n执行：{json.dumps(action, ensure_ascii=False)}")
-    intent = {'type':'decision_intent', 'decision_id':decision_id, 'controller':'llm', 'state':pre,
-              'state_sha256':executor.digest(pre), 'decision_hash':a.expected_hash, 'action':action,
-              'decision_reason':a.reason, 'plan_sha256':executor.digest(plan), 'plan':plan,
-              'knowledge_references': observed['knowledge_references'],
-              'rule_checks': observed['decision_context']['rules'],
-              'rule_authority': observed['decision_context']['authority'],
-              'legal_actions': build_information_view(pre, 'limited')['legal_actions']}
-    executor.append_jsonl(out/'decisions.jsonl', intent)
-    executor.append_jsonl(out/'pending-action.json', {'decision_id':decision_id, 'action':action})
-    began = time.monotonic()
-    try:
-        response = executor.request(a.port, action)
-        acknowledged = time.monotonic()
-        post = executor.settled_state(a.port, pre, action)
-    except (Exception, SystemExit) as error:
-        executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_error', 'decision_id':decision_id, 'error':str(error), 'retry_safe':False})
-        executor.append_live(out/'live.log', f'动作待核对：{error}；不自动重试。')
-        raise
-    executor.append_jsonl(out/'decisions.jsonl', {'type':'decision_outcome', 'decision_id':decision_id, 'controller':'llm',
-        'action_response':response, 'post_state':post, 'post_state_sha256':executor.digest(post),
-        'timing_s':{'request':acknowledged-began, 'settlement':time.monotonic()-acknowledged}})
-    (out/'pending-action.json').unlink()
-    player = post.get('player', {})
-    executor.append_live(out/'live.log', f"结算：{post.get('state_type')} | HP {player.get('hp','-')}/{player.get('max_hp','-')} | 能量 {player.get('energy','-')} | 格挡 {player.get('block','-')}")
-    print(json.dumps(snapshot(out, post, knowledge_root, decision_id), ensure_ascii=False))
+    if a.command == 'reconcile':
+        run_reconcile(a, out, knowledge_root)
+        return
+    post = run_act(a, out, meta, knowledge_root)
     if post.get('state_type') == 'game_over':
         report = run_report(out/'decisions.jsonl')
         source = meta.get('codex_session')

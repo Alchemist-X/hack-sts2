@@ -1,0 +1,61 @@
+{
+ "execution": {
+  "action": "play_card",
+  "game_action_id": 21,
+  "game_action_state": "Finished",
+  "ready_for_next_action": false,
+  "request_id": "672d3e7bb27a4cee9491b5458d4dd70a",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 99,
+  "hp": 68,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   }
+  ],
+  "status": []
+ },
+ "rewards": {
+  "can_proceed": true,
+  "items": [
+   {
+    "description": "18 Gold",
+    "gold_amount": 18,
+    "index": 0,
+    "type": "gold"
+   },
+   {
+    "description": "Liquid Bronze",
+    "index": 1,
+    "potion_description": "Gain 3 Thorns.",
+    "potion_id": "LIQUID_BRONZE",
+    "potion_name": "Liquid Bronze",
+    "type": "potion"
+   },
+   {
+    "description": "Add a card to your deck.",
+    "index": 2,
+    "type": "card"
+   }
+  ]
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 2
+ },
+ "state_type": "rewards"
+}

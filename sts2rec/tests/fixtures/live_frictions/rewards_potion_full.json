@@ -1,0 +1,101 @@
+{
+ "execution": {
+  "action": "end_turn",
+  "game_action_id": null,
+  "game_action_state": null,
+  "ready_for_next_action": false,
+  "request_id": "444869da041e4b61a2bfad7267589cc3",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 19,
+  "hp": 48,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Deal 10 damage to ALL enemies.",
+    "id": "EXPLOSIVE_AMPOULE",
+    "keywords": [],
+    "name": "Explosive Ampoule",
+    "slot": 0,
+    "target_type": "AllEnemies"
+   },
+   {
+    "can_use_in_combat": true,
+    "description": "This turn, your next card is played an extra time.",
+    "id": "DUPLICATOR",
+    "keywords": [],
+    "name": "Duplicator",
+    "slot": 1,
+    "target_type": "Self"
+   },
+   {
+    "can_use_in_combat": true,
+    "description": "Choose 1 of 3 random Attack cards to add into your Hand. It's free to play this turn.",
+    "id": "ATTACK_POTION",
+    "keywords": [],
+    "name": "Attack Potion",
+    "slot": 2,
+    "target_type": "Self"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   }
+  ],
+  "status": []
+ },
+ "rewards": {
+  "can_proceed": true,
+  "items": [
+   {
+    "description": "15 Gold",
+    "gold_amount": 15,
+    "index": 0,
+    "type": "gold"
+   },
+   {
+    "description": "Weak Potion",
+    "index": 1,
+    "potion_description": "Apply 3 Weak.",
+    "potion_id": "WEAK_POTION",
+    "potion_name": "Weak Potion",
+    "type": "potion"
+   },
+   {
+    "description": "Add a card to your deck.",
+    "index": 2,
+    "type": "card"
+   }
+  ]
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 15
+ },
+ "state_type": "rewards"
+}
