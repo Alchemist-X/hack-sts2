@@ -146,3 +146,30 @@ def test_eval_probe_without_the_endpoint_is_skipped_for_the_process(monkeypatch)
     monkeypatch.setattr(executor.urllib.request, 'urlopen', urlopen)
     assert executor.eval_probe(9) is None and executor.eval_probe(9) is None
     assert len(attempts) == 1 and 'include_state=false' in attempts[0]
+
+
+# ------------------------------------------------ busy while awaiting our pick
+def test_wait_settled_accepts_player_choice_despite_busy_queue(monkeypatch):
+    """S05 F13: True Grit+ 'Choose a card to Exhaust' deadlocked on busy."""
+    state = json.loads((FIX / 'hand_select_upgrade.json').read_text())
+    assert state['execution']['game_action_state'] == 'GatheringPlayerChoice'
+    monkeypatch.setattr(executor, 'request', lambda port, action=None: state)
+    monkeypatch.setattr(executor, 'eval_probe',
+                        lambda *a, **k: {'busy': True, 'busy_reason': 'action_queue_not_empty'})
+    got, settled = executor.wait_settled(1, timeout=1, quiet_window=0.02, poll=0.01)
+    assert settled and got['state_type'] == 'hand_select'
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda s: s['execution'].update(game_action_state='Executing'),
+    lambda s: s.update(state_type='monster'),
+])
+def test_busy_still_blocks_without_the_player_choice_witness(monkeypatch, mutate):
+    state = json.loads((FIX / 'hand_select_upgrade.json').read_text())
+    mutate(state)
+    assert not executor.awaiting_player_choice(state, {'busy': True, 'busy_reason': 'action_queue_not_empty'})
+
+
+def test_other_busy_reasons_still_block_a_player_choice():
+    state = json.loads((FIX / 'hand_select_upgrade.json').read_text())
+    assert not executor.awaiting_player_choice(state, {'busy': True, 'busy_reason': 'scene_transition'})

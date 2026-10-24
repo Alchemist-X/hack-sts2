@@ -327,6 +327,28 @@ def actionable(state: dict[str, Any]) -> bool:
     return bool(derive_legal_actions(state))
 
 
+PLAYER_CHOICE_SCREENS = frozenset({"hand_select", "card_select"})
+
+
+def awaiting_player_choice(state: dict[str, Any], probe: dict[str, Any] | None) -> bool:
+    """True when the eval API's ``busy`` is only the game waiting on *us*.
+
+    A mid-card choice (True Grit+'s "Choose a card to Exhaust", Armaments, ...)
+    keeps the parent card's action on the queue in ``GatheringPlayerChoice``,
+    so the eval mod reports ``busy`` / ``action_queue_not_empty`` until the
+    player answers.  Treating that as busy deadlocks the harness: the action
+    that would drain the queue is never sent.  Only that exact witness counts;
+    any other busy reason still blocks.
+    """
+    if state.get("state_type") not in PLAYER_CHOICE_SCREENS:
+        return False
+    execution = state.get("execution") if isinstance(state.get("execution"), dict) else {}
+    if execution.get("game_action_state") != "GatheringPlayerChoice":
+        return False
+    reason = (probe or {}).get("busy_reason")
+    return reason in (None, "action_queue_not_empty")
+
+
 def wait_settled(
     port: int,
     timeout: float = 20.0,
@@ -348,7 +370,7 @@ def wait_settled(
         now = time.monotonic()
         if actionable(latest) and now - stable_since >= quiet_window:
             probe = eval_probe(port)
-            if probe is None or not probe.get("busy"):
+            if probe is None or not probe.get("busy") or awaiting_player_choice(latest, probe):
                 return latest, True
             # The game is still resolving (e.g. combat ending before rewards):
             # restart the quiet window instead of returning a transition frame.
