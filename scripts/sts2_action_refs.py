@@ -586,6 +586,30 @@ def card_anchor(card: dict[str, Any]) -> str:
     return json.dumps(keep, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def card_instance(cards: list[dict[str, Any]], card: dict[str, Any]) -> dict[str, Any]:
+    """The observed instance among same-content copies: its cost and its position among them."""
+    anchor = card_anchor(card)
+    same = [c for c in cards if card_anchor(c) == anchor]
+    return {"cost": card.get("cost"), "star_cost": card.get("star_cost"), "index": card.get("index"),
+            "occurrence": next((i for i, c in enumerate(same) if c is card), 0)}
+
+
+def _pick_instance(anchored: list[dict[str, Any]], instance: dict[str, Any] | None) -> dict[str, Any]:
+    """The anchored copy that is the instance observed when the request was made."""
+    if not instance or len(anchored) < 2:
+        return anchored[0]
+    same_cost = [c for c in anchored if c.get("cost") == instance.get("cost")
+                 and c.get("star_cost") == instance.get("star_cost")]
+    pool = same_cost or anchored
+    at_index = [c for c in pool if c.get("index") == instance.get("index")]
+    if at_index:
+        return at_index[0]
+    if same_cost:
+        return same_cost[0]
+    occurrence = instance.get("occurrence") or 0
+    return anchored[occurrence] if 0 <= occurrence < len(anchored) else anchored[0]
+
+
 def anchor_request(state: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """Pin a positional-looking ref (``Name#k``, ``card#3``) to the item it names *now*.
 
@@ -599,8 +623,12 @@ def anchor_request(state: dict[str, Any], request: dict[str, Any]) -> dict[str, 
     name = request.get("action")
     try:
         if name == "play_card" and isinstance(request.get("card"), (str, dict)):
-            card, _ = match_card(_hand(state), request["card"])
+            hand = _hand(state)
+            card, _ = match_card(hand, request["card"])
             request["_card_anchor"] = card_anchor(card)
+            # The content anchor ignores cost, so copies like Frantic Escape [3]
+            # and [2] share it; pin the exact observed instance as well.
+            request["_card_instance"] = card_instance(hand, card)
         elif name == "claim_reward" and request.get("reward") is not None:
             items = [i for i in _block(state, "rewards").get("items", []) or [] if isinstance(i, dict)]
             item = _match_keyed(items, [reward_ref(i) for i in items], request["reward"], "reward",
@@ -680,6 +708,7 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
     notes: list[str] = []
     if name not in {"play_card"}:
         request.pop("_card_anchor", None)
+        request.pop("_card_instance", None)
     if name != "claim_reward":
         request.pop("_reward_anchor", None)
 
@@ -720,6 +749,7 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
             cards = [c for c in cards if not c.get("is_selected") and c.get("index") not in chosen_indices]
         card_ref = request.pop("card")
         anchor = request.pop("_card_anchor", None)
+        instance = request.pop("_card_instance", None)
         anchored = [c for c in cards if anchor is not None and card_anchor(c) == anchor]
         bare = isinstance(card_ref, str) and _parse_occurrence(card_ref)[1] is None
         if len(anchored) > 1 and bare:
@@ -728,8 +758,10 @@ def resolve(state: dict[str, Any], request: dict[str, Any], *, allow_index: bool
             card, card_notes = match_card(cards, card_ref)
         elif anchored:
             # Chained plays: the copy named on the observed hand, found again by
-            # content after earlier plays renumbered "Name#k".
-            card, card_notes = anchored[0], []
+            # content after earlier plays renumbered "Name#k".  Copies that
+            # differ only in cost share the content anchor, so pick the exact
+            # instance observed (same cost, then same index/occurrence).
+            card, card_notes = _pick_instance(anchored, instance), []
             if card_refs(cards)[cards.index(card)] != card_ref:
                 card_notes.append(f"card {card_ref!r} re-resolved by content after earlier plays shifted #k")
         else:
