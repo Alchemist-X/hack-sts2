@@ -1,0 +1,786 @@
+{
+ "legal_actions": [
+  {
+   "action": "choose_map_node",
+   "index": 0,
+   "ref": {
+    "action": "choose_map_node",
+    "node": "0,6",
+    "type": "Monster"
+   }
+  },
+  {
+   "action": "choose_map_node",
+   "index": 1,
+   "ref": {
+    "action": "choose_map_node",
+    "node": "1,6",
+    "type": "Elite"
+   }
+  },
+  {
+   "action": "discard_potion",
+   "ref": {
+    "action": "discard_potion",
+    "potion": "slot:0",
+    "potion_id": "LIQUID_BRONZE"
+   },
+   "slot": 0
+  }
+ ],
+ "state": {
+  "map": {
+   "boss": {
+    "col": 3,
+    "id": "CEREMONIAL_BEAST_BOSS",
+    "name": "Ceremonial Beast",
+    "row": 16
+   },
+   "bosses": [
+    {
+     "col": 3,
+     "id": "CEREMONIAL_BEAST_BOSS",
+     "name": "Ceremonial Beast",
+     "row": 16
+    }
+   ],
+   "current_position": {
+    "col": 0,
+    "row": 5,
+    "type": "Monster"
+   },
+   "next_options": [
+    {
+     "col": 0,
+     "index": 0,
+     "leads_to": [
+      {
+       "col": 0,
+       "row": 7,
+       "type": "RestSite"
+      },
+      {
+       "col": 1,
+       "row": 7,
+       "type": "Unknown"
+      }
+     ],
+     "row": 6,
+     "type": "Monster"
+    },
+    {
+     "col": 1,
+     "index": 1,
+     "leads_to": [
+      {
+       "col": 1,
+       "row": 7,
+       "type": "Unknown"
+      },
+      {
+       "col": 2,
+       "row": 7,
+       "type": "RestSite"
+      }
+     ],
+     "row": 6,
+     "type": "Elite"
+    }
+   ],
+   "nodes": [
+    {
+     "children": [
+      [
+       0,
+       1
+      ],
+      [
+       4,
+       1
+      ]
+     ],
+     "col": 3,
+     "row": 0,
+     "type": "Ancient"
+    },
+    {
+     "children": [
+      [
+       0,
+       2
+      ]
+     ],
+     "col": 0,
+     "row": 1,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       3
+      ]
+     ],
+     "col": 0,
+     "row": 2,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       0,
+       4
+      ]
+     ],
+     "col": 0,
+     "row": 3,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       0,
+       5
+      ]
+     ],
+     "col": 0,
+     "row": 4,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       6
+      ],
+      [
+       1,
+       6
+      ]
+     ],
+     "col": 0,
+     "row": 5,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       7
+      ],
+      [
+       1,
+       7
+      ]
+     ],
+     "col": 0,
+     "row": 6,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       8
+      ]
+     ],
+     "col": 0,
+     "row": 7,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       1,
+       9
+      ]
+     ],
+     "col": 0,
+     "row": 8,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       13
+      ]
+     ],
+     "col": 0,
+     "row": 12,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       0,
+       14
+      ]
+     ],
+     "col": 0,
+     "row": 13,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       0,
+       15
+      ]
+     ],
+     "col": 0,
+     "row": 14,
+     "type": "Elite"
+    },
+    {
+     "children": [
+      [
+       3,
+       16
+      ]
+     ],
+     "col": 0,
+     "row": 15,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       1,
+       7
+      ],
+      [
+       2,
+       7
+      ]
+     ],
+     "col": 1,
+     "row": 6,
+     "type": "Elite"
+    },
+    {
+     "children": [
+      [
+       0,
+       8
+      ],
+      [
+       1,
+       8
+      ],
+      [
+       2,
+       8
+      ]
+     ],
+     "col": 1,
+     "row": 7,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       1,
+       9
+      ]
+     ],
+     "col": 1,
+     "row": 8,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       2,
+       10
+      ]
+     ],
+     "col": 1,
+     "row": 9,
+     "type": "Treasure"
+    },
+    {
+     "children": [
+      [
+       0,
+       12
+      ]
+     ],
+     "col": 1,
+     "row": 11,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       0,
+       13
+      ]
+     ],
+     "col": 1,
+     "row": 12,
+     "type": "Elite"
+    },
+    {
+     "children": [
+      [
+       3,
+       8
+      ]
+     ],
+     "col": 2,
+     "row": 7,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       3,
+       9
+      ]
+     ],
+     "col": 2,
+     "row": 8,
+     "type": "Elite"
+    },
+    {
+     "children": [
+      [
+       1,
+       11
+      ],
+      [
+       2,
+       11
+      ],
+      [
+       3,
+       11
+      ]
+     ],
+     "col": 2,
+     "row": 10,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       1,
+       12
+      ]
+     ],
+     "col": 2,
+     "row": 11,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       3,
+       9
+      ]
+     ],
+     "col": 3,
+     "row": 8,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       2,
+       10
+      ],
+      [
+       4,
+       10
+      ]
+     ],
+     "col": 3,
+     "row": 9,
+     "type": "Treasure"
+    },
+    {
+     "children": [
+      [
+       3,
+       12
+      ],
+      [
+       4,
+       12
+      ]
+     ],
+     "col": 3,
+     "row": 11,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       3,
+       13
+      ]
+     ],
+     "col": 3,
+     "row": 12,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       3,
+       14
+      ],
+      [
+       4,
+       14
+      ]
+     ],
+     "col": 3,
+     "row": 13,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       4,
+       15
+      ]
+     ],
+     "col": 3,
+     "row": 14,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       5,
+       2
+      ]
+     ],
+     "col": 4,
+     "row": 1,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       4,
+       7
+      ]
+     ],
+     "col": 4,
+     "row": 6,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       3,
+       8
+      ]
+     ],
+     "col": 4,
+     "row": 7,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       5,
+       11
+      ]
+     ],
+     "col": 4,
+     "row": 10,
+     "type": "Shop"
+    },
+    {
+     "children": [
+      [
+       3,
+       13
+      ],
+      [
+       5,
+       13
+      ]
+     ],
+     "col": 4,
+     "row": 12,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       4,
+       15
+      ]
+     ],
+     "col": 4,
+     "row": 14,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       3,
+       16
+      ]
+     ],
+     "col": 4,
+     "row": 15,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       5,
+       3
+      ]
+     ],
+     "col": 5,
+     "row": 2,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       5,
+       4
+      ]
+     ],
+     "col": 5,
+     "row": 3,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       5,
+       5
+      ]
+     ],
+     "col": 5,
+     "row": 4,
+     "type": "Shop"
+    },
+    {
+     "children": [
+      [
+       4,
+       6
+      ],
+      [
+       6,
+       6
+      ]
+     ],
+     "col": 5,
+     "row": 5,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       4,
+       12
+      ],
+      [
+       5,
+       12
+      ]
+     ],
+     "col": 5,
+     "row": 11,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       5,
+       13
+      ]
+     ],
+     "col": 5,
+     "row": 12,
+     "type": "Shop"
+    },
+    {
+     "children": [
+      [
+       4,
+       14
+      ],
+      [
+       5,
+       14
+      ]
+     ],
+     "col": 5,
+     "row": 13,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       4,
+       15
+      ]
+     ],
+     "col": 5,
+     "row": 14,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       6,
+       7
+      ]
+     ],
+     "col": 6,
+     "row": 6,
+     "type": "Unknown"
+    },
+    {
+     "children": [
+      [
+       6,
+       8
+      ]
+     ],
+     "col": 6,
+     "row": 7,
+     "type": "RestSite"
+    },
+    {
+     "children": [
+      [
+       6,
+       9
+      ]
+     ],
+     "col": 6,
+     "row": 8,
+     "type": "Monster"
+    },
+    {
+     "children": [
+      [
+       6,
+       10
+      ]
+     ],
+     "col": 6,
+     "row": 9,
+     "type": "Treasure"
+    },
+    {
+     "children": [
+      [
+       5,
+       11
+      ]
+     ],
+     "col": 6,
+     "row": 10,
+     "type": "Elite"
+    },
+    {
+     "children": [],
+     "col": 3,
+     "id": "CEREMONIAL_BEAST_BOSS",
+     "name": "Ceremonial Beast",
+     "row": 16,
+     "type": "Boss"
+    }
+   ],
+   "visited": [
+    {
+     "col": 3,
+     "row": 0,
+     "type": "Ancient"
+    },
+    {
+     "col": 0,
+     "row": 1,
+     "type": "Monster"
+    },
+    {
+     "col": 0,
+     "row": 2,
+     "type": "Unknown"
+    },
+    {
+     "col": 0,
+     "row": 3,
+     "type": "Unknown"
+    },
+    {
+     "col": 0,
+     "row": 4,
+     "type": "Monster"
+    },
+    {
+     "col": 0,
+     "row": 5,
+     "type": "Monster"
+    }
+   ]
+  },
+  "player": {
+   "block": 0,
+   "character": "The Ironclad",
+   "gold": 36,
+   "hp": 62,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [
+    {
+     "can_use_in_combat": true,
+     "description": "Gain 3 Thorns.",
+     "id": "LIQUID_BRONZE",
+     "keywords": [
+      {
+       "description": "When hit by an attack, deal damage back.",
+       "name": "Thorns"
+      }
+     ],
+     "name": "Liquid Bronze",
+     "slot": 0,
+     "target_type": "AnyPlayer"
+    }
+   ],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "Upon pickup, Transform 1 card.",
+     "id": "NEW_LEAF",
+     "keywords": [
+      {
+       "description": "Transformed cards become a random card of any rarity.",
+       "name": "Transform"
+      }
+     ],
+     "name": "New Leaf"
+    }
+   ],
+   "status": []
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 6
+  },
+  "state_type": "map"
+ },
+ "unavailable_actions": []
+}

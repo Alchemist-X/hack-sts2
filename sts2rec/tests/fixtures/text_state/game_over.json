@@ -1,0 +1,94 @@
+{
+ "legal_actions": [],
+ "state": {
+  "game_over": {
+   "message": "Run ended.",
+   "options": [
+    "main_menu"
+   ]
+  },
+  "player": {
+   "block": 0,
+   "character": "The Ironclad",
+   "gold": 113,
+   "hp": 0,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [
+    {
+     "can_use_in_combat": true,
+     "description": "Gain 3 Thorns.",
+     "id": "LIQUID_BRONZE",
+     "keywords": [
+      {
+       "description": "When hit by an attack, deal damage back.",
+       "name": "Thorns"
+      }
+     ],
+     "name": "Liquid Bronze",
+     "slot": 0,
+     "target_type": "AnyPlayer"
+    },
+    {
+     "can_use_in_combat": true,
+     "description": "Triple your Block.",
+     "id": "FORTIFIER",
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "name": "Fortifier",
+     "slot": 1,
+     "target_type": "AnyPlayer"
+    },
+    {
+     "can_use_in_combat": true,
+     "description": "Play the top 3 cards of your Draw Pile.",
+     "id": "DISTILLED_CHAOS",
+     "keywords": [],
+     "name": "Distilled Chaos",
+     "slot": 2,
+     "target_type": "Self"
+    }
+   ],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "Upon pickup, Transform 1 card.",
+     "id": "NEW_LEAF",
+     "keywords": [
+      {
+       "description": "Transformed cards become a random card of any rarity.",
+       "name": "Transform"
+      }
+     ],
+     "name": "New Leaf"
+    },
+    {
+     "counter": 2,
+     "description": "Every 10th Attack you play deals double damage.",
+     "id": "PEN_NIB",
+     "keywords": [],
+     "name": "Pen Nib"
+    }
+   ],
+   "status": []
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 12
+  },
+  "state_type": "game_over"
+ },
+ "unavailable_actions": []
+}

@@ -312,7 +312,8 @@ def play(inst, seed, run_dir, rec, policy_name, policy, args, began):
                    'legal_actions': [a.get('ref') for a in obs.get('legal_actions') or []],
                    'wiki_facts_chars': len(obs['wiki_facts']) if isinstance(obs.get('wiki_facts'), str) else None,
                    'chosen': reply['action'], 'rationale': reply['reason'], 'policy': policy_name,
-                   'outcome': outcome, 'latency_s': {'policy': round(policy_latency, 3), 'act': round(act_latency, 3)}})
+                   'outcome': outcome, 'latency_s': {'policy': round(policy_latency, 3), 'act': round(act_latency, 3)},
+                   **({'llm': reply['llm']} if reply.get('llm') else {})})
         index += 1
         if outcome['ok']:
             consecutive_errors, avoid, last_error = 0, [], None

@@ -1,0 +1,565 @@
+{
+ "legal_actions": [
+  {
+   "action": "play_card",
+   "card_index": 0,
+   "ref": {
+    "action": "play_card",
+    "card": "Strike",
+    "target": "Phrog Parasite@1"
+   },
+   "target": "PHROG_PARASITE_0"
+  },
+  {
+   "action": "play_card",
+   "card_index": 2,
+   "ref": {
+    "action": "play_card",
+    "card": "Setup Strike",
+    "target": "Phrog Parasite@1"
+   },
+   "target": "PHROG_PARASITE_0"
+  },
+  {
+   "action": "play_card",
+   "card_index": 3,
+   "ref": {
+    "action": "play_card",
+    "card": "Defend"
+   }
+  },
+  {
+   "action": "use_potion",
+   "ref": {
+    "action": "use_potion",
+    "potion": "slot:0",
+    "potion_id": "WEAK_POTION",
+    "target": "Phrog Parasite@1"
+   },
+   "slot": 0,
+   "target": "PHROG_PARASITE_0"
+  },
+  {
+   "action": "discard_potion",
+   "ref": {
+    "action": "discard_potion",
+    "potion": "slot:0",
+    "potion_id": "WEAK_POTION"
+   },
+   "slot": 0
+  },
+  {
+   "action": "use_potion",
+   "ref": {
+    "action": "use_potion",
+    "potion": "slot:1",
+    "potion_id": "ENERGY_POTION"
+   },
+   "slot": 1
+  },
+  {
+   "action": "discard_potion",
+   "ref": {
+    "action": "discard_potion",
+    "potion": "slot:1",
+    "potion_id": "ENERGY_POTION"
+   },
+   "slot": 1
+  },
+  {
+   "action": "end_turn",
+   "ref": {
+    "action": "end_turn"
+   }
+  }
+ ],
+ "state": {
+  "battle": {
+   "enemies": [
+    {
+     "block": 0,
+     "combat_id": 1,
+     "current_move_id": "INFECT_MOVE",
+     "entity_id": "PHROG_PARASITE_0",
+     "hp": 56,
+     "id": "PHROG_PARASITE",
+     "intents": [
+      {
+       "description": "This enemy intends to give you 3 Status cards.",
+       "label": "3",
+       "title": "Strategic",
+       "type": "StatusCard"
+      }
+     ],
+     "is_alive": true,
+     "is_targetable": true,
+     "max_hp": 62,
+     "model_id": "MONSTER.PHROG_PARASITE",
+     "name": "Phrog Parasite",
+     "status": [
+      {
+       "amount": 4,
+       "description": "Upon dying, summons... something.",
+       "id": "INFESTED_POWER",
+       "keywords": [],
+       "model_id": "POWER.INFESTED_POWER",
+       "name": "Infested",
+       "type": "Buff"
+      },
+      {
+       "amount": 1,
+       "description": "Receive 50% more damage from Attacks for 1 turn.",
+       "id": "VULNERABLE_POWER",
+       "keywords": [],
+       "model_id": "POWER.VULNERABLE_POWER",
+       "name": "Vulnerable",
+       "type": "Debuff"
+      }
+     ]
+    }
+   ],
+   "inactive_enemies": [],
+   "is_over_or_ending": false,
+   "is_play_phase": true,
+   "player_turn": 1,
+   "round": 1,
+   "turn": "player"
+  },
+  "player": {
+   "block": 7,
+   "character": "The Ironclad",
+   "discard_pile": [
+    {
+     "affliction": null,
+     "cost": "1",
+     "count": 1,
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "count": 1,
+     "description": "Gain 7 Block. Apply 1 Vulnerable.",
+     "enchantment": null,
+     "id": "TAUNT",
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Vulnerable creatures take 50% more damage from Attacks.",
+       "name": "Vulnerable"
+      },
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.TAUNT",
+     "name": "Taunt",
+     "rarity": "Uncommon",
+     "star_cost": null,
+     "type": "Skill"
+    }
+   ],
+   "discard_pile_count": 2,
+   "draw_pile": [
+    {
+     "affliction": null,
+     "cost": "0",
+     "count": 1,
+     "description": "Deal 6 damage. Add a copy of this card into your Discard Pile.",
+     "enchantment": null,
+     "id": "ANGER",
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.ANGER",
+     "name": "Anger",
+     "rarity": "Common",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "0",
+     "count": 1,
+     "description": "Lose 3 HP. Gain [ironclad_energy_icon.png][ironclad_energy_icon.png].",
+     "enchantment": null,
+     "id": "BLOODLETTING",
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Energy is used to play cards from your Hand.",
+       "name": "Energy"
+      }
+     ],
+     "model_id": "CARD.BLOODLETTING",
+     "name": "Bloodletting",
+     "rarity": "Common",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "count": 2,
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "count": 1,
+     "description": "Gain 2 Strength.",
+     "enchantment": null,
+     "id": "INFLAME",
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Strength adds additional damage to Attacks.",
+       "name": "Strength"
+      }
+     ],
+     "model_id": "CARD.INFLAME",
+     "name": "Inflame",
+     "rarity": "Uncommon",
+     "star_cost": null,
+     "type": "Power"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "count": 2,
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "2",
+     "count": 1,
+     "description": "Deal 8 damage. Apply 2 Vulnerable.",
+     "enchantment": null,
+     "id": "BASH",
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Vulnerable creatures take 50% more damage from Attacks.",
+       "name": "Vulnerable"
+      }
+     ],
+     "model_id": "CARD.BASH",
+     "name": "Bash",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    }
+   ],
+   "draw_pile_count": 8,
+   "energy": 2,
+   "exhaust_pile": [],
+   "exhaust_pile_count": 0,
+   "gold": 266,
+   "hand": [
+    {
+     "affliction": null,
+     "can_play": true,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 0,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "rule_preview": {
+      "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+      "source": "engine_ui_hooks",
+      "variables": [
+       {
+        "base_value": 6,
+        "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+        "damage_by_target": [
+         {
+          "before_block": 9,
+          "combat_id": 1,
+          "unrounded": 9.0
+         }
+        ],
+        "name": "Damage",
+        "type": "DamageVar"
+       }
+      ]
+     },
+     "star_cost": null,
+     "target_type": "AnyEnemy",
+     "type": "Attack",
+     "unplayable_reason": null
+    },
+    {
+     "affliction": null,
+     "can_play": true,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 1,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "rule_preview": {
+      "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+      "source": "engine_ui_hooks",
+      "variables": [
+       {
+        "base_value": 6,
+        "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+        "damage_by_target": [
+         {
+          "before_block": 9,
+          "combat_id": 1,
+          "unrounded": 9.0
+         }
+        ],
+        "name": "Damage",
+        "type": "DamageVar"
+       }
+      ]
+     },
+     "star_cost": null,
+     "target_type": "AnyEnemy",
+     "type": "Attack",
+     "unplayable_reason": null
+    },
+    {
+     "affliction": null,
+     "can_play": true,
+     "cost": "1",
+     "description": "Deal 7 damage. Gain 2 Strength this turn.",
+     "enchantment": null,
+     "id": "SETUP_STRIKE",
+     "index": 2,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Strength adds additional damage to Attacks.",
+       "name": "Strength"
+      }
+     ],
+     "model_id": "CARD.SETUP_STRIKE",
+     "name": "Setup Strike",
+     "rarity": "Common",
+     "rule_preview": {
+      "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+      "source": "engine_ui_hooks",
+      "variables": [
+       {
+        "base_value": 7,
+        "coverage": "engine_damage_variable_preview; current_state_single_hit_before_block",
+        "damage_by_target": [
+         {
+          "before_block": 10,
+          "combat_id": 1,
+          "unrounded": 10.5
+         }
+        ],
+        "name": "Damage",
+        "type": "DamageVar"
+       },
+       {
+        "base_value": 2,
+        "coverage": "variable_only; read_card_rules_for_trigger_and_repeats",
+        "name": "StrengthPower",
+        "type": "PowerVar`1"
+       }
+      ]
+     },
+     "star_cost": null,
+     "target_type": "AnyEnemy",
+     "type": "Attack",
+     "unplayable_reason": null
+    },
+    {
+     "affliction": null,
+     "can_play": true,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 3,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "rule_preview": {
+      "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+      "source": "engine_ui_hooks",
+      "variables": [
+       {
+        "base_value": 5,
+        "block_preview": 5,
+        "coverage": "engine_block_variable_preview; read_rules_for_trigger",
+        "name": "Block",
+        "type": "BlockVar",
+        "unrounded": 5
+       }
+      ]
+     },
+     "star_cost": null,
+     "target_type": "Self",
+     "type": "Skill",
+     "unplayable_reason": null
+    },
+    {
+     "affliction": null,
+     "can_play": true,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 4,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "rule_preview": {
+      "scope": "current_state_variables_only; not_complete_card_effects_or_multi_hit_simulation",
+      "source": "engine_ui_hooks",
+      "variables": [
+       {
+        "base_value": 5,
+        "block_preview": 5,
+        "coverage": "engine_block_variable_preview; read_rules_for_trigger",
+        "name": "Block",
+        "type": "BlockVar",
+        "unrounded": 5
+       }
+      ]
+     },
+     "star_cost": null,
+     "target_type": "Self",
+     "type": "Skill",
+     "unplayable_reason": null
+    }
+   ],
+   "hp": 61,
+   "max_energy": 3,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [
+    {
+     "can_use_in_combat": true,
+     "description": "Apply 3 Weak.",
+     "id": "WEAK_POTION",
+     "keywords": [
+      {
+       "description": "Weakened creatures deal 25% less damage with Attacks.",
+       "name": "Weak"
+      }
+     ],
+     "name": "Weak Potion",
+     "slot": 0,
+     "target_type": "AnyEnemy"
+    },
+    {
+     "can_use_in_combat": true,
+     "description": "Gain [ironclad_energy_icon.png][ironclad_energy_icon.png].",
+     "id": "ENERGY_POTION",
+     "keywords": [
+      {
+       "description": "Energy is used to play cards from your Hand.",
+       "name": "Energy"
+      }
+     ],
+     "name": "Energy Potion",
+     "slot": 1,
+     "target_type": "AnyPlayer"
+    }
+   ],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "At the start of Elite combats, draw 2 additional cards and gain [ironclad_energy_icon.png].",
+     "id": "BOOMING_CONCH",
+     "keywords": [
+      {
+       "description": "Energy is used to play cards from your Hand.",
+       "name": "Energy"
+      }
+     ],
+     "name": "Booming Conch"
+    },
+    {
+     "counter": null,
+     "description": "If you end your turn without Block, gain 6 Block.",
+     "id": "ORICHALCUM",
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "name": "Orichalcum"
+    }
+   ],
+   "status": []
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 11
+  },
+  "state_type": "elite"
+ },
+ "unavailable_actions": []
+}

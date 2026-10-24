@@ -115,4 +115,7 @@ def decide(policy, observation, context):
     reason = str(reply.get('reason') or '').strip()
     if len(reason) < 4:
         reason = f'{reason or "no rationale"} (policy gave no rationale)'
-    return {'action': reply['action'], 'reason': reason}, latency
+    out = {'action': reply['action'], 'reason': reason}
+    if isinstance(reply.get('llm'), dict):  # model/tokens/latency/cost telemetry (llm_policy.py)
+        out['llm'] = reply['llm']
+    return out, latency

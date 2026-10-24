@@ -1,0 +1,284 @@
+{
+ "legal_actions": [
+  {
+   "action": "confirm_selection",
+   "ref": {
+    "action": "confirm_selection"
+   }
+  },
+  {
+   "action": "cancel_selection",
+   "ref": {
+    "action": "cancel_selection"
+   }
+  }
+ ],
+ "state": {
+  "card_select": {
+   "can_cancel": true,
+   "can_confirm": true,
+   "cards": [
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 0,
+     "is_selected": true,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 1,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 2,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 3,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 4,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 5,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 6,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 7,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Gain 5 Block.",
+     "enchantment": null,
+     "id": "DEFEND_IRONCLAD",
+     "index": 8,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Until next turn, prevents damage.",
+       "name": "Block"
+      }
+     ],
+     "model_id": "CARD.DEFEND_IRONCLAD",
+     "name": "Defend",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Skill"
+    },
+    {
+     "affliction": null,
+     "cost": "2",
+     "description": "Deal 8 damage. Apply 2 Vulnerable.",
+     "enchantment": null,
+     "id": "BASH",
+     "index": 9,
+     "is_selected": false,
+     "is_upgraded": false,
+     "keywords": [
+      {
+       "description": "Vulnerable creatures take 50% more damage from Attacks.",
+       "name": "Vulnerable"
+      }
+     ],
+     "model_id": "CARD.BASH",
+     "name": "Bash",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    }
+   ],
+   "max_select": 1,
+   "min_select": 1,
+   "preview_cards": [
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 6 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 0,
+     "is_upgraded": false,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    },
+    {
+     "affliction": null,
+     "cost": "1",
+     "description": "Deal 9 damage.",
+     "enchantment": null,
+     "id": "STRIKE_IRONCLAD",
+     "index": 1,
+     "is_upgraded": true,
+     "keywords": [],
+     "model_id": "CARD.STRIKE_IRONCLAD",
+     "name": "Strike+",
+     "rarity": "Basic",
+     "star_cost": null,
+     "type": "Attack"
+    }
+   ],
+   "preview_showing": true,
+   "prompt": "Choose a card to Upgrade.",
+   "screen_type": "upgrade",
+   "selected_count": 1,
+   "selected_indices": [
+    0
+   ],
+   "selection_tracking": "available"
+  },
+  "player": {
+   "block": 0,
+   "character": "The Ironclad",
+   "gold": 99,
+   "hp": 80,
+   "max_hp": 80,
+   "max_potion_slots": 3,
+   "potions": [],
+   "relics": [
+    {
+     "counter": null,
+     "description": "At the end of combat, heal 6 HP.",
+     "id": "BURNING_BLOOD",
+     "keywords": [],
+     "name": "Burning Blood"
+    },
+    {
+     "counter": null,
+     "description": "Upon pickup, Upgrade a card.",
+     "id": "POMANDER",
+     "keywords": [],
+     "name": "Pomander"
+    }
+   ],
+   "status": []
+  },
+  "run": {
+   "act": 1,
+   "ascension": 0,
+   "floor": 1
+  },
+  "state_type": "card_select"
+ },
+ "unavailable_actions": []
+}
