@@ -256,3 +256,64 @@ def test_make_unlocked_save_slugify_and_unlock_idempotent():
     assert mus.unlock(after, ids) == after
     with pytest.raises(SystemExit):
         mus.unlock({'schema_version': 20}, ids)
+
+
+def test_observe_retries_transient_http_failures_but_act_never(monkeypatch):
+    import run_bench
+    calls, retries = [], []
+
+    def flaky(command, *a, **k):
+        calls.append(command)
+        if len(calls) < 3:
+            raise run_bench.BenchError('sts2_live observe exit 1: ... TimeoutError: timed out')
+        return 0, {'ok': True}
+
+    monkeypatch.setattr(run_bench, '_live_once', flaky)
+    assert run_bench.live('observe', 'x', 1, retry_wait_s=0,
+                          on_retry=lambda c, n, e: retries.append(n)) == (0, {'ok': True})
+    assert calls == ['observe'] * 3 and retries == [1, 2]
+
+    calls.clear()
+    with pytest.raises(run_bench.BenchError):
+        run_bench.live('act', 'x', 1, '{}', 'reason', 'hash', retry_wait_s=0)
+    assert calls == ['act']  # an act is never re-sent
+
+    def broken(command, *a, **k):
+        calls.append(command)
+        raise run_bench.BenchError('sts2_live observe exit 1: KeyError: state')
+
+    calls.clear()
+    monkeypatch.setattr(run_bench, '_live_once', broken)
+    with pytest.raises(run_bench.BenchError):
+        run_bench.live('observe', 'x', 1, retry_wait_s=0)
+    assert calls == ['observe']  # real bugs are not masked
+
+
+def test_unusable_instance_returns_its_seed_instead_of_draining_the_queue(tmp_path, monkeypatch):
+    import run_bench
+
+    class Inst:
+        def __init__(self, name, broken):
+            self.name, self.broken, self.unusable, self.ran = name, broken, None, []
+
+        def stop(self):
+            if self.broken:
+                raise run_bench.BenchError('PID identity changed; refusing to signal')
+
+    good, bad = Inst('inst1', False), Inst('inst2', True)
+    monkeypatch.setattr(run_bench, 'Instance', lambda pool, n, *a: {1: good, 2: bad}[int(n)])
+    monkeypatch.setattr(run_bench.baseline_mod, 'load_manifest', lambda path: {'name': 'sts2-bench-baseline-v1', 'sha256': '72f1dd96e0edcff817cd6717368701cfe4e38eb2cd13a90277ebedbe9b697846'})
+
+    def fake_run_seed(inst, seed, *a):
+        import time
+        time.sleep(0.2)  # keep inst1 busy so inst2 claims a seed
+        inst.ran.append(seed)
+        return {'seed': seed, 'instance': inst.name}
+
+    monkeypatch.setattr(run_bench, 'run_seed', fake_run_seed)
+    monkeypatch.setattr(run_bench, 'game_env', lambda: {})
+    out = tmp_path / 'out'
+    code = run_bench.main(['--instances', '1,2', '--seeds', 'BENCHA0S01,BENCHA0S02,BENCHA0S03', '--out', str(out)])
+    assert code == 0
+    assert bad.ran == [] and sorted(good.ran) == ['BENCHA0S01', 'BENCHA0S02', 'BENCHA0S03']
+    assert bad.unusable

@@ -356,6 +356,16 @@ def blocked_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
                                 "reason": "cannot_afford"})
             elif item.get("category") == "potion" and potion_slots_full(state):
                 blocked.append({"action": "shop_purchase", "ref": shop_item_ref(item), "reason": "potion_slots_full"})
+    if st in COMBAT_TYPES:
+        hand = _hand(state)
+        for card, ref in zip(hand, card_refs(hand)):
+            if not card.get("can_play", False):
+                entry = {"action": "play_card", "ref": ref,
+                         "reason": card.get("unplayable_reason") or "can_play=false"}
+                if card.get("cost") is not None:
+                    entry["cost"] = card.get("cost")
+                if entry not in blocked:  # identical copies are one entry
+                    blocked.append(entry)
     return blocked
 
 

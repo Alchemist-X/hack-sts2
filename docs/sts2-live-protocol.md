@@ -34,7 +34,7 @@ observe 的每个 legal_action 带 `ref`，act 优先使用 ref 而不是位置�
 - 简写：`end`、`proceed`、`skip`、`confirm`、`cancel`。多步：传 JSON 数组，按顺序逐步执行、逐步结算。
 - `expect` 守卫：规范化比较 id/名称/描述片段，容忍升级改名；不匹配仍然拒绝。
 
-不可执行的动作放在 `unavailable_actions` 并给原因：药水栏满时的药水奖励（`potion_slots_full`，提示先 `discard_potion` 或 proceed 放弃）、买不起的商品（`cannot_afford`）。非战斗画面（奖励、商店、地图、事件、休息、宝箱）可直接 `discard_potion`。
+不可执行的动作放在 `unavailable_actions` 并给原因：药水栏满时的药水奖励（`potion_slots_full`，提示先 `discard_potion` 或 proceed 放弃）、买不起的商品（`cannot_afford`）。战斗中打不出的手牌也列在这里（`play_card`，`reason` 为游戏给的 `unplayable_reason`，否则 `can_play=false`）。链式请求中若前一步让画面变了（如击杀后进入奖励），后续步骤不会发送，`unresolvable_action` 的 message 会注明“screen changed from … to …”，并带 `screen_changed` 字段。非战斗画面（奖励、商店、地图、事件、休息、宝箱）可直接 `discard_potion`。
 
 ## 结算与失败语义
 

@@ -287,6 +287,22 @@ class Session:
             return executor.settled_state(self.port, pre, wire)
 
 
+def chain_error(error, pre, state, step):
+    """Error text for a step that could not be resolved.
+
+    When an earlier step of the same chain moved the game to another screen
+    (combat won -> rewards, event -> card_select, ...) the bare "no card
+    matches" is misleading: say the screen changed and nothing more was sent.
+    """
+    message = str(error)
+    before, after = pre.get('state_type'), state.get('state_type')
+    if step > 1 and before != after:
+        return (f'{message} (screen changed from {before!r} to {after!r} after step {step - 1}; '
+                'remaining steps were not sent; decide again from this observation)',
+                {'screen_changed': {'from': before, 'to': after, 'after_step': step - 1}})
+    return message, {}
+
+
 def run_act(a, out, meta, knowledge_root):
     if (out/'pending-action.json').exists():
         pending = (out/'pending-action.json').read_text().strip()
@@ -323,17 +339,20 @@ def run_act(a, out, meta, knowledge_root):
         try:
             items = expand(state, original)
         except refs.ActionRefError as error:
-            fail('unresolvable_action', str(error), failed_step=step + 1, request=original, steps=session.steps,
-                 state=state, out=out, knowledge_root=knowledge_root)
+            message, changed = chain_error(error, pre, state, step + 1)
+            fail('unresolvable_action', message, failed_step=step + 1, request=original, steps=session.steps,
+                 state=state, out=out, knowledge_root=knowledge_root, **changed)
         for request in items:
             step += 1
             confirm = request.pop('_confirm', None)
             try:
                 resolved = refs.resolve(state, request, allow_index=(step == 1), observed_entities=observed_entities)
             except refs.ActionRefError as error:
-                executor.append_live(out/'live.log', f'请求未发送（第 {step} 步）：{error}')
-                fail('unresolvable_action', str(error), available=error.available, failed_step=step,
-                     request=request, steps=session.steps, state=state, out=out, knowledge_root=knowledge_root)
+                message, changed = chain_error(error, pre, state, step)
+                executor.append_live(out/'live.log', f'请求未发送（第 {step} 步）：{message}')
+                fail('unresolvable_action', message, available=error.available, failed_step=step,
+                     request=request, steps=session.steps, state=state, out=out, knowledge_root=knowledge_root,
+                     **changed)
             notes += resolved['notes']
             before_type = state.get('state_type')
             state = session.execute(state, resolved['wire'], request, step=step, legal=resolved['legal'])
