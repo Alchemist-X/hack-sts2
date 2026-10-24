@@ -15,6 +15,7 @@
 1. 模型先阅读角色记忆与上一局失误；用实际局面填写 `config/live-plan.example.json` 的副本。启动脚本会读取并留存计划与记忆哈希，但无法证明模型理解了文件。
 2. 创建独立 `output/gameplay-<日期>-<角色>-<编号>/`。运行 `python3 scripts/sts2_live.py start --run-dir <目录> --plan <计划.json> --memory <记忆.md> --port 15701 --mode practice --game-version v0.107.1 --codex-session <本任务rollout.jsonl>`。没有会话文件仍可玩，成本报告必须写未知。
 3. `observe --run-dir <目录>`：永久保存公开状态、当前快照可枚举的 legal_actions 及商品/奖励元数据、来源索引。静态规则保存到 knowledge.jsonl，同时将当前相关规则正文、敌人行动状态机和来源返回到 decision_context。牌堆保持无序，保留 ID、升级、附魔、污染及当前文本。MCP返回实际版本、commit和sts2.dll的SHA-256；act在这些值缺失、不匹配或相关本地源码校验失败时停止。其他改变玩法的mod仍需单独核对。
+   `start --wiki-facts` 时，observe 另返回 `wiki_facts`（`FactDB.facts_for_state`，最多 4000 字符，来自 knowledge/facts），用于基准测试对比有无 wiki 事实的表现；默认关闭。
 4. `act '<一个动作JSON>' '<公开决策摘要>' '<刚观察的hash>' --run-dir <目录>`：动作前写 live.log 和意图；动作后写结果与请求/结算耗时。每个回合开始、抽牌/随机效果后，重新评估计划。升级、附魔、力量和实时状态以当前公开文本为准。
 5. `note '<局势更新>' --run-dir <目录>`；`annotate '{"kind":"regret","decision_id":"...","reason":"...","next_rule":"...","counterfactual_tested":false}' --run-dir <目录>`。人工更新 plan.json 后，下个动作会保存计划与哈希；新计划不能追改历史动作。
 6. `report --run-dir <目录>`：输出 audit.json，含奖励、怪物、商店、药水与成本。成本用 token_usage_record 的每请求 usage 按 response_id 去重；压缩只数 compacted。滚动日志可能尚未落盘最后一次调用，应在响应完成后补最终快照。不能累加反复播报的累计 token_count，也不能把缓存/推理子项加两遍。
