@@ -34,6 +34,9 @@ import statistics
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import map_lookahead  # noqa: E402
+
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -268,7 +271,7 @@ def battle_block(b, gl):
     return lines
 
 
-def map_block(m, gl):
+def map_block(m, gl, *, floor=None, hp_frac=None):
     cur = m.get('current_position') or {}
     lines = [f'## Map: at ({cur.get("col")},{cur.get("row")}) {cur.get("type", "")}; boss '
              + ', '.join(f'{clean(b.get("name"))} (row {b.get("row")})' for b in m.get('bosses') or [m.get('boss') or {}])]
@@ -278,6 +281,7 @@ def map_block(m, gl):
         leads = ' '.join(f'{x.get("col")},{x.get("row")}{NODE.get(x.get("type"), x.get("type"))}'
                          for x in o.get('leads_to') or [])
         lines.append(f'Next: {o.get("col")},{o.get("row")} {o.get("type")} -> {leads}')
+    lines += lookahead_lines(m, floor=floor, hp_frac=hp_frac)
     rows = collections.defaultdict(list)
     floor = cur.get('row') if isinstance(cur.get('row'), int) else -1
     for n in m.get('nodes') or []:
@@ -296,6 +300,27 @@ def map_block(m, gl):
     return lines
 
 
+def lookahead_lines(m, *, floor=None, hp_frac=None):
+    """Compact per-option path summary (see map_lookahead.py); never breaks the encoder."""
+    try:
+        stats = map_lookahead.lookahead(m)
+    except Exception as exc:  # noqa: BLE001 - lookahead is advisory
+        return [f'Lookahead unavailable: {type(exc).__name__}']
+    if not stats:
+        return []
+    cur = (m.get('current_position') or {}).get('row')
+    off = floor - cur if isinstance(floor, int) and isinstance(cur, int) else None
+    head = 'Lookahead to boss (E/R/$/?/T min-max over all paths; r=row' + (f', floor=row+{off}' if off is not None else '') + '):'
+    out = [head]
+    low = isinstance(hp_frac, (int, float)) and hp_frac < 0.6
+    for st in stats:
+        line = map_lookahead.fmt(st)
+        if low and st.get('e_before_r'):
+            line += ' | !HP<60% avoid'
+        out.append(line)
+    return out
+
+
 def list_block(title, items, fmt, gl, extra_used=()):
     lines = [title]
     for it in items or []:
@@ -303,13 +328,13 @@ def list_block(title, items, fmt, gl, extra_used=()):
     return lines
 
 
-def screen_block(st, block, gl):
+def screen_block(st, block, gl, **map_ctx):
     if not isinstance(block, dict):
         return [f'## {st}', compact(block)]
     used = set()
     lines = []
     if st == 'map':
-        return map_block(block, gl)
+        return map_block(block, gl, **map_ctx)
     if st == 'rewards':
         lines.append(f'## Rewards (can_proceed={block.get("can_proceed")})')
         for it in block.get('items') or []:
@@ -443,8 +468,11 @@ def encode(observation, *, facts=False, header=True):
         lines += player_block(state['player'], gl, st in COMBAT)
     if isinstance(state.get('battle'), dict):
         lines += battle_block(state['battle'], gl)
+    p = state.get('player') if isinstance(state.get('player'), dict) else {}
+    hp_frac = p['hp'] / p['max_hp'] if isinstance(p.get('hp'), (int, float)) and p.get('max_hp') else None
+    map_ctx = {'floor': run.get('floor'), 'hp_frac': hp_frac}
     if st in state and st != 'battle' and st not in COMBAT:
-        lines += screen_block(st, state[st], gl)
+        lines += screen_block(st, state[st], gl, **(map_ctx if st == 'map' else {}))
     for key in SCREEN_KEYS:
         if key in state and key not in (st, 'battle'):
             lines += screen_block(key, state[key], gl)
