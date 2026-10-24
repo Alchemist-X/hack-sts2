@@ -3,9 +3,12 @@
 
 Per seed, on a dedicated worker instance:
   stop -> restore the frozen save baseline (sha256-verified) -> launch ->
-  menu_select main/singleplayer/standard/<character>/embark(seed) ->
-  verify the seed the game actually used -> loop {observe -> policy -> act}
-  through ``scripts/sts2_live.py`` (the same harness agents use) ->
+  start the run: eval API ``start_run(character, ascension, seed)`` (one call,
+  the mod verifies its own readback) or, on an MCP without /api/v1/eval, the
+  legacy menu_select main/singleplayer/standard/<character>/embark(seed) ->
+  verify the seed/ascension the game actually used (MCP readback, game.log,
+  current_run.save) -> loop {observe -> policy -> act} through
+  ``scripts/sts2_live.py`` (the same harness agents use) -> run result ->
   metrics (game history file + trajectory) -> stop.
 
 Trajectory schema: docs/benchmark.md.  Run data stays outside the repo
@@ -116,6 +119,61 @@ def wait_for(port, predicate, timeout_s, what):
                      f'menu_screen={last and last.get("menu_screen")}')
 
 
+def eval_api(port, body=None, timeout=200, query=''):
+    """POST/GET the eval API (/api/v1/eval); see docs/sts2-live-protocol.md."""
+    url = f'http://127.0.0.1:{port}/api/v1/eval{query}'
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method='POST' if body is not None else 'GET',
+                                 headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def has_eval_api(port):
+    try:
+        probe = eval_api(port, query='?include_state=false', timeout=15)
+    except (OSError, ValueError):  # HTTPError (404 on older builds) is an OSError
+        return False
+    return isinstance(probe, dict) and probe.get('schema') == 'sts2-eval-snapshot'
+
+
+def start_run_eval(port, seed, character='IRONCLAD', ascension=0, settings=None, timeout_s=120):
+    """One-call seeded start via the eval API; returns its reply after checking the readback."""
+    seed = canonical_seed(seed)
+    body = {'action': 'start_run', 'character': character, 'ascension': ascension, 'seed': seed,
+            'mode': 'standard', 'timeout_ms': int(timeout_s * 1000)}
+    if settings:
+        body['settings'] = settings
+    reply = eval_api(port, body, timeout=timeout_s + 30)
+    readback = reply.get('readback') or {}
+    if reply.get('status') != 'ok' or not reply.get('verified'):
+        raise BenchError(f'start_run failed: {reply.get("error")} steps={reply.get("steps")}')
+    got = (str(readback.get('character', '')).upper(), readback.get('ascension'), readback.get('seed'))
+    if got != (character.upper(), ascension, seed):  # never trust the mod's own verdict alone
+        raise BenchError(f'start_run readback {got} != requested {(character.upper(), ascension, seed)}')
+    return reply
+
+
+def start_run(port, seed, character='IRONCLAD', ascension=0, method='auto', settings=None):
+    """Start a seeded standard run; returns ``(reply, method_used)``."""
+    if method in ('auto', 'eval') and has_eval_api(port):
+        return start_run_eval(port, seed, character, ascension, settings), 'eval'
+    if method == 'eval':
+        raise BenchError('this MCP build has no /api/v1/eval (rebuild with patches/sts2mcp-eval-api.patch)')
+    if settings:
+        raise BenchError('game_settings need the eval API (/api/v1/eval); refusing to ignore them')
+    return start_seeded_run(port, seed, character, ascension), 'menu'
+
+
+def run_result(port):
+    """The mod's run summary (victory/cause/score/deck/relics...) or None; read-only."""
+    try:
+        reply = eval_api(port, {'action': 'run_result'}, timeout=30)
+    except (OSError, ValueError):
+        return None
+    return reply.get('run_result') if isinstance(reply, dict) else None
+
+
 def _option_names(state):
     return [o.get('name') if isinstance(o, dict) else o for o in state.get('options') or []]
 
@@ -156,15 +214,19 @@ def start_seeded_run(port, seed, character='IRONCLAD', ascension=0, timeout_s=90
     raise BenchError('timed out starting the seeded run')
 
 
-def verify_seed(inst, active_profile, seed, log_offset, ascension=None):
-    """The seed (and, if given, ascension) the game used, from its own log line and the run save."""
+def verify_seed(inst, active_profile, seed, log_offset, ascension=None, readback=None):
+    """The seed (and, if given, ascension) the game used, from its own log line, the run save
+    and (when started through the eval API) the MCP readback; all sources must agree."""
     evidence = {}
+    if readback:
+        evidence['mcp_readback'] = {'character': readback.get('character'), 'seed': readback.get('seed'),
+                                    'ascension': readback.get('ascension'), 'game_mode': readback.get('game_mode')}
     game_log = inst.dir / 'game.log'
     if game_log.exists():
         with open(game_log, 'rb') as f:
             f.seek(log_offset)
             text = f.read().decode('utf-8', 'replace')
-        found = re.findall(r'Embarking on a singleplayer (\w+) run\. Ascension: (\d+) Seed: (\w+)', text)
+        found = re.findall(r'Embarking on a (?:singleplayer|CUSTOM) (\w+) run\. Ascension: (\d+) Seed: (\w+)', text)
         if found:
             evidence['log'] = {'character': found[-1][0], 'ascension': int(found[-1][1]), 'seed': found[-1][2]}
     saved = inst.current_run(active_profile)
@@ -340,6 +402,7 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
     began, wall_start = time.monotonic(), datetime.now(timezone.utc)
     manifest = baseline_mod.load_manifest(args.baseline)
     end_reason, history, seed_evidence, restore_info, error = None, None, None, None, None
+    start_method = None
     try:
         log(inst.name, seed, 'stop + restore baseline')
         inst.stop()
@@ -348,15 +411,19 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
         epoch_before = time.time()
         inst.launch()
         wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
-        embark = start_seeded_run(inst.port, seed, args.config['character'], args.config['ascension'])
+        embark, start_method = start_run(inst.port, seed, args.config['character'], args.config['ascension'],
+                                         args.start_method, args.game_settings)
         first = wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
-        seed_evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'))
+        seed_evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'),
+                                    readback=embark.get('readback') if start_method == 'eval' else None)
         if not seed_evidence['verified']:
             raise BenchError(f'seed/ascension not verified: {seed_evidence}')
         rec.write({'type': 'run_start', 'seed': seed, 'instance': inst.name, 'port': inst.port,
                    'started_at': wall_start.isoformat(), 'policy': policy_name, 'wiki_facts': bool(args.wiki_facts),
                    'character': args.config['character'], 'ascension': args.config['ascension'],
                    'benchmark': args.config['name'], 'baseline': restore_info, 'embark': embark,
+                   'start_method': start_method,
+                   'game_settings': embark.get('settings') if start_method == 'eval' else None,
                    'seed_evidence': seed_evidence, 'first_state_type': first.get('state_type'),
                    'harness': {'mode': args.mode, 'allow_unverified_authority': args.allow_unverified_authority}})
         start = [sys.executable, str(LIVE), 'start', '--run-dir', str(run_dir), '--port', str(inst.port),
@@ -366,6 +433,10 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
         if proc.returncode != 0:
             raise BenchError(f'sts2_live start failed: {proc.stderr.strip()[-500:]}')
         end_reason = play(inst, seed, run_dir, rec, policy_name, policy, args, began)
+        if start_method == 'eval':
+            summary = run_result(inst.port)
+            if summary:
+                rec.write({'type': 'run_result', **summary})
         found = metrics_mod.find_history(inst.history_dir(manifest['active_profile']), seed, not_before=epoch_before)
         history = found[1] if found else None
         if found:
@@ -386,6 +457,10 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
     result = {'seed': seed, 'instance': inst.name, 'policy': policy_name, 'wiki_facts': bool(args.wiki_facts),
               'benchmark': args.config['name'], 'error': error, 'seed_evidence': seed_evidence,
               **metrics_mod.run_metrics(rec.records, history, wall_time_s=wall, end_reason=end_reason)}
+    mcp_result = next((r for r in reversed(rec.records) if r.get('type') == 'run_result'), None)
+    if mcp_result:  # the mod's own summary, kept beside (not instead of) the history-file metrics
+        result['mcp_run_result'] = {k: mcp_result.get(k) for k in
+                                    ('victory', 'abandoned', 'cause', 'score', 'floor', 'act', 'source')}
     rec.write({'type': 'run_end', 'metrics': result})
     (seed_dir / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     log(inst.name, seed, f"done: {end_reason} floor={result.get('floor')} act={result.get('act')} "
@@ -402,14 +477,16 @@ def fingerprint(inst, seed, args, out_dir):
     log_offset = (inst.dir / 'game.log').stat().st_size if (inst.dir / 'game.log').exists() else 0
     inst.launch()
     wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
-    start_seeded_run(inst.port, seed, args.config['character'], args.config['ascension'])
+    embark, start_method = start_run(inst.port, seed, args.config['character'], args.config['ascension'],
+                                     args.start_method, args.game_settings)
     wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
-    evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'))
+    evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'),
+                           readback=embark.get('readback') if start_method == 'eval' else None)
     run_dir = out_dir / 'live'
     subprocess.run([sys.executable, str(LIVE), 'start', '--run-dir', str(run_dir), '--port', str(inst.port),
                     '--plan', str(args.plan), '--memory', str(args.memory[0]), *args.live_flags],
                    check=True, capture_output=True, cwd=ROOT)
-    fp = {'seed_evidence': evidence}
+    fp = {'seed_evidence': evidence, 'start_method': start_method}
     for _ in range(40):
         _, obs = live('observe', run_dir, inst.port, extra=args.live_flags)
         state = obs.get('state') or {}
@@ -453,8 +530,19 @@ def parse_args(argv=None):
     p.add_argument('--max-wall-s', type=float)
     p.add_argument('--determinism', metavar='SEED', help='start SEED twice on the first instance and compare')
     p.add_argument('--starts', type=int, default=2)
+    p.add_argument('--start-method', choices=['auto', 'eval', 'menu'], default=None,
+                   help='eval: one-call /api/v1/eval start_run (required); menu: legacy menu_select; '
+                        'auto (default): eval when the MCP has it (config "start_method" overrides the default)')
+    p.add_argument('--game-settings', type=json.loads, default=None,
+                   help='JSON of logic-neutral game settings applied by start_run, e.g. '
+                        '\'{"fast_mode":"fast","screenshake":0,"text_effects":false,"skip_tutorials":true}\' '
+                        '(default: config "game_settings"; needs the eval API)')
     a = p.parse_args(argv)
     a.config = json.loads(a.config.read_text())
+    a.start_method = a.start_method or a.config.get('start_method') or 'auto'
+    a.game_settings = a.game_settings if a.game_settings is not None else a.config.get('game_settings')
+    if a.game_settings is not None and not isinstance(a.game_settings, dict):
+        raise SystemExit('--game-settings / config game_settings must be a JSON object')
     a.baseline = a.baseline or a.config.get('default_baseline') or baseline_mod.DEFAULT_BASELINE
     a.memory = a.memory or [ROOT / 'config/bench/bench-memory.md']
     a.limits = dict(a.config.get('limits') or {})
@@ -511,8 +599,9 @@ def main(argv=None):
         for k in range(a.starts):
             log(instances[0].name, a.determinism, f'determinism start {k + 1}/{a.starts}')
             prints.append(fingerprint(instances[0], canonical_seed(a.determinism), a, out / f'start{k + 1}'))
-        same = all({k: v for k, v in fp.items() if k != 'seed_evidence'} ==
-                   {k: v for k, v in prints[0].items() if k != 'seed_evidence'} for fp in prints)
+        meta = ('seed_evidence', 'start_method')
+        same = all({k: v for k, v in fp.items() if k not in meta} ==
+                   {k: v for k, v in prints[0].items() if k not in meta} for fp in prints)
         report = {'seed': canonical_seed(a.determinism), 'starts': a.starts, 'identical': same, 'fingerprints': prints}
         out.mkdir(parents=True, exist_ok=True)
         (out / 'determinism.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -528,7 +617,8 @@ def main(argv=None):
         'benchmark': a.config['name'], 'config': a.config, 'policy': policy_name, 'wiki_facts': bool(a.wiki_facts),
         'instances': [i.name for i in instances], 'seeds': seeds,
         'baseline': manifest.get('name'), 'baseline_sha256': manifest['sha256'],
-        'limits': a.limits, 'mode': a.mode, 'started_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n')
+        'limits': a.limits, 'mode': a.mode, 'start_method': a.start_method, 'game_settings': a.game_settings,
+        'started_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n')
     todo = queue.Queue()
     for seed in seeds:
         todo.put(seed)

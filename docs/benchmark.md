@@ -17,9 +17,15 @@ errors (`--max-decisions` / `--max-wall-s` override).
 the `A0` in the name is historical), same limits. It only accepts baseline
 `v2-a10` (`default_baseline`, so `--baseline` can be omitted).
 
-### Ascension 10 (interim, until the MCP has `start_run(ascension)`)
+### Ascension 10
 
-The MCP has no ascension control, so A10 comes from the save: the standard
+With the eval API (`patches/sts2mcp-eval-api.patch` in hack-sts2-cloud, see
+"Seeded start") the runner sets the ascension itself through
+`start_run(character, ascension, seed)` on any unlocked baseline, and the
+`v2-a10` pin below only matters for the legacy menu path. The config keeps
+`v2-a10` as its default so A10 results stay on one pinned baseline sha256.
+
+Legacy menu path (an MCP without `/api/v1/eval`): A10 comes from the save: the standard
 lobby starts at `min(preferred_ascension, max_ascension)` of the character
 (`StartRunLobby`, logged as `ascension set to preferred: 10`). Baseline
 `v2-a10` is v2 with every character's `preferred_ascension` = 10 (nothing
@@ -28,8 +34,7 @@ ascension for every seed: `verify_seed` requires both the game.log
 `Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: ...` line and
 `current_run.save` `ascension` to equal the config `ascension`, else the run
 fails with `seed/ascension not verified` (evidence in `run_start.seed_evidence`,
-`ascension_verified`). When a native `start_run(character, ascension, seed)`
-lands, swap `start_seeded_run` for it and drop the `v2-a10` baseline.
+`ascension_verified`).
 
 ## Frozen save baseline
 
@@ -101,6 +106,45 @@ and `Ascension: 10 Seed: BENCHA0S01`, `current_run.save` ascension 10, and
 `--determinism BENCHA0S01 --starts 2` identical across starts.
 
 ## Seeded start
+
+### Eval API (default when the worker MCP has it)
+
+`--start-method auto` (default; config `start_method` can pin it, `eval`
+makes the API mandatory) first probes `GET /api/v1/eval?include_state=false`.
+If it answers, one call starts the run headless:
+
+```json
+POST /api/v1/eval
+{"action": "start_run", "character": "IRONCLAD", "ascension": 10, "seed": "BENCHA0S01",
+ "mode": "standard", "settings": {"fast_mode": "fast", "screenshake": 0, "text_effects": false, "skip_tutorials": true}}
+```
+
+The mod validates everything up front (character, ascension 0-10, seed
+charset, modifiers, no run in progress unless `abandon_existing`), drives the
+menus itself, waits until the run is settled and returns `verified` plus a
+`readback` taken from the live run state (character, ascension, canonical
+seed, game mode, modifiers, act/floor, HP, deck). The runner refuses
+anything but `status: ok`, `verified: true` and a readback equal to the
+config, and then still runs `verify_seed`, which now requires the MCP
+readback, the game.log line and `current_run.save` to agree on seed and
+ascension (`seed_evidence.mcp_readback`). `run_start` records
+`start_method` and the applied `game_settings`.
+
+`--game-settings JSON` (or config `game_settings`) applies logic-neutral
+speed settings (`fast_mode` normal/fast/instant, `screenshake`,
+`text_effects`, `skip_tutorials`) without persisting them to settings.save;
+they need the eval API (the runner refuses to silently ignore them). Workers
+can also get them at launch through `STS2_MCP_EVAL_SETTINGS='{...}'`. The
+seeded RNG does not depend on them (same Neow, map and trajectory at
+normal/fast).
+
+After the run (any end reason) the runner asks `run_result` and writes a
+`run_result` trajectory record (victory, cause, score, floor, deck, relics,
+run time; nothing while a cut-off run is still in progress). `result.json`
+carries the main fields as `mcp_run_result`; the history file stays the
+authoritative metrics source.
+
+### Legacy menu path
 
 The runner drives the real menus over the MCP: `menu_select singleplayer` ->
 `standard` -> `IRONCLAD` -> `embark` with `"seed": "<SEED>"`. It asserts the
@@ -176,10 +220,11 @@ Every line has `schema` and `type`.
 
 | type | fields |
 |---|---|
-| `run_start` | `seed`, `instance`, `port`, `started_at`, `policy`, `wiki_facts`, `character`, `ascension`, `benchmark`, `baseline` (restore verification: tarball/progress/settings sha256), `embark` (MCP reply incl. `seed_mechanism`), `seed_evidence` (`log`, `save`, `verified`), `first_state_type`, `harness` |
+| `run_start` | `seed`, `instance`, `port`, `started_at`, `policy`, `wiki_facts`, `character`, `ascension`, `benchmark`, `baseline` (restore verification: tarball/progress/settings sha256), `embark` (MCP reply: eval `start_run` reply with `readback`/`settings`/`steps`, or the menu path's reply incl. `seed_mechanism`), `start_method` (`eval`/`menu`), `game_settings`, `seed_evidence` (`mcp_readback`, `log`, `save`, `verified`), `first_state_type`, `harness` |
 | `decision` | `index`, `t_wall_s`, `state_ref` (`run_dir`, `observations` file, `decision_hash` -> the full observation in `live/observations.jsonl`), `state_type`, `act`, `floor`, `hp`, `max_hp`, `gold`, `round`, `enemies`, `legal_actions` (refs), `wiki_facts_chars`, `chosen`, `rationale`, `policy`, `outcome`, `latency_s` (`policy`, `act`) |
 | `friction` | `kind` (`not_settled`, `pending_unresolved`, `policy_error`, `harness_crash`, `transient_observe_retry`), `index`, `message` |
 | `terminal` | the `game_over` frame summary |
+| `run_result` | the MCP `run_result` (eval API only, finished runs only): `victory`, `abandoned`, `cause` (`encounter:<id>`, `event:<id>`, `victory`, `abandoned`), `score`, `act`, `floor`, `hp`, `deck`, `relics`, `run_time_s`, `source` |
 | `history` | the game's run-history file name, `win`, `killed_by_encounter` |
 | `run_end` | `metrics` (same as `result.json`) |
 
@@ -218,14 +263,16 @@ mean act, boss kills, mean HP at boss entry, death causes, frictions per run
 
 * Practice mode: rule authority is unverified for this build, so runs pass
   `--allow-unverified-authority` (recorded per run).
-* No MCP ascension setter; A0 is asserted from the lobby, not set.
-* The seeded embark depends on the hack-sts2-cloud MCP patch; an unpatched
-  worker refuses the seeded embark and the runner stops.
+* Seeds and ascension depend on the hack-sts2-cloud MCP patches
+  (`sts2mcp-eval-api` for `start_run`; on the legacy path
+  `sts2mcp-seeded-standard-embark` plus the save's preferred ascension). An
+  unpatched worker refuses the seeded embark and the runner stops.
 * v1 has only the IRONCLAD3 reveal; v2 has everything unlocked, so card,
   relic and potion pools differ between them (and from older worker
   profiles); compare only runs from the same baseline sha256.
-* Native seeds (v2) exist only in Custom Mode, which the MCP cannot drive;
-  standard seeded runs still need the MCP seed patch.
+* Native seeds (v2) exist only in Custom Mode; the eval API can drive it
+  (`mode: custom`, `modifiers`), but custom runs cannot unlock epochs, so the
+  benchmark uses standard runs with the seed override.
 * Each decision costs ~2-8 s of harness/game settling, so a full stub run is
   minutes, an LLM run dominated by model latency.
 
