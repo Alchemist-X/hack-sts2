@@ -203,3 +203,56 @@ def test_wiki_facts_flag(tmp_path):
     (tmp_path / 'session.json').write_text(json.dumps({'knowledge_version': 'v0.107.1', 'wiki_facts': True}))
     facts = live.wiki_facts(tmp_path, state)
     assert isinstance(facts, str) and 0 < len(facts) <= live.WIKI_FACTS_MAX_CHARS
+
+
+def test_baseline_labels_resolve_to_manifest_files(tmp_path, monkeypatch):
+    bdir = make_baseline(tmp_path)
+    (bdir / 'manifest.json').rename(bdir / 'manifest-v2-unlocked.json')
+    monkeypatch.setattr(baseline, 'BASELINE_ROOT', bdir)
+    assert baseline.DEFAULT_BASELINE == 'v2'
+    assert baseline.manifest_path('v2') == bdir / 'manifest-v2-unlocked.json'
+    assert baseline.manifest_path('v1') == bdir / 'manifest.json'
+    assert baseline.manifest_path(bdir / 'manifest-v2-unlocked.json') == bdir / 'manifest-v2-unlocked.json'
+    with pytest.raises(baseline.BaselineError):
+        baseline.load_manifest('v1')
+    inst = tmp_path / 'worker-pool-test' / 'inst1'
+    assert baseline.restore(inst)['progress_save_sha256']
+    assert baseline.restore(inst, bdir / 'manifest-v2-unlocked.json')['tarball_sha256']
+
+
+def test_config_pins_each_allowed_baseline():
+    config = json.loads((ROOT / 'config/bench/ironclad-a0-10seed.json').read_text())
+    assert set(config['baselines']) == {'v1', 'v2'}
+    for pinned in config['baselines'].values():
+        run_bench.check_baseline(config, {'name': pinned['name'], 'sha256': pinned['sha256']})
+    with pytest.raises(SystemExit):
+        run_bench.check_baseline(config, {'name': 'sts2-bench-baseline-v1', 'sha256': '0' * 64})
+    with pytest.raises(SystemExit):
+        run_bench.check_baseline(config, {'name': 'other', 'sha256': config['baselines']['v2']['sha256']})
+    run_bench.check_baseline({'baseline': {'name': 'a', 'sha256': 'x'}}, {'name': 'a', 'sha256': 'x'})
+
+
+# ---------------------------------------------------------- unlocked save
+def test_make_unlocked_save_slugify_and_unlock_idempotent():
+    import make_unlocked_save as mus
+    assert mus.slugify('IroncladEpoch') == 'IRONCLAD_EPOCH'
+    assert mus.slugify('Ironclad2Epoch') == 'IRONCLAD2_EPOCH'
+    assert mus.slugify('CustomAndSeedsEpoch') == 'CUSTOM_AND_SEEDS_EPOCH'
+    ids = {'epochs': ['NEOW_EPOCH', 'CUSTOM_AND_SEEDS_EPOCH'], 'cards': ['CARD.A', 'CARD.B'], 'relics': ['RELIC.A'],
+           'potions': ['POTION.A'], 'events': ['EVENT.A'], 'acts': ['ACT.A'], 'monsters': ['MONSTER.A'],
+           'encounters': ['ENCOUNTER.A'], 'characters': ['CHARACTER.IRONCLAD', 'CHARACTER.SILENT'],
+           'ftues': ['FTUE_A'], 'agnostic_unlock_count': 18}
+    before = {'schema_version': 21, 'epochs': [{'id': 'NEOW_EPOCH', 'obtain_date': 5, 'state': 'revealed'},
+                                               {'id': 'CUSTOM_AND_SEEDS_EPOCH', 'obtain_date': 0, 'state': 'obtained'}],
+              'discovered_cards': ['CARD.A'], 'character_stats': [], 'total_unlocks': 0}
+    after = mus.unlock(before, ids)
+    assert before['discovered_cards'] == ['CARD.A']  # input untouched
+    assert {e['state'] for e in after['epochs']} == {'revealed'}
+    assert after['epochs'][0]['obtain_date'] == 5 and after['epochs'][1]['obtain_date'] == mus.FIXED_OBTAIN_DATE
+    assert after['discovered_cards'] == ['CARD.A', 'CARD.B']
+    assert [c['max_ascension'] for c in after['character_stats']] == [10, 10]
+    assert all(c['preferred_ascension'] == 0 for c in after['character_stats'])
+    assert after['total_unlocks'] == 18 and after['pending_character_unlock'] == 'NONE.NONE'
+    assert mus.unlock(after, ids) == after
+    with pytest.raises(SystemExit):
+        mus.unlock({'schema_version': 20}, ids)

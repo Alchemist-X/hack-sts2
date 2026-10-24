@@ -17,6 +17,12 @@ from pathlib import Path
 
 SAVE_REL = Path('home/.local/share/SlayTheSpire2')
 HUMAN_SAVE = Path.home() / '.local/share/SlayTheSpire2'
+BASELINE_ROOT = Path(os.environ.get('STS2_BENCH_BASELINE_ROOT', '/workspace/private/bench-baseline'))
+# Named baselines -> manifest file inside BASELINE_ROOT.  v1 = the original
+# worker profile (IRONCLAD3 revealed); v2 = v1 fully unlocked by
+# scripts/bench/make_unlocked_save.py (all epochs/characters/cards/relics/potions).
+BASELINES = {'v1': 'manifest.json', 'v2': 'manifest-v2-unlocked.json'}
+DEFAULT_BASELINE = 'v2'
 
 
 class BaselineError(RuntimeError):
@@ -31,9 +37,19 @@ def sha256(path):
     return h.hexdigest()
 
 
-def load_manifest(baseline_dir):
-    baseline_dir = Path(baseline_dir)
-    manifest = json.loads((baseline_dir / 'manifest.json').read_text())
+def manifest_path(baseline=DEFAULT_BASELINE):
+    """``v1``/``v2`` (see BASELINES), a baseline directory (its manifest.json) or a manifest file."""
+    if str(baseline) in BASELINES:
+        return BASELINE_ROOT / BASELINES[str(baseline)]
+    path = Path(baseline)
+    return path / 'manifest.json' if path.is_dir() else path
+
+
+def load_manifest(baseline=DEFAULT_BASELINE):
+    path = manifest_path(baseline)
+    if not path.is_file():
+        raise BaselineError(f'baseline manifest not found: {path}')
+    manifest = json.loads(path.read_text())
     for key in ('tarball', 'sha256', 'active_profile', 'progress_save_sha256', 'settings_save_sha256'):
         if key not in manifest:
             raise BaselineError(f'baseline manifest missing {key}')
@@ -64,10 +80,11 @@ def _safe_members(tar, root):
         yield member
 
 
-def restore(inst, baseline_dir):
+def restore(inst, baseline=DEFAULT_BASELINE):
     """Replace the instance save tree with the baseline; returns verification facts."""
-    inst, baseline_dir = Path(inst).resolve(), Path(baseline_dir).resolve()
-    manifest = load_manifest(baseline_dir)
+    inst = Path(inst).resolve()
+    manifest = load_manifest(baseline)
+    baseline_dir = manifest_path(baseline).resolve().parent
     target = inst / SAVE_REL
     if target.resolve() == HUMAN_SAVE.resolve() or 'worker-pool' not in str(inst):
         raise BaselineError(f'refusing to restore outside a worker pool: {target}')
@@ -97,12 +114,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('command', choices=['restore', 'verify'])
     p.add_argument('--inst', type=Path)
-    p.add_argument('--baseline', type=Path, default=Path('/workspace/private/bench-baseline'))
+    p.add_argument('--baseline', default=DEFAULT_BASELINE,
+                   help=f'{" | ".join(BASELINES)} (default {DEFAULT_BASELINE}), a baseline dir or a manifest file')
     a = p.parse_args()
     if a.command == 'verify':
         m = load_manifest(a.baseline)
-        ok = sha256(a.baseline / m['tarball']) == m['sha256']
-        print(json.dumps({'ok': ok, 'sha256': m['sha256']}))
+        ok = sha256(manifest_path(a.baseline).parent / m['tarball']) == m['sha256']
+        print(json.dumps({'ok': ok, 'name': m.get('name'), 'sha256': m['sha256']}))
         raise SystemExit(0 if ok else 1)
     if not a.inst:
         raise SystemExit('--inst required')
