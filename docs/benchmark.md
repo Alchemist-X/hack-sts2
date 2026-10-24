@@ -24,16 +24,56 @@ Every run (including each determinism start) begins with
 4. re-verify `progress.save` and `settings.save` hashes (settings holds the
    mod/MCP consent and is part of the baseline, never wiped).
 
-The baseline lives outside the repo, e.g. `/workspace/private/bench-baseline/`
-(`manifest.json` + `sts2-bench-baseline-v1.tar.gz`); the config pins its
-sha256 and the runner refuses a mismatch. The baseline save is a copy of a
-worker profile with the `IRONCLAD3_EPOCH` timeline epoch revealed (via the
-in-game Timeline), so the card/relic pools are the same for every run.
+The baselines live outside the repo in `/workspace/private/bench-baseline/`
+(override with `STS2_BENCH_BASELINE_ROOT`). Pick one with `--baseline v1|v2`
+(default **v2**), or pass a baseline dir / manifest file:
+
+| label | manifest | tarball | what it is |
+|---|---|---|---|
+| `v1` | `manifest.json` | `sts2-bench-baseline-v1.tar.gz` | original worker profile with the `IRONCLAD3_EPOCH` reveal (4/57 epochs, 106 cards, 76 relics, 34 potions) |
+| `v2` | `manifest-v2-unlocked.json` | `sts2-bench-baseline-v2-unlocked.tar.gz` | a copy of v1, fully unlocked: 57/57 epochs revealed (incl. `CUSTOM_AND_SEEDS_EPOCH`, daily), all 5 characters, 578 cards, 297 relics, 65 potions, 61 events, 4 acts, max ascension 10 (preferred 0), all FTUEs done, no pending reveals |
+
+The config pins every baseline it accepts (`baselines.v1` / `baselines.v2`,
+name + sha256) and the runner refuses any other name or a sha mismatch.
+`bench.json` records the baseline name and sha; compare only runs from the
+same baseline (card/relic/potion pools differ between v1 and v2).
 
 ```bash
-python3 scripts/bench/baseline.py verify  [--baseline DIR]
-python3 scripts/bench/baseline.py restore --inst /workspace/private/worker-pool-bench/inst1
+python3 scripts/bench/baseline.py verify  [--baseline v1|v2|DIR|MANIFEST]
+python3 scripts/bench/baseline.py restore --inst /workspace/private/worker-pool-bench/inst1 [--baseline v1]
 ```
+
+### Rebuilding the unlocked baseline (v2)
+
+`scripts/bench/make_unlocked_save.py` edits a worker profile's
+`progress.save` (plain JSON, schema 21, no checksum; it writes
+`progress.save.backup` identically because the game falls back to it). It
+mirrors the game's own `unlock all` console command and derives every list
+from the live game, never from hard-coded ids: it decompiles
+`$STS2_GAME_DATA_DIR/sts2.dll` with `ilspycmd` (cached under
+`artifacts/knowledge/decompiled-sts2-<sha12>`, git-ignored) and reads
+`ModelDb` (character + shared card/relic/potion pools, starting decks and
+relics), `EpochModel.EpochIds`, act events, encounters/monsters and the FTUE
+ids. `settings.save` (MCP consent) is never touched. It refuses paths outside
+a `worker-pool*` dir.
+
+```bash
+python3 scripts/bench/make_unlocked_save.py            # print derived counts
+python3 scripts/bench/baseline.py restore --inst /workspace/private/worker-pool-bench2/inst1 --baseline v1
+python3 scripts/bench/make_unlocked_save.py \
+  --saves-dir /workspace/private/worker-pool-bench2/inst1/home/.local/share/SlayTheSpire2/default/1/modded/profile1/saves
+# then tar <inst>/home/.local/share/SlayTheSpire2 (minus logs/sentry/shader_cache)
+# into the v2 tarball and write manifest-v2-unlocked.json
+```
+
+The edit is deterministic (fixed `obtain_date` for newly revealed epochs), so
+re-running it on v1 reproduces the same `progress.save` sha256
+(`fc61ff05...` for game v0.107.1). Validated in game: loads without a
+reset/backup fallback (`Epochs: 57` in game.log), Singleplayer ->
+standard/daily/custom enabled, timeline 57/57 revealed with nothing pending,
+all characters selectable, lobby ascension 0. Determinism on v2:
+`--determinism BENCHA0S01 --starts 2` gave identical Neow (Nutritious Oyster /
+Phial Holster / Cursed Pearl), 50-node act-1 map and first fight (Nibbit 44 HP).
 
 ## Seeded start
 
@@ -42,7 +82,10 @@ The runner drives the real menus over the MCP: `menu_select singleplayer` ->
 lobby is `standard` mode at the configured ascension (there is no MCP
 ascension setter; the baseline profile defaults to A0).
 
-The stock game ignores seeds for standard runs, so the worker MCP carries the
+The stock game ignores seeds for standard runs. With v2 the native seed input
+is available, but only on the Custom Mode screen (`NCustomRunScreen`, game
+mode `custom`, "cannot unlock epochs/achievements"); the MCP does not model
+that screen, so it is GUI-only and not a standard run. Therefore, even on v2, the worker MCP carries the
 `sts2mcp-seeded-standard-embark` patch (hack-sts2-cloud). It sets the game's
 own `NGame.DebugSeedOverride` (the path its AutoSlayer uses) to the
 canonicalized seed just before clicking embark, and clears it on unseeded
@@ -150,9 +193,11 @@ mean act, boss kills, mean HP at boss entry, death causes, frictions per run
 * No MCP ascension setter; A0 is asserted from the lobby, not set.
 * The seeded embark depends on the hack-sts2-cloud MCP patch; an unpatched
   worker refuses the seeded embark and the runner stops.
-* The baseline profile has the IRONCLAD3 reveal (3 relics unlocked), so
-  relic pools differ from older un-revealed worker profiles; compare only
-  runs from the same baseline sha256.
+* v1 has only the IRONCLAD3 reveal; v2 has everything unlocked, so card,
+  relic and potion pools differ between them (and from older worker
+  profiles); compare only runs from the same baseline sha256.
+* Native seeds (v2) exist only in Custom Mode, which the MCP cannot drive;
+  standard seeded runs still need the MCP seed patch.
 * Each decision costs ~2-8 s of harness/game settling, so a full stub run is
   minutes, an LLM run dominated by model latency.
 

@@ -434,7 +434,9 @@ def parse_args(argv=None):
     p.add_argument('--seeds', help='comma-separated subset of config seeds (default: all)')
     p.add_argument('--policy', default='stub', help='stub | cmd:<command> | py:<module>:<func>')
     p.add_argument('--wiki-facts', action='store_true', help='include wiki_facts in every observation')
-    p.add_argument('--baseline', type=Path, default=Path('/workspace/private/bench-baseline'))
+    p.add_argument('--baseline', default=baseline_mod.DEFAULT_BASELINE,
+                   help=f'save baseline: {" | ".join(baseline_mod.BASELINES)} (default '
+                        f'{baseline_mod.DEFAULT_BASELINE}), a baseline dir or a manifest file')
     p.add_argument('--launcher', default=os.environ.get('STS2_BENCH_LAUNCHER', DEFAULT_LAUNCHER))
     p.add_argument('--out', type=Path, help='output dir (default /workspace/private/bench-runs/<timestamp>-<policy>)')
     p.add_argument('--plan', type=Path, default=ROOT / 'config/bench/stub-plan.json')
@@ -474,12 +476,25 @@ def game_env():
     return env
 
 
+def check_baseline(config, manifest):
+    """The config pins every baseline it accepts (name -> sha256); refuse anything else."""
+    pinned = dict(config.get('baselines') or {})
+    if config.get('baseline'):
+        pinned.setdefault(config['baseline'].get('name'), config['baseline'])
+    if not pinned:
+        return
+    allowed = {b['name']: b['sha256'] for b in pinned.values()}
+    want = allowed.get(manifest.get('name'))
+    if want is None:
+        raise SystemExit(f'config does not allow baseline {manifest.get("name")!r} (allowed: {sorted(allowed)})')
+    if want != manifest['sha256']:
+        raise SystemExit(f'config expects baseline {manifest.get("name")} {want}, found {manifest["sha256"]}')
+
+
 def main(argv=None):
     a = parse_args(argv)
     manifest = baseline_mod.load_manifest(a.baseline)
-    want = (a.config.get('baseline') or {}).get('sha256')
-    if want and want != manifest['sha256']:
-        raise SystemExit(f'config expects baseline {want}, found {manifest["sha256"]}')
+    check_baseline(a.config, manifest)
     instances = [Instance(a.pool, n, a.launcher, game_env()) for n in a.instance_numbers]
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     policy_name, policy = policies.load_policy(a.policy)
@@ -505,7 +520,8 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=False)
     (out / 'bench.json').write_text(json.dumps({
         'benchmark': a.config['name'], 'config': a.config, 'policy': policy_name, 'wiki_facts': bool(a.wiki_facts),
-        'instances': [i.name for i in instances], 'seeds': seeds, 'baseline_sha256': manifest['sha256'],
+        'instances': [i.name for i in instances], 'seeds': seeds,
+        'baseline': manifest.get('name'), 'baseline_sha256': manifest['sha256'],
         'limits': a.limits, 'mode': a.mode, 'started_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n')
     todo = queue.Queue()
     for seed in seeds:
