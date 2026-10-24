@@ -97,3 +97,16 @@ def test_cli(tmp_path):
     assert [s['forced_e'] for s in json.loads(js.stdout)] == [2, None]
     bad = subprocess.run([sys.executable, str(CLI), '-'], input='{"x":1}', capture_output=True, text=True)
     assert bad.returncode == 2
+
+
+def test_boss_node_option_prints_boss():
+    m = toy_map()
+    m['current_position'] = {'col': 3, 'row': 4, 'type': 'Treasure'}
+    m['next_options'] = [{'index': 0, 'col': 3, 'row': 5, 'type': 'Boss', 'leads_to': []}]
+    (s,) = la.lookahead(m)
+    assert s['boss'] is True and la.fmt(s) == 'Look 3,5B: boss'
+    lo = text_state.encode(obs_for(m, 40))
+    assert 'Look 3,5B: boss' in lo.splitlines() and 'no path to boss' not in lo and 'avoid' not in lo
+    m.pop('boss')  # typed Boss node with no explicit boss record
+    m['nodes'].append(n(3, 5, 'Boss'))
+    assert la.fmt(la.lookahead(m)[0]) == 'Look 3,5B: boss'
