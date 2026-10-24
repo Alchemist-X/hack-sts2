@@ -45,6 +45,34 @@ def request(port: int, action: dict[str, Any] | None = None) -> dict[str, Any]:
     return body
 
 
+# Ports whose MCP has no /api/v1/eval endpoint (older build) or is unreachable;
+# the eval busy gate is skipped for them for the rest of this process.
+_EVAL_UNAVAILABLE: set[int] = set()
+
+
+def eval_probe(port: int, wait_settled_ms: int = 0, stable_ms: int = 0) -> dict[str, Any] | None:
+    """The eval API's settled-state probe (no game state), or None without that endpoint.
+
+    The mod reports ``busy`` from the game's own action queue/executor, combat
+    phase, scene transitions and save tasks, which the harness cannot see in
+    the public state.  Read-only; never sends a game action.
+    """
+    if port in _EVAL_UNAVAILABLE:
+        return None
+    url = (f"http://127.0.0.1:{port}/api/v1/eval?include_state=false"
+           f"&wait_settled_ms={int(wait_settled_ms)}&stable_ms={int(stable_ms)}")
+    try:
+        with urllib.request.urlopen(url, timeout=15 + wait_settled_ms / 1000) as response:
+            body = json.load(response)
+    except (urllib.error.URLError, OSError, ValueError):
+        _EVAL_UNAVAILABLE.add(port)
+        return None
+    if not isinstance(body, dict) or body.get("schema") != "sts2-eval-snapshot":
+        _EVAL_UNAVAILABLE.add(port)
+        return None
+    return body
+
+
 def digest(state: dict[str, Any]) -> str:
     raw = json.dumps(state, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -312,7 +340,12 @@ def wait_settled(
     while True:
         now = time.monotonic()
         if actionable(latest) and now - stable_since >= quiet_window:
-            return latest, True
+            probe = eval_probe(port)
+            if probe is None or not probe.get("busy"):
+                return latest, True
+            # The game is still resolving (e.g. combat ending before rewards):
+            # restart the quiet window instead of returning a transition frame.
+            stable_since = time.monotonic()
         if now >= deadline:
             return latest, False
         time.sleep(poll)
