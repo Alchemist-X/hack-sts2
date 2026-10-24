@@ -64,6 +64,7 @@ class Instance:
         self.dir = self.pool / f'inst{self.number}'
         self.port = int((self.dir / 'port').read_text().strip())
         self.env = {**os.environ, **(env or {})}
+        self.unusable = None  # set when stop/restore fails; the instance takes no more seeds
         if self.port in (15601, 15602, 15603) or 'worker-pool-v2' in str(self.pool):
             raise BenchError('refusing to use worker-pool-v2 / ports 15601-15603 for benchmarks')
 
@@ -176,7 +177,37 @@ def verify_seed(inst, active_profile, seed, log_offset):
 
 
 # ------------------------------------------------------------------ harness
-def live(command, run_dir, port, *args, extra=()):
+TRANSIENT_MARKERS = ('TimeoutError', 'timed out', 'ConnectionRefusedError', 'ConnectionResetError',
+                     'RemoteDisconnected', 'URLError')
+OBSERVE_RETRIES, OBSERVE_RETRY_WAIT_S = 3, 10.0
+
+
+def is_transient(error_text):
+    """A crashed observe whose cause is the game's HTTP endpoint not answering (e.g. a host stall)."""
+    return any(marker in error_text for marker in TRANSIENT_MARKERS)
+
+
+def live(command, run_dir, port, *args, extra=(), on_retry=None, retries=None, retry_wait_s=None):
+    """Run one sts2_live command and return (exit code, last JSON line).
+
+    Only ``observe`` is read-only, so only it is retried after a transient
+    HTTP failure; ``act`` failures are never re-sent (sts2_live's pending
+    mechanism and auto-reconcile handle those).
+    """
+    retries = (OBSERVE_RETRIES if command == 'observe' else 0) if retries is None else retries
+    wait = OBSERVE_RETRY_WAIT_S if retry_wait_s is None else retry_wait_s
+    for attempt in range(retries + 1):
+        try:
+            return _live_once(command, run_dir, port, *args, extra=extra)
+        except BenchError as error:
+            if attempt >= retries or not is_transient(str(error)):
+                raise
+            if on_retry:
+                on_retry(command, attempt + 1, str(error)[-300:])
+            time.sleep(wait * (attempt + 1))
+
+
+def _live_once(command, run_dir, port, *args, extra=()):
     cmd = [sys.executable, str(LIVE), command, *args, '--run-dir', str(run_dir), '--port', str(port), *extra]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
@@ -224,7 +255,9 @@ def play(inst, seed, run_dir, rec, policy_name, policy, args, began):
             return 'max_decisions'
         if time.monotonic() - began > limits['max_wall_s']:
             return 'max_wall_s'
-        code, obs = live('observe', run_dir, inst.port, extra=args.live_flags)
+        code, obs = live('observe', run_dir, inst.port, extra=args.live_flags,
+                         on_retry=lambda cmd, n, err: rec.write({'type': 'friction', 'kind': 'transient_observe_retry',
+                                                                  'attempt': n, 'message': err}))
         if obs.get('warning_pending'):
             live('reconcile', run_dir, inst.port, 'bench runner: auto-reconcile after re-observing', extra=args.live_flags)
             rec.write({'type': 'friction', 'kind': 'pending_unresolved', 'index': index})
@@ -343,6 +376,7 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
             inst.stop()
         except BenchError as exc:
             log(inst.name, 'stop failed', exc)
+            inst.unusable = str(exc)
     wall = round(time.monotonic() - began, 1)
     result = {'seed': seed, 'instance': inst.name, 'policy': policy_name, 'wiki_facts': bool(args.wiki_facts),
               'benchmark': args.config['name'], 'error': error, 'seed_evidence': seed_evidence,
@@ -486,6 +520,17 @@ def main(argv=None):
                 seed = todo.get_nowait()
             except queue.Empty:
                 return
+            if inst.unusable is None:
+                try:  # a seed is only claimed by an instance that can be stopped/restored
+                    inst.stop()
+                except BenchError as exc:
+                    inst.unusable = str(exc)
+            if inst.unusable is not None:
+                # e.g. the launcher's PID-identity guard after a host clock jump:
+                # never let one broken instance drain the queue with instant failures.
+                todo.put(seed)
+                log(inst.name, seed, f'instance unusable, retiring it and returning the seed: {inst.unusable[:200]}')
+                return
             result = run_seed(inst, seed, a, policy_name, policy, out)
             with lock:
                 results.append(result)
@@ -503,9 +548,12 @@ def main(argv=None):
     for t in threads:
         while t.is_alive():
             t.join(1.0)
-    log('all done:', out)
-    print(json.dumps({'out': str(out), 'runs': len(results)}))
-    return 0
+    unrun = []
+    while not todo.empty():
+        unrun.append(todo.get_nowait())
+    log('all done:', out, f'unrun seeds: {unrun}' if unrun else '')
+    print(json.dumps({'out': str(out), 'runs': len(results), 'unrun': unrun}))
+    return 1 if unrun else 0
 
 
 if __name__ == '__main__':
