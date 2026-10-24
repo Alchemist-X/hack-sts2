@@ -1,0 +1,370 @@
+{
+ "battle": {
+  "enemies": [
+   {
+    "block": 0,
+    "combat_id": 2,
+    "current_move_id": "CHEW",
+    "entity_id": "SCROLL_OF_BITING_0",
+    "hp": 17,
+    "id": "SCROLL_OF_BITING",
+    "intents": [
+     {
+      "damage_per_hit": 7,
+      "damage_scope": "local_player_before_block; current_state_only",
+      "damage_source": "engine_intent_preview",
+      "description": "This enemy intends to Attack for 7 damage 2 times.",
+      "hits": 2,
+      "label": "7x2",
+      "title": "Aggressive",
+      "total_damage": 14,
+      "type": "Attack"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 37,
+    "model_id": "MONSTER.SCROLL_OF_BITING",
+    "name": "Scroll of Biting",
+    "status": [
+     {
+      "amount": 2,
+      "description": "Whenever Scroll of Biting deals unblocked attack damage to you, you lose 2 Max HP.",
+      "id": "PAPER_CUTS_POWER",
+      "keywords": [],
+      "model_id": "POWER.PAPER_CUTS_POWER",
+      "name": "Paper Cuts",
+      "type": "Buff"
+     },
+     {
+      "amount": 2,
+      "description": "Increases attack damage by 2.",
+      "id": "STRENGTH_POWER",
+      "keywords": [],
+      "model_id": "POWER.STRENGTH_POWER",
+      "name": "Strength",
+      "type": "Buff"
+     }
+    ]
+   },
+   {
+    "block": 0,
+    "combat_id": 4,
+    "current_move_id": "CHEW",
+    "entity_id": "SCROLL_OF_BITING_1",
+    "hp": 16,
+    "id": "SCROLL_OF_BITING",
+    "intents": [
+     {
+      "damage_per_hit": 7,
+      "damage_scope": "local_player_before_block; current_state_only",
+      "damage_source": "engine_intent_preview",
+      "description": "This enemy intends to Attack for 7 damage 2 times.",
+      "hits": 2,
+      "label": "7x2",
+      "title": "Aggressive",
+      "total_damage": 14,
+      "type": "Attack"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 36,
+    "model_id": "MONSTER.SCROLL_OF_BITING",
+    "name": "Scroll of Biting",
+    "status": [
+     {
+      "amount": 2,
+      "description": "Whenever Scroll of Biting deals unblocked attack damage to you, you lose 2 Max HP.",
+      "id": "PAPER_CUTS_POWER",
+      "keywords": [],
+      "model_id": "POWER.PAPER_CUTS_POWER",
+      "name": "Paper Cuts",
+      "type": "Buff"
+     },
+     {
+      "amount": 2,
+      "description": "Increases attack damage by 2.",
+      "id": "STRENGTH_POWER",
+      "keywords": [],
+      "model_id": "POWER.STRENGTH_POWER",
+      "name": "Strength",
+      "type": "Buff"
+     }
+    ]
+   }
+  ],
+  "inactive_enemies": [],
+  "is_over_or_ending": false,
+  "is_play_phase": true,
+  "player_turn": 3,
+  "round": 3,
+  "turn": "player"
+ },
+ "execution": {
+  "action": "end_turn",
+  "completion_confirmed": true,
+  "completion_kind": "player_turn_advanced",
+  "game_action_id": null,
+  "game_action_state": null,
+  "player_phase": "Play",
+  "player_turn": 3,
+  "queue_idle": true,
+  "ready_for_next_action": true,
+  "request_id": "e79322d8b1434285ab154e8347958a62",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state",
+  "submitted_player_turn": 2
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "discard_pile": [],
+  "discard_pile_count": 11,
+  "draw_pile": [],
+  "draw_pile_count": 7,
+  "energy": 3,
+  "exhaust_pile": [],
+  "exhaust_pile_count": 0,
+  "gold": 276,
+  "hand": [
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "3",
+    "description": "At the start of your turn, gain 3 Strength.",
+    "enchantment": null,
+    "id": "DEMON_FORM",
+    "index": 0,
+    "is_upgraded": true,
+    "keywords": [
+     {
+      "description": "Strength adds additional damage to Attacks.",
+      "name": "Strength"
+     }
+    ],
+    "model_id": "CARD.DEMON_FORM",
+    "name": "Demon Form+",
+    "rarity": "Rare",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Power",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 8 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 1,
+    "is_upgraded": true,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend+",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 10 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_upgraded": true,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike+",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 7 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 3,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Lose 1 HP. Deal 10 damage to ALL enemies.",
+    "enchantment": null,
+    "id": "BREAKTHROUGH",
+    "index": 4,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.BREAKTHROUGH",
+    "name": "Breakthrough",
+    "rarity": "Common",
+    "star_cost": null,
+    "target_type": "AllEnemies",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 11 Block. Draw 1 card.",
+    "enchantment": null,
+    "id": "SHRUG_IT_OFF",
+    "index": 5,
+    "is_upgraded": true,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.SHRUG_IT_OFF",
+    "name": "Shrug It Off+",
+    "rarity": "Common",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 7 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 6,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "0",
+    "description": "Draw 4 cards. You cannot draw additional cards this turn.",
+    "enchantment": null,
+    "id": "BATTLE_TRANCE",
+    "index": 7,
+    "is_upgraded": true,
+    "keywords": [],
+    "model_id": "CARD.BATTLE_TRANCE",
+    "name": "Battle Trance+",
+    "rarity": "Uncommon",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   }
+  ],
+  "hp": 42,
+  "max_energy": 3,
+  "max_hp": 72,
+  "max_potion_slots": 3,
+  "potions": [],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   },
+   {
+    "id": "YUMMY_COOKIE",
+    "name": "Yummy Cookie"
+   },
+   {
+    "id": "VENERABLE_TEA_SET",
+    "name": "Venerable Tea Set"
+   },
+   {
+    "id": "VAJRA",
+    "name": "Vajra"
+   },
+   {
+    "id": "DELICATE_FROND",
+    "name": "Delicate Frond"
+   }
+  ],
+  "status": [
+   {
+    "amount": 3,
+    "description": "When hit by an attack, deal 3 damage back.",
+    "id": "THORNS_POWER",
+    "keywords": [],
+    "model_id": "POWER.THORNS_POWER",
+    "name": "Thorns",
+    "type": "Buff"
+   },
+   {
+    "amount": 1,
+    "description": "Increases attack damage by 1.",
+    "id": "STRENGTH_POWER",
+    "keywords": [],
+    "model_id": "POWER.STRENGTH_POWER",
+    "name": "Strength",
+    "type": "Buff"
+   },
+   {
+    "amount": 1,
+    "description": "Retain your Hand this turn.",
+    "id": "RETAIN_HAND_POWER",
+    "keywords": [],
+    "model_id": "POWER.RETAIN_HAND_POWER",
+    "name": "Retain Hand",
+    "type": "Buff"
+   }
+  ]
+ },
+ "run": {
+  "act": 3,
+  "ascension": 0,
+  "floor": 38
+ },
+ "state_type": "monster"
+}

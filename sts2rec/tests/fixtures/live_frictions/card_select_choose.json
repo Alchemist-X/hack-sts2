@@ -1,0 +1,241 @@
+{
+ "card_select": {
+  "can_cancel": true,
+  "can_confirm": false,
+  "can_skip": true,
+  "cards": [
+   {
+    "affliction": null,
+    "cost": "0",
+    "description": "Deal 5 damage. If you lost HP this turn, hits 2 times.",
+    "enchantment": null,
+    "id": "SPITE",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.SPITE",
+    "name": "Spite",
+    "rarity": "Uncommon",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal damage equal to your Block.",
+    "enchantment": null,
+    "id": "BODY_SLAM",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.BODY_SLAM",
+    "name": "Body Slam",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "2",
+    "description": "Deal 6 damage. Deals 2 additional damage for ALL your cards containing “Strike”.",
+    "enchantment": null,
+    "id": "PERFECTED_STRIKE",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.PERFECTED_STRIKE",
+    "name": "Perfected Strike",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Attack"
+   }
+  ],
+  "preview_showing": false,
+  "prompt": "Choose a card.",
+  "screen_type": "choose"
+ },
+ "execution": {
+  "action": "use_potion",
+  "completion_confirmed": false,
+  "completion_kind": "game_action_finished",
+  "game_action_id": null,
+  "game_action_state": null,
+  "player_phase": "Play",
+  "player_turn": 3,
+  "queue_idle": false,
+  "ready_for_next_action": false,
+  "request_id": "9c01424ffcc44ba9b259e22dd2d73609",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state",
+  "submitted_player_turn": 3
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "discard_pile": [],
+  "discard_pile_count": 0,
+  "draw_pile": [],
+  "draw_pile_count": 13,
+  "energy": 0,
+  "exhaust_pile": [],
+  "exhaust_pile_count": 0,
+  "gold": 34,
+  "hand": [
+   {
+    "affliction": null,
+    "can_play": false,
+    "cost": "1",
+    "description": "Lose 1 HP. Deal 9 damage to ALL enemies.",
+    "enchantment": null,
+    "id": "BREAKTHROUGH",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.BREAKTHROUGH",
+    "name": "Breakthrough",
+    "rarity": "Common",
+    "star_cost": null,
+    "target_type": "AllEnemies",
+    "type": "Attack",
+    "unplayable_reason": "EnergyCostTooHigh"
+   },
+   {
+    "affliction": null,
+    "can_play": false,
+    "cost": "1",
+    "description": "Gain 8 Block. Draw 1 card.",
+    "enchantment": null,
+    "id": "SHRUG_IT_OFF",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.SHRUG_IT_OFF",
+    "name": "Shrug It Off",
+    "rarity": "Common",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": "EnergyCostTooHigh"
+   },
+   {
+    "affliction": null,
+    "can_play": false,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": "EnergyCostTooHigh"
+   },
+   {
+    "affliction": null,
+    "can_play": false,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 3,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": "EnergyCostTooHigh"
+   }
+  ],
+  "hp": 60,
+  "max_energy": 3,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Deal 10 damage to ALL enemies.",
+    "id": "EXPLOSIVE_AMPOULE",
+    "keywords": [],
+    "name": "Explosive Ampoule",
+    "slot": 0,
+    "target_type": "AllEnemies"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   }
+  ],
+  "status": [
+   {
+    "amount": 3,
+    "description": "When hit by an attack, deal 3 damage back.",
+    "id": "THORNS_POWER",
+    "keywords": [],
+    "model_id": "POWER.THORNS_POWER",
+    "name": "Thorns",
+    "type": "Buff"
+   },
+   {
+    "amount": 6,
+    "description": "At the start of your turn, gain 6 Strength.",
+    "id": "DEMON_FORM_POWER",
+    "keywords": [
+     {
+      "description": "Strength adds additional damage to Attacks.",
+      "name": "Strength"
+     }
+    ],
+    "model_id": "POWER.DEMON_FORM_POWER",
+    "name": "Demon Form",
+    "type": "Buff"
+   }
+  ]
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 17
+ },
+ "state_type": "card_select"
+}

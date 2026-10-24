@@ -51,11 +51,16 @@ def digest(state: dict[str, Any]) -> str:
 
 
 def decision_digest(state: dict[str, Any]) -> str:
-    """Exclude animated transform examples, retaining the selected originals.
+    """Exclude volatile execution metadata and animated transform examples.
 
     NTransformPreview cycles replacement examples every 0.2 seconds. They are
     presentation, not the committed random outcome. Raw audit hashes use digest.
     """
+    if "execution" in state:
+        # Per-request bookkeeping (request_id, last action, readiness flags)
+        # changes on every call without changing the decision. Hashing it made
+        # observe->act hashes go stale for no gameplay reason.
+        state = {k: v for k, v in state.items() if k != "execution"}
     selection = state.get("card_select", {})
     if selection.get("screen_type") == "transform" and selection.get("preview_showing"):
         state = dict(state)
@@ -104,6 +109,15 @@ def _card_count(state: dict[str, Any], card_id: Any) -> int:
     return sum(card.get("id") == card_id for card in _hand(state))
 
 
+_EXHAUST_WORDS = ("exhaust", "消耗")
+
+
+def _mentions_exhaust(description: str, keyword_names: set[str]) -> bool:
+    """Exhaust keyword in any supported game language (was Chinese-only)."""
+    text = " ".join([description, *keyword_names]).casefold()
+    return any(word in text for word in _EXHAUST_WORDS)
+
+
 def _play_card_committed(
     before: dict[str, Any], current: dict[str, Any], action: dict[str, Any]
 ) -> bool:
@@ -142,11 +156,12 @@ def _play_card_committed(
     # that case: Exhaust cards increase exhaust_pile_count; ordinary cards
     # increase discard_pile_count. This specifically prevents false negatives
     # for Soul -> draw another Soul.
-    if ("消耗" in description or "消耗" in keyword_names) and int(
+    exhausts = _mentions_exhaust(description, keyword_names)
+    if exhausts and int(
         current_player.get("exhaust_pile_count", 0) or 0
     ) > int(before_player.get("exhaust_pile_count", 0) or 0):
         return True
-    if "消耗" not in description and "消耗" not in keyword_names and int(
+    if not exhausts and int(
         current_player.get("discard_pile_count", 0) or 0
     ) > int(before_player.get("discard_pile_count", 0) or 0):
         return True
@@ -189,11 +204,36 @@ def _action_committed(
             and current_battle.get("round") != before_battle.get("round")
         )
     if name == "choose_map_node":
-        before_run = before.get("run") if isinstance(before.get("run"), dict) else {}
-        current_run = current.get("run") if isinstance(current.get("run"), dict) else {}
-        return current.get("state_type") != "map" or (
-            current_run.get("floor") != before_run.get("floor")
-        )
+        # Floor increments *before* the room loads; a map frame with the new
+        # floor is the stale-map race seen live. Only leaving the map commits.
+        return current.get("state_type") != "map"
+    if name == "claim_treasure_relic":
+        if current.get("state_type") != "treasure":
+            return True
+        claimed = _relic_id_at(before, "treasure", action.get("index"))
+        return claimed is not None and claimed not in _relic_ids(current, "treasure")
+    if name == "combat_select_card" and before.get("state_type") == "hand_select":
+        if current.get("state_type") != "hand_select":
+            return True
+        pre, post = before.get("hand_select", {}), current.get("hand_select", {})
+        return (len(post.get("selected_cards") or []) != len(pre.get("selected_cards") or [])
+                or len(post.get("cards") or []) != len(pre.get("cards") or []))
+    if name == "combat_confirm_selection":
+        return current.get("state_type") != "hand_select"
+    if name in {"select_card_reward", "skip_card_reward"}:
+        return current.get("state_type") != "card_reward"
+    if name == "claim_reward" and before.get("state_type") == "rewards":
+        return current.get("state_type") != "rewards" or len(
+            (current.get("rewards") or {}).get("items") or []) < len((before.get("rewards") or {}).get("items") or [])
+    if name == "proceed":
+        return current.get("state_type") != before.get("state_type")
+    if name in {"use_potion", "discard_potion"}:
+        slots = lambda state: {p.get("slot"): p.get("id") for p in _player(state).get("potions") or [] if isinstance(p, dict)}
+        slot = action.get("slot")
+        return slots(current).get(slot) != slots(before).get(slot) or current.get("state_type") != before.get("state_type")
+    if name == "shop_purchase":
+        return (current.get("state_type") != before.get("state_type")
+                or _player(current).get("gold") != _player(before).get("gold"))
     if name == "menu_select" and before.get("menu_screen") == "character_select":
         if action.get("option") in {"embark", "confirm"}:
             return current.get("state_type") != "menu"
@@ -208,45 +248,126 @@ def _action_committed(
     return decision_digest(current) != decision_digest(before)
 
 
+def _relic_ids(state: dict[str, Any], key: str) -> list[Any]:
+    block = state.get(key) if isinstance(state.get(key), dict) else {}
+    return [r.get("id") for r in block.get("relics") or [] if isinstance(r, dict)]
+
+
+def _relic_id_at(state: dict[str, Any], key: str, index: Any) -> Any:
+    block = state.get(key) if isinstance(state.get(key), dict) else {}
+    for relic in block.get("relics") or []:
+        if isinstance(relic, dict) and relic.get("index") == index:
+            return relic.get("id")
+    return None
+
+
+COMBAT_TYPES = frozenset({"monster", "elite", "boss"})
+
+
+def actionable(state: dict[str, Any]) -> bool:
+    """True when the frame is a decision point rather than a transition frame.
+
+    Combat frames during the enemy turn / card animations, empty maps and
+    screens with nothing to click are not decision points; returning them is
+    how stale frames reached the controller.
+    """
+    st = state.get("state_type")
+    if st == "game_over":
+        return True
+    if st in COMBAT_TYPES:
+        battle = _battle(state)
+        execution = state.get("execution") if isinstance(state.get("execution"), dict) else {}
+        if battle.get("is_over_or_ending"):
+            return False
+        return battle.get("is_play_phase") is True and execution.get("queue_idle", True) is not False
+    if st == "map":
+        block = state.get("map") if isinstance(state.get("map"), dict) else {}
+        return bool(block.get("next_options"))
+    if st in {None, "unknown", "loading", "transition"}:
+        return False
+    try:
+        from sts2rec.legal_actions import derive_legal_actions
+    except ImportError:  # pragma: no cover - sts2rec is on sys.path for the live harness
+        return True
+    return bool(derive_legal_actions(state))
+
+
+def wait_settled(
+    port: int,
+    timeout: float = 20.0,
+    quiet_window: float = 0.5,
+    *,
+    initial: dict[str, Any] | None = None,
+    poll: float = 0.1,
+) -> tuple[dict[str, Any], bool]:
+    """Poll until the decision hash is stable for ``quiet_window`` on an actionable frame.
+
+    Returns ``(state, settled)``; ``settled`` is False when ``timeout`` expired
+    first, so callers can report that explicitly instead of acting on it.
+    """
+    deadline = time.monotonic() + timeout
+    latest = initial if initial is not None else request(port)
+    latest_hash = decision_digest(latest)
+    stable_since = time.monotonic()
+    while True:
+        now = time.monotonic()
+        if actionable(latest) and now - stable_since >= quiet_window:
+            return latest, True
+        if now >= deadline:
+            return latest, False
+        time.sleep(poll)
+        newer = request(port)
+        newer_hash = decision_digest(newer)
+        if newer_hash != latest_hash:
+            stable_since = time.monotonic()
+        latest, latest_hash = newer, newer_hash
+
+
+def quiet_window_for(action: dict[str, Any], state: dict[str, Any]) -> float:
+    name = action.get("action")
+    if name == "select_card" and state.get("card_select", {}).get("selection_tracking") == "available" and (
+        not state.get("card_select", {}).get("preview_showing") or state.get("card_select", {}).get("can_confirm")
+    ):
+        return 0.2
+    if state.get("state_type") in COMBAT_TYPES:
+        # Damage numbers / block / draw animations keep mutating for a moment.
+        return 1.0
+    return 0.6
+
+
 def settled_state(
     port: int,
     before: dict[str, Any],
     action: dict[str, Any],
     timeout: float = 30.0,
-    quiet_window: float = 2.5,
+    quiet_window: float | None = None,
 ) -> dict[str, Any]:
+    """Wait for this action's own commitment witness, then for an actionable quiet frame.
+
+    Raises SystemExit with an explicit reason on timeout; never returns a
+    pre-commit or transition frame as the outcome.
+    """
     deadline = time.monotonic() + timeout
-    latest = before
-    committed = False
-    stable_since: float | None = None
-    latest_hash = decision_digest(latest)
+    committed_state: dict[str, Any] | None = None
     while time.monotonic() < deadline:
         time.sleep(0.1)
         newer = request(port)
-        newer_hash = decision_digest(newer)
-        now = time.monotonic()
-        if not committed and _action_committed(before, newer, action):
-            committed = True
-            stable_since = now
-        elif committed:
-            if newer_hash != latest_hash:
-                stable_since = now
-            elif stable_since is not None and now - stable_since >= (
-                0.2 if action.get("action") == "select_card"
-                and newer.get("card_select", {}).get("selection_tracking") == "available"
-                and (not newer.get("card_select", {}).get("preview_showing")
-                     or newer.get("card_select", {}).get("can_confirm")) else quiet_window
-            ):
-                return newer
-        latest, latest_hash = newer, newer_hash
-    if not committed:
+        if _action_committed(before, newer, action):
+            committed_state = newer
+            break
+    if committed_state is None:
         raise SystemExit(
             f"action acknowledged but not committed within {timeout:.1f}s: {action}"
         )
-    raise SystemExit(
-        f"action committed but did not settle for {quiet_window:.1f}s "
-        f"within {timeout:.1f}s: {action}"
-    )
+    window = quiet_window if quiet_window is not None else quiet_window_for(action, committed_state)
+    remaining = max(0.5, deadline - time.monotonic())
+    post, ok = wait_settled(port, remaining, window, initial=committed_state)
+    if not ok:
+        raise SystemExit(
+            f"action committed but did not reach a stable actionable frame "
+            f"({window:.1f}s quiet) within {timeout:.1f}s: {action}; last state_type={post.get('state_type')}"
+        )
+    return post
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:

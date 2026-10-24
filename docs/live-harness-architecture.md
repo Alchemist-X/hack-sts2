@@ -34,8 +34,9 @@ flowchart TD
 | 动作空间 | `sts2rec/legal_actions.py` | 枚举当前快照可见动作，保留商品/卡牌完整候选；不是所有游戏分支均已实机验证 |
 | 知识检索 | `sts2rec/knowledge.py` | 已接入状态、附魔、污染模型及静态依赖；未实现完整规则解释器或自动网页事实更新 |
 | 构筑与战斗决策 | 本次对话中的LLM + plan.json + Markdown记忆 | 没有加载训练后的策略网络、胜率Q函数或牌序搜索器 |
-| 执行保护 | `scripts/sts2_live.py` | 检查版本、哈希、动作结构、理由与pending；尚未将提交动作逐字段强制匹配到候选集 |
-| 动作确认 | `scripts/sts2_action_executor.py` | 动作特定确认 + 稳定等待；完整战斗事件屏障未实现 |
+| 动作引用 | `scripts/sts2_action_refs.py` | 稳定 ref（卡名+升级档、`名称@combat_id`、`category:ID`、`col,row`、药水 slot/id）每步在最新状态上解析并匹配 legal_actions；链式步骤禁止位置索引；不可执行项给出原因 |
+| 执行保护 | `scripts/sts2_live.py` | 检查版本（练习局可显式放行并记录）、哈希（附 diff 与新观察）、理由与pending；多选自动确认、宝箱补点、`reconcile`；所有失败为退出码2的JSON |
+| 动作确认 | `scripts/sts2_action_executor.py` | 动作特定提交证据 + 可行动帧等待（play phase、queue_idle、next_options）+ 短静默窗口；hash 忽略 execution；完整战斗事件屏障未实现 |
 | 审计 | `scripts/sts2_run_audit.py` | 统计动作/奖励/商店/药水/SL/token等；原生历史存在时另核对最终结果与已提交的资源使用 |
 
 计划包含即时威胁、构筑方向、抽牌计划、药水预算和停止条件。harness可以保存这些内容及哈希，也能要求动作理由存在；它无法证明模型读懂了记忆、算式正确或动作符合构筑方向。游戏引擎仍是实际可执行性与结算的裁判。

@@ -1,0 +1,244 @@
+{
+ "battle": {
+  "enemies": [
+   {
+    "block": 0,
+    "combat_id": 1,
+    "current_move_id": "TACKLE_MOVE",
+    "entity_id": "TWIG_SLIME_S_0",
+    "hp": 10,
+    "id": "TWIG_SLIME_S",
+    "intents": [
+     {
+      "damage_per_hit": 4,
+      "damage_scope": "local_player_before_block; current_state_only",
+      "damage_source": "engine_intent_preview",
+      "description": "This enemy intends to Attack for 4 damage.",
+      "hits": 1,
+      "label": "4",
+      "title": "Aggressive",
+      "total_damage": 4,
+      "type": "Attack"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 10,
+    "model_id": "MONSTER.TWIG_SLIME_S",
+    "name": "Twig Slime (S)",
+    "status": []
+   },
+   {
+    "block": 0,
+    "combat_id": 2,
+    "current_move_id": "STICKY_SHOT_MOVE",
+    "entity_id": "TWIG_SLIME_M_0",
+    "hp": 26,
+    "id": "TWIG_SLIME_M",
+    "intents": [
+     {
+      "description": "This enemy intends to give you 1 Status card.",
+      "label": "1",
+      "title": "Strategic",
+      "type": "StatusCard"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 26,
+    "model_id": "MONSTER.TWIG_SLIME_M",
+    "name": "Twig Slime (M)",
+    "status": []
+   },
+   {
+    "block": 0,
+    "combat_id": 3,
+    "current_move_id": "TACKLE_MOVE",
+    "entity_id": "LEAF_SLIME_S_0",
+    "hp": 13,
+    "id": "LEAF_SLIME_S",
+    "intents": [
+     {
+      "damage_per_hit": 3,
+      "damage_scope": "local_player_before_block; current_state_only",
+      "damage_source": "engine_intent_preview",
+      "description": "This enemy intends to Attack for 3 damage.",
+      "hits": 1,
+      "label": "3",
+      "title": "Aggressive",
+      "total_damage": 3,
+      "type": "Attack"
+     }
+    ],
+    "is_alive": true,
+    "is_targetable": true,
+    "max_hp": 13,
+    "model_id": "MONSTER.LEAF_SLIME_S",
+    "name": "Leaf Slime (S)",
+    "status": []
+   }
+  ],
+  "inactive_enemies": [],
+  "is_over_or_ending": false,
+  "is_play_phase": true,
+  "player_turn": 1,
+  "round": 1,
+  "turn": "player"
+ },
+ "execution": {
+  "action": "choose_map_node",
+  "completion_confirmed": false,
+  "completion_kind": "game_action_finished",
+  "game_action_id": null,
+  "game_action_state": null,
+  "player_phase": "Play",
+  "player_turn": 1,
+  "queue_idle": true,
+  "ready_for_next_action": false,
+  "request_id": "7693ba412e3f4537a9f47f2d2d805dae",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state",
+  "submitted_player_turn": null
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "discard_pile": [],
+  "discard_pile_count": 0,
+  "draw_pile": [],
+  "draw_pile_count": 5,
+  "energy": 3,
+  "exhaust_pile": [],
+  "exhaust_pile_count": 0,
+  "gold": 99,
+  "hand": [
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "2",
+    "description": "Deal 8 damage. Apply 2 Vulnerable.",
+    "enchantment": null,
+    "id": "BASH",
+    "index": 0,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Vulnerable creatures take 50% more damage from Attacks.",
+      "name": "Vulnerable"
+     }
+    ],
+    "model_id": "CARD.BASH",
+    "name": "Bash",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 1,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 3,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "AnyEnemy",
+    "type": "Attack",
+    "unplayable_reason": null
+   },
+   {
+    "affliction": null,
+    "can_play": true,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 4,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "target_type": "Self",
+    "type": "Skill",
+    "unplayable_reason": null
+   }
+  ],
+  "hp": 80,
+  "max_energy": 3,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 2
+ },
+ "state_type": "monster"
+}

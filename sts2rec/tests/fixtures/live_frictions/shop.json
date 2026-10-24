@@ -1,0 +1,287 @@
+{
+ "execution": {
+  "action": "choose_map_node",
+  "game_action_id": null,
+  "game_action_state": null,
+  "ready_for_next_action": false,
+  "request_id": "f4e37163fd2640d9adcee24e72b33b46",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 308,
+  "hp": 49,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Deal 10 damage to ALL enemies.",
+    "id": "EXPLOSIVE_AMPOULE",
+    "keywords": [],
+    "name": "Explosive Ampoule",
+    "slot": 0,
+    "target_type": "AllEnemies"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 1,
+  "ascension": 0,
+  "floor": 13
+ },
+ "shop": {
+  "can_proceed": false,
+  "items": [
+   {
+    "can_afford": true,
+    "card_cost": "1",
+    "card_description": "Lose 2 HP. Deal 15 damage.",
+    "card_id": "HEMOKINESIS",
+    "card_name": "Hemokinesis",
+    "card_rarity": "Uncommon",
+    "card_star_cost": null,
+    "card_type": "Attack",
+    "category": "card",
+    "index": 0,
+    "is_stocked": true,
+    "keywords": [],
+    "on_sale": true,
+    "price": 38
+   },
+   {
+    "can_afford": true,
+    "card_cost": "1",
+    "card_description": "Deal 10 damage. If Fatal, raise your Max HP by 3. Exhaust.",
+    "card_id": "FEED",
+    "card_name": "Feed",
+    "card_rarity": "Rare",
+    "card_star_cost": null,
+    "card_type": "Attack",
+    "category": "card",
+    "index": 1,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Triggers whenever this card kills a non-minion enemy.",
+      "name": "Fatal"
+     },
+     {
+      "description": "Removed until the end of combat.",
+      "name": "Exhaust"
+     }
+    ],
+    "on_sale": false,
+    "price": 143
+   },
+   {
+    "can_afford": true,
+    "card_cost": "2",
+    "card_description": "Heal 10 HP. Exhaust.",
+    "card_id": "NOT_YET",
+    "card_name": "Not Yet",
+    "card_rarity": "Rare",
+    "card_star_cost": null,
+    "card_type": "Skill",
+    "category": "card",
+    "index": 2,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Removed until the end of combat.",
+      "name": "Exhaust"
+     }
+    ],
+    "on_sale": false,
+    "price": 144
+   },
+   {
+    "can_afford": true,
+    "card_cost": "1",
+    "card_description": "Gain 8 Block. Draw 1 card.",
+    "card_id": "SHRUG_IT_OFF",
+    "card_name": "Shrug It Off",
+    "card_rarity": "Common",
+    "card_star_cost": null,
+    "card_type": "Skill",
+    "category": "card",
+    "index": 3,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "on_sale": false,
+    "price": 52
+   },
+   {
+    "can_afford": true,
+    "card_cost": "1",
+    "card_description": "Whenever a card is Exhausted, gain 4 Block.",
+    "card_id": "FEEL_NO_PAIN",
+    "card_name": "Feel No Pain+",
+    "card_rarity": "Uncommon",
+    "card_star_cost": null,
+    "card_type": "Power",
+    "category": "card",
+    "index": 4,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Removed until the end of combat.",
+      "name": "Exhaust"
+     },
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "on_sale": false,
+    "price": 72
+   },
+   {
+    "can_afford": true,
+    "card_cost": "0",
+    "card_description": "Whenever you shuffle your Draw Pile, choose a card from it to put into your Hand.",
+    "card_id": "STRATAGEM",
+    "card_name": "Stratagem+",
+    "card_rarity": "Uncommon",
+    "card_star_cost": null,
+    "card_type": "Power",
+    "category": "card",
+    "index": 5,
+    "is_stocked": true,
+    "keywords": [],
+    "on_sale": false,
+    "price": 82
+   },
+   {
+    "can_afford": true,
+    "card_cost": "2",
+    "card_description": "Deal 20 damage. If Fatal, gain 20 Gold.",
+    "card_id": "HAND_OF_GREED",
+    "card_name": "Hand of Greed",
+    "card_rarity": "Rare",
+    "card_star_cost": null,
+    "card_type": "Attack",
+    "category": "card",
+    "index": 6,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Triggers whenever this card kills a non-minion enemy.",
+      "name": "Fatal"
+     }
+    ],
+    "on_sale": false,
+    "price": 173
+   },
+   {
+    "can_afford": true,
+    "category": "relic",
+    "index": 7,
+    "is_stocked": true,
+    "keywords": [
+     {
+      "description": "Energy is used to play cards from your Hand.",
+      "name": "Energy"
+     }
+    ],
+    "price": 243,
+    "relic_description": "If you do not play any Attacks during your turn, gain an additional [ironclad_energy_icon.png] next turn.",
+    "relic_id": "ART_OF_WAR",
+    "relic_name": "Art of War"
+   },
+   {
+    "can_afford": true,
+    "category": "relic",
+    "index": 8,
+    "is_stocked": true,
+    "keywords": [],
+    "price": 291,
+    "relic_description": "When your HP would be reduced to 0, heal to 50% of your Max HP instead (works once).",
+    "relic_id": "LIZARD_TAIL",
+    "relic_name": "Lizard Tail"
+   },
+   {
+    "can_afford": true,
+    "category": "relic",
+    "index": 9,
+    "is_stocked": true,
+    "keywords": [],
+    "price": 186,
+    "relic_description": "If you end your turn with no cards in your Hand, deal 20 damage to ALL enemies.",
+    "relic_id": "SCREAMING_FLAGON",
+    "relic_name": "Screaming Flagon"
+   },
+   {
+    "can_afford": true,
+    "category": "potion",
+    "index": 10,
+    "is_stocked": true,
+    "keywords": [],
+    "potion_description": "Choose 1 of 3 random Attack cards to add into your Hand. It's free to play this turn.",
+    "potion_id": "ATTACK_POTION",
+    "potion_name": "Attack Potion",
+    "price": 49
+   },
+   {
+    "can_afford": true,
+    "category": "potion",
+    "index": 11,
+    "is_stocked": true,
+    "keywords": [],
+    "potion_description": "Choose 1 of 3 random Skill cards to add into your Hand. It's free to play this turn.",
+    "potion_id": "SKILL_POTION",
+    "potion_name": "Skill Potion",
+    "price": 48
+   },
+   {
+    "can_afford": true,
+    "category": "potion",
+    "index": 12,
+    "is_stocked": true,
+    "keywords": [],
+    "potion_description": "This turn, your next card is played an extra time.",
+    "potion_id": "DUPLICATOR",
+    "potion_name": "Duplicator",
+    "price": 75
+   },
+   {
+    "can_afford": true,
+    "category": "card_removal",
+    "index": 13,
+    "is_stocked": true,
+    "price": 75
+   }
+  ]
+ },
+ "state_type": "shop"
+}

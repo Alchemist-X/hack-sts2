@@ -1,0 +1,79 @@
+{
+ "execution": {
+  "action": "claim_treasure_relic",
+  "game_action_id": null,
+  "game_action_state": null,
+  "ready_for_next_action": false,
+  "request_id": "4fe8484ed9da4ca9b21b3ae5b25b1872",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 122,
+  "hp": 46,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [
+   {
+    "can_use_in_combat": true,
+    "description": "Draw 3 cards.",
+    "id": "SWIFT_POTION",
+    "keywords": [],
+    "name": "Swift Potion",
+    "slot": 0,
+    "target_type": "AnyPlayer"
+   },
+   {
+    "can_use_in_combat": true,
+    "description": "Choose 1 of 3 random Attack cards to add into your Hand. It's free to play this turn.",
+    "id": "ATTACK_POTION",
+    "keywords": [],
+    "name": "Attack Potion",
+    "slot": 1,
+    "target_type": "Self"
+   }
+  ],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   },
+   {
+    "id": "YUMMY_COOKIE",
+    "name": "Yummy Cookie"
+   },
+   {
+    "id": "VENERABLE_TEA_SET",
+    "name": "Venerable Tea Set"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 2,
+  "ascension": 0,
+  "floor": 26
+ },
+ "state_type": "treasure",
+ "treasure": {
+  "can_proceed": true
+ }
+}

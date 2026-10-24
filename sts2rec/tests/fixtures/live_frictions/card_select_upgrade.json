@@ -1,0 +1,347 @@
+{
+ "card_select": {
+  "can_cancel": false,
+  "can_confirm": false,
+  "cards": [
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 0,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 1,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 2,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 6 damage.",
+    "enchantment": null,
+    "id": "STRIKE_IRONCLAD",
+    "index": 3,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.STRIKE_IRONCLAD",
+    "name": "Strike",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 4,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 5,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 6,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block.",
+    "enchantment": null,
+    "id": "DEFEND_IRONCLAD",
+    "index": 7,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.DEFEND_IRONCLAD",
+    "name": "Defend",
+    "rarity": "Basic",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Deal 7 damage. Gain 2 Strength this turn.",
+    "enchantment": null,
+    "id": "SETUP_STRIKE",
+    "index": 8,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Strength adds additional damage to Attacks.",
+      "name": "Strength"
+     }
+    ],
+    "model_id": "CARD.SETUP_STRIKE",
+    "name": "Setup Strike",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "0",
+    "description": "Draw 3 cards. You cannot draw additional cards this turn.",
+    "enchantment": null,
+    "id": "BATTLE_TRANCE",
+    "index": 9,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.BATTLE_TRANCE",
+    "name": "Battle Trance",
+    "rarity": "Uncommon",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 5 Block. Upgrade a card in your Hand.",
+    "enchantment": null,
+    "id": "ARMAMENTS",
+    "index": 10,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.ARMAMENTS",
+    "name": "Armaments",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 8 Block. Draw 1 card.",
+    "enchantment": null,
+    "id": "SHRUG_IT_OFF",
+    "index": 11,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.SHRUG_IT_OFF",
+    "name": "Shrug It Off",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Lose 2 HP. Deal 15 damage.",
+    "enchantment": null,
+    "id": "HEMOKINESIS",
+    "index": 12,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.HEMOKINESIS",
+    "name": "Hemokinesis",
+    "rarity": "Uncommon",
+    "star_cost": null,
+    "type": "Attack"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Gain 8 Block. Draw 1 card.",
+    "enchantment": null,
+    "id": "SHRUG_IT_OFF",
+    "index": 13,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [
+     {
+      "description": "Until next turn, prevents damage.",
+      "name": "Block"
+     }
+    ],
+    "model_id": "CARD.SHRUG_IT_OFF",
+    "name": "Shrug It Off",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Skill"
+   },
+   {
+    "affliction": null,
+    "cost": "1",
+    "description": "Lose 1 HP. Deal 9 damage to ALL enemies.",
+    "enchantment": null,
+    "id": "BREAKTHROUGH",
+    "index": 14,
+    "is_selected": false,
+    "is_upgraded": false,
+    "keywords": [],
+    "model_id": "CARD.BREAKTHROUGH",
+    "name": "Breakthrough",
+    "rarity": "Common",
+    "star_cost": null,
+    "type": "Attack"
+   }
+  ],
+  "max_select": 4,
+  "min_select": 4,
+  "preview_showing": false,
+  "prompt": "Choose 4 cards to Upgrade.",
+  "screen_type": "upgrade",
+  "selected_count": 0,
+  "selected_indices": [],
+  "selection_tracking": "available"
+ },
+ "execution": {
+  "action": "choose_event_option",
+  "game_action_id": null,
+  "game_action_state": null,
+  "ready_for_next_action": false,
+  "request_id": "2ccc98f925b54a05aa10dd46348f0cda",
+  "schema_version": 1,
+  "scope": "public action completion; no RNG or future state"
+ },
+ "player": {
+  "block": 0,
+  "character": "The Ironclad",
+  "gold": 134,
+  "hp": 80,
+  "max_hp": 80,
+  "max_potion_slots": 3,
+  "potions": [],
+  "relics": [
+   {
+    "id": "BURNING_BLOOD",
+    "name": "Burning Blood"
+   },
+   {
+    "id": "BOOMING_CONCH",
+    "name": "Booming Conch"
+   },
+   {
+    "id": "BRONZE_SCALES",
+    "name": "Bronze Scales"
+   },
+   {
+    "id": "RED_MASK",
+    "name": "Red Mask"
+   },
+   {
+    "id": "FROZEN_EGG",
+    "name": "Frozen Egg"
+   },
+   {
+    "id": "YUMMY_COOKIE",
+    "name": "Yummy Cookie"
+   }
+  ],
+  "status": []
+ },
+ "run": {
+  "act": 2,
+  "ascension": 0,
+  "floor": 18
+ },
+ "state_type": "card_select"
+}
