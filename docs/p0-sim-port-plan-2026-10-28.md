@@ -135,3 +135,23 @@ AoE、叠甲、力量缩放各类先进流水线，让各类 Hook 的移植方�
   recorder 录像」（既有版本匹配切片优先），托管 DLL 降为 P1 吞吐升级；
   横扩选卡改机制覆盖。三项开工调查（起始遗物时机／首战前流消耗／语料
   盘点）已派发 opus 代理。
+- 2026-10-30（晚）：三路调查返回（3 Opus，~118 万 token，386 次工具调用）。
+  ① **Neow 事件强制且无跳过**——floor 1 恒为 Neow，首战在 floor 2，每个
+  选项至少 +1 遗物：真实首战永不"纯起始卡组"。Burning Blood 战斗内零
+  效果（仅胜利后治疗 6，无 RNG）；Neow 遗物多数战斗内惰性（BOOMING_CONCH
+  除外），白名单入 `sim/specs/diff-bundle.md`。
+  ② **首战 RNG 对齐配方实证成立**：sim 相关流开战 counter 全 0，Niche
+  偏移 = 6·[Kaleidoscope]+[NewLeaf]+[NeowsBones]（110 局实证：洗牌 97/99、
+  LeafSlime 意图 16/16、Niche 88/89，差异均可解释）；**v0.107.1 旧语料用
+  LegacyV18 旧种子核逐位可复现**（sim 已有实现，79/80+85 手牌精确）；
+  后续战斗需真实 counter——`native/replay.mcr` 已含 SerializableRunRngSet
+  （PacketReader 解码列 P0.5 后手），或 recorder 被动拷 `current_run.save`。
+  设置顺序 sim↔游戏核对一致，4 处记录在案的偏差均不影响第一幕 weak。
+  ③ **语料盘点**（133 lineage/37 胜/8.95 万动作；v0.107.1 占 87%）：严格
+  口径可用战斗 = **0**——卡在遭遇覆盖（当前仅 NIBBITS_WEAK，且只在
+  Overgrowth 变体出现）与升级卡表达（Neow 升级）。近失案例三个（v0.107.1
+  NIBBITS/SEAPUNK/SLIMES 首战，deck=起始+bane±升级）。
+  → 结论与行动：差分点亮需最小内容批。已启动实现 workflow：sts2rec
+  exporter + Sts2Sim.Diff 比对器（契约 `sim/specs/diff-bundle.md`）+
+  内容批（第一幕全部 8 个 weak 遭遇、升级版 Strike/Defend/Bash、SLIMED/
+  GREED、遭遇私有 Rng 与槽位排序基建）+ 集成 + 对抗校验 + 修复。
