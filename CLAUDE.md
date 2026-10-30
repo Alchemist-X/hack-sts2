@@ -65,3 +65,30 @@ from the `rewards` state snapshot preceding the pick, or the recorder needs a
   `validate`, `canonical`, `watch`, `pack`.
 - Full architecture and format contract: `docs/design.md`. Verified hook map:
   `docs/hook-map.md`.
+
+## Mainline: Route C — source-ported rules simulator (since 2026-10-28)
+
+The A10 training mainline is a headless, clonable C# re-implementation of the
+game's rules kernel, ported from the decompiled tree (the game's author has
+given written permission; this is an academic research project). Simulator
+code: `sim/`. Plan and gates: `docs/p0-sim-port-plan-2026-10-28.md`.
+Rationale: `docs/a10-first-principles-review-2026-10-27.md`. The real engine
+remains oracle + exam hall only. Decompile trees stay git-ignored; ported
+source under `sim/` is committed.
+
+## Agent orchestration: Fable orchestrates, Opus executes (ultracode)
+
+To balance personal-plan economics with peak intelligence and parallel
+throughput, and to ride out the 5-hour usage cap without losing session
+cache:
+
+1. Engineering work in this repo runs under the ultracode execution shell
+   (the Workflow tool), with the main session on Fable as orchestrator.
+2. Hard rule (harness/hook annotation): every subagent dispatched by
+   ultracode — every Workflow `agent()` call and every Agent tool call —
+   MUST set `model: 'opus'` (Opus 5.5). Subagents never run on Fable. (A
+   `fork` inherits the parent model by design — do not use forks for
+   delegated execution work.)
+3. Division of labor: Fable does precise orchestration — briefs, synthesis,
+   final review. Opus does cost-effective execution — reading, porting,
+   tests, verification.
