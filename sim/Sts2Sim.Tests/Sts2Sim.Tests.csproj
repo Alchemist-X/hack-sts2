@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sts2Sim.Tests</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <CheckForOverflowUnderflow>false</CheckForOverflowUnderflow>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Sts2Sim.Core/Sts2Sim.Core.csproj" />
+    <ProjectReference Include="../Sts2Sim.Diff/Sts2Sim.Diff.csproj" />
+  </ItemGroup>
+
+</Project>

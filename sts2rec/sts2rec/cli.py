@@ -1,6 +1,7 @@
 """sts2rec command-line interface.
 
-Subcommands: sessions, validate, canonical, watch, archive, report, pack.
+Subcommands: sessions, validate, canonical, watch, archive, report, pack,
+export-bundles.
 Exit codes: 0 = ok, 1 = validation/operation errors, 2 = usage errors.
 """
 
@@ -8,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -16,6 +18,8 @@ from . import __version__
 from .archive import archive_native
 from .audit import audit_lineage
 from .canonical import build_canonical
+from .diff_bundle import SimRegistry, scan_sim_registry
+from .diff_export import PRE_STATE_MODES, PRE_STATE_SETTLED, ExportError, export_bundles
 from .errors import Sts2RecError
 from .pack import pack_session
 from .paths import profile_saves_dirs, recorder_output_root, sessions_root, user_data_dir
@@ -28,6 +32,12 @@ from .watch import watch_session
 EXIT_OK = 0
 EXIT_ERRORS = 1
 EXIT_USAGE = 2
+
+DIFF_BUNDLE_DIR_ENV = "STS2REC_DIFF_BUNDLE_DIR"
+DEFAULT_DIFF_BUNDLE_DIR = (
+    "/private/tmp/claude-501/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-"
+    "slay-the-spire-card-combo-fc5926/7fa8c8f8-229e-453c-ba28-de560fb8b5a7/scratchpad/diff-bundles"
+)
 
 
 def _result_label(manifest: Manifest) -> str:
@@ -261,6 +271,56 @@ def _cmd_archive(args: argparse.Namespace) -> int:
     return EXIT_OK if result.complete else EXIT_ERRORS
 
 
+def _repo_root() -> Path | None:
+    candidate = Path(__file__).resolve().parents[2]
+    if (candidate / "sim").is_dir() or (candidate / ".git").exists():
+        return candidate
+    return None
+
+
+def _cmd_export_bundles(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else sessions_root(recorder_output_root())
+    out_dir = Path(args.out_dir or os.environ.get(DIFF_BUNDLE_DIR_ENV) or DEFAULT_DIFF_BUNDLE_DIR)
+    repo = _repo_root()
+    try:
+        if args.sim_registry:
+            raw = json.loads(Path(args.sim_registry).read_text(encoding="utf-8"))
+            registry = SimRegistry.from_json(raw, source=f"file:{args.sim_registry}")
+        else:
+            sim_core = Path(args.sim_core) if args.sim_core else (repo / "sim" / "Sts2Sim.Core" if repo else None)
+            if sim_core is None or not sim_core.is_dir():
+                print(
+                    "error: no sim sources found; pass --sim-core DIR or --sim-registry FILE",
+                    file=sys.stderr,
+                )
+                return EXIT_USAGE
+            registry = scan_sim_registry(sim_core)
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"error: cannot load the sim registry: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        index = export_bundles(
+            root,
+            out_dir,
+            registry,
+            include_ineligible=args.include_ineligible,
+            pre_state_mode=args.pre_state,
+            forbidden_roots=[repo] if repo else [],
+            log=lambda message: print(message, file=sys.stderr),
+        )
+    except ExportError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    summary = index["summary"]
+    print(
+        f"{summary['attempts']} first-combat attempts in {summary['lineages']} lineages; "
+        f"{summary['eligible']} eligible bundles {summary['eligible_by_version']}"
+    )
+    print(f"reasons: {summary['reason_classes']}")
+    print(f"index: {out_dir / 'reasons.json'}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sts2rec",
@@ -341,6 +401,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="pack even when the manifest says incomplete (NOT while the game is running)",
     )
     pack.set_defaults(handler=_cmd_pack)
+
+    export = subparsers.add_parser(
+        "export-bundles",
+        help="write first-combat diff bundles (sim/specs/diff-bundle.md) from the corpus, read-only",
+    )
+    export.add_argument(
+        "out_dir",
+        nargs="?",
+        help=f"output directory (default: ${DIFF_BUNDLE_DIR_ENV} or {DEFAULT_DIFF_BUNDLE_DIR}); "
+        "never inside the corpus or the repo",
+    )
+    export.add_argument("--root", help="sessions root (default: recorder output root)")
+    registry_source = export.add_mutually_exclusive_group()
+    registry_source.add_argument(
+        "--sim-core", help="sim Core sources to scan for ported content (default: repo sim/Sts2Sim.Core)"
+    )
+    registry_source.add_argument(
+        "--sim-registry",
+        help="JSON {characters, encounters, cards, upgradable_cards} instead of scanning sources",
+    )
+    export.add_argument(
+        "--include-ineligible",
+        action="store_true",
+        help="also write buildable but ineligible bundles under ineligible/",
+    )
+    export.add_argument(
+        "--pre-state",
+        choices=PRE_STATE_MODES,
+        default=PRE_STATE_SETTLED,
+        help="how to fill pre_state when the state_seq snapshot was taken mid-resolution of the "
+        "previous card: settled (default) = roll it forward through the recorded events up to the "
+        "action, else null (unobserved); unobserved = always null; snapshot = raw state_seq "
+        "projection (false divergences)",
+    )
+    export.set_defaults(handler=_cmd_export_bundles)
     return parser
 
 
