@@ -155,3 +155,17 @@ AoE、叠甲、力量缩放各类先进流水线，让各类 Hook 的移植方�
   exporter + Sts2Sim.Diff 比对器（契约 `sim/specs/diff-bundle.md`）+
   内容批（第一幕全部 8 个 weak 遭遇、升级版 Strike/Defend/Bash、SLIMED/
   GREED、遭遇私有 Rng 与槽位排序基建）+ 集成 + 对抗校验 + 修复。
+- 2026-10-30（夜）：**差分闸点亮，首轮全绿**。12 代理 workflow（断网后
+  resume 补跑对抗校验）交付：`sts2rec export-bundles`（133 lineage →
+  142 次首战尝试、合格 4 个 + 全量不合格理由账本）、`Sts2Sim.Diff` 比对器、
+  8 个 weak 遭遇、升级卡、GREED/SLIMED、`CombatRunContext`（遭遇私有 Rng
+  + 槽位排序）。结果：**4/4 场真实人类 A10 战斗（v0.107.1 旧种子核）69/69
+  决策 100% 一致、结局与终局 HP 全对**；三组对照（roll-forward 消融 45/45、
+  snapshot 负对照与不合格 bundle 负对照均按预期分歧）。对抗校验 17 项，
+  2 个 major 均在 exporter 侧（粘滞 player_choice 标签误滤、地图视图误判
+  战斗结束）已修并加测试；修复后合格 bundle 字节级不变；367/367 C# +
+  680/680 Python 测试（独立复核过）。残留与未处理的 6 项尾部 minor
+  （#12-#17）见 `sim/specs/review-fixes-2026-10-30.md`。XXH64 路径仅开局级
+  实证（16/16 真实数据钉入测试），全程重放待 G0G2JMFEYHRS 的 5 张卡；
+  5 个遭遇尚无决策级重放。下一步：MCP 范围约束自走农场（v0.111 轨迹）+
+  评测 runner 版本搬迁（v0.107.1→v0.111）。

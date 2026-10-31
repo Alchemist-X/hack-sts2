@@ -21,6 +21,27 @@ public static class CombatLoop
         return cs;
     }
 
+    public static CombatState CreateCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, Action<CombatState>? populateMonsters = null)
+    {
+        var cs = SetUpCombat(rng, deck, encounterId, ascension, currentHp, maxHp, populateMonsters);
+        StartCombat(cs);
+        return cs;
+    }
+
+    public static CombatState CreateCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, CombatRunContext context, Action<CombatState>? populateMonsters = null)
+    {
+        var cs = SetUpCombat(rng, deck, encounterId, ascension, currentHp, maxHp, context, populateMonsters);
+        StartCombat(cs);
+        return cs;
+    }
+
+    public static CombatState CreateCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, EncounterDef encounter, int ascension, int? currentHp, int? maxHp, CombatRunContext context)
+    {
+        var cs = SetUpCombat(rng, deck, encounter, ascension, currentHp, maxHp, context);
+        StartCombat(cs);
+        return cs;
+    }
+
     public static CombatState SetUpCombat(ulong seed, IReadOnlyList<string> deckIds, string encounterId, int ascension, Action<CombatState>? populateMonsters = null)
         => SetUpCombat(new RunRngSet(seed), deckIds, encounterId, ascension, null, null, populateMonsters);
 
@@ -28,6 +49,25 @@ public static class CombatLoop
     {
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(deckIds);
+        return SetUpCombat(rng, CardSpec.FromIds(DeckForCombat(deckIds, ascension)), encounterId, ascension, currentHp, maxHp, populateMonsters);
+    }
+
+    public static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, Action<CombatState>? populateMonsters = null)
+        => SetUpCombat(rng, deck, encounterId, ascension, currentHp, maxHp, CombatRunContext.Default, populateMonsters);
+
+    public static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, CombatRunContext context, Action<CombatState>? populateMonsters = null)
+        => SetUpCombat(rng, deck, encounterId, null, ascension, currentHp, maxHp, context, populateMonsters);
+
+    public static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, EncounterDef encounter, int ascension, int? currentHp, int? maxHp, CombatRunContext context)
+    {
+        ArgumentNullException.ThrowIfNull(encounter);
+        return SetUpCombat(rng, deck, encounter.Id, encounter, ascension, currentHp, maxHp, context, null);
+    }
+
+    private static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, EncounterDef? encounter, int ascension, int? currentHp, int? maxHp, CombatRunContext context, Action<CombatState>? populateMonsters)
+    {
+        ArgumentNullException.ThrowIfNull(rng);
+        ArgumentNullException.ThrowIfNull(deck);
         ArgumentNullException.ThrowIfNull(encounterId);
         int resolvedMaxHp = maxHp ?? StartingDecks.IroncladStartingHp;
         int resolvedCurrentHp = currentHp ?? resolvedMaxHp;
@@ -39,7 +79,6 @@ public static class CombatLoop
         {
             throw new ArgumentOutOfRangeException(nameof(currentHp), resolvedCurrentHp, $"Current HP must be between 1 and the max HP {resolvedMaxHp}.");
         }
-        var deck = DeckForCombat(deckIds, ascension);
         var player = new PlayerState(PlayerCombatId, StartingDecks.IroncladCharacterId, resolvedCurrentHp, resolvedMaxHp, StartingDecks.IroncladMaxEnergy);
         var cs = new CombatState(player, encounterId, ascension, rng);
         cs.RoundNumber = 1;
@@ -53,17 +92,27 @@ public static class CombatLoop
         if (populateMonsters != null)
         {
             populateMonsters(cs);
+            if (encounter == null && EncounterRegistry.TryGet(encounterId, out var registered))
+            {
+                encounter = registered;
+            }
         }
         else
         {
-            MonsterSpawner.SpawnEncounter(cs, EncounterRegistry.Get(encounterId));
+            encounter ??= EncounterRegistry.Get(encounterId);
+            MonsterSpawner.SpawnEncounter(cs, encounter, context);
         }
         cs.IsStarting = true;
         PopulateDrawPile(cs, player, deck);
-        var monsters = cs.Monsters;
-        for (int i = 0; i < monsters.Count; i++)
+        var monsters = cs.Monsters.ToArray();
+        for (int i = 0; i < monsters.Length; i++)
         {
-            MonsterLifecycle.SetUpForCombat(cs, monsters[i]);
+            var monster = monsters[i];
+            MonsterLifecycle.SetUpForCombat(cs, monster);
+            if (monster.SlotName != null)
+            {
+                MonsterSpawner.SortEnemiesBySlotName(cs, encounter);
+            }
         }
         return cs;
     }
@@ -145,12 +194,12 @@ public static class CombatLoop
         }
     }
 
-    private static void PopulateDrawPile(CombatState cs, PlayerState player, IReadOnlyList<string> deckIds)
+    private static void PopulateDrawPile(CombatState cs, PlayerState player, IReadOnlyList<CardSpec> deck)
     {
         var drawPile = player.DrawPile;
-        for (int i = 0; i < deckIds.Count; i++)
+        for (int i = 0; i < deck.Count; i++)
         {
-            drawPile.AddInternal(CardInstance.Create(cs, deckIds[i]));
+            drawPile.AddInternal(CardInstance.Create(cs, deck[i]));
         }
         CardPileCmd.ShuffleInitialDrawPile(cs, player);
     }

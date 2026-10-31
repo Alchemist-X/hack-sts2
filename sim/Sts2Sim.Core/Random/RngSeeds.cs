@@ -63,6 +63,14 @@ public static class RngSeeds
         }
     }
 
+    public static uint LegacyV18Encounter(ulong runSeed, int totalFloor, string encounterIdEntry)
+    {
+        unchecked
+        {
+            return (uint)((int)runSeed + totalFloor + DeterministicHash.GetDeterministicHashCodeOld(encounterIdEntry));
+        }
+    }
+
     public static ulong Event(ulong runSeed, bool isShared, int playerSlotIndex, string eventIdEntry)
     {
         unchecked

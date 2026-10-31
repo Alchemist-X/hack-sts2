@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from .canonical import build_canonical
-from .session import load_manifest
+from .errors import ManifestError
+from .session import Manifest, load_manifest
+
+
+def _lineage_key(manifest: Manifest) -> tuple[float, str, str]:
+    return (manifest.run.start_time, manifest.run.seed, manifest.run.character)
 
 
 def discover_lineage(session_dir: str | Path) -> list[Path]:
@@ -21,13 +26,35 @@ def discover_lineage(session_dir: str | Path) -> list[Path]:
             other = load_manifest(candidate)
         except Exception:
             continue
-        if (
-            other.run.start_time == manifest.run.start_time
-            and other.run.seed == manifest.run.seed
-            and other.run.character == manifest.run.character
-        ):
+        if _lineage_key(other) == _lineage_key(manifest):
             found.append((other.part, candidate))
     return [path for _, path in sorted(found)]
+
+
+def group_lineages(root: str | Path) -> list[list[tuple[Path, Manifest]]]:
+    """Group every session directory under ``root`` into resume lineages.
+
+    Same matching rule as :func:`discover_lineage` (start_time, seed and
+    character), but one manifest read per directory instead of one scan per
+    anchor. Each lineage is ordered by part (then directory name); lineages
+    are ordered by start_time, seed, character. Directories whose manifest
+    cannot be loaded are skipped.
+    """
+    groups: dict[tuple[float, str, str], list[tuple[int, str, Path, Manifest]]] = {}
+    for candidate in sorted(Path(root).iterdir()):
+        if not candidate.is_dir():
+            continue
+        try:
+            manifest = load_manifest(candidate)
+        except ManifestError:
+            continue
+        groups.setdefault(_lineage_key(manifest), []).append(
+            (manifest.part, candidate.name, candidate, manifest)
+        )
+    return [
+        [(path, manifest) for _, _, path, manifest in sorted(members, key=lambda m: (m[0], m[1]))]
+        for _, members in sorted(groups.items(), key=lambda item: item[0])
+    ]
 
 
 def build_lineage(session_dir: str | Path) -> dict[str, Any]:

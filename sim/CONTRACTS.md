@@ -98,12 +98,17 @@ them inside Core, so Core files need no `using` for sim namespaces. Inside Core,
 enum ActionKind : byte { PlayCard, EndTurn }
 readonly record struct GameAction(ActionKind Kind, int CardIndex, int TargetIndex)
     // GameAction.NoIndex = -1; GameAction.EndTurn; GameAction.Play(cardIndex, targetIndex = -1)
+readonly record struct CardSpec(string Id, bool Upgraded)               // Api/CardSpec.cs (2026-10-30)
 
 sealed class CombatSim
     static CombatSim Create(ulong seed, IReadOnlyList<string> deckIds, string encounterId, int ascension = 0,
                             int? currentHp = null, int? maxHp = null)
     static CombatSim Create(RunRngSet rng, IReadOnlyList<string> deckIds, string encounterId, int ascension = 0,
                             int? currentHp = null, int? maxHp = null)   // rng is deep-cloned, never mutated
+    static CombatSim Create(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension,
+                            int? currentHp, int? maxHp)                 // CardSpec deck (upgrades); CombatRunContext.Default
+    static CombatSim Create(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension,
+                            int? currentHp, int? maxHp, CombatRunContext context)  // 2026-10-30: seeding/floor for encounter Rng
     static CombatSim Create(ulong seed, IReadOnlyList<string> deckIds, string encounterId, int ascension,
                             Action<CombatState> populateMonsters)     // test seam: replaces the encounter spawn
     static CombatSim FromState(CombatState state)
@@ -160,6 +165,13 @@ sealed class MegaRandom                     // xoshiro256** kernel, Random/MegaR
     MegaRandom DeepClone(); void WriteCanonical(CanonicalWriter w)
 
 readonly record struct RngSnapshot(int Counter, ulong S0, ulong S1, ulong S2, ulong S3)  // = SerializableRng
+
+enum RngSeedingScheme : byte { Xxh64, LegacyV18 }                       // 2026-10-30, Random/CombatRunContext.cs
+readonly record struct CombatRunContext(int ActIndex, int TotalFloor, int? MapCol = null, int? MapRow = null,
+                                        RngSeedingScheme Seeding = RngSeedingScheme.Xxh64)
+    // Default (act 0, floor 2, xxh64); ForAct(actNumber, totalFloor, mapCol, mapRow, seeding); ParseSeeding(string)
+    // EncounterSeed/CreateEncounterRng(runSeed, encounterIdEntry); MonsterSeed/CreateMonsterRng(runSeed, combatId)
+// RngSeeds + uint LegacyV18Encounter(ulong runSeed, int totalFloor, string encounterIdEntry)
 
 sealed class Rng                            // wrapper with _counter, Random/Rng.cs
     Rng(ulong seed = 0); Rng(ulong seed, string name); Rng(RngSnapshot s)
@@ -430,6 +442,14 @@ abstract class EncounterDef                   // Models/EncounterModel.cs
     protected EncounterDef(string id); string Id; virtual bool IsWeak
     abstract IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs)
 sealed record MonsterSpawn(MonsterDef Def, string? SlotName = null, Action<MonsterState>? Configure = null)
+
+// 2026-10-30 (rng-encounter-private.md §6): MonsterDef + virtual bool UsesPrivateRng => false;
+//   virtual void InitPrivateRng(cs, self, rng)   (no P0 monster opts in)
+// EncounterDef + virtual IReadOnlyList<string> Slots => []; virtual GenerateMonsters(cs, rng) => GenerateMonsters(cs);
+//   protected EncounterRngRequired()
+// MonsterSpawner + Spawn/SpawnEncounter/CreateEncounterRng(cs, …, CombatRunContext);
+//   SortEnemiesBySlotName(cs, encounter); IndexOfSlot(slots, slotName)
+//   (the setup slot sort runs after each slotted monster's SetUpForCombat)
 static class MonsterSpawner
     MonsterState Spawn(CombatState cs, MonsterSpawn spawn)  // allocate CombatId, CreateExtraState, Configure, roll HP (Niche)
     void SpawnEncounter(CombatState cs, EncounterDef encounter, List<MonsterState>? spawned = null)  // spawn + add, one by one
@@ -498,6 +518,10 @@ static class CombatLoop
     StartPlayerTurn; EndPlayerTurn; RunEnemyTurn; CheckWinCondition; CheckForEmptyHand(cs, player); Step(cs, action)
 static class LegalActionGenerator  Fill(cs, buffer); CanPlay(cs, card, out UnplayableReason); IsAtDecisionPoint(cs);
                                    IsLegal(cs, action); TryResolve(cs, action, out target, out error)
+
+// 2026-10-30: CombatLoop + CreateCombat/SetUpCombat(RunRngSet, IReadOnlyList<CardSpec>, encounterId|EncounterDef,
+//   ascension, currentHp, maxHp, CombatRunContext [, populateMonsters]) — existing signatures unchanged;
+//   without a context they run with CombatRunContext.Default (xxh64, floor 2); see rng-encounter-private.md §6
 static class ActionExecutor   PlayCard(cs, handIndex, target)
 static class CardPileCmd      Draw(cs, player) / Draw(cs, count, player, fromHandDraw); Shuffle; ShuffleIfNecessary;
                               Add; AddGeneratedCardToCombat; Discard; Exhaust; RemoveFromCombat

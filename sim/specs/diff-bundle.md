@@ -28,26 +28,41 @@
       // + Neow 所得卡按获得顺序追加；原位升级（NEOWS_TALISMAN 等）不改顺序
   "relics": [ "BURNING_BLOOD", "NEOWS_TALISMAN" ],  // 必须全部 ∈ 战斗惰性白名单
   "rng_offsets": { "Niche": 1 },                // 开战前各流已消耗的 counter 数
-      // 首战配方：Niche = 6·[KALEIDOSCOPE] + 1·[NEW_LEAF] + 1·[NEOWS_BONES]，
+      // 首战配方：Niche = 6·[KALEIDOSCOPE] + 1·[NEW_LEAF] + 1·[NEOWS_BONES]
+      // （6 = 2 次 × StableShuffle(其余 4 个角色卡池) 各 3 次 NextInt；Neow 只在
+      //   全角色解锁时提供 KALEIDOSCOPE，故恒为 6），
       // 其余 sim 相关流（Shuffle/MonsterAi/CombatTargets）= 0
   "decisions": [
     { "index": 0,
-      "pre_state": { <projection> },            // actions[].state_seq 对齐的快照投影
+      "pre_state": { <projection> } | null,     // actions[].state_seq 对齐的快照投影；该快照取于上一张牌
+                                                 // 结算中途时，按其间事件前滚到结算后（settled 模式）；
+                                                 // 无法前滚 ⇒ null = 未观测：重放、不比较
+      "oracle": { ... },                         // exporter 溯源：action_seq, state_seq, settled, pending_events,
+                                                 // combat_card_index, view_state_seq, rolled_forward /
+                                                 // unobserved_reason, snapshot_pre_state；消费端原样保留、不比较
       "action": { "type": "play_card", "hand_index": 2,
                   "card_id": "BASH", "upgraded": false,
                   "target_combat_id": 1 } },     // 或 {"type": "end_turn"}
     ...
   ],
   "outcome": "win" | "loss" | "abandoned",
-  "final_hp": 52                                 // 战斗内最后快照的玩家 HP（胜利后治疗不计）
+  "final_hp": 52,                                // 战斗内最后快照的玩家 HP（胜利后治疗不计）
+  "ineligible_reasons": [ "..." ]                // 仅 --include-ineligible 写入 ineligible/ 的 bundle；
+                                                 // harness 默认跳过，--include-ineligible 时才重放
 }
 ```
 
-决策定义：`play_card` + `end_turn`。排除 `ready_to_begin_enemy_turn`（与
-end_turn 重复）和 context 为 SINGLETON.MULTIPLAYER_SCALING_MODEL 的自动
-`player_choice`。`hand_index` = 该实例在 pre_state 手牌中的位置（exporter 用
-canonical 的实例解析从 `combat_card_index` 求得）；`card_id`/`upgraded` 作
-交叉校验。
+决策定义：`play_card` + `end_turn`。排除 `ready_to_begin_enemy_turn`（每次回合
+结束后都会记录；若自上一个起没有记录 `end_turn` ⇒ 不合格 `turn_end_unrecorded`）。
+战斗内的任何 `player_choice`（弃牌、选牌…）v1 无法表达 ⇒ 不合格
+`unsupported_action:player_choice`；recorder 的 `context_model` 是最后一次
+`PushModel` 的模型且从不出栈，`SINGLETON.MULTIPLAYER_SCALING_MODEL` 标签不表示
+自动选择。`hand_index` = 该实例在 pre_state 手牌中的位置：`combat_card_index`
+是 NetCombatCardDb id 而非手牌位置；exporter 用可见手牌求解（除 `index`/
+`description` 外各字段都相同的副本可互换，取第一张；否则须由动作后快照唯一
+确定，否则不合格 `hand_index_ambiguous`）；`card_id`/`upgraded` 作交叉校验。
+动作的 `state_seq` 指向战斗中打开的地图视图快照时，用其前最近的战斗快照
+（`oracle.view_state_seq` 记录地图快照）。
 
 ## projection（两侧必须按同一规则生成；只含 id，不含本地化名）
 
@@ -85,10 +100,14 @@ canonical 的实例解析从 `combat_card_index` 求得）；`card_id`/`upgraded
   `RngSeeds.LegacyV18Kernel(seed, name, 0)`（核对迁移公式
   SerializableRunV18ToV19.cs:64-66,164-173 + StringHelper.cs:120-134）。
 - `rng_offsets` 单位 = counter：对该流连续拉取 k 次（每次 1 个 u64，counter+1）。
-- Create 签名（本轮新增 upgraded 支持）：
-  `CombatSim.Create(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId,
-   int ascension, int? currentHp, int? maxHp)`，`CardSpec = (string Id, bool Upgraded)`。
-  deck 顺序 = bundle 顺序，不排序。
+- Create 签名：`CombatSim.Create(RunRngSet rng, IReadOnlyList<CardSpec> deck,
+  string encounterId, int ascension, int? currentHp, int? maxHp,
+  CombatRunContext context)`，`CardSpec = (string Id, bool Upgraded)`，
+  `context = CombatRunContext.ForAct(source.act, source.floor, null, null,
+  CombatRunContext.ParseSeeding(seeding))`。遭遇私有 Rng 的种子取决于 seeding
+  与 TotalFloor（`SLIMES_WEAK` 组成、`CORPSE_SLUGS_WEAK` 起手招式）；不带
+  context 的六参数重载恒用 `CombatRunContext.Default`（xxh64、floor 2），对
+  legacy_v18 或非 2 层的 bundle 是错的。deck 顺序 = bundle 顺序，不排序。
 - 投影时点 = 每个决策执行前（开局投影 = setup+首抽后、首决策前）。
 
 ## exporter 侧约定

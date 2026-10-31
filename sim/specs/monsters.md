@@ -19,6 +19,14 @@ Chosen: **`NibbitsWeak`** (one `Nibbit`): it is the first encounter a new player
 the bench default, it needs only `StrengthPower` (shared set), and it exercises monster
 attack, monster block, a self-buff and a `ConditionalBranchState`.
 
+Ported since (2026-10-30): all eight weak encounters of act index 0 — Overgrowth's
+`FuzzyWurmCrawlerWeak`, `NibbitsWeak`, `ShrinkerBeetleWeak`, `SlimesWeak` and Underdocks'
+`CorpseSlugsWeak`, `SeapunkWeak`, `SludgeSpinnerWeak`, `ToadpolesWeak`
+(`Models.Acts/Underdocks.cs:44,71,81,84,87`), specified in `monsters-wurm-beetle.md`,
+`monsters-slimes-weak.md`, `monsters-corpseslugs-seapunk.md` and `monsters-underdocks-weak.md`;
+`SlimesWeak` draws its composition and `CorpseSlugsWeak` its starters from the encounter `Rng`
+(`rng-encounter-private.md` §3).
+
 Ported:
 
 | Sim type | File | Game source |
@@ -228,13 +236,12 @@ rule RNG stream or changes state.
 
 ## 8. Deferred / not ported
 
-- Per-monster `MonsterModel.Rng` (`seed + mapCol + mapRow + actIndex + combatId`,
-  `Combat/CombatState.cs:721`): unused by Nibbit; needs map coordinates the sim does not
-  have (`RngSeeds.Monster` exists). Few monsters read it.
-- Encounter `Rng` (`Models/EncounterModel.cs:211-215`) for encounters that randomize their
-  spawn list (e.g. `SlimesWeak`): `EncounterDef.GenerateMonsters(cs)` has no access to it yet.
-- `SortEnemiesBySlotName` when a spawned creature has a slot (`Combat/CombatManager.cs:6999-7002`,
-  `Combat/CombatState.cs:958-964`): not needed for `NIBBITS_WEAK` (slot `null`).
+- Per-monster `MonsterModel.Rng`, encounter `Rng` and `SortEnemiesBySlotName`: ported 2026-10-30
+  (`rng-encounter-private.md` §3-§5). The encounter `Rng` is seeded through `CombatRunContext`
+  (seeding scheme, `TotalFloor`); the per-monster `Rng` is a seam
+  (`MonsterDef.UsesPrivateRng`/`InitPrivateRng`) that no P0 monster uses — the bundle path passes
+  no map coordinate and the v0.107.1 formula is not ported (`rng-encounter-private.md` §8); the
+  setup slot sort runs after each slotted monster's `SetUpForCombat`.
 - Multiplayer HP scaling, bestiary, `GetAllMoves`.
 - `CombatManager.RemoveCreature` (`Combat/CombatManager.cs:7171-7180`, called by `Kill` at
   `Commands/CreatureCmd.cs:2817` even while the monster is performing its move) runs

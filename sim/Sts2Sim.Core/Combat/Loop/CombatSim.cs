@@ -20,6 +20,18 @@ public sealed class CombatSim
         return new(CombatLoop.CreateCombat(rng.DeepClone(), deckIds, encounterId, ascension, currentHp, maxHp));
     }
 
+    public static CombatSim Create(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp)
+    {
+        ArgumentNullException.ThrowIfNull(rng);
+        return new(CombatLoop.CreateCombat(rng.DeepClone(), deck, encounterId, ascension, currentHp, maxHp));
+    }
+
+    public static CombatSim Create(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, CombatRunContext context)
+    {
+        ArgumentNullException.ThrowIfNull(rng);
+        return new(CombatLoop.CreateCombat(rng.DeepClone(), deck, encounterId, ascension, currentHp, maxHp, context));
+    }
+
     public static CombatSim Create(ulong seed, IReadOnlyList<string> deckIds, string encounterId, int ascension, Action<CombatState> populateMonsters)
     {
         ArgumentNullException.ThrowIfNull(populateMonsters);

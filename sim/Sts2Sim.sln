@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sts2Sim.Tests", "Sts2Sim.Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sts2Sim.Bench", "Sts2Sim.Bench\Sts2Sim.Bench.csproj", "{16427D85-E91B-4AF4-AB9A-634D8474928B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sts2Sim.Diff", "Sts2Sim.Diff\Sts2Sim.Diff.csproj", "{5E784B6B-85B7-4692-8CA7-A66BC2141209}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{16427D85-E91B-4AF4-AB9A-634D8474928B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{16427D85-E91B-4AF4-AB9A-634D8474928B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{16427D85-E91B-4AF4-AB9A-634D8474928B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5E784B6B-85B7-4692-8CA7-A66BC2141209}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5E784B6B-85B7-4692-8CA7-A66BC2141209}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5E784B6B-85B7-4692-8CA7-A66BC2141209}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5E784B6B-85B7-4692-8CA7-A66BC2141209}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

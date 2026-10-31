@@ -31,6 +31,12 @@ public abstract class MonsterDef
     public virtual void AfterAddedToRoom(CombatState cs, MonsterState self)
     {
     }
+
+    public virtual bool UsesPrivateRng => false;
+
+    public virtual void InitPrivateRng(CombatState cs, MonsterState self, Rng rng)
+    {
+    }
 }
 
 public sealed record MonsterSpawn(MonsterDef Def, string? SlotName = null, Action<MonsterState>? Configure = null);
@@ -46,12 +52,21 @@ public abstract class EncounterDef
 
     public virtual bool IsWeak => false;
 
+    public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
+
     public abstract IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs);
+
+    public virtual IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs, Rng rng) => GenerateMonsters(cs);
+
+    protected InvalidOperationException EncounterRngRequired()
+        => new($"Encounter {Id} draws from its private Rng; generate it with GenerateMonsters(cs, rng), as MonsterSpawner.SpawnEncounter does.");
 }
 
 public static class MonsterSpawner
 {
-    public static MonsterState Spawn(CombatState cs, MonsterSpawn spawn)
+    public static MonsterState Spawn(CombatState cs, MonsterSpawn spawn) => Spawn(cs, spawn, CombatRunContext.Default);
+
+    public static MonsterState Spawn(CombatState cs, MonsterSpawn spawn, CombatRunContext context)
     {
         var def = spawn.Def;
         var extra = def.CreateExtraState();
@@ -69,18 +84,51 @@ public static class MonsterSpawner
         monster.MaxHp = hp;
         monster.CurrentHp = hp;
         monster.MaxHpBeforeModification = hp;
+        if (def.UsesPrivateRng)
+        {
+            def.InitPrivateRng(cs, monster, context.CreateMonsterRng(cs.Rng.Seed, monster.CombatId));
+        }
         return monster;
     }
 
     public static void SpawnEncounter(CombatState cs, EncounterDef encounter, List<MonsterState>? spawned = null)
+        => SpawnEncounter(cs, encounter, CombatRunContext.Default, spawned);
+
+    public static void SpawnEncounter(CombatState cs, EncounterDef encounter, CombatRunContext context, List<MonsterState>? spawned = null)
     {
-        var spawns = encounter.GenerateMonsters(cs);
+        ArgumentNullException.ThrowIfNull(encounter);
+        var spawns = encounter.GenerateMonsters(cs, CreateEncounterRng(cs, encounter, context));
         for (int i = 0; i < spawns.Count; i++)
         {
-            var monster = Spawn(cs, spawns[i]);
+            var monster = Spawn(cs, spawns[i], context);
             cs.Monsters.Add(monster);
             spawned?.Add(monster);
         }
+    }
+
+    public static Rng CreateEncounterRng(CombatState cs, EncounterDef encounter, CombatRunContext context)
+        => context.CreateEncounterRng(cs.Rng.Seed, encounter.Id);
+
+    public static void SortEnemiesBySlotName(CombatState cs, EncounterDef? encounter)
+    {
+        if (encounter == null)
+        {
+            return;
+        }
+        var slots = encounter.Slots;
+        cs.Monsters.Sort((a, b) => IndexOfSlot(slots, a.SlotName) - IndexOfSlot(slots, b.SlotName));
+    }
+
+    public static int IndexOfSlot(IReadOnlyList<string> slots, string? slotName)
+    {
+        for (int i = 0; i < slots.Count; i++)
+        {
+            if (string.Equals(slots[i], slotName, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public static int RollUniqueMonsterHp(CombatState cs, MonsterState self, int minInitialHp, int maxInitialHp, Rng rng)

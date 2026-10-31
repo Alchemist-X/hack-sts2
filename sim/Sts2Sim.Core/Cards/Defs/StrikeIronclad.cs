@@ -6,6 +6,7 @@ public sealed class StrikeIronclad : CardDef
     public const int Cost = 1;
     public const decimal BaseDamage = 6m;
     public const decimal DamageUpgrade = 3m;
+    public const decimal UpgradedDamage = BaseDamage + DamageUpgrade;
 
     private static readonly CardTag[] Tags = { CardTag.Strike };
 

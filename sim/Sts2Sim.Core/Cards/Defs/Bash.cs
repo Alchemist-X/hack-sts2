@@ -8,6 +8,8 @@ public sealed class Bash : CardDef
     public const decimal BaseVulnerable = 2m;
     public const decimal DamageUpgrade = 2m;
     public const decimal VulnerableUpgrade = 1m;
+    public const decimal UpgradedDamage = BaseDamage + DamageUpgrade;
+    public const decimal UpgradedVulnerable = BaseVulnerable + VulnerableUpgrade;
 
     public Bash()
         : base(CardId, Cost, CardType.Attack, CardRarity.Basic, TargetType.AnyEnemy)

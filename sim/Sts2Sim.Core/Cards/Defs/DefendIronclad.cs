@@ -6,6 +6,7 @@ public sealed class DefendIronclad : CardDef
     public const int Cost = 1;
     public const decimal BaseBlock = 5m;
     public const decimal BlockUpgrade = 3m;
+    public const decimal UpgradedBlock = BaseBlock + BlockUpgrade;
 
     private static readonly CardTag[] Tags = { CardTag.Defend };
 

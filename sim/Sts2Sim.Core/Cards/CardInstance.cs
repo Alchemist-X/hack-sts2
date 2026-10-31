@@ -25,6 +25,31 @@ public sealed class CardInstance : ICanonical
 
     public static CardInstance Create(CombatState cs, CardDef def) => new(def, cs.AllocateCardInstanceId());
 
+    public static CardInstance Create(CombatState cs, CardSpec spec)
+    {
+        var def = ResolveDef(spec);
+        var card = new CardInstance(def, cs.AllocateCardInstanceId());
+        if (spec.Upgraded)
+        {
+            card.Upgrade();
+        }
+        return card;
+    }
+
+    public static CardDef ResolveDef(CardSpec spec)
+    {
+        if (spec.Id is null)
+        {
+            throw new ArgumentException("A card spec needs a card id.", nameof(spec));
+        }
+        var def = CardRegistry.Get(spec.Id);
+        if (spec.Upgraded && def.MaxUpgradeLevel < 1)
+        {
+            throw new ArgumentException($"{spec.Id} cannot be upgraded (MaxUpgradeLevel {def.MaxUpgradeLevel}), so '{spec}' is not a card the game can hold.", nameof(spec));
+        }
+        return def;
+    }
+
     public CardDef Def { get; }
 
     public string Id => Def.Id;
@@ -55,6 +80,8 @@ public sealed class CardInstance : ICanonical
     public bool IsUpgraded => UpgradeLevel > 0;
 
     public bool IsUpgradable => UpgradeLevel < Def.MaxUpgradeLevel;
+
+    public CardSpec Spec => new(Def.Id, IsUpgraded);
 
     public DynamicVarSet Vars { get; set; }
 

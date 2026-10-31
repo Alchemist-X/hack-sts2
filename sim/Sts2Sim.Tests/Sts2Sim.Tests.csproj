@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Sts2Sim.Core/Sts2Sim.Core.csproj" />
+    <ProjectReference Include="../Sts2Sim.Diff/Sts2Sim.Diff.csproj" />
   </ItemGroup>
 
 </Project>
