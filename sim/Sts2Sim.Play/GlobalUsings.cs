@@ -1,0 +1,10 @@
+global using System.Globalization;
+global using System.Text;
+global using System.Text.Json;
+global using Sts2Sim.Core;
+global using Sts2Sim.Core.Cards;
+global using Sts2Sim.Core.Combat.Pipeline;
+global using Sts2Sim.Core.Monsters;
+global using Sts2Sim.Core.Powers;
+global using Sts2Sim.Core.Registry;
+global using Sts2Sim.Core.State;
