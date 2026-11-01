@@ -32,11 +32,15 @@ public static class RunLoop
 
     public static CharacterStart GetCharacterStart(string characterId)
     {
+        if (CharacterRegistry.TryGet(characterId, out var def))
+        {
+            return def.ToCharacterStart();
+        }
         if (string.Equals(characterId, Ironclad.CharacterId, StringComparison.Ordinal))
         {
             return Ironclad;
         }
-        throw new NotSupportedException($"Character {characterId} has no ported starting data (only {Ironclad.CharacterId}).");
+        throw new NotSupportedException($"Character {characterId} has no ported starting data.");
     }
 
     public static IReadOnlyList<ActModel> SelectActs(RunConfig config)
