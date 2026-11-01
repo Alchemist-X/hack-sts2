@@ -341,6 +341,52 @@ public static class CreatureCmd
         SetMaxHp(cs, creature, Math.Max(1.0m, newMaxHp));
     }
 
+    public static void Heal(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat is { } cs)
+        {
+            Heal(cs, creature, amount);
+            return;
+        }
+        CreatureInternals.HealInternal(creature, amount);
+    }
+
+    public static void GainMaxHp(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat is { } cs)
+        {
+            GainMaxHp(cs, creature, amount);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use LoseMaxHp for max HP loss.");
+        }
+        int oldMaxHp = creature.MaxHp;
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(0m, creature.MaxHp + amount));
+        Heal(rs, creature, creature.MaxHp - oldMaxHp);
+    }
+
+    public static void LoseMaxHp(RunState rs, CreatureState creature, decimal amount, bool isFromCard)
+    {
+        if (rs.Combat is { } cs)
+        {
+            LoseMaxHp(cs, creature, amount, isFromCard);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use GainMaxHp for max HP gain.");
+        }
+        decimal newMaxHp = creature.MaxHp - amount;
+        if (newMaxHp < creature.CurrentHp)
+        {
+            var props = isFromCard ? (ValueProp.Unblockable | ValueProp.Unpowered | ValueProp.Move) : (ValueProp.Unblockable | ValueProp.Unpowered);
+            CreatureInternals.LoseHpInternal(creature, creature.CurrentHp - newMaxHp, props);
+        }
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(1.0m, newMaxHp));
+    }
+
     public static void SetMaxAndCurrentHp(CombatState cs, CreatureState creature, decimal amount)
     {
         SetMaxHp(cs, creature, amount);

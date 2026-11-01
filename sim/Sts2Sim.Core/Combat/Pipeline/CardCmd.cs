@@ -133,6 +133,44 @@ public static partial class CardCmd
         return results;
     }
 
+    public static IReadOnlyList<CardPileAddResult> TransformInDeck(RunState rs, IReadOnlyList<(CardInstance Original, CardInstance Replacement)> transformations)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(transformations);
+        var withIndex = new List<(CardInstance Original, int Index, CardInstance Replacement)>(transformations.Count);
+        foreach (var (original, replacement) in transformations)
+        {
+            if (!original.IsTransformable(null) || !original.IsInDeck)
+            {
+                throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable or not in the deck.");
+            }
+            int index = original.Owner.Deck.IndexOf(original);
+            original.RemoveFromCurrentPile(null);
+            withIndex.Add((original, index, replacement));
+        }
+        withIndex.Sort(static (a, b) => a.Index.CompareTo(b.Index));
+        var results = new List<CardPileAddResult>(withIndex.Count);
+        foreach (var (original, _, replacement) in withIndex)
+        {
+            if (!ReferenceEquals(replacement.Owner, original.Owner))
+            {
+                throw new InvalidOperationException($"Attempting to transform card {original} to {replacement}, but the replacement has a different owner!");
+            }
+            List<AbstractModel>? modifying = null;
+            var added = Hook.ModifyCardBeingAddedToDeck(rs, replacement, ref modifying);
+            original.Owner.Deck.Add(added);
+            Hook.AfterCardChangedPiles(rs, null, added, PileType.Deck, null);
+            original.Def.AfterTransformedFrom(null, original);
+            added.Def.AfterTransformedTo(null, added);
+            results.Add(new CardPileAddResult(true, added, null, PileType.None, modifying));
+        }
+        foreach (var (original, _, _) in withIndex)
+        {
+            original.RemoveFromState(null);
+        }
+        return results;
+    }
+
     public static EnchantmentModel? Enchant<T>(CardInstance card, decimal amount) where T : EnchantmentModel, new()
         => Enchant(new T(), card, amount);
 
