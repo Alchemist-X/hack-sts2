@@ -86,6 +86,9 @@ public sealed class SegmentResult
 
     public int DecisionsUnobserved { get; set; }
 
+    // W4.1: mcr play_card decisions whose hand index the sim re-resolved (V2Runner.ResolveMcrPlayIndex).
+    public int McrPlayIndicesResolved { get; set; }
+
     public List<int> AgreedIndices { get; } = new();
 
     public SegmentDivergence? Divergence { get; set; }

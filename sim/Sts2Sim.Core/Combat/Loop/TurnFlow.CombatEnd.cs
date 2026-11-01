@@ -30,6 +30,7 @@ public static partial class CombatLoop
         SetPhaseForAllPlayers(cs, PlayerTurnPhase.None);
         var player = cs.Player;
         ReviveBeforeCombatEnd(cs, player);
+        cs.PlayerHpAtCombatEnd = player.CurrentHp;
         Hook.AfterCombatEnd(cs.Run, cs, null);
         cs.History.Clear();
         PlayerAfterCombatEnd(player);

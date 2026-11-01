@@ -22,6 +22,8 @@ public abstract class CombatDriver
     public abstract void Step(GameAction action);
 
     public virtual RunSim? Run => null;
+
+    public abstract CombatDriver Clone();
 }
 
 public sealed class StandaloneCombatDriver : CombatDriver
@@ -39,7 +41,7 @@ public sealed class StandaloneCombatDriver : CombatDriver
 
     public override string OutcomeName => BundleRunner.OutcomeName(Sim.Outcome);
 
-    public override int PlayerHp => Sim.State.Player.CurrentHp;
+    public override int PlayerHp => BundleRunner.FinalHp(Sim.State);
 
     public override ChoicePrompt? PendingChoice => Sim.PendingChoice;
 
@@ -55,6 +57,8 @@ public sealed class StandaloneCombatDriver : CombatDriver
     }
 
     public override void Step(GameAction action) => Sim.Step(action);
+
+    public override CombatDriver Clone() => new StandaloneCombatDriver(Sim.Clone());
 }
 
 public sealed class RunCombatDriver : CombatDriver
@@ -89,7 +93,7 @@ public sealed class RunCombatDriver : CombatDriver
         }
     }
 
-    public override int PlayerHp => Sim.State.Players[0].CurrentHp;
+    public override int PlayerHp => Sim.State.Combat is { } cs ? BundleRunner.FinalHp(cs) : Sim.State.Players[0].CurrentHp;
 
     public override ChoicePrompt? PendingChoice => Sim.PendingChoice;
 
@@ -110,4 +114,6 @@ public sealed class RunCombatDriver : CombatDriver
     }
 
     public override void Step(GameAction action) => Sim.Step(RunAction.FromCombat(action));
+
+    public override CombatDriver Clone() => new RunCombatDriver(Sim.Clone());
 }

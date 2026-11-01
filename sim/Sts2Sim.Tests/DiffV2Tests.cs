@@ -153,11 +153,7 @@ public static class DiffV2Tests
         var tmp = (JsonObject)shell.DeepClone();
         tmp["segments"] = new JsonArray(new JsonObject { ["id"] = "c1", ["kind"] = "combat", ["act"] = 1, ["floor"] = 2, ["room_model_id"] = EncounterId, ["start"] = start.DeepClone(), ["decisions"] = new JsonArray() });
         var parsed = RunBundleJson.Parse(tmp.ToJsonString());
-        var sim = BundleRunner.CreateSim(parsed.Segments[0].CombatStart!);
-        foreach (var potion in RunBundleJson.StartPotions(parsed.Segments[0]))
-        {
-            sim.State.Player.AddPotionInternal(Sts2Sim.Core.Registry.PotionRegistry.Create(potion.Id), potion.Slot);
-        }
+        var sim = BundleRunner.CreateSim(parsed.Segments[0].CombatStart!, V2Runner.StartExtras(parsed.Segments[0]));
         var policy = policySeed is ulong ps ? new Rng(ps) : null;
         var decisions = new JsonArray();
         while (!sim.IsTerminal && decisions.Count < maxDecisions)
@@ -189,7 +185,7 @@ public static class DiffV2Tests
             ["attempt"] = 1,
             ["start"] = start,
             ["decisions"] = decisions,
-            ["outcome"] = new JsonObject { ["result"] = BundleRunner.OutcomeName(sim.Outcome), ["final_hp"] = sim.State.Player.CurrentHp }
+            ["outcome"] = new JsonObject { ["result"] = BundleRunner.OutcomeName(sim.Outcome), ["final_hp"] = BundleRunner.FinalHp(sim.State) }
         });
         return shell;
     }
@@ -447,7 +443,7 @@ public static class DiffV2Tests
         Assert.Equal(un.DecisionsTotal, un.DecisionsUnobserved);
 
         var character = (JsonObject)bundle.DeepClone();
-        character["character"] = "SILENT";
+        character["character"] = "NOT_A_CHARACTER";
         var c = Run(character).Single();
         Assert.Equal(BundleStatus.Skipped, c.Status);
         Assert.Equal(DivergenceClass.ContentNotPorted, c.Class);
@@ -587,8 +583,8 @@ public static class DiffV2Tests
         Decision(hp, 0, 1)["pre_state"]!["player"]!["hp"] = 1;
         hp["source"]!["lineage"] = "HP";
         var silent = (JsonObject)bundle.DeepClone();
-        silent["character"] = "SILENT";
-        silent["source"]!["lineage"] = "SILENT";
+        silent["character"] = "NOT_A_CHARACTER";
+        silent["source"]!["lineage"] = "NOT_A_CHARACTER";
         var results = Run(bundle).Concat(Run(hp)).Concat(Run(silent)).ToList();
         var report = ReportV2.Build(results, new List<IgnoredFile>(), new[] { "memory" }, new V2Options(), null, new SortedSet<string>());
         var combat = report["by_version"]![Version]!["by_segment_kind"]!["combat"]!;

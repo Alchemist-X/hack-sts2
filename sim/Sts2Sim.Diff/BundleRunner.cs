@@ -1,3 +1,6 @@
+using Sts2Sim.Core.Potions;
+using Sts2Sim.Core.Run;
+
 namespace Sts2Sim.Diff;
 
 public enum BundleStatus
@@ -75,6 +78,8 @@ public sealed class BundleResult
     public JsonNode? FinalSimProjection { get; set; }
 }
 
+public sealed record CombatStartExtras(IReadOnlyList<KeyValuePair<int, string>> Potions, int? MaxPotionSlots, int? Gold);
+
 public static class BundleRunner
 {
     public const string UnknownVersion = "unknown";
@@ -107,18 +112,34 @@ public static class BundleRunner
         {
             return gate;
         }
-        if (!includeExporterIneligible && b.IneligibleReasons.Count > 0)
+        var reasons = OpenExporterReasons(b.IneligibleReasons);
+        if (!includeExporterIneligible && reasons.Count > 0)
         {
-            return $"the exporter marked this attempt ineligible ({string.Join("; ", b.IneligibleReasons)}); --include-ineligible replays it anyway";
+            return $"the exporter marked this attempt ineligible ({string.Join("; ", reasons)}); --include-ineligible replays it anyway";
         }
         return null;
     }
 
+    // Exporter reasons that only described the pre-W4.1 harness or the exporter's own content scan are closed by the
+    // gate itself:
+    // - `relic_not_whitelisted:<id>` (sts2rec/diff_bundle.py relic_reasons): the gate builds every ported relic.
+    // - `card_upgrade_not_ported:<id>` (sts2rec/diff_export_v2.py: the scan looks for an upgrade override): cards whose
+    //   upgrade is an `IsUpgraded` branch in OnPlay have none in the game either (Models.Cards/HiddenDaggers.cs:122,
+    //   Splash.cs:70, Malaise.cs:74), so the reason is closed for every card the sim registers.
+    public static IReadOnlyList<string> OpenExporterReasons(IReadOnlyList<string> reasons)
+        => reasons.Where(r => !r.StartsWith(RelicNotWhitelistedReason, StringComparison.Ordinal)
+            && !(r.StartsWith(CardUpgradeNotPortedReason, StringComparison.Ordinal) && CardRegistry.Defs.Contains(r[CardUpgradeNotPortedReason.Length..])))
+            .ToList();
+
+    public const string RelicNotWhitelistedReason = "relic_not_whitelisted:";
+
+    public const string CardUpgradeNotPortedReason = "card_upgrade_not_ported:";
+
     private static string? SimGateReason(DiffBundle b)
     {
-        if (!string.Equals(b.Character, StartingDecks.IroncladCharacterId, StringComparison.Ordinal))
+        if (!CharacterRegistry.TryGet(b.Character, out _))
         {
-            return $"character {b.Character} is not supported (the sim builds an Ironclad player)";
+            return $"character {b.Character} is not ported";
         }
         if (RngSetup.HasOldPrefix(b.Seed))
         {
@@ -137,9 +158,9 @@ public static class BundleRunner
         }
         foreach (var relic in b.Relics)
         {
-            if (!RelicWhitelist.Contains(relic))
+            if (!RelicRegistry.Models.Contains(relic))
             {
-                return $"relic {relic} is not on the combat-inert whitelist";
+                return $"relic {relic} is not ported";
             }
         }
         return null;
@@ -166,11 +187,81 @@ public static class BundleRunner
         null,
         CombatRunContext.ParseSeeding(b.Seeding));
 
-    public static CombatSim CreateSim(DiffBundle b)
+    public static CombatSim CreateSim(DiffBundle b) => CreateSim(b, null);
+
+    // W4.1 widened gate (sim/specs/diff-report-w4-combat.md W4.1): the player is the bundle's character
+    // (CharacterRegistry: max energy, orb slots) with its real relics and potions, inside a CombatRoom on the room
+    // stack, entered in the game's order (Rooms/CombatRoom.cs StartCombat: CombatManager.SetUpCombat, then
+    // Hook.AfterRoomEntered, then CombatManager.StartCombat), so DIVINE_RIGHT stars (Models.Relics/DivineRight.cs:53,90)
+    // and THE_HUNT's `CurrentRoom is CombatRoom` (Models.Cards/TheHunt.cs:85) behave. The bundle HP is the first
+    // in-combat snapshot (sim/specs/diff-bundle.md `player`), i.e. after the room-entry hooks, so it is re-asserted.
+    public static CombatSim CreateSim(DiffBundle b, CombatStartExtras? extras)
     {
+        ArgumentNullException.ThrowIfNull(b);
         var rng = RngSetup.CreateForBundle(b);
-        return CombatSim.Create(rng, DeckSpecs(b), b.EncounterId, b.Ascension, b.PlayerHp, b.PlayerMaxHp, RunContext(b));
+        var def = CharacterRegistry.Get(b.Character);
+        if (b.PlayerMaxHp <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(b), b.PlayerMaxHp, "Max HP must be positive.");
+        }
+        if (b.PlayerHp <= 0 || b.PlayerHp > b.PlayerMaxHp)
+        {
+            throw new ArgumentOutOfRangeException(nameof(b), b.PlayerHp, $"Current HP must be between 1 and the max HP {b.PlayerMaxHp}.");
+        }
+        var player = new PlayerState(CombatLoop.PlayerCombatId, def.Id, b.PlayerHp, b.PlayerMaxHp, def.MaxEnergy)
+        {
+            BaseOrbSlotCount = def.BaseOrbSlotCount
+        };
+        var run = RunState.CreateStandalone(player, rng, b.Ascension);
+        if (extras?.Gold is int gold)
+        {
+            player.Gold = gold;
+        }
+        if (extras?.MaxPotionSlots is int slots && slots >= 0)
+        {
+            player.PotionSlots = new PotionModel?[slots];
+        }
+        foreach (var spec in DeckSpecs(b))
+        {
+            var cdef = CardInstance.ResolveDef(spec);
+            var card = new CardInstance(cdef, run.AllocateCardInstanceId());
+            card.AttachTo(player);
+            cdef.AfterCreated(card);
+            if (spec.Upgraded)
+            {
+                card.Upgrade();
+            }
+            card.FloorAddedToDeck = 1;
+            player.Deck.Add(card);
+        }
+        foreach (var relic in b.Relics)
+        {
+            player.AddRelicInternal(RelicRegistry.Create(relic));
+        }
+        if (extras != null)
+        {
+            foreach (var (slot, id) in extras.Potions)
+            {
+                var added = player.AddPotionInternal(PotionRegistry.Create(id), slot);
+                if (!added.Success)
+                {
+                    throw new ArgumentException($"potion {id} does not fit slot {slot} (max potion slots {player.MaxPotionCount})");
+                }
+            }
+        }
+        var encounter = EncounterRegistry.Get(b.EncounterId);
+        var room = new CombatRoom(encounter);
+        run.CurrentRooms.Add(room);
+        var setUp = CombatLoop.SetUpCombat(run, player, encounter, RunContext(b));
+        Hook.AfterRoomEntered(run, room);
+        player.MaxHp = b.PlayerMaxHp;
+        player.CurrentHp = b.PlayerHp;
+        return CombatSim.FromSetUp(setUp);
     }
+
+    // Final HP at the recorder's capture point: the last in-combat snapshot, before AfterCombatEnd /
+    // AfterCombatVictory heals (sim/specs/diff-bundle.md `final_hp`).
+    public static int FinalHp(CombatState cs) => cs.PlayerHpAtCombatEnd ?? cs.Player.CurrentHp;
 
     public static string? BundleInconsistency(DiffBundle b)
     {
@@ -311,7 +402,7 @@ public static class BundleRunner
         }
 
         result.SimOutcome = OutcomeName(sim.Outcome);
-        result.SimFinalHp = sim.State.Player.CurrentHp;
+        result.SimFinalHp = FinalHp(sim.State);
         result.FinalSimProjection = SafeProjectJson(sim);
         result.OutcomeChecked = true;
         var finalDiffs = new List<FieldDiff>();

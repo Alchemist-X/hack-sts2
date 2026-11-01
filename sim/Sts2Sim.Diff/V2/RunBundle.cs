@@ -91,6 +91,11 @@ public sealed class BundleSegment
     public string Sha256 { get; init; } = string.Empty;
 
     public string? FormatError { get; set; }
+
+    // W4.1 mcr join (V2/McrJoin.cs): the decoded replay part the combat start was joined from, or why it was not.
+    public string? McrJoinedPart { get; set; }
+
+    public string? McrJoinNote { get; set; }
 }
 
 public sealed class RunBundle
@@ -374,6 +379,25 @@ public static class RunBundleJson
         };
         foreach (var segment in segments)
         {
+            string? mismatch = null;
+            if (segment.FormatError == null && McrJoin.TryJoin(bundle, segment, out mismatch) is { } joined)
+            {
+                try
+                {
+                    // The join's reasons replace the segment's (anchor_* closed); an otherwise clean joined start is eligible.
+                    segment.CombatStart = BuildCombatStart(bundle, segment, $"$.segments[{segments.IndexOf(segment)}].start", joined.Start, joined.Reasons, markedIneligible: false);
+                    segment.McrJoinedPart = joined.Part;
+                    continue;
+                }
+                catch (BundleFormatException ex)
+                {
+                    segment.McrJoinNote = "mcr_join_unreadable: " + ex.Message;
+                }
+            }
+            else if (mismatch != null)
+            {
+                segment.McrJoinNote = mismatch;
+            }
             if (segment.FormatError == null && segment.Kind == SegmentKinds.Combat && segment.Start != null && IsV1ShapedStart(segment.Start))
             {
                 try
@@ -534,8 +558,10 @@ public static class RunBundleJson
     }
 
     private static DiffBundle BuildCombatStart(RunBundle run, BundleSegment segment, string path)
+        => BuildCombatStart(run, segment, path, segment.Start!, segment.EligibilityReasons, segment.Eligible == false);
+
+    private static DiffBundle BuildCombatStart(RunBundle run, BundleSegment segment, string path, JsonObject start, IReadOnlyList<string> eligibilityReasons, bool markedIneligible)
     {
-        var start = segment.Start!;
         string? encounter = start["encounter_id"]?.GetValue<string>() ?? segment.RoomModelId;
         if (encounter == null)
         {
@@ -562,10 +588,10 @@ public static class RunBundleJson
             ["decisions"] = new JsonArray(),
             ["outcome"] = DiffBundle.OutcomeAbandoned
         };
-        if (segment.EligibilityReasons.Count > 0 || segment.Eligible == false)
+        if (eligibilityReasons.Count > 0 || markedIneligible)
         {
             var reasons = new JsonArray();
-            foreach (var reason in segment.EligibilityReasons.DefaultIfEmpty("segment marked ineligible"))
+            foreach (var reason in eligibilityReasons.DefaultIfEmpty("segment marked ineligible"))
             {
                 reasons.Add(reason);
             }

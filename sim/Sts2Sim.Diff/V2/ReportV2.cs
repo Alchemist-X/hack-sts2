@@ -188,6 +188,9 @@ public static class ReportV2
                 ["decisions_compared"] = r.DecisionsCompared,
                 ["decisions_agreed"] = r.DecisionsAgreed,
                 ["decisions_unobserved"] = r.DecisionsUnobserved,
+                ["mcr_play_indices_resolved"] = r.McrPlayIndicesResolved,
+                ["outcome_checked"] = r.OutcomeChecked,
+                ["outcome_agreed"] = r.OutcomeAgreed,
                 ["reason"] = r.Reason
             });
         }

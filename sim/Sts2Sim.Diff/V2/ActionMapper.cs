@@ -18,12 +18,25 @@ public static class ActionMapper
             case V2Action.DiscardPotion:
                 return ApplyPotion(drv, a);
             case V2Action.Choose:
-                return ApplyChoose(drv, a.Picks, a.Bool("skipped") == true, a.Bool("confirm"));
+                return ApplyChoose(drv, HandPicksByIdentity(a), a.Bool("skipped") == true, a.Bool("confirm"));
             case V2Action.UndoEndTurn:
                 return new FieldDiff("action.type", a.Type, null, DiffSeverity.Hard, "undo_end_turn: " + UnsupportedNote);
             default:
                 return new FieldDiff("action.type", a.Type, null, DiffSeverity.Hard, "not a combat action");
         }
+    }
+
+    // Hand selects: the recorder's pick index is into its candidate list in UI order, while the game's prompt lists
+    // the hand in hand order, filtered (Commands/CardSelectCmd.cs:3687 FromHand: `PileType.Hand.GetPile(player).Cards
+    // .Where(filter)`). Picks are resolved by identity (id + upgraded, first unpicked match); copies are
+    // interchangeable.
+    public static IReadOnlyList<ChoosePick> HandPicksByIdentity(V2Action a)
+    {
+        if (!string.Equals(a.Str("kind"), "hand", StringComparison.Ordinal))
+        {
+            return a.Picks;
+        }
+        return a.Picks.Select(p => p.CardId != null ? p with { Index = null } : p).ToList();
     }
 
     private static FieldDiff? ApplyPlayOrEnd(CombatDriver drv, V2Action a)

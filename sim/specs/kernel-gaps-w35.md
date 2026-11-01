@@ -64,3 +64,19 @@ Decompile paths are relative to `output/server-bootstrap/linux-decompiled/`, nam
 - `PipelineTests`: escape records instead of flagging.
 - `W1GateTests`: SOZU excluded from the pilot relic draw (it blocks the potion slots the gate fills).
 - `EndToEndTests`: pinned seed-1 hashes refreshed (canonical format change: ready set, escaped, spawned ids, encounter extra, `IsClone`, `FloorAddedToDeck`).
+
+## W4.1 (combat-fixes, 2026-11-01)
+
+- T2 room history for spawned enemies: `Commands/CreatureCmd.cs:302-307` appends each enemy added mid-combat (once per
+  id) to the current map point's last room `MonsterIds`; ported as `CreatureCmd.AppendToRoomHistory`, called from
+  `CreatureCmd.Add(cs, creature)` and `MonsterSpawner.AddToCombat` (the add path the spawners use), copy-on-write on the
+  shared room record. Test `Test_W41_SpawnedEnemiesAppendToTheRoomHistory` (seed EC039PTFQWV5, LIVING_FOG_NORMAL, end
+  turns until GAS_BOMB). `CombatRoom.OnCombatEnded`'s end-of-combat approximation (run layer) is now redundant (dedupe)
+  and left in place.
+- VIGOR_POWER on monsters: `Models.Powers/VigorPower.cs` BeforeAttack skips `ModelSource != null && !(ModelSource is
+  CardModel)`; `Commands.Builders/AttackCommand.cs:781-791` FromMonster sets no ModelSource, so a monster attack is
+  modified and consumes the Vigor (the sim skipped `IsFromMonster`). Test `Test_W41_MonsterAttackConsumesVigor` (seed
+  K4FB4086NTRE, TERROR_EEL_ELITE A7, Vigor 6, end turn).
+- `CombatState.PlayerHpAtCombatEnd` (harness observation, not canonical): the player HP when the combat is decided, set
+  in `EndCombatInternal` before `AfterCombatEnd` / `AfterCombatVictory`; the diff harness compares the recorder's
+  `final_hp` with it. Test `Test_W41_FinalHpIsReadBeforeVictoryHeals`.

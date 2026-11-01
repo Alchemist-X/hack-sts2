@@ -92,9 +92,11 @@ Decompile paths drop the `MegaCrit.Sts2.Core.` prefix (v0.111.0 tree unless mark
 
 ## Open points
 
-- v0.107.1 hand order without checksums: replicate `NetCombatCardDb` ids (`GameActions.Multiplayer/NetCombatCardDb.cs`:
-  ids over `AllPiles` at `StartCombat`, then on pile changes) in the sim, or resolve `hand_index` by
-  card id against the sim's own hand at replay time (needs a BundleRunner mode, not owned here).
+- v0.107.1 hand order without checksums: resolved by simulation in W4.1 (`V2Runner.ResolveMcrPlayIndex`, harness v2):
+  each mcr play_card decision's hand index is re-resolved against the sim hand by card id + upgrade; among copies, the
+  one whose play reproduces the next checksum state's hand is taken (copies differ by position). All 723 converted
+  replays with `--v2 --include-ineligible`: agree 3 -> 30 (v0.107.1 0 -> 27), replayed decisions 1269 -> 5312
+  (sim/specs/diff-report-w4-combat.md W4.1). Replicating `NetCombatCardDb` ids is no longer needed for that.
 - Projections from checksum states need a reduced comparison profile (no intents / can_play / cost /
   max_energy) in `ProjectionComparer`.
 - v0.110.1 table: needs a v0.110.1 decompile (41 files).

@@ -55,6 +55,7 @@ public sealed class CombatState : ICanonical
         RoundNumber = source.RoundNumber;
         CurrentSide = source.CurrentSide;
         Outcome = source.Outcome;
+        PlayerHpAtCombatEnd = source.PlayerHpAtCombatEnd;
         IsInProgress = source.IsInProgress;
         IsStarting = source.IsStarting;
         NextCreatureId = source.NextCreatureId;
@@ -96,6 +97,11 @@ public sealed class CombatState : ICanonical
     public CombatSide CurrentSide { get; set; }
 
     public CombatOutcome Outcome { get; set; }
+
+    // Harness observation (not canonical state): the player HP when the combat was decided, before AfterCombatEnd /
+    // AfterCombatVictory hooks (BURNING_BLOOD heals 6 in AfterCombatVictory, Models.Relics/BurningBlood.cs:52). The recorder's
+    // last in-combat snapshot (bundle `final_hp`, sim/specs/diff-bundle.md) is taken before those hooks.
+    public int? PlayerHpAtCombatEnd { get; set; }
 
     public bool IsInProgress { get; set; }
 

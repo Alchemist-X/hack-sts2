@@ -89,6 +89,7 @@ public static class MonsterSpawner
         {
             MonsterLifecycle.PrepareForNextTurn(cs, monster, rollNewMove: false);
         }
+        CreatureCmd.AppendToRoomHistory(cs, monster);
         Hook.AfterCreatureAddedToCombat(cs, monster);
     }
 

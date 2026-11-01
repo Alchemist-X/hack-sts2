@@ -108,3 +108,112 @@ The kernel needed no fix. Rows give the segment, the first divergent decision, t
    segment); mcr-joined decks lack enchantments; `?` rooms resolve to `NONE` in the mcr converter.
 5. **Versions**: v0.110.1 run segments are out of scope (rules_version ≠ game_version) and their mcr relic table is
    shifted. v0.107.1 diverges only where v0.111.0 changed a rule (2 classes above).
+
+## W4.1 combat-fixes (2026-11-01, base `4809101`)
+
+Inputs regenerated in this worktree: `export-bundles-v2 tmp/diff-v2` (19 runs, same counts as §1), `replay-convert` →
+`tmp/diff-v2/mcr` (723 replays), v1 `export-bundles --include-ineligible` into the session scratchpad (the exporter
+refuses paths inside the repo). Gate = `Sts2Sim.Diff <dir> --v2` over `g0/`, `g0-ineligible/`, `v2/` (incl. `v2/mcr/`),
+2531 segments, 1294 combat.
+
+### Gate changes (harness, committed)
+
+- `BundleRunner.CreateSim(b, extras)`: the player is `CharacterRegistry.Get(b.Character)` (max energy, orb slots) with
+  the bundle's relics (`RelicRegistry.Create`) and, for v2 segments, `potions`, `max_potion_slots` (set first) and
+  `gold`; the combat is set up inside a `CombatRoom` on the room stack and `Hook.AfterRoomEntered` fires between
+  `SetUpCombat` and `StartCombat` (Rooms/CombatRoom.cs StartCombat order), so DIVINE_RIGHT stars and THE_HUNT's
+  `CurrentRoom is CombatRoom` behave; HP is re-asserted after the room hooks (the bundle HP is the first in-combat
+  snapshot). Gate: character ported, relic ported (the combat-inert whitelist is gone).
+- Exporter reasons closed by the gate (`BundleRunner.OpenExporterReasons`): `relic_not_whitelisted:*`;
+  `card_upgrade_not_ported:<id>` for registered cards (the exporter scans for an upgrade override, but HIDDEN_DAGGERS /
+  SPLASH / MALAISE upgrade through `IsUpgraded` branches in the game too: Models.Cards/HiddenDaggers.cs:122,
+  Splash.cs:70, Malaise.cs:74).
+- mcr join (`V2/McrJoin.cs`, experiment B committed): a combat segment with an `mcr_initial` start anchor takes
+  `rng_offsets`, deck (save order) and relics from `<bundle dir>/mcr/{eligible,ineligible}/<part>.json` when encounter,
+  floor, relics, deck multiset and HP match; `anchor_*` and `recorder_gap:deck_order` close, the decoded bundle's
+  `enchanted_card_in_deck` / `model_table_unverified` / `encounter_unresolved` / `multiplayer` stay as `mcr:` reasons;
+  a mismatch is `anchor_error` (`mcr_join_mismatch: …`).
+- Final HP at the recorder's point: `CombatState.PlayerHpAtCombatEnd` (kernel, set before `AfterCombatEnd` /
+  `AfterCombatVictory`; BURNING_BLOOD heals 6 in AfterCombatVictory, Models.Relics/BurningBlood.cs:52); both combat
+  drivers report it as the final HP.
+- Combat selects (`V2Runner.CompareCombatSelect`): `mode`, `can_confirm`, candidate `index` soft (unprojected UI
+  fields); hand-select candidates compare as a multiset; hand picks resolve by identity, and among identical copies
+  the one whose pick reproduces the next pre_state's hand order is taken (`ResolveHandCopies`) — the game's prompt is
+  the hand in hand order, filtered (Commands/CardSelectCmd.cs:3687), the recorder lists UI order.
+- `SimProjector.DisplayAmount`: HARDENED_SHELL_POWER `Max(0, Amount − damageReceivedThisTurn)`
+  (Models.Powers/HardenedShellPower.cs:25), SLOW_POWER `SlowAmount × 10` (SlowPower.cs:24), TENDER_POWER
+  `CardsPlayedThisTurn` (TenderPower.cs:229). On `oracle.rolled_forward` pre_states their amounts are soft
+  (`SoftenRolledForwardCounter`): the exporter replays pending events onto an older snapshot and cannot advance these
+  event-less counters (PLRUV49CRFQW s29 d8 SLOW 30 vs 40 with pending `card_play_finished`; GM28D28DX794 s32 d12 shell
+  11 vs 5 with pending `damage_received`, HP already rolled forward).
+- mcr hand indices by simulation (`V2Runner.ResolveMcrPlayIndex`, see mcr-replay.md).
+
+### Kernel fixes (port_bug, regression tests in `W41CombatFixesTests`)
+
+| ticket | game source | fix | test (minimal repro) |
+| --- | --- | --- | --- |
+| T2 spawned enemies in the room history | Commands/CreatureCmd.cs:302-307 | `CreatureCmd.AppendToRoomHistory` from `CreatureCmd.Add` and `MonsterSpawner.AddToCombat` | `Test_W41_SpawnedEnemiesAppendToTheRoomHistory` (EC039PTFQWV5, LIVING_FOG_NORMAL, end turns) |
+| T4 TERROR_EEL_ELITE enemy VIGOR (K4FB s21 d15, NBND s26 d25) | Models.Powers/VigorPower.cs BeforeAttack `ModelSource != null && !(ModelSource is CardModel)`; Commands.Builders/AttackCommand.cs:781-791 FromMonster sets no ModelSource | monster attacks are modified by and consume Vigor (the sim skipped `IsFromMonster`); recorded `power_received VIGOR -6` on the enemy side in round 3 confirms | `Test_W41_MonsterAttackConsumesVigor` (K4FB4086NTRE, TERROR_EEL_ELITE A7) |
+
+Both fixes change the canonical form of runs that reach those states: F2 run pins refreshed
+(`SelfConsistencyTests.PinnedRunStreams` seeds 1 and 4; step counts unchanged 136/114/160/400; Release = Debug verified).
+Harness tests adjusted to the widened gate: unported-character / unported-relic skips use `NOT_A_CHARACTER` /
+`NOT_A_RELIC` (SILENT and BOOMING_CONCH are ported), opening comparisons in `DiffIntegrationTests` compare projection,
+draw order and Rng streams (the harness state now carries relics and a room), the self-recorded v2 segments use
+`StartExtras` and `FinalHp`.
+
+### Counts (combat segments; before = committed gate at `4809101`, after = this commit)
+
+| version | compared before → after | agree before → after | decisions agreed / compared before → after |
+| --- | --- | --- | --- |
+| v0.107.1 (737) | 4 → 84 | 4 → 80 | 69/69 → 1084/1088 |
+| v0.110.1 (196) | 0 → 6 | 0 → 6 | 0/0 → 85/85 |
+| v0.111.0 (361) | 4 → 27 | 4 → 23 | 62/62 → 430/434 |
+| all (1294) | 8 → 117 | 8 → 109 | 131/131 → 1599/1607 (99.5 %), outcome 109/109 |
+
+Skips "the sim builds an Ironclad player only": 1006 → 0. Remaining skips: exporter reasons (v0.107.1 591 — mostly the
+mcr `model_table_unverified` / `hand_index_unresolved` / `no_checksum_states` / `outcome_not_terminal` set; v0.111.0
+257 — `anchor_missing` 139, `unsupported_action` 66, `pre_state_hand_unsettled`, `mcr:enchanted_card_in_deck`), v0.110.1
+`rules_version` out of scope 148, encounters not ported 61, cards not ported 9. mcr join (v0.111.0): 57 segments joined
+(10 agree, 4 diverge, 43 skipped on kept reasons, mostly `mcr:enchanted_card_in_deck`), 4 rejected (2 `?` rooms
+decoded as encounter `NONE`, 2 HP mismatches). G0 v1 gate unchanged: 4/4 bundles, 69/69 decisions.
+
+mcr replays alone (`tmp/diff-v2/mcr --v2 --include-ineligible`, before → after the hand-index resolution): all 723
+agree 3 → 30, replayed decisions 1269 → 5312, outcomes reached 7 → 142; v0.111.0 (71): agree 2 → 2, replayed
+decisions 342 → 390, outcomes reached 4 → 5 (5 play indices re-resolved); the rest stop at prompts the v1 action list
+cannot express (40), at cards absent from the sim hand after such a skipped prompt (19), or at `NONE` encounters (4).
+In the gate (exporter reasons honoured) one v0.111.0 mcr replay agrees.
+
+The 8 divergences: the four v0.107.1 rows of §5 (SETUP_STRIKE and CORPSE_SLUG `version_drift` ×3, SUPERCRITICAL
+`recorder_gap`); GM28D28DX794 s26/s54/s65 decision 0 (`anchor_error`: TEA_OF_DISCOURTESY / VENERABLE_TEA_SET carry
+run-time state — extra DAZED, +2 energy — that a bundle-built relic lacks; needs the start from the decoded
+`SerializableRun`); Q3X6PF8S37GA s5 decision 19 (`recorder_gap`, below).
+
+### G3 (W4 replay-runs runner, unchanged code path; combat fixes only)
+
+Decisions 748/753 → 1318/1324; floors agreed before the first divergence `1,2,3,4,5,7,7,10,10,13` →
+`1,2,3,5,11,11,11,17,22,27` (+ the old-prefix lineage at 0); K4FB4086NTRE now reaches its recorded end (17/17 floors).
+First divergences now: G0G2 f3 CRYSTAL_SPHERE (T5), NBND s27 room f12 `player.relics[5].counter` 1 vs 0 (new, after the
+TERROR_EEL combat, not investigated), DSB3 s64 shop f23 gold 188 vs 263 and P2UZ s13 shop gold (shop pre_state, T6), Q3X6
+s5 (below), GM28 s74 DECIMILLIPEDE_ELITE d11 `hand[0].cost` 0 vs 1 (new, not investigated), EC03 s29 / PLRU s32 rest
+site screen `select` vs `rest_site` (run layer, new), G1YF ROOM_FULL_OF_CHEESE (T7).
+
+### Triage of the T4 in-combat first divergences
+
+- NIBBITS_WEAK discard_count 9 vs 10 (Q3X6PF8S37GA s5 d19): `recorder_gap`. The pre_state (state seq 411) follows
+  HIDDEN_DAGGERS+'s `card_play_finished` (seq 410), but the game moves the played card from the Play pile to its
+  result pile only after the play loop ends (Models/CardModel.cs:735-739 `CardPlayFinished` / `AfterCardPlayed`, then
+  :940-960 `CardPileCmd.Add(card, resultPile)`); the player queued the next SHIV play (seq 412) in between, so the
+  snapshot holds the card in the Play pile. The sim (card in discard) is right.
+- TERROR_EEL_ELITE enemy VIGOR: `port_bug`, fixed (table above).
+- FOSSIL_STALKER select candidates (NBND s17 d19): `projection_gap`, closed by the multiset hand-select comparison.
+
+### Tickets left
+
+- `anchor_error` relic run-time state at combat start (TEA_OF_DISCOURTESY, VENERABLE_TEA_SET, saved properties): start
+  from the decoded `SerializableRun` (`RunImporter`), not bundle fields.
+- `exporter_ineligible` enchanted decks in mcr joins (`mcr:enchanted_card_in_deck`); `?` rooms decoded as `NONE`.
+- mcr v1 bundles cannot express player choices / potions (`unsupported_action`): 28+7+4+1 of the 63 v0.111.0
+  divergences under `--include-ineligible` are the sim waiting on a prompt the v1 action list skips.
+- v0.107.1 model-table checksum (`model_table_unverified`): not attempted.
+- GM28 s74 DECIMILLIPEDE card cost 0, NBND s27 relic counter: not investigated.

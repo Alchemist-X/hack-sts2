@@ -27,6 +27,6 @@ Common drops: Flash(), VFX/SFX, hover tips, DisplayAmount/InvokeDisplayAmountCha
 - THE_HUNT_POWER — Models.Powers/TheHuntPower.cs:5 — marker power, no hooks.
 - VEILPIERCER_POWER — Models.Powers/VeilpiercerPower.cs:14 — card.Pile?.Type read via GetCombatPile (null pile -> false).
 - VICIOUS_POWER — Models.Powers/ViciousPower.cs:15 — none.
-- VIGOR_POWER — Models.Powers/VigorPower.cs:16 — `ModelSource is not CardModel` = AttackCommand.IsFromMonster (the sim's only non-card source); commandToModify never reset, as in the game; canonical writes presence + AmountWhenAttackStarted.
+- VIGOR_POWER — Models.Powers/VigorPower.cs:16 — BeforeAttack skips `ModelSource != null && !(ModelSource is CardModel)`; a monster attack has a null ModelSource (Commands.Builders/AttackCommand.cs:781-791), so monster attacks consume Vigor too (W4.1 fix: the sim skipped `IsFromMonster`, TERROR_EEL kept its Thrash Vigor; test `Test_W41_MonsterAttackConsumesVigor`); commandToModify never reset, as in the game; canonical writes presence + AmountWhenAttackStarted.
 - WASTE_AWAY_POWER — Models.Powers/WasteAwayPower.cs:8 — none.
 - WELL_LAID_PLANS_POWER — Models.Powers/WellLaidPlansPower.cs:6 — v0.111.0 Single/ShouldFlush form (v0.107 Counter prompt not ported).

@@ -116,7 +116,7 @@ public static class ReplayDecodeTests
         Assert.Equal("win", (string)b["outcome"]!);
         Assert.Equal(39, (int)b["final_hp"]!);
         Assert.True(conv.IneligibleReasons.Any(r => r.StartsWith("encounter_unresolved", StringComparison.Ordinal)));
-        Assert.True(conv.GateReason != null && conv.GateReason.Contains("SILENT"), conv.GateReason);
+        Assert.True(conv.GateReason != null && conv.GateReason.Contains("encounter NONE"), conv.GateReason);
     }
 
     public static void Test_McrConvert_LegacyUsesLegacySeedingAndCounters()
