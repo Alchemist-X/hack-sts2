@@ -2,6 +2,16 @@ namespace Sts2Sim.Core.Combat.Pipeline;
 
 public abstract class AbstractModel
 {
+    private HookMask? _overriddenHooks;
+
+    internal HookMask OverriddenHooks => _overriddenHooks ??= HookMask.For(GetType());
+
+    internal void SetOverriddenHooks(HookMask mask)
+    {
+        ArgumentNullException.ThrowIfNull(mask);
+        _overriddenHooks = mask;
+    }
+
     public virtual void AfterActEntered(RunState rs)
     {
     }
