@@ -19,14 +19,14 @@ public static class MonsterCanonicalTags
     public const ushort AeonglassExtra = 0x4DE2;
     public const ushort ChomperExtra = 0x4DE3;
     public const ushort WrigglerExtra = 0x4DE4;
-    public const ushort AxebotExtra = 0x4E00;
-    public const ushort TheObscuraExtra = 0x4E01;
-    public const ushort TwoTailedRatExtra = 0x4E02;
-    public const ushort FabricatorExtra = 0x4E03;
-    public const ushort DecimillipedeSegmentExtra = 0x4E04;
-    public const ushort CeremonialBeastExtra = 0x4E05;
-    public const ushort WaterfallGiantExtra = 0x4E06;
-    public const ushort KnowledgeDemonExtra = 0x4E07;
-    public const ushort QueenExtra = 0x4E08;
-    public const ushort TestSubjectExtra = 0x4E09;
+    public const ushort AxebotExtra = 0x4DD0;
+    public const ushort TheObscuraExtra = 0x4DD1;
+    public const ushort TwoTailedRatExtra = 0x4DD2;
+    public const ushort FabricatorExtra = 0x4DD3;
+    public const ushort DecimillipedeSegmentExtra = 0x4DD4;
+    public const ushort CeremonialBeastExtra = 0x4DD5;
+    public const ushort WaterfallGiantExtra = 0x4DD6;
+    public const ushort KnowledgeDemonExtra = 0x4DD7;
+    public const ushort QueenExtra = 0x4DD8;
+    public const ushort TestSubjectExtra = 0x4DD9;
 }

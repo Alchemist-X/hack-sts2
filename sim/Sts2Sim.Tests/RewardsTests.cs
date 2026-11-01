@@ -280,7 +280,8 @@ public static class RewardsTests
         W1Pending.Run("Rewards.RoomEndRewards", "rooms", () =>
         {
             var (rs, player) = NewRun(51UL);
-            var room = new CombatRoom(EncounterRegistry.Get(EncounterRegistry.AllIds[0]));
+            var encounter = EncounterRegistry.AllIds.Select(EncounterRegistry.Get).First(e => e.RoomType == RoomType.Monster && e.ShouldGiveRewards);
+            var room = new CombatRoom(encounter);
             var set = RewardsCmd.GenerateForRoomEnd(rs, player, room);
             Assert.True(set.Rewards.Count > 0);
         });

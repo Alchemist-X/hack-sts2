@@ -782,3 +782,27 @@ Fixes:
 Gates: build 0 warnings 0 errors; tests 830/830, PENDING 0; content soak green (cards 1084, encounters 24, potions 128, relics 340); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
 
 Pending: none. Excluded defs: `VOID_FORM` (NotImplementedException from `PlayerCmd.EndTurn`).
+
+## W2/W3 integrate B (2026-11-01)
+
+Base `0a01a90` (integrate A). All 14 branches descend from the base; none skipped.
+
+Merged, in order: w2/run-state, w2/map, w2/odds-rewards, w2/events, w2/rooms, w2/loop, w2/save, w3/monsters-1, w3/monsters-2, w3/monsters-3, w3/monsters-4, w3/powers-9, w3/encounters-1, w3/encounters-2.
+
+Conflicts and resolutions:
+- `MonsterCanonicalTags.cs`: all owners' tags kept; collisions renumbered inside 0x4Dxx: monsters-3 `ToughEggExtra..WrigglerExtra` → 0x4DE1-0x4DE4, monsters-4 `AxebotExtra..TestSubjectExtra` → 0x4DD0-0x4DD9 (monsters-1 keeps 0x4DA0/0x4DA1, monsters-2 keeps 0x4DC0-0x4DC3).
+- 31 monster-coupled powers ported by both a monsters owner and powers-9 (add/add): the monsters owner's copy kept (already exercised by its monster tests; both sides were full ports). `CrabRagePower` (monsters-1 vs monsters-2): monsters-1 copy kept. `ReattachPower`: monsters-4 copy (cs overload) kept.
+- `EncounterDef` (`MonsterDef.cs`): one copy of `RoomType`; `Tags` typed `IReadOnlyList<EncounterTag>` (encounters-1) replacing run-state's string tags; gold reward members from encounters-1; `AllPossibleMonsters` from encounters-2. Duplicate `enum EncounterTag` in `MonsterDef.cs` deleted (kept in `Enums/RunEnums.cs`).
+- `EncounterMonsterConfig`: both APIs kept; `Set(string, object)` / `SetExtra` delegate to encounters-2's `Set(MonsterState, string, object)`.
+
+Fixes:
+- `PowerModel.ShouldOwnerDeathTriggerFatal(cs)` now the called overload (`Feed`, `HandOfGreed`, `BookRepairKnife`), so `ReattachPower` is honoured.
+- `InfestedPower.AfterDeath` ported (Models.Powers/InfestedPower.cs:64-93): 4 × `SpawnForAdd(WRIGGLER, slot wriggler{i+1}, StartStunned = true)`, replacing the W3-gap throw.
+- `RunLoop.SelectActs` throws `NotImplementedException` when no `ActModel` def is registered (acts are unported W3 content), so run-layer tests report PENDING instead of an index error.
+- Tests: `RunStateTests` encounter double retyped to `EncounterTag`; `RoomsTests` helper sets player odds / relic grab bags / run odds; `RewardsTests` picks a rewarding Monster encounter; `EventsTests` combat test needs an act; merchant test routes an unported relic id to PENDING; `Content_encounters_2Tests` skips the excluded ids.
+
+Gates: build 0 warnings 0 errors; tests 922/922, PENDING 6; content soak green (encounters 252 cases, 0 failures); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending (later owners): act defs (`Models.Acts/*`: Events.EventCombatGoesThroughRoomStack, Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns, Test_Map_CreateForUsesTheActMapStream, Test_SaveImport_FullStateThroughRunLayerOwners); relic `MEAL_TICKET` (Test_Rooms_MerchantInventoryLayout).
+
+Excluded defs (`[SimExclude]`, monster not ported → `KeyNotFoundException`): `BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER` / `_V2_` / `_V3_` (BATTLE_FRIEND_V1..V3), `GREMLIN_MERC_NORMAL` (GREMLIN_MERC), `THIEVING_HOPPER_WEAK` (THIEVING_HOPPER).

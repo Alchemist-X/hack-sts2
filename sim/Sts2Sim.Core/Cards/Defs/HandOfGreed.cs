@@ -29,7 +29,7 @@ public sealed class HandOfGreed : CardDef
         var target = play.Target;
         ArgumentNullException.ThrowIfNull(target);
         var handOfGreed = play.Card;
-        bool shouldTriggerFatal = target.Powers.All(p => p.ShouldOwnerDeathTriggerFatal());
+        bool shouldTriggerFatal = target.Powers.All(p => p.ShouldOwnerDeathTriggerFatal(cs));
         var attackCommand = DamageCmd.Attack(cs, handOfGreed.Vars.Damage.BaseValue).FromCard(handOfGreed, play).Targeting(target).Execute();
         if (shouldTriggerFatal && attackCommand.HitResults.SelectMany(r => r).Any(r => r.WasTargetKilled))
         {

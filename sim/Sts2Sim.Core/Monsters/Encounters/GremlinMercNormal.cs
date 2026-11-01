@@ -1,5 +1,6 @@
 namespace Sts2Sim.Core.Monsters;
 
+[Sts2Sim.Core.Registry.SimExclude]
 public sealed class GremlinMercNormal : EncounterDef
 {
     public const string EncounterIdEntry = "GREMLIN_MERC_NORMAL";

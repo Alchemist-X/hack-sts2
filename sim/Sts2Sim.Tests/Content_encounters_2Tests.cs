@@ -23,15 +23,20 @@ public static class Content_encounters_2Tests
 
     public static void Test_Encounters2_EveryPortedIdIsRegisteredWithItsRoomAndMonsters()
     {
+        var simExcluded = new HashSet<string>(StringComparer.Ordinal) { "BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER", "BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER", "BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER", "GREMLIN_MERC_NORMAL", "THIEVING_HOPPER_WEAK" };
         foreach (var id in PortedIds)
         {
+            if (simExcluded.Contains(id))
+            {
+                continue;
+            }
             Assert.True(EncounterRegistry.TryGet(id, out var def), $"{id} is registered");
             Assert.True(def.AllPossibleMonsters.Count > 0, $"{id} lists its possible monsters");
         }
         Assert.Equal(RoomType.Boss, EncounterRegistry.Get("QUEEN_BOSS").RoomType);
         Assert.Equal(RoomType.Elite, EncounterRegistry.Get("KNIGHTS_ELITE").RoomType);
         Assert.True(EncounterRegistry.Get("TUNNELER_WEAK").IsWeak, "TunnelerWeak is weak");
-        Assert.False(EncounterRegistry.Get("BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER").ShouldGiveRewards, "dummy fights give no rewards");
+        Assert.False(new BattlewornDummyEventV1Encounter().ShouldGiveRewards, "dummy fights give no rewards");
         Assert.Equal(2, EncounterRegistry.Get("TUNNELER_NORMAL").Tags.Count);
         Assert.Equal("fabricator", EncounterRegistry.Get("FABRICATOR_NORMAL").Slots[2]);
         Assert.Equal("wriggler3", PhrogParasiteElite.GetWrigglerSlotName(2));

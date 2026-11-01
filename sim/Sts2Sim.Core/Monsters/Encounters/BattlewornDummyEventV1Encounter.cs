@@ -1,5 +1,6 @@
 namespace Sts2Sim.Core.Monsters;
 
+[Sts2Sim.Core.Registry.SimExclude]
 public sealed class BattlewornDummyEventV1Encounter : BattlewornDummyEventEncounter
 {
     public const string EncounterIdEntry = "BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER";

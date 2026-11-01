@@ -38,6 +38,12 @@ public static class RoomsTests
         var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 50, 80, 3);
         var run = RunState.CreateStandalone(player, new RunRngSet(4242UL), ascension);
         player.PlayerRng = new PlayerRngSet(99UL);
+        player.PlayerOdds = new PlayerOddsSet(player.PlayerRng, ascension);
+        player.RelicGrabBag = new RelicGrabBag(false);
+        player.RelicGrabBag.Populate(run, player, run.Rng.UpFront);
+        run.SharedRelicGrabBag = new RelicGrabBag(true);
+        run.SharedRelicGrabBag.Populate(RelicGrabBag.SharedPoolRelics(run), run.Rng.UpFront);
+        run.Odds = new RunOddsSet(run.Rng.UnknownMapPoint);
         return run;
     }
 
@@ -213,7 +219,15 @@ public static class RoomsTests
         var rs = NewRun();
         W1Pending.Run(nameof(Test_Rooms_MerchantInventoryLayout), "R3 odds-rewards", () =>
         {
-            var inventory = MerchantInventory.CreateForNormalMerchant(rs, rs.Players[0]);
+            MerchantInventory inventory;
+            try
+            {
+                inventory = MerchantInventory.CreateForNormalMerchant(rs, rs.Players[0]);
+            }
+            catch (KeyNotFoundException ex) when (ex.Message.StartsWith("No RelicModel registered", StringComparison.Ordinal))
+            {
+                throw new NotImplementedException("W3 content: " + ex.Message, ex);
+            }
             Assert.Equal(5, inventory.CharacterCardEntries.Count);
             Assert.Equal(2, inventory.ColorlessCardEntries.Count);
             Assert.Equal(3, inventory.RelicEntries.Count);

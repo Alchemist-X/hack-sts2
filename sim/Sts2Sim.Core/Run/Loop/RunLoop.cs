@@ -52,6 +52,10 @@ public static class RunLoop
             return given;
         }
         var rng = new Rng(DeterministicHash.GetDeterministicHashCode(config.SeedText), ActSelectionRngName);
+        if (ActModel.ActsByIndex.Count == 0)
+        {
+            throw new NotImplementedException("W3 content: no ActModel defs are ported (Models.Acts/*)");
+        }
         var acts = ActModel.GetRandomList(rng, config.Unlocks, config.Progress, isMultiplayer: false).ToList();
         var act1 = GetAct1(config.Act1);
         if (act1 != null && acts.Count > 0)

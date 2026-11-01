@@ -15,7 +15,7 @@ public sealed class BookRepairKnife : RelicModel
 
     public override void AfterDiedToDoom(CombatState cs, IReadOnlyList<CreatureState> creatures)
     {
-        int num = creatures.Count(c => !ReferenceEquals(c, Owner) && c.Powers.All(p => p.ShouldOwnerDeathTriggerFatal()));
+        int num = creatures.Count(c => !ReferenceEquals(c, Owner) && c.Powers.All(p => p.ShouldOwnerDeathTriggerFatal(cs)));
         if (num == 0)
         {
             return;

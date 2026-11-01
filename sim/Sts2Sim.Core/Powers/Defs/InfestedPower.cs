@@ -20,7 +20,12 @@ public sealed class InfestedPower : PowerModel
         {
             return;
         }
-        throw new NotImplementedException("W3 gap: CreatureCmd.Add has no seam to set Wriggler.StartStunned on the monster model before it is added (Models.Powers/InfestedPower.cs:81-83)");
+        var cs = rs.Combat!;
+        var def = MonsterRegistry.Get(WrigglerMonsterId);
+        for (int i = 0; i < WrigglerCount; i++)
+        {
+            MonsterSpawner.SpawnForAdd(cs, def, Owner.Side, GetWrigglerSlotName(i), static m => Wriggler.GetExtra(m).StartStunned = true);
+        }
     }
 
     public override bool ShouldStopCombatFromEnding(CombatState cs) => true;

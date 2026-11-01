@@ -33,7 +33,7 @@ public sealed class Feed : CardDef
         var target = play.Target;
         ArgumentNullException.ThrowIfNull(target);
         var feed = play.Card;
-        bool shouldTriggerFatal = target.Powers.All(p => p.ShouldOwnerDeathTriggerFatal());
+        bool shouldTriggerFatal = target.Powers.All(p => p.ShouldOwnerDeathTriggerFatal(cs));
         var attackCommand = DamageCmd.Attack(cs, feed.Vars.Damage.BaseValue).FromCard(feed, play).Targeting(target).Execute();
         if (shouldTriggerFatal && attackCommand.Results.Any(r => r.WasTargetKilled))
         {
