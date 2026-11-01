@@ -421,6 +421,9 @@ first.
   (the set is deep-cloned first); and a test seam overload that takes
   `Action<CombatState> populateMonsters` in place of the encounter spawn. Inputs: §2.1.
 - `FromState`, `State`, `Outcome`, `IsTerminal` (`Outcome != InProgress`).
+- `FromSetUp(cs)` (W4 replay-combats) = the same `Begin` as `Create` on a combat that
+  `CombatLoop.SetUpCombat(RunState, PlayerState, ...)` prepared and that has not started (any character,
+  relics already on the player); rejects a started combat. Hash-equal to `Create` for the same inputs.
 - `Clone()` = `new(State.DeepClone())`.
 - `StateHash()` = `StateHasher.Hash(State, writer)` with a per-instance writer created on first use
   (integration change; `Clone` builds a new `CombatSim`, so clones never share it);

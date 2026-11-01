@@ -89,6 +89,8 @@ public sealed class BundleSegment
     public IReadOnlyList<string> EligibilityReasons { get; init; } = Array.Empty<string>();
 
     public string Sha256 { get; init; } = string.Empty;
+
+    public string? FormatError { get; set; }
 }
 
 public sealed class RunBundle
@@ -249,8 +251,12 @@ public static class RunBundleJson
         {
             throw new BundleFormatException("$.kind", $"unknown bundle kind '{kind}' (expected 'run' or 'combat')");
         }
-        string seeding = r.String(root, "seeding", "$");
-        if (seeding != RngSetup.SeedingXxh64 && seeding != RngSetup.SeedingLegacyV18)
+        string? seedingOrNull = (!root.TryGetProperty("seeding", out var seedingEl) || seedingEl.ValueKind == JsonValueKind.Null)
+            && root.TryGetProperty("seed", out var oldSeedEl) && oldSeedEl.ValueKind == JsonValueKind.String && RngSetup.HasOldPrefix(oldSeedEl.GetString()!)
+            ? UnknownSeeding
+            : null;
+        string seeding = seedingOrNull ?? r.String(root, "seeding", "$");
+        if (seeding != RngSetup.SeedingXxh64 && seeding != RngSetup.SeedingLegacyV18 && seeding != UnknownSeeding)
         {
             throw new BundleFormatException("$.seeding", $"unknown seeding '{seeding}'");
         }
@@ -315,7 +321,15 @@ public static class RunBundleJson
         foreach (var s in segmentsEl.EnumerateArray())
         {
             string p = $"$.segments[{si}]";
-            var segment = ReadSegment(r, s, p);
+            BundleSegment segment;
+            try
+            {
+                segment = ReadSegment(r, s, p);
+            }
+            catch (BundleFormatException ex) when (MarkedIneligible(s))
+            {
+                segment = UnreadableSegment(s, si, ex.Message);
+            }
             if (!segIds.Add(segment.Id))
             {
                 throw new BundleFormatException(p + ".id", $"duplicate segment id '{segment.Id}'");
@@ -360,12 +374,53 @@ public static class RunBundleJson
         };
         foreach (var segment in segments)
         {
-            if (segment.Kind == SegmentKinds.Combat && segment.Start != null && IsV1ShapedStart(segment.Start))
+            if (segment.FormatError == null && segment.Kind == SegmentKinds.Combat && segment.Start != null && IsV1ShapedStart(segment.Start))
             {
-                segment.CombatStart = BuildCombatStart(bundle, segment, $"$.segments[{segments.IndexOf(segment)}].start");
+                try
+                {
+                    segment.CombatStart = BuildCombatStart(bundle, segment, $"$.segments[{segments.IndexOf(segment)}].start");
+                }
+                catch (BundleFormatException ex) when (segment.Eligible == false)
+                {
+                    segment.FormatError = ex.Message;
+                }
             }
         }
         return bundle;
+    }
+
+    public const string UnknownSeeding = "unknown";
+
+    private static bool MarkedIneligible(JsonElement s)
+        => s.ValueKind == JsonValueKind.Object && s.TryGetProperty("eligibility", out var e) && e.ValueKind == JsonValueKind.Object
+            && e.TryGetProperty("eligible", out var el) && el.ValueKind == JsonValueKind.False;
+
+    private static BundleSegment UnreadableSegment(JsonElement s, int index, string error)
+    {
+        string? Str(string name) => s.ValueKind == JsonValueKind.Object && s.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        bool? eligible = null;
+        var reasons = new List<string>();
+        if (s.ValueKind == JsonValueKind.Object && s.TryGetProperty("eligibility", out var e) && e.ValueKind == JsonValueKind.Object)
+        {
+            if (e.TryGetProperty("eligible", out var el) && el.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                eligible = el.GetBoolean();
+            }
+            if (e.TryGetProperty("reasons", out var rs) && rs.ValueKind == JsonValueKind.Array)
+            {
+                reasons.AddRange(rs.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!));
+            }
+        }
+        string kind = Str("kind") ?? "unknown";
+        return new BundleSegment
+        {
+            Id = Str("id") ?? $"segment{index}",
+            Kind = SegmentKinds.IsKnown(kind) ? kind : "unknown",
+            Eligible = eligible,
+            EligibilityReasons = reasons,
+            Sha256 = Sha(s.GetRawText()),
+            FormatError = error
+        };
     }
 
     public static bool IsV1ShapedStart(JsonObject start) => start.ContainsKey("deck") && start.ContainsKey("player");

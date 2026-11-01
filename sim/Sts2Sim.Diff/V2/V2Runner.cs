@@ -38,6 +38,21 @@ public static class V2Runner
                 live = null;
                 continue;
             }
+            if (segment.FormatError != null)
+            {
+                string why = "unreadable segment: " + segment.FormatError;
+                if (RngSetup.HasOldPrefix(run.Seed))
+                {
+                    Skip(result, DivergenceClass.VersionDrift, why);
+                }
+                else
+                {
+                    Skip(result, DivergenceClass.ExporterIneligible, why);
+                }
+                chainBroken = true;
+                live = null;
+                continue;
+            }
             RunSim? next;
             try
             {
@@ -67,7 +82,9 @@ public static class V2Runner
 
     public static string? RunGate(RunBundle run)
     {
-        if (!string.Equals(run.GameMode, "standard", StringComparison.Ordinal))
+        bool customWithoutModifiers = string.Equals(run.GameMode, "custom", StringComparison.Ordinal) && run.Modifiers.Count == 0
+            && !run.RunReasons.Any(r => r.StartsWith("game_mode_modifiers", StringComparison.Ordinal));
+        if (!string.Equals(run.GameMode, "standard", StringComparison.Ordinal) && !customWithoutModifiers)
         {
             return $"game_mode {run.GameMode} is out of scope";
         }
