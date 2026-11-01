@@ -690,7 +690,8 @@ sealed class ChoicePendingException : Exception { ChoicePrompt Prompt { get; } }
 sealed class CardSelectorPrefs      // CardSelection/CardSelectorPrefs.cs: MinSelect, MaxSelect, RequireManualConfirmation
                                     //   (default: MinSelect >= 0 && MinSelect != MaxSelect, :114), Cancelable, prompt key
 sealed class ChoiceRuntime          // one per RunState; CombatState.Choice == Run.Choice
-    ContextScope PushContext(ChoiceContextKind kind)   // disposable struct; the context stack is transient (not cloned, not hashed): re-execution rebuilds it
+    ContextScope PushContext(ChoiceContextKind kind, Action? onFirstPause = null)   // disposable struct; the context stack is transient (not cloned,
+                                                      //   not hashed): re-execution rebuilds it. onFirstPause = the TurnSetup steps the loop supplies (B1 table)
     void PushSelector(IChoiceAnswerer s); void PopSelector()   // content selectors (VakuuCardSelector); part of the state: cloned and hashed
     ChoiceAnswer Ask(ChoicePrompt prompt)             // selector top answers first, else Answerer; the tape answerer throws ChoicePendingException when its tape is exhausted
     IChoiceAnswerer? Answerer { get; set; }           // installed by CombatSim for the duration of one Step
