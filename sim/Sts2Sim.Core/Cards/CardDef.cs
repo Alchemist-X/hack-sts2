@@ -69,6 +69,8 @@ public abstract class CardDef
 
     public CardPool Pool => CardPools.PoolOf(Id) ?? throw new InvalidProgramException($"Card {Id} is not in any card pool!");
 
+    public virtual CardPool VisualCardPool => Pool;
+
     public string SelectionScreenPromptKey => Id + ".selectionScreenPrompt";
 
     protected virtual IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();

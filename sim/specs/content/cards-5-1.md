@@ -1,0 +1,43 @@
+# cards-5-1 (wave A) index
+
+Dropped everywhere: TriggerAnim, VFX, SFX, hover tips.
+
+- ACROBATICS — Models.Cards/Acrobatics.cs:16 — W1 pilot, kept as is
+- ARMAMENTS — Models.Cards/Armaments.cs:17 — W1 pilot, kept as is
+- BEGONE — Models.Cards/Begone.cs:16 — MINION_STRIKE by id (cs.CreateCard)
+- BRAND — Models.Cards/Brand.cs:24 — NGroundFireVfx dropped
+- BURNING_PACT — Models.Cards/BurningPact.cs:17 — none
+- CHARGE — Models.Cards/Charge.cs:17 — MINION_DIVE_BOMB by id (TransformTo)
+- COSMIC_INDIFFERENCE — Models.Cards/CosmicIndifference.cs:17 — pile check via GetCombatPile(cs)?.Type
+- DAGGER_THROW — Models.Cards/DaggerThrow.cs:21 — attacker/hit VFX dropped
+- DREDGE — Models.Cards/Dredge.cs:15 — none
+- DUAL_WIELD — Models.Cards/DualWield.cs:17 — CreateClone = cs.CloneCard + ExhaustOnNextPlay=false (pile assert and _cloneOf dropped); VisualCardPool = Ironclad (kernel: CardDef.VisualCardPool added)
+- ENTROPY — Models.Cards/Entropy.cs:16 — none
+- FOREGONE_CONCLUSION — Models.Cards/ForegoneConclusion.cs:15 — FOREGONE_CONCLUSION_POWER by id
+- GLIMMER — Models.Cards/Glimmer.cs:16 — none
+- GRAVEBLAST — Models.Cards/Graveblast.cs:18 — none
+- GUARDS — Models.Cards/Guards.cs:16 — MINION_SACRIFICE by id; selection 0..999999999
+- HAND_TRICK — Models.Cards/HandTrick.cs:18 — IsSlyThisTurn read as CardPileCmd.IsSlyThisTurn(cs, c)
+- HEADBUTT — Models.Cards/Headbutt.cs:18 — W1 pilot, kept as is
+- HEIRLOOM_HAMMER — Models.Cards/HeirloomHammer.cs:18 — filter c.Def.VisualCardPool.IsColorless; clone as DUAL_WIELD
+- HIDDEN_DAGGERS — Models.Cards/HiddenDaggers.cs:17 — Shiv.CreateInHand (Models.Cards/Shiv.cs:355) inlined, SHIV by id
+- HOLOGRAM — Models.Cards/Hologram.cs:17 — none
+- NEOWS_FURY — Models.Cards/NeowsFury.cs:17 — none
+- NIGHTMARE — Models.Cards/Nightmare.cs:23 — GAP: NightmarePower.SetSelectedCard not callable (power owned by another agent); throws "W3 gap" right after applying NIGHTMARE_POWER; smoky vignette (TestMode/LocalContext) dropped
+- PHOTON_CUT — Models.Cards/PhotonCut.cs:17 — none
+- PREPARED — Models.Cards/Prepared.cs:15 — none
+- PURITY — Models.Cards/Purity.cs:16 — none
+- SCAVENGE — Models.Cards/Scavenge.cs:18 — ENERGY_NEXT_TURN_POWER by id
+- SCULPTING_STRIKE — Models.Cards/SculptingStrike.cs:19 — none
+- SEANCE — Models.Cards/Seance.cs:17 — W1 pilot, kept as is
+- SECRET_TECHNIQUE — Models.Cards/SecretTechnique.cs:15 — none
+- SECRET_WEAPON — Models.Cards/SecretWeapon.cs:15 — none
+- SEEKER_STRIKE — Models.Cards/SeekerStrike.cs:19 — W1 pilot, kept as is
+- STRATAGEM — Models.Cards/Stratagem.cs:13 — STRATAGEM_POWER by id
+- SURVIVOR — Models.Cards/Survivor.cs:17 — none
+- THINKING_AHEAD — Models.Cards/ThinkingAhead.cs:16 — none
+- TOOLS_OF_THE_TRADE — Models.Cards/ToolsOfTheTrade.cs:13 — none
+- TRANSFIGURE — Models.Cards/Transfigure.cs:17 — none
+- TRUE_GRIT — Models.Cards/TrueGrit.cs:18 — Owner.RunState.Rng.CombatCardSelection read as cs.Rng.CombatCardSelection (pilot convention)
+- TYRANNY — Models.Cards/Tyranny.cs:15 — TYRANNY_POWER by id
+- WISH — Models.Cards/Wish.cs:15 — none
