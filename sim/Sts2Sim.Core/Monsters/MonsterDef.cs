@@ -7,6 +7,31 @@ public abstract class MonsterExtraState : ICanonical
     public abstract void WriteCanonical(CanonicalWriter w);
 }
 
+public abstract class PrivateRngExtraState : MonsterExtraState
+{
+    public Rng? PrivateRng { get; set; }
+
+    public sealed override MonsterExtraState DeepClone()
+    {
+        var clone = CloneFields();
+        clone.PrivateRng = PrivateRng?.DeepClone();
+        return clone;
+    }
+
+    public sealed override void WriteCanonical(CanonicalWriter w)
+    {
+        w.WriteTag(MonsterCanonicalTags.PrivateRngExtra);
+        var rng = PrivateRng;
+        w.WriteBool(rng != null);
+        rng?.WriteCanonical(w);
+        WriteFieldsCanonical(w);
+    }
+
+    protected abstract PrivateRngExtraState CloneFields();
+
+    protected abstract void WriteFieldsCanonical(CanonicalWriter w);
+}
+
 public abstract class MonsterDef
 {
     protected MonsterDef(string id)
@@ -32,10 +57,43 @@ public abstract class MonsterDef
     {
     }
 
+    public virtual void BeforeRemovedFromRoom(CombatState cs, MonsterState self)
+    {
+    }
+
+    public virtual void AfterCardChangedPilesLate(RunState rs, MonsterState self, CardInstance card, PileType oldPileType, AbstractModel? clonedBy)
+    {
+    }
+
+    public virtual void AfterCardGeneratedForCombat(CombatState cs, MonsterState self, CardInstance card, PlayerState? creator)
+    {
+    }
+
+    public virtual void AfterCurrentHpChanged(RunState rs, MonsterState self, CreatureState creature, decimal delta)
+    {
+    }
+
+    public virtual void AfterDamageReceived(RunState rs, MonsterState self, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+    {
+    }
+
+    public virtual void BeforeDeath(RunState rs, MonsterState self, CreatureState creature)
+    {
+    }
+
+    public virtual void AfterDeath(RunState rs, MonsterState self, CreatureState creature, bool wasRemovalPrevented)
+    {
+    }
+
     public virtual bool UsesPrivateRng => false;
 
     public virtual void InitPrivateRng(CombatState cs, MonsterState self, Rng rng)
     {
+        if (self.Extra is not PrivateRngExtraState holder)
+        {
+            throw new InvalidOperationException($"{Id} uses a private Rng, so its extra state must derive from {nameof(PrivateRngExtraState)}, which clones and hashes it.");
+        }
+        holder.PrivateRng = rng;
     }
 }
 
@@ -58,113 +116,30 @@ public abstract class EncounterDef
 
     public virtual IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs, Rng rng) => GenerateMonsters(cs);
 
-    protected InvalidOperationException EncounterRngRequired()
-        => new($"Encounter {Id} draws from its private Rng; generate it with GenerateMonsters(cs, rng), as MonsterSpawner.SpawnEncounter does.");
-}
-
-public static class MonsterSpawner
-{
-    public static MonsterState Spawn(CombatState cs, MonsterSpawn spawn) => Spawn(cs, spawn, CombatRunContext.Default);
-
-    public static MonsterState Spawn(CombatState cs, MonsterSpawn spawn, CombatRunContext context)
+    public string GetNextSlot(CombatState cs)
     {
-        var def = spawn.Def;
-        var extra = def.CreateExtraState();
-        var monster = new MonsterState(cs.AllocateCreatureId(), def, 0, 0, extra, spawn.SlotName);
-        spawn.Configure?.Invoke(monster);
-        int minInitialHp = def.MinInitialHp(cs, monster);
-        int maxInitialHp = def.MaxInitialHp(cs, monster);
-        if (minInitialHp > maxInitialHp)
-        {
-            throw new InvalidOperationException($"{def.Id} has min HP {minInitialHp} greater than its max {maxInitialHp}!");
-        }
-        monster.MaxHp = maxInitialHp;
-        monster.CurrentHp = maxInitialHp;
-        int hp = RollUniqueMonsterHp(cs, monster, minInitialHp, maxInitialHp, cs.Rng.Niche);
-        monster.MaxHp = hp;
-        monster.CurrentHp = hp;
-        monster.MaxHpBeforeModification = hp;
-        if (def.UsesPrivateRng)
-        {
-            def.InitPrivateRng(cs, monster, context.CreateMonsterRng(cs.Rng.Seed, monster.CombatId));
-        }
-        return monster;
-    }
-
-    public static MonsterState SpawnPet(CombatState cs, MonsterDef def, PlayerState owner)
-        => throw new NotImplementedException("MonsterSpawner.SpawnPet: monsters-kernel (Commands/PlayerCmd.cs:946-955, Combat/CombatState.cs:709-724; CONTRACTS Part B section B12 A15)");
-
-    public static MonsterState SpawnForAdd(CombatState cs, MonsterDef def, CombatSide side, string? slotName)
-        => throw new NotImplementedException("MonsterSpawner.SpawnForAdd: monsters-kernel (Commands/CreatureCmd.cs:3564-3572, Combat/CombatState.cs:709-724; CONTRACTS Part B section B8)");
-
-    public static void SpawnEncounter(CombatState cs, EncounterDef encounter, List<MonsterState>? spawned = null)
-        => SpawnEncounter(cs, encounter, CombatRunContext.Default, spawned);
-
-    public static void SpawnEncounter(CombatState cs, EncounterDef encounter, CombatRunContext context, List<MonsterState>? spawned = null)
-    {
-        ArgumentNullException.ThrowIfNull(encounter);
-        var spawns = encounter.GenerateMonsters(cs, CreateEncounterRng(cs, encounter, context));
-        for (int i = 0; i < spawns.Count; i++)
-        {
-            var monster = Spawn(cs, spawns[i], context);
-            cs.Monsters.Add(monster);
-            spawned?.Add(monster);
-        }
-    }
-
-    public static Rng CreateEncounterRng(CombatState cs, EncounterDef encounter, CombatRunContext context)
-        => context.CreateEncounterRng(cs.Rng.Seed, encounter.Id);
-
-    public static void SortEnemiesBySlotName(CombatState cs, EncounterDef? encounter)
-    {
-        if (encounter == null)
-        {
-            return;
-        }
-        var slots = encounter.Slots;
-        cs.Monsters.Sort((a, b) => IndexOfSlot(slots, a.SlotName) - IndexOfSlot(slots, b.SlotName));
-    }
-
-    public static int IndexOfSlot(IReadOnlyList<string> slots, string? slotName)
-    {
+        var slots = Slots;
+        var enemies = cs.Monsters;
         for (int i = 0; i < slots.Count; i++)
         {
-            if (string.Equals(slots[i], slotName, StringComparison.Ordinal))
+            var slot = slots[i];
+            bool free = true;
+            for (int j = 0; j < enemies.Count; j++)
             {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    public static int RollUniqueMonsterHp(CombatState cs, MonsterState self, int minInitialHp, int maxInitialHp, Rng rng)
-    {
-        int num = maxInitialHp + 1;
-        int count = num - minInitialHp;
-        var candidates = new int[count];
-        int available = 0;
-        var enemies = cs.Monsters;
-        for (int value = minInitialHp; value < num; value++)
-        {
-            bool taken = false;
-            for (int i = 0; i < enemies.Count; i++)
-            {
-                var other = enemies[i];
-                if (!ReferenceEquals(other, self) && other.MaxHp == value)
+                if (string.Equals(enemies[j].SlotName, slot, StringComparison.Ordinal))
                 {
-                    taken = true;
+                    free = false;
                     break;
                 }
             }
-            if (!taken)
+            if (free)
             {
-                candidates[available++] = value;
+                return slot;
             }
         }
-        if (available <= 0)
-        {
-            return rng.NextInt(minInitialHp, num);
-        }
-        return candidates[rng.NextInt(0, available)];
+        return string.Empty;
     }
+
+    protected InvalidOperationException EncounterRngRequired()
+        => new($"Encounter {Id} draws from its private Rng; generate it with GenerateMonsters(cs, rng), as MonsterSpawner.SpawnEncounter does.");
 }
