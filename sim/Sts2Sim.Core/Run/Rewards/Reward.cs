@@ -11,19 +11,65 @@ public abstract partial class Reward : ICanonical
 
     public abstract RewardType RewardType { get; }
 
-    public virtual int RewardsSetIndex => throw new NotImplementedException("W2 R3: Reward.RewardsSetIndex");
+    public abstract int RewardsSetIndex { get; }
 
-    public bool IsPopulated { get; protected set; }
+    public abstract bool IsPopulated { get; }
 
     public bool SuccessfullySelected { get; protected set; }
 
-    public virtual void Populate(RunState rs) => throw new NotImplementedException("W2 R3: Reward.Populate");
+    protected Rng? RngOverride { get; private set; }
 
-    public virtual bool OnSelectWrapper(RunState rs) => throw new NotImplementedException("W2 R3: Reward.OnSelectWrapper");
+    public Reward SetRng(Rng rng)
+    {
+        RngOverride = rng;
+        return this;
+    }
 
-    public virtual void OnSkipped(RunState rs) => throw new NotImplementedException("W2 R3: Reward.OnSkipped");
+    public abstract void Populate(RunState rs);
 
-    public virtual Reward CloneFor(PlayerState player) => throw new NotImplementedException("W2 R3: Reward.CloneFor");
+    protected abstract bool OnSelect(RunState rs);
 
-    public virtual void WriteCanonical(CanonicalWriter w) => throw new NotImplementedException("W2 R3: Reward.WriteCanonical");
+    public virtual bool OnSelectWrapper(RunState rs)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        bool success = OnSelect(rs);
+        return CompleteSelection(rs, success);
+    }
+
+    protected bool CompleteSelection(RunState rs, bool success)
+    {
+        if (success)
+        {
+            Hook.AfterRewardTaken(rs, Player, this);
+            SuccessfullySelected = true;
+        }
+        return success;
+    }
+
+    public virtual void OnSkipped(RunState rs)
+    {
+    }
+
+    public Reward CloneFor(PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        var clone = CloneCore(player);
+        clone.SuccessfullySelected = SuccessfullySelected;
+        clone.RngOverride = CardCreationOptions.RemapRng(RngOverride, Player, player);
+        return clone;
+    }
+
+    protected abstract Reward CloneCore(PlayerState player);
+
+    public void WriteCanonical(CanonicalWriter w)
+    {
+        w.WriteTag(RewardsCanonicalTags.Reward);
+        w.WriteByte((byte)RewardType);
+        w.WriteBool(SuccessfullySelected);
+        w.WriteBool(RngOverride != null);
+        RngOverride?.WriteCanonical(w);
+        WriteFields(w);
+    }
+
+    protected abstract void WriteFields(CanonicalWriter w);
 }
