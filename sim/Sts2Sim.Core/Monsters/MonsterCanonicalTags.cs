@@ -31,4 +31,5 @@ public static class MonsterCanonicalTags
     public const ushort TestSubjectExtra = 0x4DD9;
     public const ushort GremlinMercNormalEncounterExtra = 0x4DFA;
     public const ushort BattlewornDummyEventEncounterExtra = 0x4DFB;
+    public const ushort ThievingHopperExtra = 0x4DF0;
 }

@@ -43,11 +43,13 @@ public sealed class GremlinMerc : MonsterDef
 
     public override void AfterAddedToRoom(CombatState cs, MonsterState self)
     {
-        PowerCmd.Apply(cs, CreateUnownedPower(SurprisePowerId), self, SurpriseAmount, self, null);
+        PowerCmd.Apply<SurprisePower>(cs, self, SurpriseAmount, self, null);
         foreach (var player in cs.Run.Players.ToList())
         {
-            var thieveryPower = CreateUnownedPower(ThieveryPowerId);
-            thieveryPower.TargetId = player.CombatId;
+            var thieveryPower = new ThieveryPower
+            {
+                TargetId = player.CombatId
+            };
             PowerCmd.Apply(cs, thieveryPower, self, ThieveryAmount, self, null);
         }
     }
@@ -85,18 +87,9 @@ public sealed class GremlinMerc : MonsterDef
 
     private static void StealAll(CombatState cs, MonsterState self)
     {
-        foreach (var current in self.Powers.Where(p => p.Id == ThieveryPowerId).ToList())
+        foreach (var current in self.Powers.OfType<ThieveryPower>().ToList())
         {
-            throw new NotImplementedException("W3 gap: ThieveryPower.Steal (powers batch 8 unowned; Models.Powers/ThieveryPower.cs) for " + current.Id);
+            current.Steal(cs);
         }
-    }
-
-    private static PowerModel CreateUnownedPower(string id)
-    {
-        if (!PowerRegistry.AllIds.Contains(id))
-        {
-            throw new NotImplementedException("W3 gap: " + id + " is not ported (powers batch 8 unowned)");
-        }
-        return PowerRegistry.Create(id);
     }
 }

@@ -374,7 +374,11 @@ public static class CardKernelTests
         Assert.True(ReferenceEquals(result.CardAdded, cs.Player.Hand[0]));
         Assert.True(strike.HasBeenRemovedFromState);
         int unported = expectedOptions.Count - ported.Count;
-        Assert.True(unported > 0);
+        if (unported == 0)
+        {
+            Assert.Equal(0, cs.Run.Fidelity.Entries.Count(), "a fully ported pool records no fidelity flag");
+            return;
+        }
         var flag = cs.Run.Fidelity.Entries.Single();
         Assert.Equal(FidelityFlag.ApproximatedRule, flag.Flag);
         Assert.True(flag.Site.StartsWith($"CardFactory.CreateRandomCardForTransform: {unported} of {expectedOptions.Count} options", StringComparison.Ordinal), flag.Site);
@@ -845,9 +849,16 @@ public static class CardKernelTests
         var cards = CardFactory.GetDistinctForCombat(cs, cs.Player, pool, 3, stream).ToList();
         Assert.SequenceEqual(reference.Take(3), cards.Select(c => c.Id), "the draw runs over the ported options only");
         Assert.Equal(before + ported.Count - 1, stream.Counter);
-        var flag = cs.Run.Fidelity.Entries.Single();
-        Assert.Equal(FidelityFlag.ApproximatedRule, flag.Flag);
-        Assert.Equal($"CardFactory.GetDistinctForCombat: {eligible.Count - ported.Count} of {eligible.Count} options are not ported; the draw runs over the ported ones", flag.Site);
+        if (eligible.Count == ported.Count)
+        {
+            Assert.Equal(0, cs.Run.Fidelity.Entries.Count(), "a fully ported pool records no fidelity flag");
+        }
+        else
+        {
+            var flag = cs.Run.Fidelity.Entries.Single();
+            Assert.Equal(FidelityFlag.ApproximatedRule, flag.Flag);
+            Assert.Equal($"CardFactory.GetDistinctForCombat: {eligible.Count - ported.Count} of {eligible.Count} options are not ported; the draw runs over the ported ones", flag.Site);
+        }
         Assert.True(pool.Any(d => d.Id == "TANK") == false, "single-player pools drop the MultiplayerOnly cards");
         Assert.True(CardPools.Ironclad.AllCards.Any(d => d.Id == "TANK"));
     }
@@ -961,7 +972,7 @@ public static class CardKernelTests
         }
         Assert.SequenceEqual(new[] { "AGGRESSION", "ANGER", "ARMAMENTS", "ASHEN_STRIKE", "BARRICADE", "BASH" }, CardPools.Ironclad.AllCardIds.Take(6));
         Assert.True(ReferenceEquals(CardRegistry.Get(Armaments.CardId), CardPools.Ironclad.AllCards[2]), "registered cards resolve to their registered def");
-        Assert.True(CardPools.Ironclad.AllCards[0] is UnportedCardDef, "unported cards resolve to catalog placeholders");
+        Assert.True(CardPools.Ironclad.AllCards.First(c => c.Id == "BLAZE") is UnportedCardDef, "unported cards resolve to catalog placeholders");
         Assert.SequenceEqual(new[] { "IRONCLAD", "SILENT", "REGENT", "NECROBINDER", "DEFECT" }, CardPools.AllCharacterIds);
         Assert.SequenceEqual(new[] { "COLORLESS_CARD_POOL", "CURSE_CARD_POOL", "DEPRECATED_CARD_POOL", "EVENT_CARD_POOL", "QUEST_CARD_POOL", "STATUS_CARD_POOL", "TOKEN_CARD_POOL" }, CardPools.AllSharedCardPools.Select(p => p.Id));
         Assert.Equal(12, CardPools.AllCardPools.Count);
@@ -1054,9 +1065,9 @@ public static class CardKernelTests
             checkedDefs++;
         }
         Assert.Equal(CardRegistry.AllIds.Count, checkedDefs, "every registered card is in a v0.111.0 pool");
-        var placeholder = CardCatalog.Resolve("AGGRESSION");
+        var placeholder = CardCatalog.Resolve("BLAZE");
         Assert.True(placeholder is UnportedCardDef);
-        Assert.False(CardCatalog.IsPorted("AGGRESSION"));
+        Assert.False(CardCatalog.IsPorted("BLAZE"));
         Assert.Throws<NotImplementedException>(() => _ = new CardInstance(placeholder, 1), "a placeholder never becomes a card instance");
         Assert.Throws<NotImplementedException>(() => _ = placeholder.CanonicalKeywords);
         Assert.Throws<KeyNotFoundException>(() => CardCatalog.Get("NOT_A_CARD"));

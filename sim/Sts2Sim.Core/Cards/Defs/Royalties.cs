@@ -1,6 +1,5 @@
 namespace Sts2Sim.Core.Cards;
 
-[SimExclude]
 public sealed class Royalties : CardDef
 {
     public const string CardId = "ROYALTIES";
