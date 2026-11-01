@@ -191,7 +191,11 @@ public sealed class KindleRestSiteOption : RestSiteOption
 
     public override string OptionId => "KINDLE";
 
-    public override bool OnSelect(RunState rs) => throw new NotImplementedException("W3 content: KindleRestSiteOption.OnSelect needs PumpkinCandle.Rekindle");
+    public override bool OnSelect(RunState rs)
+    {
+        Owner.Relics.OfType<PumpkinCandle>().FirstOrDefault()?.Rekindle();
+        return true;
+    }
 }
 
 public sealed class CloneRestSiteOption : RestSiteOption
