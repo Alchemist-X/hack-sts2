@@ -1,0 +1,45 @@
+--- a/McpMod.Actions.cs
++++ b/McpMod.Actions.cs
+@@ -1626,6 +1626,30 @@
+                     return Error("Seeded embark is not supported for standard singleplayer from this API. Seed was not applied and the run was not started.");
+                 }
+ 
++                if (charSelect.Lobby.GameMode == MegaCrit.Sts2.Core.Runs.GameMode.Standard)
++                {
++                    // Standard mode refuses Lobby.SetSeed ("Seed should not be changed in standard
++                    // mode"). The game's own seeded-standard path (AutoSlayer) is
++                    // NGame.DebugSeedOverride, which StartRunLobby.BeginRun reads before falling
++                    // back to a random seed; NCharacterSelectScreen resets it to null whenever the
++                    // screen initializes. Benchmark-only: used solely when a caller passes a seed.
++                    var canonical = MegaCrit.Sts2.Core.Helpers.SeedHelper.CanonicalizeSeed(seed);
++                    if (canonical.Length == 0 || canonical.Any(ch => !"0123456789ABCDEFGHJKLMNPQRSTUVWXYZ".Contains(ch)))
++                        return Error($"Invalid seed '{seed}': use characters 0-9 A-Z (O/I map to 0/1)");
++                    var embarkSeeded = GetInstanceFieldValue(charSelect, "_embarkButton") as NClickableControl;
++                    if (embarkSeeded == null || !embarkSeeded.IsEnabled)
++                        return Error("Embark button not available — select a character first");
++                    MegaCrit.Sts2.Core.Nodes.NGame.Instance!.DebugSeedOverride = canonical;
++                    embarkSeeded.ForceClick();
++                    return new Dictionary<string, object?>
++                    {
++                        ["status"] = "ok",
++                        ["message"] = $"Embarking on standard run (seed: {canonical})",
++                        ["seed"] = canonical,
++                        ["seed_mechanism"] = "NGame.DebugSeedOverride"
++                    };
++                }
++
+                 try
+                 {
+                     charSelect.Lobby.SetSeed(seed);
+@@ -1635,6 +1659,11 @@
+                     return Error($"Seeded embark failed before starting the run: {ex.Message}");
+                 }
+             }
++            else if (MegaCrit.Sts2.Core.Nodes.NGame.Instance != null)
++            {
++                // An unseeded embark must never inherit a benchmark seed.
++                MegaCrit.Sts2.Core.Nodes.NGame.Instance.DebugSeedOverride = null;
++            }
+ 
+             var embarkBtn = GetInstanceFieldValue(charSelect, "_embarkButton");
+             if (embarkBtn is NClickableControl embarkClickable && embarkClickable.IsEnabled)

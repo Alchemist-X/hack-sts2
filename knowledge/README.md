@@ -24,6 +24,27 @@ python3 scripts/export_sts2_knowledge.py --port 15601 --skip-decompile
 Omit `--skip-decompile` to rebuild the ignored ILSpy source tree under
 `artifacts/knowledge/decompiled-v0.107.1/` first.
 
+`source/v0.111.0/` (public-beta build 41cef1ea) was exported offline, without
+a live MCP, so every `runtime` is null. The version and commit come from the
+build's `release_info.json`. Both exporters accept the flat `ilspycmd -p` layout
+as well as `--nested-directories`. zhs text is picked by its PCK path, because
+v0.111.0 added zht after zhs:
+
+```bash
+python3 scripts/export_sts2_knowledge.py --offline --skip-decompile \
+  --release-channel public-beta \
+  --decompiled-root artifacts/knowledge/decompiled-9cb4f1ad \
+  --output knowledge/source/v0.111.0
+python3 scripts/export_sts2_rule_evidence.py \
+  --decompiled-root artifacts/knowledge/decompiled-9cb4f1ad \
+  --output knowledge/source/v0.111.0
+```
+
+`export_sts2_rule_evidence.py` only exports versions listed in its
+`REVIEWED_VERSIONS`. To add a version, first re-read every cited file. The
+v0.111.0 review changed one check: `AEONGLASS_CYCLE`, where the A10 EBB attack
+dropped from 32 to 26.
+
 Query by stable ID or Chinese/English name; facts and community priors remain
 separate in the result:
 

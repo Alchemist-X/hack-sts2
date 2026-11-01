@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import mmap
+import struct
 from pathlib import Path
 
 import pytest
@@ -111,3 +113,77 @@ public static async Task<SummonResult> Summon(Player summoner, decimal amount)
     source.write_text(source.read_text().replace("SetMaxHp", "GrowMaxHp"))
     with pytest.raises(RuntimeError, match="no longer matches source"):
         MODULE.verified_mechanics(tmp_path)
+
+
+def test_core_paths_cover_nested_and_flat_ilspy_layouts(tmp_path: Path) -> None:
+    nested = tmp_path / "nested"
+    flat = tmp_path / "flat"
+    for path in (
+        nested / "MegaCrit/sts2/Core/Models/Monsters/Aeonglass.cs",
+        nested / "MegaCrit/sts2/Core/Models/Monsters/Mocks/MockMonster.cs",
+        nested / "MegaCrit/sts2/Core/Commands/OstyCmd.cs",
+        flat / "MegaCrit.Sts2.Core.Models.Monsters/Aeonglass.cs",
+        flat / "MegaCrit.Sts2.Core.Models.Monsters.Mocks/MockMonster.cs",
+        flat / "MegaCrit.Sts2.Core.Models.MonstersExtra/NotAMonster.cs",
+        flat / "MegaCrit.Sts2.Core.Commands/OstyCmd.cs",
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+
+    for root in (nested, flat):
+        monsters = MODULE.core_files(root, "Models/Monsters")
+        assert [path.stem for path in monsters] == ["Aeonglass", "MockMonster"]
+        assert [MODULE.is_mock_source(path) for path in monsters] == [False, True]
+        top = MODULE.core_files(root, "Models/Monsters", recursive=False)
+        assert [path.stem for path in top] == ["Aeonglass"]
+        assert MODULE.core_file(root, "Commands/OstyCmd.cs").is_file()
+    assert str(MODULE.core_file(flat, "Commands/OstyCmd.cs").relative_to(flat)) == (
+        "MegaCrit.Sts2.Core.Commands/OstyCmd.cs"
+    )
+
+
+def write_pck(path: Path, files: dict[str, bytes]) -> None:
+    """Minimal Godot PCK format 3: header, file data, then the directory."""
+
+    header_size = 4 + 5 * 4 + 8 + 8 + 16 * 4
+    data = b"".join(files.values())
+    directory = struct.pack("<I", len(files))
+    offset = 0
+    for name, content in files.items():
+        encoded = name.encode()
+        encoded += b"\0" * (-len(encoded) % 4)
+        directory += struct.pack("<I", len(encoded)) + encoded
+        directory += struct.pack("<QQ", offset, len(content)) + b"\0" * 16
+        directory += struct.pack("<I", 0)
+        offset += len(content)
+    header = b"GDPC" + struct.pack("<5I", 3, 4, 5, 1, 2)
+    header += struct.pack("<QQ", header_size, header_size + len(data))
+    header += b"\0" * 64
+    path.write_bytes(header + data + directory)
+
+
+def test_locale_map_follows_pck_directory_not_position(tmp_path: Path) -> None:
+    def table(text: str) -> bytes:
+        values = {key: f"{text} {key}" for key in MODULE.LOCALIZATION_OBJECT_SENTINELS}
+        return ("{\n" + json.dumps(values, ensure_ascii=False)[1:] + "\n").encode()
+
+    pck = tmp_path / "game.pck"
+    # zht sorts after zhs, so the legacy "last occurrence" is no longer zhs.
+    write_pck(
+        pck,
+        {
+            "localization/deu/all.json": table("Schlag"),
+            "localization/eng/all.json": table("Strike"),
+            "localization/zhs/all.json": table("打击"),
+            "localization/zht/all.json": table("打擊"),
+        },
+    )
+    with pck.open("rb") as handle, mmap.mmap(
+        handle.fileno(), 0, access=mmap.ACCESS_READ
+    ) as mapped:
+        assert set(MODULE.pck_locale_ranges(mapped)) == {"deu", "eng", "zhs", "zht"}
+    assert MODULE.extract_locale_map(pck, "eng")["FATAL.description"] == "Strike FATAL.description"
+    assert MODULE.extract_locale_map(pck, "zhs")["FATAL.description"] == "打击 FATAL.description"
+    assert MODULE.extract_locale_map(pck, -1)["FATAL.description"] == "打擊 FATAL.description"
+    with pytest.raises(RuntimeError, match="no localization/jpn/"):
+        MODULE.extract_locale_map(pck, "jpn")

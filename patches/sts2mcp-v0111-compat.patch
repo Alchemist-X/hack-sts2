@@ -1,0 +1,79 @@
+--- a/McpMod.Eval.cs
++++ b/McpMod.Eval.cs
+@@ -368,7 +368,9 @@
+                 {
+                     ["seed"] = run.Rng.StringSeed,
+                     ["seed_uint"] = run.Rng.Seed,
+-                    ["counters"] = rng.Counters.ToDictionary(kv => kv.Key.ToString(), kv => (object?)kv.Value),
++                    // v0.111: SerializableRunRngSet.Counters (RunRngType -> int) became
++                    // Rngs (RunRngType -> SerializableRng{counter,s0..s3}); keep the same counters schema.
++                    ["counters"] = rng.Rngs.ToDictionary(kv => kv.Key.ToString(), kv => (object?)kv.Value.counter),
+                 };
+             }
+             catch (Exception ex) { meta["rng_error"] = ex.Message; }
+@@ -1232,7 +1234,9 @@
+             if (!parsed.Success || parsed.SaveData == null) return Error($"Checkpoint JSON did not parse: {parsed.Status}");
+             var save = parsed.SaveData;
+             save.NumReloads -= 1; // IncrementNumReloads adds it back; it is the game's public run-save writer.
+-            _evalSaveTask = SaveManager.Instance.IncrementNumReloads(save, false);
++            // v0.111: (save, bool isMultiplayer) became (save, NetGameType type); Singleplayer is the
++            // game's own singleplayer call (RunManager) and still writes via SaveRun(save, isMultiplayer: false).
++            _evalSaveTask = SaveManager.Instance.IncrementNumReloads(save, MegaCrit.Sts2.Core.Multiplayer.Game.NetGameType.Singleplayer);
+             return new Dictionary<string, object?> { ["status"] = "ok", ["checkpoint"] = DescribeSave(save) };
+         });
+         if ((string?)write["status"] != "ok") return write;
+--- a/McpMod.RuleEvidence.cs
++++ b/McpMod.RuleEvidence.cs
+@@ -59,8 +59,10 @@
+                     var damage = (DamageVar)value;
+                     item["damage_by_target"] = card.CombatState.HittableEnemies.Select(target =>
+                     {
++                        // v0.111 added `CardPlay? cardPlay` after cardSource; the engine's own
++                        // DamageVar preview passes null there, so this mirrors it exactly.
+                         decimal amount = Hook.ModifyDamage(card.Owner.RunState, card.CombatState,
+-                            target, card.Owner.Creature, damage.BaseValue, damage.Props, card,
++                            target, card.Owner.Creature, damage.BaseValue, damage.Props, card, null,
+                             ModifyDamageHookType.All, CardPreviewMode.Normal, out _);
+                         return new Dictionary<string, object?>
+                         {
+--- a/McpMod.StateBuilder.cs
++++ b/McpMod.StateBuilder.cs
+@@ -783,7 +783,8 @@
+                 _ => lobby.NetService.Type.ToString().ToLowerInvariant()
+             },
+             ["game_mode"] = lobby.GameMode.ToString().ToLowerInvariant(),
+-            ["max_players"] = lobby.MaxPlayers,
++            // v0.111: public MaxPlayers became the private readonly field _maxPlayers (same ctor value).
++            ["max_players"] = GetInstanceFieldValue(lobby, "_maxPlayers"),
+             ["ascension"] = lobby.Ascension,
+             ["max_ascension"] = lobby.MaxAscension,
+             ["all_ready"] = lobby.Players.Count > 0 && lobby.Players.All(p => p.isReady),
+@@ -973,7 +974,9 @@
+             catch { }
+ 
+             info["expected_player_count"] = lobby.Run?.Players?.Count ?? 0;
+-            info["connected_player_count"] = lobby.ConnectedPlayerIds?.Count ?? 0;
++            // v0.111: HashSet ConnectedPlayerIds became List<LoadRunLobbyPlayer> Players
++            // (added on connect, removed on leave); PlayerCount/PlayerIds are its views.
++            info["connected_player_count"] = lobby.PlayerCount;
+ 
+             // LoadRunLobby no longer exposes IsAboutToBeginGame in the public game API,
+             // so derive the same readiness summary from connected players and ready flags.
+@@ -982,7 +985,7 @@
+             try
+             {
+                 var runPlayers = lobby.Run?.Players;
+-                var connectedPlayerIds = lobby.ConnectedPlayerIds;
++                var connectedPlayerIds = lobby.PlayerIds.ToHashSet();
+                 aboutToBegin = runPlayers != null
+                     && connectedPlayerIds != null
+                     && runPlayers.Count > 0
+@@ -1000,7 +1003,7 @@
+                 {
+                     foreach (var sp in lobby.Run.Players)
+                     {
+-                        bool isConnected = lobby.ConnectedPlayerIds?.Contains(sp.NetId) ?? false;
++                        bool isConnected = lobby.PlayerIds.Contains(sp.NetId);
+                         bool isReady = false;
+                         try { isReady = lobby.IsPlayerReady(sp.NetId); } catch { }
+                         players.Add(new Dictionary<string, object?>

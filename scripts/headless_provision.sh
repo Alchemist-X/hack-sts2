@@ -18,7 +18,14 @@
 #
 # The sandbox-only MCP DLL reads STS2_MCP_PORT from each process environment.
 # The recorder reads STS2_RECORDER_* variables, so neither mod needs a private
-# mods directory.  The real app and human save tree are read-only inputs.
+# mods directory.  The real app is a read-only input.
+#
+# Worker profiles start fresh (the game creates progress.save on first launch)
+# and settings.save is synthesized, so the human save tree is not read at all.
+# Benchmark runs replace the whole save tree with a frozen baseline anyway
+# (scripts/bench/baseline.py).  STS2_HEADLESS_HUMAN_PROFILE=1 restores the old
+# behaviour for non-benchmark agent play: copy the human settings.save as the
+# template and seed progress.save/prefs.save (unlocks) from the human profile.
 #
 # Usage: headless_provision.sh [N] [BASE_DIR]
 
@@ -30,6 +37,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 N="${1:-1}"
 BASE_DIR="${2:-$REPO_ROOT/headless-instances}"
 PORT_BASE="${STS2_HEADLESS_PORT_BASE:-15600}"
+HUMAN_PROFILE="${STS2_HEADLESS_HUMAN_PROFILE:-0}"
 
 REAL_APP="${STS2_GAME_APP:-$HOME/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app}"
 REAL_SAVE_ROOT="$HOME/Library/Application Support/SlayTheSpire2"
@@ -56,13 +64,15 @@ find_real_settings() {
     return 1
 }
 
-REAL_SETTINGS="$(find_real_settings || true)"
-if [[ -n "$REAL_SETTINGS" ]]; then
+REAL_SETTINGS=""
+STEAM_ID=""
+if [[ "$HUMAN_PROFILE" == "1" ]]; then
+    REAL_SETTINGS="$(find_real_settings || true)"
+    [[ -n "$REAL_SETTINGS" ]] || die "STS2_HEADLESS_HUMAN_PROFILE=1 but no human settings.save under $REAL_SAVE_ROOT/steam"
     STEAM_ID="$(basename "$(dirname "$REAL_SETTINGS")")"
-    log "template settings.save: $REAL_SETTINGS (steam id $STEAM_ID)"
+    log "human profile mode: template settings.save $REAL_SETTINGS (steam id $STEAM_ID)"
 else
-    STEAM_ID="76561198323101015"
-    log "WARNING: no real settings.save found; synthesizing a minimal one"
+    log "fresh worker profiles: synthesized settings.save, no human save is read"
 fi
 
 create_overlay_runtime() {
@@ -107,7 +117,11 @@ if template and os.path.isfile(template):
     with open(template, "r", encoding="utf-8") as handle:
         settings = json.load(handle)
 else:
-    settings = {"schema_version": 5}
+    # v0.111.0 settings schema; the game fills every missing field on first
+    # launch.  Without a language the game takes the host locale
+    # (LocManager), so pin English: observations and rule text stay identical
+    # on every host.
+    settings = {"schema_version": 8, "language": "eng"}
 settings = {
     **settings,
     "mod_settings": {
@@ -194,16 +208,17 @@ RUNTIME_BIN="$RUNTIME_APP/Contents/MacOS/Slay the Spire 2"
 
 MCP_LOCK_FILE="$REPO_ROOT/config/sts2mcp.lock.json"
 MCP_COMMIT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' "$MCP_LOCK_FILE")"
-MCP_SOURCE_DLL="$REPO_ROOT/artifacts/mcp/$MCP_COMMIT/STS2_MCP.dll"
-if [[ ! -f "$MCP_SOURCE_DLL" ]]; then
-    log "pinned upstream MCP artifact is missing; building it now"
-    "$SCRIPT_DIR/build_upstream_mcp.sh"
-fi
 
+# The worker MCP is built from source (upstream commit + the lock's patch list);
+# the unpatched upstream artifact (build_upstream_mcp.sh) is not an input and no
+# longer compiles on current game builds.
 log "building process-configurable worker MCP from pinned commit $MCP_COMMIT"
 MCP_BUILD="$RUNTIME_BUILD/mcp"
+# Build both mods against the same game the runtime overlays.
+export STS2_GAME_INSTALL_DIR="${STS2_GAME_INSTALL_DIR:-$(dirname "$REAL_APP")}"
 "$SCRIPT_DIR/build_selection_mcp.sh" "$MCP_BUILD"
-dotnet build "$REPO_ROOT/mod/Sts2Recorder.csproj" -c Release --nologo >/dev/null
+dotnet build "$REPO_ROOT/mod/Sts2Recorder.csproj" -c Release --nologo \
+    -p:STS2GameDir="$STS2_GAME_INSTALL_DIR" >/dev/null
 
 RUNTIME_MODS="$RUNTIME_APP/Contents/MacOS/mods"
 mkdir -p "$RUNTIME_MODS"
@@ -236,8 +251,10 @@ for i in $(seq 1 "$N"); do
 
     save_root="$inst/home/Library/Application Support/SlayTheSpire2"
     write_settings "$REAL_SETTINGS" "$save_root/default/1/settings.save"
-    write_settings "$REAL_SETTINGS" "$save_root/steam/$STEAM_ID/settings.save"
-    seed_progress "$save_root"
+    if [[ "$HUMAN_PROFILE" == "1" ]]; then
+        write_settings "$REAL_SETTINGS" "$save_root/steam/$STEAM_ID/settings.save"
+        seed_progress "$save_root"
+    fi
     mkdir -p "$save_root/logs"
     printf '%d\n' "$port" > "$inst/port"
     log "  inst$i: port=$port, private data only (runtime shared)"
