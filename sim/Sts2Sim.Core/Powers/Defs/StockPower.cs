@@ -18,7 +18,9 @@ public sealed class StockPower : PowerModel
         {
             return;
         }
-        throw new NotImplementedException("W3 gap: CreatureCmd.Add has no seam to set Axebot.StockAmount on the monster model before it is added (Models.Powers/StockPower.cs:58-61)");
+        var cs = rs.Combat!;
+        int stockAmount = Amount - 1;
+        MonsterSpawner.SpawnForAdd(cs, MonsterRegistry.Get(AxebotMonsterId), Owner.Side, (Owner as MonsterState)?.SlotName, m => Axebot.GetExtra(m).StockOverrideAmount = stockAmount);
     }
 
     public override bool ShouldStopCombatFromEnding(CombatState cs) => true;
