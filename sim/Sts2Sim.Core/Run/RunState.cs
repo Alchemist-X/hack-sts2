@@ -35,6 +35,10 @@ public sealed partial class RunState : ICanonical
     public static RunState CreateStandalone(PlayerState player, RunRngSet rng, int ascension, UnlockProfile? unlocks = null)
     {
         ArgumentNullException.ThrowIfNull(player);
+        if (ascension >= (int)AscensionLevel.TightBelt)
+        {
+            player.SubtractFromMaxPotionCount(1);
+        }
         var players = new List<PlayerState>(DefaultPlayerCapacity) { player };
         return new RunState(players, rng, unlocks ?? UnlockProfile.All, ascension, new List<ModifierModel>(), new ChoiceRuntime(), new FidelityLog());
     }

@@ -277,6 +277,43 @@ public sealed class PlayerState : CreatureState
 
     public bool HasRelic(string relicId) => GetRelic(relicId) != null;
 
+    public void AddToMaxPotionCount(int maxPotionCountIncrease) => SetMaxPotionCountInternal(PotionSlots.Length + maxPotionCountIncrease);
+
+    public void SubtractFromMaxPotionCount(int maxPotionCountDecrease) => SetMaxPotionCountInternal(PotionSlots.Length - maxPotionCountDecrease);
+
+    private void SetMaxPotionCountInternal(int newMaxPotionCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(newMaxPotionCount);
+        var slots = PotionSlots;
+        if (newMaxPotionCount == slots.Length)
+        {
+            return;
+        }
+        if (newMaxPotionCount < slots.Length)
+        {
+            for (int i = slots.Length - 1; i >= newMaxPotionCount; i--)
+            {
+                var potion = slots[i];
+                if (potion is null)
+                {
+                    continue;
+                }
+                int open = Array.IndexOf(slots, null, 0, i);
+                if (open < 0)
+                {
+                    throw new InvalidOperationException($"Cannot remove potion slot {i}: every slot is full, and the game indexes slot -1 here (Entities.Players/Player.cs:1004-1007).");
+                }
+                if (open < newMaxPotionCount)
+                {
+                    slots[open] = potion;
+                }
+            }
+        }
+        var resized = new PotionModel?[newMaxPotionCount];
+        Array.Copy(slots, resized, Math.Min(slots.Length, newMaxPotionCount));
+        PotionSlots = resized;
+    }
+
     public CardPile GetPile(PileType type) => type switch
     {
         PileType.Draw => DrawPile,

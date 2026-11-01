@@ -98,11 +98,11 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void BeforeCombatStart(CombatState cs)
+    public virtual void BeforeCombatStart(RunState rs)
     {
     }
 
-    public virtual void BeforeCombatStartLate(CombatState cs)
+    public virtual void BeforeCombatStartLate(RunState rs)
     {
     }
 
@@ -126,7 +126,7 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void AfterCurrentHpChanged(CombatState cs, CreatureState creature, decimal delta)
+    public virtual void AfterCurrentHpChanged(RunState rs, CreatureState creature, decimal delta)
     {
     }
 
@@ -134,23 +134,23 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void BeforeDamageReceived(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+    public virtual void BeforeDamageReceived(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
     }
 
-    public virtual void AfterDamageReceived(CombatState cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+    public virtual void AfterDamageReceived(RunState rs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
     }
 
-    public virtual void AfterDamageReceivedLate(CombatState cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+    public virtual void AfterDamageReceivedLate(RunState rs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
     }
 
-    public virtual void BeforeDeath(CombatState cs, CreatureState creature)
+    public virtual void BeforeDeath(RunState rs, CreatureState creature)
     {
     }
 
-    public virtual void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented)
+    public virtual void AfterDeath(RunState rs, CreatureState creature, bool wasRemovalPrevented)
     {
     }
 
@@ -230,7 +230,7 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void AfterModifyingDamageAmount(CombatState cs, CardInstance? cardSource)
+    public virtual void AfterModifyingDamageAmount(RunState rs, CardInstance? cardSource)
     {
     }
 
@@ -250,11 +250,11 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void AfterModifyingHpLostBeforeOsty(CombatState cs)
+    public virtual void AfterModifyingHpLostBeforeOsty(RunState rs)
     {
     }
 
-    public virtual void AfterModifyingHpLostAfterOsty(CombatState cs)
+    public virtual void AfterModifyingHpLostAfterOsty(RunState rs)
     {
     }
 
@@ -310,7 +310,7 @@ public abstract class AbstractModel
     {
     }
 
-    public virtual void AfterPreventingDeath(CombatState cs, CreatureState creature)
+    public virtual void AfterPreventingDeath(RunState rs, CreatureState creature)
     {
     }
 
@@ -424,11 +424,11 @@ public abstract class AbstractModel
 
     public virtual decimal ModifyCardRewardUpgradeOdds(RunState rs, PlayerState player, CardInstance card, decimal odds) => odds;
 
-    public virtual decimal ModifyDamageAdditive(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => 0m;
+    public virtual decimal ModifyDamageAdditive(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => 0m;
 
-    public virtual decimal ModifyDamageCap(CombatState cs, CreatureState? target, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => decimal.MaxValue;
+    public virtual decimal ModifyDamageCap(RunState rs, CreatureState? target, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => decimal.MaxValue;
 
-    public virtual decimal ModifyDamageMultiplicative(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => 1m;
+    public virtual decimal ModifyDamageMultiplicative(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay) => 1m;
 
     public virtual decimal ModifyEnergyGain(CombatState cs, PlayerState player, decimal amount) => amount;
 
@@ -442,13 +442,13 @@ public abstract class AbstractModel
 
     public virtual decimal ModifyHandDrawLate(CombatState cs, PlayerState player, decimal count) => count;
 
-    public virtual decimal ModifyHpLostBeforeOsty(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
+    public virtual decimal ModifyHpLostBeforeOsty(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
 
-    public virtual decimal ModifyHpLostBeforeOstyLate(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
+    public virtual decimal ModifyHpLostBeforeOstyLate(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
 
-    public virtual decimal ModifyHpLostAfterOsty(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
+    public virtual decimal ModifyHpLostAfterOsty(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
 
-    public virtual decimal ModifyHpLostAfterOstyLate(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
+    public virtual decimal ModifyHpLostAfterOstyLate(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource) => amount;
 
     public virtual decimal ModifyMaxEnergy(CombatState cs, PlayerState player, decimal amount) => amount;
 
@@ -554,9 +554,9 @@ public abstract class AbstractModel
 
     public virtual bool ShouldClearBlock(CombatState cs, CreatureState creature) => true;
 
-    public virtual bool ShouldDie(CombatState cs, CreatureState creature) => true;
+    public virtual bool ShouldDie(RunState rs, CreatureState creature) => true;
 
-    public virtual bool ShouldDieLate(CombatState cs, CreatureState creature) => true;
+    public virtual bool ShouldDieLate(RunState rs, CreatureState creature) => true;
 
     public virtual bool ShouldDisableRemainingRestSiteOptions(RunState rs, PlayerState player) => true;
 

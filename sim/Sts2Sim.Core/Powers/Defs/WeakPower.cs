@@ -12,7 +12,7 @@ public sealed class WeakPower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public override decimal ModifyDamageMultiplicative(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+    public override decimal ModifyDamageMultiplicative(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
     {
         if (dealer == null || !ReferenceEquals(dealer, Owner))
         {
@@ -25,7 +25,7 @@ public sealed class WeakPower : PowerModel
         decimal num = DamageDecrease;
         if (dealer.GetPower(MultiplierModifierIds.DebilitatePower) is IWeakMultiplierModifier debilitate)
         {
-            num = debilitate.ModifyWeakMultiplier(cs, dealer, num, props, dealer, cardSource);
+            num = debilitate.ModifyWeakMultiplier(rs.Combat!, dealer, num, props, dealer, cardSource);
         }
         return num;
     }

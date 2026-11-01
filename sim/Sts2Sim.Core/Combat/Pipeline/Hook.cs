@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Sts2Sim.Core.Combat.Pipeline;
 
 public static class Hook
@@ -32,6 +34,24 @@ public static class Hook
     private static IReadOnlyList<CreatureState> SideTurnParticipants(CombatState cs, CombatSide side)
         => side == CombatSide.Enemy ? cs.Monsters : cs.Allies;
 
+    private static void RequireAttachedCombat(RunState rs, [NotNull] CombatState? cs, string dispatcher)
+    {
+        if (cs is null || !ReferenceEquals(rs.Combat, cs))
+        {
+            ThrowNoAttachedCombat(cs, dispatcher);
+        }
+    }
+
+    [DoesNotReturn]
+    private static void ThrowNoAttachedCombat(CombatState? cs, string dispatcher)
+    {
+        if (cs is null)
+        {
+            throw new NotImplementedException(dispatcher + " without a combat: hooks agent (run listeners without a combat, Runs/RunState.cs:829-933)");
+        }
+        throw new InvalidOperationException(dispatcher + ": cs must be rs.Combat, the combat attached to the run (CONTRACTS Part B section B3)");
+    }
+
     private static bool ContainsModel(IReadOnlyList<AbstractModel> models, AbstractModel model)
     {
         for (int i = 0; i < models.Count; i++)
@@ -45,19 +65,26 @@ public static class Hook
     }
 
     public static decimal ModifyDamage(CombatState cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType = ModifyDamageHookType.All)
-    {
-        List<AbstractModel>? modifiers = null;
-        return ModifyDamage(cs, target, dealer, damage, props, cardSource, cardPlay, hookType, ref modifiers);
-    }
+        => ModifyDamage(cs.Run, cs, target, dealer, damage, props, cardSource, cardPlay, hookType);
 
     public static decimal ModifyDamage(CombatState cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType, ref List<AbstractModel>? modifiers)
+        => ModifyDamage(cs.Run, cs, target, dealer, damage, props, cardSource, cardPlay, hookType, ref modifiers);
+
+    public static decimal ModifyDamage(RunState rs, CombatState? cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType = ModifyDamageHookType.All)
     {
+        List<AbstractModel>? modifiers = null;
+        return ModifyDamage(rs, cs, target, dealer, damage, props, cardSource, cardPlay, hookType, ref modifiers);
+    }
+
+    public static decimal ModifyDamage(RunState rs, CombatState? cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType, ref List<AbstractModel>? modifiers)
+    {
+        RequireAttachedCombat(rs, cs, "Hook.ModifyDamage (Hooks/Hook.cs:10328)");
         decimal num = damage;
-        num = ModifyDamageInternal(cs, target, dealer, num, props, cardSource, cardPlay, hookType, ref modifiers);
+        num = ModifyDamageInternal(rs, cs, target, dealer, num, props, cardSource, cardPlay, hookType, ref modifiers);
         return Math.Max(0m, num);
     }
 
-    private static decimal ModifyDamageInternal(CombatState cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType, ref List<AbstractModel>? modifiers)
+    private static decimal ModifyDamageInternal(RunState rs, CombatState cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType, ref List<AbstractModel>? modifiers)
     {
         decimal num = damage;
         if ((hookType & ModifyDamageHookType.Additive) != 0)
@@ -69,7 +96,7 @@ public static class Hook
                 {
                     continue;
                 }
-                decimal add = model.ModifyDamageAdditive(cs, target, num, props, dealer, cardSource, cardPlay);
+                decimal add = model.ModifyDamageAdditive(rs, target, num, props, dealer, cardSource, cardPlay);
                 num += add;
                 if (add != 0m)
                 {
@@ -86,7 +113,7 @@ public static class Hook
                 {
                     continue;
                 }
-                decimal mul = model.ModifyDamageMultiplicative(cs, target, num, props, dealer, cardSource, cardPlay);
+                decimal mul = model.ModifyDamageMultiplicative(rs, target, num, props, dealer, cardSource, cardPlay);
                 num *= mul;
                 if (mul != 1m)
                 {
@@ -104,7 +131,7 @@ public static class Hook
                 {
                     continue;
                 }
-                decimal c = model.ModifyDamageCap(cs, target, props, dealer, cardSource, cardPlay);
+                decimal c = model.ModifyDamageCap(rs, target, props, dealer, cardSource, cardPlay);
                 if (c < cap)
                 {
                     cap = c;
@@ -164,13 +191,20 @@ public static class Hook
     }
 
     public static decimal ModifyHpLost(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, HpLossHookPhase phases)
-    {
-        List<AbstractModel>? modifiers = null;
-        return ModifyHpLost(cs, target, amount, props, dealer, cardSource, phases, ref modifiers);
-    }
+        => ModifyHpLost(cs.Run, cs, target, amount, props, dealer, cardSource, phases);
 
     public static decimal ModifyHpLost(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, HpLossHookPhase phases, ref List<AbstractModel>? modifiers)
+        => ModifyHpLost(cs.Run, cs, target, amount, props, dealer, cardSource, phases, ref modifiers);
+
+    public static decimal ModifyHpLost(RunState rs, CombatState? cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, HpLossHookPhase phases)
     {
+        List<AbstractModel>? modifiers = null;
+        return ModifyHpLost(rs, cs, target, amount, props, dealer, cardSource, phases, ref modifiers);
+    }
+
+    public static decimal ModifyHpLost(RunState rs, CombatState? cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, HpLossHookPhase phases, ref List<AbstractModel>? modifiers)
+    {
+        RequireAttachedCombat(rs, cs, "Hook.ModifyHpLost (Hooks/Hook.cs:10627)");
         decimal num = amount;
         if ((phases & HpLossHookPhase.BeforeOsty) != 0)
         {
@@ -183,7 +217,7 @@ public static class Hook
                         continue;
                     }
                     decimal before = num;
-                    num = model.ModifyHpLostBeforeOsty(cs, target, num, props, dealer, cardSource);
+                    num = model.ModifyHpLostBeforeOsty(rs, target, num, props, dealer, cardSource);
                     if (decimal.Truncate(before) != decimal.Truncate(num))
                     {
                         AddModifier(ref modifiers, model);
@@ -199,7 +233,7 @@ public static class Hook
                         continue;
                     }
                     decimal before = num;
-                    num = model.ModifyHpLostBeforeOstyLate(cs, target, num, props, dealer, cardSource);
+                    num = model.ModifyHpLostBeforeOstyLate(rs, target, num, props, dealer, cardSource);
                     if (decimal.Truncate(before) != decimal.Truncate(num))
                     {
                         AddModifier(ref modifiers, model);
@@ -218,7 +252,7 @@ public static class Hook
                         continue;
                     }
                     decimal before = num;
-                    num = model.ModifyHpLostAfterOsty(cs, target, num, props, dealer, cardSource);
+                    num = model.ModifyHpLostAfterOsty(rs, target, num, props, dealer, cardSource);
                     if (decimal.Truncate(before) != decimal.Truncate(num))
                     {
                         AddModifier(ref modifiers, model);
@@ -234,7 +268,7 @@ public static class Hook
                         continue;
                     }
                     decimal before = num;
-                    num = model.ModifyHpLostAfterOstyLate(cs, target, num, props, dealer, cardSource);
+                    num = model.ModifyHpLostAfterOstyLate(rs, target, num, props, dealer, cardSource);
                     if (decimal.Truncate(before) != decimal.Truncate(num))
                     {
                         AddModifier(ref modifiers, model);
@@ -573,15 +607,20 @@ public static class Hook
         return true;
     }
 
-    public static bool ShouldDie(CombatState cs, CreatureState creature) => ShouldDie(cs, creature, out _);
+    public static bool ShouldDie(CombatState cs, CreatureState creature) => ShouldDie(cs.Run, cs, creature, out _);
 
-    public static bool ShouldDie(CombatState cs, CreatureState creature, out AbstractModel? preventer)
+    public static bool ShouldDie(CombatState cs, CreatureState creature, out AbstractModel? preventer) => ShouldDie(cs.Run, cs, creature, out preventer);
+
+    public static bool ShouldDie(RunState rs, CombatState? cs, CreatureState creature) => ShouldDie(rs, cs, creature, out _);
+
+    public static bool ShouldDie(RunState rs, CombatState? cs, CreatureState creature, out AbstractModel? preventer)
     {
+        RequireAttachedCombat(rs, cs, "Hook.ShouldDie (Hooks/Hook.cs:11365)");
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
         {
             for (int i = 0; i < listeners.Count; i++)
             {
-                if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldDie(cs, creature))
+                if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldDie(rs, creature))
                 {
                     preventer = model;
                     return false;
@@ -592,7 +631,7 @@ public static class Hook
         {
             for (int i = 0; i < listeners.Count; i++)
             {
-                if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldDieLate(cs, creature))
+                if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldDieLate(rs, creature))
                 {
                     preventer = model;
                     return false;
@@ -747,15 +786,18 @@ public static class Hook
         return true;
     }
 
-    public static void BeforeCombatStart(CombatState cs)
+    public static void BeforeCombatStart(CombatState cs) => BeforeCombatStart(cs.Run, cs);
+
+    public static void BeforeCombatStart(RunState rs, CombatState? cs)
     {
+        RequireAttachedCombat(rs, cs, "Hook.BeforeCombatStart (Hooks/Hook.cs:9071)");
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
         {
             for (int i = 0; i < listeners.Count; i++)
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.BeforeCombatStart(cs);
+                    model.BeforeCombatStart(rs);
                 }
             }
         }
@@ -765,7 +807,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.BeforeCombatStartLate(cs);
+                    model.BeforeCombatStartLate(rs);
                 }
             }
         }
@@ -1184,13 +1226,17 @@ public static class Hook
     }
 
     public static void BeforeDamageReceived(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+        => BeforeDamageReceived(cs.Run, cs, target, amount, props, dealer, cardSource);
+
+    public static void BeforeDamageReceived(RunState rs, CombatState? cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
+        RequireAttachedCombat(rs, cs, "Hook.BeforeDamageReceived (Hooks/Hook.cs:9179)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model))
             {
-                model.BeforeDamageReceived(cs, target, amount, props, dealer, cardSource);
+                model.BeforeDamageReceived(rs, target, amount, props, dealer, cardSource);
             }
         }
     }
@@ -1208,14 +1254,18 @@ public static class Hook
     }
 
     public static void AfterDamageReceived(CombatState cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+        => AfterDamageReceived(cs.Run, cs, target, result, props, dealer, cardSource);
+
+    public static void AfterDamageReceived(RunState rs, CombatState? cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
+        RequireAttachedCombat(rs, cs, "Hook.AfterDamageReceived (Hooks/Hook.cs:9199)");
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
         {
             for (int i = 0; i < listeners.Count; i++)
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterDamageReceived(cs, target, result, props, dealer, cardSource);
+                    model.AfterDamageReceived(rs, target, result, props, dealer, cardSource);
                 }
             }
         }
@@ -1225,20 +1275,23 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterDamageReceivedLate(cs, target, result, props, dealer, cardSource);
+                    model.AfterDamageReceivedLate(rs, target, result, props, dealer, cardSource);
                 }
             }
         }
     }
 
-    public static void AfterCurrentHpChanged(CombatState cs, CreatureState creature, decimal delta)
+    public static void AfterCurrentHpChanged(CombatState cs, CreatureState creature, decimal delta) => AfterCurrentHpChanged(cs.Run, cs, creature, delta);
+
+    public static void AfterCurrentHpChanged(RunState rs, CombatState? cs, CreatureState creature, decimal delta)
     {
+        RequireAttachedCombat(rs, cs, "Hook.AfterCurrentHpChanged (Hooks/Hook.cs:9144)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model))
             {
-                model.AfterCurrentHpChanged(cs, creature, delta);
+                model.AfterCurrentHpChanged(rs, creature, delta);
             }
         }
     }
@@ -1315,42 +1368,52 @@ public static class Hook
         }
     }
 
-    public static void BeforeDeath(CombatState cs, CreatureState creature)
+    public static void BeforeDeath(CombatState cs, CreatureState creature) => BeforeDeath(cs.Run, cs, creature);
+
+    public static void BeforeDeath(RunState rs, CombatState? cs, CreatureState creature)
     {
+        RequireAttachedCombat(rs, cs, "Hook.BeforeDeath (Hooks/Hook.cs:9219)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model))
             {
-                model.BeforeDeath(cs, creature);
+                model.BeforeDeath(rs, creature);
             }
         }
     }
 
-    public static void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented)
+    public static void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented) => AfterDeath(cs.Run, cs, creature, wasRemovalPrevented);
+
+    public static void AfterDeath(RunState rs, CombatState? cs, CreatureState creature, bool wasRemovalPrevented)
     {
+        RequireAttachedCombat(rs, cs, "Hook.AfterDeath (Hooks/Hook.cs:9234)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model))
             {
-                model.AfterDeath(cs, creature, wasRemovalPrevented);
+                model.AfterDeath(rs, creature, wasRemovalPrevented);
             }
         }
     }
 
     public static void AfterModifyingDamageAmount(CombatState cs, CardInstance? cardSource, IReadOnlyList<AbstractModel>? modifiers)
+        => AfterModifyingDamageAmount(cs.Run, cs, cardSource, modifiers);
+
+    public static void AfterModifyingDamageAmount(RunState rs, CombatState? cs, CardInstance? cardSource, IReadOnlyList<AbstractModel>? modifiers)
     {
         if (modifiers == null || modifiers.Count == 0)
         {
             return;
         }
+        RequireAttachedCombat(rs, cs, "Hook.AfterModifyingDamageAmount (Hooks/Hook.cs:9462)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model) && ContainsModel(modifiers, model))
             {
-                model.AfterModifyingDamageAmount(cs, cardSource);
+                model.AfterModifyingDamageAmount(rs, cardSource);
             }
         }
     }
@@ -1371,34 +1434,40 @@ public static class Hook
         }
     }
 
-    public static void AfterModifyingHpLostBeforeOsty(CombatState cs, IReadOnlyList<AbstractModel>? modifiers)
+    public static void AfterModifyingHpLostBeforeOsty(CombatState cs, IReadOnlyList<AbstractModel>? modifiers) => AfterModifyingHpLostBeforeOsty(cs.Run, cs, modifiers);
+
+    public static void AfterModifyingHpLostBeforeOsty(RunState rs, CombatState? cs, IReadOnlyList<AbstractModel>? modifiers)
     {
         if (modifiers == null || modifiers.Count == 0)
         {
             return;
         }
+        RequireAttachedCombat(rs, cs, "Hook.AfterModifyingHpLostBeforeOsty (Hooks/Hook.cs:9523)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model) && ContainsModel(modifiers, model))
             {
-                model.AfterModifyingHpLostBeforeOsty(cs);
+                model.AfterModifyingHpLostBeforeOsty(rs);
             }
         }
     }
 
-    public static void AfterModifyingHpLostAfterOsty(CombatState cs, IReadOnlyList<AbstractModel>? modifiers)
+    public static void AfterModifyingHpLostAfterOsty(CombatState cs, IReadOnlyList<AbstractModel>? modifiers) => AfterModifyingHpLostAfterOsty(cs.Run, cs, modifiers);
+
+    public static void AfterModifyingHpLostAfterOsty(RunState rs, CombatState? cs, IReadOnlyList<AbstractModel>? modifiers)
     {
         if (modifiers == null || modifiers.Count == 0)
         {
             return;
         }
+        RequireAttachedCombat(rs, cs, "Hook.AfterModifyingHpLostAfterOsty (Hooks/Hook.cs:9538)");
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model) && ContainsModel(modifiers, model))
             {
-                model.AfterModifyingHpLostAfterOsty(cs);
+                model.AfterModifyingHpLostAfterOsty(rs);
             }
         }
     }
@@ -1491,11 +1560,14 @@ public static class Hook
         }
     }
 
-    public static void AfterPreventingDeath(CombatState cs, AbstractModel preventer, CreatureState creature)
+    public static void AfterPreventingDeath(CombatState cs, AbstractModel preventer, CreatureState creature) => AfterPreventingDeath(cs.Run, cs, preventer, creature);
+
+    public static void AfterPreventingDeath(RunState rs, CombatState? cs, AbstractModel preventer, CreatureState creature)
     {
+        RequireAttachedCombat(rs, cs, "Hook.AfterPreventingDeath (Hooks/Hook.cs:9816)");
         if (ListenerSnapshot.Contains(cs, ListenerSource.Run, preventer))
         {
-            preventer.AfterPreventingDeath(cs, creature);
+            preventer.AfterPreventingDeath(rs, creature);
         }
     }
 

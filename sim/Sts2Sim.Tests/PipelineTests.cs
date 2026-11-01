@@ -4,6 +4,7 @@ using Sts2Sim.Core.Combat.Pipeline;
 using Sts2Sim.Core.Monsters;
 using Sts2Sim.Core.Powers;
 using Sts2Sim.Core.Random;
+using Sts2Sim.Core.Run;
 using Sts2Sim.Core.State;
 
 namespace Sts2Sim.Tests;
@@ -71,7 +72,7 @@ public static class PipelineTests
 
         public override void AfterSideTurnStartLate(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants) => _log.Add(_tag + ":late");
 
-        public override void AfterDamageReceived(CombatState cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+        public override void AfterDamageReceived(RunState rs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
         {
             if (ReferenceEquals(target, Owner))
             {
@@ -79,7 +80,7 @@ public static class PipelineTests
             }
         }
 
-        public override void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented) => _log.Add(_tag + ":death" + (wasRemovalPrevented ? "-prevented" : string.Empty));
+        public override void AfterDeath(RunState rs, CreatureState creature, bool wasRemovalPrevented) => _log.Add(_tag + ":death" + (wasRemovalPrevented ? "-prevented" : string.Empty));
 
         public override void AfterRemoved(CombatState cs, CreatureState oldOwner) => _log.Add(_tag + ":removed");
     }
@@ -103,10 +104,10 @@ public static class PipelineTests
 
         public override PowerInstanceType InstanceType => PowerInstanceType.Instanced;
 
-        public override decimal ModifyDamageAdditive(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+        public override decimal ModifyDamageAdditive(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
             => ReferenceEquals(dealer, Owner) ? _bonus : 0m;
 
-        public override void AfterModifyingDamageAmount(CombatState cs, CardInstance? cardSource) => _log.Add("after-modifying:" + _bonus);
+        public override void AfterModifyingDamageAmount(RunState rs, CardInstance? cardSource) => _log.Add("after-modifying:" + _bonus);
     }
 
     private sealed class CapPower : PowerModel
@@ -126,7 +127,7 @@ public static class PipelineTests
 
         public override PowerInstanceType InstanceType => PowerInstanceType.Instanced;
 
-        public override decimal ModifyDamageCap(CombatState cs, CreatureState? target, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+        public override decimal ModifyDamageCap(RunState rs, CreatureState? target, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
             => ReferenceEquals(target, Owner) ? _cap : decimal.MaxValue;
     }
 
@@ -140,12 +141,12 @@ public static class PipelineTests
 
         public override PowerStackType StackType => PowerStackType.Single;
 
-        public override bool ShouldDie(CombatState cs, CreatureState creature) => !ReferenceEquals(creature, Owner) || _used;
+        public override bool ShouldDie(RunState rs, CreatureState creature) => !ReferenceEquals(creature, Owner) || _used;
 
-        public override void AfterPreventingDeath(CombatState cs, CreatureState creature)
+        public override void AfterPreventingDeath(RunState rs, CreatureState creature)
         {
             _used = true;
-            CreatureCmd.Heal(cs, creature, 1m);
+            CreatureCmd.Heal(rs.Combat!, creature, 1m);
         }
     }
 

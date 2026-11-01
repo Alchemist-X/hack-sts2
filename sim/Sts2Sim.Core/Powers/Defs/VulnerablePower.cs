@@ -12,7 +12,7 @@ public sealed class VulnerablePower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public override decimal ModifyDamageMultiplicative(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+    public override decimal ModifyDamageMultiplicative(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
     {
         if (target == null || !ReferenceEquals(target, Owner))
         {
@@ -25,11 +25,11 @@ public sealed class VulnerablePower : PowerModel
         decimal num = DamageIncrease;
         if (dealer != null && dealer.GetPower(MultiplierModifierIds.CrueltyPower) is IVulnerableMultiplierModifier cruelty)
         {
-            num = cruelty.ModifyVulnerableMultiplier(cs, target, num, props, dealer, cardSource);
+            num = cruelty.ModifyVulnerableMultiplier(rs.Combat!, target, num, props, dealer, cardSource);
         }
         if (target.GetPower(MultiplierModifierIds.DebilitatePower) is IVulnerableMultiplierModifier debilitate)
         {
-            num = debilitate.ModifyVulnerableMultiplier(cs, target, num, props, dealer, cardSource);
+            num = debilitate.ModifyVulnerableMultiplier(rs.Combat!, target, num, props, dealer, cardSource);
         }
         return num;
     }

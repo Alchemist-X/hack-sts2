@@ -1,22 +1,24 @@
 # W1 phase-0 scaffold (CONTRACTS Part B §B11 row "scaffold (phase 0)")
 
-2026-11-01 · branch `claude/sim-source-recreation-9392df` on top of `83c7ee9`. Rule truth: decompile v0.111.0
+2026-11-01 · branch `claude/sim-source-recreation-9392df` on top of `83c7ee9`; fix pass after the adversarial
+check on top of `46d1918` (§15). Rule truth: decompile v0.111.0
 (`<ns-dir>/<File>.cs:<line>`, `MegaCrit.Sts2.Core.` dropped). This file records every member the scaffold
 added, the source line of its signature, every mapping decision and every signature that could not be mapped
 cleanly (§14). Bodies are stubs (`NotImplementedException` naming the owner and the source line) unless §12
 lists them.
 
-Gates at commit time: `dotnet build sim/Sts2Sim.sln` 0 warnings 0 errors; `dotnet run --project sim/Sts2Sim.Tests`
-367/367; diff gate 4/4 bundles agree, 69/69 decisions. Counts: 182 `AbstractModel` hook virtuals
-(100 kept + 82 new), 148 public `Hook` dispatcher names (77 kept + 71 new stubs).
+Gates at commit time (scaffold and fix pass alike): `dotnet build sim/Sts2Sim.sln` 0 warnings 0 errors;
+`dotnet run --project sim/Sts2Sim.Tests` 367/367; diff gate 4/4 bundles agree, 69/69 decisions. Counts: 182
+`AbstractModel` hook virtuals (100 kept + 82 new; 30 of the kept ones changed signature, §3), 148 public `Hook`
+dispatcher names (77 kept + 71 new stubs; 13 kept ones gained the game's run + combat context, §4).
 
 ## 1. Mapping rules (decisions)
 
 | # | Decision | Source / reason |
 | --- | --- | --- |
-| M1 | First parameter of a **new** virtual: `CombatState cs` when its `hooks.json` scope is `combat`, `RunState rs` for `run` and `both`. The 100 existing virtuals keep `CombatState cs`, including the 21 existing `both`-scope ones (`BeforeCombatStart[Late]`, `AfterCurrentHpChanged`, `BeforeDamageReceived`, `AfterDamageReceived[Late]`, `BeforeDeath`, `AfterDeath`, `AfterModifyingDamageAmount`, `AfterModifyingHpLost{Before,After}Osty`, `AfterPreventingDeath`, `ModifyDamage{Additive,Cap,Multiplicative}`, `ModifyHpLost{Before,After}Osty[Late]`, `ShouldDie[Late]`) | brief step 2; Part B §B3 |
+| M1 | First parameter of every virtual, new and existing alike: `CombatState cs` when its `hooks.json` scope is `combat`, `RunState rs` when it is `run` or `both`. Result: 100 `combat` virtuals take `cs`; 46 `run` and 33 `both` take `rs`. The 33 `both` ones are the 12 new ones and the 21 existing ones (`BeforeCombatStart[Late]`, `AfterCurrentHpChanged`, `BeforeDamageReceived`, `AfterDamageReceived[Late]`, `BeforeDeath`, `AfterDeath`, `AfterModifyingDamageAmount`, `AfterModifyingHpLost{Before,After}Osty`, `AfterPreventingDeath`, `ModifyDamage{Additive,Cap,Multiplicative}`, `ModifyHpLost{Before,After}Osty[Late]`, `ShouldDie[Late]`). The fix pass moved those 21 from `CombatState cs` to `RunState rs` (§3, §15). An override that needs the combat reads `rs.Combat`. When a combat listener is visited (power, monster, orb, combat card or its enchantment or affliction), that value is the dispatching combat and is never null. The 13 migrated dispatchers enforce `cs == rs.Combat` (M26), and the hooks agent keeps the same invariant when it fills the 10 new both-scope stubs. The P0 power overrides use `rs.Combat!` at the point of use | Part B §B3 (`RunState rs` for run-scope and both-scope hooks; the combat, when attached, is `rs.Combat`) |
 | M2 | The three hooks no dispatcher calls (`hooks.json` scope `unknown`): `AfterAddToDeckPrevented` → `RunState rs` (called on the preventer while adding to the deck, `Commands/CardPileCmd.cs:406`, `:3381`); `AfterModifyingCardPlayResultLocation` → `CombatState cs` (combat; overridden by `Models.Powers/NostalgiaPower.cs:54`, `ReboundPower.cs:178`); `AfterTargetingBlockedVfx` → `CombatState cs` (UI only, `Nodes.Combat/NTargetManager.cs`; declared for the count, never dispatched) | |
-| M3 | Dispatcher parameters: the game's `IRunState runState, ICombatState? combatState` → `RunState rs, CombatState? cs`; `ICombatState combatState` → `CombatState cs`; every `PlayerChoiceContext` / `HookPlayerChoiceContext` dropped. Only reorder: `BeforeCombatRewardOffered(RewardsSet rewards, IRunState runState, CombatRoom room)` (`Hooks/Hook.cs:9100`) becomes `(RunState rs, RewardsSet rewards, CombatRoom room)` so the context is first | Part A §1 |
+| M3 | Dispatcher parameters: the game's `IRunState runState, ICombatState? combatState` → `RunState rs, CombatState? cs`; `ICombatState combatState` → `CombatState cs`; every `PlayerChoiceContext` / `HookPlayerChoiceContext` dropped. Only reorder: `BeforeCombatRewardOffered(RewardsSet rewards, IRunState runState, CombatRoom room)` (`Hooks/Hook.cs:9100`) becomes `(RunState rs, RewardsSet rewards, CombatRoom room)` so the context is first. All 23 game dispatchers with `(IRunState, ICombatState?)` have the `(RunState rs, CombatState? cs, …)` sim signature. That covers 10 new stubs (§4) and the 13 existing dispatchers that the fix pass migrated (§4, last table). For those 13, the P0 `(CombatState cs, …)` signature stays as an exact forwarding overload `(cs.Run, cs, …)`, so combat callers are unchanged. These overloads are permanent conveniences, unlike the M5 side-turn overloads | Part A §1; `Hooks/Hook.cs` (23 signatures) |
 | M4 | `out IEnumerable<AbstractModel> modifiers` / `out List<AbstractModel> modifyingModels` → a plain overload plus a `ref List<AbstractModel>? <same name>` overload (Part A §4.6): `ModifyCardPlayResultLocation`, `ModifyOrbPassiveTriggerCount`, `ModifyGoldGained` (Part B §B3) and the run-layer `ModifyCardBeingAddedToDeck`, `TryModifyCardRewardOptions`. `out AbstractModel? preventer` kept on `ShouldAddToDeck` (plus a plain overload). Run-layer dispatchers that **return** their modifier list (`ModifyCardRewardAlternatives`, `ModifyRestSiteOptions`, `ModifyRestSiteHealRewards`, `ModifyRewards`) keep the return type `IEnumerable<AbstractModel>` | `Hooks/Hook.cs:10121`, `:10188`, `:10213`, `:10266`, `:10501`, `:10840`, `:10972`, `:10994`, `:11016`, `:11170` |
 | M5 | Side-turn hooks (D12): the 8 virtuals (`BeforeSideTurnStart`, `AfterSideTurnStart[Late]`, `BeforeSideTurnEnd{VeryEarly,Early,}`, `AfterSideTurnEnd[Late]`) and the 4 dispatchers take `IReadOnlyList<CreatureState> participants` (the game's turn-end hooks take `IEnumerable<Creature>`; Part B §B3 fixes `IReadOnlyList`). The existing `(cs, side)` dispatchers stay as forwarding overloads that pass the live side list (`cs.Monsters` for `Enemy`, else `cs.Allies`), allocation-free. Exact for every P0 caller: no pets, no extra turns, and no ported override reads `participants` (the four power overrides got the new parameter, bodies unchanged). The loop agent replaces the calls with the game's snapshots: turn start = `PlayersTakingExtraTurn` creatures or `CreaturesOnCurrentSide` (`Combat/CombatManager.cs:4873-4882`), player turn end = the ending players' creatures only (list `:2649`, `:2860`; calls `:2457`, `:2967`), enemy turn end = a copy of `CreaturesOnCurrentSide` (`:2055-2088`); the hooks agent removes the forwarding overloads afterwards | `Models/AbstractModel.cs:638-688` |
 | M6 | `ShouldPlay` virtual and dispatcher take `AutoPlayType autoPlayType` (game dispatcher order `(combatState, card, out preventer, autoPlayType)`, `Hooks/Hook.cs:11554`); the existing `(cs, card)` and `(cs, card, out preventer)` overloads forward `AutoPlayType.None`, which is what `CardModel.CanPlay` passes (`Models/CardModel.cs:3351`); `CardCmd.AutoPlay` passes its type (`Commands/CardCmd.cs:395`) | `Models/AbstractModel.cs:1042` |
@@ -39,6 +41,8 @@ Gates at commit time: `dotnet build sim/Sts2Sim.sln` 0 warnings 0 errors; `dotne
 | M23 | `ChoiceRuntime` state: the selector stack is cloned (list copy, same selector objects) and hashed (count, then per selector its type full name and, when it implements `ICanonical`, its payload); selectors on the stack must therefore be stateless or `ICanonical` (the only content selector, `VakuuCardSelector`, is stateless, `Models.Relics/VakuuCardSelector.cs:14`). `Answerer` and the context stack are transient: not cloned, not hashed | Part B §B1 |
 | M24 | `ModifierModel.IsEquivalent` default = same runtime type (the game also compares `IsCanonical`, `Models/ModifierModel.cs:103-110`; the sim has no canonical modifier instances) | |
 | M25 | `CardSelectorPrefs` is a `sealed class` (Part B §B1; a struct in the game). The `LocString Prompt` becomes `string PromptKey`; `UnpoweredPreviews`, `PretendCardsCanBePlayed`, `ShouldGlowGold` (UI) are dropped; `Comparison<CardInstance>?` kept (`CardSelection/CardSelectorPrefs.cs:64`) | |
+| M26 | The `(RunState rs, CombatState? cs, …)` body of the 13 migrated dispatchers starts with `RequireAttachedCombat(rs, cs, site)`. When `cs` is non-null and `ReferenceEquals(rs.Combat, cs)`, the P0 listener pass runs unchanged over `cs` (`ListenerSnapshot.Take(cs, ListenerSource.Run)`) and hands `rs` to the virtuals. When `cs` is null (the game's out-of-combat dispatch: HP changes, deaths, potions outside combat), it throws `NotImplementedException` naming the hooks agent: the run listeners without a combat are `IterateRunHookListeners(rs, null)`, `Runs/RunState.cs:829-933`, a stub. When `cs` is not `rs.Combat`, it throws `InvalidOperationException`: the virtuals only see `rs`, so a detached combat would give the overrides the wrong combat. No P0 or test path builds a detached combat; every combat is created standalone and attached. The three `AfterModifying*` dispatchers return before the check when `modifiers` is empty, which is exact because no listener can match an empty list. Cost: one null test and one reference compare per dispatch (§13) | Part B §B3; `Hooks/Hook.cs:9071`, `:9144`, `:9179`, `:9199`, `:9219`, `:9234`, `:9462`, `:9523`, `:9538`, `:9816`, `:10328`, `:10627`, `:11365` |
+| M27 | Potion slot count. The game builds a new-run player with `initialMaxPotionSlotCount = 3` slots (`Entities.Players/Player.cs:101`, `:714`). `RunManager.SetUpNewSingleplayer` (`Runs/RunManager.cs:3647`, `:3667`) → `InitializeNewRun` (`:3826`) → `ApplyAscensionEffects(player)` per player (`:3862`, `:4827-4830`) → `AscensionManager.ApplyEffectsTo` (`Entities.Ascension/AscensionManager.cs:27-39`). At `AscensionLevel.TightBelt` (4, `Entities.Ascension/AscensionLevel.cs`) and above, that call does `player.SubtractFromMaxPotionCount(1)` (`:29-32`), so the player has 2 slots. `RunState.CreateStandalone` is the sim's new run for a standalone combat, so it applies this half: at `ascension >= TightBelt` it calls `player.SubtractFromMaxPotionCount(1)`, and every standalone combat at A4+ has 2 slots. The AscendersBane half (`:33-38`) is not applied there. It stays with the deck specs (`CombatLoop.DeckForCombat` → `StartingDecks.ApplyAscensionEffectsToDeck`): a standalone deck comes from specs that already carry the curse unless they are the bare starting deck, so adding it in `CreateStandalone` would double it. `PlayerState.AddToMaxPotionCount` / `SubtractFromMaxPotionCount` port `Player.cs:974-1017`. Growing appends empty slots. Shrinking walks from the last slot down to the new count; a potion found there moves to the first empty slot when that slot lies below the new count, else it is discarded (`DiscardPotionInternal` → `RemovePotionInternal` nulls the slot, `:1072-1096`; the `PotionDiscarded` and `MaxPotionCountChanged` events are UI-only, `Nodes.Potions/NPotionContainer.cs:299-300`, `Nodes.CommonUi/NTopBar.cs:383`). With every slot full the game indexes slot -1 and throws (`:1004-1007`); the port throws `InvalidOperationException` there. That case is unreachable in v0.111.0: the only shrink is TightBelt at run creation, on empty slots, and `PlayerCmd.LoseMaxPotionCount` (`Commands/PlayerCmd.cs:940`) has no caller. Growth is used by `PlayerCmd.GainMaxPotionCount` (`:934`; PotionBelt, PhialHolster, AlchemicalCoffer) | finding "TightBelt"; §14 item 14 |
 
 ## 2. Stubbed member groups
 
@@ -47,6 +51,7 @@ Gates at commit time: `dotnet build sim/Sts2Sim.sln` 0 warnings 0 errors; `dotne
 | Hook virtuals | `Combat/Pipeline/AbstractModel.cs` | 182 virtuals in game line order (§3) | `Models/AbstractModel.cs:188-1097` | hooks (defaults are final) |
 | Dispatchers | `Combat/Pipeline/Hook.cs` | 71 new stubs (§4); `IterateRunHookListeners(RunState rs, CombatState? cs, List<AbstractModel> buffer)` | `Hooks/Hook.cs:8813-11741`; `Runs/RunState.cs:829-933` | hooks |
 | Side-turn / `ShouldPlay` overloads | `Combat/Pipeline/Hook.cs` | `BeforeSideTurnStart`, `AfterSideTurnStart`, `BeforeSideTurnEnd`, `AfterSideTurnEnd` `(cs, side, participants)`; `ShouldPlay(cs, card, out preventer, autoPlayType)` (bodies are the P0 bodies) | `Hooks/Hook.cs:9933`, `:9948`, `:10023`, `:10038`, `:11554` | hooks |
+| Both-scope context (fix pass) | `Combat/Pipeline/Hook.cs` | 13 existing dispatchers re-keyed to `(RunState rs, CombatState? cs, …)` with `(CombatState cs, …)` forwarding overloads; `RequireAttachedCombat` / `ThrowNoAttachedCombat` (M26) | §4 last table | hooks (the `cs == null` path) |
 | Decision API | `Api/GameAction.cs` | `ActionKind` + `UsePotion`, `DiscardPotion`, `ChoosePick`, `ChooseConfirm`, `ChooseCancel` (append-only); `GameAction.UsePotion(slot, target)`, `DiscardPotion(slot)`, `Pick(option)`, `Confirm`, `Cancel`; `ToString` cases `UsePotion(s[->t])`, `DiscardPotion(s)`, `Pick(i)`, `Confirm`, `Cancel` | Part B §B1 | scaffold (final) |
 | Choice types | `Choice/ChoiceTypes.cs` | `ChoicePromptKind` (13), `ChoiceResultType`, `ChoiceContextKind`, `ChoiceOption`, `ChoicePrompt`, `ChoiceAnswer`, `IChoiceAnswerer`, `ChoiceSource` (M10) | Part B §B1 | frozen |
 | Choice runtime | `Choice/ChoiceRuntime.cs` | `ContextScope` (disposable struct); `PushContext(kind, onFirstPause)` stub, `Ask(prompt)` stub, internal `PopContext` stub; `PushSelector`/`PopSelector`/`Selectors`/`Answerer`, `DeepClone`, `WriteCanonical` working | Part B §B1; `Commands/CardSelectCmd.cs:3084-3150` | choice |
@@ -63,7 +68,7 @@ Gates at commit time: `dotnet build sim/Sts2Sim.sln` 0 warnings 0 errors; `dotne
 | Run state | `Run/RunState.cs` | §6, §7 | `Runs/RunState.cs:26` | state (W1 body), W2 |
 | Run shells | `Run/*.cs` (16) | §6 | §6 | W2 |
 | Unlocks | `Unlocks/UnlockProfile.cs` | §7 | `Unlocks/UnlockState.cs:16-139` | cards-kernel (queries over pools) |
-| State members | `State/CombatState.cs`, `State/CreatureState.cs`, `State/CardPile.cs`, `Cards/CardInstance.cs` | §7 | §7 | state / cards-kernel |
+| State members | `State/CombatState.cs`, `State/CreatureState.cs`, `State/CardPile.cs`, `Cards/CardInstance.cs` | §7 (fix pass: `PlayerState.AddToMaxPotionCount` / `SubtractFromMaxPotionCount`, M27) | §7 | state / cards-kernel |
 | Combat history | `State/CombatHistory.cs` | 17 entry structs, `HistoryStamp`, `HistoryCardPlay`, `HistoryDamageResult`, `IHistoryEntry`; per-type read lists, `CardPlaysStarted`/`CardPlaysFinished`, `Entries<T>()`, `Count`, `Clear`, `DeepClone`, `WriteCanonical` working; 17 `Append*`, `CountThisTurn<T>`, `CountLastPlayerTurn<T>`, `ByActor<T>`, `HistoryStamp.HappenedThisTurn/HappenedLastPlayerTurn` stubs | §9 | state |
 | Fidelity | `State/Fidelity.cs` | `FidelityFlag { DeferredListenerPromptInline }`, `FidelityEntry(Flag, Site)`, `FidelityLog` (`Record`, `Contains`, `Entries`, `Count`, clone, canonical) | Part B §B0 D2, §B2 | state |
 | Registries | `Registry/Registries.cs` | `ModelTable<T>`; `RelicRegistry`, `PotionRegistry`, `OrbRegistry`, `EnchantmentRegistry`, `AfflictionRegistry`, `ModifierRegistry` (id → factory, like `PowerRegistry`); `VersionExclusiveAttribute`, `GameVersions` (M22) | Part B §B5, §B10 | scaffold (final) |
@@ -173,9 +178,33 @@ Existing virtuals whose signature changed (all overrides and callers in the sim 
 | 683 | `AfterSideTurnEnd` | `+ participants` | `WeakPower`, `VulnerablePower`, `FrailPower`, `ShrinkPower` (bodies unchanged; `ShrinkPower` keeps its `IsTurnParticipant` reconstruction until the pipeline agent re-ports it, B5) |
 | 688 | `AfterSideTurnEndLate` | `+ participants` | — |
 | 1042 | `ShouldPlay` | `+ AutoPlayType autoPlayType` | — |
+| 308 | `BeforeCombatStart` | `CombatState cs` → `RunState rs` (fix pass, M1) | — |
+| 313 | `BeforeCombatStartLate` | `cs` → `rs` | — |
+| 343 | `AfterCurrentHpChanged` | `cs` → `rs` | — |
+| 353 | `BeforeDamageReceived` | `cs` → `rs` | `ThornsPower` (`CreatureCmd.Damage(rs.Combat!, …)`) |
+| 358 | `AfterDamageReceived` | `cs` → `rs` | `PipelineTests.RecordingPower` |
+| 363 | `AfterDamageReceivedLate` | `cs` → `rs` | — |
+| 368 | `BeforeDeath` | `cs` → `rs` | — |
+| 373 | `AfterDeath` | `cs` → `rs` | `RavenousPower`, `ShrinkPower` (`rs.Combat!` at the point of use), `PipelineTests.RecordingPower`; direct calls in `CorpseSlugsSeapunkTests`, `WurmBeetleTests` pass `cs.Run` |
+| 473 | `AfterModifyingDamageAmount` | `cs` → `rs` | `PipelineTests.FlatBonusPower` |
+| 498 | `AfterModifyingHpLostBeforeOsty` | `cs` → `rs` | — |
+| 503 | `AfterModifyingHpLostAfterOsty` | `cs` → `rs` | — |
+| 573 | `AfterPreventingDeath` | `cs` → `rs` | `PipelineTests.PreventDeathOncePower` (`CreatureCmd.Heal(rs.Combat!, …)`) |
+| 738 | `ModifyDamageAdditive` | `cs` → `rs` | `StrengthPower`, `PipelineTests.FlatBonusPower` |
+| 743 | `ModifyDamageCap` | `cs` → `rs` | `PipelineTests.CapPower` |
+| 748 | `ModifyDamageMultiplicative` | `cs` → `rs` | `WeakPower`, `VulnerablePower` (multiplier modifiers get `rs.Combat!`), `ShrinkPower`; direct calls in `WurmBeetleTests` pass `cs.Run` |
+| 783 | `ModifyHpLostBeforeOsty` | `cs` → `rs` | — |
+| 788 | `ModifyHpLostBeforeOstyLate` | `cs` → `rs` | — |
+| 793 | `ModifyHpLostAfterOsty` | `cs` → `rs` | — |
+| 798 | `ModifyHpLostAfterOstyLate` | `cs` → `rs` | — |
+| 997 | `ShouldDie` | `cs` → `rs` | `PipelineTests.PreventDeathOncePower` |
+| 1002 | `ShouldDieLate` | `cs` → `rs` | — |
 
-The other 91 existing virtuals are unchanged (they already had the game's names, parameter names and order,
-checked by script against `hooks.json`).
+The 21 `cs` → `rs` rows change only the first parameter; the override bodies are unchanged apart from reading the
+combat through `rs.Combat!`. The other 70 existing virtuals are unchanged (they already had the game's names,
+parameter names and order, checked by script against `hooks.json`). A script check over the final file finds the
+first parameter by scope as M1 requires: `combat` 100 × `CombatState`, `run` 46 and `both` 33 × `RunState`,
+`unknown` per M2.
 
 ## 4. `Hook`: the 71 new dispatcher stubs
 
@@ -257,9 +286,33 @@ Sources as in design-combat-kernel §2.1 (one entry per pass). Each stub throws
 | 11703 | `ShouldForcePotionReward` | RunOnly | `bool ShouldForcePotionReward(RunState rs, PlayerState player, RoomType roomType)` |
 | 11722 | `ShouldAllowFreeTravel` | RunOnly | `bool ShouldAllowFreeTravel(RunState rs)` |
 
-The 77 existing dispatchers keep their bodies; the only edits are the §2 overloads, the four side-turn bodies
-passing `participants` to the virtuals and `ShouldPlay` passing `autoPlayType`. `IterateRunHookListeners(cs, buffer)`
-(the P0 run-source fill) stays next to the new `(rs, cs, buffer)` stub.
+The 77 existing dispatchers keep their bodies. The only edits are the §2 overloads, the four side-turn bodies
+passing `participants` to the virtuals, `ShouldPlay` passing `autoPlayType`, and the fix-pass context migration
+below. `IterateRunHookListeners(cs, buffer)` (the P0 run-source fill) stays next to the new `(rs, cs, buffer)` stub.
+
+Existing both-scope dispatchers migrated to the game's context (fix pass, M3, M26). The game signature is
+`(IRunState runState, ICombatState? combatState, …)` in every row. The primary sim signature holds the P0 body
+with `rs` handed to the virtuals. The forwarding overload is the P0 signature, which now calls `(cs.Run, cs, …)`:
+
+| L | Dispatcher | Primary sim signature(s) | Forwarding overload(s) |
+|---:|---|---|---|
+| 9071 | `BeforeCombatStart` | `void BeforeCombatStart(RunState rs, CombatState? cs)` | `(CombatState cs)` |
+| 9144 | `AfterCurrentHpChanged` | `void AfterCurrentHpChanged(RunState rs, CombatState? cs, CreatureState creature, decimal delta)` | `(cs, creature, delta)` |
+| 9179 | `BeforeDamageReceived` | `void BeforeDamageReceived(RunState rs, CombatState? cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)` | `(cs, target, amount, props, dealer, cardSource)` |
+| 9199 | `AfterDamageReceived` | `void AfterDamageReceived(RunState rs, CombatState? cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)` | `(cs, target, result, props, dealer, cardSource)` |
+| 9219 | `BeforeDeath` | `void BeforeDeath(RunState rs, CombatState? cs, CreatureState creature)` | `(cs, creature)` |
+| 9234 | `AfterDeath` | `void AfterDeath(RunState rs, CombatState? cs, CreatureState creature, bool wasRemovalPrevented)` (`deathAnimLength` dropped, D12) | `(cs, creature, wasRemovalPrevented)` |
+| 9462 | `AfterModifyingDamageAmount` | `void AfterModifyingDamageAmount(RunState rs, CombatState? cs, CardInstance? cardSource, IReadOnlyList<AbstractModel>? modifiers)` | `(cs, cardSource, modifiers)` |
+| 9523 | `AfterModifyingHpLostBeforeOsty` | `void AfterModifyingHpLostBeforeOsty(RunState rs, CombatState? cs, IReadOnlyList<AbstractModel>? modifiers)` | `(cs, modifiers)` |
+| 9538 | `AfterModifyingHpLostAfterOsty` | `void AfterModifyingHpLostAfterOsty(RunState rs, CombatState? cs, IReadOnlyList<AbstractModel>? modifiers)` | `(cs, modifiers)` |
+| 9816 | `AfterPreventingDeath` | `void AfterPreventingDeath(RunState rs, CombatState? cs, AbstractModel preventer, CreatureState creature)` | `(cs, preventer, creature)` |
+| 10328 | `ModifyDamage` | `decimal ModifyDamage(RunState rs, CombatState? cs, CreatureState? target, CreatureState? dealer, decimal damage, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay, ModifyDamageHookType hookType = All)`<br>`… (…, ModifyDamageHookType hookType, ref List<AbstractModel>? modifiers)`; private `ModifyDamageInternal(RunState rs, CombatState cs, …)` | `(cs, target, dealer, damage, props, cardSource, cardPlay, hookType = All)`, `(…, hookType, ref modifiers)` |
+| 10627 | `ModifyHpLost` | `decimal ModifyHpLost(RunState rs, CombatState? cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, HpLossHookPhase phases)`<br>`… (…, HpLossHookPhase phases, ref List<AbstractModel>? modifiers)` | `(cs, target, amount, props, dealer, cardSource, phases)`, `(…, phases, ref modifiers)` |
+| 11365 | `ShouldDie` | `bool ShouldDie(RunState rs, CombatState? cs, CreatureState creature)`<br>`bool ShouldDie(RunState rs, CombatState? cs, CreatureState creature, out AbstractModel? preventer)` | `(cs, creature)`, `(cs, creature, out preventer)` |
+
+The P0 callers (`CreatureCmd`, `CombatLoop.StartCombat`, `Intents`, tests) keep the `(cs, …)` form and are
+unchanged. `ModifyDamage` still omits the game's `CardPreviewMode previewMode` and the enchantment pre-pass
+(`Hooks/Hook.cs:10332-10342`), as in P0. The pre-pass belongs to the hooks and cards-kernel agents (Part B §B5).
 
 ## 5. Enums (game ordinals; `Enums/*`)
 
@@ -316,7 +369,7 @@ MutableCard, Player, Index) is represented by B1's sim-only `ChoiceResultType { 
 | Member | Sim | Game source | Body |
 | --- | --- | --- | --- |
 | `RunState.Players`, `Combat`, `Rng`, `Unlocks`, `Ascension`, `Modifiers`, `Choice`, `Fidelity` | `Run/RunState.cs` | `Runs/RunState.cs` | data |
-| `RunState.CreateStandalone(player, rng, ascension, unlocks = null)` | `Run/RunState.cs` | Part B §B2 | implemented: `Players = [player]`, `Unlocks = unlocks ?? UnlockProfile.All`, empty modifiers, fresh `ChoiceRuntime` and `FidelityLog`, `Combat = null` until a `CombatState` attaches |
+| `RunState.CreateStandalone(player, rng, ascension, unlocks = null)` | `Run/RunState.cs` | Part B §B2; `Entities.Ascension/AscensionManager.cs:29-32` | implemented: at `ascension >= TightBelt` first `player.SubtractFromMaxPotionCount(1)` (fix pass, M27), then `Players = [player]`, `Unlocks = unlocks ?? UnlockProfile.All`, empty modifiers, fresh `ChoiceRuntime` and `FidelityLog`, `Combat = null` until a `CombatState` attaches |
 | `RunState.DeepClone()`, `WriteCanonical` | `Run/RunState.cs` | Part B §B2 | implemented (§10) |
 | `CombatState(PlayerState, string, int, RunRngSet)` | `State/CombatState.cs` | Part A §4.4 | now `: this(RunState.CreateStandalone(player, rng, ascension), player, encounterId)` |
 | `CombatState(RunState run, PlayerState player, string encounterId)` | `State/CombatState.cs` | added for W1/W2 callers | attaches itself with `run.Combat ??= this` |
@@ -326,7 +379,8 @@ MutableCard, Player, Index) is represented by B1's sim-only `ChoiceResultType { 
 | `CombatState.CreateCard(def, owner)` | `State/CombatState.cs` | `Combat/CombatState.cs:671-677` | stub |
 | `PlayerState.Gold` | `State/CreatureState.cs` | `Entities.Players/Player.cs:253` | data, default 0 (the run start sets the character's `StartingGold`, e.g. 99 for Ironclad, `Models.Characters/Ironclad.cs:32`) |
 | `PlayerState.Relics` (`List<RelicModel>`), `GetRelic(id)`, `HasRelic(id)` | `State/CreatureState.cs` | `Player.cs:241`, `:949-957` | list + lookup by id |
-| `PlayerState.PotionSlots` (`PotionModel?[]`), `MaxPotionCount`, `HasOpenPotionSlot` | `State/CreatureState.cs` | `Player.cs:142`, `:243`, `:280`; default 3 slots `:714` (`PlayerState.DefaultPotionSlotCount`) | array + queries (M21) |
+| `PlayerState.PotionSlots` (`PotionModel?[]`), `MaxPotionCount`, `HasOpenPotionSlot` | `State/CreatureState.cs` | `Player.cs:142`, `:243`, `:280`; default 3 slots `:101`, `:714` (`PlayerState.DefaultPotionSlotCount`), 2 from A4 on through `CreateStandalone` (M27) | array + queries (M21) |
+| `PlayerState.AddToMaxPotionCount(int)`, `SubtractFromMaxPotionCount(int)` | `State/CreatureState.cs` | `Player.cs:974-1017`, `:1072-1096` | implemented (fix pass, M27): resize the slot array; a shrink moves potions into lower open slots or discards them |
 | `PlayerState.CanUseOrRemovePotions` (default `true`) | `State/CreatureState.cs` | `Player.cs:140`, `:282` | data (M21) |
 | `PlayerState.BaseOrbSlotCount` | `State/CreatureState.cs` | `Player.cs:373`; default 0 `Models/CharacterModel.cs:71` | data |
 | `PlayerState.Deck` (`List<CardInstance>`, deck order) | `State/CreatureState.cs` | `Player.cs:312` | data; empty in P0 flows (the loop still fills the draw pile from the specs) |
@@ -440,7 +494,9 @@ by actor.
 
 - Clone and canonical plumbing of every new type (§10), owner rebinding, `CardPile.CloneFor`,
   `CardInstance.CloneFor`.
-- `RunState.CreateStandalone`; the `CombatState` constructors' run attachment.
+- `RunState.CreateStandalone` (including the TightBelt slot reduction, M27); the `CombatState` constructors' run
+  attachment; `PlayerState.AddToMaxPotionCount` / `SubtractFromMaxPotionCount` (M27).
+- The attached-combat check of the 13 migrated both-scope dispatchers (M26); their combat path keeps the P0 body.
 - `UnlockProfile` data and lookups (§7).
 - `CardSelectorPrefs`: both constructors, `RequireManualConfirmation = MinSelect >= 0 && MinSelect != MaxSelect`
   (`CardSelection/CardSelectorPrefs.cs:114`, also through the single-count constructor `:99-103`, which therefore
@@ -460,6 +516,11 @@ queue, choice runtime, fidelity log, history, allies); `StateHash()` 2.15 / 2.14
 2.10 µs (unchanged; the unlock profile is an 8-byte digest); playouts 253k / 381k / 367k → 445k / 335k /
 358k decisions/s (no regression beyond machine noise). The W1 gate compares against P0's 705k decisions/s and
 2.53 µs (quiet machine) after the W1 wave.
+
+Fix pass (same bench, three alternating 3 s runs of `46d1918` and the fix pass on a quieter machine): `Clone()`
+2.50 / 2.54 / 2.60 µs → 2.63 / 2.57 / 2.63 µs; `StateHash()` 1.19 / 1.24 / 1.27 µs → 1.20 / 1.18 / 1.25 µs; playouts
+691k / 659k / 683k → 685k / 676k / 686k decisions/s. The attached-combat check costs nothing measurable. The bench
+runs at A0, so the TightBelt change does not touch it.
 
 ## 14. Open questions and signatures that could not be mapped cleanly
 
@@ -495,3 +556,31 @@ queue, choice runtime, fidelity log, history, allies); `StateHash()` 2.15 / 2.14
 13. **`PotionActions.CanUse` / `UsePotion` take the resolved target** (`CreatureState?`, like
     `ActionExecutor.PlayCard`); the `TargetIndex` encoding (≥0 enemy, `NoIndex`, ≤-2 ally) is resolved by
     `LegalActionGenerator` (choice agent).
+14. **Ascension effects on the player (M27), owner record.** `CreateStandalone` applies TightBelt. The state agent
+    owns that body from W1 on (`Run/RunState.cs`, Part B §B11). AscendersBane stays with the loop's deck specs
+    (`CombatLoop.DeckForCombat`) and `StartingDecks` (cards-kernel). W2 run creation (R1 takes `Run/RunState.cs`
+    over) applies all of `AscensionManager.ApplyEffectsTo` once per player at `InitializeNewRun`
+    (`Runs/RunManager.cs:3862`). It must not pass new-run players through `CreateStandalone` as well, or TightBelt
+    would apply twice. `CreateStandalone` treats its player as a new-run player. A caller that rebuilds a recorded
+    mid-run player, for example a W1 diff bundle that carries potion slots (the P0 bundles carry none), sets
+    `PotionSlots` after it constructs the combat.
+15. **Out-of-combat dispatch of the 13 migrated dispatchers (M26).** The `cs == null` path throws until the hooks
+    agent implements the run listeners without a combat (`IterateRunHookListeners(rs, null, …)`,
+    `Runs/RunState.cs:829-933`). The same agent extends `ListenerSnapshot`'s `Run` source with the deck cards and
+    modifiers of `rs` (Part B §B3). W2 needs both for HP changes, deaths and potions used outside combat
+    (`PotionModel.OnUseWrapper(RunState, …)`).
+16. **Detaching a combat (M26).** The 13 dispatchers require `cs == rs.Combat`. If W2 clears `rs.Combat` at combat
+    end, it does so after the last dispatch that passes that combat, or it passes `cs = null`.
+
+## 15. Fix pass after the adversarial check (2026-11-01)
+
+| Finding | Resolution |
+| --- | --- |
+| The 21 existing both-scope virtuals and 13 both-scope dispatchers kept `CombatState cs`, against Part B §B3 and M3 | Migrated (M1, M3, M26). The virtuals take `RunState rs`. The dispatchers take the game's `(RunState rs, CombatState? cs, …)`, with exact `(CombatState cs, …)` forwarding overloads. Overrides updated: `RavenousPower`, `ThornsPower`, `WeakPower`, `StrengthPower`, `ShrinkPower`, `VulnerablePower`, and the `PipelineTests` doubles; direct calls in `CorpseSlugsSeapunkTests` and `WurmBeetleTests` pass `cs.Run`. The contract is unchanged: code and Part B §B3 now agree |
+| Standalone runs at A4+ had 3 potion slots where the game has 2 (TightBelt) | `RunState.CreateStandalone` applies TightBelt through the new `PlayerState.SubtractFromMaxPotionCount` (M27). A probe confirms 3 slots at A0-A3 and 2 at A4-A10, for both `new CombatState(...)` and `CombatSim.Create` / `CombatLoop.CreateCombat`, and that clones keep the count. The four A10 P0 diff bundles still agree 69/69: they record no potions, and the canonical form changes only for A4+ states, so the pinned A0 hashes stay the same. Owner record in §14 item 14 |
+
+Probe (scratch console project against `Sts2Sim.Core`, not committed; the scaffold row owns no test file and the
+suite stays at 367): slot counts per ascension, clone, growth to 5, shrink 5 → 3 moving potions down, shrink
+4 → 2 discarding, a full shrink throwing, `ModifyDamage` `(cs)` == `(rs, cs)`, `(rs, null)` →
+`NotImplementedException`, a detached combat → `InvalidOperationException`, an empty-modifier `AfterModifying*`
+with `cs = null` as a no-op, and overrides receiving `rs` with `rs.Combat == cs`. All pass.

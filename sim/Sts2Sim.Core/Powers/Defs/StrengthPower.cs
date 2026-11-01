@@ -12,7 +12,7 @@ public sealed class StrengthPower : PowerModel
 
     public override bool AllowNegative => true;
 
-    public override decimal ModifyDamageAdditive(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+    public override decimal ModifyDamageAdditive(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
     {
         if (!ReferenceEquals(Owner, dealer))
         {

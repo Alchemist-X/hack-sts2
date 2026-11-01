@@ -413,11 +413,11 @@ public static class WurmBeetleTests
         PowerCmd.Apply<ShrinkPower>(cs, MonsterLifecycle.PlayerCreatures(cs), -1m, beetle, null);
         var shrink = player.GetPower<ShrinkPower>()!;
 
-        Assert.Equal(0.7m, shrink.ModifyDamageMultiplicative(cs, beetle, 6m, ValueProp.Move, player, null, null));
-        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs, beetle, 6m, ValueProp.Move | ValueProp.Unpowered, player, null, null), "unpowered");
-        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs, beetle, 6m, ValueProp.None, player, null, null), "not a move");
-        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs, player, 7m, ValueProp.Move, beetle, null, null), "another dealer");
-        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs, beetle, 6m, ValueProp.Move, null, null, null), "no dealer");
+        Assert.Equal(0.7m, shrink.ModifyDamageMultiplicative(cs.Run, beetle, 6m, ValueProp.Move, player, null, null));
+        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs.Run, beetle, 6m, ValueProp.Move | ValueProp.Unpowered, player, null, null), "unpowered");
+        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs.Run, beetle, 6m, ValueProp.None, player, null, null), "not a move");
+        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs.Run, player, 7m, ValueProp.Move, beetle, null, null), "another dealer");
+        Assert.Equal(1m, shrink.ModifyDamageMultiplicative(cs.Run, beetle, 6m, ValueProp.Move, null, null, null), "no dealer");
 
         Assert.Equal(4.2m, Hook.ModifyDamage(cs, beetle, player, 6m, ValueProp.Move, null, null));
         Assert.Equal(5.6m, Hook.ModifyDamage(cs, beetle, player, 8m, ValueProp.Move, null, null));
@@ -470,9 +470,9 @@ public static class WurmBeetleTests
         PowerCmd.Apply<ShrinkPower>(cs, MonsterLifecycle.PlayerCreatures(cs), -1m, beetle, null);
         var shrink = player.GetPower<ShrinkPower>()!;
 
-        shrink.AfterDeath(cs, beetle, wasRemovalPrevented: true);
+        shrink.AfterDeath(cs.Run, beetle, wasRemovalPrevented: true);
         Assert.True(ReferenceEquals(shrink, player.GetPower<ShrinkPower>()), "a prevented death keeps the power");
-        shrink.AfterDeath(cs, player, wasRemovalPrevented: false);
+        shrink.AfterDeath(cs.Run, player, wasRemovalPrevented: false);
         Assert.True(ReferenceEquals(shrink, player.GetPower<ShrinkPower>()), "only the applier's death counts");
 
         CreatureCmd.Kill(cs, wurm);
