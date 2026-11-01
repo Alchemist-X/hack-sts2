@@ -4,31 +4,56 @@ public abstract class RelicModel : AbstractModel, ICanonical
 {
     public const int NoOwner = -1;
 
+    public const int UnavailableMerchantCost = 999999999;
+
     private PlayerState? _owner;
+    private DynamicVarSet _dynamicVars;
+
+    protected RelicModel()
+    {
+        _dynamicVars = new DynamicVarSet(CanonicalVars);
+    }
 
     public abstract string Id { get; }
 
     public abstract RelicRarity Rarity { get; }
 
-    public virtual string Pool => throw new NotImplementedException("RelicModel.Pool: relics-potions / W2 relic pools (Models/RelicModel.cs:192)");
+    public string Pool => RelicPools.PoolOf(Id);
+
+    public bool IsTradable
+    {
+        get
+        {
+            if (IsUsedUp)
+            {
+                return false;
+            }
+            if (HasUponPickupEffect)
+            {
+                return false;
+            }
+            if (IsMelted)
+            {
+                return false;
+            }
+            if (SpawnsPets)
+            {
+                return false;
+            }
+            var rarity = Rarity;
+            if (rarity == RelicRarity.Starter || (uint)(rarity - RelicRarity.Event) <= 1u)
+            {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    public virtual bool IsAllowedInShops => true;
 
     public PlayerState Owner => _owner ?? throw new InvalidOperationException($"Relic {Id} has no owner");
 
     public bool HasOwner => _owner != null;
-
-    public bool IsWax { get; set; }
-
-    public bool IsMelted { get; set; }
-
-    public int StackCount { get; set; } = 1;
-
-    public int FloorAddedToDeck { get; set; }
-
-    public RelicStatus Status { get; set; }
-
-    public bool HasBeenRemovedFromState { get; set; }
-
-    public virtual bool IsAllowedInShops => true;
 
     public virtual bool IsUsedUp => false;
 
@@ -38,15 +63,40 @@ public abstract class RelicModel : AbstractModel, ICanonical
 
     public virtual bool IsStackable => false;
 
+    public bool IsWax { get; set; }
+
+    public bool IsMelted { get; set; }
+
     public virtual bool AddsPet => false;
+
+    public int StackCount { get; private set; } = 1;
+
+    public DynamicVarSet DynamicVars => _dynamicVars;
 
     protected virtual IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();
 
-    public virtual int MerchantCost => throw new NotImplementedException("RelicModel.MerchantCost: relics-potions / W2 (Models/RelicModel.cs:307-318)");
+    public virtual int MerchantCost => Rarity switch
+    {
+        RelicRarity.Common => 175,
+        RelicRarity.Uncommon => 225,
+        RelicRarity.Rare => 275,
+        RelicRarity.Shop => 200,
+        RelicRarity.Ancient => UnavailableMerchantCost,
+        RelicRarity.Starter => UnavailableMerchantCost,
+        RelicRarity.Event => UnavailableMerchantCost,
+        RelicRarity.None => 1,
+        _ => throw new InvalidOperationException($"Relic {Id} has invalid merchant rarity {Rarity}.")
+    };
+
+    public int FloorAddedToDeck { get; set; }
+
+    public RelicStatus Status { get; set; }
 
     public virtual bool ShowCounter => false;
 
     public virtual int DisplayAmount => 0;
+
+    public bool HasBeenRemovedFromState { get; internal set; }
 
     public void AttachTo(PlayerState owner)
     {
@@ -62,6 +112,29 @@ public abstract class RelicModel : AbstractModel, ICanonical
 
     public virtual bool IsAllowedAtNeow(RunState rs, PlayerState player) => IsAllowed(rs);
 
+    protected static bool IsBeforeAct3TreasureChest(RunState rs)
+        => throw new NotImplementedException("RelicModel.IsBeforeAct3TreasureChest: W2 (needs RunState.TotalFloor, Runs/RunState.cs; rule Models/RelicModel.cs:539-543)");
+
+    protected static bool IsBeforeAct3TreasureChest(int playerCount, int totalFloor)
+    {
+        int num = playerCount > 1 ? 38 : 41;
+        return totalFloor < num;
+    }
+
+    public void RemoveInternal()
+    {
+        HasBeenRemovedFromState = true;
+    }
+
+    public void IncrementStackCount()
+    {
+        if (!IsStackable)
+        {
+            throw new InvalidOperationException($"Cannot increment stack count on {Id} because it is not a stackable relic.");
+        }
+        StackCount++;
+    }
+
     public virtual void AfterObtained(RunState rs)
     {
     }
@@ -74,6 +147,7 @@ public abstract class RelicModel : AbstractModel, ICanonical
     {
         var clone = (RelicModel)MemberwiseClone();
         clone._owner = _owner is null ? null : newOwner;
+        clone._dynamicVars = _dynamicVars.DeepClone();
         clone.CopyMutableReferenceState(this);
         return clone;
     }
@@ -93,6 +167,9 @@ public abstract class RelicModel : AbstractModel, ICanonical
         w.WriteInt32(FloorAddedToDeck);
         w.WriteByte((byte)Status);
         w.WriteBool(HasBeenRemovedFromState);
+        w.WriteTag(RelicCanonicalTags.DynamicVars);
+        _dynamicVars.WriteCanonical(w);
+        w.WriteTag(RelicCanonicalTags.Extra);
         WriteExtraCanonical(w);
     }
 
