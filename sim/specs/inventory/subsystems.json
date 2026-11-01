@@ -1,0 +1,6693 @@
+{
+ "schema": "sts2sim.inventory/v1",
+ "kind": "subsystems",
+ "game_version": "0.111.0",
+ "decompile_root": "/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled",
+ "citation_format": "<ns-dir>/<File>.cs:<line>, MegaCrit.Sts2.Core. prefix dropped",
+ "companion_doc": "docs/sim-port/design-subsystems.md",
+ "generated_by": "tmp/sim-port/subsys/gen_main.py (scratch, git-ignored); usage counts from tmp/sim-port/subsys/usage.py over Models.* directories",
+ "scope": "standard single-player runs (GameMode.Standard, no modifiers, one player, no mods)",
+ "decision_vocabulary": {
+  "port": "port the game logic 1:1",
+  "port-parameter": "port the logic and expose the external input as an explicit sim parameter",
+  "port-as-sim-seams": "do not port the class; provide the equivalent seam in the sim API",
+  "stub": "identity behaviour for single player; keep only the single-player branch",
+  "exclude": "no effect on standard single-player rules"
+ },
+ "decisions": {
+  "test_support": "port-as-sim-seams",
+  "card_selection_prompts": "port",
+  "enchantments": "port",
+  "afflictions": "port",
+  "modifiers": "exclude",
+  "daily": "exclude",
+  "game_mode": "port-parameter",
+  "badges": "exclude",
+  "orbs": "port",
+  "osty_pets": "port",
+  "stars": "port",
+  "forge": "port",
+  "ancients": "port",
+  "unlocks_timeline": "port-parameter",
+  "multiplayer_scaling": "stub",
+  "combat_history": "port",
+  "card_entities": "port",
+  "helpers_extensions": "port",
+  "dynamic_vars": "port",
+  "saves_profile": "port-parameter",
+  "model_db": "port",
+  "local_context": "stub",
+  "achievements_timeline_ui": "exclude"
+ },
+ "content_totals": {
+  "note": "files per Models.<Category> directory (Mocks sub-namespaces excluded; Deprecated* counted)",
+  "Cards": {
+   "files": 596,
+   "deprecated": 1,
+   "mocks": 8
+  },
+  "Powers": {
+   "files": 268,
+   "deprecated": 0,
+   "mocks": 18
+  },
+  "Relics": {
+   "files": 300,
+   "deprecated": 1,
+   "mocks": 0,
+   "non_model": [
+    "VakuuCardSelector"
+   ]
+  },
+  "Potions": {
+   "files": 65,
+   "deprecated": 1,
+   "mocks": 1
+  },
+  "Monsters": {
+   "files": 121,
+   "deprecated": 1,
+   "mocks": 6
+  },
+  "Encounters": {
+   "files": 91,
+   "deprecated": 1,
+   "mocks": 8
+  },
+  "Events": {
+   "files": 68,
+   "deprecated": 2,
+   "mocks": 1
+  },
+  "Enchantments": {
+   "files": 23,
+   "deprecated": 1,
+   "mocks": 1
+  },
+  "Afflictions": {
+   "files": 7,
+   "deprecated": 0,
+   "mocks": 3
+  },
+  "Orbs": {
+   "files": 5,
+   "deprecated": 0,
+   "mocks": 2
+  },
+  "Modifiers": {
+   "files": 17,
+   "deprecated": 1,
+   "mocks": 0
+  },
+  "Badges": {
+   "files": 29,
+   "deprecated": 0,
+   "mocks": 0
+  },
+  "Characters": {
+   "files": 8,
+   "deprecated": 1,
+   "mocks": 0,
+   "non_playable": [
+    "Deprived",
+    "RandomCharacter",
+    "DeprecatedCharacter"
+   ]
+  },
+  "Acts": {
+   "files": 5,
+   "deprecated": 1,
+   "mocks": 0
+  }
+ },
+ "subsystems": [
+  {
+   "id": "test_support",
+   "name": "Official test seams (TestSupport, NonInteractiveMode, mocks)",
+   "namespaces": [
+    "TestSupport",
+    "Helpers (NonInteractiveMode, OneTimeInitialization)",
+    "Models.*.Mocks",
+    "Models.Characters/Deprived"
+   ],
+   "summary": "Static switches and injection points the game's own test suite uses to run the rules headless: TestMode.IsOn (static flag), NonInteractiveMode.IsActive (TestMode or AutoSlay), ICardSelector stacks inside CardSelectCmd, TestRngInjector one-shot overrides for the four high-entropy draws, RunRngSet.MockRng per-stream replacement, RunState.CreateForTest (Deprived test character, UnlockState.all), ModelDb.Init(injectedTypes)/Inject/Remove/ResetForTest, SaveManager mock instance, RewardsSet.testSelector, RestSiteOption.generateForTests and per-model test overrides.",
+   "rules_dependent": [
+    "~39 content files branch on TestMode; almost all only skip VFX/SFX/Godot nodes",
+    "TestMode branches that change rule outcomes or RNG consumption are listed in test_seams.testmode_divergences and must take the TestMode.IsOff branch in the sim"
+   ],
+   "game_refs": [
+    "TestSupport/TestMode.cs:11-48",
+    "Helpers/NonInteractiveMode.cs:10-28",
+    "TestSupport/ICardSelector.cs:9-14",
+    "TestSupport/TestCardSelector.cs:221-319",
+    "TestSupport/TestRngInjector.cs:8-70",
+    "Runs/RunRngSet.cs:57-65",
+    "Runs/RunRngSet.cs:191-194",
+    "Runs/RunState.cs:597-604",
+    "Models/ModelDb.cs:353-384",
+    "Saves/SaveManager.cs:950-981",
+    "Rewards/RewardsSet.cs:290-292",
+    "Rewards/RewardsSet.cs:348",
+    "Entities.RestSite/RestSiteOption.cs:19",
+    "Entities.RestSite/RestSiteOption.cs:49-52"
+   ],
+   "decision": "port-as-sim-seams",
+   "justification": "The seams themselves are test infrastructure, not rules. The sim needs equivalents (decision API in place of ICardSelector, explicit RNG state in place of TestRngInjector, populateMonsters-style factories in place of CreateForTest) but must follow the shipping (TestMode.IsOff) rule paths. Mock models (48 files under Models.*.Mocks and Models.Orbs.Mock plus Deprived/MockCardPool/MockPotionPool) are excluded from the registry.",
+   "sim_notes": [
+    "Treat NonInteractiveMode.IsActive == true for waits/pauses (Cmd.Wait no-ops, ActionExecutor awaits each action to completion) but TestMode.IsOn == false for every rule branch",
+    "MockPotionPool is registered in ModelDb.AllSharedPotionPools (Models/ModelDb.cs:187-194); exclude it from any sim pool list (rules only read character + SharedPotionPool, Factories/PotionFactory.cs:65)"
+   ],
+   "content_usage": {
+    "test_mode": {
+     "pattern": "TestMode\\.",
+     "total_files": 39,
+     "by_category": {
+      "Cards": 3,
+      "Powers": 4,
+      "Relics": 7,
+      "Potions": 2,
+      "Monsters": 21,
+      "Events": 1,
+      "Enchantments": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "card_selection_prompts",
+   "name": "Player-choice prompts (CardSelectCmd, selector stack, CardSelectorPrefs, PlayerChoiceContext)",
+   "namespaces": [
+    "Commands/CardSelectCmd",
+    "CardSelection/CardSelectorPrefs",
+    "GameActions.Multiplayer/*PlayerChoiceContext",
+    "Commands/RelicSelectCmd",
+    "Rewards/CardReward",
+    "Entities.CardRewardAlternatives"
+   ],
+   "summary": "All in-combat and deck card prompts go through 13 CardSelectCmd entry points. Each first applies auto-resolution (0 options -> empty; count <= MinSelect && !RequireManualConfirmation -> all), then asks Selector (global stack), else LocalSelector, else the Godot screen. A selector answer is synchronous and skips ReserveChoiceId/SignalPlayerChoiceBegun. CardReward.OnSelect consults Selector.GetSelectedCardReward. Content can push its own selector (WhisperingEarring pushes VakuuCardSelector = take first maxSelect options). FromChooseABundleScreen has no selector seam (TestMode -> bundles[0]). RelicSelectCmd.FromChooseARelicScreen has no callers in v0.111.0.",
+   "rules_dependent": [
+    "107 content files call CardSelectCmd (42 cards, 5 powers, 29 relics, 9 potions, 1 monster, 20 events, 1 modifier)",
+    "card rewards (Rewards/CardReward.cs:590-700) and reward alternatives (Skip/Reroll/hook-added, max 2)"
+   ],
+   "game_refs": [
+    "Commands/CardSelectCmd.cs:3084-3150",
+    "Commands/CardSelectCmd.cs:3169-3234",
+    "Commands/CardSelectCmd.cs:3236-3351",
+    "Commands/CardSelectCmd.cs:3361-3439",
+    "Commands/CardSelectCmd.cs:3441-3666",
+    "Commands/CardSelectCmd.cs:3668-3796",
+    "Commands/CardSelectCmd.cs:3798-3840",
+    "CardSelection/CardSelectorPrefs.cs",
+    "Rewards/CardReward.cs:590-700",
+    "Entities.CardRewardAlternatives/CardRewardAlternative.cs",
+    "Models.Relics/WhisperingEarring.cs:86",
+    "Models.Relics/VakuuCardSelector.cs",
+    "Commands/RelicSelectCmd.cs:162-200",
+    "Hooks/Hook.cs:2364",
+    "Combat/CombatManager.cs:5059"
+   ],
+   "decision": "port",
+   "justification": "Every prompt is a decision point of the environment (P1 plan: each player-choice prompt is a search node). The auto-resolution rules decide whether a decision point exists at all, so they must be ported exactly.",
+   "sim_notes": [
+    "Model a selector stack in CombatState/RunState: the agent is the bottom selector; content-pushed selectors (VakuuCardSelector) resolve prompts without a decision",
+    "Prompts can open inside HookPlayerChoiceContext dispatchers (AfterDeath, AfterDiedToDoom, AfterSideTurnEnd, BeforeFlush, BeforeSideTurnEnd, BeforeSideTurnStart; CombatManager end-turn phases and StartTurn); monster code passes ThrowingPlayerChoiceContext to many of its own commands (a prompt there would throw; 173 content files reference it), but monster attacks fall back to BlockingPlayerChoiceContext (Commands.Builders/AttackCommand.cs:423, :434, :1132, :1146), so a player listener reacting to an enemy attack can open a prompt during the enemy turn",
+    "Draw-pile prompts sort options by (Rarity, Id) on the selector path (Commands/CardSelectCmd.cs:3403-3405)"
+   ],
+   "content_usage": {
+    "card_select": {
+     "pattern": "CardSelectCmd\\.",
+     "total_files": 107,
+     "by_category": {
+      "Cards": 42,
+      "Powers": 5,
+      "Relics": 29,
+      "Potions": 9,
+      "Monsters": 1,
+      "Events": 20,
+      "Modifiers": 1
+     }
+    },
+    "PushSelector": {
+     "pattern": "PushSelector",
+     "total_files": 1,
+     "by_category": {
+      "Relics": 1
+     }
+    },
+    "ThrowingPlayerChoice": {
+     "pattern": "ThrowingPlayerChoiceContext",
+     "total_files": 173,
+     "by_category": {
+      "Cards": 5,
+      "Powers": 23,
+      "Relics": 26,
+      "Potions": 1,
+      "Monsters": 96,
+      "Events": 19,
+      "Modifiers": 3
+     }
+    },
+    "RelicSelectCmd": {
+     "pattern": "RelicSelectCmd\\.",
+     "total_files": 0,
+     "by_category": {}
+    }
+   }
+  },
+  {
+   "id": "enchantments",
+   "name": "Enchantments (card-attached modifiers, persistent on deck cards)",
+   "namespaces": [
+    "Models/EnchantmentModel",
+    "Models.Enchantments",
+    "Entities.Enchantments",
+    "Commands/CardCmd.Enchant"
+   ],
+   "summary": "22 concrete enchantments (+DeprecatedEnchantment, +1 mock). One per card (stackable only with the same type), stored on the deck card and copied into combat. Integrates via EnchantDamageAdditive/Multiplicative (Hook.ModifyDamage), EnchantBlockAdditive/Multiplicative (Hook.ModifyBlock), EnchantPlayCount (CardModel replay count), OnPlay (after card effect), OnEnchant (keyword/cost changes), and ordinary hooks while ShouldReceiveCombatHooks (card is a listener). ShouldStartAtBottomOfDrawPile is applied at combat start.",
+   "rules_dependent": [
+    "damage/block pipeline (Hook.cs:10071-10080, :10336-10340)",
+    "card play replay count (Models/CardModel.cs:2762)",
+    "card OnPlay tail (Models/CardModel.cs:721)",
+    "combat start draw-pile placement (Combat/CombatManager.cs:4249)",
+    "DynamicVar previews (Localization.DynamicVars/*Var.cs)",
+    "hook listener order: card, then its affliction, then its enchantment (Combat/CombatState.cs:903-910)"
+   ],
+   "game_refs": [
+    "Models/EnchantmentModel.cs:125-127",
+    "Hooks/Hook.cs:10071-10080",
+    "Models/EnchantmentModel.cs:289-366",
+    "Models/EnchantmentModel.cs:395-418",
+    "Commands/CardCmd.cs:2146-2180",
+    "Commands/CardSelectCmd.cs:3533-3605",
+    "Models.Enchantments/Slither.cs:23",
+    "Models.Enchantments/Goopy.cs"
+   ],
+   "decision": "port",
+   "justification": "Applied in standard runs by 16 relics, 9 events and the card BladeOfInk; they change damage, block, play count, costs and keywords.",
+   "sim_notes": [
+    "Goopy increments both the combat copy and Card.DeckVersion.Enchantment.Amount: the deck/combat card link must exist in the sim",
+    "Slither re-rolls cost with Rng.CombatEnergyCosts.NextInt(4) on draw",
+    "Status = Disabled is per combat copy (Glam/Sown/Swift/Vigorous)",
+    "CanEnchant base rule: not Status/Curse/Quest, not Unplayable deck cards, at most one enchantment unless IsStackable and same type (Models/EnchantmentModel.cs:294-315)"
+   ],
+   "content_usage": {
+    "enchant_apply": {
+     "pattern": "CardCmd\\.Enchant",
+     "total_files": 26,
+     "by_category": {
+      "Cards": 1,
+      "Relics": 16,
+      "Events": 9
+     }
+    },
+    "enchantment_read": {
+     "pattern": "\\.Enchantment\\b",
+     "total_files": 31,
+     "by_category": {
+      "Relics": 17,
+      "Monsters": 1,
+      "Events": 12,
+      "Enchantments": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "afflictions",
+   "name": "Afflictions (monster-applied card debuffs)",
+   "namespaces": [
+    "Models/AfflictionModel",
+    "Models.Afflictions",
+    "Commands/CardCmd.Afflict"
+   ],
+   "summary": "7 afflictions (Bound, Entangled, Galvanized, Hexed, Ringing, Smog, Tainted) applied to cards in combat by 7 monster powers (ChainsOfBinding, Galvanic, Hex, Ringing, Smoggy, Tangled, VitalSpark) from 7 encounters. Most behaviour lives in the applying power; afflictions are hook listeners (ShouldReceiveCombatHooks true) and record CardAfflictedEntry in combat history.",
+   "rules_dependent": [
+    "Hook.ShouldAfflict gate",
+    "CardAfflicted history entry (ChainsOfBindingPower query)",
+    "random target pick AfflictionModel.PickRandomTargets with Rng.CombatCardGeneration"
+   ],
+   "game_refs": [
+    "Models/AfflictionModel.cs:117-252",
+    "Commands/CardCmd.cs:2188-2276 (AfflictAndPreview 2188, Afflict 2228-2271, ClearAffliction 2273)",
+    "Combat/CombatState.cs:903-906"
+   ],
+   "decision": "port",
+   "justification": "Part of act 2/3 monster content (CeremonialBeastBoss, GlobeHeadNormal, InfestedPrismsElite, KnightsElite, LivingFogNormal, QueenBoss, VineShamblerNormal).",
+   "sim_notes": [
+    "PickRandomTargets keeps the first min(count, n) shuffled cards via RemoveRange(Clamp(n-1, 0, count), Max(0, n-count)) (Models/AfflictionModel.cs:245-250)",
+    "Cleared by the applying powers on removal and by NightmarePower"
+   ],
+   "content_usage": {
+    "afflict_apply": {
+     "pattern": "CardCmd\\.Afflict",
+     "total_files": 7,
+     "by_category": {
+      "Powers": 7
+     }
+    },
+    "affliction_read": {
+     "pattern": "\\.Affliction\\b",
+     "total_files": 14,
+     "by_category": {
+      "Powers": 7,
+      "Encounters": 7
+     }
+    }
+   }
+  },
+  {
+   "id": "modifiers",
+   "name": "Run modifiers (custom and daily runs)",
+   "namespaces": [
+    "Models/ModifierModel",
+    "Models.Modifiers"
+   ],
+   "summary": "16 modifiers (+DeprecatedModifier). ModelDb.GoodModifiers = Draft, SealedDeck, Hoarder, Specialized, Insanity, AllStar, Flight, Vintage, CharacterCards; BadModifiers = DeadlyEvents, CursedRun, BigGameHunter, Midas, Murderous, NightTerrors, Terminal; SealedDeck/Draft/Insanity mutually exclusive. Modifiers are run-level hook listeners (after cards in the combat listener order) plus OnRunCreated/OnRunLoaded and GenerateNeowOption.",
+   "rules_dependent": [
+    "Neow branches on RunState.Modifiers.Count (Models.Events/Neow.cs:120, :297, :365)",
+    "combat listener order (Combat/CombatState.cs:915-918)",
+    "RunManager.InitializeNewRun OnRunCreated loop (Runs/RunManager.cs:3843-3850)"
+   ],
+   "game_refs": [
+    "Models/ModelDb.cs:317-351",
+    "Models/ModifierModel.cs:26-135",
+    "Nodes.Screens.CharacterSelect/NCharacterSelectScreen.cs:966",
+    "Nodes.Screens.CharacterSelect/NCharacterSelectScreen.cs:1794-1799"
+   ],
+   "decision": "exclude",
+   "justification": "A standard run is started with System.Array.Empty<ModifierModel>() and GameMode.Standard (Nodes.Screens.CharacterSelect/NCharacterSelectScreen.cs:966; BeginRun logs an error and ignores non-empty modifiers, :1794-1799). Only Custom and Daily runs carry modifiers, and no content adds a modifier mid-run.",
+   "sim_notes": [
+    "Keep RunState.Modifiers as an always-empty list so the Neow Count<=0 branches take the standard path",
+    "The 12 cards with CanBeGeneratedByModifiers => false only matter to modifier generators"
+   ],
+   "content_usage": {
+    "Modifiers ref": {
+     "pattern": "RunState\\.Modifiers|ModifierModel",
+     "total_files": 19,
+     "by_category": {
+      "Events": 2,
+      "Modifiers": 17
+     }
+    }
+   }
+  },
+  {
+   "id": "daily",
+   "name": "Daily runs",
+   "namespaces": [
+    "Daily",
+    "Nodes.Screens.DailyRun"
+   ],
+   "summary": "Daily seed/character/modifiers are derived in UI code from the server date (Nodes.Screens.DailyRun/NDailyRunScreen.cs:917-922: Rng(GetDeterministicHashCode('dd_MM_yyyy')) then three child Rngs). TimeServer fetches network time. DailyRunUtility only uploads scores and names leaderboards.",
+   "rules_dependent": [
+    "GameMode.Daily disables tutorial/discovery-order modifications (Runs/RunManager.cs:4104)",
+    "multiplayer daily lobby uses UnlockState.all (Multiplayer.Game.Lobby/StartRunLobby.cs:1115-1121)"
+   ],
+   "game_refs": [
+    "Daily/DailyRunUtility.cs:232-269",
+    "Daily/TimeServer.cs",
+    "Nodes.Screens.DailyRun/NDailyRunScreen.cs:917-950"
+   ],
+   "decision": "exclude",
+   "justification": "Not part of standard single-player runs; seed derivation is UI-side and network-time dependent.",
+   "sim_notes": [],
+   "content_usage": {}
+  },
+  {
+   "id": "game_mode",
+   "name": "GameMode (None/Standard/Daily/Custom)",
+   "namespaces": [
+    "Runs/GameMode",
+    "Runs/GameModeExtension"
+   ],
+   "summary": "Enum stored on RunState. In rule code it only gates RunManager.ShouldApplyTutorialModifications (Standard => apply discovery-order modifications, unless TestMode). AreAchievementsAndEpochsLocked (non-Standard) only affects progress/achievements.",
+   "rules_dependent": [
+    "ActModel.ApplyDiscoveryOrderModifications (boss discovery order, first-run room order)"
+   ],
+   "game_refs": [
+    "Runs/GameMode.cs",
+    "Runs/GameModeExtension.cs:5-8",
+    "Runs/RunManager.cs:4090-4108",
+    "Runs/RunManager.cs:4078-4081"
+   ],
+   "decision": "port-parameter",
+   "justification": "Constant GameMode.Standard for the sim, but its single rule effect (discovery-order modifications) must be ported because it is ON in every standard run.",
+   "sim_notes": [
+    "ShouldApplyTutorialModifications returns false under TestMode: the sim must follow the TestMode.IsOff branch"
+   ],
+   "content_usage": {}
+  },
+  {
+   "id": "badges",
+   "name": "Badges (end-of-run score badges)",
+   "namespaces": [
+    "Models/BadgeModel",
+    "Models.Badges",
+    "Runs/ScoreUtility"
+   ],
+   "summary": "23 Badge classes evaluated on the finished SerializableRun for score (Models.Badges/BadgePool.cs; Runs/ScoreUtility.cs:127). Two BadgeModel hook listeners (CccComboModel counts cards played per turn, DebufferModel counts debuffs applied) write only Player.ExtraFields.CccomboBadgeUnlocked / DebuffsApplied, which only badges read.",
+   "rules_dependent": [],
+   "game_refs": [
+    "Models/BadgeModel.cs:5",
+    "Models.Badges/Badge.cs",
+    "Models.Badges/BadgePool.cs",
+    "Models.Badges/CccComboModel.cs",
+    "Models.Badges/DebufferModel.cs",
+    "Combat/CombatState.cs:919-922",
+    "Runs/RunState.cs:652"
+   ],
+   "decision": "exclude",
+   "justification": "No rule reads badge state; BadgeModel listeners return CompletedTask and touch only ExtraFields that are read exclusively by Badge.IsObtained.",
+   "sim_notes": [
+    "Excluding them does not shift any other listener (they come after modifiers in the listener list)"
+   ],
+   "content_usage": {}
+  },
+  {
+   "id": "orbs",
+   "name": "Orbs (Defect)",
+   "namespaces": [
+    "Models/OrbModel",
+    "Models.Orbs",
+    "Entities.Orbs/OrbQueue",
+    "Commands/OrbCmd"
+   ],
+   "summary": "5 orbs (Lightning 3/8 dmg to random enemy via Rng.CombatTargets; Frost 2/5 block; Dark passive +6 to its evoke (start 6), evoke hits the weakest hittable enemy; Plasma 1 energy at turn start / 2 on evoke; Glass passive 4 decreasing by 1, evoke = 2x passive to all enemies). OrbQueue: capacity (max 10), Channel = add 1 slot for a character with BaseOrbSlotCount 0 and capacity 0, evoke front when full, enqueue, history OrbChanneled, Hook.AfterOrbChanneled. EvokeNext = first orb, EvokeLast = last orb. Lightning/Frost/Glass values and Dark's passive pass through Hook.ModifyOrbValue; Dark's accumulated evoke value and Plasma's values do not. Orbs are hook listeners placed after potions and before cards.",
+   "rules_dependent": [
+    "turn hooks: OrbQueue.BeforeTurnEnd (Combat/CombatManager.cs:1198), OrbQueue.AfterTurnStart under HookPlayerChoiceContext (Combat/CombatManager.cs:5119)",
+    "PlayerCombatState: new OrbQueue with capacity Player.BaseOrbSlotCount each combat (Entities.Players/PlayerCombatState.cs:274-276)",
+    "history OrbChanneled (Voltaic)",
+    "random orb: OrbModel.GetRandomOrb(Rng.CombatOrbGeneration) over 5 ids incl. GlassOrb (Chaos, TrashToTreasurePower)"
+   ],
+   "game_refs": [
+    "Commands/OrbCmd.cs:146-219",
+    "Commands/OrbCmd.cs:647-667",
+    "Commands/OrbCmd.cs:699-745",
+    "Entities.Orbs/OrbQueue.cs:386-461",
+    "Models/OrbModel.cs:197-204",
+    "Models/OrbModel.cs:402-405",
+    "Models/OrbModel.cs:334",
+    "Models/ModelDb.cs:212-218",
+    "Models.Orbs/LightningOrb.cs:336-338",
+    "Models.Orbs/FrostOrb.cs:349-351",
+    "Models.Orbs/DarkOrb.cs:164-214",
+    "Models.Orbs/PlasmaOrb.cs:220-259",
+    "Models.Orbs/GlassOrb.cs:234-283",
+    "Models.Characters/Defect.cs:63"
+   ],
+   "decision": "port",
+   "justification": "Core Defect mechanic; 43 content files call OrbCmd (30 cards, 6 powers, 5 relics, 2 potions) and any character can channel (slot auto-added).",
+   "sim_notes": [
+    "ModelDb.Orbs lists 4 orbs (no Glass) but GetRandomOrb draws from 5",
+    "Orb state (DarkOrb _evokeVal, GlassOrb _passiveVal) is per-instance mutable and must be cloned/hashed",
+    "RemoveCapacity evicts from the back (Entities.Orbs/OrbQueue.cs:419-427)"
+   ],
+   "content_usage": {
+    "orb_cmd": {
+     "pattern": "OrbCmd\\.",
+     "total_files": 43,
+     "by_category": {
+      "Cards": 30,
+      "Powers": 6,
+      "Relics": 5,
+      "Potions": 2
+     }
+    },
+    "orb_queue": {
+     "pattern": "OrbQueue|\\.Orbs\\b",
+     "total_files": 52,
+     "by_category": {
+      "Cards": 32,
+      "Powers": 9,
+      "Relics": 5,
+      "Potions": 1,
+      "Orbs": 5
+     }
+    },
+    "OrbCmd.Channel": {
+     "pattern": "OrbCmd\\.Channel",
+     "total_files": 30,
+     "by_category": {
+      "Cards": 22,
+      "Powers": 4,
+      "Relics": 3,
+      "Potions": 1
+     }
+    },
+    "OrbCmd.Evoke": {
+     "pattern": "OrbCmd\\.Evoke",
+     "total_files": 5,
+     "by_category": {
+      "Cards": 4,
+      "Powers": 1
+     }
+    },
+    "OrbCmd.Passive": {
+     "pattern": "OrbCmd\\.Passive",
+     "total_files": 4,
+     "by_category": {
+      "Cards": 2,
+      "Powers": 1,
+      "Relics": 1
+     }
+    },
+    "OrbCmd.Slots": {
+     "pattern": "OrbCmd\\.(AddSlots|RemoveSlots)",
+     "total_files": 5,
+     "by_category": {
+      "Cards": 3,
+      "Relics": 1,
+      "Potions": 1
+     }
+    },
+    "CombatOrbGeneration rng": {
+     "pattern": "Rng\\.CombatOrbGeneration",
+     "total_files": 2,
+     "by_category": {
+      "Cards": 1,
+      "Powers": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "osty_pets",
+   "name": "Osty and pets (Necrobinder summon)",
+   "namespaces": [
+    "Commands/OstyCmd",
+    "Commands/PlayerCmd.AddPet",
+    "Models.Monsters/Osty",
+    "Models.Powers/DieForYouPower",
+    "Entities.Players/PlayerCombatState (Pets)"
+   ],
+   "summary": "Osty is a MonsterModel pet (1 HP, single NOTHING_MOVE) owned by the player (PetOwner). OstyCmd.Summon: amount = Hook.ModifySummonAmount; if Osty alive -> GainMaxHp(amount); else revive (AddPetInternal) or create (PlayerCmd.AddPet<Osty> + DieForYouPower 1), then SetMaxHp(amount), Heal(amount), Hook.AfterOstyRevived on revive; then History.Summoned and Hook.AfterSummon. DieForYouPower redirects powered attacks aimed at the owner to Osty (ModifyUnblockedDamageTarget); overkill flows back to the owner (HpLossHookPhase.BeforeOsty/AfterOsty in CreatureCmd damage). Osty is killed when the player dies.",
+   "rules_dependent": [
+    "damage pipeline phases BeforeOsty/AfterOsty (Commands/CreatureCmd.cs:3699-3719)",
+    "TargetType.Osty, CardTag.OstyAttack, OstyDamageVar, CalculatedDamageVar.FromOsty",
+    "history CreatureAttacked with Actor == Owner.Osty (Flatten, Rattle)",
+    "pets are allies but not PlayerCreatures (AnyAlly targeting still sees no living ally in single player)"
+   ],
+   "game_refs": [
+    "Commands/OstyCmd.cs:336-394",
+    "Commands/PlayerCmd.cs:947-967",
+    "Models.Powers/DieForYouPower.cs:15-49",
+    "Commands/CreatureCmd.cs:2705-2707",
+    "Commands/CreatureCmd.cs:3699-3719",
+    "Entities.Players/Player.cs:247-251",
+    "Entities.Players/PlayerCombatState.cs:39",
+    "Models.Monsters/Osty.cs"
+   ],
+   "decision": "port",
+   "justification": "Core Necrobinder mechanic; OstyCmd used by 15 files, Osty referenced by 24; other pets are spawned by 7 monsters and 4 relics (Byrdpip, PaelsLegion, BoundPhylactery, PhylacteryUnbound).",
+   "sim_notes": [
+    "Pets live in PlayerCombatState.Pets and in CombatState allies; PlayerCombatState.AfterCombatEnd clears pets",
+    "Summoned history entries are write-only (no reader)"
+   ],
+   "content_usage": {
+    "osty_cmd": {
+     "pattern": "OstyCmd\\.",
+     "total_files": 15,
+     "by_category": {
+      "Cards": 9,
+      "Powers": 3,
+      "Relics": 2,
+      "Potions": 1
+     }
+    },
+    "osty_ref": {
+     "pattern": "\\bOsty\\b|IsOsty|\\.Osty\\b",
+     "total_files": 24,
+     "by_category": {
+      "Cards": 15,
+      "Powers": 5,
+      "Relics": 3,
+      "Monsters": 1
+     }
+    },
+    "summon_pet": {
+     "pattern": "PlayerCmd\\.AddPet|AddPet|IsPet|\\.Pets\\b|Summon",
+     "total_files": 35,
+     "by_category": {
+      "Cards": 13,
+      "Powers": 8,
+      "Relics": 4,
+      "Potions": 2,
+      "Monsters": 7,
+      "Characters": 1
+     }
+    },
+    "pets_monster": {
+     "pattern": "IsPet|PetOwner",
+     "total_files": 19,
+     "by_category": {
+      "Powers": 9,
+      "Relics": 3,
+      "Potions": 1,
+      "Monsters": 6
+     }
+    },
+    "PlayerCmd.AddPet": {
+     "pattern": "PlayerCmd\\.AddPet",
+     "total_files": 2,
+     "by_category": {
+      "Relics": 2
+     }
+    },
+    "OstyCmd.Summon": {
+     "pattern": "OstyCmd\\.Summon",
+     "total_files": 15,
+     "by_category": {
+      "Cards": 9,
+      "Powers": 3,
+      "Relics": 2,
+      "Potions": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "stars",
+   "name": "Stars (Regent resource)",
+   "namespaces": [
+    "Entities.Players/PlayerCombatState.Stars",
+    "Commands/PlayerCmd (GainStars/LoseStars/SetStars)",
+    "Models/CardModel star cost"
+   ],
+   "summary": "Integer per-combat resource (starts at 0 in each new PlayerCombatState). Setter records History.StarsModified(delta). Cards carry CanonicalStarCost (-1 = none), BaseStarCost, TemporaryStarCost, HasStarCostX and LastStarsSpent; Hook.ModifyStarCost adjusts. HasEnoughResourcesFor: if energy cost exceeds energy and Hook.ShouldPayExcessEnergyCostWithStars, each missing energy costs 2 stars. GainStars is gated by Hook.ShouldGainStars and followed by Hook.AfterStarsGained; spending fires Hook.AfterStarsSpent. Lose/Gain clamp at 0.",
+   "rules_dependent": [
+    "card playability (UnplayableReason.StarCostTooHigh)",
+    "history StarsModified (Radiate sums positive deltas this turn)",
+    "X-cost from stars (Hook.ModifyXValue(LastStarsSpent), Models/CardModel.cs:2772)"
+   ],
+   "game_refs": [
+    "Entities.Players/PlayerCombatState.cs:138-154",
+    "Entities.Players/PlayerCombatState.cs:334-373",
+    "Commands/PlayerCmd.cs:844-878",
+    "Commands/PlayerCmd.cs:390-393",
+    "Hooks/Hook.cs:9963",
+    "Hooks/Hook.cs:9978",
+    "Hooks/Hook.cs:11071",
+    "Hooks/Hook.cs:11512",
+    "Hooks/Hook.cs:11533",
+    "Models/CardModel.cs:1848-1904",
+    "Models/CardModel.cs:2914-2919"
+   ],
+   "decision": "port",
+   "justification": "44 content files (32 cards, 4 powers, 7 relics, 1 potion); the sim's PlayerState already has a Stars field.",
+   "sim_notes": [
+    "PlayerCmd.LoseStars is a no-op once the combat is ending (Commands/PlayerCmd.cs:857-866)"
+   ],
+   "content_usage": {
+    "stars": {
+     "pattern": "\\bStars\\b|GainStars|LoseStars|StarCost|PlayerCmd\\.GainStars",
+     "total_files": 44,
+     "by_category": {
+      "Cards": 32,
+      "Powers": 4,
+      "Relics": 7,
+      "Potions": 1
+     }
+    },
+    "PlayerCmd.GainStars": {
+     "pattern": "PlayerCmd\\.(GainStars|LoseStars|SetStars)",
+     "total_files": 16,
+     "by_category": {
+      "Cards": 9,
+      "Powers": 3,
+      "Relics": 3,
+      "Potions": 1
+     }
+    },
+    "StarCost": {
+     "pattern": "StarCost",
+     "total_files": 27,
+     "by_category": {
+      "Cards": 23,
+      "Powers": 1,
+      "Relics": 3
+     }
+    }
+   }
+  },
+  {
+   "id": "forge",
+   "name": "Forge (Regent Sovereign Blade)",
+   "namespaces": [
+    "Commands/ForgeCmd",
+    "Models.Cards/SovereignBlade"
+   ],
+   "summary": "ForgeCmd.Forge(amount): no-op if combat over/ending; if the player has no non-dupe SovereignBlade outside the exhaust pile, create one (CreatedThroughForge = true) and add it to hand via AddGeneratedCardToCombat; then every non-dupe SovereignBlade including exhausted ones gets AddDamage(amount) and AfterForged; then Hook.AfterForge.",
+   "rules_dependent": [
+    "Hook.AfterForge listeners (FurnacePower, HammerTimePower, FencingManual...)",
+    "SovereignBlade damage var and CreatedThroughForge reset (Models.Cards/SovereignBlade.cs:263-359)"
+   ],
+   "game_refs": [
+    "Commands/ForgeCmd.cs:153-171",
+    "Commands/ForgeCmd.cs:174-209",
+    "Models.Cards/SovereignBlade.cs:263-359"
+   ],
+   "decision": "port",
+   "justification": "15 files call ForgeCmd.Forge (11 cards, 2 powers, 1 relic, 1 potion); 19 reference SovereignBlade.",
+   "sim_notes": [
+    "The VFX/preview half (PreviewSovereignBlade, PlayCombatRoomForgeVfx) has no rule effect"
+   ],
+   "content_usage": {
+    "forge": {
+     "pattern": "ForgeCmd\\.",
+     "total_files": 15,
+     "by_category": {
+      "Cards": 11,
+      "Powers": 2,
+      "Relics": 1,
+      "Potions": 1
+     }
+    },
+    "sovereign_blade": {
+     "pattern": "SovereignBlade",
+     "total_files": 19,
+     "by_category": {
+      "Cards": 13,
+      "Powers": 4,
+      "Relics": 1,
+      "Potions": 1
+     }
+    },
+    "ForgeCmd.Forge": {
+     "pattern": "ForgeCmd\\.Forge",
+     "total_files": 14,
+     "by_category": {
+      "Cards": 10,
+      "Powers": 2,
+      "Relics": 1,
+      "Potions": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "ancients",
+   "name": "Ancient events and dialogue",
+   "namespaces": [
+    "Models/AncientEventModel",
+    "Entities.Ancients",
+    "Models.Events (Neow, Darv, Orobas, Pael, Tezcatara, Nonupeipe, Tanx, Vakuu, TheArchitect)"
+   ],
+   "summary": "AncientEventModel subclasses: Neow (acts Overgrowth/Underdocks), Orobas/Pael/Tezcatara (Hive), Nonupeipe/Tanx/Vakuu (Glory), Darv (shared). On enter: heal missing HP (x0.8 at WearyTraveler); Neow first sets HP to 0, so Neow heals to MaxHp (x0.8). Options come from GenerateInitialOptions unless Hook.ShouldAllowAncient blocks (then a single PROCEED). Dialogue (Entities.Ancients) is picked in UI code with Rng.Chaotic from profile visit counts and has no rule effect. TheArchitect is a separate EventModel entered after the last act (victory); its dialogue/VFX consume the event Rng but nothing follows.",
+   "rules_dependent": [
+    "ancient selection per act: ActModel.GenerateRooms picks _rooms.Ancient from GetUnlockedAncients + shared subset (Models/ActModel.cs:322)",
+    "shared ancient subset distribution with Rng.UpFront (Runs/RunManager.cs:4055-4072)"
+   ],
+   "game_refs": [
+    "Models/AncientEventModel.cs:78-105",
+    "Models/AncientEventModel.cs:246",
+    "Models/AncientEventModel.cs:275-289",
+    "Nodes.Rooms/NEventRoom.cs:208-213",
+    "Entities.Ancients/AncientDialogueSet.cs",
+    "Entities.Ancients/ArchitectAttackers.cs",
+    "Models.Events/TheArchitect.cs:285-286",
+    "Models.Events/TheArchitect.cs:1042-1048",
+    "Runs/RunManager.cs:872",
+    "Models.Monsters/Architect.cs:13-20"
+   ],
+   "decision": "port",
+   "justification": "Ancients are on every act's map (MapPointType.Ancient) and grant relics/upgrades; dialogue and TheArchitect are excluded (no rule effect / post-victory terminal state).",
+   "sim_notes": [
+    "Treat entering TheArchitect event as run victory (terminal)",
+    "DebugOption replaces the first option only in debug (Models/AncientEventModel.cs:280-284)"
+   ],
+   "content_usage": {}
+  },
+  {
+   "id": "unlocks_timeline",
+   "name": "Unlock state and timeline epochs",
+   "namespaces": [
+    "Unlocks/UnlockState",
+    "Unlocks/SerializableUnlockState",
+    "Timeline",
+    "Timeline.Epochs",
+    "Saves/ProgressState"
+   ],
+   "summary": "UnlockState = {revealed epoch ids, encounters seen, NumberOfRuns}, snapshotted per player at run creation from the profile (SaveManager.GenerateUnlockStateFromProgress) and stored in SerializablePlayer.UnlockState; RunState.UnlockState merges players (union of sets, max runs). UnlockState.all = every epoch, every encounter, NumberOfRuns 999999999; FromSerializable(null) = all. 57 epochs: 48 gate concrete content (3 cards/relics/potions each per character tier, 5 colorless card tiers, 2 potion tiers, 5 relic tiers, 3 event epochs, 4 character epochs), plus NeowEpoch, UnderdocksEpoch, DarvEpoch, OrobasEpoch (rule gates without lists) and Act2B/Act3B/CustomAndSeeds/DailyRun (no rule gate in v0.111.0). See unlock_profile_dependence for every rule path.",
+   "rules_dependent": [
+    "card/relic/potion pools",
+    "event pool per act",
+    "ancients per act and shared ancient Darv",
+    "act list (Underdocks)",
+    "character set (Orobas, Kaleidoscope, Splash, PrismaticGem, ColorfulPhilosophers)",
+    "boss discovery order",
+    "first-run tutorial behaviours",
+    "Neow vs. monster start"
+   ],
+   "game_refs": [
+    "Unlocks/UnlockState.cs:16-139",
+    "Unlocks/SerializableUnlockState.cs:10-73",
+    "Saves.Runs/SerializablePlayer.cs:169",
+    "Entities.Players/Player.cs:191",
+    "Entities.Players/Player.cs:707-716",
+    "Runs/RunState.cs:679",
+    "Nodes/NGame.cs:3138",
+    "Timeline/EpochModel.cs:102-234",
+    "Timeline.Epochs/*.cs"
+   ],
+   "decision": "port-parameter",
+   "justification": "Unlock state changes which content can appear and therefore RNG outcomes; it is a run input (in the save), not UI. Timeline UI, epoch reveal flow and stories are excluded.",
+   "sim_notes": [
+    "Default: UnlockState.all semantics plus 'all acts discovered' (DiscoveredActs is a live profile read outside UnlockState)",
+    "Replay of a recorded run: load each SerializablePlayer.UnlockState from the save"
+   ],
+   "content_usage": {
+    "unlock": {
+     "pattern": "UnlockState",
+     "total_files": 54,
+     "by_category": {
+      "Cards": 16,
+      "Powers": 5,
+      "Relics": 13,
+      "Potions": 6,
+      "Events": 7,
+      "Modifiers": 2,
+      "Acts": 5
+     }
+    }
+   }
+  },
+  {
+   "id": "multiplayer_scaling",
+   "name": "Multiplayer scaling and player-count branches",
+   "namespaces": [
+    "Models.Singleton/MultiplayerScalingModel",
+    "Entities.Creatures/Creature (HP scaling)",
+    "Commands/PowerCmd (power scaling)",
+    "Runs/IRunState.CardMultiplayerConstraint",
+    "Models/CardPoolModel.GetUnlockedCards"
+   ],
+   "summary": "MultiplayerScalingModel is a combat hook listener whose only override (ModifyBlockMultiplicative on enemies) returns Players.Count when <= 2, i.e. 1m in single player, and 1m multipliers are not recorded as modifiers. Monster HP scaling and power-amount scaling are skipped when playerCount <= 1. Single-player is not a pure no-op: IRunState.CardMultiplayerConstraint = SingleplayerOnly removes the 37 MultiplayerOnly cards from every pool via CardPoolModel.GetUnlockedCards; ActModel.GetNumberOfRooms subtracts 1 room only in multiplayer; AnyAlly-target cards are unplayable in single player (NoLivingAllies: PlayerCreatures excludes pets).",
+   "rules_dependent": [
+    "every pool lookup (CardMultiplayerConstraint)",
+    "card playability for TargetType.AnyAlly (Models/CardModel.cs:3347-3350)"
+   ],
+   "game_refs": [
+    "Models.Singleton/MultiplayerScalingModel.cs:19-77",
+    "Hooks/Hook.cs:10096-10110",
+    "Entities.Creatures/Creature.cs:986-993",
+    "Entities.Creatures/Creature.cs:1332-1339",
+    "Commands/PowerCmd.cs:550-552",
+    "Runs/IRunState.cs:74-84",
+    "Models/CardPoolModel.cs:68-81",
+    "Models/ActModel.cs:185-193",
+    "Combat/CombatState.cs:560",
+    "Combat/CombatState.cs:923-926"
+   ],
+   "decision": "stub",
+   "justification": "Single-player identity confirmed by code; keep the SingleplayerOnly pool filter and the Count<=1 branch of every player-count check (33 rule files contain such checks).",
+   "sim_notes": [
+    "Do not register MultiplayerScalingModel as a listener; it cannot change any value at Players.Count == 1"
+   ],
+   "content_usage": {
+    "multiplayer_scale": {
+     "pattern": "MultiplayerScaling|ScaleInMultiplayer|GetScaledAmountForMultiplayer|Players\\.Count|IsMultiplayer",
+     "total_files": 13,
+     "by_category": {
+      "Powers": 13
+     }
+    }
+   }
+  },
+  {
+   "id": "combat_history",
+   "name": "Combat history",
+   "namespaces": [
+    "Combat.History",
+    "Combat.History.Entries"
+   ],
+   "summary": "Append-only per-combat log owned by CombatManager (cleared at combat end/reset). 17 entry types; each entry stores Actor, RoundNumber, CurrentSide and a snapshot of every player's TurnNumber. Content reads it through 45 query sites in 45 files (29 cards, 12 powers, 4 relics); 3 entry types are write-only. See combat_history section for every query.",
+   "rules_dependent": [
+    "damage/hit-count multipliers (CalculatedVar)",
+    "cost reductions on cards entering combat",
+    "playability gates",
+    "power triggers and modifiers"
+   ],
+   "game_refs": [
+    "Combat.History/CombatHistory.cs:24-168",
+    "Combat.History/CombatHistoryEntry.cs:46-125",
+    "Combat/CombatManager.cs:1759",
+    "Combat/CombatManager.cs:7084",
+    "Combat/CombatState.cs:1077-1080"
+   ],
+   "decision": "port",
+   "justification": "Queries change damage, costs, playability and triggers; generated cards compute their state from history on entering combat, so counters alone are fragile.",
+   "sim_notes": [
+    "Store an immutable-entry log with structural sharing (clone = share prefix + length) and port each query as written",
+    "HappenedThisTurn requires equal RoundNumber, CurrentSide and every player's TurnNumber; HappenedLastPlayerTurn compares only the given player's TurnNumber - 1"
+   ],
+   "content_usage": {
+    "history": {
+     "pattern": "CombatHistory|\\.History\\.",
+     "total_files": 45,
+     "by_category": {
+      "Cards": 29,
+      "Powers": 12,
+      "Relics": 4
+     }
+    }
+   }
+  },
+  {
+   "id": "card_entities",
+   "name": "Card entity helpers (Entities.Cards)",
+   "namespaces": [
+    "Entities.Cards",
+    "CardSelection"
+   ],
+   "summary": "38 files. Rule-bearing: CardPile (list order, MaxCardsInHand 10, top = index 0, RandomizeOrderInternal = UnstableShuffle + TestRngInjector override + Hook.ModifyShuffleOrder(isInitialShuffle: true)), CardPlay (Player, Target, Resources, PlayIndex/IsFirstInSeries, IsAutoPlay), CardEnergyCost + LocalCostModifier (Absolute/Relative, reduce-only, expiration EndOfCombat=0/EndOfTurn=2/WhenPlayed=4) + TemporaryCardCost/Offset (UntilPlayed/ThisTurn/ThisCombat), CardTransformation (fixed replacement, option list or CardFactory random with transform rng), CardCreationResult (modified-by-relic wrapper for rewards), ResourceInfo, CardLocation (player, pile, position), CardPileAddResult, enums (CardKeyword, CardType, CardRarity, CardTag, PileType, TargetType, UnplayableReason flags, AutoPlayType, CostModifiers/KeywordSources flags, CardScope, OrbEvokeType, CardMultiplayerConstraint), extensions (IsSingleTarget, IsCombatPile, GetNextHighestRarityWithWrapping, HasResourceCostReason). UI-only: CardPreviewMode, CardCostColor, CardKeywordOrder, CardUpgradePreviewType, CardKeywordExtensions loc helpers, PileTypeExtensions.GetTargetPosition.",
+   "rules_dependent": [
+    "every card play and pile move"
+   ],
+   "game_refs": [
+    "Entities.Cards/CardPile.cs:35",
+    "Entities.Cards/CardPile.cs:220-320",
+    "Entities.Cards/CardPlay.cs:24-98",
+    "Entities.Cards/LocalCostModifier.cs",
+    "Entities.Cards/TemporaryCardCost.cs",
+    "Entities.Cards/TemporaryCardCostOffset.cs",
+    "Entities.Cards/CardTransformation.cs:139-195",
+    "Entities.Cards/ActionTargetExtensions.cs",
+    "Entities.Cards/PileTypeExtensions.cs",
+    "Entities.Cards/CardRarityExtensions.cs",
+    "Entities.Cards/UnplayableReason.cs",
+    "CardSelection/CardSelectorPrefs.cs"
+   ],
+   "decision": "port",
+   "justification": "Mostly already partially ported in P0 (CardPile, CardEnergyCost, CardPlay, enums); the remainder is required by the content kernel.",
+   "sim_notes": [
+    "CardPrefs.RequireManualConfirmation = MinSelect >= 0 && MinSelect != MaxSelect decides auto-resolution of prompts",
+    "PileType.Deck is the run deck; IsCombatPile = Draw..Play"
+   ],
+   "content_usage": {}
+  },
+  {
+   "id": "helpers_extensions",
+   "name": "Helpers and extensions with rule semantics",
+   "namespaces": [
+    "Helpers",
+    "Helpers.Models",
+    "Extensions"
+   ],
+   "summary": "Rule-bearing: AscensionHelper.GetValueIfAscension/HasAscension (reads RunManager.Instance; 102 monster files), ListExtensions.UnstableShuffle (Fisher-Yates from the end, NextInt(i+1)), StableShuffle (List.Sort with IComparable then UnstableShuffle), IEnumerableExtensions.TakeRandom (shuffle a full copy then Take), GrabBag (weighted roulette with rejection resampling; ActModel encounters), StringHelper (Slugify, SnakeCase, GetDeterministicHashCode XXH64, GetDeterministicHashCodeOld), SeedHelper (CanonicalizeSeed; GetRandomSeed with BadWordChecker rejection), EggRelicHelper (upgrade reward cards of one type), Really.bigNumber 999999999, TaskHelper.RunSafely (fire-and-forget tasks inside rule code), NonInteractiveMode, OneTimeInitialization (ModelDb.Init order). UI-only: CardCostHelper, Ease, EnergyIconHelper, GlyphConverter, GodotTreeExtensions, HandLayoutHelper, HandPosHelper, ImageHelper, MathHelper, SceneHelper, ScrollHelper, SpineNodeExtensions, StsColors, TimeFormatting, DisplayVars, CommandLineHelper, ReflectionHelper (type discovery, mods), SignalAwaiterExtensions.",
+   "rules_dependent": [
+    "ascension values",
+    "every shuffle and random subset"
+   ],
+   "game_refs": [
+    "Helpers/AscensionHelper.cs:9-36",
+    "Extensions/ListExtensions.cs:10-62",
+    "Extensions/IEnumerableExtensions.cs:9-12",
+    "Helpers/GrabBag.cs:7-90",
+    "Helpers/StringHelper.cs:63-135",
+    "Helpers/SeedHelper.cs:13-43",
+    "Helpers.Models/EggRelicHelper.cs",
+    "Helpers/Really.cs",
+    "Helpers/TaskHelper.cs:210"
+   ],
+   "decision": "port",
+   "justification": "The shuffles and hashing are already ported in P0 (RngCollectionExtensions, DeterministicHash); AscensionHelper maps to cs.GetValueIfAscension; GrabBag and EggRelicHelper are needed by the run layer and relics.",
+   "sim_notes": [
+    "StableShuffle depends on .NET List.Sort (introsort, unstable for equal keys): keep List<T>.Sort with the game's comparer (CardModel: ModelId ordinal, then upgrade level), never OrderBy",
+    "TakeRandom consumes Count-1 draws regardless of count",
+    "Rng.NextItem consumes one NextInt even for a single item and nothing for an empty sequence (Random/Rng.cs:213-223)"
+   ],
+   "content_usage": {
+    "AscensionHelper": {
+     "pattern": "AscensionHelper\\.",
+     "total_files": 102,
+     "by_category": {
+      "Monsters": 102
+     }
+    },
+    "UnstableShuffle": {
+     "pattern": "UnstableShuffle",
+     "total_files": 9,
+     "by_category": {
+      "Powers": 1,
+      "Relics": 2,
+      "Events": 6
+     }
+    },
+    "StableShuffle": {
+     "pattern": "StableShuffle",
+     "total_files": 17,
+     "by_category": {
+      "Cards": 4,
+      "Relics": 8,
+      "Events": 5
+     }
+    },
+    "TakeRandom": {
+     "pattern": "TakeRandom",
+     "total_files": 4,
+     "by_category": {
+      "Cards": 2,
+      "Relics": 1,
+      "Events": 1
+     }
+    },
+    "Rng.Shuffle": {
+     "pattern": "\\.Shuffle\\(",
+     "total_files": 4,
+     "by_category": {
+      "Cards": 1,
+      "Relics": 1,
+      "Potions": 1,
+      "Events": 1
+     }
+    },
+    "Rng.NextItem": {
+     "pattern": "\\.NextItem",
+     "total_files": 69,
+     "by_category": {
+      "Cards": 7,
+      "Powers": 7,
+      "Relics": 18,
+      "Monsters": 9,
+      "Encounters": 6,
+      "Events": 20,
+      "Orbs": 1,
+      "Modifiers": 1
+     }
+    },
+    "Rng.NextInt/Float/Double/Bool": {
+     "pattern": "\\.Next(Int|Float|Double|Bool|UnsignedInt|UnsignedLong|Gaussian)",
+     "total_files": 36,
+     "by_category": {
+      "Powers": 1,
+      "Relics": 1,
+      "Potions": 1,
+      "Monsters": 4,
+      "Encounters": 6,
+      "Events": 18,
+      "Enchantments": 1,
+      "Acts": 4
+     }
+    },
+    "EggRelicHelper": {
+     "pattern": "EggRelicHelper\\.",
+     "total_files": 3,
+     "by_category": {
+      "Relics": 3
+     }
+    },
+    "TaskHelper": {
+     "pattern": "TaskHelper\\.",
+     "total_files": 27,
+     "by_category": {
+      "Powers": 3,
+      "Relics": 22,
+      "Events": 2
+     }
+    },
+    "StringHelper": {
+     "pattern": "StringHelper\\.",
+     "total_files": 1,
+     "by_category": {
+      "Events": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "dynamic_vars",
+   "name": "Localization.DynamicVars (numeric card/power/relic variables)",
+   "namespaces": [
+    "Localization.DynamicVars"
+   ],
+   "summary": "24 DynamicVar types + DynamicVarSet. BaseValue clamps to 999999999; EnchantedValue/PreviewValue are display values. Rule-bearing types: DamageVar/BlockVar (value + ValueProp), CalculatedVar/CalculatedDamageVar/CalculatedBlockVar (CalculationBase.BaseValue + CalculationExtra.BaseValue x static multiplier(card, target); multiplier is 0 unless CombatManager.IsInProgress and card in combat; FromOsty), CalculationBaseVar, CalculationExtraVar, ExtraDamageVar, OstyDamageVar, PowerVar<T> (power amount), SummonVar, CardsVar, EnergyVar, StarsVar, ForgeVar, GoldVar, HealVar, HpLossVar, MaxHpVar, RepeatVar, IntVar, BoolVar (0/1), IfUpgradedVar (display enum), StringVar (text). DynamicVarSet exposes named accessors (Damage, Block, Cards, Energy, Strength, Vulnerable, Weak, Poison, Doom, Dexterity, Stars, Summon, Forge, Gold, Heal, HpLoss, MaxHp, Repeat, OstyDamage, ExtraDamage, CalculatedDamage, CalculatedBlock, CalculationBase, CalculationExtra) and RecalculateForUpgradeOrEnchant/FinalizeUpgrade.",
+   "rules_dependent": [
+    "every numeric constant of content",
+    "history-driven multipliers"
+   ],
+   "game_refs": [
+    "Localization.DynamicVars/DynamicVar.cs:37",
+    "Localization.DynamicVars/CalculatedVar.cs:28-48",
+    "Localization.DynamicVars/DynamicVarSet.cs:26-72",
+    "Localization.DynamicVars/DynamicVarSet.cs:169-206"
+   ],
+   "decision": "port",
+   "justification": "Content constants and upgrade deltas live here; the P0 sim has DynamicVar/DynamicVarSet with Damage/Block only.",
+   "sim_notes": [
+    "Content construction counts in Models.*: DamageVar 210, PowerVar 194, DynamicVar 182, CardsVar 171, BlockVar 105, EnergyVar 86, StringVar 65, CalculationBaseVar 43, GoldVar 31, RepeatVar 30, HealVar 24, CalculationExtraVar 24, MaxHpVar 21, ExtraDamageVar 19, CalculatedDamageVar 19, HpLossVar 18, StarsVar 17, CalculatedVar 17, SummonVar 15, ForgeVar 13, IntVar 12, OstyDamageVar 11, CalculatedBlockVar 7 (raw construction-site counts, async duplicates included)",
+    "UpdateCardPreview paths are display-only; actual damage goes through Hook.ModifyDamage with the enchantment applied there"
+   ],
+   "content_usage": {}
+  },
+  {
+   "id": "saves_profile",
+   "name": "Saves: profile/progress state read by rules",
+   "namespaces": [
+    "Saves/ProgressState",
+    "Saves/SaveManager",
+    "Saves.Managers/ProgressSaveManager",
+    "Saves.Runs/SerializablePlayer"
+   ],
+   "summary": "ProgressState holds epochs, character/card/encounter/enemy/ancient stats, discovered cards/relics/potions/events/acts, WongoPoints, TestSubjectKills, ArchitectDamage, UniqueId, FTUE flags. Rules read the profile in two ways: (1) through the run's UnlockState snapshot (preferred, saved), (2) live through SaveManager.Instance.Progress in 5 paths (act discovery, first-run tutorial room, WelcomeToWongos points, single-player ascension clamp in the lobby, TheArchitect dialogue after victory) plus display-only reads (Vakuu visits, TestSubject title, LoomingFruit icon, MaxAscensionWhenRunStarted, ancient dialogue). PrefsSave.FastMode only changes VFX timing.",
+   "rules_dependent": [
+    "see unlock_profile_dependence.paths"
+   ],
+   "game_refs": [
+    "Saves/ProgressState.cs:70-225",
+    "Saves/SaveManager.cs:1588-1590",
+    "Saves.Managers/ProgressSaveManager.cs:146-148",
+    "Saves.Runs/SerializablePlayer.cs:169-321"
+   ],
+   "decision": "port-parameter",
+   "justification": "Only a handful of profile facts matter; expose them as explicit run parameters with all-unlocked defaults instead of porting the save system. Save import (read path) belongs to the run-layer study.",
+   "sim_notes": [
+    "Profile facts parameter: {UnlockState per player, DiscoveredActs, ProfileNumberOfRuns, WongoPoints}"
+   ],
+   "content_usage": {
+    "save_manager": {
+     "pattern": "SaveManager\\.Instance",
+     "total_files": 10,
+     "by_category": {
+      "Cards": 5,
+      "Relics": 1,
+      "Monsters": 1,
+      "Events": 3
+     }
+    },
+    "SaveManager": {
+     "pattern": "SaveManager\\.Instance\\.(Progress|IsEpoch)",
+     "total_files": 5,
+     "by_category": {
+      "Relics": 1,
+      "Monsters": 1,
+      "Events": 3
+     }
+    }
+   }
+  },
+  {
+   "id": "model_db",
+   "name": "ModelDb registry, ids, pools and lookups",
+   "namespaces": [
+    "Models/ModelDb",
+    "Models/ModelId",
+    "Models/AbstractModelSubtypes",
+    "Models.CardPools",
+    "Models.RelicPools",
+    "Models.PotionPools"
+   ],
+   "summary": "Static registry keyed by ModelId(Category, Entry): Category = Slugify(name of the first subclass under AbstractModel) minus '_MODEL' (CARD, POWER, RELIC, ...), Entry = Slugify(class name). Init instantiates every type in AbstractModelSubtypes.All plus mod subtypes; canonical instances are shared, ToMutable clones. Pools: 5 characters (Ironclad, Silent, Regent, Necrobinder, Defect); shared card pools Colorless, Curse, Deprecated, Event, Quest, Status, Token; shared relic pools Deprecated, Event, Fallback, Shared; shared potion pools Deprecated, Event, Mock, Shared, Token. Pool order = GenerateAllCards/Relics/Potions array order (+ mods); epoch filters use RemoveAll (order preserved). Acts: Overgrowth(0, default), Underdocks(0), Hive(1), Glory(2). AllRelics/AllPotions are sorted by Id.Entry with the default culture-sensitive comparer; ModelId.CompareTo is ordinal. ModelDb has no randomized lookup itself; content draws through CardFactory (GetDistinctForCombat = player-count filter + FilterForCombat + TakeRandom; GetForCombat = NextItem with replacement; CreateForReward = rarity roll then NextItem on PlayerRng.Rewards; CreateRandomCardForTransform), PotionFactory (character + Shared unlocked potions, rarity then NextItem), RelicFactory (grab-bag pulls, RollRarity 0.5/0.83, fallback Circlet) and OrbModel.GetRandomOrb.",
+   "rules_dependent": [
+    "every random pick from a pool depends on pool order",
+    "ids appear in saves and recordings"
+   ],
+   "game_refs": [
+    "Factories/CardFactory.cs:25-200",
+    "Factories/PotionFactory.cs:22-66",
+    "Factories/RelicFactory.cs:13-67",
+    "Models/ModelDb.cs:112-218",
+    "Models/ModelDb.cs:220-275",
+    "Models/ModelDb.cs:353-384",
+    "Models/ModelDb.cs:460-488",
+    "Models/ModelId.cs:39-91",
+    "Helpers/StringHelper.cs:68-73",
+    "Models/CardPoolModel.cs:35-46",
+    "Models/RelicPoolModel.cs:21-43",
+    "Models/PotionPoolModel.cs:23-43"
+   ],
+   "decision": "port",
+   "justification": "The sim registry (Registry/Registries.cs) already mirrors the id rule; pools must reproduce the game's array order exactly.",
+   "sim_notes": [
+    "Per-model inventories are in sibling files sim/specs/inventory/{cards,powers,relics,potions,...}.json and pools.json",
+    "Never iterate HashSet/Dictionary keyed by ModelId or string for ordered choices (string hashes are randomized per process)"
+   ],
+   "content_usage": {
+    "card_factory": {
+     "pattern": "CardFactory\\.",
+     "total_files": 49,
+     "by_category": {
+      "Cards": 15,
+      "Powers": 5,
+      "Relics": 15,
+      "Potions": 6,
+      "Events": 4,
+      "Modifiers": 4
+     }
+    },
+    "potion_factory": {
+     "pattern": "PotionFactory\\.",
+     "total_files": 5,
+     "by_category": {
+      "Cards": 1,
+      "Relics": 3,
+      "Potions": 1
+     }
+    },
+    "relic_factory": {
+     "pattern": "RelicFactory\\.",
+     "total_files": 12,
+     "by_category": {
+      "Relics": 3,
+      "Events": 9
+     }
+    }
+   }
+  },
+  {
+   "id": "local_context",
+   "name": "LocalContext (local-player identity)",
+   "namespaces": [
+    "Context/LocalContext"
+   ],
+   "summary": "Static NetId of the local player. IsMe(player) is true for the single-player player (netId 1); IsMe(creature) is false for monsters and pets without Player; IsMine(card) requires a mutable card owned by the local player. 27 content files gate on it; rule-relevant cases include MembershipCard price discount (ModifyMerchantPrice requires IsMe(Owner)), ThievingHopper target fallback, SoulFysh Beckon handling, Vakuu/TheArchitect display.",
+   "rules_dependent": [
+    "shop prices (MembershipCard)",
+    "a few monster target choices"
+   ],
+   "game_refs": [
+    "Context/LocalContext.cs",
+    "Models.Relics/MembershipCard.cs:18-29",
+    "Models.Monsters/ThievingHopper.cs:589",
+    "Models.Monsters/SoulFysh.cs:779"
+   ],
+   "decision": "stub",
+   "justification": "Single player: IsMe(player) == true, IsMe(non-player creature) == false; no state needed.",
+   "sim_notes": [],
+   "content_usage": {
+    "local_context": {
+     "pattern": "LocalContext\\.",
+     "total_files": 27,
+     "by_category": {
+      "Cards": 3,
+      "Powers": 2,
+      "Relics": 7,
+      "Monsters": 6,
+      "Events": 7,
+      "Modifiers": 1,
+      "Badges": 1
+     }
+    }
+   }
+  },
+  {
+   "id": "achievements_timeline_ui",
+   "name": "Achievements, stories, epoch reveal UI, stats",
+   "namespaces": [
+    "Achievements",
+    "Models.Achievements",
+    "Timeline.Stories",
+    "Timeline (reveal flow)",
+    "Platform",
+    "Runs.Metrics",
+    "Leaderboard"
+   ],
+   "summary": "Progress bookkeeping after combats/runs (UpdateProgressAfterCombatWon, UpdateProgressWithRunData, MarkCardAsSeen/MarkRelicAsSeen), achievements and Steam stats, metrics upload.",
+   "rules_dependent": [],
+   "game_refs": [
+    "Combat/CombatManager.cs:1793-1795",
+    "Runs/RunManager.cs:4724-4762",
+    "Saves.Managers/ProgressSaveManager.cs:146-170"
+   ],
+   "decision": "exclude",
+   "justification": "Writes only; no rule reads them during a run except through the UnlockState snapshot taken at run start.",
+   "sim_notes": [],
+   "content_usage": {}
+  }
+ ],
+ "test_seams": {
+  "switches": [
+   {
+    "name": "TestMode.IsOn",
+    "ref": "TestSupport/TestMode.cs:11-20",
+    "effect": "static flag; set by TurnOnInternal (:45-48); IsTestRunFromCmdline checks for RiderTestRunner/ in Godot OS.GetCmdlineArgs (:22-25)"
+   },
+   {
+    "name": "NonInteractiveMode.IsActive",
+    "ref": "Helpers/NonInteractiveMode.cs:10-28",
+    "effect": "TestMode.IsOn || AutoSlayerCheck(); AutoSlayer installs AutoSlayerCheck = () => IsActive in its static ctor (AutoSlay/AutoSlayer.cs:2529-2532)"
+   }
+  ],
+  "injection_points": [
+   {
+    "name": "ICardSelector / CardSelectCmd selector stacks",
+    "ref": "TestSupport/ICardSelector.cs:9-14; Commands/CardSelectCmd.cs:3084-3150",
+    "effect": "UseSelector (only if empty) / PushSelector / SuspendSelectorForTest; global and local-only stacks; Selector answers every CardSelectCmd prompt except FromChooseABundleScreen, plus CardReward.GetSelectedCardReward"
+   },
+   {
+    "name": "TestCardSelector",
+    "ref": "TestSupport/TestCardSelector.cs:221-319",
+    "effect": "queued answers by card or by index (selected cards must be among options, else throws); no queued answer -> empty selection; default card reward = first option; PrepareToBlock makes the next prompt block (pause/resume tests)"
+   },
+   {
+    "name": "TestRngInjector",
+    "ref": "TestSupport/TestRngInjector.cs:8-70",
+    "effect": "one-shot overrides consumed at: RelicFactory.PullNextRelicFromFront/Back (Factories/RelicFactory.cs:32, :44), relic rarity roll short-circuits before rng.NextFloat (:56), CardFactory.GetDistinctForCombat (Factories/CardFactory.cs:95), initial shuffle reorder after UnstableShuffle (Entities.Cards/CardPile.cs:244)"
+   },
+   {
+    "name": "RunRngSet.MockRng / GetMockInstance",
+    "ref": "Runs/RunRngSet.cs:57-65; :191-194",
+    "effect": "replace one named stream with new Rng(seed); a shared mock set exists only in TestMode"
+   },
+   {
+    "name": "RunState.CreateForTest",
+    "ref": "Runs/RunState.cs:597-604",
+    "effect": "default player = Deprived (1000 HP, 100 energy, mock card pool, Ironclad relic/potion pools) with UnlockState.all; default acts = ActModel.GetDefaultList(); random seed via SeedHelper"
+   },
+   {
+    "name": "ModelDb.Init(injectedTypes) / Inject / Remove / ResetForTest",
+    "ref": "Models/ModelDb.cs:353-384",
+    "effect": "tests register mock models (Models.*.Mocks) into the static registry"
+   },
+   {
+    "name": "SaveManager mock instance",
+    "ref": "Saves/SaveManager.cs:950-981; :1097-1104",
+    "effect": "Instance returns a mock; TestMode uses MockGodotFileIo('user://test')"
+   },
+   {
+    "name": "RewardsSet.testSelector",
+    "ref": "Rewards/RewardsSet.cs:290-302; :348",
+    "effect": "in TestMode the rewards screen is replaced by a delegate"
+   },
+   {
+    "name": "RestSiteOption.generateForTests",
+    "ref": "Entities.RestSite/RestSiteOption.cs:19; :49-52",
+    "effect": "override rest site options in TestMode"
+   },
+   {
+    "name": "Per-model test overrides",
+    "ref": "Models.Relics/SneckoEye.cs:269-275; Models.Powers/ConfusedPower.cs:25; Models.Potions/SneckoOil.cs:132; Models.Enchantments/Slither.cs:23; Models.Cards/MadScience.cs:431, :873",
+    "effect": "fixed energy costs instead of Rng.CombatEnergyCosts rolls; fixed chaos card; assert TestMode"
+   }
+  ],
+  "testmode_divergences": [
+   {
+    "ref": "Commands/CardSelectCmd.cs:3813",
+    "test": "FromChooseABundleScreen picks bundles[0]",
+    "shipping": "player chooses a bundle (no selector seam)",
+    "sim": "decision point"
+   },
+   {
+    "ref": "Runs/RunManager.cs:4096",
+    "test": "ShouldApplyTutorialModifications = false",
+    "shipping": "true for GameMode.Standard: boss discovery order and first-run room order applied",
+    "sim": "apply with the UnlockState parameter"
+   },
+   {
+    "ref": "Runs/RunManager.cs:4232",
+    "test": "no tutorial room type",
+    "shipping": "first-ever run: Unassigned map point -> Event",
+    "sim": "apply only if profile NumberOfRuns == 0"
+   },
+   {
+    "ref": "Models/ActModel.cs:487",
+    "test": "no forced undiscovered act",
+    "shipping": "an unlocked, not-yet-discovered non-default act is forced and no rng draw is made for that act index",
+    "sim": "parameter DiscoveredActs"
+   },
+   {
+    "ref": "Entities.Merchant/MerchantPotionEntry.cs:196-199",
+    "test": "potion price not jittered, PlayerRng.Shops not consumed",
+    "shipping": "cost = (int)Mathf.Round(cost * Shops.NextFloat(0.95f, 1.05f))",
+    "sim": "shipping path"
+   },
+   {
+    "ref": "Models.Powers/RollingBoulderPower.cs:98-115",
+    "test": "one CreatureCmd.Damage on all HittableEnemies",
+    "shipping": "one CreatureCmd.Damage per creature, triggered by the boulder VFX HitCreature signal, awaited with WhenAll",
+    "sim": "open question: order and grouping of per-creature hits"
+   },
+   {
+    "ref": "Models.Relics/Cauldron.cs:114; Models.Relics/CallingBell.cs:162",
+    "test": "fixed test potions/relics",
+    "shipping": "random rewards",
+    "sim": "shipping path"
+   },
+   {
+    "ref": "Rewards/RewardsSet.cs:290",
+    "test": "testSelector replaces the rewards screen",
+    "shipping": "rewards screen",
+    "sim": "decision point"
+   },
+   {
+    "ref": "Models.Relics/LargeCapsule.cs:185, :194; Models.Relics/ScrollBoxes.cs:240",
+    "test": "Deprived maps to Ironclad cards",
+    "shipping": "not reachable (Deprived is not playable)",
+    "sim": "ignore"
+   }
+  ],
+  "execution_order_facts": [
+   {
+    "ref": "GameActions/ActionExecutor.cs:197-209",
+    "fact": "NonInteractiveMode: each dequeued GameAction is awaited to completion before the next one is dequeued; interactive mode may continue with other ready actions while an action is paused for a player choice (:151-161)"
+   },
+   {
+    "ref": "GameActions/ActionExecutor.cs:130-139",
+    "fact": "after every executed action except EndPlayerTurnAction and ReadyToBeginEnemyTurnAction, CombatManager.CheckWinCondition() runs while the combat is in progress"
+   },
+   {
+    "ref": "GameActions/GameAction.cs:107",
+    "fact": "NonInteractiveMode throws if an action finishes in a non-Executing state: no action may be left paused, i.e. every choice must resolve synchronously"
+   },
+   {
+    "ref": "Commands/Cmd.cs:75; :172",
+    "fact": "Cmd.Wait / CustomScaledWait are skipped in NonInteractiveMode (and in FastMode Instant)"
+   },
+   {
+    "ref": "GameActions/ActionExecutor.cs:303-322; :505-512; Combat/CombatManager.cs:7504-7518",
+    "fact": "pausing is disabled under AutoSlay/NonInteractive; TestMode polls unpause with Task.Delay(50)"
+   },
+   {
+    "ref": "Combat/CombatStateTracker.cs:360-366",
+    "fact": "in TestMode nothing may subscribe to CombatStateChanged: rule code does not depend on UI state-change events"
+   },
+   {
+    "ref": "Commands/CardSelectCmd.cs:3236-3796",
+    "fact": "with a Selector installed no choice id is reserved and SignalPlayerChoiceBegun/Ended are not called; auto-resolution happens before the selector is consulted"
+   },
+   {
+    "ref": "Combat/CombatState.cs:221-232",
+    "fact": "GodotTimerTask uses Task.Delay in TestMode instead of a SceneTree timer (no rule effect)"
+   },
+   {
+    "ref": "Hooks/Hook.cs:2364, :2467, :6170, :7776, :8398, :8607; Combat/CombatManager.cs:2388, :2502, :2900, :5059, :5118",
+    "fact": "HookPlayerChoiceContext is created in these dispatchers: prompts can occur inside AfterDeath, AfterDiedToDoom, AfterSideTurnEnd, BeforeFlush, BeforeSideTurnEnd, BeforeSideTurnStart, end-turn phases one/two and StartTurn"
+   },
+   {
+    "ref": "Models.Monsters/* (ThrowingPlayerChoiceContext referenced by 173 content files); Commands.Builders/AttackCommand.cs:423, :434, :1132, :1146",
+    "fact": "commands that monster code issues with ThrowingPlayerChoiceContext can never prompt (it throws); monster attacks executed with a null context use BlockingPlayerChoiceContext (no-op signals), so listeners reacting to an enemy attack may prompt during the enemy turn"
+   }
+  ]
+ },
+ "autoslay": {
+  "purpose": "The game's own autoplay bot. It drives the real UI (Godot nodes) but reads model-level legality for combat, so it documents which predicates define legal actions.",
+  "setup": [
+   {
+    "ref": "AutoSlay/AutoSlayer.cs:1911-1920",
+    "what": "DebugSeedOverride = seed; FastMode Fast; FTUEs off; reveals Silent1/Regent1/Defect1/Necrobinder1 epochs; own Rng = new Rng(GetDeterministicHashCode(seed)) (independent of game streams); CardSelectCmd.UseSelector(new AutoSlayCardSelector(rng))"
+   },
+   {
+    "ref": "AutoSlay/AutoSlayer.cs:2534-2563",
+    "what": "room handlers by RoomType (Monster/Elite/Boss -> CombatRoomHandler, Event, Shop, Treasure, RestSite) and screen handlers by overlay type (Rewards, CardReward, DeckUpgrade, DeckTransform, DeckEnchant, DeckCardSelect, SimpleCardSelect, ChooseACard, ChooseABundle, ChooseARelic, GameOver, CrystalSphere)"
+   },
+   {
+    "ref": "AutoSlay/AutoSlayer.cs:2012; AutoSlay/AutoSlayConfig.cs:27-31",
+    "what": "loop while TotalFloor < 49: handle room, wait for rewards after combat rooms, drain overlay screens (top of NOverlayStack -> handler), click proceed, map handler; then abandon"
+   }
+  ],
+  "card_selector": {
+   "ref": "AutoSlay.Helpers/AutoSlayCardSelector.cs:23-51",
+   "rule": "n = min(maxSelect, count); if n < minSelect then n = min(minSelect, count); shuffle options with AutoSlay rng; take n. Card reward: uniform random card, never an alternative"
+  },
+  "rooms": [
+   {
+    "room": "Combat",
+    "ref": "AutoSlay.Handlers.Rooms/CombatRoomHandler.cs:278-408, :602-652",
+    "behaviour": "cheats: Plating 999 + Regen 999 at start, +200 Strength from turn 3; each turn: use every potion (EnqueueManualUse, target by TargetType: AnyEnemy random hittable enemy, AnyAlly/AnyPlayer/Self first living player creature, single-target with no target skipped); then up to 50 cards: random card with CanPlay(out reason, out preventer) not yet attempted this turn, target random HittableEnemies for AnyEnemy else null, CardCmd.AutoPlay; then PlayerCmd.EndTurn(canBackOut: false); max 100 turns"
+   },
+   {
+    "room": "Event",
+    "ref": "AutoSlay.Handlers.Rooms/EventRoomHandler.cs:532-640, :921-1091",
+    "behaviour": "options = buttons with !Option.IsLocked; prefer options whose WillKillPlayer is null or false for the owner; random choice; up to 50 iterations; ancient dialogue clicked through; event combats: buffs then kill all enemies (removing powers with ShouldStopCombatFromEnding)"
+   },
+   {
+    "room": "RestSite",
+    "ref": "AutoSlay.Handlers.Rooms/RestSiteRoomHandler.cs:167-172",
+    "behaviour": "random option with Option.IsEnabled, then proceed"
+   },
+   {
+    "room": "Shop",
+    "ref": "AutoSlay.Handlers.Rooms/ShopRoomHandler.cs:216-221",
+    "behaviour": "repeat up to 50: random slot with Entry.IsStocked && Entry.EnoughGold, excluding the card-removal slot; OnTryPurchaseWrapper; then leave"
+   },
+   {
+    "room": "Treasure",
+    "ref": "AutoSlay.Handlers.Rooms/TreasureRoomHandler.cs:187-195, :249-251",
+    "behaviour": "open chest, click every enabled visible relic holder, proceed"
+   },
+   {
+    "room": "Map",
+    "ref": "AutoSlay.Handlers.Screens/MapScreenHandler.cs:269-286",
+    "behaviour": "deterministic: first row-0 point at act start, else first child of the last visited coordinate"
+   }
+  ],
+  "screens": [
+   {
+    "screen": "Rewards",
+    "ref": "AutoSlay.Handlers.Screens/RewardsScreenHandler.cs:51-57, :155-179",
+    "behaviour": "click each enabled reward button once (potion rewards only with an open potion slot), then proceed"
+   },
+   {
+    "screen": "CardReward",
+    "ref": "AutoSlay.Handlers.Screens/CardRewardScreenHandler.cs:104-109",
+    "behaviour": "random card holder"
+   },
+   {
+    "screen": "ChooseACard",
+    "ref": "AutoSlay.Handlers.Screens/ChooseACardScreenHandler.cs:57-63",
+    "behaviour": "random card holder"
+   },
+   {
+    "screen": "ChooseABundle",
+    "ref": "AutoSlay.Handlers.Screens/ChooseABundleScreenHandler.cs:98-149",
+    "behaviour": "random bundle, confirm"
+   },
+   {
+    "screen": "ChooseARelic",
+    "ref": "AutoSlay.Handlers.Screens/ChooseARelicScreenHandler.cs:51-57",
+    "behaviour": "random clickable"
+   },
+   {
+    "screen": "DeckUpgrade/DeckCardSelect/DeckEnchant/DeckTransform/SimpleCardSelect",
+    "ref": "AutoSlay.Handlers.Screens/DeckUpgradeScreenHandler.cs:150-205; DeckCardSelectScreenHandler.cs:296-312; DeckEnchantScreenHandler.cs:307-326; DeckTransformScreenHandler.cs:312; SimpleCardSelectScreenHandler.cs:168",
+    "behaviour": "fallback UI path: click random distinct holders up to min(count, 5) until confirm is enabled; normally unused because the selector answers first"
+   },
+   {
+    "screen": "CrystalSphere",
+    "ref": "AutoSlay.Handlers.Screens/CrystalSphereScreenHandler.cs:398-417",
+    "behaviour": "random visible hidden cell with the current tool, up to 20 clicks, stop after 5 clicks without progress"
+   },
+   {
+    "screen": "GameOver/Victory",
+    "ref": "AutoSlay.Handlers.Screens/GameOverScreenHandler.cs; AutoSlay.Handlers.Rooms/VictoryRoomHandler.cs",
+    "behaviour": "proceed"
+   }
+  ],
+  "lessons_for_sim": [
+   "Combat legality = CardModel.CanPlay(out reason, out preventer) per hand card plus a target from the valid set; AutoSlay uses HittableEnemies, the loop spec (sim/specs/loop.md:383-393) already uses IsValidTarget && ShouldAllowHitting && ShouldAllowTargeting from NTargetManager",
+   "Potions are part of the combat action space (use with target, discard)",
+   "Prompts with a Selector never create UI; the sim's LegalActionGenerator is the selector for the agent",
+   "AutoSlay cheats and its own rng are not rules and must not be copied"
+  ]
+ },
+ "legal_action_reference": [
+  {
+   "prompt": "combat_main",
+   "api": "PlayCardAction / UsePotionAction / DiscardPotionGameAction / EndPlayerTurnAction",
+   "options": "hand cards with CanPlay; potions in slots; end turn",
+   "legality": "Models/CardModel.cs:3330-3360 (Unplayable keyword, HasEnoughResourcesFor energy+stars, AnyAlly needs another living player, Hook.ShouldPlay, IsPlayable); targets per sim/specs/loop.md:383-393",
+   "count": "1",
+   "auto_resolve": "none",
+   "skip": "EndTurn always legal at a decision point",
+   "ordering": "hand index, target index, EndTurn last (current sim contract)"
+  },
+  {
+   "prompt": "choose_a_card",
+   "api": "CardSelectCmd.FromChooseACardScreen (Commands/CardSelectCmd.cs:3169-3234)",
+   "options": "<= 3 cards (throws if more)",
+   "legality": "any option",
+   "count": "0..1 on the selector path; UI enforces canSkip",
+   "auto_resolve": "0 options -> null",
+   "skip": "only if canSkip",
+   "ordering": "given order"
+  },
+  {
+   "prompt": "simple_grid",
+   "api": "FromSimpleGrid / FromSimpleGridForRewards (3236-3351)",
+   "options": "given list",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "count <= MinSelect && !RequireManualConfirmation -> all; 0 -> empty",
+   "skip": "MinSelect == 0",
+   "ordering": "given order"
+  },
+  {
+   "prompt": "combat_pile",
+   "api": "FromCombatPile (3361-3439)",
+   "options": "pile cards passing filter",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "0 -> empty; count <= MinSelect && !RequireManualConfirmation -> all",
+   "skip": "MinSelect == 0",
+   "ordering": "Draw pile: OrderBy(Rarity).ThenBy(Id) on the selector path (:3403-3405); other piles: pile order"
+  },
+  {
+   "prompt": "hand_select",
+   "api": "FromHand / FromHandForDiscard (3668-3742)",
+   "options": "hand cards passing filter",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "as combat_pile",
+   "skip": "MinSelect == 0",
+   "ordering": "hand order"
+  },
+  {
+   "prompt": "hand_upgrade",
+   "api": "FromHandForUpgrade (3744-3796)",
+   "options": "upgradable hand cards",
+   "legality": "IsUpgradable",
+   "count": "exactly 1",
+   "auto_resolve": "<= 1 option -> that option or null",
+   "skip": "no",
+   "ordering": "hand order"
+  },
+  {
+   "prompt": "deck_upgrade",
+   "api": "FromDeckForUpgrade (3441-3483)",
+   "options": "deck cards with IsUpgradable",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "0 -> empty; count <= MinSelect && !RMC -> all",
+   "skip": "MinSelect == 0; Cancelable for Smith (Entities.RestSite/SmithRestSiteOption.cs:142, :260)",
+   "ordering": "deck order"
+  },
+  {
+   "prompt": "deck_transform",
+   "api": "FromDeckForTransformation (3485-3531)",
+   "options": "deck cards, Type != Quest && IsTransformable",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "as deck_upgrade",
+   "skip": "MinSelect == 0",
+   "ordering": "deck order"
+  },
+  {
+   "prompt": "deck_enchant",
+   "api": "FromDeckForEnchantment (3533-3605)",
+   "options": "deck cards with enchantment.CanEnchant && additional filter",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "count <= MinSelect -> all (no RequireManualConfirmation check)",
+   "skip": "MinSelect == 0",
+   "ordering": "deck order"
+  },
+  {
+   "prompt": "deck_removal",
+   "api": "FromDeckForRemoval -> FromDeckGeneric (3607-3666)",
+   "options": "deck cards with IsRemovable && filter",
+   "legality": "any option",
+   "count": "[MinSelect, MaxSelect]",
+   "auto_resolve": "count <= MinSelect && !RMC -> all; dead player -> empty",
+   "skip": "MinSelect == 0; Cancelable for reward removal (Multiplayer.Game/RewardSynchronizer.cs:157, :525)",
+   "ordering": "curses first (sort key -999999999), then deck index"
+  },
+  {
+   "prompt": "choose_a_bundle",
+   "api": "FromChooseABundleScreen (3798-3840)",
+   "options": "bundles (lists of cards)",
+   "legality": "any bundle",
+   "count": "exactly 1",
+   "auto_resolve": "0 bundles -> empty",
+   "skip": "no",
+   "ordering": "given order"
+  },
+  {
+   "prompt": "card_reward",
+   "api": "CardReward.OnSelect (Rewards/CardReward.cs:590-700)",
+   "options": "offered cards + alternatives from CardRewardAlternative.Generate (Skip if CanSkip, REROLL if CanReroll, plus Hook.ModifyCardRewardAlternatives; max 2)",
+   "legality": "index into cards then alternatives; null = close",
+   "count": "loop: after a pick, continue while Hook.ShouldAllowSelectingMoreCardRewards",
+   "auto_resolve": "none",
+   "skip": "Skip alternative ends without completing; null closes",
+   "ordering": "cards then alternatives"
+  },
+  {
+   "prompt": "rewards_screen",
+   "api": "RewardsSet.Offer / NRewardsScreen",
+   "options": "unclaimed rewards (potion only with an open slot)",
+   "legality": "per reward type",
+   "count": "any subset, each once",
+   "auto_resolve": "none",
+   "skip": "proceed",
+   "ordering": "reward list order"
+  },
+  {
+   "prompt": "event_option",
+   "api": "EventModel options (Events/EventOption.cs)",
+   "options": "current page options",
+   "legality": "!IsLocked (IsLocked = OnChosen == null, Events/EventOption.cs:279, :292)",
+   "count": "1",
+   "auto_resolve": "none",
+   "skip": "IsProceed options",
+   "ordering": "option order"
+  },
+  {
+   "prompt": "rest_site",
+   "api": "RestSiteOption.Generate",
+   "options": "options",
+   "legality": "Option.IsEnabled",
+   "count": "1 then proceed",
+   "auto_resolve": "none",
+   "skip": "proceed after",
+   "ordering": "option order"
+  },
+  {
+   "prompt": "shop",
+   "api": "MerchantInventory entries",
+   "options": "card/relic/potion entries and card removal",
+   "legality": "Entry.IsStocked && Entry.EnoughGold",
+   "count": "any number",
+   "auto_resolve": "none",
+   "skip": "leave",
+   "ordering": "inventory order"
+  },
+  {
+   "prompt": "treasure",
+   "api": "TreasureRoom",
+   "options": "chest then relic holders",
+   "legality": "holder IsEnabled",
+   "count": "per room rules",
+   "auto_resolve": "none",
+   "skip": "proceed",
+   "ordering": "holder order"
+  },
+  {
+   "prompt": "map",
+   "api": "MoveToMapCoordAction",
+   "options": "children of the current map point (row 0 at act start)",
+   "legality": "reachable child (WingedBoots/Flight modify travel)",
+   "count": "1",
+   "auto_resolve": "none",
+   "skip": "no",
+   "ordering": "child order"
+  },
+  {
+   "prompt": "crystal_sphere",
+   "api": "CrystalSphereMinigame.SetTool / CellClicked (Events.Custom.CrystalSphereEvent/CrystalSphereMinigame.cs:25-31, :819-829)",
+   "options": "tool {Small, Big} and hidden cells",
+   "legality": "cell.IsHidden",
+   "count": "DivinationCount clicks (Big clears adjacent cells)",
+   "auto_resolve": "none",
+   "skip": "proceed when finished",
+   "ordering": "grid order"
+  },
+  {
+   "prompt": "choose_a_relic",
+   "api": "RelicSelectCmd.FromChooseARelicScreen (Commands/RelicSelectCmd.cs:162-200)",
+   "options": "relics",
+   "legality": "any",
+   "count": "1",
+   "auto_resolve": "none",
+   "skip": "no",
+   "ordering": "given order",
+   "note": "no callers in v0.111.0"
+  }
+ ],
+ "combat_history": {
+  "owner": "CombatManager.Instance.History (Combat.History/CombatHistory.cs); cleared at combat end (Combat/CombatManager.cs:1759) and reset (:7084); Add only when combatState.IsLiveCombat() (always true for CombatState, Combat/CombatState.cs:1077-1080)",
+  "entry_base": {
+   "ref": "Combat.History/CombatHistoryEntry.cs:46-125",
+   "fields": [
+    "Actor (Creature)",
+    "RoundNumber",
+    "CurrentSide",
+    "per-player TurnNumber snapshot keyed by NetId"
+   ],
+   "HappenedThisTurn": "RoundNumber == state.RoundNumber && CurrentSide == state.CurrentSide && every snapshotted player's current TurnNumber equals the snapshot (:67-112)",
+   "HappenedLastPlayerTurn(player)": "snapshot TurnNumber of that player == player's current TurnNumber - 1 (:115-125)"
+  },
+  "entry_types": [
+   {
+    "type": "CardPlayStarted",
+    "actor": "card owner creature",
+    "payload": "CardPlay",
+    "writer": "Models/CardModel.cs:665",
+    "readers": 8
+   },
+   {
+    "type": "CardPlayFinished",
+    "actor": "card owner creature",
+    "payload": "CardPlay, WasEthereal (Ethereal keyword at finish)",
+    "writer": "Models/CardModel.cs:735",
+    "readers": 17
+   },
+   {
+    "type": "CardAfflicted",
+    "actor": "card owner creature",
+    "payload": "Card, Affliction",
+    "writer": "Commands/CardCmd.cs:2269",
+    "readers": 1
+   },
+   {
+    "type": "CardDiscarded",
+    "actor": "card owner creature",
+    "payload": "Card",
+    "writer": "Commands/CardCmd.cs:829",
+    "readers": 1
+   },
+   {
+    "type": "CardDrawn",
+    "actor": "card owner creature",
+    "payload": "Card, FromHandDraw",
+    "writer": "Commands/CardPileCmd.cs:1919, :4050",
+    "readers": 3
+   },
+   {
+    "type": "CardExhausted",
+    "actor": "card owner creature",
+    "payload": "Card",
+    "writer": "Commands/CardCmd.cs:1041, :1877",
+    "readers": 2
+   },
+   {
+    "type": "CardGenerated",
+    "actor": "card owner creature",
+    "payload": "Card, Creator (Player?)",
+    "writer": "Commands/CardCmd.cs:1471, :2069; Commands/CardPileCmd.cs:1194, :3237",
+    "readers": 1
+   },
+   {
+    "type": "CreatureAttacked",
+    "actor": "attacker",
+    "payload": "DamageResults",
+    "writer": "Commands.Builders/AttackCommand.cs:422, :1145",
+    "readers": 2
+   },
+   {
+    "type": "DamageReceived",
+    "actor": "receiver",
+    "payload": "Result (DamageResult), Dealer, CardSource",
+    "writer": "Commands/CreatureCmd.cs:776, :3737",
+    "readers": 5
+   },
+   {
+    "type": "BlockGained",
+    "actor": "receiver",
+    "payload": "Amount, Props, CardPlay?",
+    "writer": "Commands/CreatureCmd.cs:1872, :3973",
+    "readers": 1
+   },
+   {
+    "type": "EnergySpent",
+    "actor": "player creature",
+    "payload": "Amount",
+    "writer": "Models/CardModel.cs:1255",
+    "readers": 1
+   },
+   {
+    "type": "OrbChanneled",
+    "actor": "orb owner creature",
+    "payload": "Orb",
+    "writer": "Commands/OrbCmd.cs:216",
+    "readers": 1
+   },
+   {
+    "type": "PowerReceived",
+    "actor": "power owner",
+    "payload": "Power, Amount, Applier",
+    "writer": "Commands/PowerCmd.cs:458, :883, :1321",
+    "readers": 1
+   },
+   {
+    "type": "StarsModified",
+    "actor": "player creature",
+    "payload": "Amount (signed delta)",
+    "writer": "Entities.Players/PlayerCombatState.cs:150",
+    "readers": 1
+   },
+   {
+    "type": "MonsterPerformedMove",
+    "actor": "monster creature",
+    "payload": "Monster, Move, Targets",
+    "writer": "Models/MonsterModel.cs:286",
+    "readers": 0
+   },
+   {
+    "type": "PotionUsed",
+    "actor": "potion owner creature",
+    "payload": "Potion, Target",
+    "writer": "Models/PotionModel.cs:247",
+    "readers": 0
+   },
+   {
+    "type": "Summoned",
+    "actor": "player creature",
+    "payload": "Amount",
+    "writer": "Commands/OstyCmd.cs:269, :391",
+    "readers": 0
+   }
+  ],
+  "write_only_entry_types": [
+   "MonsterPerformedMove",
+   "PotionUsed",
+   "Summoned"
+  ],
+  "queries": [
+   {
+    "site": "Models.Cards/BansheesCry.cs:134",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "combat",
+    "filter": "WasEthereal && CardPlay.Player == Owner",
+    "use": "cost reduction (AddThisCombat(-n * Energy))"
+   },
+   {
+    "site": "Models.Cards/BeatIntoShape.cs:132",
+    "entry": "DamageReceived",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Receiver == target && Dealer == owner creature && Result.Props.IsPoweredAttack()",
+    "use": "CalculatedForge multiplier"
+   },
+   {
+    "site": "Models.Cards/Bolas.cs:61",
+    "entry": "CardPlayFinished",
+    "agg": "any",
+    "window": "last_player_turn",
+    "filter": "CardPlay.Card == this card instance",
+    "use": "trigger at player turn start"
+   },
+   {
+    "site": "Models.Cards/DeathMarch.cs:97",
+    "entry": "CardDrawn",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Actor == owner creature && !FromHandDraw",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/DeathsDoor.cs:146",
+    "entry": "PowerReceived",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Power is DoomPower && Applier == owner creature",
+    "use": "WasDoomAppliedThisTurn"
+   },
+   {
+    "site": "Models.Cards/EvilEye.cs:138",
+    "entry": "CardExhausted",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Actor == owner creature",
+    "use": "WasCardExhaustedThisTurn"
+   },
+   {
+    "site": "Models.Cards/Fetch.cs:149",
+    "entry": "CardPlayFinished",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "CardPlay.Card == this card instance",
+    "use": "HasBeenPlayedThisTurn"
+   },
+   {
+    "site": "Models.Cards/Finisher.cs:103",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/Flatten.cs:114",
+    "entry": "CreatureAttacked",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Actor == Owner.Osty",
+    "use": "HasOstyAttackedThisTurn"
+   },
+   {
+    "site": "Models.Cards/Ftl.cs:139",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "CardPlay.Player == Owner",
+    "use": "condition count < PlayMax"
+   },
+   {
+    "site": "Models.Cards/GangUp.cs:99",
+    "entry": "DamageReceived",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Receiver == target && Result.Props.IsPoweredAttack() && Dealer != null && Dealer != owner creature && Dealer.Side == owner side",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/GoldAxe.cs:96",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "combat",
+    "filter": "none (all players)",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/HelixDrill.cs:108",
+    "entry": "EnergySpent",
+    "agg": "sum(Amount)",
+    "window": "this_turn",
+    "filter": "Actor.Player == Owner",
+    "use": "cost/energy computation"
+   },
+   {
+    "site": "Models.Cards/LunarBlast.cs:100",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Skill && CardPlay.Player == Owner",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/MakeItSo.cs:58",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Skill && CardPlay.Player == Owner",
+    "use": "every Cards-th skill returns this card to hand"
+   },
+   {
+    "site": "Models.Cards/MementoMori.cs:97",
+    "entry": "CardDiscarded",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Actor == owner creature",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/Midnight.cs:129",
+    "entry": "CardExhausted",
+    "agg": "count",
+    "window": "combat",
+    "filter": "none (all players)",
+    "use": "cost reduction when entering combat"
+   },
+   {
+    "site": "Models.Cards/Murder.cs:97",
+    "entry": "CardDrawn",
+    "agg": "count",
+    "window": "combat",
+    "filter": "Actor == owner creature",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/Normality.cs:34",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "CardPlay.Player == Owner",
+    "use": "CardsPlayedThisTurn (play limit)"
+   },
+   {
+    "site": "Models.Cards/Pinpoint.cs:128",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Skill && CardPlay.Player == Owner",
+    "use": "cost reduction when entering combat"
+   },
+   {
+    "site": "Models.Cards/PullFromBelow.cs:104",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "combat",
+    "filter": "CardPlay.Player == Owner && WasEthereal",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/Radiate.cs:102",
+    "entry": "StarsModified",
+    "agg": "sum(Amount)",
+    "window": "this_turn",
+    "filter": "Amount > 0 && Actor == owner creature",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/Rattle.cs:119",
+    "entry": "CreatureAttacked",
+    "agg": "1 + count",
+    "window": "this_turn",
+    "filter": "Actor == Owner.Osty",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/Spite.cs:130",
+    "entry": "DamageReceived",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Receiver == creature && Result.UnblockedDamage > 0",
+    "use": "condition"
+   },
+   {
+    "site": "Models.Cards/Stomp.cs:180",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner",
+    "use": "cost reduction when entering combat"
+   },
+   {
+    "site": "Models.Cards/Supermassive.cs:97",
+    "entry": "CardGenerated",
+    "agg": "count",
+    "window": "combat",
+    "filter": "Creator == Owner",
+    "use": "CalculatedDamage multiplier"
+   },
+   {
+    "site": "Models.Cards/TearAsunder.cs:102",
+    "entry": "DamageReceived",
+    "agg": "1 + count",
+    "window": "combat",
+    "filter": "Receiver == owner creature && Result.UnblockedDamage > 0",
+    "use": "CalculatedHits multiplier"
+   },
+   {
+    "site": "Models.Cards/ThrummingHatchet.cs:57",
+    "entry": "CardPlayFinished",
+    "agg": "any",
+    "window": "last_player_turn",
+    "filter": "CardPlay.Card == this card instance",
+    "use": "trigger at player turn start"
+   },
+   {
+    "site": "Models.Cards/Voltaic.cs:140",
+    "entry": "OrbChanneled",
+    "agg": "count",
+    "window": "combat",
+    "filter": "Actor.Player == Owner && Orb is LightningOrb",
+    "use": "CalculatedChannels multiplier"
+   },
+   {
+    "site": "Models.Powers/ChainsOfBindingPower.cs:66",
+    "entry": "CardAfflicted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Actor == Owner && Affliction is Bound",
+    "use": "afflict while count < Amount"
+   },
+   {
+    "site": "Models.Powers/EchoFormPower.cs:65",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Actor == Owner && CardPlay.IsFirstInSeries",
+    "use": "ModifyCardPlayCount +1 while count < Amount"
+   },
+   {
+    "site": "Models.Powers/FeralPower.cs:35",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner.Player && Resources.EnergyValue == 0",
+    "use": "initialise counter on AfterApplied"
+   },
+   {
+    "site": "Models.Powers/IterationPower.cs:59",
+    "entry": "CardDrawn",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Actor == Owner && Card.Type == Status",
+    "use": "draw when count <= 1"
+   },
+   {
+    "site": "Models.Powers/JugglingPower.cs:122",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner.Player",
+    "use": "initialise counter on AfterApplied"
+   },
+   {
+    "site": "Models.Powers/LethalityPower.cs:42",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner.Player",
+    "use": "damage multiplier only for the first attack (compares with 1 if the source is in the Play pile)"
+   },
+   {
+    "site": "Models.Powers/NostalgiaPower.cs:33",
+    "entry": "CardPlayStarted",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Type in {Attack, Skill} && CardPlay.Player == Owner.Player",
+    "use": "result location -> top of draw pile while count < Amount"
+   },
+   {
+    "site": "Models.Powers/PaleBlueDotPower.cs:147",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "CardPlay.Player == Owner.Player (no type filter despite the name AttacksPlayedThisTurn)",
+    "use": "trigger threshold"
+   },
+   {
+    "site": "Models.Powers/PhantomBladesPower.cs:77",
+    "entry": "CardPlayFinished",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "Card.Tags contains Shiv && CardPlay.Player == Owner.Player",
+    "use": "extra damage only for the first Shiv"
+   },
+   {
+    "site": "Models.Powers/RingingPower.cs:328",
+    "entry": "CardPlayStarted",
+    "agg": "none",
+    "window": "this_turn",
+    "filter": "CardPlay.Player == Owner.Player",
+    "use": "Ringing-afflicted card playable only as the first card"
+   },
+   {
+    "site": "Models.Powers/SmoggyPower.cs:57",
+    "entry": "CardPlayStarted",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Card.Type == Skill && CardPlay.Player == Owner.Player",
+    "use": "afflict skills after the first"
+   },
+   {
+    "site": "Models.Powers/UnmovablePower.cs:37",
+    "entry": "BlockGained",
+    "agg": "count",
+    "window": "this_turn",
+    "filter": "CardPlay != null && CardPlay.Player.Creature == Owner && Props.IsCardOrMonsterMove() && CardPlay != current cardPlay",
+    "use": "double block while count < Amount"
+   },
+   {
+    "site": "Models.Relics/EmotionChip.cs:155",
+    "entry": "DamageReceived",
+    "agg": "any",
+    "window": "last_player_turn",
+    "filter": "Receiver == owner creature && !Result.WasFullyBlocked",
+    "use": "LostHpInPreviousTurn"
+   },
+   {
+    "site": "Models.Relics/HistoryCourse.cs:58",
+    "entry": "CardPlayFinished",
+    "agg": "last",
+    "window": "last_player_turn",
+    "filter": "CardPlay.Player == Owner && Card.Type == Attack && !Card.IsDupe",
+    "use": "replay the last attack of the previous turn"
+   },
+   {
+    "site": "Models.Relics/PaelsEye.cs:258",
+    "entry": "CardPlayFinished",
+    "agg": "any",
+    "window": "this_turn",
+    "filter": "Actor == owner creature && !CardPlay.IsAutoPlay",
+    "use": "condition"
+   },
+   {
+    "site": "Models.Relics/RippleBasin.cs:59",
+    "entry": "CardPlayFinished",
+    "agg": "none",
+    "window": "this_turn",
+    "filter": "Card.Type == Attack && CardPlay.Player == Owner",
+    "use": "block if no attack played this turn"
+   }
+  ],
+  "state_model_recommendation": "Keep the ordered log (not counters): two queries need instance identity (Bolas, ThrummingHatchet, Fetch), one returns the last matching card (HistoryCourse), several run when a generated card enters combat mid-fight (Midnight, Pinpoint, Stomp, BansheesCry) and need the whole combat so far. Entries are immutable after creation, so clones can share the backing array and keep their own length (append-only persistent list). Snapshot per-player TurnNumber exactly as the game does (Combat.History/CombatHistoryEntry.cs:58)."
+ },
+ "unlock_profile_dependence": {
+  "unlock_state": {
+   "ref": "Unlocks/UnlockState.cs:16-139",
+   "fields": [
+    "unlocked (revealed) epoch ids",
+    "encounters seen (EncounterStats keys that are encounters)",
+    "NumberOfRuns = Wins + Losses"
+   ],
+   "all": "every epoch, every encounter, NumberOfRuns 999999999 (:18)",
+   "none": "(:16)",
+   "snapshot": "per player at run creation from the profile (Nodes/NGame.cs:3138; Entities.Players/Player.cs:707-716), serialized in SerializablePlayer.UnlockState (Saves.Runs/SerializablePlayer.cs:169); null deserializes to all (Unlocks/UnlockState.cs:131-136); RunState merges players (Runs/RunState.cs:679); multiplayer daily lobby uses all (Multiplayer.Game.Lobby/StartRunLobby.cs:1115-1121)"
+  },
+  "paths": [
+   {
+    "id": "U1",
+    "source": "UnlockState",
+    "reads": "Ironclad/Silent/Defect/Regent/Necrobinder 2/5/7 epochs, Colorless1-5 epochs",
+    "effect": "card pool membership (CardPoolModel.GetUnlockedCards -> FilterThroughEpochs)",
+    "sites": [
+     "Models/CardPoolModel.cs:68-91",
+     "Models.CardPools/IroncladCardPool.cs:122-137 (same pattern in Silent/Defect/Regent/Necrobinder/Colorless pools)",
+     "Runs/CardCreationOptions.cs:121",
+     "Entities.Merchant/MerchantInventory.cs:119, :134",
+     "Factories/CardFactory.cs:126",
+     "direct UnlockState use in 16 cards, 5 powers, 13 relics, 6 potions, 7 events, 2 modifiers, 5 acts (unlock_profile_dependence.content_files)"
+    ],
+    "rng_effect": "changes the candidate list of every random card pick"
+   },
+   {
+    "id": "U2",
+    "source": "UnlockState",
+    "reads": "Relic1-5 epochs; character 3/6 epochs",
+    "effect": "relic pool membership",
+    "sites": [
+     "Models.RelicPools/SharedRelicPool.cs:139-162",
+     "Models.RelicPools/IroncladRelicPool.cs:33-44 (same in other character pools)",
+     "Runs/RunManager.cs:3828",
+     "Runs/RelicGrabBag.cs:72-73"
+    ],
+    "rng_effect": "grab bag contents and order"
+   },
+   {
+    "id": "U3",
+    "source": "UnlockState",
+    "reads": "Potion1-2 epochs; character 4 epochs",
+    "effect": "potion pool membership",
+    "sites": [
+     "Models.PotionPools/SharedPotionPool.cs:66-100",
+     "Models.PotionPools/IroncladPotionPool.cs:21-27 (same in other character pools)",
+     "Factories/PotionFactory.cs:65",
+     "Models.Events/PotionCourier.cs:119",
+     "Models.Events/Wellspring.cs:234",
+     "Models.Events/TheLegendsWereTrue.cs:183",
+     "Models.Events/BattlewornDummy.cs:105",
+     "Models.Events/EndlessConveyor.cs:639"
+    ],
+    "rng_effect": "random potion candidates"
+   },
+   {
+    "id": "U4",
+    "source": "UnlockState",
+    "reads": "Event1-3 epochs (TrashHeap, Reflections, ColorfulPhilosophers)",
+    "effect": "event pool per act",
+    "sites": [
+     "Models/ActModel.cs:241-257"
+    ],
+    "rng_effect": "event list shuffled with Rng.UpFront"
+   },
+   {
+    "id": "U5",
+    "source": "UnlockState",
+    "reads": "NeowEpoch, OrobasEpoch, DarvEpoch",
+    "effect": "ancient candidates: Neow in Overgrowth/Underdocks, Orobas in Hive, shared Darv",
+    "sites": [
+     "Models.Acts/Overgrowth.cs:100-108",
+     "Models.Acts/Underdocks.cs:93-101",
+     "Models.Acts/Hive.cs:98-106",
+     "Unlocks/UnlockState.cs:56-67",
+     "Runs/RunManager.cs:4055-4072",
+     "Models/ActModel.cs:322"
+    ],
+    "rng_effect": "shared ancient shuffle and per-act subset draw (Rng.UpFront)"
+   },
+   {
+    "id": "U6",
+    "source": "UnlockState",
+    "reads": "UnderdocksEpoch",
+    "effect": "Underdocks can be act 1",
+    "sites": [
+     "Models.Acts/Underdocks.cs:107-110",
+     "Models/ActModel.cs:470-505"
+    ],
+    "rng_effect": "act selection draw"
+   },
+   {
+    "id": "U7",
+    "source": "UnlockState",
+    "reads": "Silent1/Regent1/Necrobinder1/Defect1 epochs",
+    "effect": "UnlockState.Characters and CharacterCardPools",
+    "sites": [
+     "Unlocks/UnlockState.cs:31-54",
+     "Models.Events/Orobas.cs:200",
+     "Models.Relics/Kaleidoscope.cs:56, :120",
+     "Models.Cards/Splash.cs:76",
+     "Models.Relics/PrismaticGem.cs:47",
+     "Models.Events/ColorfulPhilosophers.cs:109, :116"
+    ],
+    "rng_effect": "random other-character picks; event availability"
+   },
+   {
+    "id": "U8",
+    "source": "UnlockState",
+    "reads": "encounters seen",
+    "effect": "boss = first BossDiscoveryOrder entry not yet seen (every standard run)",
+    "sites": [
+     "Models/ActModel.cs:338-358",
+     "Runs/RunManager.cs:4078-4081",
+     "Runs/RunManager.cs:4090-4108"
+    ],
+    "rng_effect": "overrides the rng-picked boss (the draw already happened)"
+   },
+   {
+    "id": "U9",
+    "source": "UnlockState",
+    "reads": "NumberOfRuns == 0 (and EpochUnlockCount == 0 for rewards)",
+    "effect": "first-ever run: fixed Overgrowth room order; first two unknown rooms are events and the third a monster; Ironclad tutorial rewards",
+    "sites": [
+     "Models.Acts/Overgrowth.cs:110-127",
+     "Odds/UnknownMapPointOdds.cs:109-120",
+     "Rewards/RewardsSet.cs:527-560"
+    ],
+    "rng_effect": "skips odds rolls"
+   },
+   {
+    "id": "U10",
+    "source": "UnlockState",
+    "reads": "NeowEpoch",
+    "effect": "StartedWithNeow: act 1 starts at the Neow ancient; without it the starting map point becomes a Monster room",
+    "sites": [
+     "Runs/RunManager.cs:3924-3927",
+     "Runs/RunManager.cs:327-343",
+     "Runs/RunManager.cs:2146-2149"
+    ],
+    "rng_effect": "whole first floor differs"
+   },
+   {
+    "id": "L1",
+    "source": "live profile",
+    "reads": "Progress.DiscoveredActs",
+    "effect": "an unlocked non-default act not yet discovered is forced (no rng draw for that index)",
+    "sites": [
+     "Models/ActModel.cs:487"
+    ],
+    "rng_effect": "act_selection rng consumption (Multiplayer.Game.Lobby/StartRunLobby.cs:705-707)"
+   },
+   {
+    "id": "L2",
+    "source": "live profile",
+    "reads": "Progress.NumberOfRuns",
+    "effect": "first-ever run: MapPointType.Unassigned point becomes an Event room",
+    "sites": [
+     "Runs/RunManager.cs:4229-4258"
+    ],
+    "rng_effect": "skips room-type roll"
+   },
+   {
+    "id": "L3",
+    "source": "live profile",
+    "reads": "Progress.WongoPoints",
+    "effect": "WelcomeToWongos grants WongoCustomerAppreciationBadge when (WongoPoints % 2000) + points earned >= 2000",
+    "sites": [
+     "Models.Events/WelcomeToWongos.cs:419-433",
+     "Models.Events/WelcomeToWongos.cs:634-646"
+    ],
+    "rng_effect": "relic gain"
+   },
+   {
+    "id": "L4",
+    "source": "live profile",
+    "reads": "Progress.Wins, character TotalWins",
+    "effect": "TheArchitect dialogue (event Rng) after victory",
+    "sites": [
+     "Models.Events/TheArchitect.cs:1042-1048"
+    ],
+    "rng_effect": "post-victory only"
+   },
+   {
+    "id": "L5",
+    "source": "live profile",
+    "reads": "CharacterStats.MaxAscension",
+    "effect": "single-player lobby clamps the chosen ascension",
+    "sites": [
+     "Multiplayer.Game.Lobby/StartRunLobby.cs:717-731"
+    ],
+    "rng_effect": "run parameter"
+   },
+   {
+    "id": "D1",
+    "source": "live profile (display only)",
+    "reads": "AncientStats, TestSubjectKills, UniqueId, MaxAscension, ancient visits",
+    "effect": "text/icons/dialogue",
+    "sites": [
+     "Models.Events/Vakuu.cs:49-56",
+     "Models.Monsters/TestSubject.cs:1114-1121",
+     "Models.Relics/LoomingFruit.cs:80-104",
+     "Entities.Players/Player.cs:704",
+     "Nodes.Rooms/NEventRoom.cs:208-213",
+     "Models/CharacterModel.cs:276"
+    ],
+    "rng_effect": "none (dialogue uses Rng.Chaotic)"
+   }
+  ],
+  "recommendation": {
+   "parameter": "RunProfile { per-player UnlockState snapshot (epoch ids, encounters seen, NumberOfRuns), DiscoveredActs, ProfileNumberOfRuns, WongoPoints }",
+   "default": "AllUnlocked: UnlockState.all semantics, DiscoveredActs = all acts, ProfileNumberOfRuns = UnlockState NumberOfRuns, WongoPoints = 0",
+   "replay": "load SerializablePlayer.UnlockState from the save (null -> all); acts, boss choices and room sets are already in the save; WongoPoints must be recorded or treated as unknown",
+   "why": "pools, bosses, ancients and the first floor are functions of the profile; an all-unlocked default makes every tutorial/discovery path a no-op, which matches an experienced A10 profile, while the explicit parameter keeps differential replay of fresh profiles possible"
+  },
+  "content_files": {
+   "Cards": [
+    "Abundance",
+    "BundleOfJoy",
+    "Discovery",
+    "Distraction",
+    "Fasten",
+    "InfernalBlade",
+    "JackOfAllTrades",
+    "Jackpot",
+    "Largesse",
+    "MadScience",
+    "ManifestAuthority",
+    "Metamorphosis",
+    "Quasar",
+    "Splash",
+    "Stoke",
+    "WhiteNoise"
+   ],
+   "Powers": [
+    "CalamityPower",
+    "CallOfTheVoidPower",
+    "CreativeAiPower",
+    "HelloWorldPower",
+    "SpectrumShiftPower"
+   ],
+   "Relics": [
+    "BigHat",
+    "ChoicesParadox",
+    "Crossbow",
+    "DistinguishedCape",
+    "DustyTome",
+    "Kaleidoscope",
+    "LastingCandy",
+    "NeowsBones",
+    "OrangeDough",
+    "PrismaticGem",
+    "ScrollBoxes",
+    "Toolbox",
+    "VexingPuzzlebox"
+   ],
+   "Potions": [
+    "AttackPotion",
+    "ColorlessPotion",
+    "CosmicConcoction",
+    "OrobicAcid",
+    "PowerPotion",
+    "SkillPotion"
+   ],
+   "Events": [
+    "BattlewornDummy",
+    "ColorfulPhilosophers",
+    "EndlessConveyor",
+    "Orobas",
+    "PotionCourier",
+    "TheLegendsWereTrue",
+    "Wellspring"
+   ],
+   "Modifiers": [
+    "CharacterCards",
+    "CursedRun"
+   ],
+   "Acts": [
+    "DeprecatedAct",
+    "Glory",
+    "Hive",
+    "Overgrowth",
+    "Underdocks"
+   ]
+  }
+ },
+ "traps": [
+  {
+   "id": "T1",
+   "kind": "static state",
+   "where": "CardSelectCmd._selectorStack/_localSelectorStack (Commands/CardSelectCmd.cs:3084-3086), TestRngInjector statics, RunManager/CombatManager/SaveManager.Instance, LocalContext.NetId, TestMode.IsOn, NonInteractiveMode.AutoSlayerCheck, RewardsSet.testSelector, RestSiteOption.generateForTests",
+   "note": "per-run state lives in statics; the sim keeps all of it inside the cloneable state"
+  },
+  {
+   "id": "T2",
+   "kind": "static initializer",
+   "where": "Odds/CardRarityOdds.cs:13 regularCommonOdds = AscensionHelper.GetValueIfAscension(Scarcity, 0.615f, 0.6f)",
+   "note": "evaluated once at type init with whatever run is active, but only GetBaseOdds(Common) reads it and the roll methods only request Rare and Uncommon (Odds/CardRarityOdds.cs:75-76, :91-92): inert in v0.111.0; other odds are properties evaluated per call"
+  },
+  {
+   "id": "T3",
+   "kind": "static counter",
+   "where": "Combat/CombatTurnState.cs:12, :151 (Interlocked sequence for CombatId)",
+   "note": "identity only; never hash it"
+  },
+  {
+   "id": "T4",
+   "kind": "static cache with Chaotic rng",
+   "where": "Models.Relics/YummyCookie.cs:100-117; Models.Events/FakeMerchant.cs:135-152",
+   "note": "display only"
+  },
+  {
+   "id": "T5",
+   "kind": "Godot dependency in rule code",
+   "where": "Models.Powers/RollingBoulderPower.cs:98-115",
+   "note": "shipping damage is per creature as the VFX reaches each node (HitCreature signal), awaited with WhenAll; TestMode deals one multi-target hit"
+  },
+  {
+   "id": "T6",
+   "kind": "Godot math",
+   "where": "Entities.Merchant/MerchantPotionEntry.cs:198 (Mathf.Round), Entities.Merchant/MerchantCardEntry.cs:181, :260 (Mathf.RoundToInt), Models.Relics/GalacticDust.cs:64 (Mathf.FloorToInt)",
+   "note": "GodotSharp Mathf semantics (float, midpoint rounding) must be reproduced"
+  },
+  {
+   "id": "T7",
+   "kind": "animation time passed into rules",
+   "where": "AfterDeath(..., float deathAnimLength) hooks; InfestedPower/StockPower/ReattachPower reveal tasks",
+   "note": "only visibility changes in v0.111.0"
+  },
+  {
+   "id": "T8",
+   "kind": "fire-and-forget tasks in rule code",
+   "where": "TaskHelper.RunSafely at Models.Relics/LordsParasol.cs:555, Rooms/TreasureRoom.cs:129, Rooms/CombatRoom.cs:262, Events.Custom.CrystalSphereEvent/CrystalSphereMinigame.cs:656, Rewards/CardReward.cs:556, :583, :587, Factories/CardFactory.cs:88",
+   "note": "the synchronous port runs them inline at the call site; ordering against the caller's continuation must be checked when ported"
+  },
+  {
+   "id": "T9",
+   "kind": "hidden randomness",
+   "where": "Helpers/GrabBag.cs:52-80 (rejection resampling), Extensions/IEnumerableExtensions.cs:9-12 (TakeRandom shuffles all), Extensions/ListExtensions.cs:10-33 (StableShuffle = List.Sort + UnstableShuffle), Random/Rng.cs:213-223 (NextItem draws even for one item), Models/AfflictionModel.cs:245-250, Models/OrbModel.cs:197-205, Helpers/SeedHelper.cs:13-31 (bad-word rejection loop), Models.Enchantments/Slither.cs (CombatEnergyCosts.NextInt(4)), Factories/RelicFactory.cs:56-67 (rarity thresholds 0.5/0.83 on NextFloat)",
+   "note": "draw counts depend on data; port loops exactly"
+  },
+  {
+   "id": "T10",
+   "kind": "TestMode changes rng consumption",
+   "where": "Entities.Merchant/MerchantPotionEntry.cs:196-199; Factories/RelicFactory.cs:56-60; Models/ActModel.cs:487",
+   "note": "tests written against the game's TestMode behaviour are not oracles for these paths"
+  },
+  {
+   "id": "T11",
+   "kind": "listener order",
+   "where": "Combat/CombatState.cs:856-956",
+   "note": "per creature (allies then enemies): powers, then monster model, or for an active player relics (not melted), potions, orbs, then for each pile each card followed by its affliction and enchantment; then modifiers, badges, multiplayer scaling model, then mod subscribers"
+  },
+  {
+   "id": "T12",
+   "kind": "culture-sensitive sort",
+   "where": "Models/ModelDb.cs:179, :198 (OrderBy Id.Entry with the default comparer)",
+   "note": "not used by rules in v0.111.0; ModelId.CompareTo is ordinal (Models/ModelId.cs:66-74)"
+  },
+  {
+   "id": "T13",
+   "kind": "hash-ordered collections",
+   "where": "UnlockState sets, ModelId record hash",
+   "note": "string hash codes are randomized per process; rules only use Contains/Count"
+  },
+  {
+   "id": "T14",
+   "kind": "mods",
+   "where": "ModHelper.ConcatModelsFromMods in pools (Models/CardPoolModel.cs:42, Models/RelicPoolModel.cs:28, Models/PotionPoolModel.cs:30) and ModHelper.IterateAllCombatStateSubscribers (Combat/CombatState.cs:944)",
+   "note": "assume no mods"
+  },
+  {
+   "id": "T15",
+   "kind": "multiplayer residue",
+   "where": "Runs/IRunState.cs:74-84; Models/CardModel.cs:3347-3350",
+   "note": "single player still filters MultiplayerOnly cards and makes AnyAlly cards unplayable"
+  },
+  {
+   "id": "T16",
+   "kind": "naming",
+   "where": "Models.Powers/PaleBlueDotPower.cs:147",
+   "note": "AttacksPlayedThisTurn counts every card play"
+  },
+  {
+   "id": "T17",
+   "kind": "prompt seams",
+   "where": "Commands/CardSelectCmd.cs:3798-3840 (bundle prompt has no selector), Commands/RelicSelectCmd.cs (unused), Commands/CardSelectCmd.cs:3186, :3196 (ChooseACard selector min 0 regardless of canSkip)",
+   "note": "the sim's decision API must implement these prompt types itself"
+  },
+  {
+   "id": "T18",
+   "kind": "post-victory event",
+   "where": "Runs/RunManager.cs:872; Models.Events/TheArchitect.cs:275-286",
+   "note": "TheArchitect consumes event Rng for VFX after the run is won; treat as terminal"
+  },
+  {
+   "id": "T19",
+   "kind": "deck link",
+   "where": "Models.Enchantments/Goopy.cs (DeckVersion.Enchantment.Amount++)",
+   "note": "combat cards must keep a link to their deck original"
+  },
+  {
+   "id": "T20",
+   "kind": "local-player gate",
+   "where": "Models.Relics/MembershipCard.cs:24",
+   "note": "price discount applies only when LocalContext.IsMe(owner) (always true in single player)"
+  }
+ ],
+ "open_questions": [
+  {
+   "id": "Q1",
+   "topic": "RollingBoulderPower",
+   "question": "In the shipping game, in which order does NRollingBoulderVfx emit HitCreature, and does one CreatureCmd.Damage per creature (shipping) dispatch hooks differently from the single multi-target call used in TestMode? Needs a read of Nodes.Vfx/NRollingBoulderVfx.cs or an oracle trace.",
+   "refs": [
+    "Models.Powers/RollingBoulderPower.cs:98-115"
+   ]
+  },
+  {
+   "id": "Q2",
+   "topic": "Godot Mathf",
+   "question": "Exact GodotSharp semantics of Mathf.Round, Mathf.RoundToInt and Mathf.FloorToInt (float, midpoint rounding) used in shop prices and GalacticDust; GodotSharp is not part of the decompile tree.",
+   "refs": [
+    "Entities.Merchant/MerchantPotionEntry.cs:198",
+    "Entities.Merchant/MerchantCardEntry.cs:181",
+    "Entities.Merchant/MerchantCardEntry.cs:260",
+    "Models.Relics/GalacticDust.cs:64"
+   ]
+  },
+  {
+   "id": "Q3",
+   "topic": "unlock state in recordings",
+   "question": "Do the recorded saves in our corpus carry SerializablePlayer.UnlockState (unlocked_epochs, encounters_seen, number_of_runs)? The diff exporter must forward it; older saves deserialize null to UnlockState.all.",
+   "refs": [
+    "Saves.Runs/SerializablePlayer.cs:169",
+    "Unlocks/UnlockState.cs:131-136"
+   ]
+  },
+  {
+   "id": "Q4",
+   "topic": "WongoPoints",
+   "question": "WelcomeToWongos reads the live profile WongoPoints, which recordings do not capture. Default 0, or record it?",
+   "refs": [
+    "Models.Events/WelcomeToWongos.cs:419-433"
+   ]
+  },
+  {
+   "id": "Q5",
+   "topic": "prompts inside hooks",
+   "question": "When a prompt opens inside a HookPlayerChoiceContext dispatcher, do the remaining listeners of the same dispatch run before or after the choice resolves (single player)? Combat-kernel study to confirm from Hooks/HookPlayerChoiceContext.",
+   "refs": [
+    "GameActions.Multiplayer/HookPlayerChoiceContext.cs",
+    "Hooks/Hook.cs:8607"
+   ]
+  },
+  {
+   "id": "Q6",
+   "topic": "tutorial room",
+   "question": "Which map point is entered with MapPointType.Unassigned (first-ever-run Event override in TryGetRoomTypeForTutorial)? Only matters for NumberOfRuns == 0 profiles.",
+   "refs": [
+    "Runs/RunManager.cs:4229-4258"
+   ]
+  },
+  {
+   "id": "Q7",
+   "topic": "AnyAlly cards",
+   "question": "Are all 15 AnyAlly-target cards/potions MultiplayerOnly (filtered from single-player pools)? Any that are not are generated but never playable in single player.",
+   "refs": [
+    "Models/CardModel.cs:3347-3350",
+    "Runs/IRunState.cs:74-84"
+   ]
+  },
+  {
+   "id": "Q8",
+   "topic": "history clone cost",
+   "question": "Is an append-only shared log within the Clone budget (<= 1 ms) for long boss fights, or is a per-turn compaction needed? Compaction must keep every field the 45 queries read.",
+   "refs": [
+    "Combat.History/CombatHistory.cs:159-168"
+   ]
+  },
+  {
+   "id": "Q9",
+   "topic": "fire-and-forget ordering",
+   "question": "For LordsParasol.PurchaseEverything, TreasureRoom/CombatRoom reward Offer and CrystalSphere ClearCell (TaskHelper.RunSafely), does any rule effect happen after the caller continues in the shipping game? The synchronous port runs them inline.",
+   "refs": [
+    "Models.Relics/LordsParasol.cs:555",
+    "Rooms/TreasureRoom.cs:129",
+    "Rooms/CombatRoom.cs:262",
+    "Events.Custom.CrystalSphereEvent/CrystalSphereMinigame.cs:656"
+   ]
+  },
+  {
+   "id": "Q10",
+   "topic": "version drift",
+   "question": "RelicSelectCmd has no callers and FromChooseABundleScreen has no selector in v0.111.0; the v0.107.1 corpus needs a separate check before reusing these prompt models for old recordings.",
+   "refs": [
+    "Commands/RelicSelectCmd.cs:162-200",
+    "Commands/CardSelectCmd.cs:3798-3840"
+   ]
+  }
+ ],
+ "usage_index": {
+  "AscensionHelper": {
+   "pattern": "AscensionHelper\\.",
+   "total_files": 102,
+   "by_category": {
+    "Monsters": 102
+   },
+   "files": {
+    "Monsters": [
+     "Aeonglass",
+     "AssassinRubyRaider",
+     "AxeRubyRaider",
+     "Axebot",
+     "BowlbugEgg",
+     "BowlbugNectar",
+     "BowlbugRock",
+     "BowlbugSilk",
+     "BruteRubyRaider",
+     "BygoneEffigy",
+     "Byrdonis",
+     "CalcifiedCultist",
+     "CeremonialBeast",
+     "Chomper",
+     "CorpseSlug",
+     "CrossbowRubyRaider",
+     "Crusher",
+     "CubexConstruct",
+     "DampCultist",
+     "DecimillipedeSegment",
+     "DevotedSculptor",
+     "Entomancer",
+     "Exoskeleton",
+     "Fabricator",
+     "FakeMerchantMonster",
+     "FatGremlin",
+     "FlailKnight",
+     "Flyconid",
+     "Fogmog",
+     "FossilStalker",
+     "FrogKnight",
+     "FuzzyWurmCrawler",
+     "GasBomb",
+     "GlobeHead",
+     "GremlinMerc",
+     "Guardbot",
+     "HauntedShip",
+     "HunterKiller",
+     "InfestedPrism",
+     "Inklet",
+     "KinFollower",
+     "KinPriest",
+     "KnowledgeDemon",
+     "LagavulinMatriarch",
+     "LeafSlimeM",
+     "LeafSlimeS",
+     "LivingFog",
+     "LivingShield",
+     "LouseProgenitor",
+     "MagiKnight",
+     "Mawler",
+     "MechaKnight",
+     "Myte",
+     "Nibbit",
+     "Noisebot",
+     "Ovicopter",
+     "OwlMagistrate",
+     "Parafright",
+     "PhantasmalGardener",
+     "PhrogParasite",
+     "PunchConstruct",
+     "Queen",
+     "Rocket",
+     "ScrollOfBiting",
+     "Seapunk",
+     "SewerClam",
+     "ShrinkerBeetle",
+     "SkulkingColony",
+     "SlimedBerserker",
+     "SlitheringStrangler",
+     "SludgeSpinner",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "SneakyGremlin",
+     "SoulFysh",
+     "SoulNexus",
+     "SpectralKnight",
+     "SpinyToad",
+     "Stabbot",
+     "TerrorEel",
+     "TestSubject",
+     "TheAdversaryMkThree",
+     "TheAdversaryMkTwo",
+     "TheForgotten",
+     "TheInsatiable",
+     "TheLost",
+     "TheObscura",
+     "ThievingHopper",
+     "Toadpole",
+     "TorchHeadAmalgam",
+     "ToughEgg",
+     "TrackerRubyRaider",
+     "Tunneler",
+     "TurretOperator",
+     "TwigSlimeM",
+     "TwigSlimeS",
+     "TwoTailedRat",
+     "Vantom",
+     "VineShambler",
+     "WaterfallGiant",
+     "Wriggler",
+     "Zapbot"
+    ]
+   }
+  },
+  "CardCmd.Afflict": {
+   "pattern": "CardCmd\\.Afflict",
+   "total_files": 7,
+   "by_category": {
+    "Powers": 7
+   },
+   "files": {
+    "Powers": [
+     "ChainsOfBindingPower",
+     "GalvanicPower",
+     "HexPower",
+     "RingingPower",
+     "SmoggyPower",
+     "TangledPower",
+     "VitalSparkPower"
+    ]
+   }
+  },
+  "CardCmd.AutoPlay": {
+   "pattern": "CardCmd\\.AutoPlay",
+   "total_files": 14,
+   "by_category": {
+    "Cards": 8,
+    "Powers": 3,
+    "Relics": 2,
+    "Enchantments": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "Bombardment",
+     "Catastrophe",
+     "DecisionsDecisions",
+     "Eidolon",
+     "HowlFromBeyond",
+     "KnifeTrap",
+     "Uproar"
+    ],
+    "Powers": [
+     "HellraiserPower",
+     "ImitationLearningPower",
+     "StampedePower"
+    ],
+    "Relics": [
+     "HistoryCourse",
+     "WhisperingEarring"
+    ],
+    "Enchantments": [
+     "Imbued"
+    ]
+   }
+  },
+  "CardCmd.Enchant": {
+   "pattern": "CardCmd\\.Enchant",
+   "total_files": 26,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 16,
+    "Events": 9
+   },
+   "files": {
+    "Cards": [
+     "BladeOfInk"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "BeautifulBracelet",
+     "Claws",
+     "ElectricShrymp",
+     "FresnelLens",
+     "Glitter",
+     "GnarledHammer",
+     "Kifuda",
+     "NutritiousSoup",
+     "PaelsClaw",
+     "PaelsGrowth",
+     "PunchDagger",
+     "RoyalStamp",
+     "SilkenTress",
+     "TriBoomerang",
+     "WingCharm"
+    ],
+    "Events": [
+     "FieldOfManSizedHoles",
+     "GraveOfTheForgotten",
+     "SapphireSeed",
+     "SelfHelpBook",
+     "SpiralingWhirlpool",
+     "StoneOfAllTime",
+     "Symbiote",
+     "WaterloggedScriptorium",
+     "WoodCarvings"
+    ]
+   }
+  },
+  "CardCmd.Transform": {
+   "pattern": "CardCmd\\.Transform",
+   "total_files": 22,
+   "by_category": {
+    "Cards": 7,
+    "Powers": 1,
+    "Relics": 7,
+    "Events": 7
+   },
+   "files": {
+    "Cards": [
+     "Begone",
+     "Charge",
+     "Compact",
+     "Dowsing",
+     "Guards",
+     "PrimalForce",
+     "Seance"
+    ],
+    "Powers": [
+     "EntropyPower"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "Astrolabe",
+     "Byrdpip",
+     "Claws",
+     "LeafyPoultice",
+     "NewLeaf",
+     "PandorasBox"
+    ],
+    "Events": [
+     "AromaOfChaos",
+     "EndlessConveyor",
+     "MorphicGrove",
+     "Symbiote",
+     "Trial",
+     "WhisperingHollow",
+     "WoodCarvings"
+    ]
+   }
+  },
+  "CardCmd.Upgrade": {
+   "pattern": "CardCmd\\.Upgrade",
+   "total_files": 59,
+   "by_category": {
+    "Cards": 20,
+    "Powers": 3,
+    "Relics": 23,
+    "Potions": 3,
+    "Events": 10
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "Apotheosis",
+     "Armaments",
+     "Begone",
+     "Charge",
+     "Compact",
+     "Dirge",
+     "DrainPower",
+     "Guards",
+     "HiddenDaggers",
+     "Jackpot",
+     "KnifeTrap",
+     "Largesse",
+     "ManifestAuthority",
+     "PrimalForce",
+     "Quasar",
+     "Reave",
+     "Splash",
+     "Stoke",
+     "StormOfSteel"
+    ],
+    "Powers": [
+     "AggressionPower",
+     "DampenPower",
+     "ImprovementPower"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "Astrolabe",
+     "Bellows",
+     "BoneTea",
+     "Claws",
+     "DustyTome",
+     "FishingRod",
+     "FragrantMushroom",
+     "FrozenEgg",
+     "LavaLamp",
+     "MoltenEgg",
+     "NeowsTalisman",
+     "PaelsTooth",
+     "Pomander",
+     "RazorTooth",
+     "SandCastle",
+     "SilverCrucible",
+     "StoneCracker",
+     "ToxicEgg",
+     "WarHammer",
+     "WarPaint",
+     "Whetstone",
+     "YummyCookie"
+    ],
+    "Potions": [
+     "BlessingOfTheForge",
+     "CosmicConcoction",
+     "CunningPotion"
+    ],
+    "Events": [
+     "AromaOfChaos",
+     "BattlewornDummy",
+     "DoorsOfLightAndDark",
+     "EndlessConveyor",
+     "Reflections",
+     "SapphireSeed",
+     "SpiritGrafter",
+     "TabletOfTruth",
+     "TheFutureOfPotions",
+     "Trial"
+    ]
+   }
+  },
+  "CardCostHelper": {
+   "pattern": "CardCostHelper\\.",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "Cmd.Wait": {
+   "pattern": "Cmd\\.(Wait|CustomScaledWait)",
+   "total_files": 118,
+   "by_category": {
+    "Cards": 29,
+    "Powers": 20,
+    "Relics": 32,
+    "Potions": 1,
+    "Monsters": 25,
+    "Events": 8,
+    "Modifiers": 3
+   },
+   "files": {
+    "Cards": [
+     "BadLuck",
+     "BladeDance",
+     "BladeSymphony",
+     "Bombardment",
+     "BoostAway",
+     "BouncingFlask",
+     "CloakAndDagger",
+     "CollisionCourse",
+     "Comet",
+     "Dualcast",
+     "EndOfDays",
+     "FanOfKnives",
+     "GrandFinale",
+     "GuidingStar",
+     "GunkUp",
+     "Haze",
+     "Hyperbeam",
+     "LeadingStrike",
+     "MeteorStrike",
+     "MultiCast",
+     "Nightmare",
+     "Overclock",
+     "ParticleWall",
+     "Quadcast",
+     "StormOfSteel",
+     "SweepingBeam",
+     "Turbo",
+     "UpMySleeve",
+     "Void"
+    ],
+    "Powers": [
+     "CacophonyPower",
+     "ConsumingShadowPower",
+     "DoomPower",
+     "EnragePower",
+     "FlutterPower",
+     "InfernoPower",
+     "InfestedPower",
+     "LoopPower",
+     "MagicBombPower",
+     "NoxiousFumesPower",
+     "PaleBlueDotPower",
+     "PanachePower",
+     "PersonalHivePower",
+     "PoisonPower",
+     "ReattachPower",
+     "SandpitPower",
+     "SerpentFormPower",
+     "StockPower",
+     "TheBombPower",
+     "WitheringPresencePower"
+    ],
+    "Relics": [
+     "BiiigHug",
+     "BlessedAntler",
+     "BookOfFiveRings",
+     "CallingBell",
+     "DistinguishedCape",
+     "EmotionChip",
+     "FakeHappyFlower",
+     "GalacticDust",
+     "HappyFlower",
+     "IronClub",
+     "JossPaper",
+     "Kunai",
+     "Kusarigama",
+     "LastingCandy",
+     "LetterOpener",
+     "LordsParasol",
+     "Metronome",
+     "NeowsBones",
+     "Nunchaku",
+     "OrnamentalFan",
+     "PaelsTooth",
+     "PaelsWing",
+     "PenNib",
+     "Pendulum",
+     "PollinousCore",
+     "SereTalon",
+     "Shuriken",
+     "StoneCalendar",
+     "StoneCracker",
+     "ToyBox",
+     "TuningFork",
+     "TwistedFunnel"
+    ],
+    "Potions": [
+     "ExplosiveAmpoule"
+    ],
+    "Monsters": [
+     "Axebot",
+     "BygoneEffigy",
+     "CalcifiedCultist",
+     "CeremonialBeast",
+     "CubexConstruct",
+     "DampCultist",
+     "DecimillipedeSegment",
+     "DevotedSculptor",
+     "FakeMerchantMonster",
+     "FatGremlin",
+     "FrogKnight",
+     "GremlinMerc",
+     "HauntedShip",
+     "MagiKnight",
+     "Noisebot",
+     "OwlMagistrate",
+     "SoulFysh",
+     "SpinyToad",
+     "TerrorEel",
+     "TestSubject",
+     "TheInsatiable",
+     "ThievingHopper",
+     "Tunneler",
+     "TwoTailedRat",
+     "Vantom"
+    ],
+    "Events": [
+     "DenseVegetation",
+     "JungleMazeAdventure",
+     "PunchOff",
+     "Reflections",
+     "TabletOfTruth",
+     "TheArchitect",
+     "TheLegendsWereTrue",
+     "WelcomeToWongos"
+    ],
+    "Modifiers": [
+     "AllStar",
+     "Insanity",
+     "Specialized"
+    ]
+   }
+  },
+  "CombatCardGeneration rng": {
+   "pattern": "Rng\\.CombatCardGeneration",
+   "total_files": 33,
+   "by_category": {
+    "Cards": 15,
+    "Powers": 5,
+    "Relics": 6,
+    "Potions": 6,
+    "Monsters": 1
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "BundleOfJoy",
+     "Discovery",
+     "Distraction",
+     "InfernalBlade",
+     "JackOfAllTrades",
+     "Jackpot",
+     "Largesse",
+     "MadScience",
+     "ManifestAuthority",
+     "Metamorphosis",
+     "Quasar",
+     "Splash",
+     "Stoke",
+     "WhiteNoise"
+    ],
+    "Powers": [
+     "CalamityPower",
+     "CallOfTheVoidPower",
+     "CreativeAiPower",
+     "HelloWorldPower",
+     "SpectrumShiftPower"
+    ],
+    "Relics": [
+     "BigHat",
+     "ChoicesParadox",
+     "Crossbow",
+     "OrangeDough",
+     "Toolbox",
+     "VexingPuzzlebox"
+    ],
+    "Potions": [
+     "AttackPotion",
+     "ColorlessPotion",
+     "CosmicConcoction",
+     "OrobicAcid",
+     "PowerPotion",
+     "SkillPotion"
+    ],
+    "Monsters": [
+     "ThievingHopper"
+    ]
+   }
+  },
+  "CombatCardSelection rng": {
+   "pattern": "Rng\\.CombatCardSelection",
+   "total_files": 15,
+   "by_category": {
+    "Cards": 7,
+    "Powers": 3,
+    "Relics": 5
+   },
+   "files": {
+    "Cards": [
+     "Anointed",
+     "Cinder",
+     "DrainPower",
+     "HiddenGem",
+     "SeekerStrike",
+     "Thrash",
+     "TrueGrit"
+    ],
+    "Powers": [
+     "AggressionPower",
+     "EntropyPower",
+     "ImprovementPower"
+    ],
+    "Relics": [
+     "Bookmark",
+     "JeweledMask",
+     "MummifiedHand",
+     "PowerCell",
+     "StoneCracker"
+    ]
+   }
+  },
+  "CombatEnergyCosts rng": {
+   "pattern": "Rng\\.CombatEnergyCosts",
+   "total_files": 3,
+   "by_category": {
+    "Powers": 1,
+    "Potions": 1,
+    "Enchantments": 1
+   },
+   "files": {
+    "Powers": [
+     "ConfusedPower"
+    ],
+    "Potions": [
+     "SneckoOil"
+    ],
+    "Enchantments": [
+     "Slither"
+    ]
+   }
+  },
+  "CombatOrbGeneration rng": {
+   "pattern": "Rng\\.CombatOrbGeneration",
+   "total_files": 2,
+   "by_category": {
+    "Cards": 1,
+    "Powers": 1
+   },
+   "files": {
+    "Cards": [
+     "Chaos"
+    ],
+    "Powers": [
+     "TrashToTreasurePower"
+    ]
+   }
+  },
+  "CombatPotionGeneration rng": {
+   "pattern": "Rng\\.CombatPotionGeneration",
+   "total_files": 5,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 3,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "Alchemize"
+    ],
+    "Relics": [
+     "AlchemicalCoffer",
+     "DelicateFrond",
+     "PhialHolster"
+    ],
+    "Potions": [
+     "EntropicBrew"
+    ]
+   }
+  },
+  "CombatTargets rng": {
+   "pattern": "Rng\\.CombatTargets",
+   "total_files": 14,
+   "by_category": {
+    "Cards": 3,
+    "Powers": 5,
+    "Relics": 5,
+    "Orbs": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "BouncingFlask",
+     "TheBall"
+    ],
+    "Powers": [
+     "CacophonyPower",
+     "CountdownPower",
+     "HauntPower",
+     "JuggernautPower",
+     "SerpentFormPower"
+    ],
+    "Relics": [
+     "ForgottenSoul",
+     "Kusarigama",
+     "ParryingShield",
+     "Tingsha",
+     "WhisperingEarring"
+    ],
+    "Orbs": [
+     "LightningOrb"
+    ]
+   }
+  },
+  "CreatureCmd.Add (spawn)": {
+   "pattern": "CreatureCmd\\.Add",
+   "total_files": 9,
+   "by_category": {
+    "Powers": 3,
+    "Monsters": 6
+   },
+   "files": {
+    "Powers": [
+     "InfestedPower",
+     "StockPower",
+     "SurprisePower"
+    ],
+    "Monsters": [
+     "Fabricator",
+     "Fogmog",
+     "LivingFog",
+     "Ovicopter",
+     "TheObscura",
+     "TwoTailedRat"
+    ]
+   }
+  },
+  "EggRelicHelper": {
+   "pattern": "EggRelicHelper\\.",
+   "total_files": 3,
+   "by_category": {
+    "Relics": 3
+   },
+   "files": {
+    "Relics": [
+     "FrozenEgg",
+     "MoltenEgg",
+     "ToxicEgg"
+    ]
+   }
+  },
+  "FirstIndex/IndexOf(ext)": {
+   "pattern": "\\.FirstIndex\\(",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "ForgeCmd.Forge": {
+   "pattern": "ForgeCmd\\.Forge",
+   "total_files": 14,
+   "by_category": {
+    "Cards": 10,
+    "Powers": 2,
+    "Relics": 1,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatIntoShape",
+     "BigBang",
+     "Bulwark",
+     "Conqueror",
+     "RefineBlade",
+     "SeekingEdge",
+     "SpoilsOfBattle",
+     "SummonForth",
+     "TheSmith",
+     "WroughtInWar"
+    ],
+    "Powers": [
+     "FurnacePower",
+     "HammerTimePower"
+    ],
+    "Relics": [
+     "FencingManual"
+    ],
+    "Potions": [
+     "KingsCourage"
+    ]
+   }
+  },
+  "GetCreatureNode": {
+   "pattern": "GetCreatureNode",
+   "total_files": 52,
+   "by_category": {
+    "Cards": 8,
+    "Powers": 7,
+    "Relics": 1,
+    "Potions": 1,
+    "Monsters": 32,
+    "Events": 2,
+    "Orbs": 1
+   },
+   "files": {
+    "Cards": [
+     "Bombardment",
+     "BouncingFlask",
+     "BubbleBubble",
+     "Comet",
+     "GuidingStar",
+     "HandOfGreed",
+     "MeteorStrike",
+     "SovereignBlade"
+    ],
+    "Powers": [
+     "CorrosiveWavePower",
+     "DoomPower",
+     "NoxiousFumesPower",
+     "ReattachPower",
+     "SandpitPower",
+     "ShrinkPower",
+     "SurroundedPower"
+    ],
+    "Relics": [
+     "BigMushroom"
+    ],
+    "Potions": [
+     "PoisonPotion"
+    ],
+    "Monsters": [
+     "BowlbugSilk",
+     "BygoneEffigy",
+     "DecimillipedeSegment",
+     "DecimillipedeSegmentBack",
+     "DecimillipedeSegmentFront",
+     "DecimillipedeSegmentMiddle",
+     "FatGremlin",
+     "Flyconid",
+     "FuzzyWurmCrawler",
+     "Guardbot",
+     "KinFollower",
+     "KinPriest",
+     "LagavulinMatriarch",
+     "LeafSlimeM",
+     "MagiKnight",
+     "Myte",
+     "Noisebot",
+     "PhantasmalGardener",
+     "Queen",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "SoulNexus",
+     "Stabbot",
+     "TestSubject",
+     "ThievingHopper",
+     "TorchHeadAmalgam",
+     "ToughEgg",
+     "Tunneler",
+     "TwigSlimeM",
+     "Vantom",
+     "WaterfallGiant",
+     "Zapbot"
+    ],
+    "Events": [
+     "PunchOff",
+     "TheArchitect"
+    ],
+    "Orbs": [
+     "DarkOrb"
+    ]
+   }
+  },
+  "GrabBag": {
+   "pattern": "GrabBag<",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "HookPlayerChoice": {
+   "pattern": "HookPlayerChoiceContext",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "MapCmd": {
+   "pattern": "MapCmd\\.",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "Modifiers ref": {
+   "pattern": "RunState\\.Modifiers|ModifierModel",
+   "total_files": 19,
+   "by_category": {
+    "Events": 2,
+    "Modifiers": 17
+   },
+   "files": {
+    "Events": [
+     "Darv",
+     "Neow"
+    ],
+    "Modifiers": [
+     "AllStar",
+     "BigGameHunter",
+     "CharacterCards",
+     "CursedRun",
+     "DeadlyEvents",
+     "DeprecatedModifier",
+     "Draft",
+     "Flight",
+     "Hoarder",
+     "Insanity",
+     "Midas",
+     "Murderous",
+     "NightTerrors",
+     "SealedDeck",
+     "Specialized",
+     "Terminal",
+     "Vintage"
+    ]
+   }
+  },
+  "MonsterAi rng": {
+   "pattern": "Rng\\.MonsterAi|RunRng\\.MonsterAi",
+   "total_files": 2,
+   "by_category": {
+    "Powers": 1,
+    "Monsters": 1
+   },
+   "files": {
+    "Powers": [
+     "FlutterPower"
+    ],
+    "Monsters": [
+     "Fabricator"
+    ]
+   }
+  },
+  "NCombatRoom/NRun/NGame (Godot UI in rule file)": {
+   "pattern": "NCombatRoom\\.Instance|NRun\\.Instance|NGame\\.Instance|NMapScreen|NOverlayStack",
+   "total_files": 120,
+   "by_category": {
+    "Cards": 37,
+    "Powers": 10,
+    "Relics": 9,
+    "Potions": 29,
+    "Monsters": 22,
+    "Events": 12,
+    "Orbs": 1
+   },
+   "files": {
+    "Cards": [
+     "Bolas",
+     "Bombardment",
+     "BouncingFlask",
+     "Brand",
+     "BubbleBubble",
+     "Burn",
+     "Comet",
+     "Conflagration",
+     "CrushUnder",
+     "DaggerSpray",
+     "DeadlyPoison",
+     "EndOfDays",
+     "FiendFire",
+     "FlameBarrier",
+     "FlashOfSteel",
+     "ForgottenRitual",
+     "GrandFinale",
+     "GuidingStar",
+     "HandOfGreed",
+     "Haze",
+     "Hellraiser",
+     "Hyperbeam",
+     "Infection",
+     "Inflame",
+     "MeteorStrike",
+     "Neutralize",
+     "Nightmare",
+     "Outbreak",
+     "Overclock",
+     "Pyre",
+     "Slice",
+     "Slimed",
+     "SovereignBlade",
+     "Stomp",
+     "Suppress",
+     "SweepingBeam",
+     "Whirlwind"
+    ],
+    "Powers": [
+     "CorrosiveWavePower",
+     "DoomPower",
+     "InfernoPower",
+     "NoxiousFumesPower",
+     "ReattachPower",
+     "RollingBoulderPower",
+     "SandpitPower",
+     "ShrinkPower",
+     "SurroundedPower",
+     "TheBombPower"
+    ],
+    "Relics": [
+     "BeautifulBracelet",
+     "BigMushroom",
+     "LordsParasol",
+     "NutritiousSoup",
+     "PaelsClaw",
+     "RoyalStamp",
+     "SandCastle",
+     "TriBoomerang",
+     "TwistedFunnel"
+    ],
+    "Potions": [
+     "Ambergris",
+     "Ashwater",
+     "BeetleJuice",
+     "BlessingOfTheForge",
+     "BloodPotion",
+     "BoneBrew",
+     "BottledPotential",
+     "Clarity",
+     "CureAll",
+     "DistilledChaos",
+     "EnergyPotion",
+     "ExplosiveAmpoule",
+     "FirePotion",
+     "FoulPotion",
+     "GamblersBrew",
+     "GigantificationPotion",
+     "GlowwaterPotion",
+     "LiquidMemories",
+     "PoisonPotion",
+     "PotionOfBinding",
+     "PotionOfCapacity",
+     "PotionOfDoom",
+     "ShacklingPotion",
+     "SneckoOil",
+     "SoldiersStew",
+     "StrengthPotion",
+     "SwiftPotion",
+     "VulnerablePotion",
+     "WeakPotion"
+    ],
+    "Monsters": [
+     "BygoneEffigy",
+     "CeremonialBeast",
+     "Crusher",
+     "DecimillipedeSegment",
+     "FatGremlin",
+     "FuzzyWurmCrawler",
+     "Guardbot",
+     "KinPriest",
+     "MechaKnight",
+     "Noisebot",
+     "Osty",
+     "PhantasmalGardener",
+     "Queen",
+     "Rocket",
+     "ShrinkerBeetle",
+     "SoulNexus",
+     "Stabbot",
+     "TestSubject",
+     "ThievingHopper",
+     "ToughEgg",
+     "Vantom",
+     "Zapbot"
+    ],
+    "Events": [
+     "Amalgamator",
+     "DenseVegetation",
+     "FieldOfManSizedHoles",
+     "GraveOfTheForgotten",
+     "PunchOff",
+     "SapphireSeed",
+     "SelfHelpBook",
+     "SpiralingWhirlpool",
+     "Symbiote",
+     "TheArchitect",
+     "WaterloggedScriptorium",
+     "WoodCarvings"
+    ],
+    "Orbs": [
+     "DarkOrb"
+    ]
+   }
+  },
+  "Niche rng": {
+   "pattern": "Rng\\.Niche",
+   "total_files": 17,
+   "by_category": {
+    "Relics": 15,
+    "Monsters": 1,
+    "Modifiers": 1
+   },
+   "files": {
+    "Relics": [
+     "Astrolabe",
+     "BeautifulBracelet",
+     "DistinguishedCape",
+     "FishingRod",
+     "FragrantMushroom",
+     "Kaleidoscope",
+     "NeowsBones",
+     "NewLeaf",
+     "PandorasBox",
+     "RoyalStamp",
+     "SandCastle",
+     "WarHammer",
+     "WarPaint",
+     "Whetstone",
+     "WingCharm"
+    ],
+    "Monsters": [
+     "ToughEgg"
+    ],
+    "Modifiers": [
+     "CursedRun"
+    ]
+   }
+  },
+  "OrbCmd.Channel": {
+   "pattern": "OrbCmd\\.Channel",
+   "total_files": 30,
+   "by_category": {
+    "Cards": 22,
+    "Powers": 4,
+    "Relics": 3,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BallLightning",
+     "Chaos",
+     "Chill",
+     "ColdSnap",
+     "ConsumingShadow",
+     "Coolheaded",
+     "Darkness",
+     "Fusion",
+     "Glacier",
+     "Glasswork",
+     "Hibernate",
+     "IceLance",
+     "Ignition",
+     "MeteorStrike",
+     "Null",
+     "Rainbow",
+     "Refract",
+     "ShadowShield",
+     "Spinner",
+     "Tempest",
+     "Voltaic",
+     "Zap"
+    ],
+    "Powers": [
+     "LightningRodPower",
+     "SpinnerPower",
+     "StormPower",
+     "TrashToTreasurePower"
+    ],
+    "Relics": [
+     "CrackedCore",
+     "InfusedCore",
+     "SymbioticVirus"
+    ],
+    "Potions": [
+     "EssenceOfDarkness"
+    ]
+   }
+  },
+  "OrbCmd.Evoke": {
+   "pattern": "OrbCmd\\.Evoke",
+   "total_files": 5,
+   "by_category": {
+    "Cards": 4,
+    "Powers": 1
+   },
+   "files": {
+    "Cards": [
+     "Dualcast",
+     "MultiCast",
+     "Quadcast",
+     "Shatter"
+    ],
+    "Powers": [
+     "ConsumingShadowPower"
+    ]
+   }
+  },
+  "OrbCmd.Passive": {
+   "pattern": "OrbCmd\\.Passive",
+   "total_files": 4,
+   "by_category": {
+    "Cards": 2,
+    "Powers": 1,
+    "Relics": 1
+   },
+   "files": {
+    "Cards": [
+     "Darkness",
+     "TeslaCoil"
+    ],
+    "Powers": [
+     "LoopPower"
+    ],
+    "Relics": [
+     "EmotionChip"
+    ]
+   }
+  },
+  "OrbCmd.Slots": {
+   "pattern": "OrbCmd\\.(AddSlots|RemoveSlots)",
+   "total_files": 5,
+   "by_category": {
+    "Cards": 3,
+    "Relics": 1,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BulkUp",
+     "Capacitor",
+     "Modded"
+    ],
+    "Relics": [
+     "RunicCapacitor"
+    ],
+    "Potions": [
+     "PotionOfCapacity"
+    ]
+   }
+  },
+  "OstyCmd.Summon": {
+   "pattern": "OstyCmd\\.Summon",
+   "total_files": 15,
+   "by_category": {
+    "Cards": 9,
+    "Powers": 3,
+    "Relics": 2,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "Afterlife",
+     "Bodyguard",
+     "Cleanse",
+     "Dirge",
+     "LegionOfBone",
+     "NecroMastery",
+     "PullAggro",
+     "Reanimate",
+     "Spur"
+    ],
+    "Powers": [
+     "DevourLifePower",
+     "SicEmPower",
+     "SummonNextTurnPower"
+    ],
+    "Relics": [
+     "BoundPhylactery",
+     "PhylacteryUnbound"
+    ],
+    "Potions": [
+     "BoneBrew"
+    ]
+   }
+  },
+  "PlayerCmd.AddPet": {
+   "pattern": "PlayerCmd\\.AddPet",
+   "total_files": 2,
+   "by_category": {
+    "Relics": 2
+   },
+   "files": {
+    "Relics": [
+     "Byrdpip",
+     "PaelsLegion"
+    ]
+   }
+  },
+  "PlayerCmd.GainStars": {
+   "pattern": "PlayerCmd\\.(GainStars|LoseStars|SetStars)",
+   "total_files": 16,
+   "by_category": {
+    "Cards": 9,
+    "Powers": 3,
+    "Relics": 3,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BigBang",
+     "GatherLight",
+     "Glow",
+     "HiddenCache",
+     "KnockoutBlow",
+     "RoyalGamble",
+     "ShiningStrike",
+     "SolarStrike",
+     "Venerate"
+    ],
+    "Powers": [
+     "GenesisPower",
+     "StarNextTurnPower",
+     "TheSealedThronePower"
+    ],
+    "Relics": [
+     "DivineDestiny",
+     "DivineRight",
+     "LunarPastry"
+    ],
+    "Potions": [
+     "StarPotion"
+    ]
+   }
+  },
+  "PlayerRng.Rewards": {
+   "pattern": "PlayerRng\\.Rewards",
+   "total_files": 9,
+   "by_category": {
+    "Relics": 4,
+    "Events": 5
+   },
+   "files": {
+    "Relics": [
+     "DustyTome",
+     "NeowsBones",
+     "PaelsTooth",
+     "ScrollBoxes"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "EndlessConveyor",
+     "PotionCourier",
+     "TheLegendsWereTrue",
+     "Wellspring"
+    ]
+   }
+  },
+  "PlayerRng.Shops": {
+   "pattern": "PlayerRng\\.Shops",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "PlayerRng.Transformations": {
+   "pattern": "PlayerRng\\.Transformations",
+   "total_files": 2,
+   "by_category": {
+    "Relics": 2
+   },
+   "files": {
+    "Relics": [
+     "Claws",
+     "LeafyPoultice"
+    ]
+   }
+  },
+  "PotionCmd": {
+   "pattern": "PotionCmd\\.",
+   "total_files": 10,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 5,
+    "Potions": 1,
+    "Events": 3
+   },
+   "files": {
+    "Cards": [
+     "Alchemize"
+    ],
+    "Relics": [
+     "AlchemicalCoffer",
+     "DelicateFrond",
+     "NeowsSacrifice",
+     "PetrifiedToad",
+     "PhialHolster"
+    ],
+    "Potions": [
+     "EntropicBrew"
+    ],
+    "Events": [
+     "RanwidTheElder",
+     "StoneOfAllTime",
+     "TheFutureOfPotions"
+    ]
+   }
+  },
+  "PushSelector": {
+   "pattern": "PushSelector",
+   "total_files": 1,
+   "by_category": {
+    "Relics": 1
+   },
+   "files": {
+    "Relics": [
+     "WhisperingEarring"
+    ]
+   }
+  },
+  "RelicCmd": {
+   "pattern": "RelicCmd\\.",
+   "total_files": 24,
+   "by_category": {
+    "Relics": 5,
+    "Events": 19
+   },
+   "files": {
+    "Relics": [
+     "LargeCapsule",
+     "PaelsWing",
+     "SwordOfStone",
+     "TouchOfOrobas",
+     "ToyBox"
+    ],
+    "Events": [
+     "ColossalFlower",
+     "DollRoom",
+     "DrowningBeacon",
+     "GraveOfTheForgotten",
+     "HungryForMushrooms",
+     "LostWisp",
+     "LuminousChoir",
+     "RanwidTheElder",
+     "RelicTrader",
+     "RoomFullOfCheese",
+     "RoundTeaParty",
+     "SunkenStatue",
+     "TeaMaster",
+     "ThisOrThat",
+     "TrashHeap",
+     "Trial",
+     "UnrestSite",
+     "WarHistorianRepy",
+     "WelcomeToWongos"
+    ]
+   }
+  },
+  "RelicSelectCmd": {
+   "pattern": "RelicSelectCmd\\.",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "RewardsCmd": {
+   "pattern": "RewardsCmd\\.",
+   "total_files": 21,
+   "by_category": {
+    "Relics": 8,
+    "Events": 13
+   },
+   "files": {
+    "Relics": [
+     "CallingBell",
+     "Cauldron",
+     "GlassEye",
+     "Kaleidoscope",
+     "LostCoffer",
+     "Orrery",
+     "SmallCapsule",
+     "ToyBox"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "BrainLeech",
+     "ColorfulPhilosophers",
+     "DrowningBeacon",
+     "EndlessConveyor",
+     "PotionCourier",
+     "PunchOff",
+     "TheFutureOfPotions",
+     "TheLegendsWereTrue",
+     "Trial",
+     "WarHistorianRepy",
+     "Wellspring",
+     "WhisperingHollow"
+    ]
+   }
+  },
+  "Rng.Chaotic": {
+   "pattern": "Rng\\.Chaotic",
+   "total_files": 11,
+   "by_category": {
+    "Relics": 1,
+    "Monsters": 8,
+    "Events": 2
+   },
+   "files": {
+    "Relics": [
+     "YummyCookie"
+    ],
+    "Monsters": [
+     "CeremonialBeast",
+     "CubexConstruct",
+     "FakeMerchantMonster",
+     "KinFollower",
+     "ScrollOfBiting",
+     "Toadpole",
+     "TwoTailedRat",
+     "Vantom"
+    ],
+    "Events": [
+     "DenseVegetation",
+     "Trial"
+    ]
+   }
+  },
+  "Rng.NextInt/Float/Double/Bool": {
+   "pattern": "\\.Next(Int|Float|Double|Bool|UnsignedInt|UnsignedLong|Gaussian)",
+   "total_files": 36,
+   "by_category": {
+    "Powers": 1,
+    "Relics": 1,
+    "Potions": 1,
+    "Monsters": 4,
+    "Encounters": 6,
+    "Events": 18,
+    "Enchantments": 1,
+    "Acts": 4
+   },
+   "files": {
+    "Powers": [
+     "ConfusedPower"
+    ],
+    "Relics": [
+     "ScrollBoxes"
+    ],
+    "Potions": [
+     "SneckoOil"
+    ],
+    "Monsters": [
+     "CeremonialBeast",
+     "CorpseSlug",
+     "ToughEgg",
+     "Vantom"
+    ],
+    "Encounters": [
+     "DecimillipedeElite",
+     "PunchOffEventEncounter",
+     "ScrollsOfBitingNormal",
+     "ScrollsOfBitingWeak",
+     "SlimesNormal",
+     "TwoTailedRatsNormal"
+    ],
+    "Events": [
+     "ColorfulPhilosophers",
+     "CrystalSphere",
+     "Darv",
+     "DenseVegetation",
+     "EndlessConveyor",
+     "JungleMazeAdventure",
+     "LostWisp",
+     "LuminousChoir",
+     "Neow",
+     "Orobas",
+     "PunchOff",
+     "StoneOfAllTime",
+     "SunkenStatue",
+     "SunkenTreasury",
+     "TheArchitect",
+     "ThisOrThat",
+     "Trial",
+     "WhisperingHollow"
+    ],
+    "Enchantments": [
+     "Slither"
+    ],
+    "Acts": [
+     "Glory",
+     "Hive",
+     "Overgrowth",
+     "Underdocks"
+    ]
+   }
+  },
+  "Rng.NextItem": {
+   "pattern": "\\.NextItem",
+   "total_files": 69,
+   "by_category": {
+    "Cards": 7,
+    "Powers": 7,
+    "Relics": 18,
+    "Monsters": 9,
+    "Encounters": 6,
+    "Events": 20,
+    "Orbs": 1,
+    "Modifiers": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "BouncingFlask",
+     "Cinder",
+     "HiddenGem",
+     "TheBall",
+     "Thrash",
+     "TrueGrit"
+    ],
+    "Powers": [
+     "CacophonyPower",
+     "CountdownPower",
+     "HauntPower",
+     "ImprovementPower",
+     "JuggernautPower",
+     "SerpentFormPower",
+     "StampedePower"
+    ],
+    "Relics": [
+     "Bookmark",
+     "Byrdpip",
+     "DistinguishedCape",
+     "DustyTome",
+     "FishingRod",
+     "ForgottenSoul",
+     "JeweledMask",
+     "Kusarigama",
+     "MummifiedHand",
+     "NeowsBones",
+     "PaelsLegion",
+     "PaelsTooth",
+     "ParryingShield",
+     "ScrollBoxes",
+     "Tingsha",
+     "WhisperingEarring",
+     "WingCharm",
+     "YummyCookie"
+    ],
+    "Monsters": [
+     "CubexConstruct",
+     "Fabricator",
+     "FakeMerchantMonster",
+     "KinFollower",
+     "ScrollOfBiting",
+     "ThievingHopper",
+     "Toadpole",
+     "ToughEgg",
+     "TwoTailedRat"
+    ],
+    "Encounters": [
+     "BowlbugsNormal",
+     "BowlbugsWeak",
+     "FlyconidNormal",
+     "RubyRaidersNormal",
+     "SlimesWeak",
+     "SlitheringStranglerNormal"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "Darv",
+     "DollRoom",
+     "EndlessConveyor",
+     "Neow",
+     "Orobas",
+     "Pael",
+     "PotionCourier",
+     "RanwidTheElder",
+     "Reflections",
+     "SlipperyBridge",
+     "StoneOfAllTime",
+     "TabletOfTruth",
+     "Tezcatara",
+     "TheArchitect",
+     "TheFutureOfPotions",
+     "TheLegendsWereTrue",
+     "TrashHeap",
+     "WelcomeToWongos",
+     "Wellspring"
+    ],
+    "Orbs": [
+     "LightningOrb"
+    ],
+    "Modifiers": [
+     "CursedRun"
+    ]
+   }
+  },
+  "Rng.Shuffle": {
+   "pattern": "\\.Shuffle\\(",
+   "total_files": 4,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 1,
+    "Potions": 1,
+    "Events": 1
+   },
+   "files": {
+    "Cards": [
+     "Reboot"
+    ],
+    "Relics": [
+     "NeowsBones"
+    ],
+    "Potions": [
+     "BottledPotential"
+    ],
+    "Events": [
+     "TheArchitect"
+    ]
+   }
+  },
+  "Rng.WeightedNextItem": {
+   "pattern": "WeightedNextItem",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "SaveManager": {
+   "pattern": "SaveManager\\.Instance\\.(Progress|IsEpoch)",
+   "total_files": 5,
+   "by_category": {
+    "Relics": 1,
+    "Monsters": 1,
+    "Events": 3
+   },
+   "files": {
+    "Relics": [
+     "LoomingFruit"
+    ],
+    "Monsters": [
+     "TestSubject"
+    ],
+    "Events": [
+     "TheArchitect",
+     "Vakuu",
+     "WelcomeToWongos"
+    ]
+   }
+  },
+  "SeedHelper": {
+   "pattern": "SeedHelper\\.",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "Shuffle rng": {
+   "pattern": "Rng\\.Shuffle\\b",
+   "total_files": 5,
+   "by_category": {
+    "Cards": 3,
+    "Powers": 1,
+    "Events": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "Catastrophe",
+     "Uproar"
+    ],
+    "Powers": [
+     "StampedePower"
+    ],
+    "Events": [
+     "TheArchitect"
+    ]
+   }
+  },
+  "StableShuffle": {
+   "pattern": "StableShuffle",
+   "total_files": 17,
+   "by_category": {
+    "Cards": 4,
+    "Relics": 8,
+    "Events": 5
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "Catastrophe",
+     "SeekerStrike",
+     "Uproar"
+    ],
+    "Relics": [
+     "FragrantMushroom",
+     "Kaleidoscope",
+     "PowerCell",
+     "SandCastle",
+     "StoneCracker",
+     "WarHammer",
+     "WarPaint",
+     "Whetstone"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "DollRoom",
+     "DoorsOfLightAndDark",
+     "JungleMazeAdventure",
+     "RelicTrader"
+    ]
+   }
+  },
+  "StarCost": {
+   "pattern": "StarCost",
+   "total_files": 27,
+   "by_category": {
+    "Cards": 23,
+    "Powers": 1,
+    "Relics": 3
+   },
+   "files": {
+    "Cards": [
+     "Alignment",
+     "AstralPulse",
+     "CloakOfStars",
+     "Comet",
+     "Constellation",
+     "CrescentSpear",
+     "DecisionsDecisions",
+     "Devastate",
+     "DyingStar",
+     "FallingStar",
+     "GammaBlast",
+     "GuidingStar",
+     "MeteorShower",
+     "NeutronAegis",
+     "ParticleWall",
+     "Quasar",
+     "Reflect",
+     "Resonance",
+     "RoyalGamble",
+     "SevenStars",
+     "Stardust",
+     "TheSealedThrone",
+     "TheSmith"
+    ],
+    "Powers": [
+     "VoidFormPower"
+    ],
+    "Relics": [
+     "BrilliantScarf",
+     "ChemicalX",
+     "MummifiedHand"
+    ]
+   }
+  },
+  "StringHelper": {
+   "pattern": "StringHelper\\.",
+   "total_files": 1,
+   "by_category": {
+    "Events": 1
+   },
+   "files": {
+    "Events": [
+     "FakeMerchant"
+    ]
+   }
+  },
+  "TakeRandom": {
+   "pattern": "TakeRandom",
+   "total_files": 4,
+   "by_category": {
+    "Cards": 2,
+    "Relics": 1,
+    "Events": 1
+   },
+   "files": {
+    "Cards": [
+     "Anointed",
+     "DrainPower"
+    ],
+    "Relics": [
+     "BeautifulBracelet"
+    ],
+    "Events": [
+     "TinkerTime"
+    ]
+   }
+  },
+  "TaskHelper": {
+   "pattern": "TaskHelper\\.",
+   "total_files": 27,
+   "by_category": {
+    "Powers": 3,
+    "Relics": 22,
+    "Events": 2
+   },
+   "files": {
+    "Powers": [
+     "InfestedPower",
+     "ReattachPower",
+     "StockPower"
+    ],
+    "Relics": [
+     "BookOfFiveRings",
+     "FakeHappyFlower",
+     "GalacticDust",
+     "HappyFlower",
+     "IronClub",
+     "JossPaper",
+     "Kunai",
+     "Kusarigama",
+     "LastingCandy",
+     "LetterOpener",
+     "LordsParasol",
+     "Metronome",
+     "Nunchaku",
+     "OrnamentalFan",
+     "PaelsWing",
+     "PenNib",
+     "Pendulum",
+     "PollinousCore",
+     "Shuriken",
+     "StoneCalendar",
+     "ToyBox",
+     "TuningFork"
+    ],
+    "Events": [
+     "PunchOff",
+     "TheArchitect"
+    ]
+   }
+  },
+  "ThrowingPlayerChoice": {
+   "pattern": "ThrowingPlayerChoiceContext",
+   "total_files": 173,
+   "by_category": {
+    "Cards": 5,
+    "Powers": 23,
+    "Relics": 26,
+    "Potions": 1,
+    "Monsters": 96,
+    "Events": 19,
+    "Modifiers": 3
+   },
+   "files": {
+    "Cards": [
+     "Disintegration",
+     "MindRot",
+     "Sloth",
+     "Spinner",
+     "WasteAway"
+    ],
+    "Powers": [
+     "ArsenalPower",
+     "BiasedCognitionPower",
+     "CountdownPower",
+     "CoveredPower",
+     "DemonFormPower",
+     "IllusionPower",
+     "JuggernautPower",
+     "LightningRodPower",
+     "NecroMasteryPower",
+     "NeurosurgePower",
+     "NoxiousFumesPower",
+     "PlatingPower",
+     "PoisonPower",
+     "PrepTimePower",
+     "ShadowStepPower",
+     "SmokestackPower",
+     "SpinnerPower",
+     "TankPower",
+     "TemporaryDexterityPower",
+     "TemporaryFocusPower",
+     "TemporaryStrengthPower",
+     "TrashToTreasurePower",
+     "WraithFormPower"
+    ],
+    "Relics": [
+     "Akabeko",
+     "BeltBuckle",
+     "BoundPhylactery",
+     "Brimstone",
+     "BronzeScales",
+     "DataDisk",
+     "DiamondDiadem",
+     "EmberTea",
+     "FakeSneckoEye",
+     "FragrantMushroom",
+     "Girya",
+     "Gorget",
+     "LeafyPoultice",
+     "MiniRegent",
+     "OddlySmoothStone",
+     "PhilosophersStone",
+     "PhylacteryUnbound",
+     "PrecariousShears",
+     "RedSkull",
+     "ReptileTrinket",
+     "SereTalon",
+     "SlingOfCourage",
+     "SneckoEye",
+     "SparklingRouge",
+     "SwordOfJade",
+     "Vajra"
+    ],
+    "Potions": [
+     "FairyInABottle"
+    ],
+    "Monsters": [
+     "Aeonglass",
+     "Axebot",
+     "BattleFriendV1",
+     "BattleFriendV2",
+     "BattleFriendV3",
+     "BowlbugNectar",
+     "BowlbugRock",
+     "BowlbugSilk",
+     "BruteRubyRaider",
+     "BygoneEffigy",
+     "Byrdonis",
+     "CalcifiedCultist",
+     "CeremonialBeast",
+     "Chomper",
+     "CorpseSlug",
+     "Crusher",
+     "CubexConstruct",
+     "DampCultist",
+     "DecimillipedeSegment",
+     "DevotedSculptor",
+     "Entomancer",
+     "Exoskeleton",
+     "EyeWithTeeth",
+     "Fabricator",
+     "FakeMerchantMonster",
+     "FlailKnight",
+     "Flyconid",
+     "Fogmog",
+     "FossilStalker",
+     "FrogKnight",
+     "FuzzyWurmCrawler",
+     "GasBomb",
+     "GlobeHead",
+     "GremlinMerc",
+     "HauntedShip",
+     "HunterKiller",
+     "InfestedPrism",
+     "Inklet",
+     "KinFollower",
+     "KinPriest",
+     "KnowledgeDemon",
+     "LagavulinMatriarch",
+     "LivingFog",
+     "LivingShield",
+     "LouseProgenitor",
+     "MagiKnight",
+     "Mawler",
+     "MechaKnight",
+     "MysteriousKnight",
+     "Myte",
+     "Nibbit",
+     "Ovicopter",
+     "OwlMagistrate",
+     "Parafright",
+     "PhantasmalGardener",
+     "PhrogParasite",
+     "PunchConstruct",
+     "Queen",
+     "Rocket",
+     "ScrollOfBiting",
+     "Seapunk",
+     "SewerClam",
+     "ShrinkerBeetle",
+     "SkulkingColony",
+     "SlimedBerserker",
+     "SlitheringStrangler",
+     "SludgeSpinner",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "SoulFysh",
+     "SoulNexus",
+     "SpectralKnight",
+     "SpinyToad",
+     "Stabbot",
+     "TerrorEel",
+     "TestSubject",
+     "TheAdversaryMkOne",
+     "TheAdversaryMkThree",
+     "TheAdversaryMkTwo",
+     "TheForgotten",
+     "TheInsatiable",
+     "TheLost",
+     "TheObscura",
+     "ThievingHopper",
+     "Toadpole",
+     "TorchHeadAmalgam",
+     "ToughEgg",
+     "TrackerRubyRaider",
+     "Tunneler",
+     "TurretOperator",
+     "TwoTailedRat",
+     "Vantom",
+     "VineShambler",
+     "WaterfallGiant",
+     "Wriggler",
+     "Zapbot"
+    ],
+    "Events": [
+     "AbyssalBaths",
+     "BrainLeech",
+     "ColossalFlower",
+     "DenseVegetation",
+     "DollRoom",
+     "DrowningBeacon",
+     "JungleMazeAdventure",
+     "RoomFullOfCheese",
+     "RoundTeaParty",
+     "SlipperyBridge",
+     "SpiritGrafter",
+     "StoneOfAllTime",
+     "SunkenStatue",
+     "TabletOfTruth",
+     "TheLegendsWereTrue",
+     "ThisOrThat",
+     "TrashHeap",
+     "UnrestSite",
+     "WhisperingHollow"
+    ],
+    "Modifiers": [
+     "Murderous",
+     "NightTerrors",
+     "Terminal"
+    ]
+   }
+  },
+  "UnstableShuffle": {
+   "pattern": "UnstableShuffle",
+   "total_files": 9,
+   "by_category": {
+    "Powers": 1,
+    "Relics": 2,
+    "Events": 6
+   },
+   "files": {
+    "Powers": [
+     "AggressionPower"
+    ],
+    "Relics": [
+     "FurCoat",
+     "RoyalStamp"
+    ],
+    "Events": [
+     "Darv",
+     "FakeMerchant",
+     "Neow",
+     "Nonupeipe",
+     "Tanx",
+     "Vakuu"
+    ]
+   }
+  },
+  "UpFront rng": {
+   "pattern": "Rng\\.UpFront",
+   "total_files": 0,
+   "by_category": {},
+   "files": {}
+  },
+  "VfxCmd/SfxCmd/TalkCmd": {
+   "pattern": "VfxCmd\\.|SfxCmd\\.|TalkCmd\\.|ThinkCmd\\.",
+   "total_files": 119,
+   "by_category": {
+    "Cards": 20,
+    "Powers": 14,
+    "Relics": 6,
+    "Monsters": 74,
+    "Events": 4,
+    "Orbs": 1
+   },
+   "files": {
+    "Cards": [
+     "Adrenaline",
+     "BloodWall",
+     "Bloodletting",
+     "Brand",
+     "Breakthrough",
+     "Burn",
+     "DaggerSpray",
+     "DemonicShield",
+     "DramaticEntrance",
+     "DyingStar",
+     "EndOfDays",
+     "EvilEye",
+     "Expose",
+     "FiendFire",
+     "GuidingStar",
+     "HandOfGreed",
+     "Infection",
+     "Shockwave",
+     "Snakebite",
+     "Whirlwind"
+    ],
+    "Powers": [
+     "AsleepPower",
+     "CurlUpPower",
+     "DisintegrationPower",
+     "FlutterPower",
+     "GalvanicPower",
+     "HellraiserPower",
+     "IllusionPower",
+     "RavenousPower",
+     "SandpitPower",
+     "SerpentFormPower",
+     "SkittishPower",
+     "SlumberPower",
+     "SpeedsterPower",
+     "ThunderPower"
+    ],
+    "Relics": [
+     "FestivePopper",
+     "ForgottenSoul",
+     "FurCoat",
+     "ParryingShield",
+     "Tingsha",
+     "WhisperingEarring"
+    ],
+    "Monsters": [
+     "Axebot",
+     "BowlbugRock",
+     "BowlbugSilk",
+     "BruteRubyRaider",
+     "BygoneEffigy",
+     "CalcifiedCultist",
+     "CeremonialBeast",
+     "Chomper",
+     "CrossbowRubyRaider",
+     "Crusher",
+     "CubexConstruct",
+     "DampCultist",
+     "DecimillipedeSegment",
+     "DevotedSculptor",
+     "Entomancer",
+     "Exoskeleton",
+     "EyeWithTeeth",
+     "FakeMerchantMonster",
+     "FatGremlin",
+     "FlailKnight",
+     "Flyconid",
+     "Fogmog",
+     "FrogKnight",
+     "FuzzyWurmCrawler",
+     "GremlinMerc",
+     "Guardbot",
+     "HauntedShip",
+     "HunterKiller",
+     "KinFollower",
+     "KinPriest",
+     "KnowledgeDemon",
+     "LagavulinMatriarch",
+     "LeafSlimeM",
+     "LeafSlimeS",
+     "LivingFog",
+     "LouseProgenitor",
+     "MagiKnight",
+     "MechaKnight",
+     "Myte",
+     "Noisebot",
+     "Ovicopter",
+     "OwlMagistrate",
+     "PhantasmalGardener",
+     "PhrogParasite",
+     "PunchConstruct",
+     "Queen",
+     "Rocket",
+     "ScrollOfBiting",
+     "Seapunk",
+     "SewerClam",
+     "ShrinkerBeetle",
+     "SlimedBerserker",
+     "SlitheringStrangler",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "SoulFysh",
+     "SpectralKnight",
+     "SpinyToad",
+     "TerrorEel",
+     "TestSubject",
+     "TheForgotten",
+     "TheInsatiable",
+     "TheLost",
+     "TheObscura",
+     "ThievingHopper",
+     "ToughEgg",
+     "TrackerRubyRaider",
+     "Tunneler",
+     "TurretOperator",
+     "TwigSlimeM",
+     "TwoTailedRat",
+     "Vantom",
+     "WaterfallGiant",
+     "Wriggler"
+    ],
+    "Events": [
+     "DenseVegetation",
+     "JungleMazeAdventure",
+     "PunchOff",
+     "TheArchitect"
+    ],
+    "Orbs": [
+     "LightningOrb"
+    ]
+   }
+  },
+  "afflict_apply": {
+   "pattern": "CardCmd\\.Afflict",
+   "total_files": 7,
+   "by_category": {
+    "Powers": 7
+   },
+   "files": {
+    "Powers": [
+     "ChainsOfBindingPower",
+     "GalvanicPower",
+     "HexPower",
+     "RingingPower",
+     "SmoggyPower",
+     "TangledPower",
+     "VitalSparkPower"
+    ]
+   }
+  },
+  "affliction_read": {
+   "pattern": "\\.Affliction\\b",
+   "total_files": 14,
+   "by_category": {
+    "Powers": 7,
+    "Encounters": 7
+   },
+   "files": {
+    "Powers": [
+     "ChainsOfBindingPower",
+     "GalvanicPower",
+     "HexPower",
+     "RingingPower",
+     "SmoggyPower",
+     "TangledPower",
+     "VitalSparkPower"
+    ],
+    "Encounters": [
+     "CeremonialBeastBoss",
+     "GlobeHeadNormal",
+     "InfestedPrismsElite",
+     "KnightsElite",
+     "LivingFogNormal",
+     "QueenBoss",
+     "VineShamblerNormal"
+    ]
+   }
+  },
+  "ascension": {
+   "pattern": "AscensionHelper|HasAscension|AscensionLevel\\.",
+   "total_files": 102,
+   "by_category": {
+    "Monsters": 102
+   },
+   "files": {
+    "Monsters": [
+     "Aeonglass",
+     "AssassinRubyRaider",
+     "AxeRubyRaider",
+     "Axebot",
+     "BowlbugEgg",
+     "BowlbugNectar",
+     "BowlbugRock",
+     "BowlbugSilk",
+     "BruteRubyRaider",
+     "BygoneEffigy",
+     "Byrdonis",
+     "CalcifiedCultist",
+     "CeremonialBeast",
+     "Chomper",
+     "CorpseSlug",
+     "CrossbowRubyRaider",
+     "Crusher",
+     "CubexConstruct",
+     "DampCultist",
+     "DecimillipedeSegment",
+     "DevotedSculptor",
+     "Entomancer",
+     "Exoskeleton",
+     "Fabricator",
+     "FakeMerchantMonster",
+     "FatGremlin",
+     "FlailKnight",
+     "Flyconid",
+     "Fogmog",
+     "FossilStalker",
+     "FrogKnight",
+     "FuzzyWurmCrawler",
+     "GasBomb",
+     "GlobeHead",
+     "GremlinMerc",
+     "Guardbot",
+     "HauntedShip",
+     "HunterKiller",
+     "InfestedPrism",
+     "Inklet",
+     "KinFollower",
+     "KinPriest",
+     "KnowledgeDemon",
+     "LagavulinMatriarch",
+     "LeafSlimeM",
+     "LeafSlimeS",
+     "LivingFog",
+     "LivingShield",
+     "LouseProgenitor",
+     "MagiKnight",
+     "Mawler",
+     "MechaKnight",
+     "Myte",
+     "Nibbit",
+     "Noisebot",
+     "Ovicopter",
+     "OwlMagistrate",
+     "Parafright",
+     "PhantasmalGardener",
+     "PhrogParasite",
+     "PunchConstruct",
+     "Queen",
+     "Rocket",
+     "ScrollOfBiting",
+     "Seapunk",
+     "SewerClam",
+     "ShrinkerBeetle",
+     "SkulkingColony",
+     "SlimedBerserker",
+     "SlitheringStrangler",
+     "SludgeSpinner",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "SneakyGremlin",
+     "SoulFysh",
+     "SoulNexus",
+     "SpectralKnight",
+     "SpinyToad",
+     "Stabbot",
+     "TerrorEel",
+     "TestSubject",
+     "TheAdversaryMkThree",
+     "TheAdversaryMkTwo",
+     "TheForgotten",
+     "TheInsatiable",
+     "TheLost",
+     "TheObscura",
+     "ThievingHopper",
+     "Toadpole",
+     "TorchHeadAmalgam",
+     "ToughEgg",
+     "TrackerRubyRaider",
+     "Tunneler",
+     "TurretOperator",
+     "TwigSlimeM",
+     "TwigSlimeS",
+     "TwoTailedRat",
+     "Vantom",
+     "VineShambler",
+     "WaterfallGiant",
+     "Wriggler",
+     "Zapbot"
+    ]
+   }
+  },
+  "card_factory": {
+   "pattern": "CardFactory\\.",
+   "total_files": 49,
+   "by_category": {
+    "Cards": 15,
+    "Powers": 5,
+    "Relics": 15,
+    "Potions": 6,
+    "Events": 4,
+    "Modifiers": 4
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "BundleOfJoy",
+     "Discovery",
+     "Distraction",
+     "InfernalBlade",
+     "JackOfAllTrades",
+     "Jackpot",
+     "Largesse",
+     "MadScience",
+     "ManifestAuthority",
+     "Metamorphosis",
+     "Quasar",
+     "Splash",
+     "Stoke",
+     "WhiteNoise"
+    ],
+    "Powers": [
+     "CalamityPower",
+     "CallOfTheVoidPower",
+     "CreativeAiPower",
+     "HelloWorldPower",
+     "SpectrumShiftPower"
+    ],
+    "Relics": [
+     "ArcaneScroll",
+     "Astrolabe",
+     "BigHat",
+     "ChoicesParadox",
+     "Crossbow",
+     "HeftyTablet",
+     "Kaleidoscope",
+     "LastingCandy",
+     "LeadPaperweight",
+     "MassiveScroll",
+     "OrangeDough",
+     "PandorasBox",
+     "SeaGlass",
+     "Toolbox",
+     "VexingPuzzlebox"
+    ],
+    "Potions": [
+     "AttackPotion",
+     "ColorlessPotion",
+     "CosmicConcoction",
+     "OrobicAcid",
+     "PowerPotion",
+     "SkillPotion"
+    ],
+    "Events": [
+     "BrainLeech",
+     "EndlessConveyor",
+     "InfestedAutomaton",
+     "RoomFullOfCheese"
+    ],
+    "Modifiers": [
+     "AllStar",
+     "Insanity",
+     "SealedDeck",
+     "Specialized"
+    ]
+   }
+  },
+  "card_select": {
+   "pattern": "CardSelectCmd\\.",
+   "total_files": 107,
+   "by_category": {
+    "Cards": 42,
+    "Powers": 5,
+    "Relics": 29,
+    "Potions": 9,
+    "Monsters": 1,
+    "Events": 20,
+    "Modifiers": 1
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "Acrobatics",
+     "Armaments",
+     "Begone",
+     "Brand",
+     "BurningPact",
+     "Charge",
+     "Cleanse",
+     "CosmicIndifference",
+     "DaggerThrow",
+     "DecisionsDecisions",
+     "Discovery",
+     "Dredge",
+     "DualWield",
+     "Glimmer",
+     "Graveblast",
+     "Guards",
+     "HandTrick",
+     "Headbutt",
+     "HeirloomHammer",
+     "HiddenDaggers",
+     "Hologram",
+     "NeowsFury",
+     "Nightmare",
+     "PhotonCut",
+     "Prepared",
+     "Purity",
+     "Quasar",
+     "Scavenge",
+     "SculptingStrike",
+     "Seance",
+     "SecretTechnique",
+     "SecretWeapon",
+     "SeekerStrike",
+     "Snap",
+     "Splash",
+     "Survivor",
+     "ThinkingAhead",
+     "Transfigure",
+     "TrueGrit",
+     "Tutor",
+     "Wish"
+    ],
+    "Powers": [
+     "EntropyPower",
+     "ForegoneConclusionPower",
+     "StratagemPower",
+     "ToolsOfTheTradePower",
+     "TyrannyPower"
+    ],
+    "Relics": [
+     "Astrolabe",
+     "BiiigHug",
+     "ChoicesParadox",
+     "Claws",
+     "DollysMirror",
+     "ElectricShrymp",
+     "EmptyCage",
+     "GamblingChip",
+     "GnarledHammer",
+     "HeftyTablet",
+     "Kifuda",
+     "LeadPaperweight",
+     "MassiveScroll",
+     "NewLeaf",
+     "PaelsGrowth",
+     "PaelsTooth",
+     "Pomander",
+     "PrecariousShears",
+     "PreciseScissors",
+     "PreservedFog",
+     "PunchDagger",
+     "RoyalStamp",
+     "ScrollBoxes",
+     "SeaGlass",
+     "ToastyMittens",
+     "Toolbox",
+     "TriBoomerang",
+     "WhisperingEarring",
+     "YummyCookie"
+    ],
+    "Potions": [
+     "Ashwater",
+     "AttackPotion",
+     "ColorlessPotion",
+     "DropletOfPrecognition",
+     "GamblersBrew",
+     "LiquidMemories",
+     "PowerPotion",
+     "SkillPotion",
+     "TouchOfInsanity"
+    ],
+    "Monsters": [
+     "KnowledgeDemon"
+    ],
+    "Events": [
+     "Amalgamator",
+     "AromaOfChaos",
+     "DoorsOfLightAndDark",
+     "EndlessConveyor",
+     "FieldOfManSizedHoles",
+     "GraveOfTheForgotten",
+     "LuminousChoir",
+     "MorphicGrove",
+     "SapphireSeed",
+     "SelfHelpBook",
+     "SpiralingWhirlpool",
+     "SpiritGrafter",
+     "StoneOfAllTime",
+     "Symbiote",
+     "Trial",
+     "WaterloggedScriptorium",
+     "Wellspring",
+     "WhisperingHollow",
+     "WoodCarvings",
+     "ZenWeaver"
+    ],
+    "Modifiers": [
+     "SealedDeck"
+    ]
+   }
+  },
+  "chaotic_rng": {
+   "pattern": "Rng\\.Chaotic",
+   "total_files": 11,
+   "by_category": {
+    "Relics": 1,
+    "Monsters": 8,
+    "Events": 2
+   },
+   "files": {
+    "Relics": [
+     "YummyCookie"
+    ],
+    "Monsters": [
+     "CeremonialBeast",
+     "CubexConstruct",
+     "FakeMerchantMonster",
+     "KinFollower",
+     "ScrollOfBiting",
+     "Toadpole",
+     "TwoTailedRat",
+     "Vantom"
+    ],
+    "Events": [
+     "DenseVegetation",
+     "Trial"
+    ]
+   }
+  },
+  "doom": {
+   "pattern": "DoomPower|Doom",
+   "total_files": 35,
+   "by_category": {
+    "Cards": 14,
+    "Powers": 7,
+    "Relics": 2,
+    "Potions": 1,
+    "Monsters": 11
+   },
+   "files": {
+    "Cards": [
+     "BlightStrike",
+     "Countdown",
+     "Deathbringer",
+     "DeathsDoor",
+     "EndOfDays",
+     "NegativePulse",
+     "Neurosurge",
+     "NoEscape",
+     "Oblivion",
+     "ReaperForm",
+     "Scourge",
+     "Shroud",
+     "TimesUp",
+     "Underworld"
+    ],
+    "Powers": [
+     "CountdownPower",
+     "DoomPower",
+     "NeurosurgePower",
+     "OblivionPower",
+     "ReaperFormPower",
+     "ShroudPower",
+     "UnderworldPower"
+    ],
+    "Relics": [
+     "BookRepairKnife",
+     "UndyingSigil"
+    ],
+    "Potions": [
+     "PotionOfDoom"
+    ],
+    "Monsters": [
+     "CeremonialBeast",
+     "Crusher",
+     "DecimillipedeSegment",
+     "EyeWithTeeth",
+     "Inklet",
+     "Parafright",
+     "Rocket",
+     "TestSubject",
+     "TorchHeadAmalgam",
+     "Vantom",
+     "WaterfallGiant"
+    ]
+   }
+  },
+  "enchant_apply": {
+   "pattern": "CardCmd\\.Enchant",
+   "total_files": 26,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 16,
+    "Events": 9
+   },
+   "files": {
+    "Cards": [
+     "BladeOfInk"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "BeautifulBracelet",
+     "Claws",
+     "ElectricShrymp",
+     "FresnelLens",
+     "Glitter",
+     "GnarledHammer",
+     "Kifuda",
+     "NutritiousSoup",
+     "PaelsClaw",
+     "PaelsGrowth",
+     "PunchDagger",
+     "RoyalStamp",
+     "SilkenTress",
+     "TriBoomerang",
+     "WingCharm"
+    ],
+    "Events": [
+     "FieldOfManSizedHoles",
+     "GraveOfTheForgotten",
+     "SapphireSeed",
+     "SelfHelpBook",
+     "SpiralingWhirlpool",
+     "StoneOfAllTime",
+     "Symbiote",
+     "WaterloggedScriptorium",
+     "WoodCarvings"
+    ]
+   }
+  },
+  "enchantment_read": {
+   "pattern": "\\.Enchantment\\b",
+   "total_files": 31,
+   "by_category": {
+    "Relics": 17,
+    "Monsters": 1,
+    "Events": 12,
+    "Enchantments": 1
+   },
+   "files": {
+    "Relics": [
+     "ArchaicTooth",
+     "BeautifulBracelet",
+     "Claws",
+     "ElectricShrymp",
+     "FresnelLens",
+     "Glitter",
+     "GnarledHammer",
+     "Kifuda",
+     "MysticLighter",
+     "NutritiousSoup",
+     "PaelsClaw",
+     "PaelsGrowth",
+     "PunchDagger",
+     "RoyalStamp",
+     "SilkenTress",
+     "TriBoomerang",
+     "WingCharm"
+    ],
+    "Monsters": [
+     "ThievingHopper"
+    ],
+    "Events": [
+     "FieldOfManSizedHoles",
+     "GraveOfTheForgotten",
+     "Nonupeipe",
+     "Pael",
+     "SapphireSeed",
+     "SelfHelpBook",
+     "SpiralingWhirlpool",
+     "StoneOfAllTime",
+     "Symbiote",
+     "Tanx",
+     "WaterloggedScriptorium",
+     "WoodCarvings"
+    ],
+    "Enchantments": [
+     "Goopy"
+    ]
+   }
+  },
+  "event/monster own Rng (base.Rng)": {
+   "pattern": "base\\.Rng\\.|\\bRng\\.(NextItem|NextInt|NextFloat|NextBool|Shuffle|NextDouble)",
+   "total_files": 45,
+   "by_category": {
+    "Cards": 3,
+    "Powers": 1,
+    "Monsters": 1,
+    "Encounters": 12,
+    "Events": 28
+   },
+   "files": {
+    "Cards": [
+     "BeatDown",
+     "Catastrophe",
+     "Uproar"
+    ],
+    "Powers": [
+     "StampedePower"
+    ],
+    "Monsters": [
+     "ToughEgg"
+    ],
+    "Encounters": [
+     "BowlbugsNormal",
+     "BowlbugsWeak",
+     "DecimillipedeElite",
+     "FlyconidNormal",
+     "PunchOffEventEncounter",
+     "RubyRaidersNormal",
+     "ScrollsOfBitingNormal",
+     "ScrollsOfBitingWeak",
+     "SlimesNormal",
+     "SlimesWeak",
+     "SlitheringStranglerNormal",
+     "TwoTailedRatsNormal"
+    ],
+    "Events": [
+     "ColorfulPhilosophers",
+     "CrystalSphere",
+     "Darv",
+     "DenseVegetation",
+     "DollRoom",
+     "EndlessConveyor",
+     "JungleMazeAdventure",
+     "LostWisp",
+     "LuminousChoir",
+     "Neow",
+     "Orobas",
+     "Pael",
+     "PunchOff",
+     "RanwidTheElder",
+     "Reflections",
+     "SlipperyBridge",
+     "StoneOfAllTime",
+     "SunkenStatue",
+     "SunkenTreasury",
+     "TabletOfTruth",
+     "Tezcatara",
+     "TheArchitect",
+     "TheFutureOfPotions",
+     "ThisOrThat",
+     "TrashHeap",
+     "Trial",
+     "WelcomeToWongos",
+     "WhisperingHollow"
+    ]
+   }
+  },
+  "forge": {
+   "pattern": "ForgeCmd\\.",
+   "total_files": 15,
+   "by_category": {
+    "Cards": 11,
+    "Powers": 2,
+    "Relics": 1,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatIntoShape",
+     "BigBang",
+     "Bulwark",
+     "Conqueror",
+     "RefineBlade",
+     "SeekingEdge",
+     "SovereignBlade",
+     "SpoilsOfBattle",
+     "SummonForth",
+     "TheSmith",
+     "WroughtInWar"
+    ],
+    "Powers": [
+     "FurnacePower",
+     "HammerTimePower"
+    ],
+    "Relics": [
+     "FencingManual"
+    ],
+    "Potions": [
+     "KingsCourage"
+    ]
+   }
+  },
+  "history": {
+   "pattern": "CombatHistory|\\.History\\.",
+   "total_files": 45,
+   "by_category": {
+    "Cards": 29,
+    "Powers": 12,
+    "Relics": 4
+   },
+   "files": {
+    "Cards": [
+     "BansheesCry",
+     "BeatIntoShape",
+     "Bolas",
+     "DeathMarch",
+     "DeathsDoor",
+     "EvilEye",
+     "Fetch",
+     "Finisher",
+     "Flatten",
+     "Ftl",
+     "GangUp",
+     "GoldAxe",
+     "HelixDrill",
+     "LunarBlast",
+     "MakeItSo",
+     "MementoMori",
+     "Midnight",
+     "Murder",
+     "Normality",
+     "Pinpoint",
+     "PullFromBelow",
+     "Radiate",
+     "Rattle",
+     "Spite",
+     "Stomp",
+     "Supermassive",
+     "TearAsunder",
+     "ThrummingHatchet",
+     "Voltaic"
+    ],
+    "Powers": [
+     "ChainsOfBindingPower",
+     "EchoFormPower",
+     "FeralPower",
+     "IterationPower",
+     "JugglingPower",
+     "LethalityPower",
+     "NostalgiaPower",
+     "PaleBlueDotPower",
+     "PhantomBladesPower",
+     "RingingPower",
+     "SmoggyPower",
+     "UnmovablePower"
+    ],
+    "Relics": [
+     "EmotionChip",
+     "HistoryCourse",
+     "PaelsEye",
+     "RippleBasin"
+    ]
+   }
+  },
+  "keyword_ethereal": {
+   "pattern": "CardKeyword\\.Ethereal",
+   "total_files": 33,
+   "by_category": {
+    "Cards": 24,
+    "Powers": 5,
+    "Relics": 3,
+    "Afflictions": 1
+   },
+   "files": {
+    "Cards": [
+     "Apparition",
+     "BansheesCry",
+     "CallOfTheVoid",
+     "Clumsy",
+     "Dazed",
+     "Defile",
+     "Defy",
+     "Demesne",
+     "DyingStar",
+     "EchoForm",
+     "Eidolon",
+     "EnfeeblingTouch",
+     "Fear",
+     "Lethality",
+     "Pagestorm",
+     "Parse",
+     "PullFromBelow",
+     "SculptingStrike",
+     "Seance",
+     "SpiritOfAsh",
+     "SweepingGaze",
+     "Veilpiercer",
+     "Void",
+     "VoidForm"
+    ],
+    "Powers": [
+     "CallOfTheVoidPower",
+     "HexPower",
+     "PagestormPower",
+     "SpiritOfAshPower",
+     "VeilpiercerPower"
+    ],
+    "Relics": [
+     "BigHat",
+     "GhostSeed",
+     "MusicBox"
+    ],
+    "Afflictions": [
+     "Hexed"
+    ]
+   }
+  },
+  "local_context": {
+   "pattern": "LocalContext\\.",
+   "total_files": 27,
+   "by_category": {
+    "Cards": 3,
+    "Powers": 2,
+    "Relics": 7,
+    "Monsters": 6,
+    "Events": 7,
+    "Modifiers": 1,
+    "Badges": 1
+   },
+   "files": {
+    "Cards": [
+     "Adrenaline",
+     "GlimpseBeyond",
+     "Nightmare"
+    ],
+    "Powers": [
+     "SandpitPower",
+     "SurroundedPower"
+    ],
+    "Relics": [
+     "DreamCatcher",
+     "EternalFeather",
+     "MembershipCard",
+     "PandorasBox",
+     "RegalPillow",
+     "StoneHumidifier",
+     "TinyMailbox"
+    ],
+    "Monsters": [
+     "Myte",
+     "Noisebot",
+     "SnappingJaxfruit",
+     "SoulFysh",
+     "TheInsatiable",
+     "ThievingHopper"
+    ],
+    "Events": [
+     "DenseVegetation",
+     "DollRoom",
+     "FakeMerchant",
+     "JungleMazeAdventure",
+     "TheArchitect",
+     "Trial",
+     "Vakuu"
+    ],
+    "Modifiers": [
+     "CursedRun"
+    ],
+    "Badges": [
+     "CccComboModel"
+    ]
+   }
+  },
+  "multiplayer_scale": {
+   "pattern": "MultiplayerScaling|ScaleInMultiplayer|GetScaledAmountForMultiplayer|Players\\.Count|IsMultiplayer",
+   "total_files": 13,
+   "by_category": {
+    "Powers": 13
+   },
+   "files": {
+    "Powers": [
+     "ArtifactPower",
+     "BufferPower",
+     "CurlUpPower",
+     "FlutterPower",
+     "HardenedShellPower",
+     "PlatingPower",
+     "PlowPower",
+     "RampartPower",
+     "ReattachPower",
+     "RegenPower",
+     "ShriekPower",
+     "SkittishPower",
+     "SlipperyPower"
+    ]
+   }
+  },
+  "orb_cmd": {
+   "pattern": "OrbCmd\\.",
+   "total_files": 43,
+   "by_category": {
+    "Cards": 30,
+    "Powers": 6,
+    "Relics": 5,
+    "Potions": 2
+   },
+   "files": {
+    "Cards": [
+     "BallLightning",
+     "BulkUp",
+     "Capacitor",
+     "Chaos",
+     "Chill",
+     "ColdSnap",
+     "ConsumingShadow",
+     "Coolheaded",
+     "Darkness",
+     "Dualcast",
+     "Fusion",
+     "Glacier",
+     "Glasswork",
+     "Hibernate",
+     "IceLance",
+     "Ignition",
+     "MeteorStrike",
+     "Modded",
+     "MultiCast",
+     "Null",
+     "Quadcast",
+     "Rainbow",
+     "Refract",
+     "ShadowShield",
+     "Shatter",
+     "Spinner",
+     "Tempest",
+     "TeslaCoil",
+     "Voltaic",
+     "Zap"
+    ],
+    "Powers": [
+     "ConsumingShadowPower",
+     "LightningRodPower",
+     "LoopPower",
+     "SpinnerPower",
+     "StormPower",
+     "TrashToTreasurePower"
+    ],
+    "Relics": [
+     "CrackedCore",
+     "EmotionChip",
+     "InfusedCore",
+     "RunicCapacitor",
+     "SymbioticVirus"
+    ],
+    "Potions": [
+     "EssenceOfDarkness",
+     "PotionOfCapacity"
+    ]
+   }
+  },
+  "orb_queue": {
+   "pattern": "OrbQueue|\\.Orbs\\b",
+   "total_files": 52,
+   "by_category": {
+    "Cards": 32,
+    "Powers": 9,
+    "Relics": 5,
+    "Potions": 1,
+    "Orbs": 5
+   },
+   "files": {
+    "Cards": [
+     "BallLightning",
+     "Barrage",
+     "Chill",
+     "ColdSnap",
+     "CompileDriver",
+     "ConsumingShadow",
+     "Coolheaded",
+     "Darkness",
+     "Dualcast",
+     "Fusion",
+     "Glacier",
+     "Glasswork",
+     "Hailstorm",
+     "Hibernate",
+     "IceLance",
+     "Ignition",
+     "LightningRod",
+     "MeteorStrike",
+     "Null",
+     "Quadcast",
+     "Rainbow",
+     "Refract",
+     "ShadowShield",
+     "Shatter",
+     "Spinner",
+     "Storm",
+     "Synchronize",
+     "Tempest",
+     "TeslaCoil",
+     "Thunder",
+     "Voltaic",
+     "Zap"
+    ],
+    "Powers": [
+     "ConsumingShadowPower",
+     "CoolantPower",
+     "HailstormPower",
+     "HibernatePower",
+     "LightningRodPower",
+     "LoopPower",
+     "SpinnerPower",
+     "StormPower",
+     "ThunderPower"
+    ],
+    "Relics": [
+     "CrackedCore",
+     "EmotionChip",
+     "GoldPlatedCables",
+     "InfusedCore",
+     "SymbioticVirus"
+    ],
+    "Potions": [
+     "EssenceOfDarkness"
+    ],
+    "Orbs": [
+     "DarkOrb",
+     "FrostOrb",
+     "GlassOrb",
+     "LightningOrb",
+     "PlasmaOrb"
+    ]
+   }
+  },
+  "osty_cmd": {
+   "pattern": "OstyCmd\\.",
+   "total_files": 15,
+   "by_category": {
+    "Cards": 9,
+    "Powers": 3,
+    "Relics": 2,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "Afterlife",
+     "Bodyguard",
+     "Cleanse",
+     "Dirge",
+     "LegionOfBone",
+     "NecroMastery",
+     "PullAggro",
+     "Reanimate",
+     "Spur"
+    ],
+    "Powers": [
+     "DevourLifePower",
+     "SicEmPower",
+     "SummonNextTurnPower"
+    ],
+    "Relics": [
+     "BoundPhylactery",
+     "PhylacteryUnbound"
+    ],
+    "Potions": [
+     "BoneBrew"
+    ]
+   }
+  },
+  "osty_ref": {
+   "pattern": "\\bOsty\\b|IsOsty|\\.Osty\\b",
+   "total_files": 24,
+   "by_category": {
+    "Cards": 15,
+    "Powers": 5,
+    "Relics": 3,
+    "Monsters": 1
+   },
+   "files": {
+    "Cards": [
+     "BoneShards",
+     "Fetch",
+     "Flatten",
+     "HighFive",
+     "Poke",
+     "Protector",
+     "Rattle",
+     "RightHandHand",
+     "Sacrifice",
+     "SicEm",
+     "Snap",
+     "Spur",
+     "Squeeze",
+     "SweepingGaze",
+     "Unleash"
+    ],
+    "Powers": [
+     "CalcifyPower",
+     "NecroMasteryPower",
+     "PersonalHivePower",
+     "SandpitPower",
+     "SicEmPower"
+    ],
+    "Relics": [
+     "BoneFlute",
+     "PenNib",
+     "TheBoot"
+    ],
+    "Monsters": [
+     "Osty"
+    ]
+   }
+  },
+  "pets_monster": {
+   "pattern": "IsPet|PetOwner",
+   "total_files": 19,
+   "by_category": {
+    "Powers": 9,
+    "Relics": 3,
+    "Potions": 1,
+    "Monsters": 6
+   },
+   "files": {
+    "Powers": [
+     "CalcifyPower",
+     "DieForYouPower",
+     "NecroMasteryPower",
+     "PersonalHivePower",
+     "ReaperFormPower",
+     "SicEmPower",
+     "SuckPower",
+     "UnderworldPower",
+     "VulnerablePower"
+    ],
+    "Relics": [
+     "BoneFlute",
+     "HandDrill",
+     "RegalPillow"
+    ],
+    "Potions": [
+     "FoulPotion"
+    ],
+    "Monsters": [
+     "Byrdpip",
+     "Noisebot",
+     "PaelsLegion",
+     "SoulFysh",
+     "TheInsatiable",
+     "ThievingHopper"
+    ]
+   }
+  },
+  "potion_factory": {
+   "pattern": "PotionFactory\\.",
+   "total_files": 5,
+   "by_category": {
+    "Cards": 1,
+    "Relics": 3,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "Alchemize"
+    ],
+    "Relics": [
+     "AlchemicalCoffer",
+     "DelicateFrond",
+     "PhialHolster"
+    ],
+    "Potions": [
+     "EntropicBrew"
+    ]
+   }
+  },
+  "relic_factory": {
+   "pattern": "RelicFactory\\.",
+   "total_files": 12,
+   "by_category": {
+    "Relics": 3,
+    "Events": 9
+   },
+   "files": {
+    "Relics": [
+     "LargeCapsule",
+     "PaelsWing",
+     "ToyBox"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "LuminousChoir",
+     "RanwidTheElder",
+     "RelicTrader",
+     "RoundTeaParty",
+     "ThisOrThat",
+     "Trial",
+     "UnrestSite",
+     "WelcomeToWongos"
+    ]
+   }
+  },
+  "run_history": {
+   "pattern": "MapPointHistory|RunState\\.(VisitedEvents|MapPointHistory)",
+   "total_files": 16,
+   "by_category": {
+    "Powers": 2,
+    "Relics": 4,
+    "Events": 1,
+    "Badges": 9
+   },
+   "files": {
+    "Powers": [
+     "HeistPower",
+     "SwipePower"
+    ],
+    "Relics": [
+     "FurCoat",
+     "HeftyTablet",
+     "LeadPaperweight",
+     "MassiveScroll"
+    ],
+    "Events": [
+     "FakeMerchant"
+    ],
+    "Badges": [
+     "DamageLeader",
+     "Debuffer",
+     "EliteKiller",
+     "Healer",
+     "KaChing",
+     "MysteryMachine",
+     "Perfect",
+     "Restful",
+     "Restless"
+    ]
+   }
+  },
+  "save_manager": {
+   "pattern": "SaveManager\\.Instance",
+   "total_files": 10,
+   "by_category": {
+    "Cards": 5,
+    "Relics": 1,
+    "Monsters": 1,
+    "Events": 3
+   },
+   "files": {
+    "Cards": [
+     "FlashOfSteel",
+     "Neutralize",
+     "Slice",
+     "Suppress",
+     "Whirlwind"
+    ],
+    "Relics": [
+     "LoomingFruit"
+    ],
+    "Monsters": [
+     "TestSubject"
+    ],
+    "Events": [
+     "TheArchitect",
+     "Vakuu",
+     "WelcomeToWongos"
+    ]
+   }
+  },
+  "sovereign_blade": {
+   "pattern": "SovereignBlade",
+   "total_files": 19,
+   "by_category": {
+    "Cards": 13,
+    "Powers": 4,
+    "Relics": 1,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "BeatIntoShape",
+     "BigBang",
+     "Bulwark",
+     "Conqueror",
+     "Parry",
+     "RefineBlade",
+     "SeekingEdge",
+     "SovereignBlade",
+     "SpoilsOfBattle",
+     "SummonForth",
+     "SwordSage",
+     "TheSmith",
+     "WroughtInWar"
+    ],
+    "Powers": [
+     "ConquerorPower",
+     "FurnacePower",
+     "HammerTimePower",
+     "SwordSagePower"
+    ],
+    "Relics": [
+     "FencingManual"
+    ],
+    "Potions": [
+     "KingsCourage"
+    ]
+   }
+  },
+  "stars": {
+   "pattern": "\\bStars\\b|GainStars|LoseStars|StarCost|PlayerCmd\\.GainStars",
+   "total_files": 44,
+   "by_category": {
+    "Cards": 32,
+    "Powers": 4,
+    "Relics": 7,
+    "Potions": 1
+   },
+   "files": {
+    "Cards": [
+     "Alignment",
+     "AstralPulse",
+     "BigBang",
+     "CloakOfStars",
+     "Comet",
+     "Constellation",
+     "Convergence",
+     "CrescentSpear",
+     "DecisionsDecisions",
+     "Devastate",
+     "DyingStar",
+     "FallingStar",
+     "GammaBlast",
+     "GatherLight",
+     "Glow",
+     "GuidingStar",
+     "HiddenCache",
+     "KnockoutBlow",
+     "MeteorShower",
+     "NeutronAegis",
+     "ParticleWall",
+     "Quasar",
+     "Reflect",
+     "Resonance",
+     "RoyalGamble",
+     "SevenStars",
+     "ShiningStrike",
+     "SolarStrike",
+     "Stardust",
+     "TheSealedThrone",
+     "TheSmith",
+     "Venerate"
+    ],
+    "Powers": [
+     "GenesisPower",
+     "StarNextTurnPower",
+     "TheSealedThronePower",
+     "VoidFormPower"
+    ],
+    "Relics": [
+     "BrilliantScarf",
+     "ChemicalX",
+     "DivineDestiny",
+     "DivineRight",
+     "GalacticDust",
+     "LunarPastry",
+     "MummifiedHand"
+    ],
+    "Potions": [
+     "StarPotion"
+    ]
+   }
+  },
+  "summon_pet": {
+   "pattern": "PlayerCmd\\.AddPet|AddPet|IsPet|\\.Pets\\b|Summon",
+   "total_files": 35,
+   "by_category": {
+    "Cards": 13,
+    "Powers": 8,
+    "Relics": 4,
+    "Potions": 2,
+    "Monsters": 7,
+    "Characters": 1
+   },
+   "files": {
+    "Cards": [
+     "Afterlife",
+     "Bodyguard",
+     "Cleanse",
+     "DevourLife",
+     "Dirge",
+     "Invoke",
+     "LegionOfBone",
+     "NecroMastery",
+     "PullAggro",
+     "Reanimate",
+     "SicEm",
+     "Spur",
+     "SummonForth"
+    ],
+    "Powers": [
+     "DevourLifePower",
+     "DoubleDamagePower",
+     "SandpitPower",
+     "SicEmPower",
+     "SuckPower",
+     "SummonNextTurnPower",
+     "SurroundedPower",
+     "TrackingPower"
+    ],
+    "Relics": [
+     "BoundPhylactery",
+     "Byrdpip",
+     "PaelsLegion",
+     "PhylacteryUnbound"
+    ],
+    "Potions": [
+     "BoneBrew",
+     "FoulPotion"
+    ],
+    "Monsters": [
+     "Fabricator",
+     "Fogmog",
+     "LivingFog",
+     "Ovicopter",
+     "TheObscura",
+     "ToughEgg",
+     "TwoTailedRat"
+    ],
+    "Characters": [
+     "Necrobinder"
+    ]
+   }
+  },
+  "test_mode": {
+   "pattern": "TestMode\\.",
+   "total_files": 39,
+   "by_category": {
+    "Cards": 3,
+    "Powers": 4,
+    "Relics": 7,
+    "Potions": 2,
+    "Monsters": 21,
+    "Events": 1,
+    "Enchantments": 1
+   },
+   "files": {
+    "Cards": [
+     "BouncingFlask",
+     "HandOfGreed",
+     "Nightmare"
+    ],
+    "Powers": [
+     "ConfusedPower",
+     "InfestedPower",
+     "RollingBoulderPower",
+     "SandpitPower"
+    ],
+    "Relics": [
+     "CallingBell",
+     "Cauldron",
+     "FakeSneckoEye",
+     "LargeCapsule",
+     "LordsParasol",
+     "ScrollBoxes",
+     "SneckoEye"
+    ],
+    "Potions": [
+     "FoulPotion",
+     "SneckoOil"
+    ],
+    "Monsters": [
+     "BowlbugSilk",
+     "BygoneEffigy",
+     "DecimillipedeSegment",
+     "Flyconid",
+     "FuzzyWurmCrawler",
+     "Guardbot",
+     "KinFollower",
+     "LeafSlimeM",
+     "MagiKnight",
+     "Myte",
+     "Noisebot",
+     "SlumberingBeetle",
+     "SnappingJaxfruit",
+     "Stabbot",
+     "TorchHeadAmalgam",
+     "ToughEgg",
+     "Tunneler",
+     "TwigSlimeM",
+     "Vantom",
+     "WaterfallGiant",
+     "Zapbot"
+    ],
+    "Events": [
+     "DollRoom"
+    ],
+    "Enchantments": [
+     "Slither"
+    ]
+   }
+  },
+  "transform": {
+   "pattern": "CardCmd\\.Transform|Transform\\(",
+   "total_files": 22,
+   "by_category": {
+    "Cards": 7,
+    "Powers": 1,
+    "Relics": 7,
+    "Events": 7
+   },
+   "files": {
+    "Cards": [
+     "Begone",
+     "Charge",
+     "Compact",
+     "Dowsing",
+     "Guards",
+     "PrimalForce",
+     "Seance"
+    ],
+    "Powers": [
+     "EntropyPower"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "Astrolabe",
+     "Byrdpip",
+     "Claws",
+     "LeafyPoultice",
+     "NewLeaf",
+     "PandorasBox"
+    ],
+    "Events": [
+     "AromaOfChaos",
+     "EndlessConveyor",
+     "MorphicGrove",
+     "Symbiote",
+     "Trial",
+     "WhisperingHollow",
+     "WoodCarvings"
+    ]
+   }
+  },
+  "unlock": {
+   "pattern": "UnlockState",
+   "total_files": 54,
+   "by_category": {
+    "Cards": 16,
+    "Powers": 5,
+    "Relics": 13,
+    "Potions": 6,
+    "Events": 7,
+    "Modifiers": 2,
+    "Acts": 5
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "BundleOfJoy",
+     "Discovery",
+     "Distraction",
+     "Fasten",
+     "InfernalBlade",
+     "JackOfAllTrades",
+     "Jackpot",
+     "Largesse",
+     "MadScience",
+     "ManifestAuthority",
+     "Metamorphosis",
+     "Quasar",
+     "Splash",
+     "Stoke",
+     "WhiteNoise"
+    ],
+    "Powers": [
+     "CalamityPower",
+     "CallOfTheVoidPower",
+     "CreativeAiPower",
+     "HelloWorldPower",
+     "SpectrumShiftPower"
+    ],
+    "Relics": [
+     "BigHat",
+     "ChoicesParadox",
+     "Crossbow",
+     "DistinguishedCape",
+     "DustyTome",
+     "Kaleidoscope",
+     "LastingCandy",
+     "NeowsBones",
+     "OrangeDough",
+     "PrismaticGem",
+     "ScrollBoxes",
+     "Toolbox",
+     "VexingPuzzlebox"
+    ],
+    "Potions": [
+     "AttackPotion",
+     "ColorlessPotion",
+     "CosmicConcoction",
+     "OrobicAcid",
+     "PowerPotion",
+     "SkillPotion"
+    ],
+    "Events": [
+     "BattlewornDummy",
+     "ColorfulPhilosophers",
+     "EndlessConveyor",
+     "Orobas",
+     "PotionCourier",
+     "TheLegendsWereTrue",
+     "Wellspring"
+    ],
+    "Modifiers": [
+     "CharacterCards",
+     "CursedRun"
+    ],
+    "Acts": [
+     "DeprecatedAct",
+     "Glory",
+     "Hive",
+     "Overgrowth",
+     "Underdocks"
+    ]
+   }
+  },
+  "upgrade": {
+   "pattern": "CardCmd\\.Upgrade",
+   "total_files": 59,
+   "by_category": {
+    "Cards": 20,
+    "Powers": 3,
+    "Relics": 23,
+    "Potions": 3,
+    "Events": 10
+   },
+   "files": {
+    "Cards": [
+     "Abundance",
+     "Apotheosis",
+     "Armaments",
+     "Begone",
+     "Charge",
+     "Compact",
+     "Dirge",
+     "DrainPower",
+     "Guards",
+     "HiddenDaggers",
+     "Jackpot",
+     "KnifeTrap",
+     "Largesse",
+     "ManifestAuthority",
+     "PrimalForce",
+     "Quasar",
+     "Reave",
+     "Splash",
+     "Stoke",
+     "StormOfSteel"
+    ],
+    "Powers": [
+     "AggressionPower",
+     "DampenPower",
+     "ImprovementPower"
+    ],
+    "Relics": [
+     "ArchaicTooth",
+     "Astrolabe",
+     "Bellows",
+     "BoneTea",
+     "Claws",
+     "DustyTome",
+     "FishingRod",
+     "FragrantMushroom",
+     "FrozenEgg",
+     "LavaLamp",
+     "MoltenEgg",
+     "NeowsTalisman",
+     "PaelsTooth",
+     "Pomander",
+     "RazorTooth",
+     "SandCastle",
+     "SilverCrucible",
+     "StoneCracker",
+     "ToxicEgg",
+     "WarHammer",
+     "WarPaint",
+     "Whetstone",
+     "YummyCookie"
+    ],
+    "Potions": [
+     "BlessingOfTheForge",
+     "CosmicConcoction",
+     "CunningPotion"
+    ],
+    "Events": [
+     "AromaOfChaos",
+     "BattlewornDummy",
+     "DoorsOfLightAndDark",
+     "EndlessConveyor",
+     "Reflections",
+     "SapphireSeed",
+     "SpiritGrafter",
+     "TabletOfTruth",
+     "TheFutureOfPotions",
+     "Trial"
+    ]
+   }
+  }
+ }
+}

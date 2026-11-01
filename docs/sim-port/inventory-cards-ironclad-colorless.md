@@ -1,0 +1,467 @@
+# Inventory: Ironclad, Colorless, Event, Curse, Status, Token, Quest, Deprecated and mock cards
+
+2026-11-01 · Route C full port, W0 semantic classification · game v0.111.0 · 240 cards.
+
+Machine-readable companion: [`sim/specs/inventory/cards-ironclad-colorless.classified.json`](../../sim/specs/inventory/cards-ironclad-colorless.classified.json)
+(one entry per card, same order and ids as [`cards.json`](../../sim/specs/inventory/cards.json); field definitions in its `fields` block).
+Rule truth: decompile tree v0.111.0 (`output/server-bootstrap/linux-decompiled`), cited as `<ns-dir>/<File>.cs:<line>`
+with `MegaCrit.Sts2.Core.` dropped; the v0.107.1 tree was used only for the version diff and to read
+async bodies of files that are identical after normalisation. Scratch scripts (git-ignored): `tmp/sim-port/cards-ic/`
+(`condense.py` state-machine reader, `awaits.py` await order from state numbers, `vdiff.py` normalised diff, `build.py`, `mkdoc.py`).
+
+Slice: every `cards.json` entry outside the Silent, Defect, Necrobinder and Regent pools, i.e. pools IRONCLAD,
+COLORLESS, EVENT, CURSE, STATUS, TOKEN, QUEST, DEPRIVED (the 8 mocks) and DEPRECATED (`DeprecatedCard`, the only
+card outside the named pools). No card in the tree is `unlisted`.
+
+## 1. Summary
+
+| | Count |
+| --- | --: |
+| tier 1 | 150 |
+| tier 2 | 32 |
+| tier 3 | 47 |
+| tier 4 | 11 |
+| scope `game` | 214 |
+| scope `multiplayer_only` | 17 |
+| scope `test_only` | 8 |
+| scope `deprecated` | 1 |
+| already ported (P0) | 6 |
+| with a prompt entry (incl. 4 KnowledgeDemon options and 1 mock) | 21 |
+| card hook listeners (override an AbstractModel hook in combat) | 10 |
+| consume a run RNG stream in their own code | 26 |
+
+Tier rules (`fields.tier` in the JSON): 1 = numbers through facades the sim already has; 2 = needs facades or hooks
+that exist in the game but not in the sim; 3 = needs a player prompt or a new subsystem; 4 = decompile gap,
+cross-cutting, or test-only. A tier is the highest level among the card's `kernel_requirements`; power
+dependencies never raise it (they order batches instead).
+
+### 1.1 Tier by pool (cards have no act; acts apply to monsters and encounters)
+
+| Pool | Cards | Tier 1 | Tier 2 | Tier 3 | Tier 4 | Multiplayer-only | Ported |
+| --- | --: | --: | --: | --: | --: | --: | --: |
+| IRONCLAD | 90 | 63 | 15 | 12 | 0 | 5 | 3 |
+| COLORLESS | 65 | 41 | 9 | 15 | 0 | 12 | 0 |
+| EVENT | 28 | 18 | 3 | 6 | 1 | 0 | 0 |
+| CURSE | 18 | 11 | 2 | 3 | 2 | 0 | 2 |
+| STATUS | 12 | 11 | 1 | 0 | 0 | 0 | 1 |
+| TOKEN | 14 | 6 | 2 | 6 | 0 | 0 | 0 |
+| QUEST | 4 | 0 | 0 | 4 | 0 | 0 | 0 |
+| DEPRECATED | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
+| DEPRIVED | 8 | 0 | 0 | 0 | 8 | 0 | 0 |
+| **all** | 240 | 150 | 32 | 47 | 11 | 17 | 6 |
+
+### 1.2 Tier by pool and card type (scope `game` only)
+
+| Pool | Attack | Skill | Power | Curse | Status | Quest |
+| --- | --- | --- | --- | --- | --- | --- |
+| IRONCLAD | 25 / 8 / 4 / 0 | 17 / 5 / 7 / 0 | 19 / 0 / 0 / 0 | - | - | - |
+| COLORLESS | 6 / 3 / 6 / 0 | 15 / 3 / 8 / 0 | 12 / 0 / 0 / 0 | - | - | - |
+| EVENT | 8 / 1 / 1 / 1 | 8 / 2 / 5 / 0 | 2 / 0 / 0 / 0 | - | - | - |
+| CURSE | - | - | - | 11 / 2 / 3 / 2 | - | - |
+| STATUS | - | - | - | - | 11 / 1 / 0 / 0 | - |
+| TOKEN | 3 / 1 / 2 / 0 | 3 / 1 / 0 / 0 | - | - | 0 / 0 / 4 / 0 | - |
+| QUEST | - | - | - | - | - | 0 / 0 / 4 / 0 |
+
+Cells are tier 1 / 2 / 3 / 4 counts.
+
+## 2. Port batches
+
+Batches order the W3 content work for this slice; they assume the W1 kernel (choice API, hooks, Cmd facades,
+history, card factory) and, for batch 8, the W2 run layer. Within a batch, cards are independent.
+
+| Batch | Meaning | Cards | Ids |
+| --: | --- | --: | --- |
+| 0 | already ported in P0; re-verify against the expanded kernel | 6 | ASCENDERS_BANE, BASH, DEFEND_IRONCLAD, GREED, SLIMED, STRIKE_IRONCLAD |
+| 1 | tier 1 on the current sim: existing facades, every dependency already ported | 84 | ANOINTED, BAD_LUCK, BECKON, BLOODLETTING, BLOOD_WALL, BLUDGEON, BREAK, BREAKTHROUGH, BRIGHTEST_FLAME, BURN, BYRD_SWOOP, CALTROPS, CINDER, CLASH, CLUMSY, CONFLAGRATION, CURSE_OF_THE_BELL, DAZED, DEBRIS, DECAY, DISMANTLE, DOMINATE, DOUBT, DRAMATIC_ENTRANCE, ENLIGHTENMENT, ENTRENCH, EXTERMINATE, FEED, FIEND_FIRE, FIGHT_ME, FINESSE, FISTICUFFS, FLASH_OF_STEEL, FOLLY, FORGOTTEN_RITUAL, FUEL, GIANT_ROCK, HEMOKINESIS, IMPATIENCE, IMPERVIOUS, INFECTION, INFLAME, INJURY, IRON_WAVE, LUMINESCE, MASTER_OF_STRATEGY, MINION_DIVE_BOMB, MINION_SACRIFICE, MINION_STRIKE, MOLTEN_FIST, NOT_YET, OFFERING, PACTS_END, PECK, PILLAGE, POMMEL_STRIKE, POOR_SLEEP, PRODUCTION, PROWESS, RESTLESSNESS, RIP_AND_TEAR, SCRAWL, SECOND_WIND, SHAME, SHOCKWAVE, SHRUG_IT_OFF, SOOT, SPORE_MIND, SQUASH, SWORD_BOOMERANG, TAUNT, THUNDERCLAP, TOXIC, TREMBLE, TWIN_STRIKE, ULTIMATE_DEFEND, ULTIMATE_STRIKE, UPPERCUT, VOLLEY, WHIRLWIND, WHISTLE, WITHER, WOUND, WRITHE |
+| 2 | tier 1 logic, but applies or reads powers (or uses tokens) not yet ported: after those powers land | 52 | AGGRESSION, APPARITION, AUTOMATION, BARRICADE, BATTLE_TRANCE, CALAMITY, COLOSSUS, CORRUPTION, CRIMSON_MANTLE, CRUELTY, DARK_EMBRACE, DARK_SHACKLES, DEMON_FORM, ENTROPY, EQUILIBRIUM, ETERNAL_ARMOR, FASTEN, FEEDING_FRENZY, FEEL_NO_PAIN, FLAME_BARRIER, FRANTIC_ESCAPE, HELLO_WORLD, HELLRAISER, INFERNO, JUGGERNAUT, JUGGLING, MANGLE, MAYHEM, NOSTALGIA, ONE_TWO_PUNCH, OUTMANEUVER, PANACHE, PANIC_BUTTON, PREP_TIME, PROLONG, PYRE, RAGE, REBOUND, RELAX, ROLLING_BOULDER, RUPTURE, SALVO, SETUP_STRIKE, STAMPEDE, STONE_ARMOR, STRATAGEM, THE_BOMB, THE_GAMBIT, TORIC_TOUGHNESS, UNMOVABLE, UNRELENTING, VICIOUS |
+| 3 | tier 2: needs kernel facades/hooks missing from the sim (card hook listeners, CardCmd.Upgrade/Transform/AutoPlay, CreateClone/CreateCard, Calculated* vars, AttackContext, per-instance card state) | 27 | ANGER, APOTHEOSIS, ASHEN_STRIKE, BEAT_DOWN, BODY_SLAM, BULLY, CASCADE, CATASTROPHE, DRUM_OF_BATTLE, ENTHRALLED, EXPECT_A_FIGHT, HAVOC, HIDDEN_GEM, HOWL_FROM_BEYOND, MAUL, MIND_BLAST, OMNISLICE, PERFECTED_STRIKE, PRIMAL_FORCE, RAMPAGE, REGRET, REND, SHIV, SOUL, STACK, THRASH, VOID |
+| 4 | tier 3, combat history: CombatHistory queries (CardExhausted, DamageReceived, CardPlayStarted/Finished) | 8 | BOLAS, EVIL_EYE, GOLD_AXE, NORMALITY, SPITE, STOMP, TEAR_ASUNDER, THRUMMING_HATCHET |
+| 5 | tier 3, player prompts: choice API (HandSelect, HandUpgrade, PileSelect, ChooseCard) | 13 | ARMAMENTS, BRAND, BURNING_PACT, DUAL_WIELD, HEADBUTT, NEOWS_FURY, PURITY, SECRET_TECHNIQUE, SECRET_WEAPON, SEEKER_STRIKE, THINKING_AHEAD, TRUE_GRIT, WISH |
+| 6 | tier 3, card generation: CardFactory + UnlockState + ordered pool data | 9 | ABUNDANCE, DISCOVERY, DISTRACTION, INFERNAL_BLADE, JACKPOT, JACK_OF_ALL_TRADES, METAMORPHOSIS, SPLASH, STOKE |
+| 7 | tier 3, other subsystems: potions, run gold, Osty, Forge, monster-driven prompt (KnowledgeDemon) | 9 | ALCHEMIZE, DEBT, DISINTEGRATION, HAND_OF_GREED, MIND_ROT, SLOTH, SOVEREIGN_BLADE, SWEEPING_GAZE, WASTE_AWAY |
+| 8 | run layer: deck-resident quest/curse hooks, saved properties, deck removal, event-driven card state | 7 | BYRDONIS_EGG, DEPRECATED_CARD, DOWSING, GUILTY, LANTERN_KEY, MAD_SCIENCE, SPOILS_MAP |
+| 9 | multiplayer-only: unreachable in single-player pools; port last or never | 17 | BEACON_OF_HOPE, BELIEVE_IN_YOU, BLAZE, COORDINATE, DEMONIC_SHIELD, GANG_UP, HUDDLE_UP, INTERCEPT, KNOCKDOWN, LIFT, MIDNIGHT, MIMIC, OUTRAGE, RALLY, TAG_TEAM, TANK, THE_BALL |
+| - | excluded: test-only mocks (keep as test doubles, never registered as game content) | 8 | MOCK_ATTACK_CARD, MOCK_CARD_MODEL, MOCK_CURSE_CARD, MOCK_POWER_CARD, MOCK_QUEST_CARD, MOCK_SKILL_CARD, MOCK_STATUS_CARD, MOCK_TURN_END_IN_HAND_RECORDER_CARD |
+
+## 3. Dependency order
+
+### 3.1 Kernel features that must precede the cards
+
+| Kernel feature (W1 unless noted) | Cards | Ids |
+| --- | --: | --- |
+| Choice API: HandSelect (CardSelectCmd.FromHand / FromHandForDiscard) | 7 | BRAND, BURNING_PACT, DUAL_WIELD, MOCK_SKILL_CARD, PURITY, THINKING_AHEAD, TRUE_GRIT |
+| Choice API: HandUpgrade (CardSelectCmd.FromHandForUpgrade) | 1 | ARMAMENTS |
+| Choice API: PileSelect (CardSelectCmd.FromCombatPile) | 6 | HEADBUTT, NEOWS_FURY, SECRET_TECHNIQUE, SECRET_WEAPON, SEEKER_STRIKE, WISH |
+| Choice API: ChooseCard (CardSelectCmd.FromChooseACardScreen) | 3 | ABUNDANCE, DISCOVERY, SPLASH |
+| Monster-driven prompt (KnowledgeDemon.ChooseCurse) | 4 | DISINTEGRATION, MIND_ROT, SLOTH, WASTE_AWAY |
+| Card hook listeners (cards in combat piles as AbstractModel listeners) | 10 | BOLAS, DRUM_OF_BATTLE, ENTHRALLED, HOWL_FROM_BEYOND, MIDNIGHT, NORMALITY, REGRET, STOMP, THRUMMING_HATCHET, VOID |
+| Missing Hook dispatchers / virtuals | 2 | GUILTY, HOWL_FROM_BEYOND |
+| Hook parameters to restore (participants, AutoPlayType) | 2 | ENTHRALLED, REGRET |
+| CardCmd.Upgrade | 6 | ABUNDANCE, APOTHEOSIS, JACKPOT, PRIMAL_FORCE, SPLASH, STOKE |
+| CardCmd.Transform (combat) | 1 | PRIMAL_FORCE |
+| CardCmd.AutoPlay / CardPileCmd.AutoPlayFromDrawPile | 5 | BEAT_DOWN, CASCADE, CATASTROPHE, HAVOC, HOWL_FROM_BEYOND |
+| CardPileCmd.AddGeneratedCardsToCombat (batch) | 3 | SHIV, SOUL, STOKE |
+| Card creation: CreateClone / CreateCloneForPlayer / CombatState.CreateCard<T> | 6 | ANGER, DUAL_WIELD, OUTRAGE, PRIMAL_FORCE, SHIV, SOUL |
+| DynamicVar family: CalculatedDamageVar / CalculatedBlockVar / CalculatedVar | 15 | ASHEN_STRIKE, BODY_SLAM, BULLY, DEMONIC_SHIELD, EXPECT_A_FIGHT, GANG_UP, GOLD_AXE, MIMIC, MIND_BLAST, NORMALITY, PERFECTED_STRIKE, REND, SOVEREIGN_BLADE, STACK, TEAR_ASUNDER |
+| Per-instance card state, AfterDowngraded, AfterCloned | 6 | MAUL, RAMPAGE, REGRET, SOVEREIGN_BLADE, THE_BALL, THRASH |
+| AttackContext (CreatureCmd.Damage as an attack) | 1 | OMNISLICE |
+| CombatHistory queries | 10 | BOLAS, EVIL_EYE, GANG_UP, GOLD_AXE, MIDNIGHT, NORMALITY, SPITE, STOMP, TEAR_ASUNDER, THRUMMING_HATCHET |
+| Card generation: CardFactory + UnlockState | 10 | ABUNDANCE, DISCOVERY, DISTRACTION, INFERNAL_BLADE, JACKPOT, JACK_OF_ALL_TRADES, MAD_SCIENCE, METAMORPHOSIS, SPLASH, STOKE |
+| Potions runtime | 1 | ALCHEMIZE |
+| Run gold (PlayerCmd.GainGold/LoseGold, RunEffects gold) | 3 | DEBT, HAND_OF_GREED, SPOILS_MAP |
+| Osty (Necrobinder pet) | 1 | SWEEPING_GAZE |
+| Forge (Regent Sovereign Blade) | 1 | SOVEREIGN_BLADE |
+| Run layer: deck-card hooks, saved properties, quests, deck removal | 7 | BYRDONIS_EGG, DEPRECATED_CARD, DOWSING, GUILTY, LANTERN_KEY, MAD_SCIENCE, SPOILS_MAP |
+| Decompile gap (InitializeArray / LdMemberToken) | 2 | ASCENDERS_BANE, FOLLY |
+
+Card hook listeners by hook (game listener order puts cards after orbs: Hand, Draw, Discard, Exhaust, Play, each
+card followed by its affliction and enchantment, `Combat/CombatState.cs:895-914`):
+
+| Hook | In sim (virtual) | Cards |
+| --- | :-: | --- |
+| `AfterAutoPostPlayPhaseEntered` | no | HOWL_FROM_BEYOND |
+| `AfterCardDrawn` | yes | VOID |
+| `AfterCardEnteredCombat` | yes | MIDNIGHT, STOMP |
+| `AfterCardExhausted` | yes | DRUM_OF_BATTLE, MIDNIGHT |
+| `BeforeCardPlayed` | yes | STOMP |
+| `BeforeHandDraw` | yes | BOLAS, THRUMMING_HATCHET |
+| `BeforeSideTurnEnd` | yes | REGRET |
+| `ShouldPlay` | yes | ENTHRALLED, NORMALITY |
+
+Hook parameters the P0 sim dropped but these cards read: `participants` on `BeforeSideTurnEnd` (Regret),
+`AutoPlayType` on `ShouldPlay` (Enthralled). `CardModel.CanPlay` consults `Hook.ShouldPlay(..., AutoPlayType.None)`
+(`Models/CardModel.cs:3351`), so Enthralled and Normality change the legal-action set.
+
+### 3.2 Powers that must precede the cards
+
+Applied or read by the card (`depends_on.powers`; hover-tip references excluded). Already in the sim:
+`DEXTERITY_POWER`, `FRAIL_POWER`, `STRENGTH_POWER`, `THORNS_POWER`, `VULNERABLE_POWER`, `WEAK_POWER`.
+
+| Power (not yet ported) | Cards |
+| --- | --- |
+| `ENERGY_NEXT_TURN_POWER` | OUTMANEUVER, RELAX |
+| `PLATING_POWER` | ETERNAL_ARMOR, STONE_ARMOR |
+| `RETAIN_HAND_POWER` | EQUILIBRIUM, SALVO |
+| `AGGRESSION_POWER` | AGGRESSION |
+| `AUTOMATION_POWER` | AUTOMATION |
+| `BARRICADE_POWER` | BARRICADE |
+| `BEACON_OF_HOPE_POWER` | BEACON_OF_HOPE |
+| `BLOCK_NEXT_TURN_POWER` | PROLONG |
+| `CALAMITY_POWER` | CALAMITY |
+| `COLOSSUS_POWER` | COLOSSUS |
+| `COORDINATE_POWER` | COORDINATE |
+| `CORRUPTION_POWER` | CORRUPTION |
+| `COVERED_POWER` | INTERCEPT |
+| `CRIMSON_MANTLE_POWER` | CRIMSON_MANTLE |
+| `CRUELTY_POWER` | CRUELTY |
+| `CURIOUS_POWER` | MAD_SCIENCE |
+| `DARK_EMBRACE_POWER` | DARK_EMBRACE |
+| `DARK_SHACKLES_POWER` | DARK_SHACKLES |
+| `DEMON_FORM_POWER` | DEMON_FORM |
+| `DISINTEGRATION_POWER` | DISINTEGRATION |
+| `DRAW_CARDS_NEXT_TURN_POWER` | RELAX |
+| `ENTROPY_POWER` | ENTROPY |
+| `FAN_OF_KNIVES_POWER` | SHIV |
+| `FASTEN_POWER` | FASTEN |
+| `FEEDING_FRENZY_POWER` | FEEDING_FRENZY |
+| `FEEL_NO_PAIN_POWER` | FEEL_NO_PAIN |
+| `FLAME_BARRIER_POWER` | FLAME_BARRIER |
+| `FREE_ATTACK_POWER` | UNRELENTING |
+| `HELLO_WORLD_POWER` | HELLO_WORLD |
+| `HELLRAISER_POWER` | HELLRAISER |
+| `IMPROVEMENT_POWER` | MAD_SCIENCE |
+| `INFERNO_POWER` | INFERNO |
+| `INTANGIBLE_POWER` | APPARITION |
+| `JUGGERNAUT_POWER` | JUGGERNAUT |
+| `JUGGLING_POWER` | JUGGLING |
+| `KNOCKDOWN_POWER` | KNOCKDOWN |
+| `MANGLE_POWER` | MANGLE |
+| `MAYHEM_POWER` | MAYHEM |
+| `MIND_ROT_POWER` | MIND_ROT |
+| `NOSTALGIA_POWER` | NOSTALGIA |
+| `NO_BLOCK_POWER` | PANIC_BUTTON |
+| `NO_DRAW_POWER` | BATTLE_TRANCE |
+| `ONE_TWO_PUNCH_POWER` | ONE_TWO_PUNCH |
+| `PANACHE_POWER` | PANACHE |
+| `PARRY_POWER` | SOVEREIGN_BLADE |
+| `PREP_TIME_POWER` | PREP_TIME |
+| `PYRE_POWER` | PYRE |
+| `RAGE_POWER` | RAGE |
+| `REBOUND_POWER` | REBOUND |
+| `ROLLING_BOULDER_POWER` | ROLLING_BOULDER |
+| `RUPTURE_POWER` | RUPTURE |
+| `SANDPIT_POWER` | FRANTIC_ESCAPE |
+| `SEEKING_EDGE_POWER` | SOVEREIGN_BLADE |
+| `SETUP_STRIKE_POWER` | SETUP_STRIKE |
+| `SLOTH_POWER` | SLOTH |
+| `STAMPEDE_POWER` | STAMPEDE |
+| `STRANGLE_POWER` | MAD_SCIENCE |
+| `STRATAGEM_POWER` | STRATAGEM |
+| `TAG_TEAM_POWER` | TAG_TEAM |
+| `TANK_POWER` | TANK |
+| `THE_BOMB_POWER` | THE_BOMB |
+| `THE_GAMBIT_POWER` | THE_GAMBIT |
+| `TORIC_TOUGHNESS_POWER` | TORIC_TOUGHNESS |
+| `UNMOVABLE_POWER` | UNMOVABLE |
+| `VICIOUS_POWER` | VICIOUS |
+| `WASTE_AWAY_POWER` | WASTE_AWAY |
+
+Ported powers used by this slice: `VULNERABLE_POWER` (13); `STRENGTH_POWER` (9); `WEAK_POWER` (4); `DEXTERITY_POWER` (2); `THORNS_POWER` (1); `FRAIL_POWER` (1).
+
+### 3.3 Card-to-card and creator dependencies
+
+| Card | Needs card first | Note |
+| --- | --- | --- |
+| DOWSING | ABUNDANCE | created/transformed into by this card |
+| PRIMAL_FORCE | GIANT_ROCK | created/transformed into by this card |
+
+Tokens created by other slices or other kinds (port each token together with its first creator):
+
+| Token | Created by |
+| --- | --- |
+| DISINTEGRATION | monsters/KnowledgeDemon |
+| FUEL | cards/Compact |
+| GIANT_ROCK | cards/PrimalForce |
+| LUMINESCE | relics/RadiantPearl |
+| MIND_ROT | monsters/KnowledgeDemon |
+| MINION_DIVE_BOMB | cards/Charge |
+| MINION_SACRIFICE | cards/Guards |
+| MINION_STRIKE | cards/Begone |
+| SHIV | cards/BladeDance, cards/CloakAndDagger, cards/FanOfKnives, cards/InfiniteBlades, cards/LeadingStrike, potions/CunningPotion, relics/NinjaScroll, (19 sources) |
+| SLOTH | monsters/KnowledgeDemon |
+| SOUL | cards/CaptureSpirit, cards/Haunt, cards/Reave, cards/Seance, relics/FuneraryMask, (17 sources) |
+| SOVEREIGN_BLADE | cards/RefineBlade, cards/SummonForth, cards/Conqueror, potions/KingsCourage, relics/FencingManual, (19 sources) |
+| SWEEPING_GAZE | cards/SentryMode, powers/SentryModePower |
+| WASTE_AWAY | monsters/KnowledgeDemon |
+
+Statuses and curses that monsters, encounters or powers put into combat (port with those monsters):
+
+| Card | Sources |
+| --- | --- |
+| BECKON | monsters/SoulFysh |
+| BURN | cards/Overclock, monsters/MechaKnight, monsters/TestSubject |
+| DAZED | monsters/Chomper, monsters/EyeWithTeeth, monsters/HauntedShip, monsters/Noisebot, cards/BoostAway, powers/PersonalHivePower |
+| DEBRIS | cards/CollisionCourse, cards/CrashLanding |
+| FRANTIC_ESCAPE | monsters/TheInsatiable |
+| INFECTION | monsters/PhrogParasite, monsters/Wriggler, encounters/PhrogParasiteElite |
+| SLIMED | monsters/LeafSlimeM, monsters/LeafSlimeS, monsters/TwigSlimeM, monsters/SlimedBerserker, cards/GunkUp |
+| TOXIC | monsters/Myte |
+| VOID | cards/Turbo |
+| WITHER | monsters/Aeonglass, powers/WitheringPresencePower |
+| WOUND | monsters/Vantom, powers/PainfulStabsPower, cards/FightThrough |
+
+Event, relic and ancient sources (run layer W2, then W3 relic/event batches):
+
+| Card | Sources |
+| --- | --- |
+| APOTHEOSIS | relics/JewelryBox |
+| APPARITION | relics/DistinguishedCape |
+| ASCENDERS_BANE | Entities.Ascension/AscensionManager.cs:33-35 (starting deck at A5+) |
+| BAD_LUCK | events/Reflections |
+| BREAK | relics/ArchaicTooth (transforms Bash, Models.Relics/ArchaicTooth.cs:50, :99) |
+| BRIGHTEST_FLAME | relics/Storybook |
+| BYRDONIS_EGG | events/ByrdonisNest, relics/Byrdpip |
+| BYRD_SWOOP | relics/Byrdpip |
+| CALTROPS | events/TrashHeap |
+| CLASH | events/TrashHeap |
+| CLUMSY | events/ThisOrThat |
+| CORRUPTION | relics/DustyTome (random non-transcendence Ancient card of the character pool, PlayerRng.Rewards, Models.Relics/DustyTome.cs:121-122) |
+| CURSE_OF_THE_BELL | relics/CallingBell |
+| DAZED | relics/BlessedAntler, relics/TeaOfDiscourtesy |
+| DEBT | events/CrystalSphere |
+| DECAY | events/GraveOfTheForgotten, events/LostWisp |
+| DISTRACTION | events/TrashHeap |
+| DOUBT | events/Trial, relics/ArchaicTooth |
+| DOWSING | relics/DowsingRod |
+| DUAL_WIELD | events/TrashHeap |
+| ENLIGHTENMENT | events/ZenWeaver |
+| ENTHRALLED | relics/BloodSoakedRose |
+| ENTRENCH | events/TrashHeap |
+| EXTERMINATE | events/Bugslayer |
+| FEEDING_FRENZY | events/EndlessConveyor |
+| FOLLY | relics/PreservedFog |
+| GREED | events/SunkenTreasury, relics/CursedPearl |
+| GUILTY | events/Wellspring, relics/NeowsSacrifice |
+| HELLO_WORLD | events/TrashHeap |
+| INJURY | events/PunchOff, relics/HeftyTablet |
+| LANTERN_KEY | events/TheLanternKey, events/WarHistorianRepy |
+| LUMINESCE | relics/RadiantPearl |
+| MAD_SCIENCE | events/TinkerTime |
+| MAUL | relics/Claws |
+| METAMORPHOSIS | events/SpiritGrafter |
+| NEOWS_FURY | relics/NeowsTorment |
+| NORMALITY | events/FieldOfManSizedHoles |
+| OUTMANEUVER | events/TrashHeap |
+| PECK | events/WoodCarvings |
+| POOR_SLEEP | events/UnrestSite |
+| REBOUND | events/TrashHeap |
+| REGRET | events/Trial |
+| RELAX | relics/PaelsHorn |
+| RIP_AND_TEAR | events/TrashHeap |
+| SHAME | events/Trial |
+| SHIV | relics/NinjaScroll |
+| SOOT | relics/BiiigHug |
+| SOUL | relics/FuneraryMask |
+| SOVEREIGN_BLADE | relics/FencingManual |
+| SPOILS_MAP | events/TheLegendsWereTrue |
+| SPORE_MIND | events/LuminousChoir |
+| SQUASH | events/Bugslayer |
+| STACK | events/TrashHeap |
+| TORIC_TOUGHNESS | events/WoodCarvings |
+| ULTIMATE_DEFEND | events/Amalgamator |
+| ULTIMATE_STRIKE | events/Amalgamator |
+| WHISTLE | relics/TanxsWhistle |
+| WISH | relics/SereTalon |
+
+## 4. Player prompts
+
+| Prompt type | Game entry | Pile / options | Sites | Cards |
+| --- | --- | --- | --: | --- |
+| HandSelect | `CardSelectCmd.FromHand` | Hand | 6 | BRAND, BURNING_PACT, DUAL_WIELD, PURITY, THINKING_AHEAD, TRUE_GRIT |
+| ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated (by KnowledgeDemon) | 4 | DISINTEGRATION, MIND_ROT, SLOTH, WASTE_AWAY |
+| PileSelect | `CardSelectCmd.FromCombatPile` | Draw | 4 | SECRET_TECHNIQUE, SECRET_WEAPON, SEEKER_STRIKE, WISH |
+| ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated | 3 | ABUNDANCE, DISCOVERY, SPLASH |
+| PileSelect | `CardSelectCmd.FromCombatPile` | Discard | 2 | HEADBUTT, NEOWS_FURY |
+| HandSelect | `CardSelectCmd.FromHandForDiscard` | Hand | 1 | MOCK_SKILL_CARD |
+| HandUpgrade | `CardSelectCmd.FromHandForUpgrade` | Hand | 1 | ARMAMENTS |
+
+By type: ChooseCard 7, HandSelect 7, PileSelect 6, HandUpgrade 1.
+Details per site (min/max, filter, skip, condition) are in each entry's `prompts`. Select ranges:
+
+| Card | Type | min | max | Filter | Skip | When |
+| --- | --- | --- | --- | --- | :-: | --- |
+| ABUNDANCE | ChooseCard | 1 | 1 | Type == Power |  | always |
+| ARMAMENTS | HandUpgrade | 1 | 1 | IsUpgradable |  | only if not upgraded; auto when <=1 upgradable card |
+| BRAND | HandSelect | 1 | 1 | - |  | always |
+| BURNING_PACT | HandSelect | 1 | 1 | - |  | always |
+| DISCOVERY | ChooseCard | 1 | 1 | - | Y | always |
+| DISINTEGRATION | ChooseCard | 1 | 1 | - |  | offered by monster KnowledgeDemon.ChooseCurse during the enemy turn (BlockingPlayerChoiceContext, Models.Monsters/KnowledgeDemon.cs:124); the prompt belongs to the monster |
+| DUAL_WIELD | HandSelect | 1 | 1 | Type is Attack or Power |  | always |
+| HEADBUTT | PileSelect | 1 | 1 | - |  | always (empty discard -> no prompt) |
+| MIND_ROT | ChooseCard | 1 | 1 | - |  | offered by monster KnowledgeDemon.ChooseCurse during the enemy turn (BlockingPlayerChoiceContext, Models.Monsters/KnowledgeDemon.cs:124); the prompt belongs to the monster |
+| NEOWS_FURY | PileSelect | 0 | min(Cards, MaxCardsInHand - hand) | - | Y | only if the computed max > 0; RequireManualConfirmation (min != max) |
+| PURITY | HandSelect | 0 | Cards (3, upgraded 5) | - | Y | always; RequireManualConfirmation (min != max) |
+| SECRET_TECHNIQUE | PileSelect | 1 | 1 | Type == Skill |  | always |
+| SECRET_WEAPON | PileSelect | 1 | 1 | Type == Attack |  | always |
+| SEEKER_STRIKE | PileSelect | 1 | 1 | card in StableShuffle(draw, CombatCardSelection).Take(Cards) |  | always |
+| SLOTH | ChooseCard | 1 | 1 | - |  | offered by monster KnowledgeDemon.ChooseCurse during the enemy turn (BlockingPlayerChoiceContext, Models.Monsters/KnowledgeDemon.cs:124); the prompt belongs to the monster |
+| SPLASH | ChooseCard | 1 | 1 | - | Y | always |
+| THINKING_AHEAD | HandSelect | 1 | 1 | - |  | after the draw |
+| TRUE_GRIT | HandSelect | 1 | 1 | - |  | only if upgraded |
+| WASTE_AWAY | ChooseCard | 1 | 1 | - |  | offered by monster KnowledgeDemon.ChooseCurse during the enemy turn (BlockingPlayerChoiceContext, Models.Monsters/KnowledgeDemon.cs:124); the prompt belongs to the monster |
+| WISH | PileSelect | 1 | 1 | - |  | always |
+
+No orb, scry, stance or relic prompt exists in this slice. Prompts reached through powers the cards apply
+(EntropyPower, StratagemPower; MayhemPower autoplays) belong to the power inventory.
+
+## 5. RNG streams
+
+| Stream | Cards | Ids |
+| --- | --: | --- |
+| `CombatCardGeneration` | 10 | ABUNDANCE, DISCOVERY, DISTRACTION, INFERNAL_BLADE, JACKPOT, JACK_OF_ALL_TRADES, MAD_SCIENCE, METAMORPHOSIS, SPLASH, STOKE |
+| `CombatTargets` | 9 | BEAT_DOWN, CASCADE, CATASTROPHE, HAVOC, RIP_AND_TEAR, SWEEPING_GAZE, SWORD_BOOMERANG, THE_BALL, VOLLEY |
+| `CombatCardSelection` | 6 | ANOINTED, CINDER, HIDDEN_GEM, SEEKER_STRIKE, THRASH, TRUE_GRIT |
+| `Shuffle` | 6 | BEAT_DOWN, CASCADE, CATASTROPHE, HAVOC, METAMORPHOSIS, THE_BALL |
+| `CombatPotionGeneration` | 1 | ALCHEMIZE |
+
+No card uses `PlayerRngType`, the encounter/monster private `Rng`, or `Rng.Chaotic` in rule code. Implicit draws that
+are not listed per card: `RunRngType.Shuffle` whenever a draw empties the draw pile, and `CombatTargets` inside
+`CardCmd.AutoPlay` for AnyEnemy cards without a target (`Commands/CardCmd.cs:411`). In-combat generation excludes
+Basic, Ancient and Event rarity and `CanBeGeneratedInCombat == false` cards (`Factories/CardFactory.cs:120`).
+
+## 6. Version delta v0.107.1 -> v0.111.0
+
+Method: per file, compare constructor arguments, CanonicalVars (types and literal arguments), keywords, tags,
+OnUpgrade, literal property overrides, the overridden-member set, multisets of Cmd/enum/var/call tokens and
+numbers in logic, the CalculatedVar multiplier tokens, and the await order recovered from state numbers; every
+flagged file was then read by hand. Counts: same 197, rule-change 27, cosmetic 8, new 7, decompile-gap 1.
+
+| Card | Status | Change |
+| --- | --- | --- |
+| ABUNDANCE | new | not in v0.107.1; added with the Dowsing quest |
+| ASCENDERS_BANE | rule-change | adds CanBeGeneratedInCombat => false; v0.111.0 keyword array unreadable (LdMemberToken), v0.107.1 = Eternal, Unplayable, Ethereal |
+| BEACON_OF_HOPE | rule-change | cost 1 -> 2 |
+| BLAZE | new | not in v0.107.1 |
+| BLOODLETTING | rule-change | rarity Common -> Uncommon |
+| BRIGHTEST_FLAME | rule-change | max HP loss 1 -> 2 |
+| COLOSSUS | rule-change | block 5 -> 4 |
+| CRIMSON_MANTLE | rule-change | CrimsonMantlePower 8 -> 7, upgrade +2 -> +3 |
+| CRUELTY | rule-change | rarity Rare -> Uncommon |
+| DEMON_FORM | rule-change | PowerVar<StrengthPower> 2 -> 3 |
+| DOMINATE | rule-change | rarity Uncommon -> Rare |
+| DOWSING | new | not in v0.107.1 (quest from relic DowsingRod) |
+| EXPECT_A_FIGHT | rule-change | redesigned: v0.107.1 cost 2, energy per Attack in hand + NoEnergyGainPower (upgrade cost -1); v0.111.0 cost 3, block 15 + 5 x Strength (upgrade +1 / +3) |
+| FOLLY | decompile-gap | v0.111.0 keyword array unreadable (LdMemberToken); every readable member identical to v0.107.1 |
+| FORGOTTEN_RITUAL | rule-change | v0.107.1 gained energy only if a card of the owner was exhausted this turn; v0.111.0 gains it unconditionally |
+| FUEL | rule-change | v0.107.1 energy 1 + draw 1 (upgrade +1 card); v0.111.0 energy 1 only (upgrade +1 energy) |
+| GIANT_ROCK | rule-change | damage 16 -> 20 |
+| HOWL_FROM_BEYOND | rule-change | damage 16 -> 18, upgrade +5 -> +6 |
+| MAD_SCIENCE | rule-change | Violence: N separate DamageCmd.Attack calls -> one attack WithHitCount(N); Chaos card via AddGeneratedCardToCombat instead of CardPileCmd.Add |
+| MANGLE | rule-change | damage 15 -> 20, upgrade +5 -> +6 |
+| MAUL | rule-change | Increase 1 -> 2 |
+| MIDNIGHT | new | not in v0.107.1 |
+| MINION_SACRIFICE | rule-change | block 8 -> 7 |
+| MOCK_TURN_END_IN_HAND_RECORDER_CARD | new | test mock, not in v0.107.1 |
+| OUTRAGE | new | not in v0.107.1 |
+| PACTS_END | rule-change | damage 17 -> 18 |
+| RAMPAGE | rule-change | damage 9 -> 10, Increase upgrade +4 -> +5 |
+| RELAX | rule-change | block 15 -> 16 |
+| REND | rule-change | cost 2 -> 1, CalculationBase 15 -> 10, upgrade base +3 -> +2 |
+| SALVO | rule-change | rarity Rare -> Uncommon |
+| SETUP_STRIKE | rule-change | SetupStrikePower 2 -> 3 |
+| SPLASH | rule-change | rarity Uncommon -> Rare |
+| TAUNT | rule-change | rarity Uncommon -> Common, block 7 -> 6 |
+| THE_BALL | new | not in v0.107.1 |
+| WHISTLE | rule-change | cost 3 -> 2 |
+
+Cosmetic: HUDDLE_UP (CardPileCmd.Draw -> DrawWithoutBlockingOnOtherPlayers (multiplayer-only card)), MOCK_CARD_MODEL (test mock: IsMock and Pool => DeprivedCardPool added), MOCK_SKILL_CARD (test mock: only state-machine numbering differs), SHIV (CreateInHand gains optional creator (creator ?? owner); identical in single player), SOUL (CreateInHand gains optional creator (creator ?? owner); identical in single player), SOVEREIGN_BLADE (VFX node calls only), TANK (adds description vars DamageIncrease 1.5 / DamageDecrease 0.5; TankPower keeps its own constants (Models.Powers/TankPower.cs:113-124)), WITHER (fake-upgrade title/portrait overrides added (UI only)).
+
+Engine-level differences seen in every attack card (not counted per card): `FromCard(card)` became
+`FromCard(card, cardPlay)` and `CreatureCmd.Damage` gained a `cardPlay` argument. Every card that the corpus
+inventory flags (`corpus-inventory.json` `version_diff_v0_107_1_vs_v0_111_0`) is flagged here too; after reading,
+DualWield, Omnislice, FiendFire and Whirlwind are decompile-format noise (same effects and order) and HuddleUp, Shiv,
+Soul, Tank and Wither are cosmetic.
+
+## 7. Decompile-unreadable code (re-decompile with reference assemblies or read the IL)
+
+| File | What is unreadable | Effect on this slice | Fallback |
+| --- | --- | --- | --- |
+| `Models.Cards/AscendersBane.cs:16-22` | `CanonicalKeywords` array (`RuntimeHelpers.InitializeArray`, LdMemberToken) | keywords of AscendersBane | v0.107.1: Eternal, Unplayable, Ethereal (already used by the P0 port) |
+| `Models.Cards/Folly.cs:14-20` | `CanonicalKeywords` array (same pattern) | keywords of Folly | v0.107.1: Unplayable, Eternal, Innate, Ethereal |
+| `Models.Monsters/KnowledgeDemon.cs:772-773` | `int[3]` per-cycle values | DynamicVars[DisintegrationPower] of the Disintegration option | v0.107.1 tree |
+| `Models.Events/TinkerTime.cs` | `RiderEffect[3]` tables | which riders MadScience can carry (event side) | v0.107.1 tree |
+| `Commands/CreatureCmd.cs:4105-4124` | `Stun` local `Wrapper` state machine is referenced but has no body (`sim/specs/pipeline.md` section 9) | Whistle (first stunning card) | sim runs the stun move directly (no-op) |
+
+All other files in the slice read cleanly; `/*cast due to .constrained prefix*/` remarks (9 files) are harmless.
+
+## 8. Multiplayer-only cards (batch 9)
+
+`MultiplayerConstraint => MultiplayerOnly`; `CardPoolModel.GetUnlockedCards` removes them when the run has one
+player (`Models/CardPoolModel.cs:68-81`, `Runs/IRunState.cs:74-84`), and no other path in the tree hands them out
+(the only direct `CardPool.AllCards` reader, `Models.Relics/LargeCapsule.cs:189-198`, picks basic Strike/Defend):
+BEACON_OF_HOPE, BELIEVE_IN_YOU, BLAZE, COORDINATE, DEMONIC_SHIELD, GANG_UP, HUDDLE_UP, INTERCEPT, KNOCKDOWN, LIFT, MIDNIGHT, MIMIC, OUTRAGE, RALLY, TAG_TEAM, TANK, THE_BALL.
+
+## 9. Port notes worth knowing before batch work
+
+- Await order is not text order in v0.111.0: state machines lay segments out by jump target. `await_order` in the JSON lists each method's awaited calls by state number (= source order); e.g. Dominate applies Vulnerable before reading it for Strength, Iron Wave blocks before attacking, Taunt blocks before applying Vulnerable.
+- Self HP loss uses `CreatureCmd.Damage(owner, HpLoss, Unblockable | Unpowered | Move, card, cardPlay)` (Bloodletting, Blood Wall, Brand, Breakthrough, Hemokinesis, Offering); status/curse self-damage uses the DamageVar overload with `Unpowered | Move`, so block absorbs Burn, Decay, Infection, Toxic and Wither but not Bad Luck, Beckon or Regret.
+- Fatal-kill rewards (Feed max HP, Hand of Greed gold) evaluate `ShouldOwnerDeathTriggerFatal` over the target's powers before the attack and then check `WasTargetKilled` in `AttackCommand.Results`.
+- Growing-damage cards (Rampage, Thrash, Maul, The Ball, Sovereign Blade) keep extra damage in per-instance fields and re-apply it in `AfterDowngraded`; the sim needs per-card extra state that is cloned and hashed.
+- Thrash computes the exhausted Attack's damage through a direct `Hook.ModifyDamage` with target null and the exhausted card as source (`Models.Cards/Thrash.cs:113`).
+- Turn-end-in-hand cards (Bad Luck, Beckon, Burn, Debt, Decay, Doubt, Infection, Regret, Shame, Toxic, Wither) map onto the sim's existing `CardDef.HasTurnEndInHandEffect` / `OnTurnEndInHand`.
+- The four KnowledgeDemon options (Disintegration, Mind Rot, Sloth, Waste Away) are never played: `OnChosen` applies their power through a `ThrowingPlayerChoiceContext`, so they need the monster's ChooseCard prompt during the enemy turn.
+- Quest cards and Guilty are deck listeners of the run source; in combat they only sit in piles (Unplayable).
+
+## 10. Open questions
+
+- ASCENDERS_BANE: Confirm the v0.111.0 keyword array of AscendersBane from IL (decompile gap).
+- DISINTEGRATION: KnowledgeDemon's per-cycle disintegration damage int[3] is a LdMemberToken gap (Models.Monsters/KnowledgeDemon.cs:772-773); v0.107.1 has the values.
+- FOLLY: Confirm the v0.111.0 keyword array of Folly from IL (decompile gap).
+- MAD_SCIENCE: TinkerTime's RiderEffect[3] tables are a LdMemberToken decompile gap (Models.Events/TinkerTime.cs); which riders each type can roll must come from IL or a re-decompile (only matters for the event, not the card).
+- WHISTLE: CreatureCmd.Stun wraps the stun move in a local Wrapper whose state machine has no body in the decompile (Commands/CreatureCmd.cs:4105-4124, sim/specs/pipeline.md section 9); Whistle is the first stunning card in the port, so confirm the STUNNED move has no rule effect (IL or recordings).
+- Draw-pile PileSelect option order (Secret Technique, Secret Weapon, Seeker Strike, Wish): the selector path sorts by rarity then ModelId, the UI by rarity then localized title (kernel design 4.1); recordings identify the pick by card id, but ties between equal ids need the post-state.
+- Stomp and Midnight `AfterCardEnteredCombat`: confirm no dispatch at combat setup for deck cards (call sites found only in CardPileCmd.Add from outside combat piles and transforms, `Commands/CardPileCmd.cs:316`, `:3436`, `Commands/CardCmd.cs:1472`, `:2070`).
+- Howl from Beyond autoplays itself from the exhaust pile at the auto-post-play phase: confirm where `CardCmd.AutoPlay` sends a card whose current pile is Exhaust (result pile Discard, so it leaves the exhaust pile after one trigger?).
+- Drum of Battle on exhaust calls `GeneratePlayCount(CombatState, null)`: confirm which `ModifyCardPlayCount` listeners act with a null CardPlay.
+- Seeker Strike draws its random subset (StableShuffle on CombatCardSelection) before the prompt; under answer-tape re-execution the replay must reproduce that draw exactly (deterministic, but the prompt's option list depends on it).
+- HiddenGem's `GetEnchantedReplayCount() < 1` filter includes enchantment replays; until enchantments exist the sim's value is BaseReplayCount only.

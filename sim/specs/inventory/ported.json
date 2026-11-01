@@ -1,0 +1,248 @@
+{
+ "schema": "sts2sim.inventory/v1",
+ "kind": "ported",
+ "sim_root": "sim/Sts2Sim.Core",
+ "scan": "public sealed class X : CardDef|PowerModel|MonsterDef|EncounterDef in **/Defs/*.cs and **/Encounters/*.cs",
+ "counts": {"cards": 6, "powers": 8, "monsters": 11, "encounters": 8},
+ "entries": {
+  "cards": [
+   {
+    "id": "ASCENDERS_BANE",
+    "class": "AscendersBane",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/AscendersBane.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "BASH",
+    "class": "Bash",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/Bash.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "DEFEND_IRONCLAD",
+    "class": "DefendIronclad",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/DefendIronclad.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "GREED",
+    "class": "Greed",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/Greed.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SLIMED",
+    "class": "Slimed",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/Slimed.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "STRIKE_IRONCLAD",
+    "class": "StrikeIronclad",
+    "sim_file": "sim/Sts2Sim.Core/Cards/Defs/StrikeIronclad.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   }
+  ],
+  "powers": [
+   {
+    "id": "DEXTERITY_POWER",
+    "class": "DexterityPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/DexterityPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "FRAIL_POWER",
+    "class": "FrailPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/FrailPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "RAVENOUS_POWER",
+    "class": "RavenousPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/RavenousPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SHRINK_POWER",
+    "class": "ShrinkPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/ShrinkPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "STRENGTH_POWER",
+    "class": "StrengthPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/StrengthPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "THORNS_POWER",
+    "class": "ThornsPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/ThornsPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "VULNERABLE_POWER",
+    "class": "VulnerablePower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/VulnerablePower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "WEAK_POWER",
+    "class": "WeakPower",
+    "sim_file": "sim/Sts2Sim.Core/Powers/Defs/WeakPower.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   }
+  ],
+  "monsters": [
+   {
+    "id": "CORPSE_SLUG",
+    "class": "CorpseSlug",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/CorpseSlug.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "FUZZY_WURM_CRAWLER",
+    "class": "FuzzyWurmCrawler",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/FuzzyWurmCrawler.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "LEAF_SLIME_M",
+    "class": "LeafSlimeM",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/LeafSlimeM.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "LEAF_SLIME_S",
+    "class": "LeafSlimeS",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/LeafSlimeS.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "NIBBIT",
+    "class": "Nibbit",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/Nibbit.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SEAPUNK",
+    "class": "Seapunk",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/Seapunk.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SHRINKER_BEETLE",
+    "class": "ShrinkerBeetle",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/ShrinkerBeetle.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SLUDGE_SPINNER",
+    "class": "SludgeSpinner",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/SludgeSpinner.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "TOADPOLE",
+    "class": "Toadpole",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/Toadpole.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "TWIG_SLIME_M",
+    "class": "TwigSlimeM",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/TwigSlimeM.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "TWIG_SLIME_S",
+    "class": "TwigSlimeS",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Defs/TwigSlimeS.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   }
+  ],
+  "encounters": [
+   {
+    "id": "CORPSE_SLUGS_WEAK",
+    "class": "CorpseSlugsWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/CorpseSlugsWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "FUZZY_WURM_CRAWLER_WEAK",
+    "class": "FuzzyWurmCrawlerWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/FuzzyWurmCrawlerWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "NIBBITS_WEAK",
+    "class": "NibbitsWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/NibbitsWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SEAPUNK_WEAK",
+    "class": "SeapunkWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/SeapunkWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SHRINKER_BEETLE_WEAK",
+    "class": "ShrinkerBeetleWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/ShrinkerBeetleWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SLIMES_WEAK",
+    "class": "SlimesWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/SlimesWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "SLUDGE_SPINNER_WEAK",
+    "class": "SludgeSpinnerWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/SludgeSpinnerWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   },
+   {
+    "id": "TOADPOLES_WEAK",
+    "class": "ToadpolesWeak",
+    "sim_file": "sim/Sts2Sim.Core/Monsters/Encounters/ToadpolesWeak.cs",
+    "id_matches_slugify": true,
+    "sim_exclude": false
+   }
+  ]
+ }
+}

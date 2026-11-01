@@ -1,0 +1,592 @@
+# Inventory: Silent and Defect cards (semantic classification)
+
+2026-11-01 · W0 semantic classification · game v0.111.0 · slice: card pools `SILENT` (91) and `DEFECT` (91).
+
+Machine-readable companion: [`sim/specs/inventory/cards-silent-defect.classified.json`](../../sim/specs/inventory/cards-silent-defect.classified.json) (same entry order and ids as [`cards.json`](../../sim/specs/inventory/cards.json) filtered to the two pools; join on `id`). Rule truth: `/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled/`, cited as `<ns-dir>/<File>.cs:<line>` without the `MegaCrit.Sts2.Core.` prefix. Every card body was read (v0.111.0 state machines, cross-read with the v0.107.1 async decompile); the version check is mechanical (`tmp/sim-port/cards-silent-defect/vdelta.py`, scratch) and every flagged file was then read by hand.
+
+## 0. Summary
+
+| Item | Silent | Defect | Total |
+| --- | --: | --: | --: |
+| tier 1 | 51 | 27 | 78 |
+| tier 2 | 25 | 10 | 35 |
+| tier 3 | 14 | 53 | 67 |
+| tier 4 | 1 | 1 | 2 |
+| MultiplayerOnly (deferred, batch 99) | 5 | 5 | 10 |
+| opens a player prompt (card or its own power) | 8 | 2 | 10 |
+| needs the orb subsystem | 0 | 45 | 45 |
+| reads combat history (card or own power) | 5 | 5 | 10 |
+| Sly keyword or grants Sly | 9 | 0 | 9 |
+| discards cards by effect (Sly auto-play path) | 9 | 1 | 10 |
+| creates or reads Shivs | 13 | 0 | 13 |
+| applies or reads Poison | 12 | 0 | 12 |
+| epoch-gated (unlock) | 9 | 9 | 18 |
+| explicit RNG stream | 3 | 7 | 10 |
+| v0.107.1 rule change | 12 | 14 | 26 |
+| new since v0.107.1 | 4 | 3 | 7 |
+
+Key points:
+
+- **Starter gates.** A Silent run needs the HandSelect prompt from turn 1 (`Survivor`, batch 5) plus `Neutralize`/Strike/Defend (batch 1). A Defect run needs the orb subsystem from turn 1 (`Zap`, `Dualcast`, batch 6; the `CrackedCore` relic also channels). Batches 1-3 alone cannot run either character's starter deck end to end.
+- **No ascension sensitivity.** None of the 182 files reads `AscensionHelper`/`AscensionLevel`; ascension reaches these cards only through pool-level reward upgrade odds (`Factories/CardFactory.cs:23`, `AscensionLevel.Scarcity`).
+- **No unreadable file.** All 182 bodies decompile into readable state machines (section 8).
+- **`OrbEvokeType` is UI-only** (hover tip and orb highlight, `Nodes.Orbs/NOrbManager.cs:304`); `GainsBlock` is rule-relevant only for the Nimble enchantment filter (`Models.Enchantments/Nimble.cs:11`).
+- **v0.107.1 corpus caution:** 26 rule changes and 7 new cards (section 7); 29 cosmetic-only diffs, 120 identical.
+
+## 1. Tier rubric and port batches
+
+| Tier | Meaning |
+| --: | --- |
+| 1 | pure numbers through facades/hooks the sim already has (incl. X cost, temporary costs, keywords Exhaust/Innate/Retain/Ethereal) |
+| 2 | needs facades/hooks that exist in the game but not in the sim (Sly discard auto-play, AutoPlay, Shiv batch generation, CardCmd.Upgrade/ApplyKeyword/ApplySingleTurn*, CalculatedVar, AttackContext, card listeners, CreateClone, Transform) |
+| 3 | needs a player-choice prompt or a new subsystem (orbs, combat history, card generation from pools, enchantments) |
+| 4 | decompile-unreadable or cross-cutting combat/run effects (deck persistence, run-layer rewards) |
+
+`tier` = max(`tier_own`, tiers of the powers/cards it depends on, 3 if it needs orbs or enchantments); `tier_own` covers the card file alone. Power tiers are this slice's assessment of the powers it references (JSON `dependency_powers`).
+
+| Batch | Content | Prerequisite batches | Cards | Silent | Defect |
+| --: | --- | --- | --: | --: | --: |
+| 1 | basics on the current kernel: only ported facades and ported powers | - | 34 | 19 | 15 |
+| 2 | new simple powers on existing hooks (poison family, temporary stats, next-turn powers, draw/cost powers) and status-card generators | 1 | 39 | 29 | 10 |
+| 3 | card-kernel facades: Sly discard auto-play, CardCmd.AutoPlay, Shiv generation, CalculatedVar, AttackContext, card listeners, clone/transform/upgrade | 1, 2 | 32 | 23 | 9 |
+| 4 | combat history readers (CardPlaysFinished/Started, CardDiscarded, CardDrawn, EnergySpent) | 3 | 9 | 5 | 4 |
+| 5 | player-choice prompts (CardSelectCmd hand/pile selection; includes the Silent starter Survivor) | 3 | 10 | 8 | 2 |
+| 6 | orb core: OrbQueue, 5 orbs, Channel/EvokeNext, FocusPower and temporary focus (includes the Defect starters Zap/Dualcast) | 3 | 24 | 0 | 24 |
+| 7 | orb advanced: evoke loops, passive triggers, slot changes, random orbs, orb-trigger powers, orb history | 4, 6 | 19 | 0 | 19 |
+| 8 | generation and cross-cutting: CardFactory pools + UnlockState, enchantments, deck persistence, run-layer rewards | 3, 5 | 5 | 2 | 3 |
+| 99 | deferred: MultiplayerOnly cards (removed from single-player pools) | - | 10 | 5 | 5 |
+
+- **Batch 1.** `ADRENALINE`, `ALL_FOR_ONE`, `ASSASSINATE`, `BACKFLIP`, `BACKSTAB`, `BEAM_CELL`, `BOOT_SEQUENCE`, `DAGGER_SPRAY`, `DASH`, `DEFEND_DEFECT`, `DEFEND_SILENT`, `DEFLECT`, `DOUBLE_ENERGY`, `ESCAPE_PLAN`, `FOOTWORK`, `GO_FOR_THE_EYES`, `GRAND_FINALE`, `GUNK_UP`, `LEAP`, `LEG_SWEEP`, `MALAISE`, `MOMENTUM_STRIKE`, `NEUTRALIZE`, `REBOOT`, `SKEWER`, `SKIM`, `SLICE`, `STRIKE_DEFECT`, `STRIKE_SILENT`, `SUCKER_PUNCH`, `SUNDER`, `SUPERCRITICAL`, `SUPPRESS`, `SWEEPING_BEAM`
+- **Batch 2.** `ACCELERANT`, `AFTERIMAGE`, `ANTICIPATE`, `BLUR`, `BOOST_AWAY`, `BOUNCING_FLASK`, `BUBBLE_BUBBLE`, `BUFFER`, `BULLET_TIME`, `BURST`, `CHARGE_BATTERY`, `CORROSIVE_WAVE`, `DEADLY_POISON`, `DODGE_AND_ROLL`, `ENVENOM`, `EXPOSE`, `FIGHT_THROUGH`, `HAZE`, `MACHINE_LEARNING`, `NOXIOUS_FUMES`, `OUTBREAK`, `OVERCLOCK`, `PIERCING_WAIL`, `POISONED_STAB`, `POUNCE`, `PREDATOR`, `SERPENT_FORM`, `SHADOWMELD`, `SIDESTEP`, `SIGNAL_BOOST`, `SMOKESTACK`, `SNAKEBITE`, `SPEEDSTER`, `STRANGLE`, `SUBROUTINE`, `SYNTHESIS`, `TRACKING`, `WELL_LAID_PLANS`, `WRAITH_FORM`
+- **Batch 3.** `ABRASIVE`, `ACCURACY`, `ADAPTIVE_STRIKE`, `BLADE_DANCE`, `CALCULATED_GAMBLE`, `CLAW`, `CLOAK_AND_DAGGER`, `COMPACT`, `ECHOING_SLASH`, `EXPERTISE`, `FAN_OF_KNIVES`, `FERAL`, `FLAK_CANNON`, `FLECHETTES`, `FLICK_FLACK`, `INFINITE_BLADES`, `KNIFE_TRAP`, `LEADING_STRIKE`, `MASTER_PLANNER`, `MIRAGE`, `PRECISE_CUT`, `REFLEX`, `RICOCHET`, `ROCKET_PUNCH`, `SCRAPE`, `SHADOW_STEP`, `STORM_OF_STEEL`, `TACTICIAN`, `TURBO`, `UNTOUCHABLE`, `UPROAR`, `UP_MY_SLEEVE`
+- **Batch 4.** `ECHO_FORM`, `FINISHER`, `FTL`, `HELIX_DRILL`, `ITERATION`, `MEMENTO_MORI`, `MURDER`, `PHANTOM_BLADES`, `PINPOINT`
+- **Batch 5.** `ACROBATICS`, `DAGGER_THROW`, `HAND_TRICK`, `HIDDEN_DAGGERS`, `HOLOGRAM`, `NIGHTMARE`, `PREPARED`, `SCAVENGE`, `SURVIVOR`, `TOOLS_OF_THE_TRADE`
+- **Batch 6.** `BALL_LIGHTNING`, `BARRAGE`, `BIASED_COGNITION`, `CHILL`, `COLD_SNAP`, `COMPILE_DRIVER`, `COOLHEADED`, `DEFRAGMENT`, `DUALCAST`, `FOCUSED_STRIKE`, `FUSION`, `GLACIER`, `GLASSWORK`, `HOTFIX`, `HYPERBEAM`, `ICE_LANCE`, `METEOR_STRIKE`, `NULL`, `RAINBOW`, `REFRACT`, `SHADOW_SHIELD`, `SYNCHRONIZE`, `TEMPEST`, `ZAP`
+- **Batch 7.** `BULK_UP`, `CAPACITOR`, `CHAOS`, `CONSUMING_SHADOW`, `COOLANT`, `DARKNESS`, `HAILSTORM`, `LIGHTNING_ROD`, `LOOP`, `MODDED`, `MULTI_CAST`, `QUADCAST`, `SHATTER`, `SPINNER`, `STORM`, `TESLA_COIL`, `THUNDER`, `TRASH_TO_TREASURE`, `VOLTAIC`
+- **Batch 8.** `BLADE_OF_INK`, `CREATIVE_AI`, `GENETIC_ALGORITHM`, `THE_HUNT`, `WHITE_NOISE`
+- **Batch 99.** `BLADE_SYMPHONY`, `CONCOCT`, `ENERGY_SURGE`, `FADE`, `FLANKING`, `HIBERNATE`, `IGNITION`, `IMITATION_LEARNING`, `ONE_FOR_ALL`, `SNEAKY`
+
+Counts by pool and tier:
+
+| Pool | tier 1 | tier 2 | tier 3 | tier 4 | total |
+| --- | --: | --: | --: | --: | --: |
+| SILENT | 51 | 25 | 14 | 1 | 91 |
+| DEFECT | 27 | 10 | 53 | 1 | 91 |
+
+Counts by pool, rarity and tier:
+
+| Pool | Rarity | tier 1 | tier 2 | tier 3 | tier 4 |
+| --- | --- | --: | --: | --: | --: |
+| SILENT | Basic | 3 | 0 | 1 | 0 |
+| SILENT | Common | 12 | 6 | 2 | 0 |
+| SILENT | Uncommon | 19 | 12 | 7 | 0 |
+| SILENT | Rare | 15 | 7 | 4 | 1 |
+| SILENT | Ancient | 2 | 0 | 0 | 0 |
+| DEFECT | Basic | 2 | 0 | 2 | 0 |
+| DEFECT | Common | 8 | 3 | 9 | 0 |
+| DEFECT | Uncommon | 10 | 4 | 24 | 0 |
+| DEFECT | Rare | 7 | 3 | 16 | 1 |
+| DEFECT | Ancient | 0 | 0 | 2 | 0 |
+
+## 2. Dependency order
+
+Subsystems and kernel features first, then the powers, then the cards. Batch numbers are the earliest batch a card can land in; every batch also assumes the W1 kernel expansion (`docs/sim-port/design-combat-kernel.md` §6).
+
+| Prerequisite (subsystem / kernel feature) | Unblocks |
+| --- | --- |
+| CardSelectCmd hand/pile prompts (choice API) | 10: `ACROBATICS`, `DAGGER_THROW`, `HAND_TRICK`, `HIDDEN_DAGGERS`, `HOLOGRAM`, `NIGHTMARE`, `PREPARED`, `SCAVENGE`, `SURVIVOR`, `TOOLS_OF_THE_TRADE` |
+| CardCmd.Discard/DiscardAndDraw with Sly auto-play, CardCmd.AutoPlay | 20: `ABRASIVE`, `ACROBATICS`, `CALCULATED_GAMBLE`, `DAGGER_THROW`, `FLICK_FLACK`, `HAND_TRICK`, `HIDDEN_DAGGERS`, `KNIFE_TRAP`, `MASTER_PLANNER`, `PREPARED`, `REFLEX`, `RICOCHET`, `SCRAPE`, `SHADOW_STEP`, `STORM_OF_STEEL`, `SURVIVOR`, `TACTICIAN`, `TOOLS_OF_THE_TRADE`, `UNTOUCHABLE`, `UPROAR` |
+| Shiv.CreateInHand / AddGeneratedCardsToCombat | 12: `ACCURACY`, `BLADE_DANCE`, `BLADE_OF_INK`, `CLOAK_AND_DAGGER`, `FAN_OF_KNIVES`, `HIDDEN_DAGGERS`, `INFINITE_BLADES`, `KNIFE_TRAP`, `LEADING_STRIKE`, `PHANTOM_BLADES`, `STORM_OF_STEEL`, `UP_MY_SLEEVE` |
+| CalculatedVar family | 13: `BARRAGE`, `COMPILE_DRIVER`, `FINISHER`, `FLAK_CANNON`, `FLECHETTES`, `HELIX_DRILL`, `KNIFE_TRAP`, `MEMENTO_MORI`, `MIRAGE`, `MURDER`, `PRECISE_CUT`, `SYNCHRONIZE`, `VOLTAIC` |
+| CombatHistory | 10: `ECHO_FORM`, `FINISHER`, `FTL`, `HELIX_DRILL`, `ITERATION`, `MEMENTO_MORI`, `MURDER`, `PHANTOM_BLADES`, `PINPOINT`, `VOLTAIC` |
+| Card hook listeners (cards in combat piles) | 3: `PINPOINT`, `ROCKET_PUNCH`, `TURBO` |
+| OrbQueue + OrbCmd + 5 orbs + Hook.ModifyOrbValue | 43: `BALL_LIGHTNING`, `BARRAGE`, `BIASED_COGNITION`, `BULK_UP`, `CAPACITOR`, `CHAOS`, `CHILL`, `COLD_SNAP`, `COMPILE_DRIVER`, `CONSUMING_SHADOW`, `COOLANT`, `COOLHEADED`, `DARKNESS`, `DEFRAGMENT`, `DUALCAST`, `FOCUSED_STRIKE`, `FUSION`, `GLACIER`, `GLASSWORK`, `HAILSTORM`, `HOTFIX`, `HYPERBEAM`, `ICE_LANCE`, `LIGHTNING_ROD`, `LOOP`, `METEOR_STRIKE`, `MODDED`, `MULTI_CAST`, `NULL`, `QUADCAST`, `RAINBOW`, `REFRACT`, `SHADOW_SHIELD`, `SHATTER`, `SPINNER`, `STORM`, `SYNCHRONIZE`, `TEMPEST`, `TESLA_COIL`, `THUNDER`, `TRASH_TO_TREASURE`, `VOLTAIC`, `ZAP` |
+| Hook.AfterOrbEvoked / ModifyCardPlayResultLocation listeners (hooks missing in sim) | 2: `FERAL`, `THUNDER` |
+| CardFactory + card pools + UnlockState | 2: `CREATIVE_AI`, `WHITE_NOISE` |
+| Enchantments | 1: `BLADE_OF_INK` |
+| Run-layer effects from combat (deck version, extra rewards) | 2: `GENETIC_ALGORITHM`, `THE_HUNT` |
+
+Powers referenced by this slice (ported powers are marked; `needs` lists the hooks/facades the power itself uses):
+
+| Power | Tier | Batch | Needs | v0.107.1 | Cards that depend on it |
+| --- | --: | --: | --- | --- | --- |
+| `DexterityPower` (ported) | 0 | - | Hook.ModifyBlockAdditive | same | `ABRASIVE`, `BULK_UP`, `FOOTWORK`, `WRAITH_FORM` |
+| `StrengthPower` (ported) | 0 | - | Hook.ModifyDamageAdditive | same | `BULK_UP`, `MALAISE` |
+| `ThornsPower` (ported) | 0 | - | BeforeDamageReceived | same | `ABRASIVE` |
+| `VulnerablePower` (ported) | 0 | - | ModifyDamageMultiplicative; side-turn participants | same | `ASSASSINATE`, `BEAM_CELL`, `EXPOSE` |
+| `WeakPower` (ported) | 0 | - | ModifyDamageMultiplicative; side-turn participants | same | `GO_FOR_THE_EYES`, `HAZE`, `LEG_SWEEP`, `MALAISE`, `NEUTRALIZE`, `NULL`, `SUCKER_PUNCH`, `SUPPRESS`, `TRACKING` |
+| `AccelerantPower` | 1 | 2 | no hooks; read by PoisonPower.TriggerCount | same | `ACCELERANT` |
+| `AfterimagePower` | 1 | 2 | BeforeCardPlayed/AfterCardPlayed with per-card amount map; CreatureCmd.GainBlock(fast) | same | `AFTERIMAGE` |
+| `AnticipatePower` | 1 | 2 | TemporaryDexterityPower base | cosmetic for this slice (TemporaryDexterityPower lost IgnoreNextInstance, called only by Misery in v0.107.1; FromPotion is a hover tip) | `ANTICIPATE` |
+| `ArtifactPower` | 1 | 2 | TryModifyPowerAmountReceived; AfterModifyingPowerAmountReceived decrement | same | `EXPOSE` |
+| `BlockNextTurnPower` | 1 | 2 | AfterBlockCleared | same | `DODGE_AND_ROLL` |
+| `BlurPower` | 1 | 2 | ShouldClearBlock; AfterPreventingBlockClear; AfterSideTurnStart decrement (side-turn participants) | same | `BLUR` |
+| `BufferPower` | 1 | 2 | ModifyHpLostAfterOstyLate; AfterModifyingHpLostAfterOsty decrement | same | `BUFFER` |
+| `BurstPower` | 1 | 2 | ModifyCardPlayCount; AfterModifyingCardPlayCount; AfterSideTurnEnd (side-turn participants) | same | `BURST` |
+| `CorrosiveWavePower` | 1 | 2 | AfterCardDrawn; AfterSideTurnEnd remove (side-turn participants) | cosmetic | `CORROSIVE_WAVE` |
+| `DrawCardsNextTurnPower` | 1 | 2 | ModifyHandDraw (AmountOnTurnStart); AfterSideTurnStart remove | same | `PREDATOR` |
+| `EnergyNextTurnPower` | 1 | 2 | AfterEnergyReset | same | `CHARGE_BATTERY`, `SCAVENGE`, `SIDESTEP` |
+| `EnvenomPower` | 1 | 2 | AfterDamageGiven (powered attack, UnblockedDamage > 0) | same | `ENVENOM` |
+| `FreePowerPower` | 1 | 2 | TryModifyEnergyCostInCombatLate (Powers in Hand/Play); BeforeCardPlayed decrement | same | `SYNTHESIS` |
+| `FreeSkillPower` | 1 | 2 | TryModifyEnergyCostInCombatLate (Skills in Hand/Play); BeforeCardPlayed decrement | same | `POUNCE` |
+| `IntangiblePower` | 1 | 2 | ModifyHpLostAfterOsty; ModifyDamageCap; AfterSideTurnEnd decrement (enemy side) | cosmetic (decimal.MaxValue printed as a literal; ModifyDamageCap gained CardPlay) | `WRAITH_FORM` |
+| `MachineLearningPower` | 1 | 2 | ModifyHandDraw | same | `MACHINE_LEARNING` |
+| `NoDrawPower` | 1 | 2 | ShouldDraw (non-hand draws); AfterSideTurnEnd remove | same | `BULLET_TIME` |
+| `NoxiousFumesPower` | 1 | 2 | AfterSideTurnStart (side-turn participants); PowerCmd.Apply list overload | same | `NOXIOUS_FUMES` |
+| `PiercingWailPower` | 1 | 2 | TemporaryStrengthPower base (negative) | cosmetic for this slice (TemporaryStrengthPower lost IgnoreNextInstance, called only by Misery in v0.107.1) | `PIERCING_WAIL` |
+| `PoisonPower` | 1 | 2 | AfterSideTurnStart (side-turn participants); public Trigger(): TriggerCount = min(Amount, 1 + sum AccelerantPower of alive opponents); CreatureCmd.Damage(Unblockable\|Unpowered, ThrowingPlayerChoiceContext); PowerCmd.Decrement while alive | cosmetic (tick body moved into a public Trigger(), used by Outbreak) | `ACCELERANT`, `BOUNCING_FLASK`, `BUBBLE_BUBBLE`, `CORROSIVE_WAVE`, `DEADLY_POISON`, `ENVENOM`, `HAZE`, `MIRAGE`, `NOXIOUS_FUMES`, `OUTBREAK`, `POISONED_STAB`, `SNAKEBITE` |
+| `SerpentFormPower` | 1 | 2 | BeforeCardPlayed/AfterCardPlayed; random hittable enemy via RunRng.CombatTargets; CreatureCmd.Damage | cosmetic (VFX property added) | `SERPENT_FORM` |
+| `ShadowmeldPower` | 1 | 2 | ModifyBlockMultiplicative x 2^Amount; AfterSideTurnEnd remove | cosmetic | `SHADOWMELD` |
+| `SignalBoostPower` | 1 | 2 | ModifyCardPlayCount (Power cards); AfterModifyingCardPlayCount | same | `SIGNAL_BOOST` |
+| `SmokestackPower` | 1 | 2 | AfterCardGeneratedForCombat (Status, creator == owner); CreatureCmd.Damage to all hittable | same | `SMOKESTACK` |
+| `SpeedsterPower` | 1 | 2 | AfterCardDrawn (not hand draw, own side's turn); CreatureCmd.Damage to all hittable | same | `SPEEDSTER` |
+| `StranglePower` | 1 | 2 | InstancedPerApplier; BeforeCardPlayed/AfterCardPlayed; AfterSideTurnEnd remove | same | `STRANGLE` |
+| `SubroutinePower` | 1 | 2 | BeforeCardPlayed/AfterCardPlayed (Power cards); PlayerCmd.GainEnergy | same | `SUBROUTINE` |
+| `TrackingPower` | 1 | 2 | ModifyDamageMultiplicative 1 + Amount/100 vs Weak targets (owner or pets, card attacks) | rule-change (multiplier formula; card now applies 50) | `TRACKING` |
+| `WellLaidPlansPower` | 1 | 2 | ShouldFlush | rule-change (was a BeforeFlushLate FromHand retain prompt) | `WELL_LAID_PLANS` |
+| `WraithFormPower` | 1 | 2 | AfterSideTurnStart: -Amount DexterityPower | same | `WRAITH_FORM` |
+| `AccuracyPower` | 1 | 3 | ModifyDamageAdditive (Shiv-tagged card source) | same | `ACCURACY` |
+| `DoubleDamagePower` | 1 | 3 | ModifyDamageMultiplicative x2 (owner or pets, powered card attacks); AfterSideTurnEnd decrement | same | `SHADOW_STEP` |
+| `FanOfKnivesPower` | 1 | 3 | no hooks; read by Shiv.TargetType and Shiv.OnPlay | same | `FAN_OF_KNIVES` |
+| `FeralPower` | 2 | 3 | ModifyCardPlayResultLocation + AfterModifyingCardPlayResultLocation (missing in sim); AfterSideTurnStart reset | rule-change (API rename and new !card.IsDupe condition) | `FERAL` |
+| `InfiniteBladesPower` | 2 | 3 | BeforeHandDraw; Shiv.CreateInHand (AddGeneratedCardsToCombat) | same | `INFINITE_BLADES` |
+| `MasterPlannerPower` | 2 | 3 | AfterCardPlayed; CardCmd.ApplyKeyword(Sly) | same | `MASTER_PLANNER` |
+| `ShadowStepPower` | 1 | 3 | AfterSideTurnStart: apply DoubleDamagePower, remove | same | `SHADOW_STEP` |
+| `EchoFormPower` | 3 | 4 | ModifyCardPlayCount while CardPlaysStarted(IsFirstInSeries, this turn) < Amount; CombatHistory | cosmetic (VFX-only AfterApplied/AfterRemoved/AfterCardPlayed/BeforeSideTurnStart overrides added) | `ECHO_FORM` |
+| `IterationPower` | 3 | 4 | AfterCardDrawn Status: draw if <= 1 Status drawn this turn (CombatHistory.CardDrawnEntry) | same | `ITERATION` |
+| `PhantomBladesPower` | 3 | 4 | AfterCardEnteredCombat/AfterApplied: CardCmd.ApplyKeyword(Retain) on Shivs; ModifyDamageAdditive for the first Shiv play this turn (CombatHistory) | cosmetic (history filter API) | `PHANTOM_BLADES` |
+| `NightmarePower` | 3 | 5 | InstanceType Instanced; SetSelectedCard: CardModel.CreateClone + CardCmd.ClearAffliction; BeforeHandDraw: AddGeneratedCardToCombat(Hand) x Amount, remove | same | `NIGHTMARE` |
+| `ToolsOfTheTradePower` | 3 | 5 | ModifyHandDraw; AfterPlayerTurnStart: CardSelectCmd.FromHandForDiscard prompt (turn-setup deferral) | same | `TOOLS_OF_THE_TRADE` |
+| `BiasedCognitionPower` | 3 | 6 | AfterSideTurnStart: -Amount FocusPower | same | `BIASED_COGNITION` |
+| `FocusPower` | 3 | 6 | Hook.ModifyOrbValue (value + Amount, floor 0); AllowNegative; orb subsystem | same | `BIASED_COGNITION`, `DEFRAGMENT`, `FOCUSED_STRIKE`, `HOTFIX`, `HYPERBEAM`, `SYNCHRONIZE` |
+| `FocusedStrikePower` | 3 | 6 | TemporaryFocusPower base | cosmetic for this slice (TemporaryFocusPower lost IgnoreNextInstance) | `FOCUSED_STRIKE` |
+| `HotfixPower` | 3 | 6 | TemporaryFocusPower base | cosmetic for this slice (TemporaryFocusPower lost IgnoreNextInstance) | `HOTFIX` |
+| `HyperbeamFocusDownPower` | 3 | 6 | TemporaryFocusPower base, IsPositive=false | new | `HYPERBEAM` |
+| `SynchronizePower` | 3 | 6 | TemporaryFocusPower base | cosmetic for this slice (TemporaryFocusPower lost IgnoreNextInstance) | `SYNCHRONIZE` |
+| `ConsumingShadowPower` | 3 | 7 | AfterSideTurnEnd: OrbCmd.EvokeLast when the queue is not empty | same | `CONSUMING_SHADOW` |
+| `CoolantPower` | 3 | 7 | AfterSideTurnStart: block = Amount x distinct orb ids | cosmetic | `COOLANT` |
+| `HailstormPower` | 3 | 7 | BeforeSideTurnEnd: >= 1 FrostOrb -> damage Amount to all hittable | same | `HAILSTORM` |
+| `LightningRodPower` | 3 | 7 | AfterEnergyReset: OrbCmd.Channel<LightningOrb>, decrement | same | `LIGHTNING_ROD` |
+| `LoopPower` | 3 | 7 | AfterPlayerTurnStart: OrbCmd.Passive(front orb) x Amount | same | `LOOP` |
+| `SpinnerPower` | 3 | 7 | AfterEnergyReset: OrbCmd.Channel<GlassOrb> x Amount | same | `SPINNER` |
+| `StormPower` | 3 | 7 | BeforeCardPlayed/AfterCardPlayed (Power cards): OrbCmd.Channel<LightningOrb> x Amount | same | `STORM` |
+| `ThunderPower` | 3 | 7 | Hook.AfterOrbEvoked (missing in sim): damage living targets of a Lightning evoke | same | `THUNDER` |
+| `TrashToTreasurePower` | 3 | 7 | AfterCardGeneratedForCombat (Status): OrbModel.GetRandomOrb (RunRng.CombatOrbGeneration) + Channel | same | `TRASH_TO_TREASURE` |
+| `CreativeAiPower` | 3 | 8 | BeforeHandDraw: CardFactory.GetDistinctForCombat over own pool Powers (UnlockState); RunRng.CombatCardGeneration | cosmetic | `CREATIVE_AI` |
+| `TheHuntPower` | 1 | 8 | no hooks, no readers (display marker) | same | `THE_HUNT` |
+| `ConcoctPower` | 1 | 99 | AfterDamageGiven; AfterSideTurnEnd | new | `CONCOCT` |
+| `FadePower` | 1 | 99 | TemporaryDexterityPower base | new | `FADE` |
+| `FlankingPower` | 1 | 99 | ModifyDamageMultiplicative; AfterSideTurnEnd | cosmetic | `FLANKING` |
+| `HibernatePower` | 3 | 99 | AfterPlayerTurnStart decrement; read by FrostOrb.Evoke (teammate block) | new | `HIBERNATE` |
+| `ImitationLearningPower` | 2 | 99 | BeforeCardPlayed/AfterCardPlayed; CardCmd.AutoPlay | new | `IMITATION_LEARNING` |
+| `OneForAllPower` | 1 | 99 | ModifyDamageAdditive | new | `ONE_FOR_ALL` |
+| `SneakyPower` | 1 | 99 | AfterCardPlayed (ally Attacks): GainBlock | same | `SNEAKY` |
+
+Card dependencies outside the slice: `Shiv` (TOKEN, tier 2: Shiv.CreateInHand -> CardPileCmd.AddGeneratedCardsToCombat, TargetType getter reads FanOfKnivesPower, CardTag.Shiv, Exhaust); `Dazed` (STATUS, tier 1: Ethereal, Unplayable); `Wound` (STATUS, tier 1: Unplayable); `Burn` (STATUS, tier 1: OnTurnEndInHand: 2 damage to owner (CardDef.OnTurnEndInHand exists)); `Void` (STATUS, tier 2: Unplayable, Ethereal, card listener AfterCardDrawn: lose 1 energy); `Slimed` (STATUS, tier 0: ported); `Fuel` (TOKEN, tier 1: 0-cost Exhaust: gain 1 energy, draw 1 (+1)).
+
+## 3. Defect orb mechanics (what the orb subsystem must reproduce)
+
+- **Queue.** Every player gets an `OrbQueue` per combat with capacity `BaseOrbSlotCount` (`Entities.Players/PlayerCombatState.cs:274-276`; Defect 3 at `Models.Characters/Defect.cs:63`, default 0 at `Models/CharacterModel.cs:71`), so orb cards reaching a Silent deck still work; `maxCapacity = 10` (`Entities.Orbs/OrbQueue.cs:386`). `TryEnqueue` fails at capacity 0 or when full (`:429-444`). `RemoveCapacity` floors at 0 and drops orbs from the back without evoking (`:419-427`).
+- **Channel** (`Commands/OrbCmd.cs:684`, body `:86-260`): no-op when combat is over or ending; if the character has `BaseOrbSlotCount == 0` and capacity 0, add 1 slot first (any character can channel); when full, `EvokeNext` the front orb; then `TryEnqueue`, `History.OrbChanneled`, `Hook.AfterOrbChanneled`.
+- **Evoke** (`EvokeNext :699` front, `EvokeLast :714` back, private `Evoke :729`): with `dequeue` the orb is removed from the queue *before* its evoke effect runs; then `orb.Evoke` returns the targets, `Hook.AfterOrbEvoked(targets)` (ThunderPower), then `RemoveInternal`. `dequeue: false` evokes in place - Dualcast/MultiCast/Quadcast/Shatter evoke the front orb N-1 times in place and remove it on the last evoke.
+- **Passive triggers.** `OrbQueue.BeforeTurnEnd` (Lightning, Frost, Dark, Glass) and `OrbQueue.AfterTurnStart` (Plasma) iterate a snapshot front to back (`Entities.Orbs/OrbQueue.cs:149` before turn end, `:52` after turn start) and call `TriggerPassive`, which applies `Hook.ModifyOrbPassiveTriggerCount` (GoldPlatedCables) and loops `Passive` (`Models/OrbModel.cs:31-190`, `:481`). Card/power passives (`Darkness`, `TeslaCoil`, `LoopPower`) call `OrbCmd.Passive` without `countAffectedByHooks` (`Commands/OrbCmd.cs:745`), i.e. exactly one `Passive`; only the EmotionChip relic passes `true`.
+- **Values and Focus.** `LightningOrb` 3/8, `FrostOrb` 2/5, `GlassOrb` passive (base 4) and `DarkOrb` passive (6) go through `Hook.ModifyOrbValue` (`Models/OrbModel.cs:505`); `FocusPower.ModifyOrbValue` adds Amount and floors at 0 (`Models.Powers/FocusPower.cs`, AllowNegative). Dark's evoke value is an accumulated field (starts 6, +focused passive each passive) and is not re-focused; Plasma 1/2 is never focused. Temporary focus (Hotfix, FocusedStrike, Synchronize, Hyperbeam) uses `TemporaryFocusPower` (BeforeApplied applies FocusPower, turn end reverts).
+- **Targets.** Lightning without a target picks a random hittable opponent with `RunRng.CombatTargets` (`Models.Orbs/LightningOrb.cs:72`); with a target (TeslaCoil) it hits that target. Dark evoke hits the lowest current HP hittable enemy (`MinBy`, first in enemy order on ties). Glass passive and evoke hit all hittable enemies; the passive decrements its base value (floor 0) before dealing the pre-decrement focused value. Frost evoke shields teammates under HibernatePower (multiplayer only).
+- **Random orbs.** `OrbModel.GetRandomOrb(RunRng.CombatOrbGeneration)` draws from 5 ids including Glass (`Models/OrbModel.cs:197-205`, `:402`): Chaos, TrashToTreasurePower.
+- **State to clone and hash:** queue order and capacity, Dark `_evokeVal`, Glass `_passiveVal`, plus history `OrbChanneledEntry` (Voltaic counts Lightning channels for the whole combat).
+
+Orb-dependent Defect cards by operation:
+
+| Operation | Cards |
+| --- | --- |
+| channel (card or own power) | `BALL_LIGHTNING`, `CHAOS`, `CHILL`, `COLD_SNAP`, `CONSUMING_SHADOW`, `COOLHEADED`, `DARKNESS`, `FUSION`, `GLACIER`, `GLASSWORK`, `HIBERNATE`, `ICE_LANCE`, `IGNITION`, `LIGHTNING_ROD`, `METEOR_STRIKE`, `NULL`, `RAINBOW`, `REFRACT`, `SHADOW_SHIELD`, `SPINNER`, `STORM`, `TEMPEST`, `TRASH_TO_TREASURE`, `VOLTAIC`, `ZAP` |
+| evoke explicitly | `CONSUMING_SHADOW`, `DUALCAST`, `MULTI_CAST`, `QUADCAST`, `SHATTER` |
+| trigger a passive | `DARKNESS`, `LOOP`, `TESLA_COIL` |
+| change slots | `BULK_UP`, `CAPACITOR`, `MODDED` |
+| focus (permanent or this turn) | `BIASED_COGNITION`, `DEFRAGMENT`, `FOCUSED_STRIKE`, `HOTFIX`, `HYPERBEAM`, `SYNCHRONIZE` |
+| react to orb events | `THUNDER` |
+| read the queue only | `BARRAGE`, `COMPILE_DRIVER`, `COOLANT`, `HAILSTORM`, `SYNCHRONIZE`, `THUNDER` |
+
+## 4. Silent mechanics: poison, Shivs, discard and Sly
+
+- **Poison** (`Models.Powers/PoisonPower.cs`): at the poisoned creature's side turn start (`AfterSideTurnStart`, participants contain the owner) `Trigger()` runs `TriggerCount = min(Amount, 1 + sum of AccelerantPower on alive opponents)` iterations (`:235-241`); each deals `Amount` with `Unblockable | Unpowered` (`ThrowingPlayerChoiceContext`), then decrements while the owner is alive. `Trigger()` is public in v0.111.0 and Outbreak calls it mid-turn. Mirage reads total Poison on alive enemies; BubbleBubble only applies to an already poisoned target.
+- **Poison sources:** cards (DeadlyPoison, PoisonedStab, Snakebite, BouncingFlask, BubbleBubble, Haze, Outbreak) and powers (NoxiousFumes at the owner's turn start, Envenom on unblocked powered attack damage, CorrosiveWave per card drawn this turn). NoxiousFumes/CorrosiveWave/Haze use the `PowerCmd.Apply` list overload.
+- **Shiv** (TOKEN pool, `Models.Cards/Shiv.cs`): 0-cost Attack, 4 (+2), Exhaust, `CardTag.Shiv`; `TargetType` is AnyEnemy, or AllEnemies while the owner has FanOfKnivesPower (getter, also used in OnPlay). `Shiv.CreateInHand(owner, count, combatState, creator)` builds `count` Shivs and calls `CardPileCmd.AddGeneratedCardsToCombat` once (`:355-372`): per Shiv `History.CardGenerated`, `Add` (a full hand of 10 sends it to the discard pile, `Commands/CardPileCmd.cs:3405`), `AfterCardGeneratedForCombat`. BladeDance/CloakAndDagger/LeadingStrike/UpMySleeve/FanOfKnives call it once per Shiv; HiddenDaggers/StormOfSteel/BladeOfInk/InfiniteBladesPower once for all.
+- **Shiv readers:** AccuracyPower (+N per Shiv hit), PhantomBladesPower (Retain on Shivs, +N on the first Shiv each turn, history), KnifeTrap (auto-plays every Shiv in the exhaust pile at one target), relics HelicalDart/NinjaScroll (other slice).
+- **Discard by effect** = `CardCmd.Discard` -> `DiscardAndDraw(cards, 0)` (`Commands/CardCmd.cs:721-930`, readable `:1811-1839`): snapshot list; per card collect `IsSlyThisTurn`, `CardPileCmd.Add` to the discard pile, `History.CardDiscarded`, `Hook.AfterCardDiscarded`; then the optional draw; then `AutoPlay(card, null, AutoPlayType.SlyDiscard)` for each collected Sly card in discard order. AutoPlay picks a random hittable enemy for AnyEnemy cards (`RunRng.CombatTargets`, `:411`) and moves the card to its result pile without playing when no target exists or `Hook.ShouldPlay` refuses.
+- **End-of-turn flush is not a discard:** `FlushPlayerHand` moves cards with `CardPileCmd.Add` (`Combat/CombatManager.cs:3354-3382`): no Sly auto-play, no `CardDiscardedEntry` (MementoMori counts only effect discards), no `AfterCardDiscarded`. WellLaidPlansPower and Retain/single-turn Retain keep cards in hand there (`Hook.ShouldFlush`, `ShouldRetainThisTurn`).
+- **Sly sources:** keyword Sly (Abrasive, FlickFlack, Reflex, Ricochet, Tactician, Untouchable, Sneaky), single-turn Sly (HandTrick via `CardCmd.ApplySingleTurnSly`), permanent Sly on played Skills (MasterPlannerPower via `CardCmd.ApplyKeyword`). The sim already stores the flags (`CardInstance.IsSlyThisTurn`) but `CardPileCmd.Discard` throws on a Sly card today. Only `Enthralled` (`Models.Cards/Enthralled.cs:36`, any `AutoPlayType != None`) and the SkillSilent1 achievement read the auto-play type, so no rule distinguishes `SlyDiscard` from other auto-plays.
+- **Discarders:** prompts (Survivor, Acrobatics, DaggerThrow, Prepared, HiddenDaggers, ToolsOfTheTradePower) and non-prompt (CalculatedGamble whole hand + draw, StormOfSteel, ShadowStep whole hand, Defect Scrape drawn non-zero-cost).
+
+## 5. Player prompts
+
+| Type | Cmd | Pile | Min | Max | Filter | Site | Card | Scope |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | 1 | 1 | - | OnPlay | ACROBATICS | single_player |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | 1 | 1 | - | OnPlay | DAGGER_THROW | single_player |
+| HandSelect | CardSelectCmd.FromHand | Hand | 1 | 1 | card.Type == Skill && !card.IsSlyThisTurn | OnPlay | HAND_TRICK | single_player |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | 2 | 2 | - | OnPlay | HIDDEN_DAGGERS | single_player |
+| PileSelect | CardSelectCmd.FromCombatPile | Discard | 1 | 1 | - | OnPlay | HOLOGRAM | single_player |
+| HandSelect | CardSelectCmd.FromHand | Hand | 1 | 1 | - | OnPlay | NIGHTMARE | single_player |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | Cards (1, +1) | Cards (1, +1) | - | OnPlay | PREPARED | single_player |
+| HandSelect | CardSelectCmd.FromHand | Hand | 1 | 1 | - | OnPlay | SCAVENGE | single_player |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | 1 | 1 | - | OnPlay | SURVIVOR | single_player |
+| HandSelect | CardSelectCmd.FromHandForDiscard | Hand | Amount | Amount | - | power:ToolsOfTheTradePower.AfterPlayerTurnStart | TOOLS_OF_THE_TRADE | single_player |
+
+Frequencies: HandSelect via `CardSelectCmd.FromHandForDiscard` x6; HandSelect via `CardSelectCmd.FromHand` x3; PileSelect via `CardSelectCmd.FromCombatPile` x1. No ChooseCard, SimpleGrid, HandUpgrade, orb, scry or stance prompt exists in this slice; orbs are evoked by position. Every `min == max` site auto-resolves without a decision when the eligible options are <= min (`Commands/CardSelectCmd.cs:3693` hand, `:3397` pile), so a 1-card hand never prompts. All sites run in the card play's `GameActionPlayerChoiceContext` except ToolsOfTheTradePower (turn-setup deferral at `AfterPlayerTurnStart`).
+
+## 6. RNG streams
+
+| Card | Stream | Site | Via |
+| --- | --- | --- | --- |
+| `BOUNCING_FLASK` | `RunRng.CombatTargets` (`RunRngType.CombatTargets`) | OnPlay | NextItem(HittableEnemies) once per bounce; skipped when no hittable enemy |
+| `CHAOS` | `RunRng.CombatOrbGeneration` (`RunRngType.CombatOrbs`) | OnPlay | OrbModel.GetRandomOrb -> NextItem(_validOrbs) once per channel |
+| `CREATIVE_AI` | `RunRng.CombatCardGeneration` (`RunRngType.CombatCardGeneration`) | power:CreativeAiPower | CreativeAiPower.BeforeHandDraw: GetDistinctForCombat TakeRandom(1) per Amount |
+| `FLAK_CANNON` | `RunRng.CombatTargets` (`RunRngType.CombatTargets`) | OnPlay | AttackCommand.TargetingRandomOpponents per hit |
+| `REBOOT` | `RunRng.Shuffle` (`RunRngType.Shuffle`) | OnPlay | CardPileCmd.Shuffle -> StableShuffle(Rng.Shuffle) of discard+draw |
+| `RICOCHET` | `RunRng.CombatTargets` (`RunRngType.CombatTargets`) | OnPlay | AttackCommand.TargetingRandomOpponents picks a target per hit |
+| `SERPENT_FORM` | `RunRng.CombatTargets` (`RunRngType.CombatTargets`) | power:SerpentFormPower | SerpentFormPower.AfterCardPlayed NextItem(HittableEnemies) per card |
+| `TRASH_TO_TREASURE` | `RunRng.CombatOrbGeneration` (`RunRngType.CombatOrbs`) | power:TrashToTreasurePower | TrashToTreasurePower.AfterCardGeneratedForCombat GetRandomOrb per Status x Amount |
+| `UPROAR` | `RunRng.Shuffle` (`RunRngType.Shuffle`) | OnPlay | StableShuffle of draw-pile Attacks without Unplayable; second StableShuffle over all Attacks when the first list is empty |
+| `WHITE_NOISE` | `RunRng.CombatCardGeneration` (`RunRngType.CombatCardGeneration`) | OnPlay | CardFactory.GetDistinctForCombat TakeRandom(1) |
+
+Implicit streams (through facades the card calls): `RunRng.CombatTargets` x26 (a Channel into a full queue or an EvokeNext evokes the front orb; a LightningOrb evoke picks a random hittable opponent); `RunRng.Shuffle` x19 (CardPileCmd.Draw reshuffles discard into draw when the draw pile is empty (StableShuffle with Rng.Shuffle)); `RunRng.CombatTargets` x9 (a discarded Sly card with TargetType AnyEnemy auto-plays at a random hittable enemy (Commands/CardCmd.cs:411)); `RunRng.CombatTargets` x1 (ConsumingShadowPower EvokeLast of a LightningOrb picks a random target); `RunRng.Shuffle` x1 (IterationPower draws (reshuffle when the draw pile is empty)); `RunRng.CombatTargets` x1 (LightningRodPower channels Lightning; a full queue evokes the front orb (Lightning evoke = random target)); `RunRng.CombatTargets` x1 (LoopPower triggers the front orb passive with no target (LightningOrb = random target)); `RunRng.CombatTargets` x1 (SpinnerPower channels Glass; a full queue evokes the front orb); `RunRng.CombatTargets` x1 (StormPower channels Lightning; a full queue evokes the front orb); `RunRng.CombatTargets` x1 (ToolsOfTheTradePower discard can auto-play a Sly AnyEnemy card at a random enemy); `RunRng.CombatTargets` x1 (TrashToTreasurePower channels; a full queue evokes the front orb); `RunRng.CombatTargets` x1 (CardCmd.AutoPlay(target: null) for an AnyEnemy attack).
+
+## 7. Version delta v0.107.1 -> v0.111.0
+
+Method: per file, normalized identifier/literal/operator multisets plus the awaited Cmd order (by state number) and structural fields (ctor, CanonicalVars, keywords, tags, OnUpgrade, override set) were compared; every flagged file was read. Counts: same 120, cosmetic 29, rule-change 26, new 7.
+
+| Card | Pool | Status | Change |
+| --- | --- | --- | --- |
+| `ACCELERANT` | SILENT | rule-change | rarity Rare -> Uncommon (reward/shop odds); effect unchanged |
+| `ANTICIPATE` | SILENT | rule-change | upgrade +1 -> +2 Dexterity |
+| `BIASED_COGNITION` | DEFECT | rule-change | Focus 4 -> 5 |
+| `BLADE_SYMPHONY` | SILENT | new | no v0.107.1 file (card added after v0.107.1) |
+| `COMPACT` | DEFECT | rule-change | per-card CardCmd.Transform -> one batched Transform(IEnumerable<CardTransformation>, null): same cards, different side-effect order |
+| `CONCOCT` | SILENT | new | no v0.107.1 file (card added after v0.107.1) |
+| `ECHOING_SLASH` | SILENT | rule-change | rarity Rare -> Uncommon; AttackContext and CreatureCmd.Damage now take the CardPlay (API) |
+| `EXPERTISE` | SILENT | rule-change | draw until 6 (+1) cards in hand -> draw 2 (+1) and give them Retain this turn |
+| `FADE` | SILENT | new | no v0.107.1 file (card added after v0.107.1) |
+| `FLANKING` | SILENT | rule-change | rarity Uncommon -> Rare (MultiplayerOnly card) |
+| `FLICK_FLACK` | SILENT | rule-change | damage 6 -> 7 |
+| `HAZE` | SILENT | rule-change | cost 3 -> 2, Sly removed, adds Weak 1 (+1) to all hittable enemies, list overloads |
+| `HIBERNATE` | DEFECT | new | no v0.107.1 file (card added after v0.107.1) |
+| `HYPERBEAM` | DEFECT | rule-change | damage 28 (+8) -> 24 (+6); permanent -3 FocusPower -> HyperbeamFocusDownPower (this turn only) |
+| `IGNITION` | DEFECT | rule-change | rarity Rare -> Uncommon (MultiplayerOnly card) |
+| `IMITATION_LEARNING` | DEFECT | new | no v0.107.1 file (card added after v0.107.1) |
+| `MIRAGE` | SILENT | rule-change | upgrade: cost -1 -> remove Exhaust |
+| `MOMENTUM_STRIKE` | DEFECT | rule-change | damage 10 (+3) -> 11 (+4) |
+| `NIGHTMARE` | SILENT | rule-change | CanBeGeneratedInCombat override (false) added: no longer offered by in-combat random generation |
+| `NULL` | DEFECT | rule-change | Weak 2 -> 1 |
+| `ONE_FOR_ALL` | DEFECT | new | no v0.107.1 file (card added after v0.107.1) |
+| `OUTBREAK` | SILENT | rule-change | reworked: 1-cost Uncommon Power (OutbreakPower 11 (+4), repeat 3) -> 3-cost Rare AllEnemies Skill: Poison 9 (+3) to all, then trigger each enemy's Poison |
+| `REFRACT` | DEFECT | rule-change | damage 9 -> 10 |
+| `ROCKET_PUNCH` | DEFECT | rule-change | on Status creation: cost 0 until played (SetUntilPlayed) -> cost -1 until played, stacking (AddUntilPlayed) |
+| `SCRAPE` | DEFECT | rule-change | zero-cost filter CostModifiers.Local -> CostModifiers.All |
+| `SHATTER` | DEFECT | rule-change | gains Exhaust |
+| `SIDESTEP` | SILENT | new | no v0.107.1 file (card added after v0.107.1) |
+| `SUNDER` | DEFECT | rule-change | damage 24 -> 26 |
+| `SYNCHRONIZE` | DEFECT | rule-change | Exhaust removed (upgrade now raises the multiplier); Focus per distinct orb type 2 -> 1 (+1) |
+| `THUNDER` | DEFECT | rule-change | ThunderPower 6 (+2) -> 8 (+3) |
+| `TRACKING` | SILENT | rule-change | applies TrackingPower 50 every time (was 2 first, 1 after); TrackingPower now multiplies by 1 + Amount/100 |
+| `TRASH_TO_TREASURE` | DEFECT | rule-change | upgrade: Innate -> cost -1 |
+| `WELL_LAID_PLANS` | SILENT | rule-change | reworked: Uncommon 1-cost retain-N prompt (SingleplayerOnly) -> Rare 2-cost (-1) whole-hand retain via WellLaidPlansPower.ShouldFlush |
+
+Dependency power changes that alter a card whose own file is unchanged or cosmetic: `FERAL` <- FeralPower: rule-change (API rename and new !card.IsDupe condition).
+
+Cosmetic only (29): `ALL_FOR_ONE`, `BARRAGE`, `BOUNCING_FLASK`, `BUBBLE_BUBBLE`, `CHILL`, `CLAW`, `COMPILE_DRIVER`, `DARKNESS`, `ENERGY_SURGE`, `EXPOSE`, `FINISHER`, `FLAK_CANNON`, `FLECHETTES`, `FTL`, `GENETIC_ALGORITHM`, `GRAND_FINALE`, `HELIX_DRILL`, `HIDDEN_DAGGERS`, `KNIFE_TRAP`, `MEMENTO_MORI`, `MURDER`, `PIERCING_WAIL`, `PINPOINT`, `PRECISE_CUT`, `PREPARED`, `REBOOT`, `TESLA_COIL`, `THE_HUNT`, `VOLTAIC`.
+
+## 8. Decompile-unreadable files
+
+- No card file in this slice is unreadable: 0 'could not be decompiled' / error markers in 182 files. Every OnPlay is a compiler state machine that reads cleanly; 3,177 '//IL_xxxx: Unknown result type' comments are TaskAwaiter/Godot reference noise.
+- 5 files carry a benign '/*cast due to .constrained prefix*/' on an enumerator Dispose (Compact, FlakCannon, Hyperbeam, Reboot, TeslaCoil).
+- Textual order inside MoveNext is not execution order when awaits sit in switch cases (e.g. Abrasive, Expose, Null): read the `_003C_003E1__state = N` numbers (assigned in source order) or the v0.107.1 async source. vdelta.py orders awaited Cmd calls by those state numbers.
+- Hyperbeam's BeforeDamage async lambda (`_003C_003COnPlay_003Eb__5_0_003Ed`) is VFX only (NHyperbeamVfx, Cmd.Wait); it calls Enumerable.Last on alive enemies, unreachable with no alive enemy because the play loop stops when combat ends.
+- No re-decompile with reference assemblies is needed for this slice.
+
+## 9. Kernel requirement frequency
+
+| Requirement (single-player cards) | Cards |
+| --- | --: |
+| OrbQueue | 38 |
+| Hook.ModifyOrbValue | 28 |
+| OrbCmd.Channel | 23 |
+| CalculatedVar family | 13 |
+| Sly keyword: auto-play after CardCmd discard | 11 |
+| CardCmd.Discard / DiscardAndDraw with the Sly auto-play pass | 9 |
+| Shiv.CreateInHand -> CardPileCmd.AddGeneratedCardsToCombat | 9 |
+| CardSelectCmd.FromHandForDiscard | 5 |
+| CombatState.CreateCard<T> + CardPileCmd.AddGeneratedCardToCombat | 5 |
+| CardCmd.Upgrade in combat | 4 |
+| OrbCmd.EvokeNext | 4 |
+| CombatHistory.CardPlaysFinished | 4 |
+| TemporaryFocusPower base | 4 |
+| X energy cost | 4 |
+| OrbCmd.Passive | 3 |
+| CardSelectCmd.FromHand | 3 |
+| DamageCmd.Attack(CalculatedDamageVar) overload | 3 |
+| CardModel.CreateClone | 2 |
+| CardEnergyCost.SetThisCombat | 2 |
+| CardEnergyCost.GetWithModifiers(CostModifiers.All) | 2 |
+| FocusPower | 2 |
+| CardModel.SetToFreeThisTurn | 2 |
+| OrbCmd.AddSlots | 2 |
+| PlayerCombatState.AllCards | 2 |
+| CardModel.AfterDowngraded | 2 |
+| CardFactory.GetDistinctForCombat | 2 |
+| CardPoolModel.GetUnlockedCards(UnlockState, SingleplayerOnly) | 2 |
+| UnlockState input | 2 |
+| OrbCmd.EvokeNext(dequeue: false) | 2 |
+| CardCmd.Exhaust | 2 |
+| CombatHistory.CardDrawnEntry | 2 |
+| CardCmd.AutoPlay | 2 |
+| CardCmd.ApplyKeyword | 2 |
+| CardEnergyCost.AddThisCombat | 2 |
+| cards in combat piles as hook listeners | 2 |
+| AttackCommand.Results -> DamageResult.WasTargetKilled | 2 |
+| CardPileCmd.AddGeneratedCardToCombat | 1 |
+| CardPileCmd.Add(card, Hand) for an existing combat card | 1 |
+| TemporaryDexterityPower base | 1 |
+| CardCmd.Enchant<T> | 1 |
+| OrbCmd.RemoveSlots | 1 |
+| CardCmd.DiscardAndDraw | 1 |
+| OrbModel.GetRandomOrb over 5 ids incl. Glass | 1 |
+| per-card mutable field ExtraDamageFromClawPlays | 1 |
+| CardCmd.Transform(IEnumerable<CardTransformation>, rng: null) | 1 |
+| OrbCmd.EvokeLast | 1 |
+| CreatureCmd.GainBlock returns the block actually gained | 1 |
+| AttackContext | 1 |
+| CreatureCmd.Damage(targets, DamageVar, dealer, cardSource, cardPlay) overload | 1 |
+| CombatHistory.CardPlaysStarted | 1 |
+| Hook.ModifyCardPlayCount | 1 |
+| CardCmd.ApplySingleTurnRetain | 1 |
+| CreatureCmd.LoseBlock with remover | 1 |
+| PowerCmd.Remove<T> | 1 |
+| Hook.ModifyCardPlayResultLocation + AfterModifyingCardPlayResultLocation | 1 |
+| AttackCommand.TargetingRandomOpponents | 1 |
+| CardModel.DeckVersion link | 1 |
+| [SavedProperty] CurrentBlock / IncreasedBlock | 1 |
+| MonsterModel.IntendsToAttack | 1 |
+| CardDef.IsPlayable override | 1 |
+| CardCmd.ApplySingleTurnSly | 1 |
+| CombatHistory.EnergySpentEntry | 1 |
+| CardSelectCmd.FromCombatPile | 1 |
+| CardPileCmd.Add(card, Hand) | 1 |
+| CombatHistory.CardDiscardedEntry | 1 |
+| CalculatedBlockVar -> CreatureCmd.GainBlock(amount, props, cardPlay) | 1 |
+| CardCmd.ClearAffliction | 1 |
+| PowerInstanceType.Instanced powers | 1 |
+| PoisonPower.Trigger() public entry | 1 |
+| TemporaryStrengthPower base | 1 |
+| CardEnergyCost.AddThisTurn | 1 |
+| CardPileCmd.Add(card, Draw) | 1 |
+| CardPileCmd.Shuffle | 1 |
+| CardEnergyCost.AddUntilPlayed | 1 |
+| LightningOrb.Passive with an explicit target | 1 |
+| PowerModel.ShouldOwnerDeathTriggerFatal | 1 |
+| CombatRoom.AddExtraReward + CardReward(CardCreationOptions.ForRoom, 3) | 1 |
+| RunState.CurrentRoom | 1 |
+| Hook.AfterOrbEvoked | 1 |
+| CardSelectCmd.FromHandForDiscard at AfterPlayerTurnStart | 1 |
+| OrbModel.GetRandomOrb | 1 |
+| ListExtensions.StableShuffle | 1 |
+| per-card mutable field TimesPlayedThisCombat | 1 |
+| CombatHistory.OrbChanneledEntry | 1 |
+| Hook.ShouldFlush | 1 |
+
+## 10. Per-card table
+
+| Pool | Id | Cost | Type | Rarity | Tier (own) | Batch | Mechanics | Prompt | Delta |
+| --- | --- | --- | --- | --- | --- | --: | --- | --- | --- |
+| SIL | `ABRASIVE` | 3 | Power | Rare | 2 (2) | 3 | Sly; apply Dexterity 1; apply Thorns 4 (+2) | - | same |
+| SIL | `ACCELERANT` | 1 | Power | Uncommon | 1 (1) | 2 | apply AccelerantPower 1 (+1) | - | rule-change |
+| SIL | `ACCURACY` | 1 | Power | Uncommon | 2 (1) | 3 | apply AccuracyPower 4 (+2): Shiv attacks +N damage | - | same |
+| SIL | `ACROBATICS` | 1 | Skill | Uncommon | 3 (3) | 5 | draw 3 (+1); discard 1 card from hand (choice) | HandSelect 1-1 | same |
+| DEF | `ADAPTIVE_STRIKE` | 2 | Attack | Rare | 2 (2) | 3 | damage 18 (+5) to target; add a 0-cost (this combat) copy of this card to the discard pile | - | same |
+| SIL | `ADRENALINE` | 0 | Skill | Rare | 1 (1) | 1 | Exhaust; gain 1 (+1) energy; draw 2 | - | same |
+| SIL | `AFTERIMAGE` | 1 | Power | Rare | 1 (1) | 2 | apply AfterimagePower 1: block per card played; upgrade: gain Innate | - | same |
+| DEF | `ALL_FOR_ONE` | 2 | Attack | Rare | 1 (1) | 1 | damage 10 (+4) to target; return every 0-cost Attack/Skill/Power from discard to hand | - | cosmetic |
+| SIL | `ANTICIPATE` | 0 | Skill | Common | 1 (1) | 2 | apply AnticipatePower (temporary Dexterity) 2 (+2) | - | rule-change |
+| SIL | `ASSASSINATE` | 0 | Attack | Rare | 1 (1) | 1 | Innate; Exhaust; damage 10 (+3) to target; apply Vulnerable 1 (+1) | - | same |
+| SIL | `BACKFLIP` | 1 | Skill | Common | 1 (1) | 1 | block 5 (+3); draw 2 | - | same |
+| SIL | `BACKSTAB` | 0 | Attack | Uncommon | 1 (1) | 1 | Innate; Exhaust; damage 11 (+4) to target | - | same |
+| DEF | `BALL_LIGHTNING` | 1 | Attack | Common | 3 (3) | 6 | damage 7 (+3) to target; channel 1 Lightning | - | same |
+| DEF | `BARRAGE` | 1 | Attack | Common | 3 (3) | 6 | damage 5 (+2) to target x (orbs in queue) | - | cosmetic |
+| DEF | `BEAM_CELL` | 0 | Attack | Common | 1 (1) | 1 | damage 3 (+1) to target; apply Vulnerable 1 (+1) | - | same |
+| DEF | `BIASED_COGNITION` | 1 | Power | Ancient | 3 (1) | 6 | gain Focus 5 (+1); apply BiasedCognitionPower 1: lose 1 Focus each turn | - | rule-change |
+| SIL | `BLADE_DANCE` | 1 | Skill | Common | 2 (2) | 3 | Exhaust; create 3 (+1) Shivs in hand, one CreateInHand call each | - | same |
+| SIL | `BLADE_OF_INK` | 1 | Skill | Rare | 3 (3) | 8 | create 2 (+1) Shivs in hand (one batch); enchant each with Inky 1 | - | same |
+| SIL | `BLADE_SYMPHONY` | 2 | Skill | Uncommon | 2 (2) | 99 | each alive teammate player gets 2 Shivs; upgrade: cost -1 | - | new |
+| SIL | `BLUR` | 1 | Skill | Uncommon | 1 (1) | 2 | block 5 (+3); apply BlurPower 1: block is not cleared next turn | - | same |
+| DEF | `BOOST_AWAY` | 0 | Skill | Common | 1 (1) | 2 | block 6 (+3); add a Dazed to the discard pile | - | same |
+| DEF | `BOOT_SEQUENCE` | 0 | Skill | Uncommon | 1 (1) | 1 | Innate; Exhaust; block 10 (+3) | - | same |
+| SIL | `BOUNCING_FLASK` | 2 | Skill | Uncommon | 1 (1) | 2 | apply Poison 3 to a random hittable enemy, 3 (+1) times | - | cosmetic |
+| SIL | `BUBBLE_BUBBLE` | 1 | Skill | Uncommon | 1 (1) | 2 | apply Poison 9 (+3) to target only if it already has Poison | - | cosmetic |
+| DEF | `BUFFER` | 2 | Power | Rare | 1 (1) | 2 | apply BufferPower 1 (+1): prevent the next HP loss | - | same |
+| DEF | `BULK_UP` | 2 | Power | Uncommon | 3 (3) | 7 | lose 1 orb slot; gain Strength 2 (+1); gain Dexterity 2 (+1) | - | same |
+| SIL | `BULLET_TIME` | 3 | Skill | Rare | 1 (1) | 2 | every non-X card in hand costs 0 this turn; apply NoDrawPower | - | same |
+| SIL | `BURST` | 1 | Skill | Rare | 1 (1) | 2 | apply BurstPower 1 (+1): next Skill(s) this turn play twice | - | same |
+| SIL | `CALCULATED_GAMBLE` | 0 | Skill | Uncommon | 2 (2) | 3 | Exhaust; discard the whole hand, then draw that many; upgrade: gain Retain | - | same |
+| DEF | `CAPACITOR` | 1 | Power | Uncommon | 3 (3) | 7 | gain 2 (+1) orb slots | - | same |
+| DEF | `CHAOS` | 1 | Skill | Uncommon | 3 (3) | 7 | channel 1 (+1) random orb (Lightning/Frost/Dark/Plasma/Glass) | - | same |
+| DEF | `CHARGE_BATTERY` | 1 | Skill | Common | 1 (1) | 2 | block 7 (+3); apply EnergyNextTurnPower 1 | - | same |
+| DEF | `CHILL` | 0 | Skill | Uncommon | 3 (3) | 6 | Exhaust (upgrade removes); channel 1 Frost per hittable enemy | - | cosmetic |
+| DEF | `CLAW` | 0 | Attack | Common | 2 (2) | 3 | damage 3 (+1) to target; every Claw in combat gains +2 (+1) damage | - | cosmetic |
+| SIL | `CLOAK_AND_DAGGER` | 1 | Skill | Common | 2 (2) | 3 | block 6; create 1 (+1) Shiv(s), one CreateInHand call each | - | same |
+| DEF | `COLD_SNAP` | 1 | Attack | Common | 3 (3) | 6 | damage 6 (+3) to target; channel 1 Frost | - | same |
+| DEF | `COMPACT` | 1 | Skill | Uncommon | 2 (2) | 3 | block 6 (+1); transform every transformable Status in hand into Fuel (upgraded if Compact is) | - | rule-change |
+| DEF | `COMPILE_DRIVER` | 1 | Attack | Common | 3 (3) | 6 | damage 7 (+3) to target; draw 1 per distinct orb type in queue | - | cosmetic |
+| SIL | `CONCOCT` | 0 | Skill | Uncommon | 1 (1) | 99 | apply ConcoctPower 3 (+1) to an ally | - | new |
+| DEF | `CONSUMING_SHADOW` | 2 | Power | Rare | 3 (3) | 7 | channel 2 (+1) Dark; apply ConsumingShadowPower 1: evoke your last orb at end of turn | - | same |
+| DEF | `COOLANT` | 1 | Power | Rare | 3 (1) | 7 | apply CoolantPower 2 (+1): at turn start gain N block per distinct orb type | - | same |
+| DEF | `COOLHEADED` | 1 | Skill | Common | 3 (3) | 6 | channel 1 Frost; draw 1 (+1) | - | same |
+| SIL | `CORROSIVE_WAVE` | 1 | Skill | Rare | 1 (1) | 2 | apply CorrosiveWavePower 2 (+1): this turn each card you draw poisons all enemies | - | same |
+| DEF | `CREATIVE_AI` | 3 | Power | Rare | 3 (1) | 8 | apply CreativeAiPower 1: add a random Power card to hand each turn; upgrade: cost -1 | - | same |
+| SIL | `DAGGER_SPRAY` | 1 | Attack | Common | 1 (1) | 1 | damage 4 (+2) to all enemies, 2 hits | - | same |
+| SIL | `DAGGER_THROW` | 1 | Attack | Common | 3 (3) | 5 | damage 9 (+3) to target; draw 1; discard 1 card from hand (choice) | HandSelect 1-1 | same |
+| DEF | `DARKNESS` | 1 | Skill | Uncommon | 3 (3) | 7 | channel 1 Dark; trigger the passive of every Dark orb 1 (2 if upgraded) time(s) | - | cosmetic |
+| SIL | `DASH` | 2 | Attack | Uncommon | 1 (1) | 1 | block 10 (+3); damage 10 (+3) to target | - | same |
+| SIL | `DEADLY_POISON` | 1 | Skill | Common | 1 (1) | 2 | apply Poison 5 (+2) to target | - | same |
+| DEF | `DEFEND_DEFECT` | 1 | Skill | Basic | 1 (1) | 1 | block 5 (+3) | - | same |
+| SIL | `DEFEND_SILENT` | 1 | Skill | Basic | 1 (1) | 1 | block 5 (+3) | - | same |
+| SIL | `DEFLECT` | 0 | Skill | Common | 1 (1) | 1 | block 4 (+3) | - | same |
+| DEF | `DEFRAGMENT` | 1 | Power | Rare | 3 (1) | 6 | gain Focus 1 (+1) | - | same |
+| SIL | `DODGE_AND_ROLL` | 1 | Skill | Common | 1 (1) | 2 | block 4 (+2); apply BlockNextTurnPower = block actually gained | - | same |
+| DEF | `DOUBLE_ENERGY` | 1 | Skill | Uncommon | 1 (1) | 1 | Exhaust; gain energy equal to your current energy; upgrade: cost -1 | - | same |
+| DEF | `DUALCAST` | 1 | Skill | Basic | 3 (3) | 6 | evoke the front orb twice (first evoke keeps it, second removes it); upgrade: cost -1 | - | same |
+| SIL | `ECHOING_SLASH` | 1 | Attack | Uncommon | 2 (2) | 3 | damage 10 (+3) to all hittable enemies; repeat once more per enemy killed | - | rule-change |
+| DEF | `ECHO_FORM` | 3 | Power | Rare | 3 (1) | 4 | Ethereal (upgrade removes); apply EchoFormPower 1: the first N cards each turn are played twice | - | same |
+| DEF | `ENERGY_SURGE` | 1 | Skill | Uncommon | 1 (1) | 99 | Exhaust; every alive teammate player gains 2 (+1) energy | - | cosmetic |
+| SIL | `ENVENOM` | 2 | Power | Rare | 1 (1) | 2 | apply EnvenomPower 1 (+1): unblocked powered attack damage applies Poison | - | same |
+| SIL | `ESCAPE_PLAN` | 0 | Skill | Uncommon | 1 (1) | 1 | draw 1; if the drawn card is a Skill: block 3 (+2) | - | same |
+| SIL | `EXPERTISE` | 1 | Skill | Uncommon | 2 (2) | 3 | draw 2 (+1); the drawn cards gain Retain this turn | - | rule-change |
+| SIL | `EXPOSE` | 0 | Skill | Uncommon | 1 (1) | 2 | Exhaust; remove all block from target; remove Artifact from target; apply Vulnerable 2 (+1) | - | cosmetic |
+| SIL | `FADE` | 0 | Skill | Uncommon | 1 (1) | 99 | Retain; apply FadePower (temporary Dexterity) 6 (+3) to an ally | - | new |
+| SIL | `FAN_OF_KNIVES` | 2 | Power | Rare | 2 (2) | 3 | apply FanOfKnivesPower: Shivs hit all enemies; create 4 (+1) Shivs, one call each | - | same |
+| DEF | `FERAL` | 2 | Power | Uncommon | 2 (1) | 3 | apply FeralPower 1: the first N 0-energy Attacks each turn return to the top of your hand; upgrade: cost -1 | - | same |
+| DEF | `FIGHT_THROUGH` | 1 | Skill | Uncommon | 1 (1) | 2 | block 13 (+4); add 2 Wounds to the discard pile | - | same |
+| SIL | `FINISHER` | 1 | Attack | Uncommon | 3 (3) | 4 | damage 6 (+2) to target x (attacks you played this turn) | - | cosmetic |
+| DEF | `FLAK_CANNON` | 2 | Attack | Rare | 2 (2) | 3 | exhaust every Status card not already exhausted; damage 8 (+3) to random enemies, once per Status | - | cosmetic |
+| SIL | `FLANKING` | 2 | Skill | Rare | 1 (1) | 99 | apply FlankingPower 2 to target; upgrade: cost -1 | - | rule-change |
+| SIL | `FLECHETTES` | 1 | Attack | Uncommon | 2 (2) | 3 | damage 5 (+2) to target x (Skills in hand) | - | cosmetic |
+| SIL | `FLICK_FLACK` | 1 | Attack | Common | 2 (2) | 3 | Sly; damage 7 (+2) to all enemies | - | rule-change |
+| DEF | `FOCUSED_STRIKE` | 1 | Attack | Common | 3 (1) | 6 | damage 9 (+2) to target; gain Focus 1 (+1) this turn | - | same |
+| SIL | `FOOTWORK` | 1 | Power | Uncommon | 1 (1) | 1 | apply Dexterity 2 (+1) | - | same |
+| DEF | `FTL` | 0 | Attack | Uncommon | 3 (3) | 4 | damage 5 (+1) to target; draw 1 if you played fewer than 3 (+1) cards this turn | - | cosmetic |
+| DEF | `FUSION` | 1 | Skill | Uncommon | 3 (3) | 6 | Exhaust (upgrade removes); channel 1 Plasma | - | same |
+| DEF | `GENETIC_ALGORITHM` | 1 | Skill | Rare | 4 (4) | 8 | Exhaust; block = CurrentBlock (starts at 1); permanently +3 (+1) block on this card and its deck version | - | cosmetic |
+| DEF | `GLACIER` | 2 | Skill | Uncommon | 3 (3) | 6 | block 6 (+3); channel 2 Frost | - | same |
+| DEF | `GLASSWORK` | 1 | Skill | Uncommon | 3 (3) | 6 | block 5 (+3); channel 1 Glass | - | same |
+| DEF | `GO_FOR_THE_EYES` | 0 | Attack | Common | 1 (1) | 1 | damage 3 (+1) to target; if the target intends to attack: apply Weak 1 (+1) | - | same |
+| SIL | `GRAND_FINALE` | 0 | Attack | Rare | 1 (1) | 1 | playable only with an empty draw pile; damage 60 (+15) to all enemies | - | cosmetic |
+| DEF | `GUNK_UP` | 1 | Attack | Common | 1 (1) | 1 | damage 4 (+1) to target, 3 hits; add a Slimed to the discard pile | - | same |
+| DEF | `HAILSTORM` | 1 | Power | Uncommon | 3 (1) | 7 | apply HailstormPower 6 (+2): end of turn, with a Frost orb, deal N to all enemies | - | same |
+| SIL | `HAND_TRICK` | 1 | Skill | Uncommon | 3 (3) | 5 | block 7 (+3); a chosen Skill in hand (not already Sly) gains Sly this turn (choice) | HandSelect 1-1 | same |
+| SIL | `HAZE` | 2 | Skill | Uncommon | 1 (1) | 2 | apply Poison 4 (+2) to all hittable enemies; apply Weak 1 (+1) to all hittable enemies | - | rule-change |
+| DEF | `HELIX_DRILL` | 0 | Attack | Rare | 3 (3) | 4 | damage 3 (+2) to target x (energy you spent this turn) | - | cosmetic |
+| DEF | `HIBERNATE` | 2 | Skill | Uncommon | 3 (3) | 99 | apply HibernatePower 1; channel 2 (+1) Frost (Frost evokes also shield teammates) | - | new |
+| SIL | `HIDDEN_DAGGERS` | 0 | Skill | Uncommon | 3 (3) | 5 | discard 2 cards (choice); create 2 Shivs (one batch); if upgraded: upgrade those Shivs | HandSelect 2-2 | cosmetic |
+| DEF | `HOLOGRAM` | 1 | Skill | Common | 3 (3) | 5 | block 3 (+2); put a chosen card from the discard pile into your hand; Exhaust (upgrade removes) | PileSelect 1-1 | same |
+| DEF | `HOTFIX` | 0 | Skill | Common | 3 (1) | 6 | Exhaust (upgrade removes); gain Focus 2 this turn | - | same |
+| DEF | `HYPERBEAM` | 2 | Attack | Rare | 3 (1) | 6 | damage 24 (+6) to all enemies; lose 3 Focus this turn | - | rule-change |
+| DEF | `ICE_LANCE` | 3 | Attack | Rare | 3 (3) | 6 | damage 19 (+5) to target; channel 3 Frost | - | same |
+| DEF | `IGNITION` | 1 | Skill | Uncommon | 3 (3) | 99 | Exhaust (upgrade removes); an ally channels 1 Plasma | - | rule-change |
+| DEF | `IMITATION_LEARNING` | 1 | Skill | Rare | 2 (2) | 99 | Exhaust; apply/extend ImitationLearningPower 2 (+1) targeting an ally | - | new |
+| SIL | `INFINITE_BLADES` | 1 | Power | Uncommon | 2 (1) | 3 | apply InfiniteBladesPower: a Shiv at the start of each turn; upgrade: gain Innate | - | same |
+| DEF | `ITERATION` | 1 | Power | Uncommon | 3 (1) | 4 | apply IterationPower 2 (+1): the first Status drawn each turn draws N | - | same |
+| SIL | `KNIFE_TRAP` | 2 | Skill | Rare | 2 (2) | 3 | auto-play every Shiv in your exhaust pile at the target; if upgraded: upgrade them first | - | cosmetic |
+| SIL | `LEADING_STRIKE` | 1 | Attack | Common | 2 (2) | 3 | damage 3 (+3) to target; create 2 Shivs, one call each | - | same |
+| DEF | `LEAP` | 1 | Skill | Common | 1 (1) | 1 | block 9 (+3) | - | same |
+| SIL | `LEG_SWEEP` | 2 | Skill | Uncommon | 1 (1) | 1 | block 11 (+3); apply Weak 2 (+1) to target | - | same |
+| DEF | `LIGHTNING_ROD` | 1 | Skill | Common | 3 (1) | 7 | block 4 (+3); apply LightningRodPower 2: channel Lightning at energy reset, 2 turns | - | same |
+| DEF | `LOOP` | 1 | Power | Uncommon | 3 (1) | 7 | apply LoopPower 1 (+1): at turn start trigger the front orb's passive N times | - | same |
+| DEF | `MACHINE_LEARNING` | 1 | Power | Rare | 1 (1) | 2 | apply MachineLearningPower 1: +1 card drawn each turn; upgrade: gain Innate | - | same |
+| SIL | `MALAISE` | X | Skill | Rare | 1 (1) | 1 | Exhaust; X cost: target loses X (+1 upgraded) Strength; apply Weak X (+1 upgraded) | - | same |
+| SIL | `MASTER_PLANNER` | 2 | Power | Rare | 2 (1) | 3 | apply MasterPlannerPower: Skills you play gain Sly; upgrade: cost -1 | - | same |
+| SIL | `MEMENTO_MORI` | 1 | Attack | Uncommon | 3 (3) | 4 | damage 9 (+2) + 4 (+1) x (cards you discarded this turn) to target | - | cosmetic |
+| DEF | `METEOR_STRIKE` | 5 | Attack | Rare | 3 (3) | 6 | damage 24 (+6) to target; channel 3 Plasma | - | same |
+| SIL | `MIRAGE` | 1 | Skill | Uncommon | 2 (2) | 3 | Exhaust (upgrade removes); block = total Poison on alive enemies | - | rule-change |
+| DEF | `MODDED` | 0 | Skill | Rare | 3 (3) | 7 | gain 1 orb slot; draw 1 (+1); this card costs 1 more for the rest of combat | - | same |
+| DEF | `MOMENTUM_STRIKE` | 1 | Attack | Common | 1 (1) | 1 | damage 11 (+4) to target; this card costs 0 for the rest of combat | - | rule-change |
+| DEF | `MULTI_CAST` | X | Skill | Rare | 3 (3) | 7 | X cost (+1 if upgraded): evoke the front orb X times, removing it on the last evoke | - | same |
+| SIL | `MURDER` | 3 | Attack | Rare | 3 (3) | 4 | damage 1 + 1 x (cards you drew this combat) to target; upgrade: cost -1 | - | cosmetic |
+| SIL | `NEUTRALIZE` | 0 | Attack | Basic | 1 (1) | 1 | damage 3 (+1) to target; apply Weak 1 (+1) to target | - | same |
+| SIL | `NIGHTMARE` | 3 | Skill | Rare | 3 (3) | 5 | Exhaust; choose a card in hand; next turn add 3 copies of it to hand; upgrade: cost -1 | HandSelect 1-1 | rule-change |
+| SIL | `NOXIOUS_FUMES` | 1 | Power | Uncommon | 1 (1) | 2 | apply NoxiousFumesPower 2 (+1): Poison all enemies at the start of your turn | - | same |
+| DEF | `NULL` | 2 | Attack | Uncommon | 3 (3) | 6 | damage 10 (+3) to target; apply Weak 1 (+1); channel 1 Dark | - | rule-change |
+| DEF | `ONE_FOR_ALL` | 1 | Power | Rare | 1 (1) | 99 | every player gains OneForAllPower 3 (+1) | - | new |
+| SIL | `OUTBREAK` | 3 | Skill | Rare | 1 (1) | 2 | apply Poison 9 (+3) to each hittable enemy; then trigger each hittable enemy's Poison once | - | rule-change |
+| DEF | `OVERCLOCK` | 0 | Skill | Uncommon | 1 (1) | 2 | draw 2 (+1); add a Burn to the discard pile | - | same |
+| SIL | `PHANTOM_BLADES` | 1 | Power | Uncommon | 3 (1) | 4 | apply PhantomBladesPower 9 (+3): Shivs gain Retain; the first Shiv each turn deals +N | - | same |
+| SIL | `PIERCING_WAIL` | 1 | Skill | Common | 1 (1) | 2 | Exhaust; each hittable enemy loses 6 (+2) Strength this turn | - | cosmetic |
+| SIL | `PINPOINT` | 3 | Attack | Uncommon | 3 (3) | 4 | damage 15 (+4) to target; costs 1 less this turn per Skill played this turn | - | cosmetic |
+| SIL | `POISONED_STAB` | 1 | Attack | Common | 1 (1) | 2 | damage 6 (+2) to target; apply Poison 3 (+1) to target | - | same |
+| SIL | `POUNCE` | 2 | Attack | Uncommon | 1 (1) | 2 | damage 14 (+6) to target; apply FreeSkillPower 1: next Skill costs 0 | - | same |
+| SIL | `PRECISE_CUT` | 0 | Attack | Uncommon | 2 (2) | 3 | damage 13 (+3) - 2 x (other cards in hand) to target | - | cosmetic |
+| SIL | `PREDATOR` | 2 | Attack | Common | 1 (1) | 2 | damage 15 (+5) to target; apply DrawCardsNextTurnPower 2 | - | same |
+| SIL | `PREPARED` | 0 | Skill | Common | 3 (3) | 5 | draw 1 (+1); discard 1 (+1) cards (choice) | HandSelect Cards (1, +1)-Cards (1, +1) | cosmetic |
+| DEF | `QUADCAST` | 1 | Skill | Ancient | 3 (3) | 7 | evoke the front orb 4 times, removing it on the last; upgrade: cost -1 | - | same |
+| DEF | `RAINBOW` | 2 | Skill | Rare | 3 (3) | 6 | Exhaust (upgrade removes); channel Lightning, Frost, Dark | - | same |
+| DEF | `REBOOT` | 0 | Skill | Rare | 1 (1) | 1 | Exhaust; put your hand into the draw pile; shuffle the discard and draw piles together; draw 4 (+2) | - | cosmetic |
+| SIL | `REFLEX` | 3 | Skill | Uncommon | 2 (2) | 3 | Sly; draw 2 (+1) | - | same |
+| DEF | `REFRACT` | 3 | Attack | Uncommon | 3 (3) | 6 | damage 10 (+3) to target, 2 hits; channel 2 Glass | - | rule-change |
+| SIL | `RICOCHET` | 2 | Attack | Common | 2 (2) | 3 | Sly; damage 3 to random enemies, 4 (+1) hits | - | same |
+| DEF | `ROCKET_PUNCH` | 2 | Attack | Uncommon | 2 (2) | 3 | damage 13 (+1) to target; draw 1 (+1); costs 1 less until played per Status you create | - | rule-change |
+| DEF | `SCAVENGE` | 1 | Skill | Uncommon | 3 (3) | 5 | exhaust a chosen card from hand; apply EnergyNextTurnPower 2 (+1) | HandSelect 1-1 | same |
+| DEF | `SCRAPE` | 1 | Attack | Uncommon | 2 (2) | 3 | damage 7 (+3) to target; draw 4 (+1); discard the drawn cards that do not cost 0 | - | rule-change |
+| SIL | `SERPENT_FORM` | 3 | Power | Rare | 1 (1) | 2 | apply SerpentFormPower 4 (+2): each card you play deals N to a random enemy | - | same |
+| SIL | `SHADOWMELD` | 1 | Skill | Rare | 1 (1) | 2 | apply ShadowmeldPower 1: block gained this turn x2^Amount; upgrade: cost -1 | - | same |
+| DEF | `SHADOW_SHIELD` | 2 | Skill | Uncommon | 3 (3) | 6 | block 11 (+4); channel 1 Dark | - | same |
+| SIL | `SHADOW_STEP` | 1 | Skill | Rare | 2 (2) | 3 | discard your whole hand; apply ShadowStepPower: Double Damage next turn; upgrade: cost -1 | - | same |
+| DEF | `SHATTER` | 1 | Attack | Rare | 3 (3) | 7 | Exhaust; damage 7 (+4) to all enemies; evoke every orb twice (front orb, keep then remove) | - | rule-change |
+| SIL | `SIDESTEP` | 0 | Skill | Uncommon | 1 (1) | 2 | apply EnergyNextTurnPower 1 (+1) | - | new |
+| DEF | `SIGNAL_BOOST` | 1 | Skill | Rare | 1 (1) | 2 | Exhaust; apply SignalBoostPower 1: the next Power card plays twice; upgrade: cost -1 | - | same |
+| SIL | `SKEWER` | X | Attack | Uncommon | 1 (1) | 1 | X cost: damage 8 (+3) to target, X hits | - | same |
+| DEF | `SKIM` | 1 | Skill | Uncommon | 1 (1) | 1 | draw 3 (+1) | - | same |
+| SIL | `SLICE` | 0 | Attack | Common | 1 (1) | 1 | damage 6 (+3) to target | - | same |
+| DEF | `SMOKESTACK` | 1 | Power | Uncommon | 1 (1) | 2 | apply SmokestackPower 5 (+2): each Status you create deals N to all enemies | - | same |
+| SIL | `SNAKEBITE` | 2 | Skill | Common | 1 (1) | 2 | Retain; apply Poison 7 (+3) to target | - | same |
+| SIL | `SNEAKY` | 2 | Power | Rare | 2 (2) | 99 | Sly; apply SneakyPower 1 (+1) | - | same |
+| SIL | `SPEEDSTER` | 2 | Power | Uncommon | 1 (1) | 2 | apply SpeedsterPower 2: each non-hand-draw draw on your turn deals 2 to all enemies; upgrade: gain Innate | - | same |
+| DEF | `SPINNER` | 1 | Power | Rare | 3 (3) | 7 | if upgraded: channel 1 Glass; apply SpinnerPower 1: channel Glass at each energy reset | - | same |
+| DEF | `STORM` | 1 | Power | Uncommon | 3 (1) | 7 | apply StormPower 1 (+1): channel Lightning per Power card played | - | same |
+| SIL | `STORM_OF_STEEL` | 1 | Skill | Rare | 2 (2) | 3 | discard your whole hand; create that many Shivs (one batch); if upgraded: upgrade them | - | same |
+| SIL | `STRANGLE` | 1 | Attack | Uncommon | 1 (1) | 2 | damage 8 (+2) to target; apply StranglePower 2 (+1): target loses N HP per card you play this turn | - | same |
+| DEF | `STRIKE_DEFECT` | 1 | Attack | Basic | 1 (1) | 1 | damage 6 (+3) to target | - | same |
+| SIL | `STRIKE_SILENT` | 1 | Attack | Basic | 1 (1) | 1 | damage 6 (+3) to target | - | same |
+| DEF | `SUBROUTINE` | 1 | Power | Uncommon | 1 (1) | 2 | apply SubroutinePower 1: gain 1 energy per Power card played; upgrade: cost -1 | - | same |
+| SIL | `SUCKER_PUNCH` | 1 | Attack | Common | 1 (1) | 1 | damage 8 (+2) to target; apply Weak 1 (+1) to target | - | same |
+| DEF | `SUNDER` | 3 | Attack | Uncommon | 1 (1) | 1 | damage 26 (+8) to target; if it kills: gain 3 energy | - | rule-change |
+| DEF | `SUPERCRITICAL` | 0 | Skill | Rare | 1 (1) | 1 | Exhaust; gain 4 (+2) energy | - | same |
+| SIL | `SUPPRESS` | 0 | Attack | Ancient | 1 (1) | 1 | Innate; damage 11 (+6) to target; apply Weak 3 (+2) | - | same |
+| SIL | `SURVIVOR` | 1 | Skill | Basic | 3 (3) | 5 | block 8 (+3); discard 1 card from hand (choice) | HandSelect 1-1 | same |
+| DEF | `SWEEPING_BEAM` | 1 | Attack | Common | 1 (1) | 1 | damage 6 (+3) to all enemies; draw 1 | - | same |
+| DEF | `SYNCHRONIZE` | 1 | Skill | Uncommon | 3 (1) | 6 | gain Focus this turn = 1 (+1) x distinct orb types | - | rule-change |
+| DEF | `SYNTHESIS` | 2 | Attack | Uncommon | 1 (1) | 2 | damage 14 (+6) to target; apply FreePowerPower 1: next Power costs 0 | - | same |
+| SIL | `TACTICIAN` | 3 | Skill | Uncommon | 2 (2) | 3 | Sly; gain 1 (+1) energy | - | same |
+| DEF | `TEMPEST` | X | Skill | Uncommon | 3 (3) | 6 | X cost (+1 if upgraded): channel X Lightning | - | same |
+| DEF | `TESLA_COIL` | 0 | Attack | Uncommon | 3 (3) | 7 | damage 3 (+1) to target; every Lightning orb's passive hits the target (twice if upgraded) | - | cosmetic |
+| SIL | `THE_HUNT` | 1 | Attack | Rare | 4 (4) | 8 | Exhaust; damage 10 (+5) to target; on a fatal kill in a combat room: extra 3-card reward + TheHuntPower marker | - | cosmetic |
+| DEF | `THUNDER` | 1 | Power | Uncommon | 3 (1) | 7 | apply ThunderPower 8 (+3): Lightning evokes deal N extra to the creatures they hit | - | rule-change |
+| SIL | `TOOLS_OF_THE_TRADE` | 1 | Power | Rare | 3 (1) | 5 | apply ToolsOfTheTradePower: +1 draw each turn, then discard 1 (choice); upgrade: cost -1 | HandSelect Amount-Amount | same |
+| SIL | `TRACKING` | 2 | Power | Rare | 1 (1) | 2 | apply TrackingPower 50: your card attacks on Weak enemies deal x1.5 (stacks additively); upgrade: cost -1 | - | rule-change |
+| DEF | `TRASH_TO_TREASURE` | 1 | Power | Rare | 3 (1) | 7 | apply TrashToTreasurePower: channel a random orb per Status you create; upgrade: cost -1 | - | rule-change |
+| DEF | `TURBO` | 0 | Skill | Common | 2 (1) | 3 | gain 2 (+1) energy; add a Void to the discard pile | - | same |
+| SIL | `UNTOUCHABLE` | 2 | Skill | Common | 2 (2) | 3 | Sly; block 6 (+3) | - | same |
+| DEF | `UPROAR` | 2 | Attack | Common | 2 (2) | 3 | damage 6 (+2) to target, 2 hits; auto-play a random Attack from the draw pile | - | same |
+| SIL | `UP_MY_SLEEVE` | 2 | Skill | Uncommon | 2 (2) | 3 | create 3 (+1) Shivs, one call each; this card costs 1 less for the rest of combat | - | same |
+| DEF | `VOLTAIC` | 3 | Skill | Rare | 3 (3) | 7 | Exhaust (upgrade removes); channel Lightning once per Lightning channeled this combat | - | cosmetic |
+| SIL | `WELL_LAID_PLANS` | 2 | Power | Rare | 1 (1) | 2 | apply WellLaidPlansPower: your hand is not discarded at end of turn; upgrade: cost -1 | - | rule-change |
+| DEF | `WHITE_NOISE` | 1 | Skill | Uncommon | 3 (3) | 8 | Exhaust; add a random Power card from your pool to hand; it costs 0 this turn; upgrade: cost -1 | - | same |
+| SIL | `WRAITH_FORM` | 3 | Power | Ancient | 1 (1) | 2 | apply Intangible 2 (+1); apply WraithFormPower 1: lose 1 Dexterity each turn | - | same |
+| DEF | `ZAP` | 1 | Skill | Basic | 3 (3) | 6 | channel 1 Lightning; upgrade: cost -1 | - | same |
+
+## 11. Open questions
+
+1. Which game version are the recorder/diff bundles on? If they are v0.107.1, the 26 rule-changed and 7 new cards in this slice cannot be validated against them; the v0.111.0 rules here need v0.111.0 recordings or MCP self-play.
+2. Nested prompts through Sly: a prompting Skill that gained Sly (HandTrick, MasterPlannerPower) and is discarded by a prompting discarder (Survivor, Acrobatics, DaggerThrow, Prepared, HiddenDaggers) auto-plays inside the outer card's play and opens its own HandSelect; from ToolsOfTheTradePower the same chain starts inside the turn-setup HookPlayerChoiceContext. Confirm the choice runtime (design-combat-kernel §4.5-4.6) re-executes such chains exactly.
+3. WhiteNoise and CreativeAiPower filter the character pool through UnlockState epochs (Silent2/5/7 and Defect2/5/7 gate 9 cards each). The run input must carry the recorded UnlockState (design-subsystems open question 3).
+4. GeneticAlgorithm grows its deck version through [SavedProperty] CurrentBlock/IncreasedBlock: does the recorder/save export carry these properties so a mid-run import starts from the right block value?
+5. TheHunt adds a CardReward(CardCreationOptions.ForRoom, 3) to the CombatRoom from inside combat: when does that reward roll its cards (at AddExtraReward or when the reward screen opens), and in which order relative to the room's normal rewards (PlayerRng.Rewards consumption)? Run-layer question.
+
+Per-entry `open_questions` in the JSON restate questions 2-5 for the cards they touch: `ACROBATICS`, `CREATIVE_AI`, `DAGGER_THROW`, `GENETIC_ALGORITHM`, `HAND_TRICK`, `HIDDEN_DAGGERS`, `MASTER_PLANNER`, `PREPARED`, `SURVIVOR`, `THE_HUNT`, `TOOLS_OF_THE_TRADE`, `WHITE_NOISE`.

@@ -1,0 +1,452 @@
+# Event inventory (W0 semantic classification) — events, ancients, Neow
+
+2026-11-01 · W0 classification of the P1 full port ([plan](../p1-sim-full-port-plan-2026-11-01.md)) · game v0.111.0 · machine-readable companion: [`sim/specs/inventory/events.classified.json`](../../sim/specs/inventory/events.classified.json) (same entry order as [`events.json`](../../sim/specs/inventory/events.json), raw `source_digest` `67926fa2a70960f3`).
+
+Rule truth: `/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled/` (v0.111.0). Citations are `<ns-dir>/<File>.cs:<line>` with the `MegaCrit.Sts2.Core.` prefix dropped; `[v107]` marks the v0.107.1 tree (`artifacts/knowledge/decompiled-v0.107.1/MegaCrit/sts2/Core/`), used as a reading aid and as the fallback for values the v0.111.0 decompile lost. Scope: single player, `GameMode.Standard`, no modifiers, `TestMode.IsOff`, veteran unlock profile. Framework design (pull, Begin, options, combat, resume, save points) is in [design-run-layer.md](design-run-layer.md) 3.10-3.11; this document classifies the content.
+
+## 中文摘要
+
+- 共 69 个事件模型：act 事件 39、共享事件 17、Neow 1、二三幕远古 6、共享远古 Darv 1、终局 TheArchitect 1、钩子注入事件 WarHistorianRepy 1；另有 2 个存档占位（Deprecated*）和 1 个测试 mock，不移植。
+- 分级（以 W2 事件核心为基线，见下）：tier 1 = 12、tier 2 = 18、tier 3 = 34、tier 4 = 2。事件以玩家提示为主：带嵌套提示（选牌/奖励屏/战斗/小游戏）的有 34 个。
+- 规则变化（v0.107.1 → v0.111.0）只有 3 个：BattlewornDummy、Darv、Neow；其余为同一规则（反编译风格差异）或单人无影响的改动。
+- 反编译不可读：`AncientEventModel.RelicOption` 的 OnChosen 本地函数状态机整体缺失（影响全部 8 个远古的选遗物），ColossalFlower 与 TinkerTime 的静态数组初值丢失；均需带引用程序集重新反编译或读 IL，暂用 v0.107.1 值。
+- 隐藏 RNG/状态陷阱：战斗布局事件进门就抽 `RunRng.Niche`；RelicTrader/WelcomeToWongos 在事件开始就从遗物袋拉走遗物；Pael 第二槽列表自我 AddRange 造成加权；CrystalSphere 放置重试会累积物品与重复订阅。
+- 依赖顺序：W1 提示 API 与 Cmd 门面 → W2 事件核心/远古框架/奖励屏/遗物袋/卡牌奖励生成/事件战斗同步器 → 批次 1（Neow、远古、TheArchitect、纯数值事件）→ 2（无提示的门面事件）→ 3（提示事件）→ 4（事件战斗）→ 5（小游戏、假商人、LanternKey 链）→ 6（待 IL 复核）。
+
+## 1. How to read the classification
+
+Tier basis. Events cannot run in the sim today (no run layer). Tiers are therefore measured against the sim plus the W2 event core of docs/sim-port/design-run-layer.md 3.10-3.11: EventModel/AncientEventModel lifecycle, EventOption legality, the event Rng, and the basic run-state facades (HP, max HP, gold, fixed card add/remove, curse add, fixed relic obtain).
+
+| Tier | Meaning |
+| --- | --- |
+| 1 | only the event core and basic run-state facades (pure numbers, fixed cards/relics, event Rng) |
+| 2 | needs game facades that are not in the sim and not part of the core: relic grab bag, card reward generation, random upgrade/downgrade/clone, potion discard, relic removal, ancient option logic and unlock/profile queries, combat layout, run end |
+| 3 | needs a player prompt (CardSelectCmd deck/grid prompt, rewards screen, abandon modal) or a new subsystem (event combat, merchant UI, Crystal Sphere minigame) |
+| 4 | decompile-broken (lost static arrays) or cross-cutting content state that must be resolved first |
+
+| Batch | Content |
+| --- | --- |
+| 0 | not ported (deprecated save placeholders, test mock) |
+| 1 | W2 gate set: Neow and the act-2/3 ancients (option generation is a W2 oracle), TheArchitect (terminal victory) and the tier-1 events |
+| 2 | tier-2 events without prompts (grab bag, card generation, random upgrades, potion/relic trades, profile input) |
+| 3 | prompt events: deck prompts, grid picks and the rewards screen (needs the W1 resumable prompt API) |
+| 4 | event combats and combat-layout events (needs event encounters/monsters and EventCombatSynchronizer) |
+| 5 | special subsystems: Crystal Sphere minigame, FakeMerchant shop + FoulPotion rule, LanternKey -> WarHistorianRepy chain |
+| 6 | blocked on IL re-verification of lost static arrays (ColossalFlower, TinkerTime) |
+
+| v0.107.1 delta | Meaning |
+| --- | --- |
+| same | no source change visible: token fingerprints equal or only decompiler style differs |
+| cosmetic | source changed without a single-player rule effect (renames, history logging, multiplayer-only branches, owner-only reward lists) |
+| rule-change | single-player rules differ between v0.107.1 and v0.111.0 |
+
+Per-entry fields (JSON): `category`, `port_scope`, `layout`, `appearance` (pool, acts, allowed act indices, `IsAllowed` in words with citation, epoch gate, entry path, one-per-run), `options` (page, key, condition, cost, effect, next page, citation), `outcomes`, `combats`, `prompts` (type, min/max, source, filter, cancelable, auto-resolution, option, citation), `indirect_prompts` (pickup prompts of fixed relics the event grants, from `relics.json`), `rng_streams` (stream, when, draws, citation, in order), `mechanics`, `kernel_requirements`, `content_deps`, `ascension_sensitivity`, `unlock_progress_dependence`, `version_delta_v107` (`status`, `note`, `fingerprint` with the differing tokens), `tier`, `tier_reason`, `port_batch`, `notes`, `open_questions`; every raw `events.json` field is kept unchanged before them. Glossary tokens used in `kernel_requirements`:
+
+| Token | Meaning |
+| --- | --- |
+| `EventFramework` | EventModel lifecycle: BeginEvent sets Owner and the private Rng, then BeforeEventStarted, CalculateVars, SetInitialEventState -> GenerateInitialOptions (Models/EventModel.cs:68-144, :576-611); SetEventState / SetEventFinished (empty option list = finished, Models/EventModel.cs:760-810); EventOption legality (locked when OnChosen is null, Events/EventOption.cs:279, :292; DisableOnChosen guard :66; IsProceed :303-307). WillKillPlayer is a UI warning only in single player (Nodes.Events/NEventOptionButton.cs:599-623 blocks only when Players > 1). |
+| `EventRng` | EventModel.Rng = new Rng(RunSeed + (IsShared ? 0 : slot) + XXH64(Id.Entry)) (Models/EventModel.cs:91). Sim already has Random/Rng.cs ForPlayerModel + Random/DeterministicHash.cs; slot is 0 in single player so IsShared does not change the seed there. |
+| `AncientFramework` | AncientEventModel: arrival heal in BeforeEventStarted (Neow first sets HP to 0; heal (MaxHp-CurrentHp) x0.8 at A2 WearyTraveler; Models/AncientEventModel.cs:76-105), Hook.ShouldAllowAncient gate (no overriding model in v0.111.0; :275-289), StartPreFinished/Done (:328-351), RelicOption -> RelicCmd.Obtain + Done (:353-377; the local-function body is missing from the v0.111.0 decompile, see decompile list). |
+| `EventCombat` | EventModel.EnterCombatWithoutExitingEvent (shared events only; Models/EventModel.cs:812-839) -> EventCombatSynchronizer: CombatRoom{ParentEventId, ShouldResumeParentEventAfterCombat, ExtraRewards} entered with EnterRoomWithoutExitingCurrentRoom; normal room rewards (unless ShouldGiveRewards=false) + ExtraRewards. |
+| `EventResume` | EventModel.Resume(exitedRoom) override called from EventRoom.Resume after the event combat (Rooms/EventRoom.cs:373-379). |
+| `CombatLayout` | EventLayoutType.Combat: at room entry EventCombatSynchronizer.InitializeForEvent builds a layout CombatState (Multiplayer.Game/EventCombatSynchronizer.cs:83-128): encounter GenerateMonstersWithSlots on a fresh mutable copy + CombatState.CreateCreature per monster, which draws RunRng.Niche for the unique HP roll (Combat/CombatState.cs:709-724, Entities.Creatures/Creature.cs:972-984). Hidden RNG use before any option. |
+| `OutOfCombatDamage` | CreatureCmd.Damage / Heal / GainMaxHp (SetMaxHp then Heal of the gain) / LoseMaxHp / Kill with no live combat: HP hooks still dispatch; CreatureCmd.Kill or lethal damage ends the run (design-run-layer.md 3.14). |
+| `GoldFacades` | PlayerCmd.GainGold (Hook.ModifyGoldGained, then Gold += (int)amount, Hook.AfterGoldGained; Commands/PlayerCmd.cs:237-335) and PlayerCmd.LoseGold (Gold = max(0, Gold - (int)amount), no hooks; :896-918). |
+| `DeckFacades` | RunState.CreateCard / CloneCard, CardPileCmd.Add(card, Deck) (Hook.ModifyCardBeingAddedToDeck), CardPileCmd.AddCurseToDeck<T> / AddCursesToDeck, CardPileCmd.RemoveFromDeck, CardCmd.Upgrade / Downgrade. |
+| `Transform` | CardCmd.TransformToRandom(card, rng) -> CardTransformation + CardFactory.CreateRandomCardForTransform: rng.NextItem over the card pool's unlocked cards filtered by rarity/id (Commands/CardCmd.cs:1949-2060, Factories/CardFactory.cs:123-163); CardCmd.TransformTo<T> (fixed replacement). |
+| `Enchant` | CardCmd.Enchant<T>(card, amount) + EnchantmentModel.CanEnchant filters (Commands/CardCmd.cs:2146-2180); the enchantment models themselves are enchantments-kind content. |
+| `RewardsScreen` | RewardsCmd.OfferCustom(player, rewards) opens the rewards screen (decision D2): CardReward (pick 1 of N or skip; Populate -> CardFactory.CreateForReward), PotionReward (needs a free slot), RelicReward, SpecialCardReward, GoldReward; random rewards populate on PlayerRng.Rewards unless SetRng/RngOverride. |
+| `RelicGrabBag` | RelicFactory.PullNextRelicFromFront: rarity roll PlayerRng.Rewards.NextFloat (<0.5 Common, <0.83 Uncommon, else Rare) unless a rarity is given, then RelicGrabBag.PullFromFront removes the relic (and from the shared bag) (Factories/RelicFactory.cs:15-61, Runs/RelicGrabBag.cs:156-178). |
+| `CardRewardGen` | CardFactory.CreateForReward(player, n, CardCreationOptions): per card Hook.ModifyCardRewardCreationOptions, rarity roll unless Uniform (PlayerOdds.CardRarity on PlayerRng.Rewards; RollWithBaseOdds for non-encounter sources, so no pity change), rng.NextItem, then an upgrade roll NextFloat unless CardCreationFlags.NoUpgradeRoll (set by ForNonCombatWithDefaultOdds/UniformOdds, Runs/CardCreationOptions.cs:109-117; WithFlags ORs) (rng = RngOverride ?? PlayerRng.Rewards; A7 Scarcity halves the per-act upgrade scaling and lowers base rarity odds) (Factories/CardFactory.cs:71-91, :166-238, Odds/CardRarityOdds.cs:53-105). |
+| `PotionPools` | Character PotionPool + SharedPotionPool GetUnlockedPotions(UnlockState) concatenation (unlock-state dependent candidate list), drawn with PlayerRng.Rewards.NextItem. |
+| `DeckPrompt` | CardSelectCmd deck prompts (FromDeckForRemoval/Upgrade/Transformation/Enchantment/Generic): candidates in deck order (removal: curses first), auto-resolve when candidates <= MinSelect and no manual confirmation, empty result when no candidates (Commands/CardSelectCmd.cs:3441-3666). Needs the W1 resumable prompt API. |
+| `GridPrompt` | CardSelectCmd.FromSimpleGridForRewards via EventModel.SelectCardsToAddToDeckFromGrid (adds the picks to the deck, logs the rest; Models/EventModel.cs:153-300, :865-878). |
+| `StableShuffle` | ListExtensions.StableShuffle = List.Sort with model CompareTo (ModelId ordinal category then entry, then card upgrade level; Models/AbstractModel.cs:126-137, Models/CardModel.cs:3649-3671) then UnstableShuffle; sim has Random/RngCollectionExtensions.cs. Equal keys keep .NET introsort order, so the sim must use List<T>.Sort on the same initial order. |
+| `PotionLock` | Player.CanUseOrRemovePotions=false between BeforeEventStarted and OnEventFinished: disables potion use and discard (node-layer rule Nodes.Potions/NPotionPopup.cs:328-334, :556-565). |
+
+## 2. Counts
+
+| Category | Count |
+| --- | --- |
+| act_event | 39 |
+| shared_event | 17 |
+| start_ancient | 1 |
+| act_ancient | 6 |
+| shared_ancient | 1 |
+| final_event | 1 |
+| hook_injected_event | 1 |
+| deprecated | 2 |
+| mock | 1 |
+
+Tier by pool (an event listed in two acts counts in both columns; shared events appear in every act list and are gated by `IsAllowed`):
+
+| Pool | Tier 1 | Tier 2 | Tier 3 | Tier 4 | Total |
+| --- | --- | --- | --- | --- | --- |
+| Overgrowth | 3 | 2 | 8 | 0 | 13 |
+| Underdocks | 4 | 0 | 6 | 0 | 10 |
+| Hive | 2 | 1 | 6 | 1 | 10 |
+| Glory | 1 | 2 | 3 | 1 | 7 |
+| shared events | 3 | 4 | 10 | 0 | 17 |
+| ancients | 0 | 8 | 0 | 0 | 8 |
+| special | 0 | 1 | 1 | 0 | 2 |
+| excluded | 3 | 0 | 0 | 0 | 3 |
+
+| Batch | Events |
+| --- | --- |
+| 0 (3) | DeprecatedAncientEvent, DeprecatedEvent, MockEventModel |
+| 1 (21) | AbyssalBaths, Bugslayer, ByrdonisNest, Darv, DollRoom, HungryForMushrooms, JungleMazeAdventure, LostWisp, Neow, Nonupeipe, Orobas, Pael, SlipperyBridge, SunkenStatue, SunkenTreasury, Tanx, TeaMaster, Tezcatara, TheArchitect, TrashHeap, Vakuu |
+| 2 (9) | InfestedAutomaton, RanwidTheElder, Reflections, RelicTrader, RoundTeaParty, TabletOfTruth, ThisOrThat, UnrestSite, WelcomeToWongos |
+| 3 (27) | Amalgamator, AromaOfChaos, BrainLeech, ColorfulPhilosophers, DoorsOfLightAndDark, DrowningBeacon, EndlessConveyor, FieldOfManSizedHoles, GraveOfTheForgotten, LuminousChoir, MorphicGrove, PotionCourier, RoomFullOfCheese, SapphireSeed, SelfHelpBook, SpiralingWhirlpool, SpiritGrafter, StoneOfAllTime, Symbiote, TheFutureOfPotions, TheLegendsWereTrue, Trial, WaterloggedScriptorium, Wellspring, WhisperingHollow, WoodCarvings, ZenWeaver |
+| 4 (4) | BattlewornDummy, DenseVegetation, PunchOff, TheLanternKey |
+| 5 (3) | CrystalSphere, FakeMerchant, WarHistorianRepy |
+| 6 (2) | ColossalFlower, TinkerTime |
+
+## 3. Per-event table
+
+Prompts: nested decisions after the event option (remove/upgrade/transform/enchant/deck-generic = CardSelectCmd deck prompts, grid = FromSimpleGridForRewards, rewards = rewards screen, combat = event combat, minigame, shop, potion-use, abandon). RNG: Event = event private Rng, Rewards/Shops = PlayerRng streams, Niche = RunRng.Niche, Encounter = encounter private Rng, bag-pull = grab bag pull without a draw, combat = combat kernel streams.
+
+| Event | Category | Acts | Allowed act idx | Tier | Batch | Prompts | RNG | v107 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AbyssalBaths | act_event | Underdocks | 0 | 1 | 1 | - | - | same |
+| Amalgamator | act_event | Hive | 1 | 3 | 3 | remove | - | same |
+| AromaOfChaos | act_event | Overgrowth | 0 | 3 | 3 | transform, upgrade | Event | same |
+| BattlewornDummy | act_event | Glory | 2 | 3 | 4 | combat, rewards | combat, Rewards, Event | rule-change |
+| BrainLeech | shared_event | shared | 0,1 | 3 | 3 | grid, rewards | Rewards | cosmetic |
+| Bugslayer | act_event | Hive | 1 | 1 | 1 | - | - | same |
+| ByrdonisNest | act_event | Overgrowth | 0 | 1 | 1 | - | - | same |
+| ColorfulPhilosophers | act_event | Hive | 1 | 3 | 3 | rewards | Event, Rewards | same |
+| ColossalFlower | act_event | Hive | 1 | 4 | 6 | - | - | same |
+| CrystalSphere | shared_event | shared | 1,2 | 3 | 5 | minigame, rewards | Event | same |
+| Darv | shared_ancient | shared ancient | 1,2 | 2 | 1 | - | Event | rule-change |
+| DenseVegetation | act_event | Overgrowth | 0 | 3 | 4 | combat | Event, Chaotic(UI), combat | same |
+| DeprecatedAncientEvent | deprecated | - | - | 1 | 0 | - | - | same |
+| DeprecatedEvent | deprecated | - | - | 1 | 0 | - | - | same |
+| DollRoom | shared_event | shared | 1 | 1 | 1 | - | Event | same |
+| DoorsOfLightAndDark | act_event | Underdocks | 0 | 3 | 3 | remove | Event | same |
+| DrowningBeacon | act_event | Underdocks | 0 | 3 | 3 | rewards | - | same |
+| EndlessConveyor | act_event | Underdocks | 0 | 3 | 3 | transform, rewards | Event, Rewards | same |
+| FakeMerchant | shared_event | shared | 1,2 | 3 | 5 | shop, potion-use, combat | Event, Shops, combat | cosmetic |
+| FieldOfManSizedHoles | act_event | Hive | 1 | 3 | 3 | remove, enchant | - | same |
+| GraveOfTheForgotten | act_event | Glory | 2 | 3 | 3 | enchant | - | same |
+| HungryForMushrooms | act_event | Glory | 2 | 1 | 1 | - | - | same |
+| InfestedAutomaton | act_event | Hive | 1 | 2 | 2 | - | Rewards | same |
+| JungleMazeAdventure | act_event | Overgrowth | 0 | 1 | 1 | - | Event | cosmetic |
+| LostWisp | act_event | Hive | 1 | 1 | 1 | - | Event | same |
+| LuminousChoir | act_event | Overgrowth | 0 | 3 | 3 | remove | Event, Rewards | same |
+| MockEventModel | mock | - | - | 1 | 0 | - | - | cosmetic |
+| MorphicGrove | act_event | Overgrowth | 0 | 3 | 3 | transform | Event | same |
+| Neow | start_ancient | Overgrowth/Underdocks | 0 | 2 | 1 | - | Event | rule-change |
+| Nonupeipe | act_ancient | Glory | 2 | 2 | 1 | - | Event | same |
+| Orobas | act_ancient | Hive | 1 | 2 | 1 | - | Event | same |
+| Pael | act_ancient | Hive | 1 | 2 | 1 | - | Event | same |
+| PotionCourier | shared_event | shared | 1,2 | 3 | 3 | rewards | Rewards | same |
+| PunchOff | act_event | Underdocks | 0 | 3 | 4 | rewards, combat | Encounter, Niche, Event, Rewards, combat | cosmetic |
+| RanwidTheElder | shared_event | shared | 1,2 | 2 | 2 | - | Event, Rewards | cosmetic |
+| Reflections | act_event | Glory | 2 | 2 | 2 | - | Event | same |
+| RelicTrader | shared_event | shared | 1,2 | 2 | 2 | - | Event, Rewards | same |
+| RoomFullOfCheese | shared_event | shared | 0,1 | 3 | 3 | grid | Rewards | cosmetic |
+| RoundTeaParty | act_event | Glory | 2 | 2 | 2 | - | Rewards | same |
+| SapphireSeed | act_event | Overgrowth | 0 | 3 | 3 | upgrade, enchant | - | same |
+| SelfHelpBook | shared_event | shared | 0,1,2 | 3 | 3 | enchant | - | same |
+| SlipperyBridge | shared_event | shared | 0,1,2 | 1 | 1 | - | Event | same |
+| SpiralingWhirlpool | act_event | Underdocks | 0 | 3 | 3 | enchant | - | same |
+| SpiritGrafter | act_event | Hive | 1 | 3 | 3 | upgrade | - | same |
+| StoneOfAllTime | shared_event | shared | 1 | 3 | 3 | enchant | Event | cosmetic |
+| SunkenStatue | act_event | Overgrowth/Underdocks | 0 | 1 | 1 | - | Event | same |
+| SunkenTreasury | act_event | Underdocks | 0 | 1 | 1 | - | Event | same |
+| Symbiote | shared_event | shared | 1,2 | 3 | 3 | enchant, transform | Event | same |
+| TabletOfTruth | act_event | Overgrowth | 0 | 2 | 2 | - | Event | same |
+| Tanx | act_ancient | Glory | 2 | 2 | 1 | - | Event | same |
+| TeaMaster | shared_event | shared | 0,1 | 1 | 1 | - | - | same |
+| Tezcatara | act_ancient | Hive | 1 | 2 | 1 | - | Event | same |
+| TheArchitect | final_event | - | - | 2 | 1 | - | Niche, Event | cosmetic |
+| TheFutureOfPotions | shared_event | shared | 0,1,2 | 3 | 3 | rewards | Event, Rewards | cosmetic |
+| TheLanternKey | act_event | Hive | 1 | 3 | 4 | combat | Niche, combat | cosmetic |
+| TheLegendsWereTrue | shared_event | shared | 0 | 3 | 3 | rewards | Rewards | same |
+| ThisOrThat | shared_event | shared | 0,1,2 | 2 | 2 | - | Event, Rewards | same |
+| TinkerTime | act_event | Glory | 2 | 4 | 6 | - | Event | same |
+| TrashHeap | act_event | Underdocks | 0 | 1 | 1 | - | Event | same |
+| Trial | act_event | Glory | 2 | 3 | 3 | upgrade, transform, rewards, abandon | Chaotic(UI), Event, Rewards | same |
+| UnrestSite | act_event | Overgrowth | 0 | 2 | 2 | - | Rewards | same |
+| Vakuu | act_ancient | Glory | 2 | 2 | 1 | - | Event | same |
+| WarHistorianRepy | hook_injected_event | shared | 2 | 3 | 5 | rewards | Rewards | same |
+| WaterloggedScriptorium | act_event | Underdocks | 0 | 3 | 3 | enchant | - | same |
+| WelcomeToWongos | shared_event | shared | 1 | 2 | 2 | - | bag-pull, Event | same |
+| Wellspring | act_event | Overgrowth | 0 | 3 | 3 | rewards, remove | Rewards | same |
+| WhisperingHollow | act_event | Overgrowth | 0 | 3 | 3 | rewards, transform | Event, Rewards | same |
+| WoodCarvings | act_event | Overgrowth | 0 | 3 | 3 | deck-generic, enchant | - | same |
+| ZenWeaver | act_event | Hive | 1 | 3 | 3 | remove | - | same |
+
+## 4. Appearance conditions
+
+Pull rule (design-run-layer.md 3.10): the act's event list (act `AllEvents` + `ModelDb.AllSharedEvents`, minus Event1/2/3Epoch events when unrevealed, `Models/ActModel.cs:241-258`) is shuffled once on `RunRng.UpFront`; `RoomSet.EnsureNextEventIsValid` skips events whose `IsAllowed(runState)` is false or that were already visited (`Rooms/RoomSet.cs:114-129`), then `Hook.ModifyNextEvent` may replace the event (`Models/ActModel.cs:380-386`). Ancients: one per act from unlocked act ancients plus the act's shared-ancient subset (`Models/ActModel.cs:322`).
+
+| Event | IsAllowed (single player) | Gate / entry |
+| --- | --- | --- |
+| AbyssalBaths | always | act event pool (Underdocks) |
+| Amalgamator | every player has >= 2 removable Basic Strike-tagged and >= 2 removable Basic Defend-tagged cards (`Models.Events/Amalgamator.cs:337`) | act event pool (Hive) |
+| AromaOfChaos | always | act event pool (Overgrowth) |
+| BattlewornDummy | always | act event pool (Glory) |
+| BrainLeech | CurrentActIndex < 2 (`Models.Events/BrainLeech.cs:217`) | shared event pool (every act list) |
+| Bugslayer | always | act event pool (Hive) |
+| ByrdonisNest | no player HasEventPet() (`Models.Events/ByrdonisNest.cs:167`) | act event pool (Overgrowth) |
+| ColorfulPhilosophers | every player has > 1 unlocked character card pool (`Models.Events/ColorfulPhilosophers.cs:107`) | Event3Epoch; act event pool (Hive); removed from the act list unless Event3Epoch is revealed (Models/ActModel.cs:255-258) |
+| ColossalFlower | every player CurrentHp >= 19 (`Models.Events/ColossalFlower.cs:409`) | act event pool (Hive) |
+| CrystalSphere | every player Gold >= 100 and CurrentActIndex > 0 (`Models.Events/CrystalSphere.cs:236`) | shared event pool (every act list) |
+| Darv | always | DarvEpoch; ModelDb.AllSharedAncients: UnlockState.SharedAncients (DarvEpoch) is shuffled on UpFront and split across acts 2..n by UpFront.NextInt(count+1) (Runs/RunManager.cs:4055-4068); the act's ancient is then UpFront.NextItem(unlocked act ancients + subset) |
+| DenseVegetation | single player always; multiplayer requires every CurrentHp > HpLoss(8) (`Models.Events/DenseVegetation.cs:305`) | act event pool (Overgrowth) |
+| DollRoom | CurrentActIndex == 1 (`Models.Events/DollRoom.cs:374`) | shared event pool (every act list) |
+| DoorsOfLightAndDark | always | act event pool (Underdocks) |
+| DrowningBeacon | always | act event pool (Underdocks) |
+| EndlessConveyor | every player Gold >= 120 (`Models.Events/EndlessConveyor.cs:730`) | act event pool (Underdocks) |
+| FakeMerchant | CurrentActIndex >= 1, single player only, and every player has Gold >= 100 or holds a FoulPotion (`Models.Events/FakeMerchant.cs:194`) | shared event pool (every act list) |
+| FieldOfManSizedHoles | every player has a deck card PerfectFit.CanEnchant (`Models.Events/FieldOfManSizedHoles.cs:229`) | act event pool (Hive) |
+| GraveOfTheForgotten | every player has a deck card SoulsPower.CanEnchant (`Models.Events/GraveOfTheForgotten.cs:205`) | act event pool (Glory) |
+| HungryForMushrooms | always | act event pool (Glory) |
+| InfestedAutomaton | always | act event pool (Hive) |
+| JungleMazeAdventure | single player always; multiplayer requires every CurrentHp > SoloHp(18) (`Models.Events/JungleMazeAdventure.cs:286`) | act event pool (Overgrowth) |
+| LostWisp | always | act event pool (Hive) |
+| LuminousChoir | every player Gold >= 149 (canonical GoldVar; CalculateVars has not run on the canonical instance) and RelicGrabBag.HasAvailableRelics (`Models.Events/LuminousChoir.cs:238`) | act event pool (Overgrowth) |
+| MorphicGrove | every player Gold >= 100 and >= 2 transformable deck cards (`Models.Events/MorphicGrove.cs:240`) | act event pool (Overgrowth) |
+| Neow | always | NeowEpoch; act-1 ancient (Overgrowth or Underdocks AllAncients): RoomSet.Ancient = UpFront.NextItem(unlocked ancients), Neow removed unless NeowEpoch is revealed (Models.Acts/Overgrowth.cs:100-108, Models.Acts/Underdocks.cs:93-101); without Neow the act-1 ancient list is empty |
+| Nonupeipe | always | act-3 ancient (Glory AllAncients) |
+| Orobas | always | OrobasEpoch; act-2 ancient (Hive AllAncients; removed unless OrobasEpoch, Models.Acts/Hive.cs:98-106); competes with Pael, Tezcatara and the shared Darv subset |
+| Pael | always | act-2 ancient (Hive AllAncients) |
+| PotionCourier | CurrentActIndex > 0 (`Models.Events/PotionCourier.cs:178`) | shared event pool (every act list) |
+| PunchOff | TotalFloor >= 6 (`Models.Events/PunchOff.cs:454`) | act event pool (Underdocks) |
+| RanwidTheElder | CurrentActIndex != 0, every player has a tradable relic, Gold >= 100 and a potion (`Models.Events/RanwidTheElder.cs:502`) | shared event pool (every act list) |
+| Reflections | always | Event2Epoch; act event pool (Glory); removed unless Event2Epoch is revealed (Models/ActModel.cs:251-254) |
+| RelicTrader | CurrentActIndex != 0 and every player has >= 5 tradable relics (`Models.Events/RelicTrader.cs:403`) | shared event pool (every act list) |
+| RoomFullOfCheese | CurrentActIndex < 2 (`Models.Events/RoomFullOfCheese.cs:186`) | shared event pool (every act list) |
+| RoundTeaParty | every player CurrentHp >= 12 (`Models.Events/RoundTeaParty.cs:217`) | act event pool (Glory) |
+| SapphireSeed | always | act event pool (Overgrowth) |
+| SelfHelpBook | always | shared event pool (every act list) |
+| SlipperyBridge | TotalFloor > 6 and every player has a removable card (`Models.Events/SlipperyBridge.cs:224`) | shared event pool (every act list) |
+| SpiralingWhirlpool | every player has a Spiral-enchantable deck card (`Models.Events/SpiralingWhirlpool.cs:168`) | act event pool (Underdocks) |
+| SpiritGrafter | always | act event pool (Hive) |
+| StoneOfAllTime | CurrentActIndex == 1 and every player holds a potion (`Models.Events/StoneOfAllTime.cs:266`) | shared event pool (every act list) |
+| SunkenStatue | always | act event pool (Overgrowth and Underdocks) |
+| SunkenTreasury | always | act event pool (Underdocks) |
+| Symbiote | CurrentActIndex > 0 (`Models.Events/Symbiote.cs:228`) | shared event pool (every act list) |
+| TabletOfTruth | always | act event pool (Overgrowth) |
+| Tanx | always | act-3 ancient (Glory AllAncients) |
+| TeaMaster | CurrentActIndex < 2 and every player Gold >= 150 (`Models.Events/TeaMaster.cs:283`) | shared event pool (every act list) |
+| Tezcatara | always | act-2 ancient (Hive AllAncients) |
+| TheArchitect | always | EventRoom(TheArchitect) after the last act's boss (Runs/RunManager.cs:821-872); victory room |
+| TheFutureOfPotions | every player holds >= 2 potions (`Models.Events/TheFutureOfPotions.cs:351`) | shared event pool (every act list) |
+| TheLanternKey | always | act event pool (Hive) |
+| TheLegendsWereTrue | CurrentActIndex == 0, every player has a non-empty deck and CurrentHp >= 10 (`Models.Events/TheLegendsWereTrue.cs:226`) | shared event pool (every act list) |
+| ThisOrThat | always | shared event pool (every act list) |
+| TinkerTime | always | act event pool (Glory) |
+| TrashHeap | every player CurrentHp > 5 (`Models.Events/TrashHeap.cs:239`) | Event1Epoch; act event pool (Underdocks); removed unless Event1Epoch is revealed (Models/ActModel.cs:247-250) |
+| Trial | always | act event pool (Glory) |
+| UnrestSite | every player CurrentHp <= MaxHp x 0.70 (`Models.Events/UnrestSite.cs:214`) | act event pool (Overgrowth) |
+| Vakuu | always | act-3 ancient (Glory AllAncients) |
+| WarHistorianRepy | always false (never drawn normally) (`Models.Events/WarHistorianRepy.cs:787`) | Hook.ModifyNextEvent: a LanternKey in the deck replaces the pulled event while CurrentActIndex == 2 (Models/ActModel.cs:380-386, Models.Cards/LanternKey.cs:32-39) |
+| WaterloggedScriptorium | every player Gold >= 55 (`Models.Events/WaterloggedScriptorium.cs:318`) | act event pool (Underdocks) |
+| WelcomeToWongos | CurrentActIndex == 1 and every player Gold >= 100 (`Models.Events/WelcomeToWongos.cs:586`) | shared event pool (every act list) |
+| Wellspring | always | act event pool (Overgrowth) |
+| WhisperingHollow | every player Gold >= 44 (`Models.Events/WhisperingHollow.cs:278`) | act event pool (Overgrowth) |
+| WoodCarvings | every player has a removable Basic deck card (`Models.Events/WoodCarvings.cs:310`) | act event pool (Overgrowth) |
+| ZenWeaver | every player Gold >= 125 (EmotionalAwarenessCost) (`Models.Events/ZenWeaver.cs:382`) | act event pool (Hive) |
+
+## 5. Prompt types and frequencies
+
+Every event is itself a decision (the option menu). Nested prompts:
+
+| Prompt | Sites | Events | Which |
+| --- | --- | --- | --- |
+| `RewardsCmd.OfferCustom` | 14 | 14 | BattlewornDummy, BrainLeech, ColorfulPhilosophers, CrystalSphere, DrowningBeacon, EndlessConveyor, PotionCourier, PunchOff, TheFutureOfPotions, TheLegendsWereTrue, Trial, WarHistorianRepy, Wellspring, WhisperingHollow |
+| `CardSelectCmd.FromDeckForEnchantment` | 10 | 9 | FieldOfManSizedHoles, GraveOfTheForgotten, SapphireSeed, SelfHelpBook, SpiralingWhirlpool, StoneOfAllTime, Symbiote, WaterloggedScriptorium, WoodCarvings |
+| `CardSelectCmd.FromDeckForRemoval` | 8 | 6 | Amalgamator, DoorsOfLightAndDark, FieldOfManSizedHoles, LuminousChoir, Wellspring, ZenWeaver |
+| `CardSelectCmd.FromDeckForTransformation` | 6 | 6 | AromaOfChaos, EndlessConveyor, MorphicGrove, Symbiote, Trial, WhisperingHollow |
+| `EventCombat` | 5 | 5 | BattlewornDummy, DenseVegetation, FakeMerchant, PunchOff, TheLanternKey |
+| `CardSelectCmd.FromDeckForUpgrade` | 4 | 4 | AromaOfChaos, SapphireSeed, SpiritGrafter, Trial |
+| `CardSelectCmd.FromSimpleGridForRewards` | 2 | 2 | BrainLeech, RoomFullOfCheese |
+| `AbandonRunConfirm` | 1 | 1 | Trial |
+| `CardSelectCmd.FromDeckGeneric` | 1 | 1 | WoodCarvings |
+| `CrystalSphereMinigame` | 1 | 1 | CrystalSphere |
+| `MerchantInventory (fake relic shop)` | 1 | 1 | FakeMerchant |
+| `PotionUse(FoulPotion)` | 1 | 1 | FakeMerchant |
+
+Deck/grid prompt shapes (min..max): deck-generic 1..1 x1, enchant 1..1 x9, enchant 2..2 x1, grid 1..1 x1, grid 2..2 x1, remove 1..1 x3, remove 2..2 x5, transform 1..1 x4, transform 2..2 x2, upgrade 1..1 x3, upgrade 2..2 x1. None of the event prompts is cancelable; all auto-resolve when the candidates do not exceed MinSelect (min = max, so no manual confirmation) and return nothing when there is no candidate (the option still finishes the event).
+
+Indirect prompts: relics granted by a fixed relic option open their own prompts in `AfterObtained` (relics-kind content, listed per entry in `indirect_prompts`):
+
+| Event | Relics with pickup prompts |
+| --- | --- |
+| Darv | Astrolabe (FromDeckForTransformation); CallingBell (OfferCustom); EmptyCage (FromDeckForRemoval) |
+| Neow | Kaleidoscope (OfferCustom); LeadPaperweight (FromChooseACardScreen); LostCoffer (OfferCustom); MassiveScroll (FromChooseACardScreen); NewLeaf (FromDeckForTransformation); PreciseScissors (FromDeckForRemoval); ScrollBoxes (FromChooseABundleScreen); Pomander (FromDeckForUpgrade); SmallCapsule (OfferCustom); HeftyTablet (FromChooseACardScreen); PrecariousShears (FromDeckForRemoval) |
+| Orobas | ElectricShrymp (FromDeckForEnchantment); GlassEye (OfferCustom); SeaGlass (FromSimpleGridForRewards) |
+| Pael | PaelsTooth (FromDeckForRemoval); PaelsGrowth (FromDeckForEnchantment) |
+| Tanx | Claws (FromDeckForTransformation); TriBoomerang (FromDeckForEnchantment) |
+| Tezcatara | YummyCookie (FromDeckForUpgrade); BiiigHug (FromDeckForRemoval); ToastyMittens (FromHand); ToyBox (OfferCustom) |
+| Vakuu | WhisperingEarring (PushSelector); PreservedFog (FromDeckForRemoval); ChoicesParadox (FromSimpleGrid) |
+
+Events that grant a random relic (grab bag or relic reward) inherit the pickup prompt of whatever relic is drawn.
+
+## 6. RNG streams
+
+| Stream | Events |
+| --- | --- |
+| Event (39) | AromaOfChaos, BattlewornDummy, ColorfulPhilosophers, CrystalSphere, Darv, DenseVegetation, DollRoom, DoorsOfLightAndDark, EndlessConveyor, FakeMerchant, JungleMazeAdventure, LostWisp, LuminousChoir, MorphicGrove, Neow, Nonupeipe, Orobas, Pael, PunchOff, RanwidTheElder, Reflections, RelicTrader, SlipperyBridge, StoneOfAllTime, SunkenStatue, SunkenTreasury, Symbiote, TabletOfTruth, Tanx, Tezcatara, TheArchitect, TheFutureOfPotions, ThisOrThat, TinkerTime, TrashHeap, Trial, Vakuu, WelcomeToWongos, WhisperingHollow |
+| Rewards (20) | BattlewornDummy, BrainLeech, ColorfulPhilosophers, EndlessConveyor, InfestedAutomaton, LuminousChoir, PotionCourier, PunchOff, RanwidTheElder, RelicTrader, RoomFullOfCheese, RoundTeaParty, TheFutureOfPotions, TheLegendsWereTrue, ThisOrThat, Trial, UnrestSite, WarHistorianRepy, Wellspring, WhisperingHollow |
+| combat (5) | BattlewornDummy, DenseVegetation, FakeMerchant, PunchOff, TheLanternKey |
+| Niche (3) | PunchOff, TheArchitect, TheLanternKey |
+| Chaotic(UI) (2) | DenseVegetation, Trial |
+| Shops (1) | FakeMerchant |
+| Encounter (1) | PunchOff |
+| bag-pull (1) | WelcomeToWongos |
+
+The event Rng is private and seeded per event (`EventRng` in the glossary), so its order matters only within the event. Cross-event streams used inside events: `PlayerRng.Rewards` (relic rarity rolls, card generation, potion picks, reward population), `PlayerRng.Shops` (FakeMerchant prices) and `RunRng.Niche` (combat layout). Their draw order inside each option is listed per entry.
+
+## 7. Dependency order
+
+1. W1 kernel, before any event batch: the resumable prompt API for CardSelectCmd deck and grid prompts (batch 3 and later); out-of-combat CreatureCmd paths including Kill -> run loss; PlayerCmd gold with `Hook.ModifyGoldGained`/`AfterGoldGained`; CardPileCmd deck add/remove with `Hook.ModifyCardBeingAddedToDeck`; CardCmd Upgrade/Downgrade/Transform/Enchant; RelicCmd Obtain/Remove; PotionCmd.Discard; run-scope hook dispatch over deck cards and relics (`ModifyNextEvent`, `ModifyGeneratedMap`).
+2. W2 run layer: RunState/RunPlayer; RoomSet event pull (UpFront shuffle, epoch filter, IsAllowed on the canonical instance, VisitedEventIds, ModifyNextEvent); EventRoom + EventModel lifecycle + event Rng; AncientEventModel (arrival heal, ShouldAllowAncient, pre-finished save point C); the rewards screen (OfferCustom with Card/Potion/Relic/SpecialCard/Gold rewards); relic grab bags + RelicFactory; CardFactory reward generation + PlayerOdds; potion pools and slots; EventCombatSynchronizer (event combat, ExtraRewards, resume, combat layout); victory and defeat.
+3. Content kinds before each event batch (table below): the fixed relics and the 102 ancient-offer relics, curses, event and quest cards, 13 enchantments, GlowwaterPotion/FoulPotion, event encounters with their monsters and powers.
+4. Inside the event kind: TheLanternKey (LanternKey card) -> WarHistorianRepy; any FoulPotion source (PotionCourier) -> the FakeMerchant fight; TheLegendsWereTrue (SpoilsMap) -> the act-2 map.
+
+Subsystems and the events that need them (the W1 kernel and W2 run layer must provide these before the batch that uses them):
+
+| Subsystem | Events | Which |
+| --- | --- | --- |
+| Event core: EventFramework + EventRng | 66 | all ported events |
+| AncientFramework (arrival heal, RelicOption, Done) | 0 |  |
+| Deck prompts (CardSelectCmd.FromDeck*) | 20 | Amalgamator, AromaOfChaos, DoorsOfLightAndDark, EndlessConveyor, FieldOfManSizedHoles, GraveOfTheForgotten, LuminousChoir, MorphicGrove, SapphireSeed, SelfHelpBook, SpiralingWhirlpool, SpiritGrafter, StoneOfAllTime, Symbiote, Trial, WaterloggedScriptorium, Wellspring, WhisperingHollow, WoodCarvings, ZenWeaver |
+| Grid prompt (FromSimpleGridForRewards) | 2 | BrainLeech, RoomFullOfCheese |
+| Rewards screen (RewardsCmd.OfferCustom) | 14 | BattlewornDummy, BrainLeech, ColorfulPhilosophers, CrystalSphere, DrowningBeacon, EndlessConveyor, PotionCourier, PunchOff, TheFutureOfPotions, TheLegendsWereTrue, Trial, WarHistorianRepy, Wellspring, WhisperingHollow |
+| Relic grab bag (RelicFactory.PullNextRelicFromFront) | 9 | BattlewornDummy, LuminousChoir, RanwidTheElder, RelicTrader, RoundTeaParty, ThisOrThat, Trial, UnrestSite, WelcomeToWongos |
+| Card reward generation (CardFactory.CreateForReward / CardReward) | 8 | BrainLeech, ColorfulPhilosophers, EndlessConveyor, InfestedAutomaton, RoomFullOfCheese, TheFutureOfPotions, TheLanternKey, Trial |
+| Potion pools / discard / lock | 10 | BattlewornDummy, CrystalSphere, EndlessConveyor, PotionCourier, PunchOff, RanwidTheElder, StoneOfAllTime, TheFutureOfPotions, TheLegendsWereTrue, Wellspring |
+| Transform (CardCmd.TransformToRandom / TransformTo) | 7 | AromaOfChaos, EndlessConveyor, MorphicGrove, Symbiote, Trial, WhisperingHollow, WoodCarvings |
+| Enchant (CardCmd.Enchant) | 9 | FieldOfManSizedHoles, GraveOfTheForgotten, SapphireSeed, SelfHelpBook, SpiralingWhirlpool, StoneOfAllTime, Symbiote, WaterloggedScriptorium, WoodCarvings |
+| Upgrade / downgrade / clone | 11 | AromaOfChaos, BattlewornDummy, DoorsOfLightAndDark, EndlessConveyor, Reflections, SapphireSeed, SpiritGrafter, TabletOfTruth, TheFutureOfPotions, Trial, WelcomeToWongos |
+| Relic removal (RelicCmd.Remove) | 2 | RanwidTheElder, RelicTrader |
+| Event combat (EnterCombatWithoutExitingEvent) | 0 |  |
+| Event resume after combat | 0 |  |
+| Combat layout (layout CombatState at entry) | 0 |  |
+| Run-scope hooks on deck cards (ModifyNextEvent, ModifyGeneratedMap) | 2 | TheLegendsWereTrue, WarHistorianRepy |
+| Merchant entries (MerchantInventory/MerchantRelicEntry) | 1 | FakeMerchant |
+| Crystal Sphere minigame | 1 | CrystalSphere |
+| Out-of-combat death (CreatureCmd.Kill) | 1 | TabletOfTruth |
+| Rest-site heal (PlayerCmd.MimicRestSiteHeal) | 1 | DenseVegetation |
+| StableShuffle (ModelId sort + shuffle) | 5 | BattlewornDummy, DollRoom, DoorsOfLightAndDark, JungleMazeAdventure, RelicTrader |
+| Profile / unlock inputs | 29 | AromaOfChaos, BattlewornDummy, BrainLeech, ColorfulPhilosophers, CrystalSphere, Darv, EndlessConveyor, InfestedAutomaton, LuminousChoir, MorphicGrove, Neow, Orobas, PotionCourier, RanwidTheElder, Reflections, RelicTrader, RoomFullOfCheese, RoundTeaParty, Symbiote, TheArchitect, TheFutureOfPotions, TheLegendsWereTrue, ThisOrThat, TrashHeap, UnrestSite, Vakuu, WelcomeToWongos, Wellspring, WhisperingHollow |
+
+Content prerequisites by batch (other kinds that must be ported first):
+
+| Batch | Relics | Cards | Potions | Enchantments | Encounters / monsters / powers |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Astrolabe, BlackStar, CallingBell, EmptyCage, PandorasBox, RunicPyramid, SneckoEye, Ectoplasm, Sozu, PhilosophersStone, VelvetChoker, DustyTome, DaughterOfTheWind, MrStruggles, BingBong, BigMushroom, FragrantMushroom, LostWisp, ArcaneScroll, BoomingConch, FishingRod, GoldenPearl, Kaleidoscope, LeadPaperweight, LostCoffer, MassiveScroll, NeowsTorment, NewLeaf, PhialHolster, PreciseScissors, ScrollBoxes, WingedBoots, LavaRock, NeowsTalisman, NutritiousOyster, Pomander, SmallCapsule, StoneHumidifier, CursedPearl, DowsingRod, +77 | Exterminate, Squash, ByrdonisEgg, Decay, Greed, Caltrops, Clash, Distraction, DualWield, Entrench, HelloWorld, Outmaneuver, Rebound, RipAndTear, Stack | - | Swift, Goopy, Instinct | TheArchitectEventEncounter, Architect |
+| 2 | RoyalPoison, WongosMysteryTicket, WongoCustomerAppreciationBadge | BadLuck, Clumsy, PoorSleep | - | - | - |
+| 3 | FresnelLens, ForgottenSoul, ChosenCheese | UltimateStrike, UltimateDefend, FeedingFrenzy, Normality, Decay, SporeMind, Metamorphosis, SpoilsMap, Regret, Shame, Doubt, Guilty, Peck, ToricToughness, Enlightenment | GlowwaterPotion, FoulPotion | PerfectFit, SoulsPower, Sown, Sharp, Nimble, Swift, Spiral, Vigorous, Corrupted, Steady, Slither | - |
+| 4 | - | Injury, LanternKey | - | - | BattlewornDummyEventV1Encounter, BattlewornDummyEventV2Encounter, BattlewornDummyEventV3Encounter, DenseVegetationEventEncounter, PunchOffEventEncounter, MysteriousKnightEventEncounter, BattleFriendV1, BattleFriendV2, BattleFriendV3, Wriggler, PunchConstruct, MysteriousKnight, BattlewornDummyTimeLimitPower |
+| 5 | FakeAnchor, FakeBloodVial, FakeHappyFlower, FakeLeesWaffle, FakeMango, FakeOrichalcum, FakeSneckoEye, FakeStrikeDummy, FakeVenerableTeaSet, FakeMerchantsRug, HistoryCourse | Debt, Doubt, LanternKey | FoulPotion | - | FakeMerchantEventEncounter, FakeMerchantMonster |
+| 6 | PollinousCore | MadScience | - | - | WeakPower, VulnerablePower, StranglePower, StrengthPower, DexterityPower |
+
+Ordering notes: (1) Neow and the ancients only need relic identities, `IsAllowed`/`IsAllowedAtNeow`/`SetupForPlayer` and a few deck queries to generate options, so they can lead (W2 oracle); their relics' `AfterObtained` effects follow the relic batches. (2) The LanternKey card (TheLanternKey, batch 4) must exist before WarHistorianRepy (batch 5) is reachable. (3) FoulPotion (PotionCourier, batch 3; also any potion reward) precedes the FakeMerchant fight. (4) SpoilsMap (TheLegendsWereTrue) needs `Hook.ModifyGeneratedMap` and SpoilsActMap from the map port. (5) ByrdonisEgg needs the HATCH rest-site option and the pet registry.
+
+## 8. Version deltas (v0.107.1 → v0.111.0)
+
+same 55, cosmetic 11, rule-change 3. Method: token fingerprints (string literals, `*Cmd.*`, `ModelDb.*`, `new *Var(...)`, decimal and comparison literals, Rng calls, enum members, overrides) and identifier sets of both trees, then a manual read of every difference (the v0.107.1 tree is re-sugared async source, the v0.111.0 tree is state machines, so raw diffs are useless).
+
+| Event | Status | Fingerprint | Note |
+| --- | --- | --- | --- |
+| BattlewornDummy | rule-change | differs | v0.107.1 used one BattlewornDummyEventEncounter with a DummySetting field and SETTING_3 called RelicCmd.Obtain directly; v0.111.0 has three encounter subclasses, SETTING_3 offers a RelicReward on the rewards screen and room ExtraRewards are appended |
+| BrainLeech | cosmetic | differs | v0.107.1 inlined FromSimpleGridForRewards + CardPileCmd.Add; v0.111.0 calls EventModel.SelectCardsToAddToDeckFromGrid, which also logs unpicked cards to history |
+| Darv | rule-change | differs | v0.107.1 had 9 sets: {Ectoplasm, Sozu} as one act-2 set and {PhilosophersStone, VelvetChoker} as one act-3-only set; v0.111.0 splits them into 4 single sets and makes PhilosophersStone/VelvetChoker available from act 2 (CurrentActIndex >= 1) |
+| FakeMerchant | cosmetic | differs | v0.111.0 adds OnEventFinished that only logs unsold relics to map-point history |
+| JungleMazeAdventure | cosmetic | differs | v0.111.0 adds an IsAllowed that only restricts multiplayer |
+| MockEventModel | cosmetic | differs | v0.111.0 adds the IsMock override (test infrastructure only) |
+| Neow | rule-change | differs | CurseOptions grew from 8 to 10 (DowsingRod, NeowsSacrifice added) and NeowsSacrifice now excludes PhialHolster and LostCoffer from the positives |
+| PunchOff | cosmetic | equal | v0.107.1 built the FIGHT extra rewards per player in RunState.Players; v0.111.0 only for the owner (identical in single player) |
+| RanwidTheElder | cosmetic | equal | Player.CanRemovePotions renamed CanUseOrRemovePotions; both disable use and discard in the potion popup |
+| RoomFullOfCheese | cosmetic | differs | v0.107.1 inlined FromSimpleGridForRewards + add; v0.111.0 uses SelectCardsToAddToDeckFromGrid (adds history entries for unpicked cards) |
+| StoneOfAllTime | cosmetic | equal | Player.CanRemovePotions renamed CanUseOrRemovePotions (same popup behaviour) |
+| TheArchitect | cosmetic | differs | v0.107.1 ended through ActChangeSynchronizer.SetLocalPlayerReady; v0.111.0 calls RunManager.WinRun() directly and its attack VFX consume the event Rng; both end the run as a win |
+| TheFutureOfPotions | cosmetic | equal | Player.CanRemovePotions renamed CanUseOrRemovePotions (same popup behaviour) |
+| TheLanternKey | cosmetic | equal | v0.107.1 built one SpecialCardReward per player; v0.111.0 only for the owner |
+
+Classified `same` although the fingerprint differs (decompiler notation only: loop re-expression, fully qualified names, compiler-generated record members, a method emitted twice): EndlessConveyor, Nonupeipe, Reflections, SelfHelpBook, SlipperyBridge, WelcomeToWongos. The fingerprint tokens that differ are kept per entry in `version_delta_v107.fingerprint_only_v107/_v111`.
+
+## 9. Decompile-unreadable sites (need a re-decompile with reference assemblies or an IL read)
+
+| Site | What is missing | Fallback | Affects |
+| --- | --- | --- | --- |
+| `Models/AncientEventModel.cs:358-377` | the state machine of the local function `RelicOption(...).OnChosen` (`<>c__DisplayClass69_0.<<RelicOption>g__OnChosen|0>d`) is referenced but not emitted | [v107] `Models/AncientEventModel.cs:279-289`: obtain the relic with RelicCmd.Obtain for the owner, store CustomDonePage, then Done() | all 8 ancients' relic options |
+| `Models.Events/ColossalFlower.cs:488-496` | `_prizeCosts`, `_prizeDamage` (`RuntimeHelpers.InitializeArray`, `LdMemberToken` not supported) | [v107] `{35, 75, 135}`, `{5, 6, 7}` (`Models/Events/ColossalFlower.cs:20-22`) | ColossalFlower |
+| `Models.Events/TinkerTime.cs:186-205` | the three `RiderEffect[3]` arrays of ChooseRiderEffect | [v107] Attack {Sapping, Violence, Choking}, Skill {Energized, Wisdom, Chaos}, Power {Expertise, Curious, Improvement} (`Models/Events/TinkerTime.cs:113-134`) | TinkerTime |
+| `Commands/CreatureCmd.cs` (outside this slice) | same missing local-function state machine for `Stun`'s `Wrapper` (`<<Stun>g__Wrapper|0>d`); found by the same whole-tree scan | [v107] | combat kernel |
+
+The `//IL_xxxx: Expected O, but got Unknown` lines in EndlessConveyor, PunchOff and TheFutureOfPotions are delegate casts with no rule content. A whole-tree scan for state-machine types that are referenced by `[AsyncStateMachine(typeof(...))]` but never defined found only the two local-function cases above.
+
+## 10. 1:1 traps
+
+- Pael slot 2: the candidate list is AddRange'd onto itself (doubling it) before PaelsGrowth is appended, so the weights are Wing 2, Claw 2, Tooth 2, Growth 1 (`Models.Events/Pael.cs:170`).
+- Combat-layout events (PunchOff, TheLanternKey, TheArchitect) build their encounter at room entry and draw `RunRng.Niche` per monster for the unique HP roll before any option (`Multiplayer.Game/EventCombatSynchronizer.cs:83-128`, `Combat/CombatState.cs:717`). PunchOff's encounter Rng is reseeded identically for the real fight (`Models/EncounterModel.cs:202-216`), so StartingHpReduction repeats but the Niche HP draws do not.
+- Hidden grab-bag pulls at event start: RelicTrader pulls 3 relics in CalculateVars (only one is ever taken) and WelcomeToWongos pulls its featured Rare in GenerateInitialOptions; pulled relics leave the bag (`Runs/RelicGrabBag.cs:161-178`).
+- Event-start Rng draws happen before the first decision: CalculateVars (AbyssalBaths none; CrystalSphere, DenseVegetation, EndlessConveyor, JungleMazeAdventure, LostWisp, LuminousChoir, PunchOff, RelicTrader, SunkenStatue, SunkenTreasury, ThisOrThat, WhisperingHollow) and GenerateInitialOptions (ColorfulPhilosophers, RanwidTheElder, SlipperyBridge, StoneOfAllTime, TheFutureOfPotions, every ancient), and BeforeEventStarted (FakeMerchant shuffle + 6 `PlayerRng.Shops` price rolls).
+- IsAllowed runs on the canonical instance, so DynamicVars there are the canonical values (LuminousChoir needs 149 gold even though the rolled cost is 100..149; `Models.Events/LuminousChoir.cs:238-241`).
+- UnrestSite fixes its heal in CalculateVars (event start); RoundTeaParty measures its full heal after the RoyalPoison pickup.
+- JungleMazeAdventure gold is the decimal 150 plus the float NextFloat(-15,15) converted to decimal, truncated to int inside PlayerCmd.GainGold; keep the float->decimal conversion exactly (`Commands/PlayerCmd.cs:321`).
+- EndlessConveyor rolls with float weights summed in table order and a strict `<`; the last dish id is removed before the roll and NumOfGrabs counts rolls including the CalculateVars roll, so every 5th roll is SEAPUNK_SALAD.
+- StableShuffle sorts with `List.Sort` over ModelId (then card upgrade level) before shuffling; equal keys keep .NET introsort order, so the sim must call `List<T>.Sort` on the same initial order (DollRoom, DoorsOfLightAndDark, BattlewornDummy V2, RelicTrader, JungleMazeAdventure).
+- `Rng.NextItem` draws even for one-element lists (`Random/Rng.cs:213-223`): Darv pays one draw per valid set.
+- StoneOfAllTime ends both options with an unused event-Rng NextInt(100) draw.
+- Card generation flags: `ForNonCombatWithDefaultOdds/UniformOdds` set NoUpgradeRoll (`Runs/CardCreationOptions.cs:109-117`), but ColorfulPhilosophers and CrystalSphere build raw CardCreationOptions and do roll upgrades (CrystalSphere on the event Rng via WithRngOverride).
+- CreatureCmd.GainMaxHp heals by the gained amount (`Commands/CreatureCmd.cs:1942-2022`); AbyssalBaths' net HP change per dip is damage - 2.
+- EventOption.WillKillPlayer only paints a warning in single player (`Nodes.Events/NEventOptionButton.cs:599-623`); lethal options stay legal (AbyssalBaths LINGER, TabletOfTruth DECIPHER, SlipperyBridge HOLD_ON, Trial DOUBLE_DOWN).
+- Shared events route even single-player choices through the vote path, which draws once from EventSynchronizer's own `Rng(seed, "event_synchronizer")` per choice (`Multiplayer.Game/EventSynchronizer.cs:163`, `:275`); no rule effect.
+- CrystalSphere PopulateItems retries keep the partially placed items and re-subscribe Revealed on all of them (duplicate reveals after a failed placement); the four corner diamonds are pre-cleared.
+- Neow's relic options ignore their customDonePage argument (`Models/AncientEventModel.cs:353-356`); loc only.
+- Event combats never advance the normal-encounter counter and append to the same map-point history entry (design-run-layer.md 3.10).
+
+## 11. Unlock, profile and ascension dependence
+
+| Event | Dependence |
+| --- | --- |
+| AromaOfChaos | transform candidates = unlocked cards of the original card's pool |
+| BattlewornDummy | V1 potion candidates = unlocked character + shared potions |
+| BrainLeech | candidate cards = unlocked character / colorless pool cards (epoch gated) |
+| ColorfulPhilosophers | Event3Epoch gate; option set = unlocked character card pools |
+| CrystalSphere | potion/card/relic candidates follow unlock state |
+| Darv | DarvEpoch |
+| EndlessConveyor | potion and colorless candidates follow unlock state |
+| InfestedAutomaton | candidates = unlocked character-pool cards |
+| LuminousChoir | relic grab bag contents follow unlock state |
+| MorphicGrove | transform candidates follow unlocked pools |
+| Neow | NeowEpoch (Neow present); Kaleidoscope and ScrollBoxes availability depend on UnlockState |
+| Orobas | OrobasEpoch; SeaGlass character drawn from unlocked characters |
+| PotionCourier | RANSACK candidates = unlocked Uncommon potions |
+| RanwidTheElder | relic grab bag contents follow unlock state |
+| Reflections | Event2Epoch gate |
+| RelicTrader | relic grab bag contents follow unlock state |
+| RoomFullOfCheese | candidates = unlocked character Commons |
+| RoundTeaParty | relic grab bag contents follow unlock state |
+| Symbiote | transform candidates follow unlocked pools |
+| TheArchitect | dialogue set depends on profile wins (cosmetic) |
+| TheFutureOfPotions | candidates = unlocked character-pool cards |
+| TheLegendsWereTrue | potion candidates follow unlock state |
+| ThisOrThat | relic grab bag contents follow unlock state |
+| TrashHeap | Event1Epoch gate |
+| UnrestSite | relic grab bag contents follow unlock state |
+| Vakuu | Visits var reads profile AncientStats (dialogue/loc only, Models.Events/Vakuu.cs:49-56) |
+| WelcomeToWongos | badge relic depends on profile WongoPoints (Models.Events/WelcomeToWongos.cs:630-651) |
+| Wellspring | potion candidates follow unlock state |
+| WhisperingHollow | potion/transform candidates follow unlock state |
+
+Ascension: no event file reads `AscensionLevel`. Indirect effects: A2 WearyTraveler (ancient arrival heal x0.8), A3 Poverty (gold of event combats with default rewards), A4 TightBelt (potion slots: EndlessConveyor dish table, every potion reward), A7 Scarcity (base card rarity odds of default-odds generation and the upgrade scaling where an upgrade roll happens), A8/A9 through the event-combat monsters. Per entry in `ascension_sensitivity`.
+
+## 12. Open questions
+
+1. ColossalFlower: Confirm _prizeCosts/_prizeDamage in v0.111.0 IL (Models.Events/ColossalFlower.cs:488-496).
+2. CrystalSphere: Recorder coverage of minigame clicks: does the corpus record tool + cell per divination?
+3. FakeMerchant: Exact purchase/leave flow of NFakeMerchant (Nodes.Events.Custom/NFakeMerchant.cs) must be ported as rules: can the player buy after deciding to throw? does leaving require closing the inventory?
+4. TheArchitect: Diff gate: are the dialogue 'continue' clicks recorded as event decisions? If so they need a no-op mapping.
+5. TheFutureOfPotions: If no card matches the rarity+type filter, CardFactory throws; is that reachable with the unlocked pools of every character (e.g. Rare Power with few unlocks)?
+6. TinkerTime: Confirm the rider array contents and order in v0.111.0 IL (Models.Events/TinkerTime.cs:186-205); order matters for TakeRandom.
+7. Trial: How should the sim and the diff gate treat DOUBLE_DOWN (abandon) and its cancel path?
+8. WelcomeToWongos: Profile WongoPoints for the diff gate: recordings must carry the profile value at run start, or the badge branch is unknowable.
+9. All ancients: confirm the `RelicOption` OnChosen body in v0.111.0 IL (decompile list).
+10. Unlock profile for the sim and the diff gate: the classification assumes a veteran profile (all epochs, all character pools); recordings from other profiles change event lists (Event1-3Epoch), Neow (Kaleidoscope/ScrollBoxes), ColorfulPhilosophers, Orobas and every pool-based draw.

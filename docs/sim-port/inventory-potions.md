@@ -1,0 +1,205 @@
+# Inventory: potions
+
+2026-11-01 · Route C full port, W0 semantic classification · game v0.111.0 · 66 potion models (65 + 1 mock).
+
+Machine-readable companion: [`sim/specs/inventory/potions.classified.json`](../../sim/specs/inventory/potions.classified.json) (one entry per potion, same order and ids as [`potions.json`](../../sim/specs/inventory/potions.json); added fields in `added_fields`). Rule truth, citation format, scratch scripts and the v0.107.1 comparison method are the same as in [`inventory-relics.md`](inventory-relics.md).
+
+Every potion needs the potion runtime first (W1): `PotionModel` with slots (`Player.PotionSlots`, nulls allowed, capacity from the character minus A4 TightBelt), the `UsePotion`/`DiscardPotion` decisions, `UsePotionAction` (`CombatPlayPhaseOnly` in combat, `GameActions/UsePotionAction.cs:164`), target validation (`PotionModel.IsValidTarget`, `Models/PotionModel.cs:618-654`: AnyEnemy = other side, AnyAlly = same side and not the owner, AnyPlayer = a player, Self = owner, no target only for non-single-target types) and `OnUseWrapper` (`RemoveBeforeUse`, `Hook.BeforePotionUsed`, `OnUse`, `History.PotionUsed`, `Hook.AfterPotionUsed`, `CheckForEmptyHand`, `Models/PotionModel.cs:147-322`). The tier rates `OnUse` on top of that; out-of-combat use of the five `AnyTime` potions is the W2 decision D9 and does not raise the tier (the effect is the same code path).
+
+## 1. Summary
+
+|  | Count |
+|---|--:|
+| tier 1 | 38 |
+| tier 2 | 7 |
+| tier 3 | 20 |
+| tier 4 | 1 |
+| usage CombatOnly / AnyTime / Automatic | 60 / 5 / 1 |
+| target AnyPlayer / AnyEnemy / AllEnemies / Self / dynamic | 51 / 9 / 3 / 2 / 1 |
+| with a player prompt (incl. the mock) | 10 |
+| hook listeners (FairyInABottle) | 1 |
+| excluded from in-combat generation | 3 |
+| rule change vs v0.107.1 | 0 |
+| new in v0.111.0 | 1 |
+
+### 1.1 Tier by pool
+
+| pool | potions | tier 1 | tier 2 | tier 3 | tier 4 | members (tier) |
+|---|--:|--:|--:|--:|--:|---|
+| IRONCLAD | 3 | 1 | 1 | 1 | 0 | Ashwater (t3), BloodPotion (t1), SoldiersStew (t2) |
+| SILENT | 3 | 2 | 1 | 0 | 0 | CunningPotion (t2), GhostInAJar (t1), PoisonPotion (t1) |
+| DEFECT | 3 | 1 | 0 | 2 | 0 | EssenceOfDarkness (t3), FocusPotion (t1), PotionOfCapacity (t3) |
+| NECROBINDER | 3 | 0 | 2 | 1 | 0 | BoneBrew (t3), PotionOfDoom (t2), PotOfGhouls (t2) |
+| REGENT | 3 | 0 | 0 | 3 | 0 | CosmicConcoction (t3), KingsCourage (t3), StarPotion (t3) |
+| SHARED | 45 | 30 | 3 | 12 | 0 | AttackPotion (t3), BeetleJuice (t1), BlessingOfTheForge (t2), BlockPotion (t1), BottledPotential (t2), Clarity (t1), ColorlessPotion (t3), CureAll (t1), DexterityPotion (t1), DistilledChaos (t3), DropletOfPrecognition (t3), Duplicator (t1), EnergyPotion (t1), EntropicBrew (t3), ExplosiveAmpoule (t1), FairyInABottle (t3), FirePotion (t1), FlexPotion (t1), Fortifier (t1), FruitJuice (t1), FyshOil (t1), GamblersBrew (t3), GigantificationPotion (t1), HeartOfIron (t1), LiquidBronze (t1), LiquidMemories (t3), LuckyTonic (t1), MazalethsGift (t1), OrobicAcid (t3), PotionOfBinding (t1), PowderedDemise (t1), PowerPotion (t3), RadiantTincture (t1), RegenPotion (t1), ShacklingPotion (t1), ShipInABottle (t1), SkillPotion (t3), SneckoOil (t2), SpeedPotion (t1), StableSerum (t1), StrengthPotion (t1), SwiftPotion (t1), TouchOfInsanity (t3), VulnerablePotion (t1), WeakPotion (t1) |
+| EVENT | 3 | 2 | 0 | 0 | 1 | Ambergris (t1), FoulPotion (t4), GlowwaterPotion (t1) |
+| TOKEN | 1 | 1 | 0 | 0 | 0 | PotionShapedRock (t1) |
+| DEPRECATED | 1 | 1 | 0 | 0 | 0 | DeprecatedPotion (t1) |
+| MOCK | 1 | 0 | 0 | 1 | 0 | MockDiscardAndAddShivsPotion (t3) |
+| **all** | 66 | 38 | 7 | 20 | 1 |  |
+
+Character potion pools come from `<Char>4Epoch.Potions` (`Timeline.Epochs/<Char>4Epoch.cs:21`), the shared pool is filtered by Potion1-2 epochs. Random potions (`PotionFactory.CreateRandomPotion`) draw `NextFloat` (<=0.1 Rare, <=0.35 Uncommon, else Common) then `NextItem` among the character + shared unlocked potions of that rarity, removing each pick (`Factories/PotionFactory.cs`); the in-combat variant also drops `CanBeGeneratedInCombat=false` potions (FairyInABottle, FruitJuice, RegenPotion). Event, Token, Deprecated and Mock pools are never rolled.
+
+### 1.2 Tier by rarity
+
+| rarity | potions | tier 1 | tier 2 | tier 3 | tier 4 |
+|---|--:|--:|--:|--:|--:|
+| Common | 20 | 14 | 1 | 5 | 0 |
+| Uncommon | 20 | 12 | 2 | 6 | 0 |
+| Rare | 20 | 8 | 4 | 8 | 0 |
+| Event | 3 | 2 | 0 | 0 | 1 |
+| Token | 1 | 1 | 0 | 0 | 0 |
+| None | 2 | 1 | 0 | 1 | 0 |
+
+### 1.3 Combat-time versus run-time behaviour
+
+- Out-of-combat use (AnyTime): Ambergris (heal; AmbergrisPower only in combat), BloodPotion (heal 20%), EntropicBrew (fill slots), FruitJuice (+5 max HP), FoulPotion (only in a shop or the FakeMerchant event with a closed inventory: +100 gold and a merchant reaction; in combat it hits every non-pet creature including the player). Use and discard are legal in every non-combat phase (`design-run-layer.md` 3.13).
+- Automatic: FairyInABottle listens to `ShouldDie` (owner) and runs `OnUseWrapper` from `AfterPreventingDeath`; it is the only potion that is a hook listener and it is never manually usable (`Nodes.Potions/NPotionPopup.cs:292-327`).
+- Procurement in combat: EntropicBrew (and the relics DelicateFrond, PetrifiedToad) go through `PotionCmd.TryToProcure`, gated by `Hook.ShouldProcurePotion` (Sozu) and followed by `Hook.AfterPotionProcured` (BeltBuckle).
+
+## 2. Port batches
+
+| batch | contents | n | potions |
+|---|---|---|---|
+| 1 | OnUse through ported facades and ported powers | 19 | BeetleJuice, BlockPotion, BloodPotion, CureAll, DexterityPotion, EnergyPotion, ExplosiveAmpoule, FirePotion, Fortifier, FruitJuice, FyshOil, GlowwaterPotion, LiquidBronze, PotionOfBinding, PotionShapedRock, StrengthPotion, SwiftPotion, VulnerablePotion, WeakPotion |
+| 2 | OnUse needs power content from the power wave | 18 | Ambergris, Clarity, Duplicator, FlexPotion, FocusPotion, GhostInAJar, GigantificationPotion, HeartOfIron, LuckyTonic, MazalethsGift, PoisonPotion, PowderedDemise, RadiantTincture, RegenPotion, ShacklingPotion, ShipInABottle, SpeedPotion, StableSerum |
+| 3 | OnUse needs missing facades/card APIs (in-combat upgrade, pile moves, Shiv/Soul creation, cost randomization, replay count) | 6 | BlessingOfTheForge, BottledPotential, CunningPotion, PotOfGhouls, SneckoOil, SoldiersStew |
+| 4 | subsystems: orbs, Osty, stars, forge, doom, auto-play, potion procurement, automatic use, card generation without prompt | 11 | BoneBrew, CosmicConcoction, DistilledChaos, EntropicBrew, EssenceOfDarkness, FairyInABottle, KingsCourage, OrobicAcid, PotionOfCapacity, PotionOfDoom, StarPotion |
+| 5 | in-combat prompts | 9 | Ashwater, AttackPotion, ColorlessPotion, DropletOfPrecognition, GamblersBrew, LiquidMemories, PowerPotion, SkillPotion, TouchOfInsanity |
+| 6 | cross-cutting (FoulPotion) | 1 | FoulPotion |
+| - | not ported (deprecated placeholder, test mock) | 2 | DeprecatedPotion, MockDiscardAndAddShivsPotion |
+
+## 3. Dependency order
+
+| power applied | ported in P0 | potions |
+|---|---|---|
+| AmbergrisPower | no | Ambergris |
+| BlockNextTurnPower | no | ShipInABottle |
+| BufferPower | no | LuckyTonic |
+| ClarityPower | no | Clarity |
+| DemisePower | no | PowderedDemise |
+| DoomPower | no | PotionOfDoom |
+| DuplicationPower | no | Duplicator |
+| FlexPotionPower | no | FlexPotion |
+| FocusPower | no | FocusPotion |
+| GigantificationPower | no | GigantificationPotion |
+| IntangiblePower | no | GhostInAJar |
+| PlatingPower | no | HeartOfIron |
+| PoisonPower | no | PoisonPotion |
+| RadiancePower | no | RadiantTincture |
+| RegenPower | no | RegenPotion |
+| RetainHandPower | no | StableSerum |
+| RitualPower | no | MazalethsGift |
+| ShacklingPotionPower | no | ShacklingPotion |
+| SpeedPotionPower | no | SpeedPotion |
+| DexterityPower | yes | DexterityPotion, FyshOil |
+| ShrinkPower | yes | BeetleJuice |
+| StrengthPower | yes | FyshOil, StrengthPotion |
+| ThornsPower | yes | LiquidBronze |
+| VulnerablePower | yes | PotionOfBinding, VulnerablePotion |
+| WeakPower | yes | PotionOfBinding, WeakPotion |
+
+**Cmd facades (missing or partial in the sim; var overloads included)**
+
+| requirement (from `kernel_requirements`) | potions | which |
+|---|---|---|
+| CardSelectCmd.FromChooseACardScreen | 4 | AttackPotion, ColorlessPotion, PowerPotion, SkillPotion |
+| CardCmd.Upgrade | 3 | BlessingOfTheForge, CosmicConcoction, CunningPotion |
+| CardPileCmd.Add (partial in sim) | 3 | BottledPotential, DropletOfPrecognition, LiquidMemories |
+| CardSelectCmd.FromCombatPile | 2 | DropletOfPrecognition, LiquidMemories |
+| CardSelectCmd.FromHand | 2 | Ashwater, TouchOfInsanity |
+| CardSelectCmd.FromHandForDiscard | 2 | GamblersBrew, MockDiscardAndAddShivsPotion |
+| CreatureCmd.GainBlock(BlockVar) overload | 2 | BlockPotion, ShipInABottle |
+| CardCmd.AutoPlay | 1 | DistilledChaos |
+| CardCmd.Discard (partial in sim) | 1 | MockDiscardAndAddShivsPotion |
+| CardCmd.DiscardAndDraw | 1 | GamblersBrew |
+| CardPileCmd.AddGeneratedCardsToCombat | 1 | OrobicAcid |
+| CardPileCmd.AutoPlayFromDrawPile | 1 | DistilledChaos |
+| CreatureCmd.Damage(DamageVar) overload | 1 | PotionShapedRock |
+| ForgeCmd.Forge | 1 | KingsCourage |
+| OrbCmd.AddSlots | 1 | PotionOfCapacity |
+| OrbCmd.Channel | 1 | EssenceOfDarkness |
+| OstyCmd.Summon | 1 | BoneBrew |
+| PlayerCmd.GainGold | 1 | FoulPotion |
+| PlayerCmd.GainStars | 1 | StarPotion |
+| PotionCmd.TryToProcure | 1 | EntropicBrew |
+
+**Subsystems, hooks and model APIs**
+
+| requirement (from `kernel_requirements`) | potions | which |
+|---|---|---|
+| potion enemy target in the decision API | 9 | BeetleJuice, DeprecatedPotion, FirePotion, PoisonPotion, PotionOfDoom, PotionShapedRock, PowderedDemise, VulnerablePotion, WeakPotion |
+| temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed) | 8 | AttackPotion, ColorlessPotion, LiquidMemories, OrobicAcid, PowerPotion, SkillPotion, SneckoOil, TouchOfInsanity |
+| CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState)) | 6 | AttackPotion, ColorlessPotion, CosmicConcoction, OrobicAcid, PowerPotion, SkillPotion |
+| out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345) | 5 | Ambergris, BloodPotion, EntropicBrew, FoulPotion, FruitJuice |
+| Defect orbs (OrbQueue, OrbCmd) | 2 | EssenceOfDarkness, PotionOfCapacity |
+| CardEnergyCost.SetThisTurnOrUntilPlayed | 1 | SneckoOil |
+| CardModel.BaseReplayCount (replay plays) | 1 | SoldiersStew |
+| CardModel.SetToFreeThisCombat | 1 | TouchOfInsanity |
+| Forge (ForgeCmd, SovereignBlade) | 1 | KingsCourage |
+| Osty/pets (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner) | 1 | BoneBrew |
+| Shiv card | 1 | CunningPotion |
+| Shiv.CreateInHand | 1 | CunningPotion |
+| Soul card | 1 | PotOfGhouls |
+| Soul.CreateInHand | 1 | PotOfGhouls |
+| Stars (PlayerCombatState.Stars, star costs) | 1 | StarPotion |
+| automatic use path (PotionUsage.Automatic: ShouldDie gate + OnUseWrapper from AfterPreventingDeath) | 1 | FairyInABottle |
+| gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained) | 1 | FoulPotion |
+| merchant/event callbacks | 1 | FoulPotion |
+| node-coupled usability (GetFoulPotionMerchantTarget reads NMerchantRoom/NFakeMerchant) | 1 | FoulPotion |
+| potion as hook listener (after relics) | 1 | FairyInABottle |
+| potion slots and procurement (PotionCmd.TryToProcure, PotionFactory) | 1 | EntropicBrew |
+| room context (RunState.CurrentRoom.RoomType) | 1 | FoulPotion |
+| shop (MerchantInventory, merchant entries) | 1 | FoulPotion |
+
+Cards: Shiv (CunningPotion), Soul (PotOfGhouls), SovereignBlade via Forge (KingsCourage). Subsystems: orbs (EssenceOfDarkness, PotionOfCapacity, FocusPotion for value), Osty (BoneBrew), stars (StarPotion), forge (KingsCourage), doom (PotionOfDoom), auto-play (DistilledChaos), card generation (Attack/Skill/Power/Colorless potions, CosmicConcoction, OrobicAcid).
+
+## 4. Player prompts
+
+| potion | type | game call | options | min | max | notes |
+|---|---|---|---|---|---|---|
+| Ashwater | HandSelect | `CardSelectCmd.FromHand` | Hand | 0 | 999999999 | UsePotionAction context (inline); RMC |
+| AttackPotion | ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated (3) | 1 | 1 | canSkip=true |
+| ColorlessPotion | ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated (3) | 1 | 1 | canSkip=true |
+| DropletOfPrecognition | PileSelect | `CardSelectCmd.FromCombatPile` | Draw (sorted by rarity then id) | 1 | 1 |  |
+| GamblersBrew | HandSelect | `CardSelectCmd.FromHandForDiscard` | Hand | 0 | 999999999 | UsePotionAction context (inline) |
+| LiquidMemories | PileSelect | `CardSelectCmd.FromCombatPile` | Discard (pile order) | 1 | 1 |  |
+| MockDiscardAndAddShivsPotion | HandSelect | `CardSelectCmd.FromHandForDiscard` | Hand | 2 | 2 | mock |
+| PowerPotion | ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated (3) | 1 | 1 | canSkip=true |
+| SkillPotion | ChooseCard | `CardSelectCmd.FromChooseACardScreen` | generated (3) | 1 | 1 | canSkip=true |
+| TouchOfInsanity | HandSelect | `CardSelectCmd.FromHand` | Hand (CostsEnergyOrStars) | 1 | 1 |  |
+
+Frequencies (mock excluded): ChooseCard 4, HandSelect 3, PileSelect 2. All sites run inside `UsePotionAction` with its `GameActionPlayerChoiceContext` (inline pause, `design-combat-kernel.md` 4.2); the choose-a-card potions can be skipped (`canSkip: true`); hand selections cancel queued card plays (`PlayerChoiceOptions.CancelPlayCardActions`). Potion targets are part of the `UsePotion` decision, not a prompt.
+
+## 5. RNG streams
+
+| stream | potions | which |
+|---|---|---|
+| RunRng.CombatCardGeneration | 6 | AttackPotion, ColorlessPotion, CosmicConcoction, OrobicAcid, PowerPotion, SkillPotion |
+| RunRng.Shuffle | 1 | BottledPotential |
+| RunRng.CombatPotionGeneration | 1 | EntropicBrew |
+| RunRng.CombatEnergyCosts | 1 | SneckoOil |
+
+Card-generating potions call `CardFactory.GetDistinctForCombat` (`TakeRandom` over the unlock- and multiplayer-filtered pool, `Factories/CardFactory.cs:93-101`); OrobicAcid makes three separate calls (Attack, Skill, Power). SneckoOil draws one `CombatEnergyCosts.NextInt(4)` per eligible hand card after its draw. No potion reads ascension.
+
+## 6. Version delta v0.107.1 -> v0.111.0
+
+34 same, 31 cosmetic, 0 rule-change, 1 new (Ambergris), 0 removed. 23 potions changed `TargetType` from Self to AnyPlayer and apply their effect to `target.Player` instead of the owner (throwable at allies in multiplayer); in single player the target defaults to the owner (`PotionModel.EnqueueManualUse`, `Models/PotionModel.cs:601-616`), so the behaviour is unchanged: Ashwater, AttackPotion, BlessingOfTheForge, BoneBrew, ColorlessPotion, CosmicConcoction, CunningPotion, DistilledChaos, DropletOfPrecognition, Duplicator, EntropicBrew, EssenceOfDarkness, FocusPotion, GamblersBrew, GlowwaterPotion, LiquidMemories, OrobicAcid, PotionOfCapacity, PotOfGhouls, PowerPotion, SkillPotion, StarPotion, TouchOfInsanity. The rest are decompiler-style differences.
+
+## 7. Decompile-unreadable code
+
+None. No potion file has a lost array blob or an unreadable body; FoulPotion's usability check and targets are node-coupled (`GetFoulPotionMerchantTarget` reads `NMerchantRoom`/`NFakeMerchant` inventory state), which must be ported as a rule (`inventory closed` = the merchant screen is not open).
+
+## 8. Port notes
+
+- PotionOfBinding reads the Weak amount from `DynamicVars["VulnerablePower"]` and the Vulnerable amount from `["WeakPower"]` (both 1, so harmless) and applies Weak before Vulnerable (`Models.Potions/PotionOfBinding.cs:91`, `:107`).
+- BeetleJuice's `DamageDecrease` 30 is display text; the effect is ShrinkPower(4).
+- FairyInABottle heals `Max(MaxHp x 0.3, 1)` with decimal arithmetic; the heal is applied through `CreatureCmd.Heal` (int truncation there).
+- FoulPotion damages the player too and excludes pets (`!c.IsPet`).
+- Mock and deprecated potions are excluded from the port (batch `-`).
+
+## 9. Open questions
+
+- Discarding a potion out of combat inside the three events that set `CanUseOrRemovePotions` false (`design-run-layer.md` 3.13): which events, and does the sim expose the decision there?
+- FoulPotion out of combat: the shop reaction (`NMerchantRoom.FoulPotionThrown`) is a node call; does it change merchant state (prices, stock) or only animation?
+- Potion use while a prompt is open is illegal in the game UI (modal); confirm the same for potions with `Automatic` usage (FairyInABottle firing during a prompt-bearing card play).
