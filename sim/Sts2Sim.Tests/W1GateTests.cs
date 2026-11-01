@@ -451,10 +451,13 @@ public static class W1GateTests
             }
             relicIds.RemoveRange(MaxPilotRelicsPerPlayer, relicIds.Count - MaxPilotRelicsPerPlayer);
         }
-        foreach (var id in relicIds)
+        Content_relics_9_1Tests.WithObtainPrompts(cs.Run, player, seed.ToString(System.Globalization.CultureInfo.InvariantCulture), () =>
         {
-            RelicCmd.Obtain(cs.Run, RelicRegistry.Create(id), player);
-        }
+            foreach (var id in relicIds)
+            {
+                RelicCmd.Obtain(cs.Run, RelicRegistry.Create(id), player);
+            }
+        });
         RelicCmd.Obtain(cs.Run, new GateCounterRelic(), player);
         var potionIds = PotionRegistry.AllIds.Where(id => W1GatePotionIds.Contains(id)).ToList();
         var slots = player.PotionSlots;

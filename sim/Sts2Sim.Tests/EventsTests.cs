@@ -147,6 +147,7 @@ public static class EventsTests
         var clone = rs.DeepClone();
         Assert.Equal(StateHasher.Hash(room), StateHasher.Hash(clone.CurrentRooms[0]));
         var clonedRoom = (EventRoom)clone.CurrentRooms[0];
+        clone.Choice.Answerer = new Content_relics_9_1Tests.PickFirst();
         clonedRoom.LocalMutableEvent!.ChooseOption(clone, 0);
         Assert.True(clonedRoom.LocalMutableEvent.IsFinished);
         Assert.True(clonedRoom.IsPreFinished);
