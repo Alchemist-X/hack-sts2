@@ -858,3 +858,26 @@ Open issues:
 - No content def carries `[SavedProperty]` yet (e.g. GIRYA.TimesLifted, SPOILS_MAP.SpoilsActIndex are `[SavedProperty]` in the game), so saves holding such cards/relics are rejected by `RunImporter.CheckSupported`.
 - `RunImporter.CreatePreFinishedRoom` does not call `EncounterModel.LoadCustomState`; a pre-finished BATTLEWORN_DUMMY room loses `RanOutOfTime` on import.
 - mcr converter: v0.107.1 model table checksum mismatch (owner note) and hand-index resolution; harness-v2 run-level pairs are logical rather than recorded order (exporter-v2 note).
+
+## W3.5/W4 integrate 2 (2026-11-01)
+
+Base `c145de0` (W3.5/W4 integrate 1). Both branches descend from the base; none skipped.
+
+Merged, in order: w4/replay-combats `36909de`, w4/replay-runs `3c893f7`. No conflicts.
+
+Fixes: none needed (both merges built and gated clean).
+
+Gates: build 0 warnings 0 errors; tests 1028/1028, PENDING 0 (the W1Pending routes named for this stage — ftests → run-glue, content-leftovers → kernel-gaps, save import → GREMLIN_MERC — were already made real in integrate 1; the remaining W1-era `W1Pending.Run` wrappers all execute their bodies); run soak 10⁴ runs × 5 characters (PortedOnly), 688135 steps, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267 (2 capped), potions 128, relics 594, 0 failures); `Test_SelfConsistency_F2_RunHashStreamsArePinnedAndRepeatable` passed in the full run (replay-combats owner reported one earlier flake, not reproduced); diff v1 4/4 bundles, 69/69 decisions; sts2rec 701 passed, 4 skipped; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded content defs: none (only `UnportedCardDef` / `SimStubEvent` placeholders carry `[SimExclude]`).
+
+Headline numbers (not a gate), `tmp/diff-v2` (exporter-v2 run bundles for 19 lineages + mcr 611 v0.107.1 replays):
+- harness v2 `--v2`: 2387 segments, 2 agree, 0 hard divergence, 2385 skipped, 0 errors; decisions 31/31, outcome 2/2. v0.107.1 combat 611 (content_not_ported 605, exporter_ineligible 6); v0.110.1 562 (out_of_scope 521, content_not_ported 41); v0.111.0 1214 (combat 350: agree 2, content_not_ported 264, exporter_ineligible 84; map 415 + room 449 exporter_ineligible).
+- G3 seed replay (`Sts2Sim.Diff g3`): 11 runs, 0 reach the recorded end, decisions 748/753, floors agreed sorted `0, 1, 2, 3, 4, 5, 7, 7, 10, 10, 13`; first divergence by class: port_bug 7, projection_gap 2, content_not_ported 1 (CRYSTAL_SPHERE event unregistered), out_of_scope 1 (old-prefix lineage).
+
+Open issues:
+- G3 first divergences (port_bug): FOSSIL_STALKER select candidates order, GREMLIN_MERC_NORMAL / LIVING_FOG_NORMAL floor_summary monster count (spawned minions), shop entry gold (54 vs 129), NIBBITS_WEAK discard count, TERROR_EEL_ELITE VIGOR_POWER on enemy, ROOM_FULL_OF_CHEESE relic count; see `sim/specs/diff-report-w4-run.md`.
+- Diff projection lacks `DisplayAmount` rules for HARDENED_SHELL_POWER and SLOW_POWER (projection_gap).
+- EVENT.CRYSTAL_SPHERE not registered (content_not_ported).
+- Carried from integrate 1: no `[SavedProperty]` on content defs; `CreatePreFinishedRoom` skips `LoadCustomState`; mcr v0.107.1 model-table checksum / hand-index resolution.
+- v0.111.0 v2 reader rejects 83 segments (`deck: null` / `action: null`), per replay-combats report.

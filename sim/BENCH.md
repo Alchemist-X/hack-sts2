@@ -85,3 +85,9 @@ Caveat: these numbers come from a single small encounter with a 10-card deck. Co
 | Row | decisions/s | Clone() | StateHash() |
 |---|---|---|---|
 | W3.5/W4 integrate 1 | 145,573 | 2.121 us | 2.570 us |
+
+## W3.5/W4 integrate 2 (2026-11-01, NIBBITS_WEAK, 1 run, 5 s)
+
+| Row | decisions/s | Clone() | StateHash() |
+|---|---|---|---|
+| W3.5/W4 integrate 2 | 141,555 | 2.449 us | 2.682 us |
