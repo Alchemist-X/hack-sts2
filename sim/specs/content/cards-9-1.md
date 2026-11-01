@@ -1,0 +1,42 @@
+# cards-9-1 (wave A) — index
+
+All: VFX/SFX/TriggerAnim/Cmd.Wait/WithHitFx/WithNoAttackerAnim, ExtraHoverTips, ShouldGlow*Internal dropped. OstyCmd.Summon / ForgeCmd.Forge receive `source: null` (sim `AbstractModel? source` has no card form; no game listener reads it). Powers not yet in the tree are applied by id (`PowerRegistry.Create`), their vars are `PowerVar<PowerModel>(name, v)`.
+
+- AFTERLIFE — Models.Cards/Afterlife.cs:17 — summon 6 (+3); Exhaust.
+- ALIGNMENT — Models.Cards/Alignment.cs:15 — star cost 2; GainEnergy 2 (+1).
+- ASTRAL_PULSE — Models.Cards/AstralPulse.cs:16 — star cost 3; 6 (+2) x2 all enemies.
+- BEAT_INTO_SHAPE — Models.Cards/BeatIntoShape.cs:22 — CalculatedForge multiplier = powered DamageReceived on target by owner this turn; minus HitResults.Count x CalculationExtra (game Results is per-hit list).
+- BIASED_COGNITION — Models.Cards/BiasedCognition.cs:16 — Focus 5 (+1) then BIASED_COGNITION_POWER 1 by id.
+- BIG_BANG — Models.Cards/BigBang.cs:15 — draw, stars, energy, forge in game order; upgrade adds Innate.
+- BLACK_HOLE — Models.Cards/BlackHole.cs:15 — BLACK_HOLE_POWER 3 (+1) by id.
+- BODYGUARD — Models.Cards/Bodyguard.cs:17 — summon 5 (+2).
+- BONE_SHARDS — Models.Cards/BoneShards.cs:17 — Osty missing -> nothing; Osty AoE, block, kill Osty if alive.
+- BULWARK — Models.Cards/Bulwark.cs:16 — block 12 (+3), forge 10 (+3).
+- CALCIFY — Models.Cards/Calcify.cs:15 — CALCIFY_POWER 4 (+2) by id.
+- CHILD_OF_THE_STARS — Models.Cards/ChildOfTheStars.cs:16 — CHILD_OF_THE_STARS_POWER by id, var BlockForStars 2 (+1).
+- CLEANSE — Models.Cards/Cleanse.cs:19 — summon 3 (+2), pick 1 from draw pile (TO_EXHAUST), exhaust.
+- CLOAK_OF_STARS — Models.Cards/CloakOfStars.cs:15 — star cost 1; block 7 (+3).
+- COMET — Models.Cards/Comet.cs:23 — star cost 5; 33 (+11), Weak 3 then Vulnerable 3.
+- CONQUEROR — Models.Cards/Conqueror.cs:16 — forge 3 (+2) then CONQUEROR_POWER 1 on target by id.
+- CONVERGENCE — Models.Cards/Convergence.cs:16 — RETAIN_HAND 1, ENERGY_NEXT_TURN 1, STAR_NEXT_TURN 1 (+1), all by id.
+- CRESCENT_SPEAR — Models.Cards/CrescentSpear.cs:18 — star cost 1; 8 + 2 (+1) x cards in owner's combat piles with CanonicalStarCost >= 0 or star X.
+- DECISIONS_DECISIONS — Models.Cards/DecisionsDecisions.cs:16 — star cost 6; draw 3 (+2), pick Skill (not Unplayable, all keyword sources) from hand, AutoPlay x3; PretendCardsCanBePlayed (UI flag) dropped.
+- DEVASTATE — Models.Cards/Devastate.cs:16 — star cost 4; 35 (+10).
+- DEVOUR_LIFE — Models.Cards/DevourLife.cs:16 — DEVOUR_LIFE_POWER 1 (+1) by id.
+- DIRGE — Models.Cards/Dirge.cs:17 — energy X; X summons of 3 (+1); X Souls (upgraded if Dirge upgraded) to draw pile Random; PreviewCardPileAdd (UI) dropped.
+- DYING_STAR — Models.Cards/DyingStar.cs:20 — star cost 3; Ethereal; hittable enemies captured before the AoE, DYING_STAR_POWER (StrengthLoss 9 +2) by id on each.
+- FALLING_STAR — Models.Cards/FallingStar.cs:18 — star cost 2; 8 (+4), Weak 1 then Vulnerable 1.
+- FETCH — Models.Cards/Fetch.cs:20 — Osty missing -> nothing; Osty hit 3 (+3); draw 1 unless a CardPlayFinished of this card exists this turn.
+- FLATTEN — Models.Cards/Flatten.cs:21 — Osty hit 12 (+4); FlattenListener: AfterAttack by owner's Osty and AfterCardEnteredCombat(self, Osty attacked this turn) -> EnergyCost.SetThisTurn(0).
+- FURNACE — Models.Cards/Furnace.cs:16 — FURNACE_POWER (Forge 5 +2) by id.
+- GAMMA_BLAST — Models.Cards/GammaBlast.cs:18 — star cost 3; 13 (+5), Weak 2 then Vulnerable 2.
+- GATHER_LIGHT — Models.Cards/GatherLight.cs:15 — block 8 (+3), 1 star.
+- GENESIS — Models.Cards/Genesis.cs:15 — GENESIS_POWER (StarsPerTurn 2 +1) by id.
+- GLOW — Models.Cards/Glow.cs:15 — stars 1 (+1), draw 1, DRAW_CARDS_NEXT_TURN_POWER 1 by id.
+- GUIDING_STAR — Models.Cards/GuidingStar.cs:22 — star cost 1; 12 (+1), DRAW_CARDS_NEXT_TURN_POWER 2 (+1) by id.
+- HIDDEN_CACHE — Models.Cards/HiddenCache.cs:15 — 1 star, STAR_NEXT_TURN_POWER 3 (+1) by id.
+- HIGH_FIVE — Models.Cards/HighFive.cs:20 — IsPlayable needs Osty; Osty AoE 11 (+2), Vulnerable 2 (+1) to hittable enemies after the hit.
+- INVOKE — Models.Cards/Invoke.cs:17 — SUMMON_NEXT_TURN 2 (+1) then ENERGY_NEXT_TURN 2 (+1), by id.
+- KNOCKOUT_BLOW — Models.Cards/KnockoutBlow.cs:18 — 30 (+8); any result WasTargetKilled -> 5 stars.
+- METEOR_SHOWER — Models.Cards/MeteorShower.cs:19 — star cost 2; 14 (+7) AoE; Weak 2 then Vulnerable 2, hittable list re-read for each.
+- NECRO_MASTERY — Models.Cards/NecroMastery.cs:17 — summon 5 (+3) then NECRO_MASTERY_POWER 1 by id.
