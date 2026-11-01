@@ -1,0 +1,34 @@
+# potions-1 (W3 wave A) index
+
+- BEETLE_JUICE — Models.Potions/BeetleJuice.cs:19 — VFX dropped; SHRINK_POWER by id, amount = Repeat (4)
+- BLOCK_POTION — Models.Potions/BlockPotion.cs:18 — pre-existing W1 pilot, not re-ported
+- BLOOD_POTION — Models.Potions/BloodPotion.cs:18 — VFX dropped; out-of-combat use throws W2 (RequireCombat)
+- CURE_ALL — Models.Potions/CureAll.cs:19 — VFX dropped; energy then draw
+- DEXTERITY_POTION — Models.Potions/DexterityPotion.cs:18 — DEXTERITY_POWER by id
+- ENERGY_POTION — Models.Potions/EnergyPotion.cs:19 — VFX dropped
+- EXPLOSIVE_AMPOULE — Models.Potions/ExplosiveAmpoule.cs:22 — smoke VFX + CustomScaledWait dropped; hittable snapshot then multi-target Damage
+- FIRE_POTION — Models.Potions/FirePotion.cs:21 — pre-existing W1 pilot, not re-ported
+- FORTIFIER — Models.Potions/Fortifier.cs:17 — GainBlock(Block*2, Unpowered); hover tip dropped
+- FRUIT_JUICE — Models.Potions/FruitJuice.cs:16 — CanBeGeneratedInCombat=false; out-of-combat use throws W2 (RequireCombat)
+- FYSH_OIL — Models.Potions/FyshOil.cs:18 — Strength then Dexterity, by id
+- GLOWWATER_POTION — Models.Potions/GlowwaterPotion.cs:21 — VFX dropped; exhausts hand snapshot then draws 10
+- LIQUID_BRONZE — Models.Potions/LiquidBronze.cs:18 — THORNS_POWER by id
+- POTION_OF_BINDING — Models.Potions/PotionOfBinding.cs:23 — smoke VFX dropped; game applies Weak with the VulnerablePower var and Vulnerable with the WeakPower var (kept as-is, both 1)
+- POTION_SHAPED_ROCK — Models.Potions/PotionShapedRock.cs:17 — Damage(DamageVar) overload
+- STRENGTH_POTION — Models.Potions/StrengthPotion.cs:20 — pre-existing W1 pilot, not re-ported
+- SWIFT_POTION — Models.Potions/SwiftPotion.cs:18 — VFX dropped
+- VULNERABLE_POTION — Models.Potions/VulnerablePotion.cs:20 — VFX dropped
+- WEAK_POTION — Models.Potions/WeakPotion.cs:20 — VFX dropped
+- AMBERGRIS — Models.Potions/Ambergris.cs:20 — VFX dropped; CombatManager.IsInProgress -> cs.IsInProgress; AMBERGRIS_POWER by id (other owner); out-of-combat use throws W2
+- CLARITY — Models.Potions/Clarity.cs:19 — VFX dropped; draw then CLARITY_POWER by id (other owner)
+- DUPLICATOR — Models.Potions/Duplicator.cs:15 — DUPLICATION_POWER by id (other owner), applier = target
+- FLEX_POTION — Models.Potions/FlexPotion.cs:18 — FLEX_POTION_POWER by id (other owner), amount = StrengthPower var
+- FOCUS_POTION — Models.Potions/FocusPotion.cs:18 — FOCUS_POWER by id, applier = target
+- GHOST_IN_A_JAR — Models.Potions/GhostInAJar.cs:18 — INTANGIBLE_POWER by id (other owner)
+- GIGANTIFICATION_POTION — Models.Potions/GigantificationPotion.cs:19 — VFX dropped; GIGANTIFICATION_POWER by id (other owner)
+- HEART_OF_IRON — Models.Potions/HeartOfIron.cs:18 — PLATING_POWER by id (other owner)
+- LUCKY_TONIC — Models.Potions/LuckyTonic.cs:18 — BUFFER_POWER by id (other owner)
+- MAZALETHS_GIFT — Models.Potions/MazalethsGift.cs:18 — RITUAL_POWER by id (other owner)
+- POISON_POTION — Models.Potions/PoisonPotion.cs:23 — gaseous VFX dropped; POISON_POWER by id (other owner)
+- POWDERED_DEMISE — Models.Potions/PowderedDemise.cs:17 — DEMISE_POWER by id (other owner), var key 'Demise'
+- RADIANT_TINCTURE — Models.Potions/RadiantTincture.cs:18 — energy (IntValue) then RADIANCE_POWER by id (other owner)
