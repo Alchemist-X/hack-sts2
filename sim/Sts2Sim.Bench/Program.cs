@@ -11,6 +11,10 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "run-soak")
+        {
+            return RunSoakBench(args);
+        }
         string encounter = args.Length > 0 ? args[0] : NibbitsWeak.EncounterIdEntry;
         double seconds = args.Length > 1 && double.TryParse(args[1], out var s) ? s : 5.0;
         var deck = StartingDecks.Ironclad;
@@ -107,5 +111,28 @@ public static class Program
         sw.Stop();
         if (!quiet)
             Console.WriteLine($"playouts: {decisions} decisions, {episodes} episodes ({completed} completed, {capped} capped, {wins} wins) in {sw.Elapsed.TotalSeconds:F2}s => {decisions / sw.Elapsed.TotalSeconds:F0} decisions/s, {episodes / sw.Elapsed.TotalSeconds:F0} episodes/s, {(double)decisions / episodes:F1} decisions/episode");
+    }
+    private static int RunSoakBench(string[] args)
+    {
+        int runs = args.Length > 1 && int.TryParse(args[1], out var r) ? r : 100_000;
+        int firstSeed = args.Length > 2 && int.TryParse(args[2], out var f) ? f : 1;
+        var sw = Stopwatch.StartNew();
+        Sts2Sim.Core.Run.RunSoakResult result;
+        try
+        {
+            result = Sts2Sim.Core.Run.RunSoak.Run(new Sts2Sim.Core.Run.RunSoakOptions { Runs = runs, FirstSeed = firstSeed });
+        }
+        catch (NotImplementedException ex)
+        {
+            Console.WriteLine($"run-soak: blocked on a W2 stub: {ex.Message}");
+            return 2;
+        }
+        sw.Stop();
+        Console.WriteLine($"run-soak: {result.Runs} runs ({result.Victories} victories, {result.Defeats} defeats, {result.Capped} capped), {result.Steps} steps in {sw.Elapsed.TotalSeconds:F1}s, {result.FailureCount} failures");
+        foreach (var failure in result.Failures)
+        {
+            Console.WriteLine("  " + failure);
+        }
+        return result.FailureCount == 0 ? 0 : 1;
     }
 }
