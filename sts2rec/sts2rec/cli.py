@@ -1,7 +1,7 @@
 """sts2rec command-line interface.
 
 Subcommands: sessions, validate, canonical, watch, archive, report, pack,
-export-bundles.
+export-bundles, export-run-oracles.
 Exit codes: 0 = ok, 1 = validation/operation errors, 2 = usage errors.
 """
 
@@ -25,6 +25,7 @@ from .pack import pack_session
 from .paths import profile_saves_dirs, recorder_output_root, sessions_root, user_data_dir
 from .report import build_report
 from .review import review_lineage, write_review
+from .run_oracles import ORACLE_BUILD_ID, RunOracleExportError, export_run_oracles
 from .session import COMPRESSED_SUFFIX, STREAM_NAMES, Manifest, load_manifest, stream_path
 from .validate import validate_session
 from .watch import watch_session
@@ -34,6 +35,7 @@ EXIT_ERRORS = 1
 EXIT_USAGE = 2
 
 DIFF_BUNDLE_DIR_ENV = "STS2REC_DIFF_BUNDLE_DIR"
+RUN_ORACLE_DIR_ENV = "STS2REC_RUN_ORACLE_DIR"
 DEFAULT_DIFF_BUNDLE_DIR = (
     "/private/tmp/claude-501/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-"
     "slay-the-spire-card-combo-fc5926/7fa8c8f8-229e-453c-ba28-de560fb8b5a7/scratchpad/diff-bundles"
@@ -321,6 +323,35 @@ def _cmd_export_bundles(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_export_run_oracles(args: argparse.Namespace) -> int:
+    out = args.out_dir or os.environ.get(RUN_ORACLE_DIR_ENV)
+    if not out:
+        print(f"error: pass OUT_DIR or set ${RUN_ORACLE_DIR_ENV}", file=sys.stderr)
+        return EXIT_USAGE
+    user_data = Path(args.user_data) if args.user_data else user_data_dir()
+    sessions = Path(args.root) if args.root else sessions_root(recorder_output_root())
+    repo = _repo_root()
+    try:
+        manifest = export_run_oracles(
+            user_data,
+            sessions,
+            Path(out),
+            build_id=args.build_id,
+            forbidden_roots=[repo] if repo else [],
+            log=lambda message: print(message, file=sys.stderr),
+        )
+    except (RunOracleExportError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    summary = manifest["summary"]
+    print(
+        f"{summary['saves']} saves, {summary['runs']} .run histories kept; {summary['excluded']} excluded"
+    )
+    print(f"manifest: {Path(out) / 'manifest.json'}")
+    print(f"next: dotnet run -c Release --project sim/Sts2Sim.Diff -- run {out}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sts2rec",
@@ -436,6 +467,20 @@ def build_parser() -> argparse.ArgumentParser:
         "projection (false divergences)",
     )
     export.set_defaults(handler=_cmd_export_bundles)
+
+    run_oracles = subparsers.add_parser(
+        "export-run-oracles",
+        help="copy run saves and .run histories for the run-layer oracles (sim/specs/run-oracles.md), read-only",
+    )
+    run_oracles.add_argument(
+        "out_dir",
+        nargs="?",
+        help=f"output directory (default: ${RUN_ORACLE_DIR_ENV}); never inside the corpus, the game data or the repo",
+    )
+    run_oracles.add_argument("--user-data", help="game user-data root (default: platform location)")
+    run_oracles.add_argument("--root", help="recorder sessions root (default: recorder output root)")
+    run_oracles.add_argument("--build-id", default=ORACLE_BUILD_ID, help=f".run build gate (default {ORACLE_BUILD_ID})")
+    run_oracles.set_defaults(handler=_cmd_export_run_oracles)
     return parser
 
 
