@@ -1,0 +1,25 @@
+# W3 cards-6-10 (wave A) index
+
+- ABUNDANCE — Models.Cards/Abundance.cs:15 — 3 distinct char-pool Powers, all upgraded, no-skip choose; Ancient so FilterForCombat drops nothing extra (options are Powers)
+- BUNDLE_OF_JOY — Models.Cards/BundleOfJoy.cs:17 — lazy GetDistinctForCombat enumeration kept (create, add, create, add)
+- CALAMITY — Models.Cards/Calamity.cs:13 — CALAMITY_POWER via PowerRegistry (other owner)
+- CALL_OF_THE_VOID — Models.Cards/CallOfTheVoid.cs:16 — TriggerAnim dropped; CALL_OF_THE_VOID_POWER via PowerRegistry; Ethereal hover tip dropped
+- DISCOVERY — Models.Cards/Discovery.cs — W1 pilot, not a stub; untouched
+- DISTRACTION — Models.Cards/Distraction.cs:16 — VisualCardPool (Silent) dropped
+- HELLO_WORLD — Models.Cards/HelloWorld.cs:14 — TriggerAnim + VisualCardPool dropped; HELLO_WORLD_POWER via PowerRegistry
+- INFERNAL_BLADE — Models.Cards/InfernalBlade.cs:15 — upgrade is cost -1 per decompile
+- JACKPOT — Models.Cards/Jackpot.cs:19 — filter Canonical cost 0 and not X; hit FX dropped
+- JACK_OF_ALL_TRADES — Models.Cards/JackOfAllTrades.cs:17 — eager ToList then add each
+- MANIFEST_AUTHORITY — Models.Cards/ManifestAuthority.cs:19 — block then 1 colorless (upgraded if upgraded)
+- METAMORPHOSIS — Models.Cards/Metamorphosis.cs:17 — PreviewCardPileAdd dropped (UI)
+- SPECTRUM_SHIFT — Models.Cards/SpectrumShift.cs:15 — TriggerAnim dropped; SPECTRUM_SHIFT_POWER via PowerRegistry
+- SPLASH — Models.Cards/Splash.cs:15 — _mockGeneratedCard test seam dropped
+- STOKE — Models.Cards/Stoke.cs:16 — no OnUpgrade in decompile (IsUpgraded only); TriggerAnim dropped; CardPreviewStyle dropped
+- ALCHEMIZE — Models.Cards/Alchemize.cs:15 — TriggerAnim dropped; potion rolled before TryToProcure
+- BLADE_OF_INK — Models.Cards/BladeOfInk.cs:17 — Shiv.CreateInHand inlined by id ("SHIV"); Inky by id via EnchantmentRegistry (both other owners; runtime KeyNotFound until ported)
+- DEBT — Models.Cards/Debt.cs:15 — OnTurnEndInHand: LoseGold(min(Gold var, gold))
+- DISINTEGRATION — Models.Cards/Disintegration.cs:16 — KnowledgeDemon.IChoosable not in Core: exposed as public OnChosen(cs, card); ThrowingPlayerChoiceContext dropped; amount uses BaseValue (decompile), others IntValue
+- HAND_OF_GREED — Models.Cards/HandOfGreed.cs:22 — TestMode VFX position + coin VFX dropped; fatal check before the attack
+- MIND_ROT — Models.Cards/MindRot.cs:16 — as DISINTEGRATION (IChoosable -> public OnChosen)
+- SLOTH — Models.Cards/Sloth.cs:16 — as DISINTEGRATION
+- WASTE_AWAY — Models.Cards/WasteAway.cs:17 — as DISINTEGRATION; Energy hover tip dropped
