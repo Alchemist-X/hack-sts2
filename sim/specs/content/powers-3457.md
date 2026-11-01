@@ -1,0 +1,42 @@
+# powers-3457 (W3 wave A) — index
+
+Decompile paths are relative to `linux-decompiled/MegaCrit.Sts2.Core.`. Common drops for every model: `Flash()`, `InvokeDisplayAmountChanged`, hover tips, VFX/SFX, `Cmd.Wait`, `choiceContext`; `card.Owner.Creature` → `CombatStatus.CardOwnerCreature`, `Owner.Player` → `Owner as PlayerState`; `PlayerCombatState.AllCards` → `AllPiles` (Hand, Draw, Discard, Exhaust, Play) snapshotted before mutating (no move happens while iterating); `e.Actor` → `Stamp.ActorId`; `e.CardPlay.Player` → `HistoryCardPlay.PlayerId`; `e.CardPlay.Card.Type` → `HistoryCardPlay.CardType` (captured at append); `card.Affliction is X` for unported afflictions → id compare.
+
+- AGGRESSION_POWER — Models.Powers/AggressionPower.cs:19 — Take(Amount) over the shuffled discard Attacks; Add to Hand then Upgrade if upgradable (game order).
+- CORRUPTION_POWER — Models.Powers/CorruptionPower.cs:9 — AfterModifyingCardPlayResultLocation is Flash only (not overridden).
+- HELLRAISER_POWER — skipped (W1 pilot exists).
+- INFINITE_BLADES_POWER — Models.Powers/InfiniteBladesPower.cs:16 — Shiv.CreateInHand (Models.Cards/Shiv.cs:355-373) inlined by id `SHIV`: IsOverOrEnding gate, create all, AddGeneratedCardsToCombat(creator = owner).
+- MASTER_PLANNER_POWER — Models.Powers/MasterPlannerPower.cs:9 — none.
+- MAYHEM_POWER — Models.Powers/MayhemPower.cs:14 — none.
+- NIGHTMARE_POWER — Models.Powers/NightmarePower.cs:17 — Instanced; `Data.selectedCard` stored as a cloned CardInstance (cloned via CloneFor on power clone, hashed); `SetSelectedCard(cs, card)` is the card-side entry; StringVar title dropped; `CreateClone` = `cs.CloneCard` + `ExhaustOnNextPlay = false` (Models/CardModel.cs:3571-3583), `_cloneOf` not tracked; null selected card throws (game NRE).
+- REBOUND_POWER — Models.Powers/ReboundPower.cs:17 — none.
+- SENTRY_MODE_POWER — Models.Powers/SentryModePower.cs:18 — creates `SWEEPING_GAZE` by id.
+- STAMPEDE_POWER — Models.Powers/StampedePower.cs:16 — `c.Keywords` = all-source keywords → HasKeywordInCombat.
+- ECHO_FORM_POWER — Models.Powers/EchoFormPower.cs:18 — AfterApplied/AfterRemoved/AfterCardPlayed/BeforeSideTurnStart/AfterModifyingCardPlayCount are VFX only (dropped).
+- FERAL_POWER — Models.Powers/FeralPower.cs:15 — `location.player = Owner.Player` dropped (sim CardLocation has no player; single player); DisplayAmount kept as a plain property.
+- ITERATION_POWER — Models.Powers/IterationPower.cs:18 — none.
+- JUGGLING_POWER — Models.Powers/JugglingPower.cs:18 — threshold 3 literal; clone as Nightmare.
+- LETHALITY_POWER — Models.Powers/LethalityPower.cs:13 — `cardSource.Pile` → GetCombatPile(cs); uses `rs.Combat!` (as VulnerablePower).
+- NOSTALGIA_POWER — Models.Powers/NostalgiaPower.cs:12 — AfterModifying is Flash only (dropped).
+- PALE_BLUE_DOT_POWER — Models.Powers/PaleBlueDotPower.cs:19 — DrawCardsNextTurnPower applied by id `DRAW_CARDS_NEXT_TURN_POWER`; Cmd.Wait(0.5) dropped; CardPlay=5 as const.
+- PHANTOM_BLADES_POWER — Models.Powers/PhantomBladesPower.cs:19 — history Shiv check resolves the tag via CardRegistry.TryGet(CardId).
+- UNMOVABLE_POWER — Models.Powers/UnmovablePower.cs:15 — `e.CardPlay != cardPlay` → PlayId compare (§B12 A11).
+- CALAMITY_POWER — Models.Powers/CalamityPower.cs:16 — Dictionary<CardModel,int> keyed by card InstanceId (SortedDictionary, cloned + hashed); pool via CardPools.ForCharacter + rs.Unlocks (player UnlockState → run unlocks).
+- CALL_OF_THE_VOID_POWER — Models.Powers/CallOfTheVoidPower.cs:20 — none.
+- CHAINS_OF_BINDING_POWER — Models.Powers/ChainsOfBindingPower.cs:22 — `ModelDb.Affliction<Bound>().CanAfflict` → AfflictionRegistry.Create("BOUND").CanAfflict; CardPreviewStyle dropped.
+- CREATIVE_AI_POWER — Models.Powers/CreativeAiPower.cs:17 — none.
+- GALVANIC_POWER — Models.Powers/GalvanicPower.cs:21 — affliction `GALVANIZED` by id; VfxCmd dropped; AfflictionTitle StringVar dropped.
+- HELLO_WORLD_POWER — Models.Powers/HelloWorldPower.cs:18 — none.
+- HEX_POWER — Models.Powers/HexPower.cs:18 — `creature == Applier` → CombatId == ApplierId.
+- INFESTED_POWER — Models.Powers/InfestedPower.cs:19 — GAP: AfterDeath throws (no CreatureCmd.Add seam to set Wriggler.StartStunned before add); ShouldStopCombatFromEnding ported; node visibility / music dropped.
+- RINGING_POWER — Models.Powers/RingingPower.cs:20 — none.
+- SMOGGY_POWER — Models.Powers/SmoggyPower.cs:20 — none.
+- SPECTRUM_SHIFT_POWER — Models.Powers/SpectrumShiftPower.cs:19 — none.
+- STOCK_POWER — Models.Powers/StockPower.cs:15 — GAP: AfterDeath throws (no seam to set Axebot.StockAmount / ShouldPlaySpawnAnimation before add); respawn anim dropped.
+- TANGLED_POWER — Models.Powers/TangledPower.cs:20 — EnergyVar(1) as const; AfterApplied afflicts all Attacks without a null-affliction check (game).
+- VITAL_SPARK_POWER — Models.Powers/VitalSparkPower.cs:20 — `oldOwner.CombatState == null` → !IsAttached; TaintedPower applied by id `TAINTED_POWER`.
+- ENTROPY_POWER — skipped (W1 pilot exists).
+- FOREGONE_CONCLUSION_POWER — Models.Powers/ForegoneConclusionPower.cs:17 — prompt key `<ID>.selectionScreenPrompt`; site `FOREGONE_CONCLUSION_POWER:BeforeHandDraw`.
+- STRATAGEM_POWER — Models.Powers/StratagemPower.cs:17 — site `STRATAGEM_POWER:AfterShuffle`.
+- TOOLS_OF_THE_TRADE_POWER — skipped (W1 pilot exists).
+- TYRANNY_POWER — Models.Powers/TyrannyPower.cs:18 — site `TYRANNY_POWER:AfterPlayerTurnStart`.
