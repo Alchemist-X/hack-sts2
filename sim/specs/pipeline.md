@@ -488,9 +488,13 @@ Osty through `Owner.Osty` (`CombatStatus.GetOsty`) and `AttackCommand.FromOsty` 
 | `Add(cs, MonsterDef, side = Enemy, slotName = null) → MonsterState` | `:3563-3572`: `CombatState.CreateCreature` (`Combat/CombatState.cs:709-724`) is `MonsterSpawner.SpawnForAdd` (monsters-kernel), then `Add(creature)` |
 | `Add(cs, CreatureState creature)` | `:3575` + state machine `<Add>d__2` `:219-330`, in this order: throw `"Attempted to add a creature outside of combat."` unless `IsInProgress` (`:270`); `CombatState == null` throws (`:275`, a sim creature belongs to `cs` by construction); `IsLiveCombat()` is always true (`Combat/CombatState.cs:1077-1080`); `CombatState.AddCreature` (`:279`; `:993-1006`: allies for side `Player`, else enemies, `"Creature is already in this combat, but AddCreature was called on it again."`) → `cs.AddAlly` (state) or `cs.AddMonster`; `CombatManager.AddCreature` (`:280`; `Combat/CombatManager.cs:6990-7005`: contains check, `Monster.SetUpForCombat()`, `SortEnemiesBySlotName()` when the creature has a slot) → `MonsterLifecycle.SetUpForCombat`, `MonsterSpawner.SortEnemiesBySlotName(cs, encounter)` (encounter = `EncounterRegistry` entry of `cs.EncounterId`, none for an unregistered id, as the game's `Encounter == null`); `CombatManager.AfterCreatureAdded` (`:282`; state machine `Combat/CombatManager.cs:497-555`: `Creature.AfterAddedToRoom` only for side `Enemy` (`Entities.Creatures/Creature.cs:36-90`), then `RollMove` when `IsEnemy && CurrentSide == Player`) → `MonsterLifecycle.AfterCreatureAdded`; `PrepareForNextTurn(players, rollNewMove: false)` when `CurrentSide != Enemy` (`:300`; `Creature.cs:1128-1138`: no roll, intent refresh only) → `MonsterLifecycle.PrepareForNextTurn(cs, m, false)`; the map-point monster list (`:301-305`, run statistics) is dropped; `Hook.AfterCreatureAddedToCombat` (`:308`) |
 
-Division of labour with monsters-kernel: `SpawnForAdd` must be `CreateCreature` only (id, `Niche` HP roll for
-enemies, the multiplayer HP gate, monster `Rng`, `OnCreatureSpawned`); it must neither add the creature to a list
-nor set it up, or `Add` throws its "already in this combat" error. Pets come through `PlayerCmd.AddPet` (loop,
+Division of labour with monsters-kernel: the brief reads `SpawnForAdd` as `CreateCreature` (id, `Niche` HP roll
+for enemies, the multiplayer HP gate, monster `Rng`, `OnCreatureSpawned`) and leaves the `Add(Creature)` sequence
+to `CreatureCmd.Add`; B8 lists the whole sequence under `MonsterSpawner`, and the monsters-kernel round-3 branch
+(`w1-r3/monsters-kernel`, `6b7ecd6`, read only) has `SpawnForAdd` = `CreateCreature` + `AddToCombat`, a second port
+of `<Add>d__2`. `Add(cs, MonsterDef, …)` therefore adds the spawned creature only when `SpawnForAdd` returned it
+unattached, so both readings run the sequence exactly once; integrate keeps one of the two ports (the
+contract member is `CreatureCmd.Add(Creature)`, B4). Pets come through `PlayerCmd.AddPet` (loop,
 `Commands/PlayerCmd.cs:946-967`), which runs `AddPetInternal` and then `CreatureCmd.Add(pet)`: a pet joins the
 allies, is set up, never gets `AfterAddedToRoom` or a roll (B12 A15). `Add` rejects a `PlayerState` with an
 `ArgumentException` (players join through the `CombatState` constructor, the game's `AddPlayer`,
@@ -572,8 +576,11 @@ game-over UI and music (`:2405-2411`) are dropped.
      rule-inert in v0.111.0 (overriders: SFX loops, music, spine animation, and `TestSubject`'s
      `PowerApplied` / `PowerRemoved` unsubscription, `Models.Monsters/TestSubject.cs:1239-1243`, on a creature that
      leaves the combat), and `ResetStateMachine` (`Models/MonsterModel.cs:693-696`) nulls the move machine of a
-     creature that is removed then or after its move (`Models/MonsterModel.cs:286-291`), so neither is observable;
-     neither has a sim member (monsters-kernel), which is recorded as an open question, not a flag.
+     creature that is removed then or after its move (`Models/MonsterModel.cs:285-291`), so neither is observable
+     at a decision point; neither has a sim member at the base. The monsters-kernel round-3 branch adds
+     `MonsterLifecycle.RemoveCreature(cs, monster)` (both steps, with a reset flag that `PerformMove` reads to skip
+     `OnMovePerformed`, `Models/MonsterModel.cs:285`) "for the pipeline's Kill and Escape": integrate inserts it at
+     `:2817` (before the list removal) and in `Escape` (`:3936`); no flag in the meantime.
    - `isPrimaryEnemy` (`:2825`), `RemoveAllPowersAfterDeath` (`:2826`; `Creature.cs:1246-1249`, predicates
      evaluated before any removal) and `AfterRemoved` per removed power (`:2660-2680`).
    - Enemy: the last primary enemy takes its living secondary teammates with it (`:2688-2698`).
@@ -864,13 +871,15 @@ The timing bench is reported in §11.21 (the machine was loaded during this roun
 
 1. `CardCmd` has no stub: `AutoPlay`, `Discard(cards)`, `TransformToRandom` are reached through
    `Powers/CardCmdForwarders.cs` (§11.15); integrate forwards them. The B2 chain needs `AutoPlay`.
-2. `MonsterSpawner.SpawnForAdd` must stop at `CombatState.CreateCreature` (§11.3).
+2. `MonsterSpawner.SpawnForAdd` versus `CreatureCmd.Add(Creature)`: two ports of the same sequence after the merge
+   (§11.3); `Add(cs, MonsterDef)` tolerates either, integrate keeps one.
 3. `CreatureState.HpDisplay` (state) is needed by Hellraiser once `HardenedShellPower` or `WaterfallGiant` is
    ported (§11.13).
 4. An escaped-creature list on `CombatState` (state; `Combat/CombatState.cs:618`, `:733-737`) for W2's reward gold;
    `Escape` flags its absence (§11.7).
-5. `MonsterDef` members for `CombatManager.RemoveCreature` (`BeforeRemovedFromRoom`, `ResetStateMachine`), if
-   content ever makes them observable (§11.6).
+5. Wire monsters-kernel's `MonsterLifecycle.RemoveCreature` (`CombatManager.RemoveCreature`: `BeforeRemovedFromRoom`,
+   `ResetStateMachine`) into `Kill` and `Escape` at integrate (§11.6, §11.7); its `InvokeDiedEvent` / `OnPetDied`
+   duplicate the pipeline's pet bookkeeping (§11.6) with the same rule.
 6. The `(CombatState cs, …)` overloads of the hooks used here pass `cs`; the both-scope `(rs, cs?)` overloads are
    used where the game passes a creature's combat (`Damage`, `Kill`, `SetCurrentHp`), so a detached creature reaches
    the hooks owner's `(rs, null)` path.

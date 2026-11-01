@@ -17,7 +17,10 @@ public static class CreatureCmd
     {
         ArgumentNullException.ThrowIfNull(monster);
         var creature = MonsterSpawner.SpawnForAdd(cs, monster, side, slotName);
-        Add(cs, creature);
+        if (!CombatStatus.IsAttached(cs, creature))
+        {
+            Add(cs, creature);
+        }
         return creature;
     }
 
