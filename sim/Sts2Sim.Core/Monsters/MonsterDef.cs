@@ -108,9 +108,9 @@ public abstract class EncounterDef
 
     public string Id { get; }
 
-    public virtual bool IsWeak => false;
-
     public virtual RoomType RoomType => RoomType.Monster;
+
+    public virtual bool IsWeak => false;
 
     public virtual bool ShouldGiveRewards => true;
 
@@ -132,6 +132,8 @@ public abstract class EncounterDef
     }
 
     public bool SharesTagsWith(EncounterDef? other) => other != null && Tags.Intersect(other.Tags).Any();
+
+    public virtual IReadOnlyList<string> AllPossibleMonsters => Array.Empty<string>();
 
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 
