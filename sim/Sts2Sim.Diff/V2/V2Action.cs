@@ -27,6 +27,9 @@ public sealed class V2Action
     public const string RestLeave = "rest_leave";
     public const string RelicSelect = "relic_select";
 
+    /// <summary>Placeholder for a decision the exporter could not resolve (<c>action: null</c> on an ineligible segment).</summary>
+    public const string Unavailable = "unavailable";
+
     public static readonly IReadOnlySet<string> CombatTypes = new HashSet<string>(StringComparer.Ordinal)
     {
         PlayCard, EndTurn, UndoEndTurn, UsePotion, DiscardPotion, Choose

@@ -51,3 +51,8 @@ One line per rule: `member — decompile file:line — dropped points / gaps`. P
 
 - Note 1 resolved: `EventRoom.Enter` override removed; `EventRoom.EnterInternal(rs, isRestoringRoomStackBase)` runs begin-event → `Hook.AfterRoomEntered` → `AfterEventStarted`, id assigned by `AbstractRoom.Enter` (Rooms/AbstractRoom.cs:40-44, Rooms/EventRoom.cs EnterInternal).
 - `EventModel.CreateOptionRelic` returns null (option kept by id, obtain skipped + fidelity) when the run's `ContentFilter` rejects the relic; `EventModel.Content` captured at `BeginEvent` (sim only).
+
+## W4.1 run-fixes (2026-11-01)
+
+- `RoomSet.EnsureNextEventIsValid` (Rooms/RoomSet.cs:114-128) now asks `UnportedEventRules.IsAllowed` for the two unregistered shared-pool events instead of treating them as allowed: CRYSTAL_SPHERE (Models.Events/CrystalSphere.cs:236-243, all gold >= 100 and act > 0), FAKE_MERCHANT (Models.Events/FakeMerchant.cs:194-205, act >= 1, one player, gold >= 100 or a FOUL_POTION). Test `Test_RunFixesW41_UnportedCrystalSphereIsSkippedInAct1` (seed G0G2JMFEYHRS: SUNKEN_STATUE, not CRYSTAL_SPHERE, on act 1 floor 3).
+- `ActInstance.CreateEvent`: an unregistered pulled event becomes a `SimStubEvent` (fidelity `ApproximatedRule`) instead of throwing `KeyNotFoundException` from `map_move`; CRYSTAL_SPHERE (minigame, `Events.Custom.CrystalSphereEvent`, ~1.7k lines, cell clicks not recorded) stays a stub, G3 stops there with `content_not_ported`. Test `Test_RunFixesW41_UnportedEventPullBecomesStubInsteadOfThrowing`.

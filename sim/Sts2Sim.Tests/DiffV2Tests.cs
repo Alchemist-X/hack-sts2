@@ -525,8 +525,9 @@ public static class DiffV2Tests
             new JsonObject { ["id"] = "s4", ["kind"] = "combat", ["start_anchor"] = "m1", ["start"] = combatFromMcr, ["decisions"] = new JsonArray() },
             new JsonObject { ["id"] = "s5", ["kind"] = "room", ["start_anchor"] = "m1", ["decisions"] = new JsonArray() });
         var results = Run(bundle);
-        Assert.Equal(BundleStatus.Skipped, results[0].Status);
-        Assert.True(results[0].Class is DivergenceClass.ContentNotPorted or DivergenceClass.RunLayerNotPorted, $"the fixture save imports with unported content or a run-layer stub: {results[0].Class} {results[0].Reason}");
+        // W4.1: the fixture save's GIRYA / SPOILS_MAP saved properties are mapped (SavedPropertyRegistry), so the
+        // room_entry anchor now imports and the empty room segment agrees (was Skipped content_not_ported).
+        Assert.Equal(BundleStatus.Agree, results[0].Status, $"the fixture save imports: {results[0].Class} {results[0].Reason}");
         Assert.Equal(DivergenceClass.AnchorMissing, results[1].Class);
         Assert.Equal(DivergenceClass.AnchorError, results[2].Class);
         Assert.True(results[2].Reason!.StartsWith("anchor_mismatch", StringComparison.Ordinal));

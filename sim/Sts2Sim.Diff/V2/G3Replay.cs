@@ -16,6 +16,8 @@ public sealed class G3Prepared
 
     public int ResolvedHandPicks { get; set; }
 
+    public int ReorderedHandSelects { get; set; }
+
     public int DroppedFinalHp { get; set; }
 }
 
@@ -107,6 +109,10 @@ public static class G3Replay
                         cands.Add(new JsonObject { ["id"] = c?["id"]?.DeepClone(), ["upgraded"] = c?["upgraded"]?.DeepClone() });
                     }
                     dn["pre_state"]!["select"] = new JsonObject { ["kind"] = sel["kind"]?.DeepClone(), ["candidates"] = cands };
+                    if (ReorderHandSelect(dn as JsonObject))
+                    {
+                        prepared.ReorderedHandSelects++;
+                    }
                 }
                 if (dn?["action"] is JsonObject act && act["type"]?.GetValue<string>() == V2Action.RewardTake
                     && act["reward_type"] is JsonValue rt && rt.TryGetValue(out string? rtype) && rtype != null && rtype.EndsWith("_reward", StringComparison.Ordinal))
@@ -184,6 +190,60 @@ public static class G3Replay
     }
 
     private static string CardKey(JsonNode? c) => (c?["id"]?.GetValue<string>() ?? "?") + (c?["upgraded"] is JsonValue u && u.TryGetValue(out bool up) && up ? "+" : "");
+
+    /// <summary>
+    /// recorder_gap: the recorder lists hand-select candidates in UI holder order (<c>NPlayerHand.ActiveHolders</c>,
+    /// mod/src/StateBuilder/PassiveStateBuilder.Combat.cs), which can differ from the model hand order the game's
+    /// <c>CardSelectCmd.FromHand</c> filters (Commands/CardSelectCmd.cs). When the candidates are a sub-multiset of the
+    /// pre_state hand, put them in hand order and remap the pick indices to the same cards.
+    /// </summary>
+    public static bool ReorderHandSelect(JsonObject? d)
+    {
+        if (d?["pre_state"]?["select"]?["candidates"] is not JsonArray cands || d["pre_state"]?["player"]?["hand"] is not JsonArray hand || cands.Count < 2)
+        {
+            return false;
+        }
+        var c = cands.Select(CardKey).ToList();
+        var h = hand.Select(CardKey).ToList();
+        var used = new bool[h.Count];
+        var handPos = new int[c.Count];
+        for (int k = 0; k < c.Count; k++)
+        {
+            int at = -1;
+            for (int j = 0; j < h.Count; j++)
+            {
+                if (!used[j] && string.Equals(h[j], c[k], StringComparison.Ordinal))
+                {
+                    at = j;
+                    break;
+                }
+            }
+            if (at < 0)
+            {
+                return false;
+            }
+            used[at] = true;
+            handPos[k] = at;
+        }
+        var order = Enumerable.Range(0, c.Count).OrderBy(k => handPos[k]).ToList();
+        if (order.SequenceEqual(Enumerable.Range(0, c.Count)))
+        {
+            return false;
+        }
+        var reordered = new JsonArray(order.Select(k => cands[k]!.DeepClone()).ToArray());
+        d["pre_state"]!["select"]!["candidates"] = reordered;
+        if (d["action"]?["picks"] is JsonArray picks)
+        {
+            foreach (var p in picks.OfType<JsonObject>())
+            {
+                if (p["index"] is JsonValue iv && iv.TryGetValue(out int idx) && idx >= 0 && idx < c.Count)
+                {
+                    p["index"] = order.IndexOf(idx);
+                }
+            }
+        }
+        return true;
+    }
 
     public static bool ResolveHandPick(JsonObject? d, JsonObject? next)
     {

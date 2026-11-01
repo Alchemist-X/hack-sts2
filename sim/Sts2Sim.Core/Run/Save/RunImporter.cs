@@ -362,7 +362,8 @@ public static class RunImporter
         }
         foreach (var (name, value) in props.Ints)
         {
-            SavedMember(model.GetType(), name)!.SetValue(model, value);
+            var member = SavedMember(model.GetType(), name)!;
+            member.SetValue(model, member.PropertyType.IsEnum ? Enum.ToObject(member.PropertyType, value) : value);
         }
         foreach (var (name, value) in props.Bools)
         {
@@ -390,7 +391,7 @@ public static class RunImporter
         void Need(string name, Type valueType)
         {
             var member = SavedMember(type, name);
-            if (member == null || member.PropertyType != valueType)
+            if (member == null || (member.PropertyType != valueType && !(valueType == typeof(int) && member.PropertyType.IsEnum)))
             {
                 missing.Add(name);
             }
@@ -429,7 +430,8 @@ public static class RunImporter
     private static PropertyInfo? SavedMember(Type type, string name)
     {
         var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (property == null || !property.CanWrite || property.GetCustomAttribute<SavedPropertyAttribute>(true) == null)
+        if (property == null || !property.CanWrite
+            || (property.GetCustomAttribute<SavedPropertyAttribute>(true) == null && !SavedPropertyRegistry.IsRegistered(type, name)))
         {
             return null;
         }
@@ -633,6 +635,7 @@ public static class RunImporter
                     ShouldResumeParentEventAfterCombat = saved.ShouldResumeParentEvent,
                     ParentEventId = saved.ParentEventId
                 };
+                room.LoadEncounterCustomState(saved.EncounterState);
                 if (saved.IsPreFinished)
                 {
                     room.MarkPreFinished();
