@@ -12,6 +12,7 @@ python3 sim/tools/inventory/extract_models.py --root <tree> --out <dir> --sim-ro
 python3 sim/tools/inventory/spotcheck.py --kind cards -n 10 [--seed N] [--class Bash] [--no-source]
 python3 sim/tools/inventory/model_ids.py StrikeIronclad LeafSlimeM   # print ModelDb entries
 python3 -m unittest discover -s sim/tools/inventory -p 'test_*.py'
+python3 sim/tools/inventory/classify/run_all.py --sim-ref fe7240c  # derived manifests (classify/README.md)
 ```
 
 The decompile root defaults to
@@ -27,7 +28,11 @@ no pool/act/encounter link, mocks, abstract classes.
 | `model_ids.py` | `StringHelper.Slugify` / `SnakeCase` with .NET `\G` semantics, `ModelId.SlugifyCategory`, `model_id()` |
 | `extract_models.py` | context loading (pools, `ModelDb` lists, `AbstractModelSubtypes`, `AbstractModel` hooks, `Hook.cs` dispatchers, Node class names, sim defs), per-kind extractors, cross-kind resolution, validation, JSON writer |
 | `spotcheck.py` | prints random entries next to the source lines they cite, for eyeball review |
-| `test_inventory.py` | unit tests (slug vectors verified against .NET 9, masker, member splitter, logic-line counting, dynamic vars, RNG tokens) plus tree-backed checks skipped when the tree is absent |
+| `test_inventory.py` | unit tests (slug vectors verified against .NET 9, masker, member splitter, logic-line counting, dynamic vars, RNG tokens, base-class resolution by namespace, cross-kind `model_id` uniqueness) plus tree-backed checks skipped when the tree is absent |
+| `classify/` | the classifier generators: `*.classified.json`, gap manifests, `requirements.json`, `batches.json`, `version-deltas.json`, the generated count blocks of `docs/sim-port/inventory-*.md` (`classify/README.md`) |
+| `test_classify.py` | tests of the classifier helpers (version-delta evidence finder, triage table, batch ordering, prompt kinds) and of the published derived manifests (schema, catalogue joins, version-delta union and citations) |
 
 After a game update: regenerate, compare `source_digest` per manifest, then rerun `--check` and the
-tests. `summary.json` `validation._problems` must be empty.
+tests. `summary.json` `validation._problems` must be empty. `--check` also fails on a `model_id` used by two
+kinds or a `model_id` whose category is not its kind's root model. Then regenerate the derived manifests
+(`classify/README.md`, "After a game update").

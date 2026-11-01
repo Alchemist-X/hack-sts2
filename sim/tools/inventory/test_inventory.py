@@ -196,6 +196,100 @@ class RngTokenTests(unittest.TestCase):
             "RunRngType.Niche", "local:mapRng.NextGaussianInt"])
 
 
+COLLIDING_TREE = {
+    "Models/AbstractModel.cs": "namespace MegaCrit.Sts2.Core.Models;\n\npublic abstract class AbstractModel\n{\n}\n",
+    "Models/RelicModel.cs": "namespace MegaCrit.Sts2.Core.Models;\n\npublic abstract class RelicModel : AbstractModel\n{\n}\n",
+    "Models/MonsterModel.cs": "namespace MegaCrit.Sts2.Core.Models;\n\npublic abstract class MonsterModel : AbstractModel\n{\n}\n",
+    "Models/EventModel.cs": "namespace MegaCrit.Sts2.Core.Models;\n\npublic abstract class EventModel : AbstractModel\n{\n}\n",
+    "Models.Relics/Byrdpip.cs": ("using MegaCrit.Sts2.Core.Models.Monsters;\n\nnamespace MegaCrit.Sts2.Core.Models.Relics;\n\n"
+                                 "public sealed class Byrdpip : RelicModel\n{\n}\n"),
+    "Models.Relics/LostWisp.cs": ("using MegaCrit.Sts2.Core.Models.Events;\n\nnamespace MegaCrit.Sts2.Core.Models.Relics;\n\n"
+                                  "public sealed class LostWisp : RelicModel\n{\n}\n"),
+    "Models.Monsters/Byrdpip.cs": ("using MegaCrit.Sts2.Core.Models.Relics;\n\nnamespace MegaCrit.Sts2.Core.Models.Monsters;\n\n"
+                                   "public class Byrdpip : MonsterModel\n{\n}\n"),
+    "Models.Monsters/BigByrdpip.cs": ("using MegaCrit.Sts2.Core.Models.Relics;\n\nnamespace MegaCrit.Sts2.Core.Models.Monsters;\n\n"
+                                      "public sealed class BigByrdpip : Byrdpip\n{\n}\n"),
+    "Models.Events/LostWisp.cs": ("using MegaCrit.Sts2.Core.Models.Relics;\n\nnamespace MegaCrit.Sts2.Core.Models.Events;\n\n"
+                                  "public sealed class LostWisp : EventModel\n{\n}\n"),
+}
+
+
+class BaseResolutionTests(unittest.TestCase):
+    """B6: same-named classes in two kind namespaces resolve their bases per namespace."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        files = {}
+        for rel, text in COLLIDING_TREE.items():
+            ns, fn = rel.split("/")
+            d = os.path.join(self.tmp, extract_models.NS_PREFIX + ns)
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, fn), "w") as fh:
+                fh.write(text)
+            files[rel] = cs_source.CsFile(os.path.join(d, fn), rel)
+        ctx = extract_models.Ctx()
+        ctx.base_files = dict((rel.split("/")[1][:-3], f) for rel, f in files.items() if rel.startswith("Models/"))
+        ctx.files = dict((k, []) for k in extract_models.KIND_NAMES)
+        for rel, f in sorted(files.items()):
+            kind = {"Models.Relics": "relics", "Models.Monsters": "monsters", "Models.Events": "events"}.get(rel.split("/")[0])
+            if kind:
+                ctx.files[kind].append(f)
+        ctx.pool_files = {}
+        extract_models._index_classes(ctx)
+        self.ctx = ctx
+        self.files = files
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp)
+
+    def category(self, rel):
+        f = self.files[rel]
+        return extract_models.category_type(self.ctx, extract_models.type_key(f, f.main_type()))
+
+    def test_colliding_names_get_their_own_category(self):
+        self.assertEqual(self.category("Models.Relics/Byrdpip.cs"), "RelicModel")
+        self.assertEqual(self.category("Models.Monsters/Byrdpip.cs"), "MonsterModel")
+        self.assertEqual(self.category("Models.Events/LostWisp.cs"), "EventModel")
+        self.assertEqual(self.category("Models.Relics/LostWisp.cs"), "RelicModel")
+        self.assertEqual(model_id(self.category("Models.Monsters/Byrdpip.cs"), "Byrdpip"), "MONSTER.BYRDPIP")
+        self.assertEqual(model_id(self.category("Models.Events/LostWisp.cs"), "LostWisp"), "EVENT.LOST_WISP")
+
+    def test_intermediate_base_binds_in_own_namespace(self):
+        f = self.files["Models.Monsters/BigByrdpip.cs"]
+        td = f.main_type()
+        self.assertEqual(self.category("Models.Monsters/BigByrdpip.cs"), "MonsterModel")
+        self.assertEqual(extract_models.chain_of(self.ctx, extract_models.type_key(f, td)), ["Byrdpip", "MonsterModel"])
+        inh = extract_models.inherited_td(self.ctx, f, td)
+        self.assertEqual([(k, ff.rel) for k, ff, _ in inh], [("monsters", "Models.Monsters/Byrdpip.cs")])
+
+    def test_resolution_order(self):
+        f = self.files["Models.Monsters/Byrdpip.cs"]
+        self.assertEqual(extract_models.resolve_type(self.ctx, f, "Byrdpip"), ("Models.Monsters", "Byrdpip"))
+        self.assertEqual(extract_models.resolve_type(self.ctx, f, "LostWisp"), ("Models.Relics", "LostWisp"))
+        self.assertEqual(extract_models.resolve_type(self.ctx, f, "MegaCrit.Sts2.Core.Models.Relics.Byrdpip"),
+                         ("Models.Relics", "Byrdpip"))
+        self.assertEqual(extract_models.resolve_type(self.ctx, f, "MonsterModel"), ("Models", "MonsterModel"))
+        self.assertIsNone(extract_models.resolve_type(self.ctx, f, "IComparable<AbstractModel>"))
+
+
+class CrossKindIdTests(unittest.TestCase):
+    def test_duplicate_across_kinds_is_reported(self):
+        entries = {"relics": [{"model_id": "RELIC.BYRDPIP", "file": "Models.Relics/Byrdpip.cs"}],
+                   "monsters": [{"model_id": "RELIC.BYRDPIP", "file": "Models.Monsters/Byrdpip.cs"}]}
+        self.assertEqual(extract_models.cross_kind_duplicate_ids(entries),
+                         {"RELIC.BYRDPIP": ["monsters/Models.Monsters/Byrdpip.cs", "relics/Models.Relics/Byrdpip.cs"]})
+        self.assertEqual(extract_models.category_mismatches(entries),
+                         ["monsters/Models.Monsters/Byrdpip.cs: RELIC.BYRDPIP"])
+
+    def test_distinct_ids_pass(self):
+        entries = {"relics": [{"model_id": "RELIC.BYRDPIP", "file": "Models.Relics/Byrdpip.cs"}],
+                   "monsters": [{"model_id": "MONSTER.BYRDPIP", "file": "Models.Monsters/Byrdpip.cs"}]}
+        pools = {"card": {"IroncladCardPool": {"model_id": "CARD_POOL.IRONCLAD_CARD_POOL", "file": "Models.CardPools/X.cs"}}}
+        self.assertEqual(extract_models.cross_kind_duplicate_ids(entries, pools), {})
+        self.assertEqual(extract_models.category_mismatches(entries), [])
+
+
 ROOT = os.environ.get("STS2_DECOMPILE_ROOT", extract_models.DEFAULT_ROOT)
 
 
@@ -236,6 +330,18 @@ class TreeTests(unittest.TestCase):
         self.assertIn("CorpseSlugsWeak", users)
         self.assertIn("SlimesWeak", users)
         self.assertNotIn("NibbitsWeak", users)
+
+    def test_ids_unique_across_kinds(self):
+        self.assertEqual(self.report["_cross_kind_duplicate_model_ids"], {})
+        self.assertEqual(self.report["_model_id_category_mismatches"], [])
+
+    def test_colliding_class_names(self):
+        self.assertEqual(self.entry("monsters", "Byrdpip")["model_id"], "MONSTER.BYRDPIP")
+        self.assertEqual(self.entry("relics", "Byrdpip")["model_id"], "RELIC.BYRDPIP")
+        self.assertEqual(self.entry("monsters", "PaelsLegion")["model_id"], "MONSTER.PAELS_LEGION")
+        self.assertEqual(self.entry("relics", "PaelsLegion")["model_id"], "RELIC.PAELS_LEGION")
+        self.assertEqual(self.entry("events", "LostWisp")["model_id"], "EVENT.LOST_WISP")
+        self.assertEqual(self.entry("relics", "LostWisp")["model_id"], "RELIC.LOST_WISP")
 
     def test_ids_unique_per_kind(self):
         for k in extract_models.KIND_NAMES:

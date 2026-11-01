@@ -1758,7 +1758,7 @@
   },
   {
    "id": "LOST_WISP",
-   "model_id": "RELIC.LOST_WISP",
+   "model_id": "EVENT.LOST_WISP",
    "class": "LostWisp",
    "file": "Models.Events/LostWisp.cs",
    "class_line": 17,

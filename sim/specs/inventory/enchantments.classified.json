@@ -1,0 +1,1452 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "enchantments",
+ "content_kind": "enchantments",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_enchantments.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "kernel:enchantments"
+ ],
+ "raw_manifest": "sim/specs/inventory/enchantments.json",
+ "raw_source_digest": "975307438f9c6236d2c2ab13a292517de1f04944351d6d03826d29df87149fb2",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "enchantment core: EnchantmentModel on a CardInstance (Amount, Status, DeckVersion), the damage/block pre-pass, EnchantPlayCount, OnPlay after the card, OnEnchant keyword/cost edits, enchantments as listeners after their card",
+  "2": "enchantments that call other kernel features: block/draw/energy facades with vars, turn-1 auto-play, temporary costs, deck-version writes"
+ },
+ "count": 24,
+ "entries": [
+  {
+   "id": "ADROIT",
+   "model_id": "ENCHANTMENT.ADROIT",
+   "class": "Adroit",
+   "file": "Models.Enchantments/Adroit.cs",
+   "class_line": 15,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": {
+    "Block": "0"
+   },
+   "constants": {},
+   "mechanics": [
+    "OnPlay (after the card's OnPlay): CreatureCmd.GainBlock(owner, Block, cardPlay) with BlockVar(0, Move)",
+    "RecalculateValues: Block.BaseValue = Amount (the enchant amount)"
+   ],
+   "hooks": [
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Adroit.cs:88"
+    },
+    {
+     "member": "RecalculateValues",
+     "cite": "Models.Enchantments/Adroit.cs:101"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "CreatureCmd.GainBlock(BlockVar)",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Adroit.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 2,
+   "notes": "applied by the relic Kifuda (deck prompt, run layer)",
+   "open_questions": []
+  },
+  {
+   "id": "CLONE",
+   "model_id": "ENCHANTMENT.CLONE",
+   "class": "Clone",
+   "file": "Models.Enchantments/Clone.cs",
+   "class_line": 3,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker only: no members",
+    "CloneRestSiteOption adds a copy of every deck card enchanted with Clone (RunState.CloneCard, Entities.RestSite/CloneRestSiteOption.cs:64-87)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [
+    "the clone itself needs run:rest_site and run:deck (CloneRestSiteOption, not a model)"
+   ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Clone.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "the effect lives in CloneRestSiteOption (added by the relic PaelsGrowth); port with the rest-site option",
+   "open_questions": []
+  },
+  {
+   "id": "CORRUPTED",
+   "model_id": "ENCHANTMENT.CORRUPTED",
+   "class": "Corrupted",
+   "file": "Models.Enchantments/Corrupted.cs",
+   "class_line": 15,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {
+    "_damageAmount": "2"
+   },
+   "mechanics": [
+    "CanEnchantCardType: Attack only",
+    "EnchantDamageMultiplicative: x1.5 on powered attacks",
+    "OnPlay: CreatureCmd.Damage(owner, 2, Unblockable|Unpowered|Move, card, cardPlay)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Corrupted.cs:87"
+    },
+    {
+     "member": "EnchantDamageMultiplicative",
+     "cite": "Models.Enchantments/Corrupted.cs:92"
+    },
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Corrupted.cs:102"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Corrupted.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the event Symbiote (APPROACH)",
+   "open_questions": []
+  },
+  {
+   "id": "DEPRECATED_ENCHANTMENT",
+   "model_id": "ENCHANTMENT.DEPRECATED_ENCHANTMENT",
+   "class": "DeprecatedEnchantment",
+   "file": "Models.Enchantments/DeprecatedEnchantment.cs",
+   "class_line": 3,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": true,
+   "scope": "deprecated",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "empty placeholder (save compatibility)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/DeprecatedEnchantment.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "GLAM",
+   "model_id": "ENCHANTMENT.GLAM",
+   "class": "Glam",
+   "file": "Models.Enchantments/Glam.cs",
+   "class_line": 11,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": {
+    "Times": "1"
+   },
+   "constants": {
+    "_timesKey": "\"Times\""
+   },
+   "mechanics": [
+    "EnchantPlayCount: +Times (1) until used this combat",
+    "AfterCardPlayed (this card): UsedThisCombat = true, Status = Disabled"
+   ],
+   "hooks": [
+    {
+     "member": "EnchantPlayCount",
+     "cite": "Models.Enchantments/Glam.cs:34"
+    },
+    {
+     "member": "AfterCardPlayed",
+     "cite": "Models.Enchantments/Glam.cs:43"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:enchantments",
+    "kernel:per_instance_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Glam.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "per-combat flag _usedThisCombat (mutable field); applied by the relics Glitter and SilkenTress",
+   "open_questions": []
+  },
+  {
+   "id": "GOOPY",
+   "model_id": "ENCHANTMENT.GOOPY",
+   "class": "Goopy",
+   "file": "Models.Enchantments/Goopy.cs",
+   "class_line": 10,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchant: base checks and CardTag.Defend",
+    "OnEnchant: AddKeyword(Exhaust)",
+    "AfterCardPlayed (this card): Amount += 1, and DeckVersion.Enchantment.Amount += 1 (persists to the deck card)",
+    "EnchantBlockAdditive: Amount - 1"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchant",
+     "cite": "Models.Enchantments/Goopy.cs:16"
+    },
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments/Goopy.cs:25"
+    },
+    {
+     "member": "AfterCardPlayed",
+     "cite": "Models.Enchantments/Goopy.cs:30"
+    },
+    {
+     "member": "EnchantBlockAdditive",
+     "cite": "Models.Enchantments/Goopy.cs:44"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:enchantments",
+    "kernel:run_effects"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Goopy.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 2,
+   "notes": "the DeckVersion write is a run-state effect from combat; applied by the relic PaelsClaw and the event Pael",
+   "open_questions": []
+  },
+  {
+   "id": "IMBUED",
+   "model_id": "ENCHANTMENT.IMBUED",
+   "class": "Imbued",
+   "file": "Models.Enchantments/Imbued.cs",
+   "class_line": 13,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Skill only; ShouldStartAtBottomOfDrawPile = true",
+    "AfterAutoPrePlayPhaseEntered: on the owner's turn 1 (PlayerCombatState.TurnNumber <= 1) CardCmd.AutoPlay(card, null)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Imbued.cs:90"
+    },
+    {
+     "member": "ShouldStartAtBottomOfDrawPile",
+     "cite": "Models.Enchantments/Imbued.cs:86"
+    },
+    {
+     "member": "AfterAutoPrePlayPhaseEntered",
+     "cite": "Models.Enchantments/Imbued.cs:96"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterAutoPrePlayPhaseEntered",
+    "CardCmd.AutoPlay",
+    "kernel:auto_phases",
+    "kernel:card_listeners",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "RunRngType.CombatTargets: CardCmd.AutoPlay picks a random enemy for an AnyEnemy card with a null target"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Imbued.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 2,
+   "notes": "applied by the relic ElectricShrymp; ThievingHopper skips Imbued cards when stealing",
+   "open_questions": []
+  },
+  {
+   "id": "INKY",
+   "model_id": "ENCHANTMENT.INKY",
+   "class": "Inky",
+   "file": "Models.Enchantments/Inky.cs",
+   "class_line": 17,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": {
+    "WeakPower": "1"
+   },
+   "constants": {},
+   "mechanics": [
+    "OnPlay: PowerCmd.Apply<WeakPower>(Weak 1) to the play target, or to every hittable enemy when the card targets AllEnemies"
+   ],
+   "hooks": [
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Inky.cs:105"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "WEAK_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "rule-change",
+    "note": "v0.107.1 also added +1 damage to powered attacks (DamageVar 1, EnchantDamageAdditive); v0.111.0 only applies Weak 1",
+    "v107_file": "Models/Enchantments/Inky.cs",
+    "fingerprint_diff": {
+     "dotted": {
+      "only_v107": [
+       "ValueProp.Move"
+      ],
+      "only_v111": []
+     },
+     "idents": {
+      "only_v107": [
+       "Damage",
+       "DamageVar",
+       "EnchantDamageAdditive",
+       "IsPoweredAttack",
+       "Move",
+       "ValueProp"
+      ],
+      "only_v111": []
+     },
+     "numbers": {
+      "only_v107": [
+       "2"
+      ],
+      "only_v111": []
+     },
+     "overrides": {
+      "only_v107": [
+       "EnchantDamageAdditive"
+      ],
+      "only_v111": []
+     },
+     "props": {
+      "CanonicalVars": {
+       "v107": "=> new _003C_003Ez__ReadOnlyArray<DynamicVar>(new DynamicVar[2] { new DamageVar(1m, ValueProp.Move), new PowerVar<WeakPower>(1m) });",
+       "v111": "=> new _003C_003Ez__ReadOnlySingleElementList<DynamicVar>(new PowerVar<WeakPower>(1m));"
+      }
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied in combat by the card BladeOfInk (CardCmd.Enchant)",
+   "open_questions": []
+  },
+  {
+   "id": "INSTINCT",
+   "model_id": "ENCHANTMENT.INSTINCT",
+   "class": "Instinct",
+   "file": "Models.Enchantments/Instinct.cs",
+   "class_line": 6,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Attack only",
+    "EnchantDamageMultiplicative: x2 on powered attacks"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Instinct.cs:8"
+    },
+    {
+     "member": "EnchantDamageMultiplicative",
+     "cite": "Models.Enchantments/Instinct.cs:13"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Instinct.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relic TriBoomerang and the event Tanx",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_FREE_ENCHANTMENT",
+   "model_id": "ENCHANTMENT.MOCK_FREE_ENCHANTMENT",
+   "class": "MockFreeEnchantment",
+   "file": "Models.Enchantments.Mocks/MockFreeEnchantment.cs",
+   "class_line": 5,
+   "base_class": "EnchantmentModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "OnEnchant: EnergyCost.UpgradeBy(-current cost) (cost 0)"
+   ],
+   "hooks": [
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments.Mocks/MockFreeEnchantment.cs:9"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "IsMock => true added (test mock)",
+    "v107_file": "Models/Enchantments/Mocks/MockFreeEnchantment.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      }
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MOMENTUM",
+   "model_id": "ENCHANTMENT.MOMENTUM",
+   "class": "Momentum",
+   "file": "Models.Enchantments/Momentum.cs",
+   "class_line": 8,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Attack only",
+    "OnPlay: ExtraDamage += Amount (mutable field)",
+    "EnchantDamageAdditive: +ExtraDamage on powered attacks"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Momentum.cs:29"
+    },
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Momentum.cs:34"
+    },
+    {
+     "member": "EnchantDamageAdditive",
+     "cite": "Models.Enchantments/Momentum.cs:40"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments",
+    "kernel:per_instance_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Momentum.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "the growth applies from the next play on (OnPlay runs after the card); applied by the relic PunchDagger",
+   "open_questions": []
+  },
+  {
+   "id": "NIMBLE",
+   "model_id": "ENCHANTMENT.NIMBLE",
+   "class": "Nimble",
+   "file": "Models.Enchantments/Nimble.cs",
+   "class_line": 3,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchant: base checks and card.GainsBlock",
+    "EnchantBlockAdditive: +Amount"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchant",
+     "cite": "Models.Enchantments/Nimble.cs:7"
+    },
+    {
+     "member": "EnchantBlockAdditive",
+     "cite": "Models.Enchantments/Nimble.cs:16"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Nimble.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relic FresnelLens and the event SelfHelpBook",
+   "open_questions": []
+  },
+  {
+   "id": "PERFECT_FIT",
+   "model_id": "ENCHANTMENT.PERFECT_FIT",
+   "class": "PerfectFit",
+   "file": "Models.Enchantments/PerfectFit.cs",
+   "class_line": 6,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "ModifyShuffleOrder: on a non-initial shuffle of the owner's draw pile, move this card to index 0 (top)"
+   ],
+   "hooks": [
+    {
+     "member": "ModifyShuffleOrder",
+     "cite": "Models.Enchantments/PerfectFit.cs:10"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/PerfectFit.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 2,
+   "notes": "ModifyShuffleOrder exists in the sim for powers; needs the enchantment as a listener; applied by the event FieldOfManSizedHoles",
+   "open_questions": []
+  },
+  {
+   "id": "ROYALLY_APPROVED",
+   "model_id": "ENCHANTMENT.ROYALLY_APPROVED",
+   "class": "RoyallyApproved",
+   "file": "Models.Enchantments/RoyallyApproved.cs",
+   "class_line": 7,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Attack or Skill",
+    "OnEnchant: AddKeyword(Innate), AddKeyword(Retain)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/RoyallyApproved.cs:15"
+    },
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments/RoyallyApproved.cs:24"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/RoyallyApproved.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relic RoyalStamp",
+   "open_questions": []
+  },
+  {
+   "id": "SHARP",
+   "model_id": "ENCHANTMENT.SHARP",
+   "class": "Sharp",
+   "file": "Models.Enchantments/Sharp.cs",
+   "class_line": 6,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Attack only",
+    "EnchantDamageAdditive: +Amount on powered attacks"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Sharp.cs:10"
+    },
+    {
+     "member": "EnchantDamageAdditive",
+     "cite": "Models.Enchantments/Sharp.cs:15"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Sharp.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relic GnarledHammer and the event SelfHelpBook",
+   "open_questions": []
+  },
+  {
+   "id": "SLITHER",
+   "model_id": "ENCHANTMENT.SLITHER",
+   "class": "Slither",
+   "file": "Models.Enchantments/Slither.cs",
+   "class_line": 10,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchant: base checks, not Unplayable, not X cost",
+    "AfterCardDrawn (this card, now in hand): EnergyCost.SetThisCombat(RunRng.CombatEnergyCosts.NextInt(4)) (cost 0-3 for the rest of combat)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchant",
+     "cite": "Models.Enchantments/Slither.cs:32"
+    },
+    {
+     "member": "AfterCardDrawn",
+     "cite": "Models.Enchantments/Slither.cs:41"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:enchantments",
+    "test:test_mode"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "RunRngType.CombatEnergyCosts: NextInt(4) each time the card is drawn"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Slither.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 2,
+   "notes": "TestEnergyCostOverride is a TestMode seam (dropped); applied by the event WoodCarvings (SNAKE)",
+   "open_questions": []
+  },
+  {
+   "id": "SLUMBERING_ESSENCE",
+   "model_id": "ENCHANTMENT.SLUMBERING_ESSENCE",
+   "class": "SlumberingEssence",
+   "file": "Models.Enchantments/SlumberingEssence.cs",
+   "class_line": 8,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "unreferenced",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "BeforeFlush (owner): while the card is in hand, EnergyCost.AddUntilPlayed(-1)"
+   ],
+   "hooks": [
+    {
+     "member": "BeforeFlush",
+     "cite": "Models.Enchantments/SlumberingEssence.cs:10"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:card_model_ops",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/SlumberingEssence.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "registered but applied by no model in v0.111.0",
+   "open_questions": []
+  },
+  {
+   "id": "SOULS_POWER",
+   "model_id": "ENCHANTMENT.SOULS_POWER",
+   "class": "SoulsPower",
+   "file": "Models.Enchantments/SoulsPower.cs",
+   "class_line": 8,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchant: base checks and the card has Exhaust (local keyword sources)",
+    "OnEnchant: CardCmd.RemoveKeyword(Exhaust)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchant",
+     "cite": "Models.Enchantments/SoulsPower.cs:12"
+    },
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments/SoulsPower.cs:25"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "CardCmd.RemoveKeyword",
+    "kernel:card_model_ops",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/SoulsPower.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the event GraveOfTheForgotten",
+   "open_questions": []
+  },
+  {
+   "id": "SOWN",
+   "model_id": "ENCHANTMENT.SOWN",
+   "class": "Sown",
+   "file": "Models.Enchantments/Sown.cs",
+   "class_line": 13,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "OnPlay: if Status is Normal, Status = Disabled and PlayerCmd.GainEnergy(Amount)"
+   ],
+   "hooks": [
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Sown.cs:86"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Sown.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "one use per combat copy (Status lives on the combat card's enchantment); applied by the event SapphireSeed",
+   "open_questions": []
+  },
+  {
+   "id": "SPIRAL",
+   "model_id": "ENCHANTMENT.SPIRAL",
+   "class": "Spiral",
+   "file": "Models.Enchantments/Spiral.cs",
+   "class_line": 9,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": {
+    "Times": "1"
+   },
+   "constants": {
+    "_timesKey": "\"Times\""
+   },
+   "mechanics": [
+    "CanEnchant: base checks, Basic rarity, Strike or Defend tag",
+    "EnchantPlayCount: +Times (1)"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchant",
+     "cite": "Models.Enchantments/Spiral.cs:17"
+    },
+    {
+     "member": "EnchantPlayCount",
+     "cite": "Models.Enchantments/Spiral.cs:30"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Spiral.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the event SpiralingWhirlpool",
+   "open_questions": []
+  },
+  {
+   "id": "STEADY",
+   "model_id": "ENCHANTMENT.STEADY",
+   "class": "Steady",
+   "file": "Models.Enchantments/Steady.cs",
+   "class_line": 7,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "OnEnchant: AddKeyword(Retain)"
+   ],
+   "hooks": [
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments/Steady.cs:11"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Steady.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the event WaterloggedScriptorium",
+   "open_questions": []
+  },
+  {
+   "id": "SWIFT",
+   "model_id": "ENCHANTMENT.SWIFT",
+   "class": "Swift",
+   "file": "Models.Enchantments/Swift.cs",
+   "class_line": 14,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "OnPlay: if Status is Normal, Status = Disabled and CardPileCmd.Draw(Amount)"
+   ],
+   "hooks": [
+    {
+     "member": "OnPlay",
+     "cite": "Models.Enchantments/Swift.cs:91"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "RunRngType.Shuffle (conditional: the draw reshuffles the discard pile when the draw pile is empty)"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Swift.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relics WingCharm, BeautifulBracelet and the events SelfHelpBook, Nonupeipe",
+   "open_questions": []
+  },
+  {
+   "id": "TEZCATARAS_EMBER",
+   "model_id": "ENCHANTMENT.TEZCATARAS_EMBER",
+   "class": "TezcatarasEmber",
+   "file": "Models.Enchantments/TezcatarasEmber.cs",
+   "class_line": 9,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": {
+    "Damage": "3"
+   },
+   "constants": {},
+   "mechanics": [
+    "OnEnchant: EnergyCost.UpgradeBy(-current cost) (cost 0), AddKeyword(Eternal)",
+    "EnchantDamageAdditive: +3 (DamageVar) on powered attacks"
+   ],
+   "hooks": [
+    {
+     "member": "OnEnchant",
+     "cite": "Models.Enchantments/TezcatarasEmber.cs:15"
+    },
+    {
+     "member": "EnchantDamageAdditive",
+     "cite": "Models.Enchantments/TezcatarasEmber.cs:21"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_model_ops",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/TezcatarasEmber.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by the relic NutritiousSoup",
+   "open_questions": []
+  },
+  {
+   "id": "VIGOROUS",
+   "model_id": "ENCHANTMENT.VIGOROUS",
+   "class": "Vigorous",
+   "file": "Models.Enchantments/Vigorous.cs",
+   "class_line": 9,
+   "base_class": "EnchantmentModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanEnchantCardType: Attack only",
+    "EnchantDamageAdditive: +Amount on powered attacks while Status is Normal",
+    "AfterCardPlayed (this card): Status = Disabled"
+   ],
+   "hooks": [
+    {
+     "member": "CanEnchantCardType",
+     "cite": "Models.Enchantments/Vigorous.cs:13"
+    },
+    {
+     "member": "EnchantDamageAdditive",
+     "cite": "Models.Enchantments/Vigorous.cs:18"
+    },
+    {
+     "member": "AfterCardPlayed",
+     "cite": "Models.Enchantments/Vigorous.cs:31"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_listeners",
+    "kernel:enchantments"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Enchantments/Vigorous.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "first play only per combat copy; applied by the event StoneOfAllTime",
+   "open_questions": []
+  }
+ ]
+}

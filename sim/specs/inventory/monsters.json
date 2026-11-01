@@ -1157,7 +1157,7 @@
   },
   {
    "id": "BYRDPIP",
-   "model_id": "RELIC.BYRDPIP",
+   "model_id": "MONSTER.BYRDPIP",
    "class": "Byrdpip",
    "file": "Models.Monsters/Byrdpip.cs",
    "class_line": 10,
@@ -5937,7 +5937,7 @@
   },
   {
    "id": "PAELS_LEGION",
-   "model_id": "RELIC.PAELS_LEGION",
+   "model_id": "MONSTER.PAELS_LEGION",
    "class": "PaelsLegion",
    "file": "Models.Monsters/PaelsLegion.cs",
    "class_line": 11,

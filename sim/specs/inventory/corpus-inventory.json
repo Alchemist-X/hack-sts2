@@ -1,19 +1,30 @@
 {
  "schema": "sts2-sim/corpus-inventory@1",
+ "generated_by": [
+  "sim/tools/inventory/classify/corpus/scan_parts.py",
+  "sim/tools/inventory/classify/corpus/scan_runs.py",
+  "sim/tools/inventory/classify/corpus/aggregate.py",
+  "sim/tools/inventory/classify/corpus/tree_diff.py",
+  "sim/tools/inventory/classify/corpus/classify_diff.py",
+  "sim/tools/inventory/classify/corpus/taint.py",
+  "sim/tools/inventory/classify/corpus/replay_stats.py",
+  "sim/tools/inventory/classify/corpus/build_inventory.py"
+ ],
  "generated": "2026-11-01",
  "corpus_root": "~/Library/Application Support/Sts2Recorder/sessions (read-only scan; the newest part was still being written)",
  "rule_truth": "output/server-bootstrap/linux-decompiled (v0.111.0, commit of recorded v0.111.0 parts: 41cef1ea)",
  "method": {
   "scripts": [
-   "tmp/sim-port/diff-gate/scan_parts.py",
-   "tmp/sim-port/diff-gate/scan_runs.py",
-   "tmp/sim-port/diff-gate/aggregate.py",
-   "tmp/sim-port/diff-gate/tree_diff.py",
-   "tmp/sim-port/diff-gate/classify_diff.py",
-   "tmp/sim-port/diff-gate/taint.py",
-   "tmp/sim-port/diff-gate/build_inventory.py"
+   "sim/tools/inventory/classify/corpus/scan_parts.py",
+   "sim/tools/inventory/classify/corpus/scan_runs.py",
+   "sim/tools/inventory/classify/corpus/aggregate.py",
+   "sim/tools/inventory/classify/corpus/tree_diff.py",
+   "sim/tools/inventory/classify/corpus/classify_diff.py",
+   "sim/tools/inventory/classify/corpus/taint.py",
+   "sim/tools/inventory/classify/corpus/replay_stats.py",
+   "sim/tools/inventory/classify/corpus/build_inventory.py"
   ],
-  "scripts_note": "scratch (git-ignored), Python 3 stdlib; rerun from the worktree root in the order listed",
+  "scripts_note": "committed generators, Python 3 stdlib; run from the repo root in the order listed (sim/tools/inventory/classify/README.md)",
   "lineage": "parts with equal (manifest.run.start_time, seed, character), as sts2rec.lineage.group_lineages",
   "combat": "room_entered event whose room_model_id starts with ENCOUNTER.; unique = (lineage, act, floor); attempts = re-entries of that room (save&quit or QuickSL reloads)",
   "decision": "actions.jsonl record (no cancelled records exist); in_combat = the state at state_seq has a battle block, or is a card/hand/bundle select or map view with a later battle snapshot in the same room; move_to_map_coord and ready_to_begin_enemy_turn are follow-ups, not decisions",
@@ -2416,6 +2427,9 @@
   },
   "version_exclusive_content": {
    "only_v0.111.0": {
+    "card_pools": [
+     "DeprivedCardPool"
+    ],
     "cards": [
      "Abundance",
      "BladeSymphony",
@@ -2437,12 +2451,13 @@
      "Tutor",
      "Underworld"
     ],
+    "encounters": [
+     "BattlewornDummyEventV1Encounter",
+     "BattlewornDummyEventV2Encounter",
+     "BattlewornDummyEventV3Encounter"
+    ],
     "potions": [
      "Ambergris"
-    ],
-    "relics": [
-     "DowsingRod",
-     "NeowsSacrifice"
     ],
     "powers": [
      "AmbergrisPower",
@@ -2456,22 +2471,18 @@
      "SoulboundPower",
      "UnderworldPower"
     ],
-    "encounters": [
-     "BattlewornDummyEventV1Encounter",
-     "BattlewornDummyEventV2Encounter",
-     "BattlewornDummyEventV3Encounter"
-    ],
-    "card_pools": [
-     "DeprivedCardPool"
+    "relics": [
+     "DowsingRod",
+     "NeowsSacrifice"
     ]
    },
    "only_v0.107.1": {
+    "cards": [
+     "Scare"
+    ],
     "powers": [
      "DiamondDiademPower",
      "OutbreakPower"
-    ],
-    "cards": [
-     "Scare"
     ]
    }
   },

@@ -1,7 +1,56 @@
 {
- "schema": "sts2sim.inventory.classified/v1",
+ "schema": "sts2sim.inventory.classified/v2",
  "kind": "events",
+ "content_kind": "events",
  "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/events/build.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "run:event_framework",
+  "run:run_state",
+  "run:gold",
+  "run:deck",
+  "RelicCmd.Obtain",
+  "RelicModel.AfterObtained",
+  "CardPileCmd.Add",
+  "CardPileCmd.AddCurseToDeck",
+  "CardPileCmd.AddCursesToDeck",
+  "CardPileCmd.RemoveFromDeck",
+  "PlayerCmd.GainGold",
+  "PlayerCmd.LoseGold",
+  "CreatureCmd.Damage",
+  "CreatureCmd.Damage(DamageVar)",
+  "CreatureCmd.Heal",
+  "CreatureCmd.GainMaxHp",
+  "CreatureCmd.LoseMaxHp"
+ ],
  "raw_manifest": "sim/specs/inventory/events.json",
  "raw_source_digest": "67926fa2a70960f3de2b3ef0ba0b92ba965ec5b403f6bd1e1b61e8852f299d74",
  "cross_reference_tree": "artifacts/knowledge/decompiled-v0.107.1/MegaCrit/sts2/Core (v0.107.1)",
@@ -18,7 +67,6 @@
   "outcomes",
   "combats",
   "prompts",
-  "indirect_prompts",
   "rng_streams",
   "mechanics",
   "kernel_requirements",
@@ -33,13 +81,6 @@
   "open_questions"
  ],
  "raw_fields": "every field of the raw events.json entry is kept unchanged before the added fields",
- "tier_definition": {
-  "basis": "Events cannot run in the sim today (no run layer). Tiers are therefore measured against the sim plus the W2 event core of docs/sim-port/design-run-layer.md 3.10-3.11: EventModel/AncientEventModel lifecycle, EventOption legality, the event Rng, and the basic run-state facades (HP, max HP, gold, fixed card add/remove, curse add, fixed relic obtain).",
-  "1": "only the event core and basic run-state facades (pure numbers, fixed cards/relics, event Rng)",
-  "2": "needs game facades that are not in the sim and not part of the core: relic grab bag, card reward generation, random upgrade/downgrade/clone, potion discard, relic removal, ancient option logic and unlock/profile queries, combat layout, run end",
-  "3": "needs a player prompt (CardSelectCmd deck/grid prompt, rewards screen, abandon modal) or a new subsystem (event combat, merchant UI, Crystal Sphere minigame)",
-  "4": "decompile-broken (lost static arrays) or cross-cutting content state that must be resolved first"
- },
  "port_batch_definition": {
   "0": "not ported (deprecated save placeholders, test mock)",
   "1": "W2 gate set: Neow and the act-2/3 ancients (option generation is a W2 oracle), TheArchitect (terminal victory) and the tier-1 events",
@@ -269,7 +310,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "gain max HP",
@@ -278,12 +319,23 @@
     "repeatable option loop"
    ],
    "kernel_requirements": [
+    "CreatureCmd.Damage(DamageVar)",
+    "kernel:dynamic_vars",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.GainMaxHp",
     "CreatureCmd.Damage (out of combat, DamageVar Unblockable|Unpowered)",
     "CreatureCmd.Heal",
     "DynamicVar mutation (DamageVar.BaseValue += 1)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -292,7 +344,13 @@
     "note": "only decompiler style differs",
     "fingerprint": "equal"
    },
-   "tier": 1,
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (kernel:dynamic_vars)"
+   ],
    "tier_reason": "HP/max-HP numbers only",
    "port_batch": 1,
    "notes": [
@@ -481,35 +539,54 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "AMALGAMATOR:COMBINE_STRIKES",
+     "opened_by": "events:AMALGAMATOR",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "IsRemovable && CardTag.Strike && Rarity == Basic",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto-takes both when exactly 2 qualify",
-     "option": "COMBINE_STRIKES",
-     "cite": "Models.Events/Amalgamator.cs:238"
+     "context": "Inline",
+     "filter": "IsRemovable && CardTag.Strike && Rarity == Basic",
+     "cite": "Models.Events/Amalgamator.cs:238",
+     "notes": "auto-takes both when exactly 2 qualify"
     },
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "AMALGAMATOR:COMBINE_DEFENDS",
+     "opened_by": "events:AMALGAMATOR",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "IsRemovable && CardTag.Defend && Rarity == Basic",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto-takes both when exactly 2 qualify",
-     "option": "COMBINE_DEFENDS",
-     "cite": "Models.Events/Amalgamator.cs:85"
+     "context": "Inline",
+     "filter": "IsRemovable && CardTag.Defend && Rarity == Basic",
+     "cite": "Models.Events/Amalgamator.cs:85",
+     "notes": "auto-takes both when exactly 2 qualify"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "remove cards from deck (choice, 2)",
     "add fixed card"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForRemoval",
+    "run:deck",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardSelectCmd.FromDeckForRemoval (filter)",
     "CardPileCmd.RemoveFromDeck",
@@ -517,6 +594,16 @@
     "CardPileCmd.Add (Deck)",
     "CardModel.Tags (Strike/Defend)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "ULTIMATE_STRIKE",
+      "ULTIMATE_DEFEND"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "UltimateStrike",
@@ -531,6 +618,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "deck removal prompt",
    "port_batch": 3,
    "notes": [
@@ -682,29 +773,41 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "AROMA_OF_CHAOS:LET_GO",
+     "opened_by": "events:AROMA_OF_CHAOS",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Type != Quest && IsTransformable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate; nothing when none",
-     "option": "LET_GO",
-     "cite": "Models.Events/AromaOfChaos.cs:66"
+     "context": "Inline",
+     "filter": "Type != Quest && IsTransformable",
+     "cite": "Models.Events/AromaOfChaos.cs:66",
+     "notes": "auto when 1 candidate; nothing when none"
     },
     {
-     "type": "CardSelectCmd.FromDeckForUpgrade",
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "AROMA_OF_CHAOS:MAINTAIN_CONTROL",
+     "opened_by": "events:AROMA_OF_CHAOS",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsUpgradable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate; nothing when none",
-     "option": "MAINTAIN_CONTROL",
-     "cite": "Models.Events/AromaOfChaos.cs:147"
+     "context": "Inline",
+     "filter": "IsUpgradable",
+     "cite": "Models.Events/AromaOfChaos.cs:147",
+     "notes": "auto when 1 candidate; nothing when none"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -718,6 +821,14 @@
     "upgrade card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.TransformToRandom",
+    "CardCmd.Upgrade",
+    "CardSelectCmd.FromDeckForTransformation",
+    "CardSelectCmd.FromDeckForUpgrade",
+    "kernel:card_generation",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardSelectCmd.FromDeckForTransformation",
@@ -725,6 +836,11 @@
     "CardCmd.TransformToRandom(rng)",
     "CardCmd.Upgrade"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [
@@ -736,6 +852,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "deck transform/upgrade prompts",
    "port_batch": 3,
    "notes": [],
@@ -987,31 +1107,29 @@
      "cite": "Models.Events/BattlewornDummy.cs:193"
     }
    ],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "EventCombat",
-     "min": null,
-     "max": null,
-     "source": "combat",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "SETTING_1/2/3",
+     "phase": "EventCombat",
+     "role": "opens",
+     "entry": "EventCombat",
+     "site": "BATTLEWORN_DUMMY:SETTING_1/2/3",
+     "opened_by": "events:BATTLEWORN_DUMMY",
+     "via": null,
+     "detail": "combat",
      "cite": "Models.Events/BattlewornDummy.cs:183"
     },
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": null,
-     "source": "PotionReward (V1) or RelicReward (V3)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "Resume",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "BATTLEWORN_DUMMY:Resume",
+     "opened_by": "events:BATTLEWORN_DUMMY",
+     "via": null,
+     "detail": "PotionReward (V1) or RelicReward (V3)",
      "cite": "Models.Events/BattlewornDummy.cs:118"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "combat streams",
@@ -1045,6 +1163,14 @@
     "relic reward"
    ],
    "kernel_requirements": [
+    "CardCmd.Upgrade",
+    "RewardsCmd.OfferCustom",
+    "run:event_combat",
+    "run:event_framework",
+    "run:relic_grab_bags",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "EventCombat (shouldResumeAfterCombat=true)",
@@ -1056,6 +1182,25 @@
     "CardCmd.Upgrade",
     "Creature.ScaleHpForMultiplayer (display only)"
    ],
+   "dependencies": {
+    "requires": {
+     "encounters": [
+      "BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER",
+      "BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER",
+      "BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER"
+     ],
+     "monsters": [
+      "BATTLE_FRIEND_V1",
+      "BATTLE_FRIEND_V2",
+      "BATTLE_FRIEND_V3"
+     ],
+     "powers": [
+      "BATTLEWORN_DUMMY_TIME_LIMIT_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "encounters": [
      "BattlewornDummyEventV1Encounter",
@@ -1105,6 +1250,10 @@
     ]
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "event combat with resume + rewards screen",
    "port_batch": 4,
    "notes": [
@@ -1289,29 +1438,35 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromSimpleGridForRewards",
+     "kind": "RewardsGrid",
+     "entry": "CardSelectCmd.FromSimpleGridForRewards",
+     "site": "BRAIN_LEECH:SHARE_KNOWLEDGE",
+     "opened_by": "events:BRAIN_LEECH",
+     "via": null,
+     "pile": "generated",
      "min": 1,
      "max": 1,
-     "source": "5 generated character-pool cards",
-     "filter": null,
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": null,
-     "option": "SHARE_KNOWLEDGE",
-     "cite": "Models.Events/BrainLeech.cs:166"
-    },
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Events/BrainLeech.cs:166",
+     "notes": null
+    }
+   ],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "CardReward x1 (3 colorless cards)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "RIP",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "BRAIN_LEECH:RIP",
+     "opened_by": "events:BRAIN_LEECH",
+     "via": null,
+     "detail": "CardReward x1 (3 colorless cards); max 1",
      "cite": "Models.Events/BrainLeech.cs:103"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -1332,6 +1487,16 @@
     "card reward (colorless)"
    ],
    "kernel_requirements": [
+    "CardSelectCmd.FromSimpleGridForRewards",
+    "CreatureCmd.Damage(DamageVar)",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:odds",
+    "run:rewards",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardFactory.CreateForReward",
     "CardCreationOptions.ForNonCombatWithDefaultOdds",
@@ -1339,6 +1504,11 @@
     "RewardsCmd.OfferCustom (CardReward)",
     "CreatureCmd.Damage (out of combat)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "A7 Scarcity changes the base rarity odds used by both options (no upgrade roll: NoUpgradeRoll)",
    "unlock_progress_dependence": [
@@ -1357,6 +1527,10 @@
     "fingerprint_only_v111": []
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "grid pick + rewards screen",
    "port_batch": 3,
    "notes": [],
@@ -1522,16 +1696,31 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "add fixed card"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "run:deck",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "RunState.CreateCard<T>",
     "CardPileCmd.Add (Deck)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "EXTERMINATE",
+      "SQUASH"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Exterminate",
@@ -1546,6 +1735,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "fixed card add",
    "port_batch": 1,
    "notes": [],
@@ -1725,19 +1918,35 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "gain max HP",
     "add fixed card"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "kernel:osty",
+    "run:deck",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.GainMaxHp",
     "RunState.CreateCard<T>",
     "CardPileCmd.Add (Deck)",
     "Player.HasEventPet (pet registry)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "BYRDONIS_EGG"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "ByrdonisEgg"
@@ -1750,7 +1959,13 @@
     "note": "only decompiler style differs",
     "fingerprint": "equal"
    },
-   "tier": 1,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (kernel:osty)"
+   ],
    "tier_reason": "max HP / fixed card",
    "port_batch": 1,
    "notes": [
@@ -1901,20 +2116,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 3,
-     "source": "3 CardRewards (3 cards each)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "<COLOR>",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "COLORFUL_PHILOSOPHERS:<COLOR>",
+     "opened_by": "events:COLORFUL_PHILOSOPHERS",
+     "via": null,
+     "detail": "3 CardRewards (3 cards each); max 3",
      "cite": "Models.Events/ColorfulPhilosophers.cs:61"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -1933,6 +2147,13 @@
     "card rewards from another character pool"
    ],
    "kernel_requirements": [
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:rewards",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "UnlockState.CharacterCardPools",
@@ -1940,6 +2161,11 @@
     "CardCreationOptions (Uniform, rarity filter)",
     "RewardsCmd.OfferCustom (CardReward x3)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "A7 Scarcity changes the upgrade roll of the generated reward cards",
    "unlock_progress_dependence": [
@@ -1952,6 +2178,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen; unlock-state dependent options",
    "port_batch": 3,
    "notes": [
@@ -2197,7 +2427,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "push-your-luck page chain",
@@ -2206,11 +2436,27 @@
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "decompile:ldmembertoken",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.Damage (out of combat)",
     "PlayerCmd.GainGold",
     "RelicCmd.Obtain<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "POLLINOUS_CORE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "PollinousCore"
@@ -2223,7 +2469,13 @@
     "note": "fingerprint equal, but v0.111.0 lost both static arrays; [v107] values _prizeCosts {35,75,135}, _prizeDamage {5,6,7} (107:re:_prizeCosts = new)",
     "fingerprint": "equal"
    },
-   "tier": 4,
+   "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [
+    "D9: the lost static array is recovered from IL (w0-critique section 7)"
+   ],
    "tier_reason": "static arrays _prizeCosts/_prizeDamage unreadable in v0.111.0 (RuntimeHelpers.InitializeArray)",
    "port_batch": 6,
    "notes": [
@@ -2440,32 +2692,29 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "CrystalSphereMinigame",
-     "min": null,
-     "max": null,
-     "source": "11x11 grid",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "UNCOVER_FUTURE / PAYMENT_PLAN",
-     "cite": "Events.Custom.CrystalSphereEvent/CrystalSphereMinigame.cs:604-671",
-     "notes": "per divination: choose tool (Big = 3x3 incl. diagonals, Small = 1 cell; free switch) and a hidden cell; node-layer legality: only hidden cells are clickable and DivinationCount > 0 (Nodes.Events.Custom.CrystalSphere/NCrystalSphereCell.cs:78, NCrystalSphereScreen.cs:156)"
+     "phase": "CrystalSphere",
+     "role": "opens",
+     "entry": "CrystalSphereMinigame",
+     "site": "CRYSTAL_SPHERE:UNCOVER_FUTURE / PAYMENT_PLAN",
+     "opened_by": "events:CRYSTAL_SPHERE",
+     "via": null,
+     "detail": "11x11 grid; per divination: choose tool (Big = 3x3 incl. diagonals, Small = 1 cell; free switch) and a hidden cell; node-layer legality: only hidden cells are clickable and DivinationCount > 0 (Nodes.Events.Custom.CrystalSphere/NCrystalSphereCell.cs:78, NCrystalSphereScreen.cs:156)",
+     "cite": "Events.Custom.CrystalSphereEvent/CrystalSphereMinigame.cs:604-671"
     },
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": null,
-     "source": "rewards of revealed items in reveal order",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "after the last divination",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "CRYSTAL_SPHERE:after the last divination",
+     "opened_by": "events:CRYSTAL_SPHERE",
+     "via": null,
+     "detail": "rewards of revealed items in reveal order",
      "cite": "Multiplayer.Game/OneOffSynchronizer.cs:377-412, :703"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -2493,6 +2742,17 @@
     "add curse on reveal"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCurseToDeck",
+    "PlayerCmd.LoseGold",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:crystal_sphere",
+    "run:deck",
+    "run:event_framework",
+    "run:gold",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CrystalSphereMinigame (grid, tools, ClearCell, reveal tracking)",
@@ -2502,6 +2762,16 @@
     "CardPileCmd.AddCurseToDeck<T>",
     "PlayerCmd.LoseGold (Spent)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "DEBT",
+      "DOUBT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Debt",
@@ -2518,6 +2788,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "new subsystem (minigame decisions)",
    "port_batch": 5,
    "notes": [
@@ -2694,28 +2968,52 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "Astrolabe",
-     "prompts": [
-      "CardSelectCmd.FromDeckForTransformation"
-     ],
-     "file": "Models.Relics/Astrolabe.cs"
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "ASTROLABE:AfterObtained",
+     "opened_by": "relics:ASTROLABE",
+     "via": "relics:ASTROLABE",
+     "pile": "Deck",
+     "min": 3,
+     "max": 3,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/Astrolabe.cs:148",
+     "notes": "TransformSelectionPrompt"
     },
     {
-     "relic": "CallingBell",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/CallingBell.cs"
-    },
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "EMPTY_CAGE:AfterObtained",
+     "opened_by": "relics:EMPTY_CAGE",
+     "via": "relics:EMPTY_CAGE",
+     "pile": "Deck",
+     "min": 2,
+     "max": 2,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/EmptyCage.cs:141",
+     "notes": "RemoveSelectionPrompt"
+    }
+   ],
+   "phases": [
     {
-     "relic": "EmptyCage",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/EmptyCage.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "CALLING_BELL:AfterObtained",
+     "opened_by": "relics:CALLING_BELL",
+     "via": "relics:CALLING_BELL",
+     "detail": "3 relic rewards; TestMode list differs",
+     "cite": "Models.Relics/CallingBell.cs:145"
     }
    ],
    "rng_streams": [
@@ -2731,6 +3029,14 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "kernel:run_modifiers",
+    "run:acts_room_sets",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
@@ -2739,6 +3045,26 @@
     "DustyTome.SetupForPlayer",
     "shared ancient subset (RunManager.GenerateRooms)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "ASTROLABE",
+      "BLACK_STAR",
+      "CALLING_BELL",
+      "EMPTY_CAGE",
+      "PANDORAS_BOX",
+      "RUNIC_PYRAMID",
+      "SNECKO_EYE",
+      "ECTOPLASM",
+      "SOZU",
+      "PHILOSOPHERS_STONE",
+      "VELVET_CHOKER",
+      "DUSTY_TOME"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "Astrolabe",
@@ -2771,7 +3097,13 @@
      "CMP >= 1"
     ]
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (kernel:run_modifiers, run:acts_room_sets)"
+   ],
    "tier_reason": "ancient framework",
    "port_batch": 1,
    "notes": [
@@ -3031,20 +3363,19 @@
      "notes": "normal Monster-room rewards (ShouldGiveRewards default true)"
     }
    ],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "EventCombat",
-     "min": null,
-     "max": null,
-     "source": "combat",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "FIGHT",
+     "phase": "EventCombat",
+     "role": "opens",
+     "entry": "EventCombat",
+     "site": "DENSE_VEGETATION:FIGHT",
+     "opened_by": "events:DENSE_VEGETATION",
+     "via": null,
+     "detail": "combat",
      "cite": "Models.Events/DenseVegetation.cs:365"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -3072,6 +3403,14 @@
     "event combat (no resume)"
    ],
    "kernel_requirements": [
+    "PlayerCmd.GainGold",
+    "PlayerCmd.MimicRestSiteHeal",
+    "run:event_combat",
+    "run:event_framework",
+    "run:rest_site",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CreatureCmd.Damage (out of combat)",
@@ -3080,6 +3419,18 @@
     "HealRestSiteOption.GetHealAmount",
     "EventCombat (shouldResumeAfterCombat=false)"
    ],
+   "dependencies": {
+    "requires": {
+     "encounters": [
+      "DENSE_VEGETATION_EVENT_ENCOUNTER"
+     ],
+     "monsters": [
+      "WRIGGLER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "encounters": [
      "DenseVegetationEventEncounter"
@@ -3096,6 +3447,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "event combat",
    "port_batch": 4,
    "notes": [
@@ -3197,12 +3552,18 @@
    "outcomes": {},
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "save-compat placeholder (no options: StartPreFinished)"
    ],
    "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -3212,6 +3573,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "empty",
    "port_batch": 0,
    "notes": [
@@ -3310,12 +3675,18 @@
    "outcomes": {},
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "save-compat placeholder (no options: finished at once)"
    ],
    "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -3325,6 +3696,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "empty",
    "port_batch": 0,
    "notes": [
@@ -3537,7 +3912,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -3558,12 +3933,29 @@
     "multi-page"
    ],
    "kernel_requirements": [
+    "CreatureCmd.Damage(DamageVar)",
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "RelicCmd.Obtain",
     "CreatureCmd.Damage (out of combat)",
     "StableShuffle (DollChoice.CompareTo -> RelicModel.CompareTo)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "DAUGHTER_OF_THE_WIND",
+      "MR_STRUGGLES",
+      "BING_BONG"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "DaughterOfTheWind",
@@ -3579,6 +3971,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "fixed relics and HP, event Rng only",
    "port_batch": 1,
    "notes": [
@@ -3733,18 +4129,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "DOORS_OF_LIGHT_AND_DARK:DARK",
+     "opened_by": "events:DOORS_OF_LIGHT_AND_DARK",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsRemovable; curses listed first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "DARK",
-     "cite": "Models.Events/DoorsOfLightAndDark.cs:65"
+     "context": "Inline",
+     "filter": "IsRemovable; curses listed first",
+     "cite": "Models.Events/DoorsOfLightAndDark.cs:65",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -3758,6 +4160,12 @@
     "remove card from deck (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Upgrade",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForRemoval",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "StableShuffle (CardModel.CompareTo)",
@@ -3765,6 +4173,11 @@
     "CardSelectCmd.FromDeckForRemoval",
     "CardPileCmd.RemoveFromDeck"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -3774,6 +4187,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "removal prompt (LIGHT alone would be tier 2)",
    "port_batch": 3,
    "notes": [],
@@ -3959,20 +4376,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "PotionReward(GlowwaterPotion)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "BOTTLE",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "DROWNING_BEACON:BOTTLE",
+     "opened_by": "events:DROWNING_BEACON",
+     "via": null,
+     "detail": "PotionReward(GlowwaterPotion); max 1",
      "cite": "Models.Events/DrowningBeacon.cs:52"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [],
    "mechanics": [
     "fixed potion reward",
@@ -3980,11 +4396,29 @@
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RewardsCmd.OfferCustom",
+    "run:event_framework",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "RewardsCmd.OfferCustom (PotionReward, fixed potion)",
     "CreatureCmd.LoseMaxHp",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {
+     "potions": [
+      "GLOWWATER_POTION"
+     ],
+     "relics": [
+      "FRESNEL_LENS"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "potions": [
      "GlowwaterPotion"
@@ -4001,6 +4435,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen",
    "port_batch": 3,
    "notes": [],
@@ -4266,29 +4704,35 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "ENDLESS_CONVEYOR:JELLY_LIVER dish",
+     "opened_by": "events:ENDLESS_CONVEYOR",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
      "filter": "Type != Quest && IsTransformable",
-     "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "JELLY_LIVER dish",
-     "cite": "Models.Events/EndlessConveyor.cs:490"
-    },
+     "cite": "Models.Events/EndlessConveyor.cs:490",
+     "notes": "auto when 1 candidate"
+    }
+   ],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "PotionReward (random)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "SUSPICIOUS_CONDIMENT dish",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "ENDLESS_CONVEYOR:SUSPICIOUS_CONDIMENT dish",
+     "opened_by": "events:ENDLESS_CONVEYOR",
+     "via": null,
+     "detail": "PotionReward (random); max 1",
      "cite": "Models.Events/EndlessConveyor.cs:646"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -4334,6 +4778,21 @@
     "add fixed card"
    ],
    "kernel_requirements": [
+    "CardCmd.TransformToRandom",
+    "CardCmd.Upgrade",
+    "CardPileCmd.Add",
+    "CardSelectCmd.FromDeckForTransformation",
+    "PlayerCmd.GainGold",
+    "PlayerCmd.LoseGold",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:deck",
+    "run:event_framework",
+    "run:gold",
+    "run:rewards",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PlayerCmd.LoseGold (Spent)",
@@ -4350,6 +4809,15 @@
     "RunState.CreateCard<FeedingFrenzy>",
     "CardPileCmd.Add"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "FEEDING_FRENZY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "FeedingFrenzy"
@@ -4377,6 +4845,10 @@
     ]
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "transform prompt + rewards screen inside a loop",
    "port_batch": 3,
    "notes": [
@@ -4604,43 +5076,39 @@
      "notes": "Min/MaxGoldReward 300"
     }
    ],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "MerchantInventory (fake relic shop)",
-     "min": 0,
-     "max": null,
-     "source": "6 of 9 fake relics",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "custom UI",
-     "cite": "Models.Events/FakeMerchant.cs:207",
-     "notes": "purchase legality like the merchant: stocked and Cost <= Gold"
+     "phase": "Shop",
+     "role": "opens",
+     "entry": "MerchantInventory (fake relic shop)",
+     "site": "FAKE_MERCHANT:custom UI",
+     "opened_by": "events:FAKE_MERCHANT",
+     "via": null,
+     "detail": "6 of 9 fake relics; purchase legality like the merchant: stocked and Cost <= Gold",
+     "cite": "Models.Events/FakeMerchant.cs:207"
     },
     {
-     "type": "PotionUse(FoulPotion)",
-     "min": null,
-     "max": null,
-     "source": "potion slots",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "custom UI",
+     "phase": "PotionUse",
+     "role": "opens",
+     "entry": "PotionUse(FoulPotion)",
+     "site": "FAKE_MERCHANT:custom UI",
+     "opened_by": "events:FAKE_MERCHANT",
+     "via": null,
+     "detail": "potion slots",
      "cite": "Models.Potions/FoulPotion.cs:115-129"
     },
     {
-     "type": "EventCombat",
-     "min": null,
-     "max": null,
-     "source": "combat",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "after the throw",
+     "phase": "EventCombat",
+     "role": "opens",
+     "entry": "EventCombat",
+     "site": "FAKE_MERCHANT:after the throw",
+     "opened_by": "events:FAKE_MERCHANT",
+     "via": null,
+     "detail": "combat",
      "cite": "Models.Events/FakeMerchant.cs:101"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -4667,6 +5135,14 @@
     "relic rewards after combat"
    ],
    "kernel_requirements": [
+    "run:event_combat",
+    "run:event_framework",
+    "run:merchant",
+    "run:potions_out_of_combat",
+    "run:rewards",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "EventLayoutType.Custom (no EventOptions; event finished at start)",
@@ -4675,6 +5151,33 @@
     "EventCombat (extra RelicRewards, no resume)",
     "RewardsCmd (RelicReward with fixed relic)"
    ],
+   "dependencies": {
+    "requires": {
+     "encounters": [
+      "FAKE_MERCHANT_EVENT_ENCOUNTER"
+     ],
+     "monsters": [
+      "FAKE_MERCHANT_MONSTER"
+     ],
+     "potions": [
+      "FOUL_POTION"
+     ],
+     "relics": [
+      "FAKE_ANCHOR",
+      "FAKE_BLOOD_VIAL",
+      "FAKE_HAPPY_FLOWER",
+      "FAKE_LEES_WAFFLE",
+      "FAKE_MANGO",
+      "FAKE_ORICHALCUM",
+      "FAKE_SNECKO_EYE",
+      "FAKE_STRIKE_DUMMY",
+      "FAKE_VENERABLE_TEA_SET",
+      "FAKE_MERCHANTS_RUG"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "FakeAnchor",
@@ -4710,6 +5213,10 @@
     ]
    },
    "tier": 3,
+   "tier_with_deps": 4,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "new subsystem (merchant UI inside an event) + node-layer potion rule + event combat",
    "port_batch": 5,
    "notes": [
@@ -4929,29 +5436,41 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "FIELD_OF_MAN_SIZED_HOLES:RESIST",
+     "opened_by": "events:FIELD_OF_MAN_SIZED_HOLES",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "IsRemovable; curses first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "RESIST",
-     "cite": "Models.Events/FieldOfManSizedHoles.cs:151"
+     "context": "Inline",
+     "filter": "IsRemovable; curses first",
+     "cite": "Models.Events/FieldOfManSizedHoles.cs:151",
+     "notes": "auto when <= 2 candidates"
     },
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "FIELD_OF_MAN_SIZED_HOLES:ENTER_YOUR_HOLE",
+     "opened_by": "events:FIELD_OF_MAN_SIZED_HOLES",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "PerfectFit.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "ENTER_YOUR_HOLE",
-     "cite": "Models.Events/FieldOfManSizedHoles.cs:55"
+     "context": "Inline",
+     "filter": "PerfectFit.CanEnchant",
+     "cite": "Models.Events/FieldOfManSizedHoles.cs:55",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "remove cards (choice, 2)",
@@ -4959,6 +5478,15 @@
     "enchant card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardPileCmd.AddCursesToDeck",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "CardSelectCmd.FromDeckForRemoval",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardSelectCmd.FromDeckForRemoval",
     "CardPileCmd.RemoveFromDeck",
@@ -4966,6 +5494,18 @@
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant<PerfectFit>"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "NORMALITY"
+     ],
+     "enchantments": [
+      "PERFECT_FIT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Normality"
@@ -4982,6 +5522,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "removal and enchant prompts",
    "port_batch": 3,
    "notes": [
@@ -5195,18 +5739,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "GRAVE_OF_THE_FORGOTTEN:CONFRONT",
+     "opened_by": "events:GRAVE_OF_THE_FORGOTTEN",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "SoulsPower.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "CONFRONT",
-     "cite": "Models.Events/GraveOfTheForgotten.cs:152"
+     "context": "Inline",
+     "filter": "SoulsPower.CanEnchant",
+     "cite": "Models.Events/GraveOfTheForgotten.cs:152",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "add curse",
@@ -5214,12 +5764,36 @@
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardPileCmd.AddCurseToDeck",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "RelicCmd.Obtain",
+    "kernel:enchantments",
+    "run:deck",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardPileCmd.AddCurseToDeck<T>",
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant<SoulsPower>",
     "RelicCmd.Obtain<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "DECAY"
+     ],
+     "enchantments": [
+      "SOULS_POWER"
+     ],
+     "relics": [
+      "FORGOTTEN_SOUL"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Decay"
@@ -5239,6 +5813,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant prompt",
    "port_batch": 3,
    "notes": [
@@ -5382,16 +5960,31 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventModel.RelicOption<T>(onChosen) (EventOption.FromRelic)",
     "RelicCmd.Obtain<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "BIG_MUSHROOM",
+      "FRAGRANT_MUSHROOM"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "BigMushroom",
@@ -5405,7 +5998,13 @@
     "note": "only decompiler style differs",
     "fingerprint": "equal"
    },
-   "tier": 1,
+   "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:neow_and_ancients)"
+   ],
    "tier_reason": "fixed relics",
    "port_batch": 1,
    "notes": [
@@ -5545,7 +6144,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -5558,11 +6157,24 @@
     "add generated card (filtered)"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "kernel:card_generation",
+    "run:deck",
+    "run:event_framework",
+    "run:odds",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardFactory.CreateForReward",
     "CardCreationOptions.ForNonCombatWithDefaultOdds(filter)",
     "CardPileCmd.Add (Deck)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "A7 Scarcity changes the base rarity odds",
    "unlock_progress_dependence": [
@@ -5573,7 +6185,13 @@
     "note": "only decompiler style differs",
     "fingerprint": "equal"
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:rewards)"
+   ],
    "tier_reason": "card reward generation without a prompt",
    "port_batch": 2,
    "notes": [],
@@ -5796,7 +6414,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -5816,12 +6434,23 @@
     "gain gold (random amount)"
    ],
    "kernel_requirements": [
+    "PlayerCmd.GainGold",
+    "run:event_framework",
+    "run:gold",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CreatureCmd.Damage (out of combat)",
     "PlayerCmd.GainGold (decimal -> (int) truncation)",
     "StableShuffle (ValueTuple<string,string> default comparer; VFX list, Rng parity only)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -5837,6 +6466,10 @@
     ]
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "HP and gold numbers",
    "port_batch": 1,
    "notes": [
@@ -5846,7 +6479,7 @@
   },
   {
    "id": "LOST_WISP",
-   "model_id": "RELIC.LOST_WISP",
+   "model_id": "EVENT.LOST_WISP",
    "class": "LostWisp",
    "file": "Models.Events/LostWisp.cs",
    "class_line": 17,
@@ -6031,7 +6664,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -6046,12 +6679,30 @@
     "gain gold (random amount)"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCursesToDeck",
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardPileCmd.AddCursesToDeck",
     "RelicCmd.Obtain<T>",
     "PlayerCmd.GainGold"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "DECAY"
+     ],
+     "relics": [
+      "LOST_WISP"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Decay"
@@ -6068,6 +6719,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "curse/relic/gold",
    "port_batch": 1,
    "notes": [
@@ -6258,18 +6913,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "LUMINOUS_CHOIR:REACH_INTO_THE_FLESH",
+     "opened_by": "events:LUMINOUS_CHOIR",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "IsRemovable; curses first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "REACH_INTO_THE_FLESH",
-     "cite": "Models.Events/LuminousChoir.cs:166"
+     "context": "Inline",
+     "filter": "IsRemovable; curses first",
+     "cite": "Models.Events/LuminousChoir.cs:166",
+     "notes": "auto when <= 2 candidates"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -6290,6 +6951,18 @@
     "pay gold for random relic"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCurseToDeck",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForRemoval",
+    "EventModel.IsAllowed",
+    "PlayerCmd.LoseGold",
+    "RelicCmd.Obtain",
+    "run:deck",
+    "run:event_framework",
+    "run:gold",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardSelectCmd.FromDeckForRemoval",
@@ -6301,6 +6974,15 @@
     "IsAllowed evaluated on the canonical instance",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "SPORE_MIND"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "SporeMind"
@@ -6316,6 +6998,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "removal prompt",
    "port_batch": 3,
    "notes": [],
@@ -6429,12 +7115,18 @@
    "outcomes": {},
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "test mock"
    ],
    "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -6447,7 +7139,13 @@
      "OVR IsMock"
     ]
    },
-   "tier": 1,
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [
+    "test-only mock"
+   ],
    "tier_reason": "test mock",
    "port_batch": 0,
    "notes": [
@@ -6633,18 +7331,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "MORPHIC_GROVE:GROUP",
+     "opened_by": "events:MORPHIC_GROVE",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "Type != Quest && IsTransformable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "GROUP",
-     "cite": "Models.Events/MorphicGrove.cs:106"
+     "context": "Inline",
+     "filter": "Type != Quest && IsTransformable",
+     "cite": "Models.Events/MorphicGrove.cs:106",
+     "notes": "auto when <= 2 candidates"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -6659,6 +7363,14 @@
     "gain max HP"
    ],
    "kernel_requirements": [
+    "CardCmd.TransformToRandom",
+    "CardSelectCmd.FromDeckForTransformation",
+    "PlayerCmd.LoseGold",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:gold"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PlayerCmd.LoseGold (Stolen)",
@@ -6666,6 +7378,11 @@
     "CardCmd.TransformToRandom(rng)",
     "CreatureCmd.GainMaxHp"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [
@@ -6677,6 +7394,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "transform prompt",
    "port_batch": 3,
    "notes": [
@@ -6938,84 +7659,184 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "Kaleidoscope",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/Kaleidoscope.cs"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "LEAD_PAPERWEIGHT:AfterObtained",
+     "opened_by": "relics:LEAD_PAPERWEIGHT",
+     "via": "relics:LEAD_PAPERWEIGHT",
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/LeadPaperweight.cs:154",
+     "notes": "canSkip=true"
     },
     {
-     "relic": "LeadPaperweight",
-     "prompts": [
-      "CardSelectCmd.FromChooseACardScreen"
-     ],
-     "file": "Models.Relics/LeadPaperweight.cs"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "MASSIVE_SCROLL:AfterObtained",
+     "opened_by": "relics:MASSIVE_SCROLL",
+     "via": "relics:MASSIVE_SCROLL",
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/MassiveScroll.cs:164",
+     "notes": "canSkip=true"
     },
     {
-     "relic": "LostCoffer",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/LostCoffer.cs"
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "NEW_LEAF:AfterObtained",
+     "opened_by": "relics:NEW_LEAF",
+     "via": "relics:NEW_LEAF",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/NewLeaf.cs:148",
+     "notes": "TransformSelectionPrompt"
     },
     {
-     "relic": "MassiveScroll",
-     "prompts": [
-      "CardSelectCmd.FromChooseACardScreen"
-     ],
-     "file": "Models.Relics/MassiveScroll.cs"
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "PRECISE_SCISSORS:AfterObtained",
+     "opened_by": "relics:PRECISE_SCISSORS",
+     "via": "relics:PRECISE_SCISSORS",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PreciseScissors.cs:141",
+     "notes": "RemoveSelectionPrompt"
     },
     {
-     "relic": "NewLeaf",
-     "prompts": [
-      "CardSelectCmd.FromDeckForTransformation"
-     ],
-     "file": "Models.Relics/NewLeaf.cs"
+     "kind": "Bundle",
+     "entry": "CardSelectCmd.FromChooseABundleScreen",
+     "site": "SCROLL_BOXES:AfterObtained",
+     "opened_by": "relics:SCROLL_BOXES",
+     "via": "relics:SCROLL_BOXES",
+     "pile": "2 bundles of 3",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/ScrollBoxes.cs:175",
+     "notes": null
     },
     {
-     "relic": "PreciseScissors",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/PreciseScissors.cs"
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "POMANDER:AfterObtained",
+     "opened_by": "relics:POMANDER",
+     "via": "relics:POMANDER",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/Pomander.cs:103",
+     "notes": "UpgradeSelectionPrompt"
     },
     {
-     "relic": "ScrollBoxes",
-     "prompts": [
-      "CardSelectCmd.FromChooseABundleScreen"
-     ],
-     "file": "Models.Relics/ScrollBoxes.cs"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "HEFTY_TABLET:AfterObtained",
+     "opened_by": "relics:HEFTY_TABLET",
+     "via": "relics:HEFTY_TABLET",
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/HeftyTablet.cs:163",
+     "notes": "canSkip=true"
     },
     {
-     "relic": "Pomander",
-     "prompts": [
-      "CardSelectCmd.FromDeckForUpgrade"
-     ],
-     "file": "Models.Relics/Pomander.cs"
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "PRECARIOUS_SHEARS:AfterObtained",
+     "opened_by": "relics:PRECARIOUS_SHEARS",
+     "via": "relics:PRECARIOUS_SHEARS",
+     "pile": "Deck",
+     "min": 2,
+     "max": 2,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PrecariousShears.cs:175",
+     "notes": "RemoveSelectionPrompt"
+    }
+   ],
+   "phases": [
+    {
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "KALEIDOSCOPE:AfterObtained",
+     "opened_by": "relics:KALEIDOSCOPE",
+     "via": "relics:KALEIDOSCOPE",
+     "detail": "2 card rewards",
+     "cite": "Models.Relics/Kaleidoscope.cs:126"
     },
     {
-     "relic": "SmallCapsule",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/SmallCapsule.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "LOST_COFFER:AfterObtained",
+     "opened_by": "relics:LOST_COFFER",
+     "via": "relics:LOST_COFFER",
+     "detail": "card reward + potion reward",
+     "cite": "Models.Relics/LostCoffer.cs:87"
     },
     {
-     "relic": "HeftyTablet",
-     "prompts": [
-      "CardSelectCmd.FromChooseACardScreen"
-     ],
-     "file": "Models.Relics/HeftyTablet.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "SMALL_CAPSULE:AfterObtained",
+     "opened_by": "relics:SMALL_CAPSULE",
+     "via": "relics:SMALL_CAPSULE",
+     "detail": "1 relic reward",
+     "cite": "Models.Relics/SmallCapsule.cs:84"
     },
     {
-     "relic": "PrecariousShears",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/PrecariousShears.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsSet.Offer",
+     "site": "NEOWS_BONES:AfterObtained",
+     "opened_by": "relics:NEOWS_BONES",
+     "via": "relics:NEOWS_BONES",
+     "detail": "2 relic rewards; skipping disallowed",
+     "cite": "Models.Relics/NeowsBones.cs:190"
     }
    ],
    "rng_streams": [
@@ -7031,6 +7852,14 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "RelicModel.IsAllowedAtNeow",
+    "run:event_framework",
+    "run:neow_and_ancients",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
@@ -7038,6 +7867,44 @@
     "RelicModel.IsAllowedAtNeow (Kaleidoscope: all character card pools unlocked; ScrollBoxes: >= 4 Common and >= 2 Uncommon unlocked character cards; MassiveScroll multiplayer only; WingedBoots/SilverCrucible single player only)",
     "RunState.Modifiers (empty in Standard; modifier Neow chain excluded)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "ARCANE_SCROLL",
+      "BOOMING_CONCH",
+      "FISHING_ROD",
+      "GOLDEN_PEARL",
+      "KALEIDOSCOPE",
+      "LEAD_PAPERWEIGHT",
+      "LOST_COFFER",
+      "MASSIVE_SCROLL",
+      "NEOWS_TORMENT",
+      "NEW_LEAF",
+      "PHIAL_HOLSTER",
+      "PRECISE_SCISSORS",
+      "SCROLL_BOXES",
+      "WINGED_BOOTS",
+      "LAVA_ROCK",
+      "NEOWS_TALISMAN",
+      "NUTRITIOUS_OYSTER",
+      "POMANDER",
+      "SMALL_CAPSULE",
+      "STONE_HUMIDIFIER",
+      "CURSED_PEARL",
+      "DOWSING_ROD",
+      "HEFTY_TABLET",
+      "LARGE_CAPSULE",
+      "LEAFY_POULTICE",
+      "NEOWS_BONES",
+      "NEOWS_SACRIFICE",
+      "PRECARIOUS_SHEARS",
+      "SILKEN_TRESS",
+      "SILVER_CRUCIBLE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "ArcaneScroll",
@@ -7090,6 +7957,10 @@
     ]
    },
    "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework + IsAllowedAtNeow unlock queries; nested prompts belong to the relics",
    "port_batch": 1,
    "notes": [
@@ -7279,7 +8150,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -7293,12 +8164,40 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "EnchantmentModel.CanEnchant",
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
     "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)",
     "EnchantmentModel Swift.CanEnchant"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "SWIFT"
+     ],
+     "relics": [
+      "BLESSED_ANTLER",
+      "BRILLIANT_SCARF",
+      "DELICATE_FROND",
+      "DIAMOND_DIADEM",
+      "FUR_COAT",
+      "GLITTER",
+      "JEWELRY_BOX",
+      "LOOMING_FRUIT",
+      "SIGNET_RING",
+      "BEAUTIFUL_BRACELET"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "BlessedAntler",
@@ -7331,6 +8230,10 @@
     ]
    },
    "tier": 2,
+   "tier_with_deps": 4,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework",
    "port_batch": 1,
    "notes": [],
@@ -7524,28 +8427,52 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "ElectricShrymp",
-     "prompts": [
-      "CardSelectCmd.FromDeckForEnchantment"
-     ],
-     "file": "Models.Relics/ElectricShrymp.cs"
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "ELECTRIC_SHRYMP:AfterObtained",
+     "opened_by": "relics:ELECTRIC_SHRYMP",
+     "via": "relics:ELECTRIC_SHRYMP",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/ElectricShrymp.cs:111",
+     "notes": "EnchantSelectionPrompt"
     },
     {
-     "relic": "GlassEye",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/GlassEye.cs"
-    },
+     "kind": "RewardsGrid",
+     "entry": "CardSelectCmd.FromSimpleGridForRewards",
+     "site": "SEA_GLASS:AfterObtained",
+     "opened_by": "relics:SEA_GLASS",
+     "via": "relics:SEA_GLASS",
+     "pile": "generated",
+     "min": 0,
+     "max": 15,
+     "require_confirm": true,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/SeaGlass.cs:212",
+     "notes": "BlockingPlayerChoiceContext"
+    }
+   ],
+   "phases": [
     {
-     "relic": "SeaGlass",
-     "prompts": [
-      "CardSelectCmd.FromSimpleGridForRewards"
-     ],
-     "file": "Models.Relics/SeaGlass.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "GLASS_EYE:AfterObtained",
+     "opened_by": "relics:GLASS_EYE",
+     "via": "relics:GLASS_EYE",
+     "detail": "5 card rewards x3 cards",
+     "cite": "Models.Relics/GlassEye.cs:107"
     }
    ],
    "rng_streams": [
@@ -7561,6 +8488,14 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "kernel:per_instance_state",
+    "run:event_framework",
+    "run:neow_and_ancients",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
@@ -7569,6 +8504,24 @@
     "SeaGlass.CharacterId (relic instance state)",
     "TouchOfOrobas.SetupForPlayer / ArchaicTooth.SetupForPlayer (relic logic at option time)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "ELECTRIC_SHRYMP",
+      "GLASS_EYE",
+      "PRISMATIC_GEM",
+      "SEA_GLASS",
+      "ALCHEMICAL_COFFER",
+      "DRIFTWOOD",
+      "RADIANT_PEARL",
+      "SAND_CASTLE",
+      "TOUCH_OF_OROBAS",
+      "ARCHAIC_TOOTH"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "ElectricShrymp",
@@ -7594,6 +8547,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework + relic SetupForPlayer queries; nested prompts belong to the relics",
    "port_batch": 1,
    "notes": [
@@ -7788,21 +8745,69 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "PaelsTooth",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/PaelsTooth.cs"
+     "kind": "CardReward",
+     "entry": "CardReward.Select",
+     "site": "PAELS_WING:TryModifyCardRewardAlternatives",
+     "opened_by": "relics:PAELS_WING",
+     "via": "relics:PAELS_WING",
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PaelsWing.cs:211",
+     "notes": "adds an alternative to every card reward (role: modifies); extra option on every card reward"
     },
     {
-     "relic": "PaelsGrowth",
-     "prompts": [
-      "CardSelectCmd.FromDeckForEnchantment"
-     ],
-     "file": "Models.Relics/PaelsGrowth.cs"
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "PAELS_TOOTH:AfterObtained",
+     "opened_by": "relics:PAELS_TOOTH",
+     "via": "relics:PAELS_TOOTH",
+     "pile": "Deck",
+     "min": 5,
+     "max": 5,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PaelsTooth.cs:323",
+     "notes": "RemoveSelectionPrompt"
+    },
+    {
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "PAELS_GROWTH:AfterObtained",
+     "opened_by": "relics:PAELS_GROWTH",
+     "via": "relics:PAELS_GROWTH",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PaelsGrowth.cs:108",
+     "notes": null
+    }
+   ],
+   "phases": [
+    {
+     "phase": "RestSite",
+     "role": "modifies",
+     "entry": "TryModifyRestSiteOptions",
+     "site": "PAELS_GROWTH:TryModifyRestSiteOptions",
+     "opened_by": "relics:PAELS_GROWTH",
+     "via": "relics:PAELS_GROWTH",
+     "detail": "adds Clone",
+     "cite": "Models.Relics/PaelsGrowth.cs:120"
     }
    ],
    "rng_streams": [
@@ -7818,6 +8823,16 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "EnchantmentModel.CanEnchant",
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "kernel:osty",
+    "run:deck",
+    "run:event_framework",
+    "run:neow_and_ancients",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
@@ -7827,6 +8842,27 @@
     "Player.HasEventPet",
     "List<T>.AddRange(self) doubling semantics"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "GOOPY"
+     ],
+     "relics": [
+      "PAELS_FLESH",
+      "PAELS_HORN",
+      "PAELS_TEARS",
+      "PAELS_WING",
+      "PAELS_CLAW",
+      "PAELS_TOOTH",
+      "PAELS_GROWTH",
+      "PAELS_EYE",
+      "PAELS_BLOOD",
+      "PAELS_LEGION"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "PaelsFlesh",
@@ -7851,7 +8887,13 @@
     "note": "fingerprint equal (the self-AddRange is in both versions)",
     "fingerprint": "equal"
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (kernel:osty)"
+   ],
    "tier_reason": "ancient framework + deck queries",
    "port_batch": 1,
    "notes": [
@@ -8015,20 +9057,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 3,
-     "source": "PotionRewards",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "GRAB_POTIONS / RANSACK",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "POTION_COURIER:GRAB_POTIONS / RANSACK",
+     "opened_by": "events:POTION_COURIER",
+     "via": null,
+     "detail": "PotionRewards; max 3",
      "cite": "Models.Events/PotionCourier.cs:56"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -8042,10 +9083,24 @@
     "random potion reward"
    ],
    "kernel_requirements": [
+    "RewardsCmd.OfferCustom",
+    "run:event_framework",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "RewardsCmd.OfferCustom (PotionReward)",
     "PotionPools (rarity filter)"
    ],
+   "dependencies": {
+    "requires": {
+     "potions": [
+      "FOUL_POTION"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "potions": [
      "FoulPotion"
@@ -8061,6 +9116,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 4,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen",
    "port_batch": 3,
    "notes": [
@@ -8313,31 +9372,29 @@
      "notes": "normal Monster-room rewards plus the two extra rewards"
     }
    ],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "RelicReward (random)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "NAB",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "PUNCH_OFF:NAB",
+     "opened_by": "events:PUNCH_OFF",
+     "via": null,
+     "detail": "RelicReward (random); max 1",
      "cite": "Models.Events/PunchOff.cs:114"
     },
     {
-     "type": "EventCombat",
-     "min": null,
-     "max": null,
-     "source": "combat",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "FIGHT",
+     "phase": "EventCombat",
+     "role": "opens",
+     "entry": "EventCombat",
+     "site": "PUNCH_OFF:FIGHT",
+     "opened_by": "events:PUNCH_OFF",
+     "via": null,
+     "detail": "combat",
      "cite": "Models.Events/PunchOff.cs:522"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "encounter private Rng (layout copy)",
@@ -8377,6 +9434,14 @@
     "combat-layout event"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCurseToDeck",
+    "RewardsCmd.OfferCustom",
+    "run:deck",
+    "run:event_combat",
+    "run:event_framework",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CombatLayout (EventCombatSynchronizer.InitializeForEvent)",
@@ -8385,6 +9450,21 @@
     "RewardsCmd.OfferCustom (RelicReward random)",
     "PotionReward (random)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "INJURY"
+     ],
+     "encounters": [
+      "PUNCH_OFF_EVENT_ENCOUNTER"
+     ],
+     "monsters": [
+      "PUNCH_CONSTRUCT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Injury"
@@ -8404,6 +9484,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "combat layout + event combat + rewards",
    "port_batch": 4,
    "notes": [
@@ -8610,7 +9694,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -8630,6 +9714,17 @@
     "lock potions during the event"
    ],
    "kernel_requirements": [
+    "PlayerCmd.LoseGold",
+    "PotionCmd.Discard",
+    "RelicCmd.Obtain",
+    "RelicCmd.Remove",
+    "run:event_framework",
+    "run:gold",
+    "run:neow_and_ancients",
+    "run:potions_out_of_combat",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PotionLock (Player.CanUseOrRemovePotions)",
@@ -8640,6 +9735,11 @@
     "PlayerCmd.LoseGold (Spent)",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [
@@ -8651,7 +9751,13 @@
     "fingerprint": "equal",
     "identifier_delta": "Player.CanRemovePotions -> Player.CanUseOrRemovePotions"
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:potions_out_of_combat)"
+   ],
    "tier_reason": "relic grab bag, potion discard, relic removal (no prompt)",
    "port_batch": 2,
    "notes": [
@@ -8822,7 +9928,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -8838,6 +9944,15 @@
     "add curse"
    ],
    "kernel_requirements": [
+    "CardCmd.Downgrade",
+    "CardCmd.Upgrade",
+    "CardPileCmd.Add",
+    "CardPileCmd.AddCurseToDeck",
+    "kernel:card_model_ops",
+    "run:deck",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardCmd.Downgrade",
@@ -8846,6 +9961,15 @@
     "CardPileCmd.Add (Deck)",
     "CardPileCmd.AddCurseToDeck<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "BAD_LUCK"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "BadLuck"
@@ -8867,6 +9991,10 @@
     ]
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "upgrade/downgrade/clone facades",
    "port_batch": 2,
    "notes": [
@@ -9092,7 +10220,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -9111,6 +10239,13 @@
     "relic swap (one of three)"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicCmd.Remove",
+    "run:event_framework",
+    "run:neow_and_ancients",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "StableShuffle (RelicModel.CompareTo)",
@@ -9119,6 +10254,11 @@
     "RelicFactory.PullNextRelicFromFront (eager, at event start)",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [
@@ -9130,6 +10270,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "grab bag + relic removal (no prompt)",
    "port_batch": 2,
    "notes": [
@@ -9298,18 +10442,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromSimpleGridForRewards",
+     "kind": "RewardsGrid",
+     "entry": "CardSelectCmd.FromSimpleGridForRewards",
+     "site": "ROOM_FULL_OF_CHEESE:GORGE",
+     "opened_by": "events:ROOM_FULL_OF_CHEESE",
+     "via": null,
+     "pile": "generated",
      "min": 2,
      "max": 2,
-     "source": "8 generated Common cards",
-     "filter": null,
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": null,
-     "option": "GORGE",
-     "cite": "Models.Events/RoomFullOfCheese.cs:58"
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Events/RoomFullOfCheese.cs:58",
+     "notes": null
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -9324,6 +10474,15 @@
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "CardSelectCmd.FromSimpleGridForRewards",
+    "CreatureCmd.Damage(DamageVar)",
+    "RelicCmd.Obtain",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:rewards",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardFactory.CreateForReward",
     "CardCreationOptions.ForNonCombatWithUniformOdds(filter)",
@@ -9331,6 +10490,15 @@
     "CreatureCmd.Damage (out of combat)",
     "RelicCmd.Obtain<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "CHOSEN_CHEESE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "ChosenCheese"
@@ -9353,6 +10521,10 @@
     "fingerprint_only_v111": []
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "grid pick",
    "port_batch": 3,
    "notes": [
@@ -9548,7 +10720,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -9564,12 +10736,28 @@
     "obtain random relic"
    ],
    "kernel_requirements": [
+    "CreatureCmd.Damage(DamageVar)",
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:relic_grab_bags",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "RelicCmd.Obtain",
     "CreatureCmd.Heal",
     "CreatureCmd.Damage (out of combat)",
     "RelicFactory.PullNextRelicFromFront"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "ROYAL_POISON"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "RoyalPoison"
@@ -9585,6 +10773,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "relic grab bag",
    "port_batch": 2,
    "notes": [],
@@ -9768,29 +10960,41 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForUpgrade",
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "SAPPHIRE_SEED:EAT",
+     "opened_by": "events:SAPPHIRE_SEED",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsUpgradable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "EAT",
-     "cite": "Models.Events/SapphireSeed.cs:96"
+     "context": "Inline",
+     "filter": "IsUpgradable",
+     "cite": "Models.Events/SapphireSeed.cs:96",
+     "notes": "auto when 1 candidate"
     },
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "SAPPHIRE_SEED:PLANT",
+     "opened_by": "events:SAPPHIRE_SEED",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck (precomputed Sown-enchantable list)",
-     "filter": "Sown.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 1 candidate",
-     "option": "PLANT",
-     "cite": "Models.Events/SapphireSeed.cs:164"
+     "context": "Inline",
+     "filter": "Sown.CanEnchant",
+     "cite": "Models.Events/SapphireSeed.cs:164",
+     "notes": "auto when <= 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "heal",
@@ -9798,6 +11002,14 @@
     "enchant card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardCmd.Upgrade",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "CardSelectCmd.FromDeckForUpgrade",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.Heal",
     "CardSelectCmd.FromDeckForUpgrade",
@@ -9805,6 +11017,15 @@
     "CardSelectCmd.FromDeckForEnchantment(cards list overload)",
     "CardCmd.Enchant<Sown>"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "SOWN"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Sown"
@@ -9818,6 +11039,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "upgrade and enchant prompts",
    "port_batch": 3,
    "notes": [
@@ -10057,27 +11282,50 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "SELF_HELP_BOOK:READ_*",
+     "opened_by": "events:SELF_HELP_BOOK",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "enchantment.CanEnchant && card.Type == required type",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "READ_*",
-     "cite": "Models.Events/SelfHelpBook.cs:280"
+     "context": "Inline",
+     "filter": "enchantment.CanEnchant && card.Type == required type",
+     "cite": "Models.Events/SelfHelpBook.cs:280",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "enchant card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardSelectCmd.FromDeckForEnchantment(additionalFilter)",
     "CardCmd.Enchant<T>(amount 2)"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "SHARP",
+      "NIMBLE",
+      "SWIFT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Sharp",
@@ -10102,6 +11350,10 @@
     ]
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant prompt",
    "port_batch": 3,
    "notes": [],
@@ -10295,7 +11547,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -10309,12 +11561,22 @@
     "repeatable option loop"
    ],
    "kernel_requirements": [
+    "CardPileCmd.RemoveFromDeck",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardPileCmd.RemoveFromDeck",
     "CreatureCmd.Damage (out of combat)",
     "CardModel identity (HashSet of skipped cards, GetType comparison)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -10330,6 +11592,10 @@
     ]
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "known-card removal and HP",
    "port_batch": 1,
    "notes": [
@@ -10521,30 +11787,51 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "SPIRALING_WHIRLPOOL:OBSERVE",
+     "opened_by": "events:SPIRALING_WHIRLPOOL",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Spiral.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "OBSERVE",
-     "cite": "Models.Events/SpiralingWhirlpool.cs:116"
+     "context": "Inline",
+     "filter": "Spiral.CanEnchant",
+     "cite": "Models.Events/SpiralingWhirlpool.cs:116",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "enchant card (choice)",
     "heal (percent of max HP)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant<Spiral>",
     "CreatureCmd.Heal",
     "DynamicVar.IntValue truncation"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "SPIRAL"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Spiral"
@@ -10558,6 +11845,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant prompt",
    "port_batch": 3,
    "notes": [],
@@ -10735,18 +12026,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForUpgrade",
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "SPIRIT_GRAFTER:REJECTION",
+     "opened_by": "events:SPIRIT_GRAFTER",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsUpgradable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "REJECTION",
-     "cite": "Models.Events/SpiritGrafter.cs:162"
+     "context": "Inline",
+     "filter": "IsUpgradable",
+     "cite": "Models.Events/SpiritGrafter.cs:162",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "heal",
@@ -10755,6 +12052,14 @@
     "lose HP"
    ],
    "kernel_requirements": [
+    "CardCmd.Upgrade",
+    "CardPileCmd.Add",
+    "CardSelectCmd.FromDeckForUpgrade",
+    "run:deck",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.Heal",
     "RunState.CreateCard<T>",
@@ -10763,6 +12068,15 @@
     "CardCmd.Upgrade",
     "CreatureCmd.Damage (out of combat)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "METAMORPHOSIS"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Metamorphosis"
@@ -10776,6 +12090,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "upgrade prompt",
    "port_batch": 3,
    "notes": [],
@@ -10989,18 +12307,24 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "STONE_OF_ALL_TIME:PUSH",
+     "opened_by": "events:STONE_OF_ALL_TIME",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Vigorous.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "PUSH",
-     "cite": "Models.Events/StoneOfAllTime.cs:184"
+     "context": "Inline",
+     "filter": "Vigorous.CanEnchant",
+     "cite": "Models.Events/StoneOfAllTime.cs:184",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -11023,6 +12347,15 @@
     "lock potions during the event"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "PotionCmd.Discard",
+    "kernel:enchantments",
+    "run:event_framework",
+    "run:potions_out_of_combat",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PotionLock (Player.CanUseOrRemovePotions)",
@@ -11032,6 +12365,15 @@
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant(enchantment, amount 8)"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "VIGOROUS"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Vigorous"
@@ -11046,6 +12388,10 @@
     "identifier_delta": "Player.CanRemovePotions -> Player.CanUseOrRemovePotions"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant prompt",
    "port_batch": 3,
    "notes": [
@@ -11237,7 +12583,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -11252,12 +12598,27 @@
     "lose HP"
    ],
    "kernel_requirements": [
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "RelicCmd.Obtain<T>",
     "PlayerCmd.GainGold",
     "CreatureCmd.Damage (out of combat)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "SWORD_OF_STONE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "SwordOfStone"
@@ -11271,6 +12632,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "relic/gold/HP",
    "port_batch": 1,
    "notes": [
@@ -11447,7 +12812,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -11461,11 +12826,26 @@
     "add curse"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCurseToDeck",
+    "PlayerCmd.GainGold",
+    "run:deck",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PlayerCmd.GainGold",
     "CardPileCmd.AddCurseToDeck<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "GREED"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Greed"
@@ -11479,6 +12859,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "gold and curse",
    "port_batch": 1,
    "notes": [],
@@ -11663,29 +13047,41 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "SYMBIOTE:APPROACH",
+     "opened_by": "events:SYMBIOTE",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Corrupted.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "APPROACH",
-     "cite": "Models.Events/Symbiote.cs:54"
+     "context": "Inline",
+     "filter": "Corrupted.CanEnchant",
+     "cite": "Models.Events/Symbiote.cs:54",
+     "notes": "auto when 1 candidate"
     },
     {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "SYMBIOTE:KILL_WITH_FIRE",
+     "opened_by": "events:SYMBIOTE",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Type != Quest && IsTransformable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "KILL_WITH_FIRE",
-     "cite": "Models.Events/Symbiote.cs:145"
+     "context": "Inline",
+     "filter": "Type != Quest && IsTransformable",
+     "cite": "Models.Events/Symbiote.cs:145",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -11699,6 +13095,15 @@
     "transform card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardCmd.TransformToRandom",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "CardSelectCmd.FromDeckForTransformation",
+    "kernel:card_generation",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardSelectCmd.FromDeckForEnchantment",
@@ -11706,6 +13111,15 @@
     "CardSelectCmd.FromDeckForTransformation",
     "CardCmd.TransformToRandom(rng)"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "CORRUPTED"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Corrupted"
@@ -11721,6 +13135,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant / transform prompts",
    "port_batch": 3,
    "notes": [],
@@ -11917,7 +13335,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -11935,6 +13353,11 @@
     "push-your-luck page chain"
    ],
    "kernel_requirements": [
+    "CardCmd.Upgrade",
+    "run:event_framework",
+    "run:run_end"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CreatureCmd.LoseMaxHp",
@@ -11942,6 +13365,11 @@
     "CardCmd.Upgrade",
     "CreatureCmd.Heal"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [],
@@ -11951,6 +13379,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "random upgrades + out-of-combat kill",
    "port_batch": 2,
    "notes": [
@@ -12133,21 +13565,52 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "Claws",
-     "prompts": [
-      "CardSelectCmd.FromDeckForTransformation"
-     ],
-     "file": "Models.Relics/Claws.cs"
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "CLAWS:AfterObtained",
+     "opened_by": "relics:CLAWS",
+     "via": "relics:CLAWS",
+     "pile": "Deck",
+     "min": 0,
+     "max": 6,
+     "require_confirm": true,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/Claws.cs:124",
+     "notes": "RMC=true; Cancelable=false"
     },
     {
-     "relic": "TriBoomerang",
-     "prompts": [
-      "CardSelectCmd.FromDeckForEnchantment"
-     ],
-     "file": "Models.Relics/TriBoomerang.cs"
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "TRI_BOOMERANG:AfterObtained",
+     "opened_by": "relics:TRI_BOOMERANG",
+     "via": "relics:TRI_BOOMERANG",
+     "pile": "Deck",
+     "min": 3,
+     "max": 3,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/TriBoomerang.cs:114",
+     "notes": null
+    }
+   ],
+   "phases": [
+    {
+     "phase": "RestSite",
+     "role": "modifies",
+     "entry": "TryModifyRestSiteOptions",
+     "site": "MEAT_CLEAVER:TryModifyRestSiteOptions",
+     "opened_by": "relics:MEAT_CLEAVER",
+     "via": "relics:MEAT_CLEAVER",
+     "detail": "adds Cook",
+     "cite": "Models.Relics/MeatCleaver.cs:15"
     }
    ],
    "rng_streams": [
@@ -12163,12 +13626,40 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "EnchantmentModel.CanEnchant",
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
     "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)",
     "EnchantmentModel Instinct.CanEnchant"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "INSTINCT"
+     ],
+     "relics": [
+      "CLAWS",
+      "CROSSBOW",
+      "IRON_CLUB",
+      "MEAT_CLEAVER",
+      "SAI",
+      "SPIKED_GAUNTLETS",
+      "TANXS_WHISTLE",
+      "THROWING_AXE",
+      "WAR_HAMMER",
+      "TRI_BOOMERANG"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "Claws",
@@ -12194,6 +13685,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework",
    "port_batch": 1,
    "notes": [],
@@ -12409,17 +13904,34 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "pay gold for fixed relic",
     "obtain fixed relic"
    ],
    "kernel_requirements": [
+    "PlayerCmd.LoseGold",
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:gold"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "PlayerCmd.LoseGold (Spent)",
     "RelicCmd.Obtain<T>"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "BONE_TEA",
+      "EMBER_TEA",
+      "TEA_OF_DISCOURTESY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "BoneTea",
@@ -12435,6 +13947,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "gold and fixed relics",
    "port_batch": 1,
    "notes": [
@@ -12628,35 +14144,79 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "YummyCookie",
-     "prompts": [
-      "CardSelectCmd.FromDeckForUpgrade"
-     ],
-     "file": "Models.Relics/YummyCookie.cs"
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "YUMMY_COOKIE:AfterObtained",
+     "opened_by": "relics:YUMMY_COOKIE",
+     "via": "relics:YUMMY_COOKIE",
+     "pile": "Deck",
+     "min": 4,
+     "max": 4,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/YummyCookie.cs:156",
+     "notes": "UpgradeSelectionPrompt"
     },
     {
-     "relic": "BiiigHug",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/BiiigHug.cs"
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "BIIIG_HUG:AfterObtained",
+     "opened_by": "relics:BIIIG_HUG",
+     "via": "relics:BIIIG_HUG",
+     "pile": "Deck",
+     "min": 4,
+     "max": 4,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/BiiigHug.cs:225",
+     "notes": "RemoveSelectionPrompt"
     },
     {
-     "relic": "ToastyMittens",
-     "prompts": [
-      "CardSelectCmd.FromHand"
-     ],
-     "file": "Models.Relics/ToastyMittens.cs"
+     "kind": "HandSelect",
+     "entry": "CardSelectCmd.FromHand",
+     "site": "TOASTY_MITTENS:AfterPlayerTurnStart",
+     "opened_by": "relics:TOASTY_MITTENS",
+     "via": "relics:TOASTY_MITTENS",
+     "pile": "Hand",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "TurnSetup",
+     "filter": null,
+     "cite": "Models.Relics/ToastyMittens.cs:187",
+     "notes": "every turn; turn-setup deferral (SetupPlayerTurn context)"
+    }
+   ],
+   "phases": [
+    {
+     "phase": "RestSite",
+     "role": "modifies",
+     "entry": "TryModifyRestSiteOptions",
+     "site": "PUMPKIN_CANDLE:TryModifyRestSiteOptions",
+     "opened_by": "relics:PUMPKIN_CANDLE",
+     "via": "relics:PUMPKIN_CANDLE",
+     "detail": "adds Kindle",
+     "cite": "Models.Relics/PumpkinCandle.cs:77"
     },
     {
-     "relic": "ToyBox",
-     "prompts": [
-      "RewardsCmd.OfferCustom"
-     ],
-     "file": "Models.Relics/ToyBox.cs"
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "TOY_BOX:AfterObtained",
+     "opened_by": "relics:TOY_BOX",
+     "via": "relics:TOY_BOX",
+     "detail": "5 wax relic rewards",
+     "cite": "Models.Relics/ToyBox.cs:330"
     }
    ],
    "rng_streams": [
@@ -12672,12 +14232,36 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
     "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)",
     "CardModel.Tags (Strike) + Rarity Basic"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "VERY_HOT_COCOA",
+      "YUMMY_COOKIE",
+      "NUTRITIOUS_SOUP",
+      "BIIIG_HUG",
+      "STORYBOOK",
+      "TOASTY_MITTENS",
+      "GOLDEN_COMPASS",
+      "PUMPKIN_CANDLE",
+      "TOY_BOX",
+      "SEAL_OF_GOLD"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "VeryHotCocoa",
@@ -12700,6 +14284,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework",
    "port_batch": 1,
    "notes": [],
@@ -12903,7 +14491,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "RunRng.Niche",
@@ -12923,6 +14511,11 @@
     "dialogue"
    ],
    "kernel_requirements": [
+    "run:event_combat",
+    "run:event_framework",
+    "run:run_end"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CombatLayout (EventCombatSynchronizer.InitializeForEvent)",
@@ -12930,6 +14523,18 @@
     "ScoreUtility.CalculateScore (display)",
     "profile Progress wins (dialogue choice, cosmetic)"
    ],
+   "dependencies": {
+    "requires": {
+     "encounters": [
+      "THE_ARCHITECT_EVENT_ENCOUNTER"
+     ],
+     "monsters": [
+      "ARCHITECT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "encounters": [
      "TheArchitectEventEncounter"
@@ -12960,7 +14565,13 @@
      "STR \"Hit\""
     ]
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:event_combat)"
+   ],
    "tier_reason": "combat layout + terminal victory; dialogue has no rule effect",
    "port_batch": 1,
    "notes": [
@@ -13119,20 +14730,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "CardReward x1 (3 upgraded cards)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "POTION",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "THE_FUTURE_OF_POTIONS:POTION",
+     "opened_by": "events:THE_FUTURE_OF_POTIONS",
+     "via": null,
+     "detail": "CardReward x1 (3 upgraded cards); max 1",
      "cite": "Models.Events/TheFutureOfPotions.cs:229"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -13153,6 +14763,15 @@
     "lock potions during the event"
    ],
    "kernel_requirements": [
+    "CardCmd.Upgrade",
+    "PotionCmd.Discard",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:potions_out_of_combat",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PotionLock (Player.CanUseOrRemovePotions)",
@@ -13162,6 +14781,11 @@
     "RewardsCmd.OfferCustom (CardReward)",
     "CardCmd.Upgrade"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "none",
    "unlock_progress_dependence": [
@@ -13174,6 +14798,10 @@
     "identifier_delta": "Player.CanRemovePotions -> Player.CanUseOrRemovePotions"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen",
    "port_batch": 3,
    "notes": [
@@ -13369,20 +14997,19 @@
      "notes": "normal Monster-room rewards plus the key"
     }
    ],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "EventCombat",
-     "min": null,
-     "max": null,
-     "source": "combat",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "FIGHT",
+     "phase": "EventCombat",
+     "role": "opens",
+     "entry": "EventCombat",
+     "site": "THE_LANTERN_KEY:FIGHT",
+     "opened_by": "events:THE_LANTERN_KEY",
+     "via": null,
+     "detail": "combat",
      "cite": "Models.Events/TheLanternKey.cs:117"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "RunRng.Niche",
@@ -13404,12 +15031,33 @@
     "combat-layout event"
    ],
    "kernel_requirements": [
+    "PlayerCmd.GainGold",
+    "run:event_combat",
+    "run:event_framework",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CombatLayout (EventCombatSynchronizer.InitializeForEvent)",
     "EventCombat (extra rewards)",
     "SpecialCardReward",
     "PlayerCmd.GainGold"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "LANTERN_KEY"
+     ],
+     "encounters": [
+      "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER"
+     ],
+     "monsters": [
+      "MYSTERIOUS_KNIGHT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "LanternKey"
@@ -13429,6 +15077,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "combat layout + event combat",
    "port_batch": 4,
    "notes": [
@@ -13612,20 +15264,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "PotionReward (random)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "SLOWLY_FIND_AN_EXIT",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "THE_LEGENDS_WERE_TRUE:SLOWLY_FIND_AN_EXIT",
+     "opened_by": "events:THE_LEGENDS_WERE_TRUE",
+     "via": null,
+     "detail": "PotionReward (random); max 1",
      "cite": "Models.Events/TheLegendsWereTrue.cs:190"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -13640,6 +15291,18 @@
     "potion reward"
    ],
    "kernel_requirements": [
+    "CardModel.AfterCreated",
+    "CardPileCmd.Add",
+    "CreatureCmd.Damage(DamageVar)",
+    "ModifyGeneratedMap",
+    "RewardsCmd.OfferCustom",
+    "run:deck",
+    "run:event_framework",
+    "run:map_generation",
+    "run:rewards",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "RunState.CreateCard<SpoilsMap> (AfterCreated sets SpoilsActIndex=1)",
     "Hook.ModifyGeneratedMap (SpoilsMap -> SpoilsActMap for act index 1)",
@@ -13648,6 +15311,15 @@
     "RewardsCmd.OfferCustom (PotionReward)",
     "CardPileCmd.Add"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "SPOILS_MAP"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "SpoilsMap"
@@ -13663,6 +15335,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen; SpoilsMap is cross-act map content",
    "port_batch": 3,
    "notes": [
@@ -13847,7 +15523,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -13869,6 +15545,15 @@
     "add curse"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCurseToDeck",
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "run:deck",
+    "run:event_framework",
+    "run:relic_grab_bags",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CreatureCmd.Damage (out of combat)",
@@ -13877,6 +15562,15 @@
     "CardPileCmd.AddCurseToDeck<T>",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "CLUMSY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Clumsy"
@@ -13892,6 +15586,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "relic grab bag",
    "port_batch": 2,
    "notes": [],
@@ -14151,7 +15849,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -14171,6 +15869,12 @@
     "multi-page"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "kernel:per_instance_state",
+    "run:event_framework",
+    "run:save_import"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "MadScience card state (TinkerTimeType, TinkerTimeRider) cloned/serialized with the deck",
@@ -14178,6 +15882,22 @@
     "RunState.CreateCard<MadScience> (hover-tip creations have no rule effect)",
     "CardPileCmd.Add"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "MAD_SCIENCE"
+     ],
+     "powers": [
+      "WEAK_POWER",
+      "VULNERABLE_POWER",
+      "STRANGLE_POWER",
+      "STRENGTH_POWER",
+      "DEXTERITY_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "MadScience"
@@ -14198,6 +15918,10 @@
     "fingerprint": "equal"
    },
    "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rider arrays unreadable in v0.111.0; MadScience rider state is cross-cutting card content",
    "port_batch": 6,
    "notes": [
@@ -14417,7 +16141,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -14433,6 +16157,14 @@
     "add random card from a fixed list"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "run:deck",
+    "run:event_framework",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CreatureCmd.Damage (out of combat)",
@@ -14441,6 +16173,31 @@
     "RunState.CreateCard",
     "CardPileCmd.Add (Deck)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "CALTROPS",
+      "CLASH",
+      "DISTRACTION",
+      "DUAL_WIELD",
+      "ENTRENCH",
+      "HELLO_WORLD",
+      "OUTMANEUVER",
+      "REBOUND",
+      "RIP_AND_TEAR",
+      "STACK"
+     ],
+     "relics": [
+      "DARKSTONE_PERIAPT",
+      "DREAM_CATCHER",
+      "HAND_DRILL",
+      "MAW_BANK",
+      "THE_BOOT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "DarkstonePeriapt",
@@ -14472,6 +16229,10 @@
     "fingerprint": "equal"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "tier_reason": "fixed lists on the event Rng",
    "port_batch": 1,
    "notes": [
@@ -14788,52 +16549,62 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForUpgrade",
+     "kind": "DeckUpgrade",
+     "entry": "CardSelectCmd.FromDeckForUpgrade",
+     "site": "TRIAL:MERCHANT INNOCENT",
+     "opened_by": "events:TRIAL",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
      "filter": "IsUpgradable",
-     "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "MERCHANT INNOCENT",
-     "cite": "Models.Events/Trial.cs:195"
+     "cite": "Models.Events/Trial.cs:195",
+     "notes": "auto when <= 2 candidates"
     },
     {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "TRIAL:NONDESCRIPT INNOCENT",
+     "opened_by": "events:TRIAL",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
      "filter": "Type != Quest && IsTransformable",
-     "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "NONDESCRIPT INNOCENT",
-     "cite": "Models.Events/Trial.cs:575"
-    },
+     "cite": "Models.Events/Trial.cs:575",
+     "notes": "auto when <= 2 candidates"
+    }
+   ],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 2,
-     "source": "CardReward x2",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "NONDESCRIPT GUILTY",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "TRIAL:NONDESCRIPT GUILTY",
+     "opened_by": "events:TRIAL",
+     "via": null,
+     "detail": "CardReward x2; max 2",
      "cite": "Models.Events/Trial.cs:462"
     },
     {
-     "type": "AbandonRunConfirm",
-     "min": null,
-     "max": null,
-     "source": "modal",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "DOUBLE_DOWN",
-     "cite": "Models.Events/Trial.cs:741",
-     "notes": "NAbandonRunConfirmPopup: confirm = abandon (run lost), cancel = back to the REJECT page"
+     "phase": "AbandonRun",
+     "role": "opens",
+     "entry": "AbandonRunConfirm",
+     "site": "TRIAL:DOUBLE_DOWN",
+     "opened_by": "events:TRIAL",
+     "via": null,
+     "detail": "modal; NAbandonRunConfirmPopup: confirm = abandon (run lost), cancel = back to the REJECT page",
+     "cite": "Models.Events/Trial.cs:741"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "Rng.Chaotic",
@@ -14878,6 +16649,23 @@
     "abandon run"
    ],
    "kernel_requirements": [
+    "CardCmd.TransformToRandom",
+    "CardCmd.Upgrade",
+    "CardPileCmd.AddCurseToDeck",
+    "CardSelectCmd.FromDeckForTransformation",
+    "CardSelectCmd.FromDeckForUpgrade",
+    "PlayerCmd.GainGold",
+    "RelicCmd.Obtain",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:deck",
+    "run:event_framework",
+    "run:relic_grab_bags",
+    "run:rewards",
+    "run:run_end",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "CardPileCmd.AddCurseToDeck<T>",
@@ -14892,6 +16680,17 @@
     "abandon-run terminal action (node-layer popup)",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "REGRET",
+      "SHAME",
+      "DOUBT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Regret",
@@ -14907,6 +16706,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "upgrade/transform prompts, rewards screen, abandon modal",
    "port_batch": 3,
    "notes": [
@@ -15102,7 +16905,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -15118,6 +16921,12 @@
     "obtain random relic"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCursesToDeck",
+    "RelicCmd.Obtain",
+    "run:event_framework",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.Heal",
     "CardPileCmd.AddCursesToDeck",
@@ -15125,6 +16934,15 @@
     "RelicFactory.PullNextRelicFromFront",
     "RelicCmd.Obtain"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "POOR_SLEEP"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "PoorSleep"
@@ -15140,6 +16958,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "relic grab bag",
    "port_batch": 2,
    "notes": [
@@ -15348,30 +17170,60 @@
     ]
    },
    "combats": [],
-   "prompts": [],
-   "indirect_prompts": [
+   "prompts": [
     {
-     "relic": "WhisperingEarring",
-     "prompts": [
-      "CardSelectCmd.PushSelector"
-     ],
-     "file": "Models.Relics/WhisperingEarring.cs"
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "PRESERVED_FOG:AfterObtained",
+     "opened_by": "relics:PRESERVED_FOG",
+     "via": "relics:PRESERVED_FOG",
+     "pile": "Deck",
+     "min": 3,
+     "max": 3,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/PreservedFog.cs:170",
+     "notes": "RemoveSelectionPrompt"
     },
     {
-     "relic": "PreservedFog",
-     "prompts": [
-      "CardSelectCmd.FromDeckForRemoval"
-     ],
-     "file": "Models.Relics/PreservedFog.cs"
+     "kind": "SimpleGrid",
+     "entry": "CardSelectCmd.FromSimpleGrid",
+     "site": "CHOICES_PARADOX:AfterPlayerTurnStart",
+     "opened_by": "relics:CHOICES_PARADOX",
+     "via": "relics:CHOICES_PARADOX",
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "TurnSetup",
+     "filter": null,
+     "cite": "Models.Relics/ChoicesParadox.cs:186",
+     "notes": "turn-setup deferral (SetupPlayerTurn context)"
     },
     {
-     "relic": "ChoicesParadox",
-     "prompts": [
-      "CardSelectCmd.FromSimpleGrid"
-     ],
-     "file": "Models.Relics/ChoicesParadox.cs"
+     "kind": "DeckRemove",
+     "entry": "MerchantCardRemovalEntry.OnTryPurchaseWrapper",
+     "site": "LORDS_PARASOL:AfterRoomEntered",
+     "opened_by": "relics:LORDS_PARASOL",
+     "via": "relics:LORDS_PARASOL",
+     "pile": "Deck",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Relics/LordsParasol.cs:549",
+     "notes": "cancelable=false; via shop removal entry"
     }
    ],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -15385,11 +17237,35 @@
     "arrival heal"
    ],
    "kernel_requirements": [
+    "RelicCmd.Obtain",
+    "RelicModel.AfterObtained",
+    "run:event_framework",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
     "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "BLOOD_SOAKED_ROSE",
+      "WHISPERING_EARRING",
+      "FIDDLE",
+      "PRESERVED_FOG",
+      "SERE_TALON",
+      "DISTINGUISHED_CAPE",
+      "CHOICES_PARADOX",
+      "MUSIC_BOX",
+      "LORDS_PARASOL",
+      "JEWELED_MASK"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "BloodSoakedRose",
@@ -15414,6 +17290,10 @@
     "fingerprint": "equal"
    },
    "tier": 2,
+   "tier_with_deps": 4,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "tier_reason": "ancient framework",
    "port_batch": 1,
    "notes": [],
@@ -15597,20 +17477,19 @@
     ]
    },
    "combats": [],
-   "prompts": [
+   "prompts": [],
+   "phases": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 4,
-     "source": "2 PotionReward + 2 RelicReward",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "UNLOCK_CHEST",
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "WAR_HISTORIAN_REPY:UNLOCK_CHEST",
+     "opened_by": "events:WAR_HISTORIAN_REPY",
+     "via": null,
+     "detail": "2 PotionReward + 2 RelicReward; max 4",
      "cite": "Models.Events/WarHistorianRepy.cs:708"
     }
    ],
-   "indirect_prompts": [],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -15626,6 +17505,16 @@
     "set run flag"
    ],
    "kernel_requirements": [
+    "CardPileCmd.RemoveFromDeck",
+    "ModifyNextEvent",
+    "PlayerCmd.CompleteQuest",
+    "RelicCmd.Obtain",
+    "RewardsCmd.OfferCustom",
+    "run:event_framework",
+    "run:run_scope_hooks",
+    "run:save_import"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "Hook.ModifyNextEvent (deck-card listener at run scope)",
     "PlayerCmd.CompleteQuest",
@@ -15634,6 +17523,18 @@
     "RewardsCmd.OfferCustom",
     "ExtraRunFields.FreedRepy (save field)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "LANTERN_KEY"
+     ],
+     "relics": [
+      "HISTORY_COURSE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "LanternKey"
@@ -15650,6 +17551,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "rewards screen; reached only through the LanternKey chain",
    "port_batch": 5,
    "notes": [
@@ -15876,41 +17781,70 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "WATERLOGGED_SCRIPTORIUM:TENTACLE_QUILL",
+     "opened_by": "events:WATERLOGGED_SCRIPTORIUM",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Steady.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "TENTACLE_QUILL",
-     "cite": "Models.Events/WaterloggedScriptorium.cs:266"
+     "context": "Inline",
+     "filter": "Steady.CanEnchant",
+     "cite": "Models.Events/WaterloggedScriptorium.cs:266",
+     "notes": "auto when 1 candidate"
     },
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "WATERLOGGED_SCRIPTORIUM:PRICKLY_SPONGE",
+     "opened_by": "events:WATERLOGGED_SCRIPTORIUM",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "Steady.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "PRICKLY_SPONGE",
-     "cite": "Models.Events/WaterloggedScriptorium.cs:151"
+     "context": "Inline",
+     "filter": "Steady.CanEnchant",
+     "cite": "Models.Events/WaterloggedScriptorium.cs:151",
+     "notes": "auto when <= 2 candidates"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "gain max HP",
     "pay gold to enchant (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "PlayerCmd.LoseGold",
+    "kernel:enchantments",
+    "run:event_framework",
+    "run:gold"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CreatureCmd.GainMaxHp",
     "PlayerCmd.LoseGold (Spent)",
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant<Steady>"
    ],
+   "dependencies": {
+    "requires": {
+     "enchantments": [
+      "STEADY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "enchantments": [
      "Steady"
@@ -15924,6 +17858,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "enchant prompts",
    "port_batch": 3,
    "notes": [],
@@ -16194,7 +18132,7 @@
    },
    "combats": [],
    "prompts": [],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [
     {
      "stream": "grab bag (no RNG draw)",
@@ -16221,6 +18159,17 @@
     "downgrade random card"
    ],
    "kernel_requirements": [
+    "CardCmd.Downgrade",
+    "PlayerCmd.LoseGold",
+    "RelicCmd.Obtain",
+    "RelicModel.IsAllowedInShops",
+    "run:event_framework",
+    "run:gold",
+    "run:history_and_score",
+    "run:relic_grab_bags",
+    "run:save_import"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "RelicFactory.PullNextRelicFromFront(rarity, filter) (no rarity roll)",
@@ -16231,6 +18180,16 @@
     "profile input SaveManager.Progress.WongoPoints (explicit sim parameter)",
     "ExtraPlayerFields.WongoPoints (save field)"
    ],
+   "dependencies": {
+    "requires": {
+     "relics": [
+      "WONGOS_MYSTERY_TICKET",
+      "WONGO_CUSTOMER_APPRECIATION_BADGE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "relics": [
      "WongosMysteryTicket",
@@ -16258,7 +18217,13 @@
      "STR \"WongoPointAmount\""
     ]
    },
-   "tier": 2,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (RelicModel.IsAllowedInShops, run:save_import)"
+   ],
    "tier_reason": "grab bag + profile parameter (no prompt)",
    "port_batch": 2,
    "notes": [
@@ -16433,29 +18398,35 @@
    "combats": [],
    "prompts": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 1,
-     "source": "PotionReward (random)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "BOTTLE",
-     "cite": "Models.Events/Wellspring.cs:243"
-    },
-    {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "WELLSPRING:BATHE",
+     "opened_by": "events:WELLSPRING",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsRemovable; curses first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "BATHE",
-     "cite": "Models.Events/Wellspring.cs:136"
+     "context": "Inline",
+     "filter": "IsRemovable; curses first",
+     "cite": "Models.Events/Wellspring.cs:136",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [
+    {
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "WELLSPRING:BOTTLE",
+     "opened_by": "events:WELLSPRING",
+     "via": null,
+     "detail": "PotionReward (random); max 1",
+     "cite": "Models.Events/Wellspring.cs:243"
+    }
+   ],
    "rng_streams": [
     {
      "stream": "PlayerRng.Rewards",
@@ -16470,6 +18441,14 @@
     "add curse"
    ],
    "kernel_requirements": [
+    "CardPileCmd.AddCursesToDeck",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForRemoval",
+    "RewardsCmd.OfferCustom",
+    "run:event_framework",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "PotionPools",
     "RewardsCmd.OfferCustom (PotionReward)",
@@ -16477,6 +18456,15 @@
     "CardPileCmd.RemoveFromDeck",
     "CardPileCmd.AddCursesToDeck"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "GUILTY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Guilty"
@@ -16492,6 +18480,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "removal prompt + rewards screen",
    "port_batch": 3,
    "notes": [],
@@ -16685,29 +18677,35 @@
    "combats": [],
    "prompts": [
     {
-     "type": "RewardsCmd.OfferCustom",
-     "min": 0,
-     "max": 2,
-     "source": "2 PotionRewards (random)",
-     "filter": null,
-     "cancelable": false,
-     "auto_resolve": null,
-     "option": "GOLD",
-     "cite": "Models.Events/WhisperingHollow.cs:90"
-    },
-    {
-     "type": "CardSelectCmd.FromDeckForTransformation",
+     "kind": "DeckTransform",
+     "entry": "CardSelectCmd.FromDeckForTransformation",
+     "site": "WHISPERING_HOLLOW:HUG",
+     "opened_by": "events:WHISPERING_HOLLOW",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Type != Quest && IsTransformable",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "HUG",
-     "cite": "Models.Events/WhisperingHollow.cs:175"
+     "context": "Inline",
+     "filter": "Type != Quest && IsTransformable",
+     "cite": "Models.Events/WhisperingHollow.cs:175",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [
+    {
+     "phase": "Rewards",
+     "role": "opens",
+     "entry": "RewardsCmd.OfferCustom",
+     "site": "WHISPERING_HOLLOW:GOLD",
+     "opened_by": "events:WHISPERING_HOLLOW",
+     "via": null,
+     "detail": "2 PotionRewards (random); max 2",
+     "cite": "Models.Events/WhisperingHollow.cs:90"
+    }
+   ],
    "rng_streams": [
     {
      "stream": "EventRng",
@@ -16734,6 +18732,17 @@
     "lose HP"
    ],
    "kernel_requirements": [
+    "CardCmd.TransformToRandom",
+    "CardSelectCmd.FromDeckForTransformation",
+    "PlayerCmd.LoseGold",
+    "RewardsCmd.OfferCustom",
+    "kernel:card_generation",
+    "run:event_framework",
+    "run:gold",
+    "run:rewards",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "EventRng",
     "PlayerCmd.LoseGold (Spent)",
@@ -16742,6 +18751,11 @@
     "CardCmd.TransformToRandom(rng)",
     "CreatureCmd.Damage (out of combat)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {},
    "ascension_sensitivity": "A4 TightBelt affects how many potions fit",
    "unlock_progress_dependence": [
@@ -16753,6 +18767,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "transform prompt + rewards screen",
    "port_batch": 3,
    "notes": [],
@@ -16979,41 +18997,74 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckGeneric",
+     "kind": "DeckGeneric",
+     "entry": "CardSelectCmd.FromDeckGeneric",
+     "site": "WOOD_CARVINGS:BIRD / TORUS",
+     "opened_by": "events:WOOD_CARVINGS",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsTransformable && Rarity == Basic",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "BIRD / TORUS",
-     "cite": "Models.Events/WoodCarvings.cs:73"
+     "context": "Inline",
+     "filter": "IsTransformable && Rarity == Basic",
+     "cite": "Models.Events/WoodCarvings.cs:73",
+     "notes": "auto when 1 candidate"
     },
     {
-     "type": "CardSelectCmd.FromDeckForEnchantment",
+     "kind": "DeckEnchant",
+     "entry": "CardSelectCmd.FromDeckForEnchantment",
+     "site": "WOOD_CARVINGS:SNAKE",
+     "opened_by": "events:WOOD_CARVINGS",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "Slither.CanEnchant",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "SNAKE",
-     "cite": "Models.Events/WoodCarvings.cs:154"
+     "context": "Inline",
+     "filter": "Slither.CanEnchant",
+     "cite": "Models.Events/WoodCarvings.cs:154",
+     "notes": "auto when 1 candidate"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "transform to fixed card (choice)",
     "enchant card (choice)"
    ],
    "kernel_requirements": [
+    "CardCmd.Enchant",
+    "CardCmd.TransformTo",
+    "CardSelectCmd.FromDeckForEnchantment",
+    "CardSelectCmd.FromDeckGeneric",
+    "kernel:enchantments",
+    "run:event_framework"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "CardSelectCmd.FromDeckGeneric(filter)",
     "CardCmd.TransformTo<T>",
     "CardSelectCmd.FromDeckForEnchantment",
     "CardCmd.Enchant<Slither>"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "PECK",
+      "TORIC_TOUGHNESS"
+     ],
+     "enchantments": [
+      "SLITHER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Peck",
@@ -17031,6 +19082,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "deck prompts",
    "port_batch": 3,
    "notes": [
@@ -17244,35 +19299,56 @@
    "combats": [],
    "prompts": [
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "ZEN_WEAVER:EMOTIONAL_AWARENESS",
+     "opened_by": "events:ZEN_WEAVER",
+     "via": null,
+     "pile": "Deck",
      "min": 1,
      "max": 1,
-     "source": "deck",
-     "filter": "IsRemovable; curses first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when 1 candidate",
-     "option": "EMOTIONAL_AWARENESS",
-     "cite": "Models.Events/ZenWeaver.cs:249"
+     "context": "Inline",
+     "filter": "IsRemovable; curses first",
+     "cite": "Models.Events/ZenWeaver.cs:249",
+     "notes": "auto when 1 candidate"
     },
     {
-     "type": "CardSelectCmd.FromDeckForRemoval",
+     "kind": "DeckRemove",
+     "entry": "CardSelectCmd.FromDeckForRemoval",
+     "site": "ZEN_WEAVER:ARACHNID_ACUPUNCTURE",
+     "opened_by": "events:ZEN_WEAVER",
+     "via": null,
+     "pile": "Deck",
      "min": 2,
      "max": 2,
-     "source": "deck",
-     "filter": "IsRemovable; curses first",
+     "require_confirm": false,
+     "can_skip": false,
      "cancelable": false,
-     "auto_resolve": "auto when <= 2 candidates",
-     "option": "ARACHNID_ACUPUNCTURE",
-     "cite": "Models.Events/ZenWeaver.cs:249"
+     "context": "Inline",
+     "filter": "IsRemovable; curses first",
+     "cite": "Models.Events/ZenWeaver.cs:249",
+     "notes": "auto when <= 2 candidates"
     }
    ],
-   "indirect_prompts": [],
+   "phases": [],
    "rng_streams": [],
    "mechanics": [
     "pay gold for cards",
     "pay gold to remove cards (choice)"
    ],
    "kernel_requirements": [
+    "CardPileCmd.Add",
+    "CardPileCmd.RemoveFromDeck",
+    "CardSelectCmd.FromDeckForRemoval",
+    "PlayerCmd.LoseGold",
+    "run:deck",
+    "run:event_framework",
+    "run:gold"
+   ],
+   "kernel_requirement_notes": [
     "EventFramework",
     "PlayerCmd.LoseGold (Spent)",
     "RunState.CreateCard<T>",
@@ -17280,6 +19356,15 @@
     "CardSelectCmd.FromDeckForRemoval",
     "CardPileCmd.RemoveFromDeck"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "ENLIGHTENMENT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "content_deps": {
     "cards": [
      "Enlightenment"
@@ -17293,6 +19378,10 @@
     "fingerprint": "equal"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "tier_reason": "removal prompt",
    "port_batch": 3,
    "notes": [

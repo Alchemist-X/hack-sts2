@@ -1,0 +1,6030 @@
+{
+ "schema": "sts2sim.inventory.requirements/v1",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/normalize/normalize.py",
+  "sim/tools/inventory/classify/normalize/catalog.py",
+  "sim/tools/inventory/classify/normalize/requirements.py"
+ ],
+ "key_forms": {
+  "<Cmd>.<Method>": "kernel-gaps.json cmd_facades[<Cmd>] rows named <Method>",
+  "<Cmd>.<Method>(<variant>)": "the overload family of that facade that content_readiness reports as a gap",
+  "<Hook>": "kernel-gaps.json hook_virtuals row",
+  "<Base>.<Virtual>": "kernel-gaps.json model_kind_virtuals[<Base>] row",
+  "<area>:<id>": "a feature without such a row; `rows` joins it to kernel-gaps.json, run-layer-gaps.json or subsystems.json"
+ },
+ "levels": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "status": "P0 sim status from kernel-gaps.json (ported, partial, missing, strip) for facades and hooks; features: missing unless level 1",
+ "selection_rule": "an entry lists the keys its own code needs: W0 texts mapped by normalize/catalog.py plus the missing hooks and Cmd overloads of its file in kernel-gaps.json content_readiness; keys whose facade or hook is already ported are left out",
+ "kind_baselines": {
+  "relics": [
+   "kernel:relic_runtime",
+   "RelicCmd.Obtain",
+   "RelicModel.AfterObtained",
+   "RelicModel.AfterRemoved",
+   "RelicModel.IsAllowed"
+  ],
+  "potions": [
+   "kernel:potion_runtime",
+   "BeforePotionUsed",
+   "AfterPotionUsed",
+   "PotionModel.OnUse",
+   "PotionModel.PassesCustomUsabilityCheck",
+   "PotionModel.CanBeGeneratedInCombat"
+  ],
+  "events": [
+   "run:event_framework",
+   "run:run_state",
+   "run:gold",
+   "run:deck",
+   "RelicCmd.Obtain",
+   "RelicModel.AfterObtained",
+   "CardPileCmd.Add",
+   "CardPileCmd.AddCurseToDeck",
+   "CardPileCmd.AddCursesToDeck",
+   "CardPileCmd.RemoveFromDeck",
+   "PlayerCmd.GainGold",
+   "PlayerCmd.LoseGold",
+   "CreatureCmd.Damage",
+   "CreatureCmd.Damage(DamageVar)",
+   "CreatureCmd.Heal",
+   "CreatureCmd.GainMaxHp",
+   "CreatureCmd.LoseMaxHp"
+  ],
+  "orbs": [
+   "kernel:orbs"
+  ],
+  "enchantments": [
+   "kernel:enchantments"
+  ],
+  "afflictions": [
+   "kernel:afflictions"
+  ],
+  "modifiers": [
+   "kernel:run_modifiers"
+  ],
+  "acts": [
+   "run:acts_room_sets",
+   "run:map_generation"
+  ],
+  "characters": [
+   "run:run_state"
+  ]
+ },
+ "count": 220,
+ "keys": {
+  "AfflictionModel.CanAfflict": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfflictionModel.CanAfflict model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "AfflictionModel/CanAfflict"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "Afflictions (Bound: CanAfflict, CardCmd.AfflictAndPreview, CardCmd.ClearAffliction)"
+   ]
+  },
+  "AfterActEntered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterActEntered hook virtual (R via AfterActEntered)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterActEntered"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "AfterActEntered"
+   ]
+  },
+  "AfterAutoPostPlayPhaseEntered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterAutoPostPlayPhaseEntered hook virtual (G via AfterAutoPostPlayPhaseEntered)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterAutoPostPlayPhaseEntered"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "powers": 2
+   },
+   "w0_texts": [
+    "Hook listener: card in combat piles (AfterAutoPostPlayPhaseEntered)",
+    "Hook.AfterAutoPostPlayPhaseEntered",
+    "Hook.AfterAutoPostPlayPhaseEntered (dispatcher + virtual missing in sim)",
+    "auto post-play phase in the turn loop"
+   ]
+  },
+  "AfterAutoPrePlayPhaseEntered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterAutoPrePlayPhaseEntered hook virtual (G via AfterAutoPrePlayPhaseEntered)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterAutoPrePlayPhaseEntered"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "enchantments": 1,
+    "powers": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "AfterAutoPrePlayPhaseEntered",
+    "Hook.AfterAutoPrePlayPhaseEntered",
+    "Hook.AfterAutoPrePlayPhaseEntered (combat)",
+    "auto pre-play phase in the turn loop"
+   ]
+  },
+  "AfterAutoPrePlayPhaseEnteredEarly": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterAutoPrePlayPhaseEnteredEarly hook virtual (G via AfterAutoPrePlayPhaseEntered)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterAutoPrePlayPhaseEnteredEarly"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": []
+  },
+  "AfterAutoPrePlayPhaseEnteredLate": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterAutoPrePlayPhaseEnteredLate hook virtual (G via AfterAutoPrePlayPhaseEntered)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterAutoPrePlayPhaseEnteredLate"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterAutoPrePlayPhaseEnteredLate (combat)"
+   ]
+  },
+  "AfterCardChangedPiles": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterCardChangedPiles hook virtual (R+C via AfterCardChangedPiles)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterCardChangedPiles"
+    }
+   ],
+   "used_by": {
+    "cards": 6,
+    "modifiers": 1,
+    "potions": 3,
+    "powers": 2,
+    "relics": 26
+   },
+   "w0_texts": [
+    "AfterCardChangedPiles",
+    "CardPileCmd.Add (partial in sim)",
+    "CardPileCmd.Add(list) [sim: AfterCardChangedPiles not dispatched]",
+    "Hook.AfterCardChangedPiles",
+    "Hook.AfterCardChangedPiles (both)"
+   ]
+  },
+  "AfterCardChangedPilesLate": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterCardChangedPilesLate hook virtual (R+C via AfterCardChangedPiles)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterCardChangedPilesLate"
+    }
+   ],
+   "used_by": {
+    "monsters": 1
+   },
+   "w0_texts": []
+  },
+  "AfterCombatEnd": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterCombatEnd hook virtual (R+C via AfterCombatEnd)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterCombatEnd"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "powers": 3,
+    "relics": 40
+   },
+   "w0_texts": [
+    "Hook listener: deck card (AfterCombatEnd, run layer)",
+    "Hook.AfterCombatEnd",
+    "Hook.AfterCombatEnd (both)",
+    "Hook.AfterCombatEnd (missing in sim)"
+   ]
+  },
+  "AfterCombatVictory": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterCombatVictory hook virtual (R+C via AfterCombatVictory)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterCombatVictory"
+    }
+   ],
+   "used_by": {
+    "relics": 5
+   },
+   "w0_texts": [
+    "Hook.AfterCombatVictory (both)",
+    "RelicCmd.Replace at combat victory"
+   ]
+  },
+  "AfterCombatVictoryEarly": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterCombatVictoryEarly hook virtual (R+C via AfterCombatVictory)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterCombatVictoryEarly"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterCombatVictoryEarly (both)"
+   ]
+  },
+  "AfterDiedToDoom": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterDiedToDoom hook virtual (C via AfterDiedToDoom)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterDiedToDoom"
+    }
+   ],
+   "used_by": {
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterDiedToDoom (combat)",
+    "Hook.AfterDiedToDoom (dispatcher, per-listener choice context)"
+   ]
+  },
+  "AfterForge": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterForge hook virtual (G via AfterForge)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterForge"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "Hook.AfterForge"
+   ]
+  },
+  "AfterGoldGained": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterGoldGained hook virtual (R via AfterGoldGained)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterGoldGained"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterGoldGained (run)",
+    "PlayerCmd.GainGold (run gold; ModifyGoldGained/AfterGoldGained)"
+   ]
+  },
+  "AfterItemPurchased": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterItemPurchased hook virtual (R via AfterItemPurchased)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterItemPurchased"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterItemPurchased (run)"
+   ]
+  },
+  "AfterMapGenerated": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterMapGenerated hook virtual (R via AfterMapGenerated)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterMapGenerated"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "Run layer: AfterMapGenerated on deck cards"
+   ]
+  },
+  "AfterModifyingCardPlayResultLocation": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterModifyingCardPlayResultLocation hook virtual (direct on modifiers (Models/CardModel.cs:524))",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterModifyingCardPlayResultLocation"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "powers": 4
+   },
+   "w0_texts": [
+    "Hook.AfterModifyingCardPlayResultLocation",
+    "Hook.ModifyCardPlayResultLocation + AfterModifyingCardPlayResultLocation (missing in sim)"
+   ]
+  },
+  "AfterModifyingCardRewardOptions": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterModifyingCardRewardOptions hook virtual (R via AfterModifyingCardRewardOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterModifyingCardRewardOptions"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.AfterModifyingCardRewardOptions (run)"
+   ]
+  },
+  "AfterModifyingGoldGained": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterModifyingGoldGained hook virtual (R+C via AfterModifyingGoldGained)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterModifyingGoldGained"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.AfterModifyingGoldGained (both)"
+   ]
+  },
+  "AfterModifyingOrbPassiveTriggerCount": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterModifyingOrbPassiveTriggerCount hook virtual (G via AfterModifyingOrbPassiveTriggerCount)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterModifyingOrbPassiveTriggerCount"
+    }
+   ],
+   "used_by": {
+    "orbs": 5,
+    "relics": 1
+   },
+   "w0_texts": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "Hook.AfterModifyingOrbPassiveTriggerCount (combat)"
+   ]
+  },
+  "AfterModifyingRewards": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterModifyingRewards hook virtual (R via AfterModifyingRewards)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterModifyingRewards"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.AfterModifyingRewards (run)"
+   ]
+  },
+  "AfterOrbChanneled": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterOrbChanneled hook virtual (G via AfterOrbChanneled)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterOrbChanneled"
+    }
+   ],
+   "used_by": {
+    "cards": 25,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterOrbChanneled (combat)",
+    "OrbCmd.Channel (Commands/OrbCmd.cs:684: add 1 slot if BaseOrbSlotCount==0 and capacity 0; EvokeNext when full; TryEnqueue; History.OrbChanneled; Hook.AfterOrbChanneled)"
+   ]
+  },
+  "AfterOrbEvoked": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterOrbEvoked hook virtual (G via AfterOrbEvoked)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterOrbEvoked"
+    }
+   ],
+   "used_by": {
+    "cards": 5,
+    "powers": 1
+   },
+   "w0_texts": [
+    "Hook.AfterOrbEvoked",
+    "Hook.AfterOrbEvoked (missing in sim)",
+    "OrbCmd.EvokeNext (Commands/OrbCmd.cs:699; dequeue flag; Hook.AfterOrbEvoked)"
+   ]
+  },
+  "AfterPotionDiscarded": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterPotionDiscarded hook virtual (R+C via AfterPotionDiscarded)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterPotionDiscarded"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterPotionDiscarded (both)"
+   ]
+  },
+  "AfterPotionProcured": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterPotionProcured hook virtual (R+C via AfterPotionProcured)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterPotionProcured"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.AfterPotionProcured (both)",
+    "Potions runtime: PotionCmd.TryToProcure (slot capacity, ShouldProcurePotion, AfterPotionProcured)"
+   ]
+  },
+  "AfterPotionUsed": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterPotionUsed hook virtual (R+C via AfterPotionUsed)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterPotionUsed"
+    }
+   ],
+   "used_by": {
+    "potions": 66,
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.AfterPotionUsed (both)",
+    "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
+   ]
+  },
+  "AfterRestSiteHeal": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterRestSiteHeal hook virtual (R via AfterRestSiteHeal)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterRestSiteHeal"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1,
+    "relics": 2
+   },
+   "w0_texts": [
+    "AfterRestSiteHeal",
+    "Hook.AfterRestSiteHeal (run)"
+   ]
+  },
+  "AfterRoomEntered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterRoomEntered hook virtual (R via AfterRoomEntered)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterRoomEntered"
+    }
+   ],
+   "used_by": {
+    "modifiers": 2,
+    "relics": 33
+   },
+   "w0_texts": [
+    "AfterRoomEntered",
+    "Hook.AfterRoomEntered (run)",
+    "combat-room entry phase: Hook.AfterRoomEntered after CombatManager.SetUpCombat, before StartCombatInternal (Rooms/CombatRoom.cs:417-420)"
+   ]
+  },
+  "AfterStarsGained": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterStarsGained hook virtual (G via AfterStarsGained)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterStarsGained"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "Hook.AfterStarsGained"
+   ]
+  },
+  "AfterStarsSpent": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "AfterStarsSpent hook virtual (G via AfterStarsSpent)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "AfterStarsSpent"
+    }
+   ],
+   "used_by": {
+    "cards": 23,
+    "powers": 1,
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.AfterStarsSpent",
+    "Hook.AfterStarsSpent (combat)",
+    "Star spend hooks"
+   ]
+  },
+  "AttackCommand.FromOsty": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "AttackCommand.FromOsty facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "AttackCommand/FromOsty@765"
+    }
+   ],
+   "used_by": {
+    "cards": 13
+   },
+   "w0_texts": [
+    "AttackCommand.FromOsty"
+   ]
+  },
+  "BeforeCardRemoved": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "BeforeCardRemoved hook virtual (R via BeforeCardRemoved)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "BeforeCardRemoved"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "Run layer: BeforeCardRemoved on deck cards"
+   ]
+  },
+  "BeforeCombatRewardOffered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "BeforeCombatRewardOffered hook virtual (R via BeforeCombatRewardOffered)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "BeforeCombatRewardOffered"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.BeforeCombatRewardOffered (run)"
+   ]
+  },
+  "BeforePotionUsed": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "BeforePotionUsed hook virtual (R+C via BeforePotionUsed)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "BeforePotionUsed"
+    }
+   ],
+   "used_by": {
+    "potions": 66,
+    "powers": 1
+   },
+   "w0_texts": [
+    "Hook.BeforePotionUsed (potions runtime)",
+    "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
+   ]
+  },
+  "BeforeRoomEntered": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "BeforeRoomEntered hook virtual (R via BeforeRoomEntered)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "BeforeRoomEntered"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "Run layer: BeforeRoomEntered on deck cards (RunState.CurrentRoomCount, CurrentMapPoint.PointType)"
+   ]
+  },
+  "CardCmd.Afflict": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.Afflict facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Afflict@2228"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Afflict@2235"
+    }
+   ],
+   "used_by": {
+    "powers": 6
+   },
+   "w0_texts": [
+    "Afflictions (Entangled: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Galvanized: CardCmd.Afflict<T>)",
+    "Afflictions (Hexed: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Ringing: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Smog: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Tainted: CardCmd.Afflict<T>, CardCmd.ClearAffliction, AfflictionModel.Amount)",
+    "CardCmd.Afflict"
+   ]
+  },
+  "CardCmd.AfflictAndPreview": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.AfflictAndPreview facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/AfflictAndPreview@2188"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "Afflictions (Bound: CanAfflict, CardCmd.AfflictAndPreview, CardCmd.ClearAffliction)",
+    "CardCmd.AfflictAndPreview"
+   ]
+  },
+  "CardCmd.ApplyKeyword": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.ApplyKeyword facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/ApplyKeyword@2278"
+    }
+   ],
+   "used_by": {
+    "cards": 4,
+    "powers": 3,
+    "relics": 3
+   },
+   "w0_texts": [
+    "CardCmd.ApplyKeyword",
+    "CardCmd.ApplyKeyword (Commands/CardCmd.cs:2278)",
+    "CardCmd.ApplyKeyword (Retain)"
+   ]
+  },
+  "CardCmd.ApplySingleTurnRetain": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.ApplySingleTurnRetain facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/ApplySingleTurnRetain@2302"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "CardCmd.ApplySingleTurnRetain (Commands/CardCmd.cs:2302; sim has CardInstance.GiveSingleTurnRetain)"
+   ]
+  },
+  "CardCmd.ApplySingleTurnSly": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.ApplySingleTurnSly facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/ApplySingleTurnSly@2296"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "CardCmd.ApplySingleTurnSly (Commands/CardCmd.cs:2296; sim has GiveSingleTurnSly)"
+   ]
+  },
+  "CardCmd.AutoPlay": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.AutoPlay facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/AutoPlay@1779"
+    }
+   ],
+   "used_by": {
+    "cards": 22,
+    "enchantments": 1,
+    "potions": 1,
+    "powers": 3,
+    "relics": 2
+   },
+   "w0_texts": [
+    "CardCmd.AutoPlay",
+    "CardCmd.AutoPlay (Commands/CardCmd.cs:1779; random AnyEnemy target via RunRng.CombatTargets when target is null)",
+    "CardCmd.AutoPlay(skipXCapture)",
+    "CardPileCmd.AutoPlayFromDrawPile (+CardCmd.AutoPlay)",
+    "Sly keyword: auto-play after CardCmd discard (Commands/CardCmd.cs:843 collects IsSlyThisTurn, :917 AutoPlay(SlyDiscard))"
+   ]
+  },
+  "CardCmd.ClearAffliction": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.ClearAffliction facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/ClearAffliction@2273"
+    }
+   ],
+   "used_by": {
+    "afflictions": 1,
+    "cards": 1,
+    "powers": 7
+   },
+   "w0_texts": [
+    "Afflictions (Bound: CanAfflict, CardCmd.AfflictAndPreview, CardCmd.ClearAffliction)",
+    "Afflictions (Entangled: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Hexed: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Ringing: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Smog: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Tainted: CardCmd.Afflict<T>, CardCmd.ClearAffliction, AfflictionModel.Amount)",
+    "CardCmd.ClearAffliction"
+   ]
+  },
+  "CardCmd.Discard": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "partial",
+   "title": "CardCmd.Discard facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Discard@1811"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Discard@1825"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "potions": 1
+   },
+   "w0_texts": [
+    "CardCmd.Discard (partial in sim)",
+    "CardCmd.Discard / DiscardAndDraw with the Sly auto-play pass (sim CardPileCmd.Discard throws on Sly today)"
+   ]
+  },
+  "CardCmd.Discard(list)": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "partial",
+   "title": "CardCmd.Discard facade (list overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Discard@1825"
+    }
+   ],
+   "used_by": {
+    "cards": 4,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CardCmd.Discard (list overload)"
+   ]
+  },
+  "CardCmd.Discard(single, Sly)": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "partial",
+   "title": "CardCmd.Discard facade (single, Sly overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Discard@1811"
+    }
+   ],
+   "used_by": {
+    "cards": 4
+   },
+   "w0_texts": []
+  },
+  "CardCmd.DiscardAndDraw": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.DiscardAndDraw facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/DiscardAndDraw@1839"
+    }
+   ],
+   "used_by": {
+    "cards": 10,
+    "potions": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardCmd.Discard / DiscardAndDraw with the Sly auto-play pass (sim CardPileCmd.Discard throws on Sly today)",
+    "CardCmd.DiscardAndDraw",
+    "CardCmd.DiscardAndDraw (Commands/CardCmd.cs:1839)"
+   ]
+  },
+  "CardCmd.Downgrade": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.Downgrade facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Downgrade@1853"
+    }
+   ],
+   "used_by": {
+    "events": 2,
+    "monsters": 1,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CardCmd.Downgrade",
+    "CardCmd.Downgrade / CardCmd.Upgrade from a power"
+   ]
+  },
+  "CardCmd.Enchant": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.Enchant facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Enchant@2146"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Enchant@2151"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 9,
+    "relics": 17
+   },
+   "w0_texts": [
+    "CardCmd.Enchant",
+    "CardCmd.Enchant(enchantment, amount 8)",
+    "CardCmd.Enchant<Corrupted>",
+    "CardCmd.Enchant<PerfectFit>",
+    "CardCmd.Enchant<Slither>",
+    "CardCmd.Enchant<SoulsPower>",
+    "CardCmd.Enchant<Sown>",
+    "CardCmd.Enchant<Spiral>",
+    "CardCmd.Enchant<Steady>",
+    "CardCmd.Enchant<T> (Commands/CardCmd.cs:2146) and the enchantment subsystem",
+    "CardCmd.Enchant<T>(amount 2)",
+    "enchantments (EnchantmentModel on cards, CardCmd.Enchant)"
+   ]
+  },
+  "CardCmd.RemoveKeyword": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.RemoveKeyword facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/RemoveKeyword@2287"
+    }
+   ],
+   "used_by": {
+    "enchantments": 1
+   },
+   "w0_texts": [
+    "CardCmd.RemoveKeyword"
+   ]
+  },
+  "CardCmd.Transform": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.Transform facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Transform@1966"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Transform@1988"
+    }
+   ],
+   "used_by": {
+    "cards": 4,
+    "relics": 5
+   },
+   "w0_texts": [
+    "CardCmd.Transform",
+    "CardCmd.Transform (combat)",
+    "CardCmd.Transform(IEnumerable<CardTransformation>, rng: null) (Commands/CardCmd.cs:1988)"
+   ]
+  },
+  "CardCmd.TransformTo": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.TransformTo facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/TransformTo@1957"
+    }
+   ],
+   "used_by": {
+    "cards": 3,
+    "events": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardCmd.TransformTo",
+    "CardCmd.TransformTo<T>",
+    "CardCmd.TransformTo<T> (deck)"
+   ]
+  },
+  "CardCmd.TransformToRandom": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.TransformToRandom facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/TransformToRandom@1949"
+    }
+   ],
+   "used_by": {
+    "events": 6,
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardCmd.TransformToRandom",
+    "CardCmd.TransformToRandom (card generation)",
+    "CardCmd.TransformToRandom(rng)"
+   ]
+  },
+  "CardCmd.Upgrade": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardCmd.Upgrade facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Upgrade@1882"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardCmd/Upgrade@1887"
+    }
+   ],
+   "used_by": {
+    "cards": 20,
+    "events": 10,
+    "monsters": 1,
+    "potions": 3,
+    "powers": 3,
+    "relics": 23
+   },
+   "w0_texts": [
+    "CardCmd.Downgrade / CardCmd.Upgrade from a power",
+    "CardCmd.Upgrade",
+    "CardCmd.Upgrade (in-combat upgrade)",
+    "CardCmd.Upgrade in combat (Commands/CardCmd.cs:1882; CardInstance.Upgrade exists, facade missing)",
+    "run effects: permanent deck upgrade (CardCmd.Upgrade on deck cards)"
+   ]
+  },
+  "CardModel.AfterCreated": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "CardModel.AfterCreated model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "CardModel/AfterCreated"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "RunState.CreateCard<SpoilsMap> (AfterCreated sets SpoilsActIndex=1)"
+   ]
+  },
+  "CardModel.AfterDowngraded": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "CardModel.AfterDowngraded model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "CardModel/AfterDowngraded"
+    }
+   ],
+   "used_by": {
+    "cards": 9
+   },
+   "w0_texts": [
+    "CardModel.AfterDowngraded",
+    "CardModel.AfterDowngraded (re-applies the bonus)"
+   ]
+  },
+  "CardModel.GetResultLocationForCardPlay": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "CardModel.GetResultLocationForCardPlay model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "CardModel/GetResultLocationForCardPlay"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "CardModel.GetResultLocationForCardPlay override (other player)"
+   ]
+  },
+  "CardPileCmd.Add": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "partial",
+   "title": "CardPileCmd.Add facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3251"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3263"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3271"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3283"
+    }
+   ],
+   "used_by": {
+    "cards": 5,
+    "events": 11,
+    "potions": 2,
+    "powers": 3,
+    "relics": 23
+   },
+   "w0_texts": [
+    "CardPileCmd.Add",
+    "CardPileCmd.Add (Deck)",
+    "CardPileCmd.Add (array)",
+    "CardPileCmd.Add (discard -> hand, full-hand handling)",
+    "CardPileCmd.Add (draw -> hand)",
+    "CardPileCmd.Add (draw -> hand, full-hand handling)",
+    "CardPileCmd.Add (partial in sim)",
+    "CardPileCmd.Add(card, Draw) (bottom)",
+    "CardPileCmd.Add(card, Hand)",
+    "CardPileCmd.Add(card, Hand) for an existing combat card (full hand redirects to discard, Commands/CardPileCmd.cs:3405)",
+    "CardPileCmd.Add(list) [sim: AfterCardChangedPiles not dispatched]"
+   ]
+  },
+  "CardPileCmd.Add(CardPile|clonedBy)": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "partial",
+   "title": "CardPileCmd.Add facade (CardPile|clonedBy overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3251"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3263"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3271"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/Add@3283"
+    }
+   ],
+   "used_by": {
+    "potions": 1
+   },
+   "w0_texts": []
+  },
+  "CardPileCmd.AddCurseToDeck": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.AddCurseToDeck facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AddCurseToDeck@4151"
+    }
+   ],
+   "used_by": {
+    "events": 8,
+    "relics": 4
+   },
+   "w0_texts": [
+    "CardPileCmd.AddCurseToDeck",
+    "CardPileCmd.AddCurseToDeck<T>"
+   ]
+  },
+  "CardPileCmd.AddCursesToDeck": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardPileCmd.AddCursesToDeck facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AddCursesToDeck@4159"
+    }
+   ],
+   "used_by": {
+    "events": 4
+   },
+   "w0_texts": [
+    "CardPileCmd.AddCursesToDeck"
+   ]
+  },
+  "CardPileCmd.AddGeneratedCardsToCombat": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.AddGeneratedCardsToCombat facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AddGeneratedCardsToCombat@3204"
+    }
+   ],
+   "used_by": {
+    "cards": 19,
+    "potions": 1,
+    "powers": 4,
+    "relics": 6
+   },
+   "w0_texts": [
+    "CardPileCmd.AddGeneratedCardsToCombat",
+    "CardPileCmd.AddGeneratedCardsToCombat (Draw, CardPilePosition.Random)",
+    "CardPileCmd.AddGeneratedCardsToCombat (Hand)",
+    "Shiv.CreateInHand (AddGeneratedCardsToCombat)",
+    "Shiv.CreateInHand -> CardPileCmd.AddGeneratedCardsToCombat (Models.Cards/Shiv.cs:355, Commands/CardPileCmd.cs:3204)"
+   ]
+  },
+  "CardPileCmd.AddToCombatAndPreview": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.AddToCombatAndPreview facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AddToCombatAndPreview@4117"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AddToCombatAndPreview@4134"
+    }
+   ],
+   "used_by": {
+    "monsters": 14,
+    "powers": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardPileCmd.AddToCombatAndPreview",
+    "CardPileCmd.AddToCombatAndPreview<T>",
+    "CardPileCmd.AddToCombatAndPreview<T> into the hand: per card CreateCard<T> then AddGeneratedCardToCombat (Commands/CardPileCmd.cs:1451-1456); a card added to a hand already holding MaxCardsInHand (10) goes to the owner's discard instead (Commands/CardPileCmd.cs:3405-3409, Entities.Cards/CardPile.cs:35)",
+    "CardPileCmd.AddToCombatAndPreview<T>(targets, pile, count)",
+    "CardPileCmd.AddToCombatAndPreview<Wither>",
+    "CardPileCmd.AddToCombatAndPreview<Wound>"
+   ]
+  },
+  "CardPileCmd.AutoPlayFromDrawPile": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.AutoPlayFromDrawPile facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/AutoPlayFromDrawPile@4074"
+    }
+   ],
+   "used_by": {
+    "cards": 3,
+    "potions": 1,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CardPileCmd.AutoPlayFromDrawPile",
+    "CardPileCmd.AutoPlayFromDrawPile (+CardCmd.AutoPlay)"
+   ]
+  },
+  "CardPileCmd.DrawWithoutBlockingOnOtherPlayers": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.DrawWithoutBlockingOnOtherPlayers facade",
+   "scope": [
+    "combat (mp variant)"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/DrawWithoutBlockingOnOtherPlayers@3988"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "CardPileCmd.DrawWithoutBlockingOnOtherPlayers"
+   ]
+  },
+  "CardPileCmd.RemoveFromDeck": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPileCmd.RemoveFromDeck facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/RemoveFromDeck@3123"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardPileCmd/RemoveFromDeck@3137"
+    }
+   ],
+   "used_by": {
+    "cards": 3,
+    "events": 8,
+    "monsters": 1,
+    "powers": 1,
+    "relics": 6
+   },
+   "w0_texts": [
+    "CardPileCmd.RemoveFromDeck",
+    "CardPileCmd.RemoveFromDeck (run deck mutation inside combat)",
+    "CardPileCmd.RemoveFromDeck (run deck)"
+   ]
+  },
+  "CardSelectCmd.FromChooseABundleScreen": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromChooseABundleScreen facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromChooseABundleScreen@3798"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromChooseABundleScreen"
+   ]
+  },
+  "CardSelectCmd.FromChooseACardScreen": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromChooseACardScreen facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromChooseACardScreen@3169"
+    }
+   ],
+   "used_by": {
+    "cards": 4,
+    "monsters": 1,
+    "potions": 4,
+    "relics": 4
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromChooseACardScreen",
+    "CardSelectCmd.FromChooseACardScreen [choice API]",
+    "CardSelectCmd.FromChooseACardScreen prompt during the enemy turn"
+   ]
+  },
+  "CardSelectCmd.FromCombatPile": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromCombatPile facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromCombatPile@3353"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromCombatPile@3361"
+    }
+   ],
+   "used_by": {
+    "cards": 14,
+    "potions": 2,
+    "powers": 2
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromCombatPile",
+    "CardSelectCmd.FromCombatPile (Discard)",
+    "CardSelectCmd.FromCombatPile (Discard) [choice API]",
+    "CardSelectCmd.FromCombatPile (Draw) [choice API]",
+    "CardSelectCmd.FromCombatPile (choice API)",
+    "CardSelectCmd.FromCombatPile (choice API, draw pile sorted by rarity then id)"
+   ]
+  },
+  "CardSelectCmd.FromDeckForEnchantment": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromDeckForEnchantment facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForEnchantment@3533"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForEnchantment@3541"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForEnchantment@3550"
+    }
+   ],
+   "used_by": {
+    "events": 9,
+    "relics": 7
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromDeckForEnchantment",
+    "CardSelectCmd.FromDeckForEnchantment(additionalFilter)",
+    "CardSelectCmd.FromDeckForEnchantment(cards list overload)",
+    "prompt: CardSelectCmd.FromDeckForEnchantment(cards)"
+   ]
+  },
+  "CardSelectCmd.FromDeckForRemoval": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromDeckForRemoval facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForRemoval@3607"
+    }
+   ],
+   "used_by": {
+    "events": 6,
+    "relics": 7
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromDeckForRemoval",
+    "CardSelectCmd.FromDeckForRemoval (filter)",
+    "prompt: MerchantCardRemovalEntry.OnTryPurchaseWrapper"
+   ]
+  },
+  "CardSelectCmd.FromDeckForTransformation": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromDeckForTransformation facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForTransformation@3485"
+    }
+   ],
+   "used_by": {
+    "events": 6,
+    "relics": 3
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromDeckForTransformation"
+   ]
+  },
+  "CardSelectCmd.FromDeckForUpgrade": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromDeckForUpgrade facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckForUpgrade@3441"
+    }
+   ],
+   "used_by": {
+    "events": 4,
+    "relics": 2
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromDeckForUpgrade"
+   ]
+  },
+  "CardSelectCmd.FromDeckGeneric": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromDeckGeneric facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromDeckGeneric@3614"
+    }
+   ],
+   "used_by": {
+    "events": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromDeckGeneric",
+    "CardSelectCmd.FromDeckGeneric(filter)"
+   ]
+  },
+  "CardSelectCmd.FromHand": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromHand facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromHand@3668"
+    }
+   ],
+   "used_by": {
+    "cards": 18,
+    "potions": 2,
+    "powers": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromHand",
+    "CardSelectCmd.FromHand (choice API)",
+    "CardSelectCmd.FromHand [choice API]"
+   ]
+  },
+  "CardSelectCmd.FromHandForDiscard": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromHandForDiscard facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromHandForDiscard@3726"
+    }
+   ],
+   "used_by": {
+    "cards": 7,
+    "potions": 2,
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromHandForDiscard",
+    "CardSelectCmd.FromHandForDiscard (choice API)",
+    "CardSelectCmd.FromHandForDiscard [choice API]",
+    "CardSelectCmd.FromHandForDiscard at AfterPlayerTurnStart (turn-setup deferral, design-combat-kernel §4.6)"
+   ]
+  },
+  "CardSelectCmd.FromHandForUpgrade": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromHandForUpgrade facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromHandForUpgrade@3744"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromHandForUpgrade [choice API]"
+   ]
+  },
+  "CardSelectCmd.FromSimpleGrid": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromSimpleGrid facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromSimpleGrid@3295"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromSimpleGrid"
+   ]
+  },
+  "CardSelectCmd.FromSimpleGridForRewards": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.FromSimpleGridForRewards facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/FromSimpleGridForRewards@3236"
+    }
+   ],
+   "used_by": {
+    "events": 2,
+    "modifiers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromSimpleGridForRewards",
+    "CardSelectCmd.FromSimpleGridForRewards (EventModel.SelectCardsToAddToDeckFromGrid)"
+   ]
+  },
+  "CardSelectCmd.PushSelector": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "CardSelectCmd.PushSelector facade",
+   "scope": [
+    "combat (WhisperingEarring)"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CardSelectCmd/PushSelector@3134"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.PushSelector",
+    "card selector stack (CardSelectCmd.PushSelector)",
+    "card selector stack on CombatState (VakuuCardSelector takes the first MaxSelect options)"
+   ]
+  },
+  "CreatureCmd.Add": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CreatureCmd.Add facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Add@3554"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Add@3564"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Add@3575"
+    }
+   ],
+   "used_by": {
+    "monsters": 10,
+    "powers": 3
+   },
+   "w0_texts": [
+    "CreatureCmd.Add(monster, combatState, side, slotName) (mid-combat summon)",
+    "CreatureCmd.Add(monster, combatState, side, slotName) mid-combat (respawn)",
+    "CreatureCmd.Add(monster, side, slot) from a power AfterDeath",
+    "CreatureCmd.Add(monster, side, slot) mid-combat",
+    "CreatureCmd.Add<T>(combatState) mid-combat",
+    "CreatureCmd.Add<T>(combatState, slot) / CreatureCmd.Add(creature)",
+    "CreatureCmd.Add<T>(combatState, slot) from a power AfterDeath",
+    "CreatureCmd.Add<T>(combatState, slot) mid-combat"
+   ]
+  },
+  "CreatureCmd.Damage(DamageVar)": {
+   "kind": "cmd_facade",
+   "level": 1,
+   "status": "missing",
+   "title": "CreatureCmd.Damage facade (DamageVar overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Damage@3588"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Damage@3606"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Damage@3622"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Damage@3638"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Damage@3654"
+    }
+   ],
+   "used_by": {
+    "cards": 7,
+    "events": 6,
+    "potions": 1,
+    "powers": 1,
+    "relics": 12
+   },
+   "w0_texts": [
+    "CreatureCmd.Damage (out of combat, DamageVar Unblockable|Unpowered)",
+    "CreatureCmd.Damage(DamageVar)",
+    "CreatureCmd.Damage(DamageVar) overload",
+    "CreatureCmd.Damage(targets, DamageVar, dealer) overload",
+    "CreatureCmd.Damage(targets, DamageVar, dealer, cardSource, cardPlay) overload"
+   ]
+  },
+  "CreatureCmd.Escape": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "CreatureCmd.Escape facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/Escape@3915"
+    }
+   ],
+   "used_by": {
+    "monsters": 5,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CreatureCmd.Escape"
+   ]
+  },
+  "CreatureCmd.GainBlock(BlockVar)": {
+   "kind": "cmd_facade",
+   "level": 1,
+   "status": "missing",
+   "title": "CreatureCmd.GainBlock facade (BlockVar overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "CreatureCmd/GainBlock@3942"
+    }
+   ],
+   "used_by": {
+    "enchantments": 1,
+    "potions": 2,
+    "powers": 2,
+    "relics": 17
+   },
+   "w0_texts": [
+    "CreatureCmd.GainBlock(BlockVar overload)",
+    "CreatureCmd.GainBlock(BlockVar)",
+    "CreatureCmd.GainBlock(BlockVar) overload"
+   ]
+  },
+  "DamageCmd.Attack(CalculatedDamageVar)": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "DamageCmd.Attack facade (CalculatedDamageVar overloads)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "DamageCmd/Attack@13"
+    }
+   ],
+   "used_by": {
+    "cards": 19
+   },
+   "w0_texts": [
+    "DamageCmd.Attack(CalculatedDamageVar)",
+    "DamageCmd.Attack(CalculatedDamageVar) overload (Commands/DamageCmd.cs:13)"
+   ]
+  },
+  "EnchantmentModel.CanEnchant": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "EnchantmentModel.CanEnchant model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EnchantmentModel/CanEnchant"
+    }
+   ],
+   "used_by": {
+    "events": 3
+   },
+   "w0_texts": [
+    "EnchantmentModel Goopy.CanEnchant",
+    "EnchantmentModel Instinct.CanEnchant",
+    "EnchantmentModel Swift.CanEnchant"
+   ]
+  },
+  "EncounterModel.CalculateGoldProportion": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "EncounterModel.CalculateGoldProportion model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EncounterModel/CalculateGoldProportion"
+    }
+   ],
+   "used_by": {
+    "encounters": 1
+   },
+   "w0_texts": [
+    "EncounterModel.CalculateGoldProportion override (combat gold reward, run layer)"
+   ]
+  },
+  "EncounterModel.LoadCustomState": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "EncounterModel.LoadCustomState model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EncounterModel/LoadCustomState"
+    }
+   ],
+   "used_by": {
+    "encounters": 4
+   },
+   "w0_texts": [
+    "encounter custom state RanOutOfTime (SaveCustomState/LoadCustomState) read back by the event"
+   ]
+  },
+  "EncounterModel.SaveCustomState": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "EncounterModel.SaveCustomState model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EncounterModel/SaveCustomState"
+    }
+   ],
+   "used_by": {
+    "encounters": 4
+   },
+   "w0_texts": [
+    "encounter custom state RanOutOfTime (SaveCustomState/LoadCustomState) read back by the event"
+   ]
+  },
+  "EncounterModel.Slots": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "EncounterModel.Slots model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EncounterModel/Slots"
+    }
+   ],
+   "used_by": {
+    "encounters": 19,
+    "monsters": 2
+   },
+   "w0_texts": [
+    "Encounter.Slots / GetNextSlot",
+    "Encounter.Slots scan for the last free slot",
+    "encounter Slots + CombatState.SortEnemiesBySlotName (Combat/CombatState.cs:958-964) after each slotted AddCreature (Combat/CombatManager.cs:6999-7002)"
+   ]
+  },
+  "EventModel.IsAllowed": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "EventModel.IsAllowed model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "EventModel/IsAllowed"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "IsAllowed evaluated on the canonical instance"
+   ]
+  },
+  "ForgeCmd.Forge": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "ForgeCmd.Forge facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "ForgeCmd/Forge@153"
+    }
+   ],
+   "used_by": {
+    "cards": 11,
+    "potions": 1,
+    "powers": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Forge (ForgeCmd, SovereignBlade)",
+    "Forge subsystem (ForgeCmd.Forge creates/finds the blade, AddDamage, AfterForged)",
+    "ForgeCmd.Forge"
+   ]
+  },
+  "ModifierModel.AfterRunCreated": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "ModifierModel.AfterRunCreated model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "ModifierModel/AfterRunCreated"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ModifierModel.AfterRunCreated"
+   ]
+  },
+  "ModifierModel.AfterRunLoaded": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "ModifierModel.AfterRunLoaded model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "ModifierModel/AfterRunLoaded"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ModifierModel.AfterRunLoaded"
+   ]
+  },
+  "ModifyCardPlayResultLocation": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyCardPlayResultLocation hook virtual (G via ModifyCardPlayResultLocation)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyCardPlayResultLocation"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "powers": 4
+   },
+   "w0_texts": [
+    "CardLocation (pileType, position) result struct",
+    "CardLocation result struct",
+    "Hook.ModifyCardPlayResultLocation",
+    "Hook.ModifyCardPlayResultLocation + AfterModifyingCardPlayResultLocation (missing in sim)",
+    "ordering: ModifyCardPlayResultLocation runs before this play's CardPlayStarted entry"
+   ]
+  },
+  "ModifyCardRewardCreationOptions": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyCardRewardCreationOptions hook virtual (R via ModifyCardRewardCreationOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyCardRewardCreationOptions"
+    }
+   ],
+   "used_by": {
+    "modifiers": 2,
+    "relics": 3
+   },
+   "w0_texts": [
+    "Hook.ModifyCardRewardCreationOptions (run)",
+    "Hook.ModifyCardRewardCreationOptions + TryModifyCardRewardOptions run inside CreateForReward",
+    "ModifyCardRewardCreationOptions"
+   ]
+  },
+  "ModifyExtraRestSiteHealText": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyExtraRestSiteHealText hook virtual (R via ModifyExtraRestSiteHealText)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyExtraRestSiteHealText"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1,
+    "relics": 4
+   },
+   "w0_texts": [
+    "Hook.ModifyExtraRestSiteHealText (run)",
+    "ModifyExtraRestSiteHealText"
+   ]
+  },
+  "ModifyGeneratedMap": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyGeneratedMap hook virtual (R via ModifyGeneratedMap)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyGeneratedMap"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 1,
+    "modifiers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ModifyGeneratedMap (SpoilsMap -> SpoilsActMap for act index 1)",
+    "Hook.ModifyGeneratedMap (run)",
+    "ModifyGeneratedMap",
+    "Run layer: ModifyGeneratedMap on deck cards"
+   ]
+  },
+  "ModifyGeneratedMapLate": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyGeneratedMapLate hook virtual (R via ModifyGeneratedMapLate)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyGeneratedMapLate"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ModifyGeneratedMapLate (run)",
+    "Run layer: ModifyGeneratedMapLate on deck cards"
+   ]
+  },
+  "ModifyGoldGained": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyGoldGained hook virtual (R+C via ModifyGoldGained)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyGoldGained"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "potions": 1,
+    "relics": 11
+   },
+   "w0_texts": [
+    "Hook.ModifyGoldGained (both)",
+    "PlayerCmd.GainGold (run gold; ModifyGoldGained/AfterGoldGained)",
+    "gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained)"
+   ]
+  },
+  "ModifyMerchantCardCreationResults": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyMerchantCardCreationResults hook virtual (R via ModifyMerchantCardCreationResults)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyMerchantCardCreationResults"
+    }
+   ],
+   "used_by": {
+    "relics": 4
+   },
+   "w0_texts": [
+    "Hook.ModifyMerchantCardCreationResults (run)"
+   ]
+  },
+  "ModifyMerchantCardPool": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyMerchantCardPool hook virtual (R via ModifyMerchantCardPool)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyMerchantCardPool"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ModifyMerchantCardPool"
+   ]
+  },
+  "ModifyMerchantPrice": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyMerchantPrice hook virtual (R via ModifyMerchantPrice)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyMerchantPrice"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.ModifyMerchantPrice (run)"
+   ]
+  },
+  "ModifyNextEvent": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyNextEvent hook virtual (R via ModifyNextEvent)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyNextEvent"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 1
+   },
+   "w0_texts": [
+    "Hook.ModifyNextEvent (deck-card listener at run scope)",
+    "Run layer: ModifyNextEvent on deck cards"
+   ]
+  },
+  "ModifyOddsIncreaseForUnrolledRoomType": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyOddsIncreaseForUnrolledRoomType hook virtual (R via ModifyOddsIncreaseForUnrolledRoomType)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyOddsIncreaseForUnrolledRoomType"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ModifyOddsIncreaseForUnrolledRoomType"
+   ]
+  },
+  "ModifyOrbPassiveTriggerCounts": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyOrbPassiveTriggerCounts hook virtual (G via ModifyOrbPassiveTriggerCount)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyOrbPassiveTriggerCounts"
+    }
+   ],
+   "used_by": {
+    "orbs": 5,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ModifyOrbPassiveTriggerCounts (combat)",
+    "ModifyOrbPassiveTriggerCounts"
+   ]
+  },
+  "ModifyOrbValue": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyOrbValue hook virtual (G via ModifyOrbValue)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyOrbValue"
+    }
+   ],
+   "used_by": {
+    "cards": 30,
+    "orbs": 4,
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "FocusPower (Models.Powers/FocusPower.cs: ModifyOrbValue value+Amount floored at 0, AllowNegative)",
+    "Hook.ModifyOrbValue",
+    "Hook.ModifyOrbValue (FocusPower; Lightning/Frost/Glass values and Dark passive)",
+    "Hook.ModifyOrbValue (combat)",
+    "ModifyOrbValue"
+   ]
+  },
+  "ModifyRestSiteHealAmount": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyRestSiteHealAmount hook virtual (R via ModifyRestSiteHealAmount)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyRestSiteHealAmount"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ModifyRestSiteHealAmount (run)",
+    "ModifyRestSiteHealAmount"
+   ]
+  },
+  "ModifyUnknownMapPointRoomTypes": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ModifyUnknownMapPointRoomTypes hook virtual (R via ModifyUnknownMapPointRoomTypes)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ModifyUnknownMapPointRoomTypes"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.ModifyUnknownMapPointRoomTypes (run)",
+    "Run layer: ModifyUnknownMapPointRoomTypes on deck cards"
+   ]
+  },
+  "MonsterModel.AfterAddedToRoom": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "MonsterModel.AfterAddedToRoom model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "MonsterModel/AfterAddedToRoom"
+    }
+   ],
+   "used_by": {
+    "monsters": 1
+   },
+   "w0_texts": [
+    "ForceCurrentState from AfterAddedToRoom"
+   ]
+  },
+  "OrbCmd.AddSlots": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.AddSlots facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/AddSlots@647"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "potions": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "OrbCmd.AddSlots",
+    "OrbCmd.AddSlots (Commands/OrbCmd.cs:647, capacity capped at 10)"
+   ]
+  },
+  "OrbCmd.Channel": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.Channel facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/Channel@670"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/Channel@684"
+    }
+   ],
+   "used_by": {
+    "cards": 25,
+    "potions": 1,
+    "powers": 4,
+    "relics": 3
+   },
+   "w0_texts": [
+    "OrbCmd.Channel",
+    "OrbCmd.Channel (Commands/OrbCmd.cs:684: add 1 slot if BaseOrbSlotCount==0 and capacity 0; EvokeNext when full; TryEnqueue; History.OrbChanneled; Hook.AfterOrbChanneled)",
+    "OrbCmd.Channel<GlassOrb>",
+    "OrbCmd.Channel<LightningOrb>"
+   ]
+  },
+  "OrbCmd.EvokeLast": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.EvokeLast facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/EvokeLast@714"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "powers": 1
+   },
+   "w0_texts": [
+    "OrbCmd.EvokeLast",
+    "OrbCmd.EvokeLast (Commands/OrbCmd.cs:714)"
+   ]
+  },
+  "OrbCmd.EvokeNext": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.EvokeNext facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/EvokeNext@699"
+    }
+   ],
+   "used_by": {
+    "cards": 4
+   },
+   "w0_texts": [
+    "OrbCmd.EvokeNext (Commands/OrbCmd.cs:699; dequeue flag; Hook.AfterOrbEvoked)",
+    "OrbCmd.EvokeNext(dequeue: false)"
+   ]
+  },
+  "OrbCmd.Passive": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.Passive facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/Passive@745"
+    }
+   ],
+   "used_by": {
+    "cards": 3,
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "OrbCmd.Passive",
+    "OrbCmd.Passive (Commands/OrbCmd.cs:745; countAffectedByHooks=false -> one Passive call, no ModifyOrbPassiveTriggerCount)"
+   ]
+  },
+  "OrbCmd.RemoveSlots": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbCmd.RemoveSlots facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OrbCmd/RemoveSlots@659"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "OrbCmd.RemoveSlots (Commands/OrbCmd.cs:659: removes capacity from the back; orbs in removed slots are dropped without evoke)"
+   ]
+  },
+  "OstyCmd.Summon": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "OstyCmd.Summon facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "OstyCmd/Summon@336"
+    }
+   ],
+   "used_by": {
+    "cards": 9,
+    "monsters": 1,
+    "potions": 1,
+    "powers": 4,
+    "relics": 9
+   },
+   "w0_texts": [
+    "Osty / pets (PetOwner, PlayerCmd.AddPet, OstyCmd.Summon applies it)",
+    "Osty/pets (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner)",
+    "Osty/pets subsystem (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner, ally-side monster)",
+    "OstyCmd.Summon"
+   ]
+  },
+  "PlayerCmd.AddPet": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.AddPet facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/AddPet@947"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/AddPet@957"
+    }
+   ],
+   "used_by": {
+    "monsters": 1,
+    "potions": 1,
+    "powers": 1,
+    "relics": 9
+   },
+   "w0_texts": [
+    "Osty / pets (PetOwner, PlayerCmd.AddPet, OstyCmd.Summon applies it)",
+    "Osty/pets (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner)",
+    "Osty/pets subsystem (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner, ally-side monster)",
+    "PlayerCmd.AddPet"
+   ]
+  },
+  "PlayerCmd.CompleteQuest": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.CompleteQuest facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/CompleteQuest@996"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "events": 1
+   },
+   "w0_texts": [
+    "PlayerCmd.CompleteQuest"
+   ]
+  },
+  "PlayerCmd.EndTurn": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.EndTurn facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/EndTurn@984"
+    }
+   ],
+   "used_by": {
+    "cards": 1
+   },
+   "w0_texts": [
+    "PlayerCmd.EndTurn"
+   ]
+  },
+  "PlayerCmd.GainGold": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.GainGold facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/GainGold@882"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "events": 11,
+    "potions": 1,
+    "relics": 11
+   },
+   "w0_texts": [
+    "PlayerCmd.GainGold",
+    "PlayerCmd.GainGold (decimal -> (int) truncation)",
+    "PlayerCmd.GainGold (run gold; ModifyGoldGained/AfterGoldGained)",
+    "gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained)"
+   ]
+  },
+  "PlayerCmd.GainMaxPotionCount": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "PlayerCmd.GainMaxPotionCount facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/GainMaxPotionCount@934"
+    }
+   ],
+   "used_by": {
+    "relics": 3
+   },
+   "w0_texts": [
+    "PlayerCmd.GainMaxPotionCount"
+   ]
+  },
+  "PlayerCmd.GainStars": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.GainStars facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/GainStars@844"
+    }
+   ],
+   "used_by": {
+    "cards": 10,
+    "potions": 1,
+    "powers": 3,
+    "relics": 3
+   },
+   "w0_texts": [
+    "PlayerCmd.GainStars"
+   ]
+  },
+  "PlayerCmd.LoseGold": {
+   "kind": "cmd_facade",
+   "level": 2,
+   "status": "missing",
+   "title": "PlayerCmd.LoseGold facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/LoseGold@896"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 10,
+    "monsters": 1,
+    "potions": 1,
+    "powers": 1,
+    "relics": 11
+   },
+   "w0_texts": [
+    "PlayerCmd.LoseGold",
+    "PlayerCmd.LoseGold (GoldLossType.Stolen) inside combat (run-state effect)",
+    "PlayerCmd.LoseGold (Spent)",
+    "PlayerCmd.LoseGold (Stolen)",
+    "PlayerCmd.LoseGold (run gold)",
+    "gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained)"
+   ]
+  },
+  "PlayerCmd.MimicRestSiteHeal": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "PlayerCmd.MimicRestSiteHeal facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PlayerCmd/MimicRestSiteHeal@971"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "PlayerCmd.MimicRestSiteHeal"
+   ]
+  },
+  "PotionCmd.Discard": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "PotionCmd.Discard facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PotionCmd/Discard@283"
+    }
+   ],
+   "used_by": {
+    "events": 3
+   },
+   "w0_texts": [
+    "PotionCmd.Discard"
+   ]
+  },
+  "PotionCmd.TryToProcure": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "PotionCmd.TryToProcure facade",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PotionCmd/TryToProcure@245"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "PotionCmd/TryToProcure@253"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "potions": 1,
+    "relics": 7
+   },
+   "w0_texts": [
+    "PotionCmd.TryToProcure",
+    "Potions runtime: PotionCmd.TryToProcure (slot capacity, ShouldProcurePotion, AfterPotionProcured)",
+    "potion slots and procurement (PotionCmd.TryToProcure, PotionFactory)"
+   ]
+  },
+  "PowerModel.BeforeApplied": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "PowerModel.BeforeApplied model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "PowerModel/BeforeApplied"
+    }
+   ],
+   "used_by": {
+    "cards": 4
+   },
+   "w0_texts": [
+    "TemporaryFocusPower base (BeforeApplied applies Sign x amount FocusPower silently, stacks re-apply the delta in AfterPowerAmountChanged, AfterSideTurnEnd removes and reverts; PowerModel.BeforeApplied exists in sim)"
+   ]
+  },
+  "PowerModel.IsVisibleInternal": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "PowerModel.IsVisibleInternal model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "PowerModel/IsVisibleInternal"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "PowerModel.IsVisible / IsVisibleInternal on every power (Artifact skips invisible debuffs)"
+   ]
+  },
+  "PowerModel.ShouldOwnerDeathTriggerFatal": {
+   "kind": "model_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "PowerModel.ShouldOwnerDeathTriggerFatal model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "PowerModel/ShouldOwnerDeathTriggerFatal"
+    }
+   ],
+   "used_by": {
+    "cards": 3
+   },
+   "w0_texts": [
+    "PowerModel.ShouldOwnerDeathTriggerFatal"
+   ]
+  },
+  "RelicCmd.Melt": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicCmd.Melt facade",
+   "scope": [
+    "combat-capable (verify)"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RelicCmd/Melt@454"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "RelicCmd.Melt"
+   ]
+  },
+  "RelicCmd.Obtain": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicCmd.Obtain facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RelicCmd/Obtain@395"
+    },
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RelicCmd/Obtain@403"
+    }
+   ],
+   "used_by": {
+    "events": 27,
+    "relics": 89
+   },
+   "w0_texts": [
+    "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
+    "RelicCmd.Obtain",
+    "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)",
+    "RelicCmd.Obtain pipeline (RelicModel.AfterObtained)",
+    "RelicCmd.Obtain<T>",
+    "nested pickup effects (RelicCmd.Obtain inside AfterObtained)",
+    "relic grab bags and RelicCmd (RelicFactory.PullNextRelicFromFront)"
+   ]
+  },
+  "RelicCmd.Remove": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicCmd.Remove facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RelicCmd/Remove@428"
+    }
+   ],
+   "used_by": {
+    "events": 2
+   },
+   "w0_texts": [
+    "RelicCmd.Remove"
+   ]
+  },
+  "RelicCmd.Replace": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicCmd.Replace facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RelicCmd/Replace@441"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "RelicCmd.Replace",
+    "RelicCmd.Replace at combat victory"
+   ]
+  },
+  "RelicModel.AfterObtained": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicModel.AfterObtained model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "RelicModel/AfterObtained"
+    }
+   ],
+   "used_by": {
+    "events": 8,
+    "relics": 84
+   },
+   "w0_texts": [
+    "RelicCmd.Obtain (+ each relic's AfterObtained, relics-kind content)",
+    "RelicCmd.Obtain pipeline (RelicModel.AfterObtained)"
+   ]
+  },
+  "RelicModel.IsAllowedAtNeow": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicModel.IsAllowedAtNeow model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "RelicModel/IsAllowedAtNeow"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "RelicModel.IsAllowedAtNeow (Kaleidoscope: all character card pools unlocked; ScrollBoxes: >= 4 Common and >= 2 Uncommon unlocked character cards; MassiveScroll multiplayer only; WingedBoots/SilverCrucible single player only)"
+   ]
+  },
+  "RelicModel.IsAllowedInShops": {
+   "kind": "model_virtual",
+   "level": 3,
+   "status": "missing",
+   "title": "RelicModel.IsAllowedInShops model virtual",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "model_kind_virtuals",
+     "name": "RelicModel/IsAllowedInShops"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "RelicModel.IsAllowedInShops"
+   ]
+  },
+  "RewardsCmd.OfferCustom": {
+   "kind": "cmd_facade",
+   "level": 3,
+   "status": "missing",
+   "title": "RewardsCmd.OfferCustom facade",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "cmd_facades",
+     "name": "RewardsCmd/OfferCustom@309"
+    }
+   ],
+   "used_by": {
+    "events": 14,
+    "relics": 10
+   },
+   "w0_texts": [
+    "OneOffSynchronizer.DoLocalCrystalSphereRewards -> RewardsCmd.OfferCustom",
+    "RewardsCmd.OfferCustom",
+    "RewardsCmd.OfferCustom (CardReward x3)",
+    "RewardsCmd.OfferCustom (CardReward)",
+    "RewardsCmd.OfferCustom (PotionReward random)",
+    "RewardsCmd.OfferCustom (PotionReward)",
+    "RewardsCmd.OfferCustom (PotionReward, fixed potion)",
+    "RewardsCmd.OfferCustom (RelicReward random)",
+    "rewards screen (RewardsCmd.OfferCustom / RewardsSet.Offer)"
+   ]
+  },
+  "ShouldAllowFreeTravel": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldAllowFreeTravel hook virtual (R via ShouldAllowFreeTravel)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldAllowFreeTravel"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldAllowFreeTravel (run)",
+    "ShouldAllowFreeTravel",
+    "map travel legality (Hook.ShouldAllowFreeTravel)"
+   ]
+  },
+  "ShouldAllowMerchantCardRemoval": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldAllowMerchantCardRemoval hook virtual (R via ShouldAllowMerchantCardRemoval)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldAllowMerchantCardRemoval"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ShouldAllowMerchantCardRemoval"
+   ]
+  },
+  "ShouldDisableRemainingRestSiteOptions": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldDisableRemainingRestSiteOptions hook virtual (R via ShouldDisableRemainingRestSiteOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldDisableRemainingRestSiteOptions"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldDisableRemainingRestSiteOptions (run)"
+   ]
+  },
+  "ShouldForcePotionReward": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldForcePotionReward hook virtual (R via ShouldForcePotionReward)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldForcePotionReward"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldForcePotionReward (run)"
+   ]
+  },
+  "ShouldGenerateTreasure": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldGenerateTreasure hook virtual (R via ShouldGenerateTreasure)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldGenerateTreasure"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldGenerateTreasure (run)"
+   ]
+  },
+  "ShouldProcurePotion": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldProcurePotion hook virtual (R+C via ShouldProcurePotion)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldProcurePotion"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldProcurePotion (both)",
+    "Potions runtime: PotionCmd.TryToProcure (slot capacity, ShouldProcurePotion, AfterPotionProcured)"
+   ]
+  },
+  "ShouldRefillMerchantEntry": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "ShouldRefillMerchantEntry hook virtual (R via ShouldRefillMerchantEntry)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "ShouldRefillMerchantEntry"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldRefillMerchantEntry (run)"
+   ]
+  },
+  "TryModifyCardBeingAddedToDeck": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyCardBeingAddedToDeck hook virtual (R via ModifyCardBeingAddedToDeck)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyCardBeingAddedToDeck"
+    }
+   ],
+   "used_by": {
+    "relics": 4
+   },
+   "w0_texts": [
+    "Hook.TryModifyCardBeingAddedToDeck (run)"
+   ]
+  },
+  "TryModifyCardRewardAlternatives": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyCardRewardAlternatives hook virtual (R via ModifyCardRewardAlternatives)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyCardRewardAlternatives"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.TryModifyCardRewardAlternatives (run)"
+   ]
+  },
+  "TryModifyCardRewardOptions": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyCardRewardOptions hook virtual (R via TryModifyCardRewardOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyCardRewardOptions"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.ModifyCardRewardCreationOptions + TryModifyCardRewardOptions run inside CreateForReward",
+    "Hook.TryModifyCardRewardOptions (run)"
+   ]
+  },
+  "TryModifyCardRewardOptionsLate": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyCardRewardOptionsLate hook virtual (R via TryModifyCardRewardOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyCardRewardOptionsLate"
+    }
+   ],
+   "used_by": {
+    "relics": 9
+   },
+   "w0_texts": [
+    "Hook.TryModifyCardRewardOptionsLate (run)"
+   ]
+  },
+  "TryModifyKeywordsInCombat": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyKeywordsInCombat hook virtual (C via ModifyKeywordsInCombat)",
+   "scope": [
+    "combat"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyKeywordsInCombat"
+    }
+   ],
+   "used_by": {
+    "powers": 1
+   },
+   "w0_texts": [
+    "Hook.TryModifyKeywordsInCombat (dispatcher ModifyKeywordsInCombat)"
+   ]
+  },
+  "TryModifyRestSiteHealRewards": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyRestSiteHealRewards hook virtual (R via ModifyRestSiteHealRewards)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyRestSiteHealRewards"
+    }
+   ],
+   "used_by": {
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.TryModifyRestSiteHealRewards (run)"
+   ]
+  },
+  "TryModifyRestSiteOptions": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyRestSiteOptions hook virtual (R via ModifyRestSiteOptions)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyRestSiteOptions"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "modifiers": 1,
+    "relics": 5
+   },
+   "w0_texts": [
+    "Hook.TryModifyRestSiteOptions (run)",
+    "Run layer: TryModifyRestSiteOptions on deck cards",
+    "TryModifyRestSiteOptions"
+   ]
+  },
+  "TryModifyRewards": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyRewards hook virtual (R via ModifyRewards)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyRewards"
+    }
+   ],
+   "used_by": {
+    "relics": 6
+   },
+   "w0_texts": [
+    "Hook.TryModifyRewards (run)"
+   ]
+  },
+  "TryModifyRewardsLate": {
+   "kind": "hook_virtual",
+   "level": 2,
+   "status": "missing",
+   "title": "TryModifyRewardsLate hook virtual (R via ModifyRewards)",
+   "scope": [
+    "run"
+   ],
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "hook_virtuals",
+     "name": "TryModifyRewardsLate"
+    }
+   ],
+   "used_by": {
+    "modifiers": 2,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.TryModifyRewardsLate (run)",
+    "TryModifyRewardsLate"
+   ]
+  },
+  "choice:CardReward": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "CardReward.Select: pick one offered card, then the alternatives",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "rewards"
+    }
+   ],
+   "used_by": {
+    "modifiers": 1,
+    "relics": 2
+   },
+   "w0_texts": [
+    "Hook.TryModifyCardRewardAlternatives (run)",
+    "card reward reroll action (CardReward.CanReroll)",
+    "choice:CardReward",
+    "prompt: CardRewardAlternative SACRIFICE"
+   ]
+  },
+  "decompile:ldmembertoken": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "static array lost by the decompiler; recovered from IL (CONTRACTS D9, w0-critique section 7)",
+   "rows": [],
+   "used_by": {
+    "cards": 2,
+    "events": 1,
+    "relics": 2
+   },
+   "w0_texts": [
+    "decompile gap: CanonicalKeywords InitializeArray (LdMemberToken); re-decompile with reference assemblies or read IL"
+   ]
+  },
+  "kernel:afflictions": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "affliction models on cards",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Afflictions"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "afflictions"
+    }
+   ],
+   "used_by": {
+    "afflictions": 7,
+    "powers": 7
+   },
+   "w0_texts": [
+    "Afflictions (Bound: CanAfflict, CardCmd.AfflictAndPreview, CardCmd.ClearAffliction)",
+    "Afflictions (Entangled: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Galvanized: CardCmd.Afflict<T>)",
+    "Afflictions (Hexed: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Ringing: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Smog: CardCmd.Afflict<T>, CardCmd.ClearAffliction)",
+    "Afflictions (Tainted: CardCmd.Afflict<T>, CardCmd.ClearAffliction, AfflictionModel.Amount)",
+    "CombatHistory: CardAfflictedEntry by owner this turn",
+    "kernel:afflictions"
+   ]
+  },
+  "kernel:auto_phases": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "auto pre-play and post-play phases of the turn loop",
+   "rows": [],
+   "used_by": {
+    "cards": 1,
+    "enchantments": 1,
+    "powers": 2
+   },
+   "w0_texts": [
+    "Hook.AfterAutoPostPlayPhaseEntered (dispatcher + virtual missing in sim)",
+    "auto post-play phase in the turn loop",
+    "auto pre-play phase in the turn loop",
+    "kernel:auto_phases"
+   ]
+  },
+  "kernel:card_generation": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "random card generation from unlock-filtered pools (CardFactory, CardPoolModel, UnlockState)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Card creation"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "model_db"
+    }
+   ],
+   "used_by": {
+    "cards": 19,
+    "events": 12,
+    "modifiers": 5,
+    "potions": 6,
+    "powers": 7,
+    "relics": 36
+   },
+   "w0_texts": [
+    "CardCmd.TransformToRandom (card generation)",
+    "CardCmd.TransformToRandom(rng)",
+    "CardCreationOptions (Uniform, rarity filter)",
+    "CardCreationOptions (Uniform, rarity+type filter)",
+    "CardCreationOptions.ForNonCombatWithDefaultOdds",
+    "CardCreationOptions.ForNonCombatWithDefaultOdds(filter)",
+    "CardCreationOptions.ForNonCombatWithUniformOdds(filter)",
+    "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
+    "CardFactory.CreateForReward",
+    "CardFactory.CreateForReward / CardCreationOptions (reward card generation, CardRarityOdds)",
+    "CardFactory.GetDistinctForCombat",
+    "CardFactory.GetDistinctForCombat (Factories/CardFactory.cs:93-102)",
+    "CardFactory.GetDistinctForCombat (FilterForCombat: CanBeGeneratedInCombat, not Basic/Ancient/Event)",
+    "CardFactory.GetDistinctForCombat (unlock + multiplayer filter, CanBeGeneratedInCombat)",
+    "CardFactory.GetForCombat",
+    "CardFactory.GetForCombat (with replacement)",
+    "CardPoolModel.GetUnlockedCards(UnlockState, CardMultiplayerConstraint)",
+    "CardPoolModel.GetUnlockedCards(UnlockState, SingleplayerOnly)",
+    "CardPoolModel.GetUnlockedCards(UnlockState, SingleplayerOnly) (Models/CardPoolModel.cs:68)",
+    "ColorlessCardPool.GetUnlockedCards(UnlockState, CardMultiplayerConstraint)",
+    "CombatRoom.AddExtraReward + CardReward(CardCreationOptions.ForRoom, 3) (run layer)",
+    "Hook.ModifyCardRewardCreationOptions + TryModifyCardRewardOptions run inside CreateForReward",
+    "OrbModel.GetRandomOrb",
+    "OrbModel.GetRandomOrb over 5 ids incl. Glass (Models/OrbModel.cs:402)",
+    "PotionFactory.GetPotionOptions",
+    "UnlockState",
+    "UnlockState input",
+    "card transformation options (CardFactory.GetDefaultTransformationOptions)",
+    "kernel:card_generation"
+   ]
+  },
+  "kernel:card_listeners": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "cards (with their affliction and enchantment) in combat piles iterate as hook listeners",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "listener_order",
+     "name": "combat_list"
+    }
+   ],
+   "used_by": {
+    "afflictions": 1,
+    "cards": 21,
+    "enchantments": 7,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Card hook listeners",
+    "Enthralled needs AutoPlayType on ShouldPlay",
+    "Hook listener: card in combat piles (AfterAutoPostPlayPhaseEntered)",
+    "Hook listener: card in combat piles (AfterCardDrawn)",
+    "Hook listener: card in combat piles (AfterCardEnteredCombat)",
+    "Hook listener: card in combat piles (AfterCardExhausted)",
+    "Hook listener: card in combat piles (BeforeCardPlayed)",
+    "Hook listener: card in combat piles (BeforeHandDraw)",
+    "Hook listener: card in combat piles (BeforeSideTurnEnd)",
+    "Hook listener: card in combat piles (ShouldPlay)",
+    "cards in combat piles as hook listeners (game listener order: ... orbs, then cards; sim iterates powers only)",
+    "kernel:card_listeners"
+   ]
+  },
+  "kernel:card_model_ops": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "card-model operations: clone/dupe, deck-version link, downgrade, fake upgrade, dynamic type/target, keyword sources, temporary costs",
+   "rows": [],
+   "used_by": {
+    "cards": 22,
+    "enchantments": 3,
+    "events": 1,
+    "monsters": 2,
+    "potions": 9,
+    "powers": 9,
+    "relics": 21
+   },
+   "w0_texts": [
+    "CardEnergyCost.AddUntilPlayed",
+    "CardEnergyCost.GetWithModifiers(CostModifiers.All)",
+    "CardEnergyCost.SetThisTurnOrUntilPlayed",
+    "CardInstance keyword query including in-combat keyword modifiers (card.Keywords)",
+    "CardInstance keyword query including in-combat modifiers",
+    "CardInstance keyword query including in-combat modifiers (card.Keywords)",
+    "CardModel.AfterCloned",
+    "CardModel.AfterDowngraded (re-applies the bonus)",
+    "CardModel.BaseReplayCount (replay plays)",
+    "CardModel.CreateClone",
+    "CardModel.CreateClone (combat copy)",
+    "CardModel.CreateClone (copies upgrade state)",
+    "CardModel.CreateCloneForPlayer",
+    "CardModel.DeckVersion link",
+    "CardModel.DeckVersion link (deck mutation from combat; sim plans CardInstance.DeckVersionId + RunEffects)",
+    "CardModel.FakeUpgrade (Wither)",
+    "CardModel.GeneratePlayCount (Hook.ModifyCardPlayCount)",
+    "CardModel.GetEnchantedReplayCount (enchantment replay term)",
+    "CardModel.IsClone",
+    "CardModel.ResolveEnergyXValue",
+    "CardModel.SetToFreeThisCombat",
+    "CardModel.SetToFreeThisTurn",
+    "EnergyCost.GetWithModifiers(Local)",
+    "GetKeywordsWithSources(Local)",
+    "Keyword sources",
+    "RunState.CloneCard",
+    "card DeckVersion link",
+    "card Enchantment/Rarity queries (Imbued)",
+    "card clones/dupes (CardModel.CreateClone, RunState.CloneCard, CreateDupe)",
+    "dynamic CardType / TargetType / GainsBlock per instance",
+    "dynamic TargetType (FanOfKnivesPower)",
+    "dynamic TargetType / GainsBlock",
+    "kernel:card_model_ops",
+    "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
+   ]
+  },
+  "kernel:card_play_api": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "CardPlay / AttackCommand result data the sim lacks (Resources.EnergyValue, AttackCommand.Results, attack context)",
+   "rows": [],
+   "used_by": {
+    "cards": 9,
+    "monsters": 1,
+    "powers": 2,
+    "relics": 4
+   },
+   "w0_texts": [
+    "AttackCommand.Results",
+    "AttackCommand.Results (WasTargetKilled)",
+    "AttackCommand.Results (mutable per-hit lists)",
+    "AttackCommand.Results -> DamageResult.WasTargetKilled",
+    "AttackContext (AttackCommand.CreateContextAsync: BeforeAttack at creation, AfterAttack at dispose; Commands.Builders/AttackCommand.cs:953)",
+    "AttackContext (AttackCommand.CreateContextAsync: BeforeAttack, AddHit, DisposeAsync -> AfterAttack)",
+    "CardModel.SpendResources",
+    "CardPlay.IsAutoPlay",
+    "CardPlay.Resources",
+    "CardPlay.Resources.EnergyValue (energy paid for the play)",
+    "CreatureCmd.GainBlock returns the block actually gained",
+    "DamageResult.WasFullyBlocked",
+    "ResourceInfo.EnergyValue"
+   ]
+  },
+  "kernel:combat_history": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "CombatHistory entries and queries",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Combat history"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "combat_history"
+    }
+   ],
+   "used_by": {
+    "cards": 37,
+    "powers": 12,
+    "relics": 4
+   },
+   "w0_texts": [
+    "CombatHistory.CardDiscardedEntry (HappenedThisTurn, Actor == owner)",
+    "CombatHistory.CardDrawnEntry (HappenedThisTurn, Status)",
+    "CombatHistory.CardDrawnEntry (whole combat, Actor == owner)",
+    "CombatHistory.CardPlaysFinished (CardPlayFinishedEntry, HappenedThisTurn, CardPlay.Player)",
+    "CombatHistory.CardPlaysStarted (IsFirstInSeries, HappenedThisTurn)",
+    "CombatHistory.EnergySpentEntry (HappenedThisTurn, sum of Amount)",
+    "CombatHistory.OrbChanneledEntry (whole combat, Orb is LightningOrb)",
+    "CombatHistory: BlockGainedEntry (CardPlay, Props, HappenedThisTurn)",
+    "CombatHistory: CardAfflictedEntry by owner this turn",
+    "CombatHistory: CardDrawnEntry by owner, Status, HappenedThisTurn (entry recorded before AfterCardDrawn)",
+    "CombatHistory: CardExhaustedEntry (whole combat)",
+    "CombatHistory: CardExhaustedEntry this turn by owner",
+    "CombatHistory: CardPlayFinishedEntry (Shiv tag, owner's player, this turn)",
+    "CombatHistory: CardPlayFinishedEntry by owner's player, HappenedThisTurn (current play recorded before AfterCardPlayed)",
+    "CombatHistory: CardPlayFinishedEntry this turn (owner, Attack)",
+    "CombatHistory: CardPlayFinishedEntry.HappenedLastPlayerTurn (this card)",
+    "CombatHistory: CardPlayStartedEntry (Attack, owner's player, EnergyValue 0, this turn)",
+    "CombatHistory: CardPlayStartedEntry (Attack, owner's player, this turn)",
+    "CombatHistory: CardPlayStartedEntry (Attack/Skill, owner's player, this turn)",
+    "CombatHistory: CardPlayStartedEntry (Skill, owner's player, this turn)",
+    "CombatHistory: CardPlayStartedEntry by owner's player this turn",
+    "CombatHistory: CardPlayStartedEntry by owner, IsFirstInSeries, HappenedThisTurn",
+    "CombatHistory: CardPlaysFinished (whole combat, all players)",
+    "CombatHistory: CardPlaysStarted this turn (owner)",
+    "CombatHistory: DamageReceivedEntry (whole combat, receiver = owner, UnblockedDamage > 0)",
+    "CombatHistory: DamageReceivedEntry this turn (receiver = owner, UnblockedDamage > 0)",
+    "CombatHistory: DamageReceivedEntry this turn by teammates",
+    "CombatState.CreateCard<T> + CardPileCmd.AddGeneratedCardToCombat (ported) with History.CardGenerated and Hook.AfterCardGeneratedForCombat",
+    "History.CardDrawn",
+    "History.CardGenerated",
+    "History.CardPlaysFinished",
+    "History.CreatureAttacked",
+    "History.DamageReceived",
+    "History.PowerReceived",
+    "History.StarsModified",
+    "combat history (CardPlayFinishedEntry.HappenedLastPlayerTurn)",
+    "combat history (CardPlayFinishedEntry.HappenedThisTurn)",
+    "combat history (DamageReceivedEntry.HappenedLastPlayerTurn)",
+    "ordering: GeneratePlayCount (ModifyCardPlayCount) runs before this play's CardPlayStarted entry is recorded",
+    "ordering: ModifyCardPlayResultLocation runs before this play's CardPlayStarted entry"
+   ]
+  },
+  "kernel:combat_room_entry": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "combat-room entry: AfterRoomEntered dispatched after SetUpCombat and before StartCombatInternal (Rooms/CombatRoom.cs:417-420)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "room_flow"
+    }
+   ],
+   "used_by": {
+    "relics": 20
+   },
+   "w0_texts": [
+    "combat-room entry phase: Hook.AfterRoomEntered after CombatManager.SetUpCombat, before StartCombatInternal (Rooms/CombatRoom.cs:417-420)"
+   ]
+  },
+  "kernel:combat_state_api": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "combat-state queries the sim lacks (Allies, AllCards, pile of a card, live-combat, current side, pets)",
+   "rows": [],
+   "used_by": {
+    "cards": 6,
+    "monsters": 5,
+    "powers": 29,
+    "relics": 1
+   },
+   "w0_texts": [
+    "CardInstance current pile type (Hand/Play)",
+    "CardInstance current pile type + CurrentPlayIndex",
+    "CardLocation (pileType, position) result struct",
+    "CardLocation result struct",
+    "CombatState.Allies",
+    "CombatState.IsLiveCombat",
+    "CombatState.PlayersTakingExtraTurn (extra-turn flag list)",
+    "CombatStatus.IsOverOrEnding",
+    "Creature.Pets (empty unless Necrobinder)",
+    "Creature.SetCurrentHpInternal (raw HP write)",
+    "CreatureState.IsPet / PetOwner",
+    "CreatureState.PetOwner",
+    "CreatureState.PetOwner (Cruelty fallback for pet dealers)",
+    "CreatureState.PetOwner (Osty attacks count)",
+    "MonsterModel.IntendsToAttack (current intent)",
+    "Osty redirect: dealer.PetOwner",
+    "Player ?? PetOwner target resolution",
+    "PlayerCombatState.AllCards",
+    "PlayerCombatState.AllCards (all combat piles in pile order)",
+    "PlayerCombatState.AllCards enumeration",
+    "card pile type in cost hooks"
+   ]
+  },
+  "kernel:dead_but_present": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "creatures that stay in combat after death until revived",
+   "rows": [],
+   "used_by": {
+    "monsters": 8,
+    "powers": 4
+   },
+   "w0_texts": [
+    "CreatureCmd.SetMaxHp + Heal on revive",
+    "MonsterDef coupling: DecimillipedeSegment.DeadState / DoReattach caller",
+    "dead-but-present creature (ShouldCreatureBeRemovedFromCombatAfterDeath false, ShouldAllowHitting false while reviving)",
+    "dead-but-present creature (SteamEruptionPower) re-armed with 999999999 HP",
+    "dead-but-present creature + revive (AdaptablePower ShouldAllowHitting/ShouldCreatureBeRemovedFromCombatAfterDeath/ShouldStopCombatFromEnding)",
+    "dead-but-present creature until revive",
+    "dead-but-present monster flow (ShouldCreatureBeRemovedFromCombatAfterDeath, ShouldStopCombatFromEnding)",
+    "dead-but-present monster revive flow",
+    "dead-but-present pet creature"
+   ]
+  },
+  "kernel:doom": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "DoomPower kill at side-turn end and AfterDiedToDoom",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Doom"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "powers": 1,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Doom (DoomPower kill at side turn end)",
+    "DoomPower.DoomKill from card",
+    "Hook.AfterDiedToDoom (dispatcher, per-listener choice context)"
+   ]
+  },
+  "kernel:dynamic_vars": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "DynamicVar subclasses the sim lacks (Calculated*, OstyDamage, mutable per-instance vars)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "DynamicVar subclasses"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "dynamic_vars"
+    }
+   ],
+   "used_by": {
+    "cards": 45,
+    "events": 1,
+    "monsters": 1,
+    "powers": 10
+   },
+   "w0_texts": [
+    "CalculatedBlockVar -> CreatureCmd.GainBlock(amount, props, cardPlay)",
+    "CalculatedVar family",
+    "CalculatedVar family (CalculationBase + CalculationExtra x multiplier(card, target); Localization.DynamicVars/CalculatedVar.cs)",
+    "DamageCmd.Attack(CalculatedDamageVar) overload (Commands/DamageCmd.cs:13)",
+    "DynamicVar mutation (DamageVar.BaseValue += 1)",
+    "DynamicVar: CalculatedBlockVar",
+    "DynamicVar: CalculatedDamageVar (CalculationBase + ExtraDamage x multiplier)",
+    "DynamicVar: CalculatedVar",
+    "DynamicVar: CalculatedVar (hit count)",
+    "DynamicVar: OstyDamageVar",
+    "PowerModel.DynamicVars",
+    "card DynamicVars override (DisintegrationPower)",
+    "mutable per-instance DynamicVar (Cards) as counter state",
+    "mutable per-instance DynamicVar Block (SetBlock)",
+    "mutable per-instance DynamicVar CardsLeft",
+    "mutable per-instance DynamicVar Damage (SetDamage)",
+    "mutable per-instance DynamicVar SelfDamage (IncrementSelfDamage called by the CrimsonMantle card)",
+    "mutable per-instance DynamicVar SelfDamage (IncrementSelfDamage called by the Inferno card)",
+    "mutable per-instance DynamicVar SlowAmount",
+    "mutable per-instance DynamicVars",
+    "mutable per-instance GoldVar"
+   ]
+  },
+  "kernel:enchantments": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "enchantment models on cards and the enchantment pre-pass",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Enchantments"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "enchantments"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "enchantments": 22,
+    "events": 9,
+    "monsters": 1,
+    "relics": 17
+   },
+   "w0_texts": [
+    "CardCmd.Enchant(enchantment, amount 8)",
+    "CardCmd.Enchant<Corrupted>",
+    "CardCmd.Enchant<PerfectFit>",
+    "CardCmd.Enchant<Slither>",
+    "CardCmd.Enchant<SoulsPower>",
+    "CardCmd.Enchant<Sown>",
+    "CardCmd.Enchant<Spiral>",
+    "CardCmd.Enchant<Steady>",
+    "CardCmd.Enchant<T> (Commands/CardCmd.cs:2146) and the enchantment subsystem",
+    "CardCmd.Enchant<T>(amount 2)",
+    "CardModel.GetEnchantedReplayCount (enchantment replay term)",
+    "CardSelectCmd.FromDeckForEnchantment(additionalFilter)",
+    "CardSelectCmd.FromDeckForEnchantment(cards list overload)",
+    "CloneRestSiteOption",
+    "card Enchantment/Rarity queries (Imbued)",
+    "enchantments (Adroit)",
+    "enchantments (Clone)",
+    "enchantments (EnchantmentModel on cards, CardCmd.Enchant)",
+    "enchantments (Glam)",
+    "enchantments (Goopy)",
+    "enchantments (Imbued: auto-play)",
+    "enchantments (Instinct)",
+    "enchantments (Momentum)",
+    "enchantments (Nimble)",
+    "enchantments (RoyallyApproved)",
+    "enchantments (Sharp)",
+    "enchantments (Swift)",
+    "enchantments (TezcatarasEmber)",
+    "enchantments on combat cards",
+    "kernel:enchantments"
+   ]
+  },
+  "kernel:encounter_slots": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "encounter slots and slot-sorted enemy order",
+   "rows": [],
+   "used_by": {
+    "encounters": 20,
+    "monsters": 8,
+    "powers": 1
+   },
+   "w0_texts": [
+    "ConditionalBranch on Creature.SlotName",
+    "Encounter.Slots / GetNextSlot",
+    "Encounter.Slots scan for the last free slot",
+    "EncounterModel.GetNextSlot",
+    "MonsterDef coupling: PhrogParasiteElite slot names",
+    "encounter Slots + CombatState.SortEnemiesBySlotName (Combat/CombatState.cs:958-964) after each slotted AddCreature (Combat/CombatManager.cs:6999-7002)",
+    "mid-combat summons into encounter slots (EncounterModel.GetNextSlot, Models/EncounterModel.cs:195-198, or a last-free-slot scan)"
+   ]
+  },
+  "kernel:encounter_state": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "encounter custom state read by events or rewards",
+   "rows": [],
+   "used_by": {
+    "encounters": 5,
+    "monsters": 4,
+    "powers": 2
+   },
+   "w0_texts": [
+    "EncounterDef state: BattlewornDummyEventEncounter.RanOutOfTime (event outcome)",
+    "EncounterDef state: GremlinMercNormal.MarkGoldStolen",
+    "encounter custom flag GoldWasStolen (MarkGoldStolen)",
+    "encounter custom state (GremlinMercNormal.MarkGoldStolen)",
+    "encounter custom state (RanOutOfTime) read by the event",
+    "encounter custom state RanOutOfTime (SaveCustomState/LoadCustomState) read back by the event"
+   ]
+  },
+  "kernel:extra_turns": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "extra-turn loop (exists in the P0 sim)",
+   "rows": [],
+   "used_by": {},
+   "w0_texts": []
+  },
+  "kernel:fixed_card_creation": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "creating a fixed card in combat (CombatState.CreateCard, Shiv/Soul helpers, token defs)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Card creation"
+    }
+   ],
+   "used_by": {
+    "cards": 28,
+    "monsters": 3,
+    "potions": 2,
+    "powers": 11,
+    "relics": 3
+   },
+   "w0_texts": [
+    "CombatState.CreateCard for choice cards",
+    "CombatState.CreateCard<Dazed>(player) (fixed-card creation)",
+    "CombatState.CreateCard<SweepingGaze> (fixed-card creation)",
+    "CombatState.CreateCard<T>",
+    "CombatState.CreateCard<T> + CardPileCmd.AddGeneratedCardToCombat (ported)",
+    "CombatState.CreateCard<T> + CardPileCmd.AddGeneratedCardToCombat (ported) with History.CardGenerated and Hook.AfterCardGeneratedForCombat",
+    "CombatState.CreateCard<T>(player) + CardPileCmd.AddGeneratedCardToCombat (ported)",
+    "Hang card def (cardSource is Hang)",
+    "Hook.AfterCardGeneratedForCombat (present; must be dispatched from every card-creation site)",
+    "Luminesce card",
+    "Shiv card",
+    "Shiv card def + Shiv.CreateInHand helper (fixed-card creation)",
+    "Shiv.CreateInHand",
+    "Shiv.CreateInHand (AddGeneratedCardsToCombat)",
+    "Shiv.CreateInHand -> CardPileCmd.AddGeneratedCardsToCombat (Models.Cards/Shiv.cs:355, Commands/CardPileCmd.cs:3204)",
+    "Soul card",
+    "Soul card def",
+    "Soul card def + Soul.Create helper",
+    "Soul.CreateInHand",
+    "Wither card def",
+    "Wound card def"
+   ]
+  },
+  "kernel:forge": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "Regent forge: ForgeCmd and the SovereignBlade token",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Forge (Regent)"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "forge"
+    }
+   ],
+   "used_by": {
+    "cards": 11,
+    "potions": 1,
+    "powers": 4,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Forge (ForgeCmd, SovereignBlade)",
+    "Forge subsystem (ForgeCmd.Forge creates/finds the blade, AddDamage, AfterForged)",
+    "Hook.AfterForge",
+    "SovereignBlade card def",
+    "SovereignBlade card def (cardSource is SovereignBlade)",
+    "SovereignBlade token",
+    "per-instance card state (CurrentDamage, CurrentRepeats, CreatedThroughForge)"
+   ]
+  },
+  "kernel:hp_display": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "CreatureState.HpDisplay read by rules",
+   "rows": [],
+   "used_by": {
+    "powers": 2
+   },
+   "w0_texts": [
+    "CreatureState.HpDisplay (rule-relevant: read by HellraiserPower)",
+    "CreatureState.HpDisplay.IsInfinite (set by HardenedShellPower, WaterfallGiant)"
+   ]
+  },
+  "kernel:monster_coupling": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "power and monster definitions that call each other: a content dependency (port together), no kernel feature",
+   "rows": [],
+   "used_by": {
+    "monsters": 5,
+    "powers": 18
+   },
+   "w0_texts": [
+    "InfestedPower.ShouldStopCombatFromEnding",
+    "MonsterDef coupling: Axebot.StockAmount / ShouldPlaySpawnAnimation",
+    "MonsterDef coupling: BowlbugRock.IsOffBalance",
+    "MonsterDef coupling: CeremonialBeast.SetStunned / StunnedMove / BeastCryState",
+    "MonsterDef coupling: DecimillipedeSegment.DeadState / DoReattach caller",
+    "MonsterDef coupling: LagavulinMatriarch.IsAwake / WakeUpMove",
+    "MonsterDef coupling: LouseProgenitor.Curled",
+    "MonsterDef coupling: MagiKnight calls AddCaster",
+    "MonsterDef coupling: PhrogParasiteElite slot names",
+    "MonsterDef coupling: SlumberingBeetle.WakeUpMove",
+    "MonsterDef coupling: TerrorEel.TerrorState",
+    "MonsterDef coupling: TestSubject.TriggerDeadState / DoRevive",
+    "MonsterDef coupling: ThievingHopper reads the amount",
+    "MonsterDef coupling: ThievingHopper.IsHovering",
+    "MonsterDef coupling: ToughEgg reads/removes it",
+    "MonsterDef coupling: Tunneler.GetStunned / StillDizzyMove",
+    "MonsterDef coupling: TurretOperator type test",
+    "MonsterDef coupling: WaterfallGiant.TriggerAboutToBlowState",
+    "StockPower.ShouldStopCombatFromEnding",
+    "SurprisePower.ShouldStopCombatFromEnding",
+    "power calls a monster method (PlowPower -> CeremonialBeast.SetStunned)",
+    "power writes monster field (ImbalancedPower sets IsOffBalance on fully blocked hit)",
+    "public HasGainedBlockThisTurn read by the monster"
+   ]
+  },
+  "kernel:monster_listeners": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "a monster model iterates as a hook listener (after its creature's powers)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "listener_order",
+     "name": "combat_list"
+    }
+   ],
+   "used_by": {
+    "monsters": 3
+   },
+   "w0_texts": [
+    "Hook.ShouldClearBlock / AfterBlockBroken listeners",
+    "monster as hook listener: AfterCardGeneratedForCombat",
+    "monster as hook listener: AfterDeath"
+   ]
+  },
+  "kernel:monster_prompt": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "a player prompt opened by monster code during the enemy turn",
+   "rows": [],
+   "used_by": {
+    "cards": 4,
+    "monsters": 1
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromChooseACardScreen prompt during the enemy turn",
+    "KnowledgeDemon.IChoosable.OnChosen",
+    "KnowledgeDemon.IChoosable.OnChosen on cards",
+    "Monster-driven prompt: KnowledgeDemon.ChooseCurse (ChooseCard in the enemy turn)"
+   ]
+  },
+  "kernel:move_state_runtime": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "move-state machine extras: SetMoveImmediate, runtime MoveStates, intent lambdas, slot branches",
+   "rows": [],
+   "used_by": {
+    "monsters": 18,
+    "powers": 2
+   },
+   "w0_texts": [
+    "ConditionalBranch on Creature.SlotName",
+    "ForceCurrentState from AfterAddedToRoom",
+    "MonsterModel.SetMoveImmediate",
+    "MonsterModel.SetMoveImmediate + MoveState(FollowUpStateId, MustPerformOnceBeforeTransitioning) + HealIntent",
+    "RunRng.MonsterAi draw outside the move state machine",
+    "SetMoveImmediate from a monster hook",
+    "SetMoveImmediate from a power hook",
+    "SetMoveImmediate(forceTransition) from a power hook",
+    "StarterMoveIdx set by the encounter from its Rng",
+    "attack intent damage from a lambda (SingleAttackIntent(() => DreadDamage))",
+    "intent damage from a lambda (PressureGun, Explode)",
+    "intent hit count from a lambda (MultiAttackIntent(dmg, () => count))",
+    "runtime-created MoveState via SetMoveImmediate (IllusionPower REVIVE_MOVE)",
+    "weight lambdas reading monster state and other monsters' NextMove"
+   ]
+  },
+  "kernel:multiplayer_scaling": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "multiplayer scaling: identity with one player",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Multiplayer scaling"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "multiplayer_scaling"
+    }
+   ],
+   "used_by": {
+    "monsters": 5
+   },
+   "w0_texts": [
+    "Creature.ScaleHpForMultiplayer (identity for 1 player)"
+   ]
+  },
+  "kernel:orbs": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "OrbQueue, orb models, Channel/Evoke/Passive and orb triggers",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Orbs (Defect)"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "orbs"
+    }
+   ],
+   "used_by": {
+    "cards": 47,
+    "characters": 1,
+    "orbs": 5,
+    "potions": 2,
+    "powers": 16,
+    "relics": 7
+   },
+   "w0_texts": [
+    "Defect orbs (OrbQueue, OrbCmd)",
+    "FocusPower (Models.Powers/FocusPower.cs: ModifyOrbValue value+Amount floored at 0, AllowNegative)",
+    "FocusPower (orbs)",
+    "GlassOrb def (not in ModelDb.Orbs list)",
+    "Hook.ModifyOrbValue (FocusPower; Lightning/Frost/Glass values and Dark passive)",
+    "LightningOrb.Passive with an explicit target",
+    "OrbCmd.Channel (Commands/OrbCmd.cs:684: add 1 slot if BaseOrbSlotCount==0 and capacity 0; EvokeNext when full; TryEnqueue; History.OrbChanneled; Hook.AfterOrbChanneled)",
+    "OrbCmd.RemoveSlots (Commands/OrbCmd.cs:659: removes capacity from the back; orbs in removed slots are dropped without evoke)",
+    "OrbModel.GetRandomOrb",
+    "OrbModel.GetRandomOrb over 5 ids incl. Glass (Models/OrbModel.cs:402)",
+    "OrbQueue",
+    "OrbQueue (FrostOrb count)",
+    "OrbQueue (capacity = Character.BaseOrbSlotCount per combat, max 10; Entities.Orbs/OrbQueue.cs)",
+    "OrbQueue (orb ids)",
+    "OrbQueue / FrostOrb (reads HibernatePower)",
+    "OrbQueue / LightningOrb",
+    "OrbQueue / OrbModel",
+    "TemporaryFocusPower base",
+    "TemporaryFocusPower base (BeforeApplied applies Sign x amount FocusPower silently, stacks re-apply the delta in AfterPowerAmountChanged, AfterSideTurnEnd removes and reverts; PowerModel.BeforeApplied exists in sim)",
+    "cards in combat piles as hook listeners (game listener order: ... orbs, then cards; sim iterates powers only)",
+    "kernel:orbs"
+   ]
+  },
+  "kernel:osty": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "Osty and player-side pets (OstyCmd, PlayerCmd.AddPet, PetOwner redirects)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Osty / pets (Necrobinder)"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "osty_pets"
+    }
+   ],
+   "used_by": {
+    "cards": 23,
+    "events": 2,
+    "monsters": 3,
+    "potions": 1,
+    "powers": 7,
+    "relics": 9
+   },
+   "w0_texts": [
+    "Creature.Pets / Osty",
+    "CreatureCmd.Heal(Osty)",
+    "CreatureCmd.Kill(Osty)",
+    "DynamicVar: OstyDamageVar",
+    "Osty / pets",
+    "Osty / pets (PetOwner, PlayerCmd.AddPet, OstyCmd.Summon applies it)",
+    "Osty / pets (creature.Monster is Osty, PetOwner)",
+    "Osty / pets (dealer.Monster is Osty, dealer.PetOwner)",
+    "Osty pet creature",
+    "Osty subsystem (Player.Osty, IsOstyMissing)",
+    "Osty-missing gate",
+    "Osty/pets (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner)",
+    "Osty/pets subsystem (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner, ally-side monster)",
+    "Player.HasEventPet",
+    "Player.HasEventPet (pet registry)",
+    "dead-but-present pet creature",
+    "pets on the player side (relic-summoned companion)"
+   ]
+  },
+  "kernel:per_instance_state": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "mutable per-instance model state that must be cloned and hashed",
+   "rows": [],
+   "used_by": {
+    "cards": 12,
+    "enchantments": 2,
+    "events": 2,
+    "modifiers": 1,
+    "monsters": 9,
+    "orbs": 2,
+    "powers": 39,
+    "relics": 1
+   },
+   "w0_texts": [
+    "Flush retained-cards list on AfterFlush",
+    "MadScience card state (TinkerTimeType, TinkerTimeRider) cloned/serialized with the deck",
+    "PowerModel internal data (isReviving) cloned with the power",
+    "SavedProperty CombatsSeen",
+    "SavedProperty RoomsEntered",
+    "SavedProperty SpoilsActIndex",
+    "SeaGlass.CharacterId (relic instance state)",
+    "[SavedProperty] CurrentBlock / IncreasedBlock (save import/export)",
+    "instanced power holding a card reference (SwipePower.StolenCard)",
+    "kernel:per_instance_state",
+    "mutable per-instance DynamicVar (Cards) as counter state",
+    "mutable per-instance DynamicVar Block (SetBlock)",
+    "mutable per-instance DynamicVar CardsLeft",
+    "mutable per-instance DynamicVar Damage (SetDamage)",
+    "mutable per-instance DynamicVar SelfDamage (IncrementSelfDamage called by the CrimsonMantle card)",
+    "mutable per-instance DynamicVar SelfDamage (IncrementSelfDamage called by the Inferno card)",
+    "mutable per-instance DynamicVar SlowAmount",
+    "mutable per-instance DynamicVars",
+    "mutable per-instance GoldVar",
+    "mutable per-instance amount growth via SetAmount",
+    "per-card mutable field ExtraDamageFromClawPlays (clone + hash)",
+    "per-card mutable field TimesPlayedThisCombat (clone + hash)",
+    "per-instance _lastSpawned (canonical model id)",
+    "per-instance card state",
+    "per-instance card state (CardsInHand)",
+    "per-instance card state (CurrentDamage, CurrentRepeats, CreatedThroughForge)",
+    "per-instance card state (ExtraDamage)",
+    "per-instance card state (ExtraDamageFromMaulPlays)",
+    "per-instance card state (ExtraDamageFromPlays, cloned + hashed)",
+    "per-instance creature reference (Amalgam) stored as an id",
+    "per-instance data (InitInternalData -> cloned field isReviving)",
+    "per-instance data alreadyApplied",
+    "per-instance data cardsLeft (InitInternalData)",
+    "per-instance data cardsPlayedThisTurn",
+    "per-instance data damageReceivedThisTurn (decimal)",
+    "per-instance data energySpent / triggerCount",
+    "per-instance data isReviving / FollowUpStateId",
+    "per-instance data: (card, clone) list",
+    "per-instance data: auto-playing card-instance-id set, infinite auto-play counter",
+    "per-instance data: card-instance-id -> amount map",
+    "per-instance data: card-instance-id -> amount map (InitInternalData)",
+    "per-instance data: card-instance-id -> deferred strength map",
+    "per-instance data: card-instance-id -> strength map",
+    "per-instance data: caster creature-id set, card-instance-id -> level map",
+    "per-instance data: covered creature-id list (AddCoveredCreature)",
+    "per-instance data: creature-id -> stolen amount map",
+    "per-instance data: detached card clone (SetSelectedCard)",
+    "per-instance data: played card reference (card instance id)",
+    "per-instance data: remembered AttackCommand identity + amountWhenAttackStarted",
+    "per-instance data: the AttackCommand being modified (transient, null between actions)",
+    "per-instance field Facing (enum Right=0 default)",
+    "per-instance field WasJustAppliedByEnemy",
+    "per-instance field _cardsPlayedThisTurn",
+    "per-instance field _shouldApplyIntangible",
+    "per-instance override field _stockOverrideAmount chooses the initial state and HP bonus",
+    "power instance internal data holding creature references (DampenPower casters) and card upgrade levels"
+   ]
+  },
+  "kernel:potion_runtime": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "potion slots, UsePotionAction, OnUseWrapper, procurement, potion listeners",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Potions runtime"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "potions": 66,
+    "powers": 1,
+    "relics": 9
+   },
+   "w0_texts": [
+    "Hook.BeforePotionUsed (potions runtime)",
+    "PotionFactory.CreateRandomPotionInCombat",
+    "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
+    "Potions runtime: PotionCmd.TryToProcure (slot capacity, ShouldProcurePotion, AfterPotionProcured)",
+    "automatic use path (PotionUsage.Automatic: ShouldDie gate + OnUseWrapper from AfterPreventingDeath)",
+    "potion as hook listener (after relics)",
+    "potion enemy target in the decision API",
+    "potion procurement",
+    "potion slots and procurement (PotionCmd.TryToProcure, PotionFactory)",
+    "potion use action"
+   ]
+  },
+  "kernel:power_model_api": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "power-model API the sim lacks (instanced powers with Target, visibility, computed type/stack, methods called by other models)",
+   "rows": [],
+   "used_by": {
+    "cards": 4,
+    "monsters": 4,
+    "powers": 7,
+    "relics": 1
+   },
+   "w0_texts": [
+    "BackAttackLeftPower / BackAttackRightPower markers",
+    "Generic power copy",
+    "PoisonPower.Trigger() public entry (Models.Powers/PoisonPower.cs:272)",
+    "PowerCmd.Apply(power instance with Target set) to a not-yet-added creature",
+    "PowerInstanceType.Instanced powers (one NightmarePower per play)",
+    "PowerModel.IsVisible",
+    "PowerModel.IsVisible / IsVisibleInternal on every power (Artifact skips invisible debuffs)",
+    "PowerModel.Target on a per-opponent power instance (PowerCmd.Apply(power instance))",
+    "PowerModel.TypeForCurrentAmount",
+    "StackType computed from StrengthApplied (None until it applied Strength, then Counter)",
+    "Type computed from IsPositive",
+    "instanced power holding a card reference (SwipePower.StolenCard)",
+    "instanced power per player with Target (SandpitPower)",
+    "instanced powers with Target (ThieveryPower, HeistPower)"
+   ]
+  },
+  "kernel:relic_runtime": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "relic models: per-instance state, combat and run listeners, melt/wax, obtain pipeline",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Relics runtime"
+    }
+   ],
+   "used_by": {
+    "powers": 2,
+    "relics": 295
+   },
+   "w0_texts": [
+    "Relic query: dealer.Player.GetRelic<PaperPhrog>().ModifyVulnerableMultiplier (relic runtime)",
+    "Relic query: target.Player.GetRelic<PaperKrane>().ModifyWeakMultiplier (relic runtime)",
+    "RelicCmd.Obtain pipeline (RelicModel.AfterObtained)",
+    "RelicModel combat listener (after player powers; melted relics skipped, Combat/CombatState.cs:877)",
+    "RelicModel run-scope listener (RunState.IterateHookListeners, Runs/RunState.cs:876)",
+    "VulnerablePower must query PaperPhrog (Models.Powers/VulnerablePower.cs), no hook",
+    "WeakPower must query the owner PaperKrane (Models.Powers/WeakPower.cs), no hook",
+    "nested pickup effects (RelicCmd.Obtain inside AfterObtained)",
+    "reads WhisperingEarring presence on turn 1",
+    "wax/melt relics",
+    "wax/melt relics (RelicModel.IsWax/IsMelted, melted relics stop listening)"
+   ]
+  },
+  "kernel:room_context": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "the current room and its type seen from combat (CombatState.Run, CONTRACTS D4)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "room_flow"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "potions": 1,
+    "relics": 16
+   },
+   "w0_texts": [
+    "RunState.BaseRoom",
+    "RunState.CurrentRoom",
+    "combat context: RunState.CurrentRoom.RoomType",
+    "room context (RunState.CurrentRoom.RoomType)"
+   ]
+  },
+  "kernel:run_effects": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "run-state effects inside combat on the shared PlayerState (CONTRACTS D3): deck-version writes, gold, run counters",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Run-state effects inside combat"
+    }
+   ],
+   "used_by": {
+    "cards": 7,
+    "enchantments": 1,
+    "monsters": 3,
+    "potions": 1,
+    "powers": 3,
+    "relics": 11
+   },
+   "w0_texts": [
+    "CardModel.DeckVersion link",
+    "CardModel.DeckVersion link (deck mutation from combat; sim plans CardInstance.DeckVersionId + RunEffects)",
+    "CardPileCmd.RemoveFromDeck (run deck mutation inside combat)",
+    "CardPileCmd.RemoveFromDeck (run deck)",
+    "DeckVersion mutation",
+    "HeistPower.BeforeDeath adds a GoldReward to the combat room (run layer)",
+    "Player.Gold in combat",
+    "PlayerCmd.GainGold (run gold; ModifyGoldGained/AfterGoldGained)",
+    "PlayerCmd.LoseGold (GoldLossType.Stolen) inside combat (run-state effect)",
+    "PlayerCmd.LoseGold (run gold)",
+    "PlayerState.Gold",
+    "RunEffects: gold delta",
+    "card DeckVersion link",
+    "gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained)",
+    "kernel:run_effects",
+    "run effects: permanent deck upgrade (CardCmd.Upgrade on deck cards)"
+   ]
+  },
+  "kernel:run_modifiers": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "run modifiers as listeners (custom and daily runs)",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Run modifiers in combat"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "modifiers"
+    }
+   ],
+   "used_by": {
+    "events": 1,
+    "modifiers": 16
+   },
+   "w0_texts": [
+    "RunState.Modifiers (ClearsPlayerDeck)",
+    "kernel:run_modifiers"
+   ]
+  },
+  "kernel:side_turn_participants": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "the participants parameter of the eight side-turn hooks",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Side-turn participants"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "monsters": 4,
+    "powers": 74,
+    "relics": 55
+   },
+   "w0_texts": [
+    "HookParam.SideTurnParticipants",
+    "HookParam.SideTurnParticipants (sim uses IsTurnParticipant approximation)",
+    "restore hook parameter: BeforeSideTurnEnd(participants)",
+    "side-turn hook participants (parameter dropped in P0)",
+    "side-turn participants (AsleepPower)",
+    "side-turn participants on AfterSideTurnEnd"
+   ]
+  },
+  "kernel:sly": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "the Sly keyword: discarded Sly cards auto-play (CardCmd.Discard pass)",
+   "rows": [],
+   "used_by": {
+    "cards": 18,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CardCmd.Discard / DiscardAndDraw with the Sly auto-play pass (sim CardPileCmd.Discard throws on Sly today)",
+    "CardKeyword.Sly behaviour in discard",
+    "Sly keyword: auto-play after CardCmd discard (Commands/CardCmd.cs:843 collects IsSlyThisTurn, :917 AutoPlay(SlyDiscard))"
+   ]
+  },
+  "kernel:stars": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "Regent stars: PlayerCombatState.Stars, star costs, star hooks",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Stars (Regent)"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "stars"
+    }
+   ],
+   "used_by": {
+    "cards": 24,
+    "potions": 1,
+    "powers": 7,
+    "relics": 8
+   },
+   "w0_texts": [
+    "CostsEnergyOrStars(includeGlobalModifiers)",
+    "History.StarsModified",
+    "Hook.AfterStarsSpent",
+    "Hook.AfterStarsSpent (combat)",
+    "Star spend hooks",
+    "Stars (PlayerCombatState.Stars, star costs)",
+    "Stars subsystem",
+    "Stars subsystem (TryModifyStarCost half)"
+   ]
+  },
+  "kernel:summons": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "mid-combat monster creation into encounter slots",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Summons (monsters)"
+    }
+   ],
+   "used_by": {
+    "encounters": 9,
+    "monsters": 15,
+    "powers": 3
+   },
+   "w0_texts": [
+    "CombatState.CreateCreature (create before adding)",
+    "CombatState.CurrentSide at spawn",
+    "CreatureCmd.Add(monster, combatState, side, slotName) (mid-combat summon)",
+    "CreatureCmd.Add(monster, combatState, side, slotName) mid-combat (respawn)",
+    "CreatureCmd.Add(monster, side, slot) from a power AfterDeath",
+    "CreatureCmd.Add(monster, side, slot) mid-combat",
+    "CreatureCmd.Add<T>(combatState) mid-combat",
+    "CreatureCmd.Add<T>(combatState, slot) / CreatureCmd.Add(creature)",
+    "CreatureCmd.Add<T>(combatState, slot) from a power AfterDeath",
+    "CreatureCmd.Add<T>(combatState, slot) mid-combat",
+    "CreatureCmd.SetMaxAndCurrentHp at spawn",
+    "PowerCmd.Apply(power instance with Target set) to a not-yet-added creature",
+    "Wriggler monster def (StartStunned)",
+    "mid-combat summons into encounter slots (EncounterModel.GetNextSlot, Models/EncounterModel.cs:195-198, or a last-free-slot scan)",
+    "static HashSet<MonsterModel> pools in insertion order"
+   ]
+  },
+  "kernel:temporary_powers": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "ITemporaryPower and the Temporary*Power base classes",
+   "rows": [
+    {
+     "file": "kernel-gaps.json",
+     "section": "subsystems",
+     "name": "Temporary powers"
+    }
+   ],
+   "used_by": {
+    "cards": 7,
+    "powers": 27,
+    "relics": 1
+   },
+   "w0_texts": [
+    "ITemporaryPower",
+    "ITemporaryPower (OriginModel = ModelDb.Card<Anticipate>)",
+    "ITemporaryPower (OriginModel, InternallyAppliedPower)",
+    "ITemporaryPower marker (ShouldPowerBeRemovedOnDeath keeps temporary debuffs)",
+    "ITemporaryPower marker on powers",
+    "ITemporaryPower marker on the temporary-power family",
+    "ITemporaryPower.InternallyAppliedPower",
+    "TemporaryDexterityPower base",
+    "TemporaryDexterityPower base (BeforeApplied applies Sign x amount DexterityPower silently, stacks via AfterPowerAmountChanged, AfterSideTurnEnd removes and reverts)",
+    "TemporaryFocusPower base",
+    "TemporaryFocusPower base (BeforeApplied applies Sign x amount FocusPower silently, stacks re-apply the delta in AfterPowerAmountChanged, AfterSideTurnEnd removes and reverts; PowerModel.BeforeApplied exists in sim)",
+    "TemporaryStrengthPower base",
+    "TemporaryStrengthPower base (BeforeApplied applies Sign x amount StrengthPower silently, stacks via AfterPowerAmountChanged, AfterSideTurnEnd removes and reverts)"
+   ]
+  },
+  "kernel:turn_setup_deferral": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "prompts inside SetupPlayerTurn (ChoiceContextKind.TurnSetup)",
+   "rows": [],
+   "used_by": {
+    "cards": 1,
+    "powers": 5
+   },
+   "w0_texts": [
+    "CardSelectCmd.FromHandForDiscard at AfterPlayerTurnStart (turn-setup deferral, design-combat-kernel §4.6)",
+    "choice context: inline when the shuffle happens inside a card play, turn-setup deferral when it happens in the turn-start draw",
+    "turn-setup choice deferral (SetupPlayerTurn context)"
+   ]
+  },
+  "mp:multiplayer": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "multiplayer-only behaviour (no single-player effect)",
+   "rows": [],
+   "used_by": {
+    "cards": 18
+   },
+   "w0_texts": [
+    "Ally targeting (multiplayer)",
+    "CardModel.GetResultLocationForCardPlay override (other player)",
+    "MultiplayerOnly: removed from single-player pools (Models/CardPoolModel.cs:68-81, Factories/CardFactory.cs:25-32)"
+   ]
+  },
+  "run:acts_room_sets": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "acts, room sets and encounter/event pools",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "acts_room_sets"
+    }
+   ],
+   "used_by": {
+    "acts": 4,
+    "events": 1
+   },
+   "w0_texts": [
+    "run:acts_room_sets",
+    "shared ancient subset (RunManager.GenerateRooms)"
+   ]
+  },
+  "run:ascension_run_effects": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "ascension effects on the run",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "ascension_run_effects"
+    }
+   ],
+   "used_by": {},
+   "w0_texts": []
+  },
+  "run:crystal_sphere": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "the Crystal Sphere minigame (grid, tools, reveal rewards)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "event_framework"
+    }
+   ],
+   "used_by": {
+    "events": 1
+   },
+   "w0_texts": [
+    "CrystalSphereMinigame (grid, tools, ClearCell, reveal tracking)",
+    "OneOffSynchronizer.DoLocalCrystalSphereRewards -> RewardsCmd.OfferCustom"
+   ]
+  },
+  "run:deck": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "deck mutations outside combat (add, remove, transform, enchant, clone)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "run_state"
+    }
+   ],
+   "used_by": {
+    "cards": 4,
+    "events": 18,
+    "modifiers": 6,
+    "monsters": 1,
+    "powers": 2,
+    "relics": 14
+   },
+   "w0_texts": [
+    "CardCmd.TransformTo<T> (deck)",
+    "CardModel.IsRemovable",
+    "CardPileCmd.Add (Deck)",
+    "CardPileCmd.AddCurseToDeck<T>",
+    "CardPileCmd.RemoveFromDeck (run deck mutation inside combat)",
+    "CardPileCmd.RemoveFromDeck (run deck)",
+    "Hook.TryModifyCardBeingAddedToDeck (run)",
+    "RunState.AddCard + SpecialCardReward + CombatRoom.AddExtraReward (run layer)",
+    "RunState.CloneCard",
+    "RunState.CreateCard",
+    "RunState.CreateCard<FeedingFrenzy>",
+    "RunState.CreateCard<SpoilsMap> (AfterCreated sets SpoilsActIndex=1)",
+    "RunState.CreateCard<T>",
+    "card clones/dupes (CardModel.CreateClone, RunState.CloneCard, CreateDupe)",
+    "run effects: permanent deck upgrade (CardCmd.Upgrade on deck cards)",
+    "run:deck"
+   ]
+  },
+  "run:event_combat": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "event combats and combat layouts (EventCombatSynchronizer, resume after combat, extra rewards)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "event_framework"
+    }
+   ],
+   "used_by": {
+    "encounters": 4,
+    "events": 6,
+    "monsters": 4,
+    "powers": 1
+   },
+   "w0_texts": [
+    "CombatLayout (EventCombatSynchronizer.InitializeForEvent)",
+    "EncounterDef state: BattlewornDummyEventEncounter.RanOutOfTime (event outcome)",
+    "EventCombat (extra RelicRewards, no resume)",
+    "EventCombat (extra rewards)",
+    "EventCombat (shouldResumeAfterCombat=false)",
+    "EventCombat (shouldResumeAfterCombat=true)",
+    "EventResume (CombatRoom.Encounter, ExtraRewards)",
+    "display-only creature: the TheArchitect event builds its layout CombatState (EventCombatSynchronizer.InitializeForEvent) but never enters combat",
+    "encounter custom state (RanOutOfTime) read by the event",
+    "encounter custom state RanOutOfTime (SaveCustomState/LoadCustomState) read back by the event"
+   ]
+  },
+  "run:event_framework": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "EventModel lifecycle, options, event Rng and event combats",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "event_framework"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 66
+   },
+   "w0_texts": [
+    "DustyTome.SetupForPlayer",
+    "EventFramework",
+    "EventLayoutType.Custom (no EventOptions; event finished at start)",
+    "EventModel.RelicOption<T>(onChosen) (EventOption.FromRelic)",
+    "EventRng",
+    "TinkerTime event state: SavedProperty TinkerTimeType / TinkerTimeRider on the deck card"
+   ]
+  },
+  "run:gold": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "run gold (gain, loss, steal, Hook.ModifyGoldGained)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "run_state"
+    }
+   ],
+   "used_by": {
+    "cards": 3,
+    "encounters": 1,
+    "events": 11,
+    "monsters": 1,
+    "potions": 1,
+    "powers": 3,
+    "relics": 12
+   },
+   "w0_texts": [
+    "CombatRoom.AddExtraReward + GoldReward(wasGoldStolenBack) (run layer)",
+    "EncounterDef state: GremlinMercNormal.MarkGoldStolen",
+    "Hook.AfterGoldGained (run)",
+    "Hook.ModifyGoldGained (both)",
+    "Player.Gold in combat",
+    "Player.Gold input",
+    "PlayerCmd.GainGold (decimal -> (int) truncation)",
+    "PlayerCmd.GainGold (run gold; ModifyGoldGained/AfterGoldGained)",
+    "PlayerCmd.LoseGold (GoldLossType.Stolen) inside combat (run-state effect)",
+    "PlayerCmd.LoseGold (Spent)",
+    "PlayerCmd.LoseGold (Stolen)",
+    "PlayerCmd.LoseGold (run gold)",
+    "PlayerState.Gold",
+    "RunEffects: gold delta",
+    "encounter custom flag GoldWasStolen (MarkGoldStolen)",
+    "encounter custom state (GremlinMercNormal.MarkGoldStolen)",
+    "gold (PlayerCmd.GainGold/LoseGold, Hook.ModifyGoldGained)"
+   ]
+  },
+  "run:history_and_score": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "run history, map-point history and score",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "history_and_score"
+    }
+   ],
+   "used_by": {
+    "events": 1,
+    "powers": 2
+   },
+   "w0_texts": [
+    "MapPointHistory MarkLootReturned (run history)",
+    "MapPointHistory MarkLootStolen/Returned",
+    "profile input SaveManager.Progress.WongoPoints (explicit sim parameter)"
+   ]
+  },
+  "run:map_generation": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "act maps, map points and travel",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "map_generation"
+    }
+   ],
+   "used_by": {
+    "acts": 4,
+    "cards": 2,
+    "events": 1,
+    "modifiers": 2,
+    "powers": 1,
+    "relics": 6
+   },
+   "w0_texts": [
+    "GoldenPathActMap",
+    "Hook.ModifyGeneratedMap (SpoilsMap -> SpoilsActMap for act index 1)",
+    "Hook.ModifyGeneratedMap (run)",
+    "Hook.ModifyGeneratedMapLate (run)",
+    "Hook.ModifyUnknownMapPointRoomTypes (run)",
+    "Hook.ShouldAllowFreeTravel (run)",
+    "Run layer: ModifyGeneratedMap on deck cards",
+    "Run layer: ModifyGeneratedMapLate on deck cards",
+    "Run layer: ModifyUnknownMapPointRoomTypes on deck cards",
+    "RunState.VisitedMapCoords",
+    "SpoilsActMap (map quest point)",
+    "map (ActMap, MapPoint, travel)",
+    "map points with quests",
+    "map regeneration mid-act",
+    "map travel legality (Hook.ShouldAllowFreeTravel)",
+    "per-instance data: card-instance-id -> amount map (InitInternalData)",
+    "run:map_generation"
+   ]
+  },
+  "run:merchant": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "merchant inventory, prices and purchases",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "merchant"
+    }
+   ],
+   "used_by": {
+    "events": 1,
+    "modifiers": 2,
+    "potions": 1,
+    "relics": 9
+   },
+   "w0_texts": [
+    "FoulPotion out-of-combat use rule at FakeMerchant (node-layer gate to port as rule)",
+    "Hook.ModifyMerchantCardCreationResults (run)",
+    "Hook.ModifyMerchantPrice (run)",
+    "Hook.ShouldRefillMerchantEntry (run)",
+    "MerchantInventory + MerchantRelicEntry (CalcCost on PlayerRng.Shops, OnTryPurchase)",
+    "card removal purchase flow",
+    "merchant/event callbacks",
+    "node-coupled usability (GetFoulPotionMerchantTarget reads NMerchantRoom/NFakeMerchant)",
+    "prompt: MerchantCardRemovalEntry.OnTryPurchaseWrapper",
+    "run:merchant",
+    "shop (MerchantInventory, merchant entries)",
+    "shop inventory and purchase hooks"
+   ]
+  },
+  "run:neow_and_ancients": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "Neow and the ancient events",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "neow_and_ancients"
+    }
+   ],
+   "used_by": {
+    "events": 11,
+    "modifiers": 5
+   },
+   "w0_texts": [
+    "AncientFramework (arrival heal, RelicOption -> RelicCmd.Obtain + Done, pre-finished save point C)",
+    "EventModel.RelicOption<T>(onChosen) (EventOption.FromRelic)",
+    "RelicModel.IsAllowedAtNeow (Kaleidoscope: all character card pools unlocked; ScrollBoxes: >= 4 Common and >= 2 Uncommon unlocked character cards; MassiveScroll multiplayer only; WingedBoots/SilverCrucible single player only)",
+    "RelicModel.IsTradable",
+    "TouchOfOrobas.SetupForPlayer / ArchaicTooth.SetupForPlayer (relic logic at option time)",
+    "run:neow_and_ancients",
+    "shared ancient subset (RunManager.GenerateRooms)"
+   ]
+  },
+  "run:odds": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "run odds (card rarity, potion reward, unknown map point)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "odds"
+    }
+   ],
+   "used_by": {
+    "events": 2,
+    "modifiers": 1,
+    "relics": 25
+   },
+   "w0_texts": [
+    "CardCreationOptions.ForNonCombatWithDefaultOdds",
+    "CardCreationOptions.ForNonCombatWithDefaultOdds(filter)",
+    "CardFactory.CreateForReward / CardCreationOptions (reward card generation, CardRarityOdds)",
+    "run:odds"
+   ]
+  },
+  "run:potions_out_of_combat": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "potion use and discard outside combat",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "potions_out_of_combat"
+    }
+   ],
+   "used_by": {
+    "events": 4,
+    "potions": 5
+   },
+   "w0_texts": [
+    "FoulPotion out-of-combat use rule at FakeMerchant (node-layer gate to port as rule)",
+    "PotionLock (Player.CanUseOrRemovePotions)",
+    "merchant/event callbacks",
+    "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)"
+   ]
+  },
+  "run:relic_grab_bags": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "relic grab bags and RelicFactory",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "relic_grab_bags"
+    }
+   ],
+   "used_by": {
+    "events": 9,
+    "modifiers": 4,
+    "relics": 11
+   },
+   "w0_texts": [
+    "RelicFactory.PullNextRelicFromFront",
+    "RelicFactory.PullNextRelicFromFront (eager, at event start)",
+    "RelicFactory.PullNextRelicFromFront(rarity, filter) (no rarity roll)",
+    "RelicGrabBag.HasAvailableRelics",
+    "relic grab bags and RelicCmd (RelicFactory.PullNextRelicFromFront)",
+    "run:relic_grab_bags"
+   ]
+  },
+  "run:rest_site": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "rest site options and heals",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "rest_site"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "events": 1,
+    "modifiers": 2,
+    "relics": 13
+   },
+   "w0_texts": [
+    "CloneRestSiteOption",
+    "CookRestSiteOption semantics (Entities.RestSite)",
+    "HatchRestSiteOption",
+    "HealRestSiteOption.GetHealAmount",
+    "Hook.AfterRestSiteHeal (run)",
+    "Hook.ModifyExtraRestSiteHealText (run)",
+    "Hook.ModifyRestSiteHealAmount (run)",
+    "Hook.ShouldDisableRemainingRestSiteOptions (run)",
+    "Hook.TryModifyRestSiteHealRewards (run)",
+    "Hook.TryModifyRestSiteOptions (run)",
+    "Run layer: TryModifyRestSiteOptions on deck cards",
+    "prompt: RestSiteOption list",
+    "rest site (RestSiteOption, rest heal)",
+    "run:rest_site"
+   ]
+  },
+  "run:rewards": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "rewards, reward sets and the rewards screen",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "rewards"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "encounters": 1,
+    "events": 17,
+    "modifiers": 5,
+    "monsters": 2,
+    "powers": 4,
+    "relics": 32
+   },
+   "w0_texts": [
+    "CardCreationOptions (Uniform, rarity filter)",
+    "CardCreationOptions (Uniform, rarity+type filter)",
+    "CardFactory.CreateForReward",
+    "CardFactory.CreateForReward / CardCreationOptions (reward card generation, CardRarityOdds)",
+    "CardReward.AfterGenerated event",
+    "CombatRoom.AddExtraReward + CardRemovalReward (run layer rewards)",
+    "CombatRoom.AddExtraReward + CardReward(CardCreationOptions.ForRoom, 3) (run layer)",
+    "CombatRoom.AddExtraReward + GoldReward (run layer rewards)",
+    "CombatRoom.AddExtraReward + GoldReward(wasGoldStolenBack) (run layer)",
+    "EncounterModel.CalculateGoldProportion override (combat gold reward, run layer)",
+    "EventCombat (extra RelicRewards, no resume)",
+    "HeistPower.BeforeDeath adds a GoldReward to the combat room (run layer)",
+    "Hook.AfterModifyingCardRewardOptions (run)",
+    "Hook.AfterModifyingRewards (run)",
+    "Hook.BeforeCombatRewardOffered (run)",
+    "Hook.ModifyCardRewardCreationOptions (run)",
+    "Hook.ModifyCardRewardCreationOptions + TryModifyCardRewardOptions run inside CreateForReward",
+    "Hook.ShouldForcePotionReward (run)",
+    "Hook.TryModifyCardRewardOptions (run)",
+    "Hook.TryModifyCardRewardOptionsLate (run)",
+    "Hook.TryModifyRewards (run)",
+    "Hook.TryModifyRewardsLate (run)",
+    "PotionFactory.GetPotionOptions",
+    "PotionPools",
+    "PotionPools (rarity filter)",
+    "PotionReward (random)",
+    "Reward.SetRng / CardCreationOptions.WithRngOverride",
+    "RewardsCmd (RelicReward with fixed relic)",
+    "RewardsCmd.OfferCustom (CardReward x3)",
+    "RewardsCmd.OfferCustom (CardReward)",
+    "RewardsCmd.OfferCustom (PotionReward random)",
+    "RewardsCmd.OfferCustom (PotionReward)",
+    "RewardsCmd.OfferCustom (PotionReward, fixed potion)",
+    "RewardsCmd.OfferCustom (RelicReward random)",
+    "RunState.AddCard + SpecialCardReward + CombatRoom.AddExtraReward (run layer)",
+    "SpecialCardReward",
+    "SpecialCardReward / CombatRoom.AddExtraReward (run layer)",
+    "card reward reroll action (CardReward.CanReroll)",
+    "prompt: RewardsSet.Offer",
+    "rewards screen (RewardsCmd.OfferCustom / RewardsSet.Offer)",
+    "run:rewards"
+   ]
+  },
+  "run:room_flow": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "room entry, room types and room sequencing",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "room_flow"
+    }
+   ],
+   "used_by": {
+    "cards": 2,
+    "modifiers": 2,
+    "relics": 35
+   },
+   "w0_texts": [
+    "Hook.AfterRoomEntered (run)",
+    "Hook.ModifyUnknownMapPointRoomTypes (run)",
+    "Run layer: BeforeRoomEntered on deck cards (RunState.CurrentRoomCount, CurrentMapPoint.PointType)",
+    "Run layer: ModifyUnknownMapPointRoomTypes on deck cards",
+    "run:room_flow"
+   ]
+  },
+  "run:run_end": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "run end (win, loss, abandon)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "room_flow"
+    }
+   ],
+   "used_by": {
+    "events": 3
+   },
+   "w0_texts": [
+    "CreatureCmd.Kill (out of combat: run loss)",
+    "RunManager.WinRun / run end",
+    "abandon-run terminal action (node-layer popup)"
+   ]
+  },
+  "run:run_scope_hooks": {
+   "kind": "feature",
+   "level": 2,
+   "status": "missing",
+   "title": "run-scope hook dispatch over deck cards, relics, potions and modifiers (W1 against shell run types, CONTRACTS D7)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "run_scope_hooks"
+    }
+   ],
+   "used_by": {
+    "cards": 5,
+    "events": 1
+   },
+   "w0_texts": [
+    "Hook listener: deck card (AfterCombatEnd, run layer)",
+    "Hook.ModifyNextEvent (deck-card listener at run scope)",
+    "Run layer: AfterMapGenerated on deck cards",
+    "Run layer: BeforeCardRemoved on deck cards",
+    "Run layer: BeforeRoomEntered on deck cards (RunState.CurrentRoomCount, CurrentMapPoint.PointType)",
+    "Run layer: ModifyGeneratedMap on deck cards",
+    "Run layer: ModifyGeneratedMapLate on deck cards",
+    "Run layer: ModifyNextEvent on deck cards",
+    "Run layer: ModifyUnknownMapPointRoomTypes on deck cards",
+    "Run layer: TryModifyRestSiteOptions on deck cards"
+   ]
+  },
+  "run:run_state": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "RunState, Player and run-level fields",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "run_state"
+    }
+   ],
+   "used_by": {
+    "cards": 1,
+    "characters": 5,
+    "events": 19,
+    "relics": 3
+   },
+   "w0_texts": [
+    "CreatureCmd.Damage (out of combat)",
+    "CreatureCmd.Damage (out of combat, DamageVar Unblockable|Unpowered)",
+    "Player.HasEventPet",
+    "Player.HasEventPet (pet registry)",
+    "Player.HasOpenPotionSlots",
+    "Run layer: BeforeRoomEntered on deck cards (RunState.CurrentRoomCount, CurrentMapPoint.PointType)",
+    "model-seeded Rng(player, ModelId) (seed = RunSeed + player slot + hash(id), Random/Rng.cs:37-40)",
+    "run:run_state"
+   ]
+  },
+  "run:save_import": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "save import and SavedProperty fields",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "save_import"
+    }
+   ],
+   "used_by": {
+    "cards": 5,
+    "events": 3,
+    "modifiers": 1
+   },
+   "w0_texts": [
+    "ExtraPlayerFields.WongoPoints (save field)",
+    "ExtraRunFields.FreedRepy (save field)",
+    "MadScience card state (TinkerTimeType, TinkerTimeRider) cloned/serialized with the deck",
+    "SavedProperty CombatsSeen",
+    "SavedProperty RoomsEntered",
+    "SavedProperty SpoilsActIndex",
+    "TinkerTime event state: SavedProperty TinkerTimeType / TinkerTimeRider on the deck card",
+    "[SavedProperty] CurrentBlock / IncreasedBlock (save import/export)",
+    "run:save_import"
+   ]
+  },
+  "run:treasure": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "treasure rooms",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "treasure"
+    }
+   ],
+   "used_by": {
+    "relics": 1
+   },
+   "w0_texts": [
+    "Hook.ShouldGenerateTreasure (run)"
+   ]
+  },
+  "run:unlock_profile": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "UnlockProfile input (epochs, unlocked pools, profile counters)",
+   "rows": [
+    {
+     "file": "run-layer-gaps.json",
+     "section": "subsystems",
+     "name": "unlock_profile"
+    },
+    {
+     "file": "subsystems.json",
+     "section": "subsystems",
+     "name": "unlocks_timeline"
+    }
+   ],
+   "used_by": {
+    "acts": 3,
+    "cards": 12,
+    "events": 3,
+    "modifiers": 1,
+    "potions": 6,
+    "powers": 5,
+    "relics": 6
+   },
+   "w0_texts": [
+    "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
+    "CardPoolModel.GetUnlockedCards(UnlockState, CardMultiplayerConstraint)",
+    "CardPoolModel.GetUnlockedCards(UnlockState, SingleplayerOnly)",
+    "CardPoolModel.GetUnlockedCards(UnlockState, SingleplayerOnly) (Models/CardPoolModel.cs:68)",
+    "ColorlessCardPool.GetUnlockedCards(UnlockState, CardMultiplayerConstraint)",
+    "RelicModel.IsAllowedAtNeow (Kaleidoscope: all character card pools unlocked; ScrollBoxes: >= 4 Common and >= 2 Uncommon unlocked character cards; MassiveScroll multiplayer only; WingedBoots/SilverCrucible single player only)",
+    "UnlockState",
+    "UnlockState input",
+    "UnlockState.CharacterCardPools",
+    "UnlockState.Characters",
+    "run:unlock_profile"
+   ]
+  },
+  "test:test_mode": {
+   "kind": "feature",
+   "level": 1,
+   "status": "n/a",
+   "title": "TestMode seam (dropped)",
+   "rows": [],
+   "used_by": {
+    "enchantments": 1
+   },
+   "w0_texts": [
+    "test:test_mode"
+   ]
+  },
+  "ui:node_rule": {
+   "kind": "feature",
+   "level": 3,
+   "status": "missing",
+   "title": "a rule that lives in the Godot node layer and must be ported as a rule",
+   "rows": [],
+   "used_by": {
+    "events": 2,
+    "potions": 5
+   },
+   "w0_texts": [
+    "FoulPotion out-of-combat use rule at FakeMerchant (node-layer gate to port as rule)",
+    "abandon-run terminal action (node-layer popup)",
+    "node-coupled usability (GetFoulPotionMerchantTarget reads NMerchantRoom/NFakeMerchant)",
+    "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)"
+   ]
+  }
+ },
+ "w0_texts_without_a_key": {
+  "reason": "the feature exists in the P0 sim or has no single-player rule effect",
+  "texts": [
+   "AfterAddedToRoom runs in setup window B: the 13 block is refused by the IsOverOrEnding gate (sim/specs/loop.md section 2, already modelled)",
+   "AfterCardExhausted causedByEthereal flag (present)",
+   "AttackCommand.Results / ModelSource (present)",
+   "AttackCommand.Results / TargetSide (present)",
+   "AttackCommand.TargetingRandomOpponents (ported)",
+   "CardCmd.Exhaust (ported)",
+   "CardCmd.Exhaust (present)",
+   "CardDef.IsPlayable override (present in sim)",
+   "CardEnergyCost.AddThisCombat (present in sim)",
+   "CardEnergyCost.AddThisTurn (present in sim)",
+   "CardEnergyCost.AddUntilPlayed (present in sim)",
+   "CardEnergyCost.CostsX / GetWithModifiers(All) (present)",
+   "CardEnergyCost.GetResolved(cs, card) (present; includes Hook.ModifyEnergyCostInCombat)",
+   "CardEnergyCost.SetThisCombat (present in sim)",
+   "CardEnergyCost.SetThisCombat (present)",
+   "CardInstance.BaseReplayCount (present)",
+   "CardInstance.HasTag(CardTag.Defend) (present)",
+   "CardInstance.HasTag(CardTag.Shiv) (present)",
+   "CardInstance.IsDupe (present)",
+   "CardModel identity (HashSet of skipped cards, GetType comparison)",
+   "CardModel.SetToFreeThisTurn (present in sim CardInstance)",
+   "CardModel.Tags (Strike) + Rarity Basic",
+   "CardModel.Tags (Strike/Defend)",
+   "CardPileCmd.AddGeneratedCardToCombat (Draw, CardPilePosition.Random) (present)",
+   "CardPileCmd.AddGeneratedCardToCombat (Hand) (present)",
+   "CardPileCmd.AddGeneratedCardToCombat (ported)",
+   "CardPileCmd.AddGeneratedCardToCombat (present)",
+   "CardPileCmd.Shuffle (ported: discard + draw StableShuffle, ModifyShuffleOrder)",
+   "CardPileCmd.ShuffleIfNecessary (present)",
+   "CardPilePosition.Random insertion (ported)",
+   "CardPilePosition.Random insertion into draw and discard (ported)",
+   "CardPlay.IsAutoPlay / IsLastInSeries (present)",
+   "CardPlay.IsLastInSeries (present)",
+   "CardPlay.Resources.EnergySpent (present)",
+   "CardPlay.Resources.StarsSpent (present)",
+   "CardPoolModel.EnergyColorName (option key)",
+   "CombatState.RoundNumber (present)",
+   "Creature.ScaleHpForMultiplayer (display only)",
+   "CreatureCmd.Damage (single-target per hit) (present)",
+   "CreatureCmd.Kill (present)",
+   "CreatureCmd.Kill(force: true) (present)",
+   "CreatureCmd.LoseBlock with remover (ported)",
+   "CreatureCmd.LoseMaxHp (present; the run layer carries max HP out of combat generically)",
+   "CreatureCmd.LoseMaxHp from PaperCutsPower (ported); the max-HP loss must flow back to the run state after combat",
+   "CreatureCmd.Stun (both overloads, present)",
+   "CreatureCmd.Stun(creature) (present)",
+   "CreatureCmd.Stun(creature, nextMoveId) (present)",
+   "CreatureCmd.Stun(creature, nextMoveId) from a power (ported)",
+   "CreatureCmd.Stun(creature, stunMove) (sim StunWithMove)",
+   "CreatureCmd.Stun(creature, stunMove, nextMoveId) (present)",
+   "CreatureCmd.Stun(creature, stunMove, nextMoveId) from a power (ported)",
+   "DamageResult.BlockedDamage (present)",
+   "DynamicVar.IntValue truncation",
+   "Hook.AfterCardDrawnEarly (present)",
+   "Hook.AfterCardEnteredCombat (present)",
+   "Hook.AfterCurrentHpChanged (present)",
+   "Hook.AfterEnergySpent (present)",
+   "Hook.AfterShuffle (present)",
+   "Hook.AfterSideTurnStartLate (present)",
+   "Hook.BeforeAttack / AfterAttack (present)",
+   "Hook.BeforeCombatStart (present)",
+   "Hook.BeforeDeath (present)",
+   "Hook.BeforeHandDraw (present)",
+   "Hook.BeforePowerAmountChanged (present)",
+   "Hook.ModifyCardPlayCount (present in sim)",
+   "Hook.ModifyUnblockedDamageTarget (present)",
+   "Hook.ShouldDraw fromHandDraw flag (present)",
+   "Hook.ShouldFlush (present in sim)",
+   "Hook.ShouldFlush (present)",
+   "IEnumerableExtensions.TakeRandom",
+   "IVulnerableMultiplierModifier / IWeakMultiplierModifier seams (present in sim)",
+   "IVulnerableMultiplierModifier seam (present in sim MultiplierModifiers.cs)",
+   "IVulnerableMultiplierModifier seam (present)",
+   "IWeakMultiplierModifier seam (present)",
+   "List<T>.AddRange(self) doubling semantics",
+   "ListExtensions.StableShuffle (List.Sort semantics)",
+   "PlayerCombatState.TurnNumber (present)",
+   "PowerCmd.Apply to a list of teammates",
+   "PowerCmd.ModifyAmount (ported)",
+   "PowerCmd.ModifyAmount (present)",
+   "PowerCmd.Remove<T> (ported)",
+   "PowerInstanceType.Instanced stacking (present)",
+   "PowerInstanceType.InstancedPerApplier (present)",
+   "PowerInstanceType.InstancedPerApplier stacking (FindExistingInstanceForStacking) (present)",
+   "PowerModel API: CrimsonMantlePower.IncrementSelfDamage on the returned instance",
+   "PowerModel API: InfernoPower.IncrementSelfDamage on the returned instance",
+   "PowerModel API: TheBombPower.SetDamage on the returned instance",
+   "PowerModel API: ToricToughnessPower.SetBlock on the returned instance",
+   "PowerModel.AmountOnTurnStart (present)",
+   "PowerModel.AmountOnTurnStart snapshot (present)",
+   "PowerModel.BeforeApplied (present)",
+   "PowerModel.GetScaledAmountForMultiplayer + ShouldScaleInMultiplayer (single player: identity)",
+   "PowerModel.GetTypeForAmount (present)",
+   "PowerModel.OwnerIsSecondaryEnemy (present)",
+   "PowerModel.Target (present as TargetId)",
+   "PowerModel.Target (present)",
+   "PowerModel.Target (robbed creature) (present)",
+   "PowerModel.Target (target creature) (present)",
+   "RngCollectionExtensions.UnstableShuffle (present)",
+   "RunRng.CombatCardGeneration draw inside a monster move",
+   "RunRng.Niche draw inside a monster move",
+   "RunState.CreateCard<MadScience> (hover-tip creations have no rule effect)",
+   "RunState.ExtraFields.TestSubjectKills++ (statistics counter, no rule effect)",
+   "RunState.Modifiers (empty in Standard; modifier Neow chain excluded)",
+   "ScoreUtility.CalculateScore (display)",
+   "ShouldOwnerDeathTriggerFatal (present)",
+   "ShouldOwnerDeathTriggerFatal / ShouldPowerBeRemovedAfterOwnerDeath (present)",
+   "Slimed.AddToCombatAndPreview (already ported for the P0 slimes)",
+   "Slimed.AddToCombatAndPreview (ported)",
+   "StableShuffle (CardModel.CompareTo)",
+   "StableShuffle (DollChoice.CompareTo -> RelicModel.CompareTo)",
+   "StableShuffle (RelicModel.CompareTo)",
+   "StableShuffle (ValueTuple<string,string> default comparer; VFX list, Rng parity only)",
+   "Task.WhenAll over players (serial in single player)",
+   "TestMode seam TestEnergyCostOverride (drop)",
+   "TryModifyStarCost (present)",
+   "ValueProp.IsCardOrMonsterMove",
+   "X energy cost (HasEnergyCostX; ResolveEnergyXValue / CapturedXValue; Hook.ModifyXValue) - present in sim",
+   "card replay loop driven by Hook.ModifyCardPlayCount (present)",
+   "dead-but-present monster (revive) flow (present: ShouldCreatureBeRemovedFromCombatAfterDeath + ShouldStopCombatFromEnding gates)",
+   "encounter-private Rng (EncounterModel.Rng, seeded Models/EncounterModel.cs:202-216; ported, sim/specs/rng-encounter-private.md)",
+   "extra turns (Hook.ShouldTakeExtraTurn)",
+   "extra-turn loop (present: CombatLoop ShouldTakeExtraTurn/AfterTakingExtraTurn)",
+   "max HP change persists to the run (combat sim: PlayerState.MaxHp, read back by the run layer)",
+   "move StateLog (present)",
+   "move StateLog + AiStateDef.GetNextState(cs, owner, RunRng.MonsterAi) (present)",
+   "multi-part boss: two independent monsters",
+   "multi-part boss: two independent monsters (Crusher left, Rocket right)",
+   "owner power enumeration by base type (present; GetPowerInstances<TemporaryStrengthPower>)",
+   "profile Progress wins (dialogue choice, cosmetic)",
+   "random pile insertion (RunRng.Shuffle NextInt(count+1), Commands/CardPileCmd.cs:3431)",
+   "read own power amount (GetPowerAmount<DexterityPower>)",
+   "read own power amount (Powers.OfType<PersonalHivePower>().First())"
+  ]
+ }
+}

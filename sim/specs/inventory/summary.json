@@ -425,6 +425,8 @@
    "unresolved_breakdown": {},
    "mock_entries": 2
   },
+  "_cross_kind_duplicate_model_ids": {},
+  "_model_id_category_mismatches": [],
   "_registered": {
    "declared_count": 1660,
    "typeof_entries": 1660,

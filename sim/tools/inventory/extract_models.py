@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cs_source import (  # noqa: E402
     CsFile, STRING_PLACEHOLDER_RE, generated_owner, iter_types, split_args, balanced_call_args,
 )
-from model_ids import model_id, slugify, self_test as slug_self_test  # noqa: E402
+from model_ids import model_id, slugify, slugify_category, self_test as slug_self_test  # noqa: E402
 
 SCHEMA = "sts2sim.inventory/v1"
 GAME_VERSION = "0.111.0"
@@ -263,45 +263,95 @@ def load_context(root, sim_root):
 def _index_classes(ctx):
     ctx.class_index = {}
     ctx.kind_classes = dict((k, set()) for k in KIND_NAMES)
-    ctx.bases = {}
-    for name, f in ctx.base_files.items():
+    ctx.type_index = {}
+    ctx.kind_type_index = {}
+    for name, f in sorted(ctx.base_files.items()):
         for td in f.types:
-            ctx.bases.setdefault(td.name, td.bases[0] if td.bases else None)
+            ctx.type_index.setdefault(type_key(f, td), (f, td))
     for kind in KIND_NAMES:
         for f in ctx.files[kind]:
             for td in f.types:
                 ctx.class_index.setdefault(td.name, []).append((kind, f, td))
                 ctx.kind_classes[kind].add(td.name)
-                ctx.bases.setdefault(td.name, td.bases[0] if td.bases else None)
+                ctx.type_index.setdefault(type_key(f, td), (f, td))
+                ctx.kind_type_index.setdefault(type_key(f, td), (kind, f, td))
     for pk, lst in ctx.pool_files.items():
         for f in lst:
             for td in f.types:
-                ctx.bases.setdefault(td.name, td.bases[0] if td.bases else None)
+                ctx.type_index.setdefault(type_key(f, td), (f, td))
 
 
-def category_type(ctx, name):
+def file_ns(f):
+    return f.rel.split("/")[0]
+
+
+def type_key(f, td):
+    return (file_ns(f), td.name)
+
+
+def enclosing_namespaces(ns_dir):
+    """`ns_dir` and its enclosing namespaces, innermost first, in decompile-dir form."""
+    parts = (NS_PREFIX + ns_dir).split(".")
+    return [rel_ns_dir(".".join(parts[:i])) for i in range(len(parts), 0, -1)]
+
+
+def resolve_type(ctx, f, name):
+    """Bind a type name used in file f the way C# does for a file-scoped namespace.
+
+    Lookup order: the file's namespace, then each enclosing namespace outward, then the
+    compilation unit's `using` namespaces (an ambiguous using match binds nothing). Only types
+    declared in the scanned dirs (`Models/`, kind dirs, pool dirs) are known; returns the
+    `(ns_dir, name)` key or None.
+    """
+    if not name:
+        return None
+    name = re.sub(r"<.*>$", "", name.strip())
+    name = re.sub(r"^global::", "", name)
+    if "." in name:
+        ns, nm = name.rsplit(".", 1)
+        key = (rel_ns_dir(ns), nm)
+        return key if key in ctx.type_index else None
+    for ns in enclosing_namespaces(file_ns(f)):
+        if (ns, name) in ctx.type_index:
+            return (ns, name)
+    hits = sorted(ns for ns in file_usings(f) if (ns, name) in ctx.type_index)
+    if len(hits) == 1:
+        return (hits[0], name)
+    return None
+
+
+def base_key(ctx, key):
+    f, td = ctx.type_index[key]
+    return resolve_type(ctx, f, td.bases[0]) if td.bases else None
+
+
+ABSTRACT_MODEL_KEY = ("Models", "AbstractModel")
+
+
+def category_type(ctx, key):
+    """Name of the class whose base is AbstractModel (`Models/ModelDb.cs:470-478`), walking bases by key."""
     seen = set()
-    cur = name
-    while cur is not None and cur not in seen:
+    cur = key
+    while cur is not None and cur not in seen and cur in ctx.type_index:
         seen.add(cur)
-        b = ctx.bases.get(cur)
+        b = base_key(ctx, cur)
         if b is None:
             return None
-        b = re.sub(r"<.*>$", "", b.strip())
-        if b == "AbstractModel":
-            return cur
+        if b == ABSTRACT_MODEL_KEY:
+            return cur[1]
         cur = b
     return None
 
 
-def chain_of(ctx, name):
+def chain_of(ctx, key):
+    """Base class names of `key` up to (not including) AbstractModel, nearest first."""
     out = []
-    cur = ctx.bases.get(name)
+    cur = base_key(ctx, key) if key in ctx.type_index else None
     seen = set()
-    while cur and cur not in seen and cur != "AbstractModel":
+    while cur and cur not in seen and cur != ABSTRACT_MODEL_KEY:
         seen.add(cur)
-        out.append(cur)
-        cur = ctx.bases.get(cur)
+        out.append(cur[1])
+        cur = base_key(ctx, cur) if cur in ctx.type_index else None
     return out
 
 
@@ -519,7 +569,7 @@ def _load_pools(ctx):
                     gates.extend(re.findall(r"IsEpochRevealed<(\w+)>", member_text(f, um)))
             is_mock = bool(re.search(r"override bool IsMock => true", f.masked))
             out[td.name] = {"class": td.name, "id": _pool_label(td.name, suffix), "model_id": model_id(
-                category_type(ctx, td.name) or (pk.capitalize() + "PoolModel"), td.name),
+                category_type(ctx, type_key(f, td)) or (pk.capitalize() + "PoolModel"), td.name),
                 "file": f.rel, "generator_line": line, "members": items, "declared_count": declared,
                 "members_via": via, "unlock_gates": uniq(gates), "is_mock": is_mock}
         ctx.pools[pk] = out
@@ -947,7 +997,7 @@ def enum_prop(ctx, f, td, prop, enum, dynamic):
     Returns (value, source_tag). A non-literal getter records dynamic[field-less key prop] =
     {"at": "file:line", "candidates": [...]} and returns (None, tag).
     """
-    sources = [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, td)]
+    sources = [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, f, td)]
     for ff, tt in sources:
         m = top_member(tt, prop, ("property",))
         if m is None or not m.is_override:
@@ -963,19 +1013,21 @@ def enum_prop(ctx, f, td, prop, enum, dynamic):
     return None, None
 
 
-def inherited_td(ctx, td):
+def inherited_td(ctx, f, td):
     """Intermediate base classes (inside the model dirs) between td and the root model base."""
     out = []
-    cur = td.bases[0] if td.bases else None
     seen = set()
-    while cur and cur not in seen:
-        seen.add(cur)
-        ents = ctx.class_index.get(cur)
-        if not ents:
+    cur_f, cur_td = f, td
+    while cur_td.bases:
+        key = resolve_type(ctx, cur_f, cur_td.bases[0])
+        if key is None or key in seen:
             break
-        out.append(ents[0])
-        tdb = ents[0][2]
-        cur = tdb.bases[0] if tdb.bases else None
+        seen.add(key)
+        ent = ctx.kind_type_index.get(key)
+        if ent is None:
+            break
+        out.append(ent)
+        cur_f, cur_td = ent[1], ent[2]
     return out
 
 
@@ -984,7 +1036,7 @@ def common(ctx, kind, f, td):
     root_base = KIND_ROOT[kind]
     base = td.bases[0] if td.bases else None
     base_class = base if base and not re.match(r"^I[A-Z]", base) else None
-    cat = category_type(ctx, td.name)
+    cat = category_type(ctx, type_key(f, td))
     e = {}
     e["id"] = slugify(td.name)
     e["model_id"] = model_id(cat, td.name) if cat else None
@@ -1011,7 +1063,7 @@ def common(ctx, kind, f, td):
     pub = uniq(pub)
     prot = uniq(prot)
     inh = []
-    for (ik, ifile, itd) in inherited_td(ctx, td):
+    for (ik, ifile, itd) in inherited_td(ctx, f, td):
         for m in itd.members:
             if m.is_override and m.name:
                 inh.append(m.name)
@@ -1092,7 +1144,7 @@ def resolve_primary(order, member_pools):
 
 
 def kind_cards(ctx, f, td, e):
-    sources = [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, td)]
+    sources = [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, f, td)]
     ctor = None
     ctor_owner = None
     base_args = None
@@ -1176,7 +1228,7 @@ def kind_cards(ctx, f, td, e):
     e["max_upgrade_level"] = int(mul) if mul is not None else None
     pools = card_pools_for(ctx, td.name)
     e["pools"] = [ctx.pools["card"][p]["id"] for p in pools]
-    chain = chain_of(ctx, td.name)
+    chain = chain_of(ctx, type_key(f, td))
     if "MockCardModel" in chain or td.name == "MockCardModel":
         prim = "DeprivedCardPool"
         e["pool_rule"] = "mock_override"
@@ -1206,7 +1258,7 @@ def kind_powers(ctx, f, td, e):
             defaults[prop] = ex.split(".")[-1] if ex else None
     bm = top_member(pm, "AllowNegative", ("property",))
     defaults["AllowNegative"] = (expr_of(ctx.base_files["PowerModel"], bm) == "true") if bm else None
-    inh = inherited_td(ctx, td)
+    inh = inherited_td(ctx, f, td)
     sources = [(f, td)] + [(x[1], x[2]) for x in inh]
 
     dynamic = {}
@@ -1293,7 +1345,7 @@ def kind_potions(ctx, f, td, e):
 
 
 def _hp_expr(ctx, f, td, prop):
-    for (ff, tt) in [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, td)]:
+    for (ff, tt) in [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, f, td)]:
         m = top_member(tt, prop, ("property",))
         if m is not None:
             ex = expr_of(ff, m)
@@ -1350,7 +1402,7 @@ def kind_monsters(ctx, f, td, e):
     e["powers_referenced"] = e["refs"].get("powers", [])
     moves = []
     e["move_states_from"] = None
-    for ff, tt in [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, td)]:
+    for ff, tt in [(f, td)] + [(x[1], x[2]) for x in inherited_td(ctx, f, td)]:
         gm = top_member(tt, "GenerateMoveStateMachine", ("method",))
         if gm is None:
             continue
@@ -1412,7 +1464,7 @@ def kind_encounters(ctx, f, td, e):
 
 def kind_events(ctx, f, td, e):
     s = f.masked
-    chain = [td.name] + chain_of(ctx, td.name)
+    chain = [td.name] + chain_of(ctx, type_key(f, td))
     e["is_ancient"] = "AncientEventModel" in chain
     e["is_shared"] = e["bool_overrides"].get("IsShared", False)
     opts = re.findall(r"\bnew\s+EventOption\s*\(", s)
@@ -1597,7 +1649,7 @@ def build_entries(ctx):
             if td is None:
                 nm.append({"file": f.rel, "reason": "no top-level type"})
                 continue
-            cat = category_type(ctx, td.name)
+            cat = category_type(ctx, type_key(f, td))
             if cat is None:
                 nm.append({"file": f.rel, "class": td.name, "bases": td.bases,
                            "reason": "type does not derive from AbstractModel"})
@@ -1912,6 +1964,31 @@ def unresolved_of(kind, lst):
     return out, why
 
 
+def cross_kind_duplicate_ids(entries, pools=None):
+    """`{model_id: [kind/file, ...]}` for every ModelDb id held by more than one entry or pool across all kinds."""
+    by_id = {}
+    for kind in sorted(entries):
+        for e in entries[kind]:
+            if e.get("model_id"):
+                by_id.setdefault(e["model_id"], []).append("%s/%s" % (kind, e["file"]))
+    for pk in sorted(pools or {}):
+        for pname, p in sorted(pools[pk].items()):
+            if p.get("model_id"):
+                by_id.setdefault(p["model_id"], []).append("%s_pools/%s" % (pk, p["file"]))
+    return dict((i, sorted(v)) for i, v in sorted(by_id.items()) if len(v) > 1)
+
+
+def category_mismatches(entries):
+    """Entries whose `model_id` category is not the slugified root model of their kind (`KIND_ROOT`)."""
+    out = []
+    for kind in KIND_NAMES:
+        want = slugify_category(KIND_ROOT[kind]) + "."
+        for e in entries.get(kind, []):
+            if e.get("model_id") and not e["model_id"].startswith(want):
+                out.append("%s/%s: %s" % (kind, e["file"], e["model_id"]))
+    return out
+
+
 def validate(ctx, entries, non_model):
     report = {}
     problems = []
@@ -1941,6 +2018,14 @@ def validate(ctx, entries, non_model):
         if not r["accounted_exactly_once"] or dup_cls or dup_ids:
             problems.append("%s: accounting problem" % kind)
         report[kind] = r
+    cross = cross_kind_duplicate_ids(entries, ctx.pools)
+    report["_cross_kind_duplicate_model_ids"] = cross
+    if cross:
+        problems.append("model_id not unique across kinds")
+    cat_bad = category_mismatches(entries)
+    report["_model_id_category_mismatches"] = cat_bad
+    if cat_bad:
+        problems.append("model_id category differs from the kind's root model")
     defined = set()
     for kind in KIND_NAMES:
         for f in ctx.files[kind]:

@@ -1,10 +1,12 @@
 {
  "schema": "sts2sim.inventory/v1",
+ "generated_by": [
+  "sim/tools/inventory/classify/run-layer/build_gaps.py"
+ ],
  "kind": "run-layer-gaps",
  "game_version": "0.111.0",
  "decompile_root": "/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled",
  "design_doc": "docs/sim-port/design-run-layer.md",
- "generated_by": "tmp/sim-port/run-layer/build_gaps.py (W0, 2026-11-01)",
  "target": {
   "players": 1,
   "game_mode": "Standard",

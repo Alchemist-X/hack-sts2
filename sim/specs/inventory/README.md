@@ -36,8 +36,9 @@ which kinds changed.
 | `ported.json` | what `sim/Sts2Sim.Core` already defines (cards, powers, monsters, encounters) |
 | `summary.json` | per-kind stats and the validation report (file accounting, registry coverage, unresolved entries) |
 
-Other JSON files in this directory (for example `corpus-inventory.json`, `kernel-gaps.json`,
-`subsystems.json`) are not written by `extract_models.py` and are not described here.
+The other JSON files in this directory (the 15 `*.classified.json`, `requirements.json`, `batches.json`,
+`version-deltas.json`, `kernel-gaps.json`, `run-layer-gaps.json`, `subsystems.json`, `corpus-inventory.json`)
+are written by the classifier pipeline `sim/tools/inventory/classify/` (section "Derived manifests" below).
 
 Not inventoried (counted in `summary.json` only): `Models.Achievements`, `Models.Badges`,
 `Models.Singleton`, `Models.Exceptions`. Pool directories feed `pools.json`.
@@ -360,3 +361,80 @@ duplicates, registry coverage, `unresolved_pool_or_act` with `unresolved_breakdo
   `ActModel.GenerateRooms` epoch filters on events are not applied.
 - `external_refs` scans non-model namespaces for the bare class name in code (strings excluded), so it can
   include unrelated members that happen to share the name (e.g. `Osty` in `TargetType.Osty`).
+
+## Derived manifests
+
+Written by `python3 sim/tools/inventory/classify/run_all.py --sim-ref fe7240c` (generators, exact per-file
+commands and the W0 sim-root note: `sim/tools/inventory/classify/README.md`). Every file carries `generated_by`,
+the committed scripts that produce it. Never edit them by hand; edit the generator's records and re-run.
+
+| File | Contents |
+| --- | --- |
+| `cards-ironclad-colorless`, `cards-necrobinder-regent`, `cards-silent-defect`, `powers`, `relics`, `potions`, `monsters`, `encounters`, `events`, `enchantments`, `afflictions`, `orbs`, `modifiers`, `acts`, `characters` `.classified.json` | semantic classification of every model (1621 entries), one schema (below); companion docs `docs/sim-port/inventory-*.md` |
+| `requirements.json` | the requirement catalogue: 220 keys (70 Cmd facades, 64 hook virtuals, 19 model virtuals, 67 features), each with level, P0 status, the `kernel-gaps.json` / `run-layer-gaps.json` / `subsystems.json` rows it names, users per kind and the W0 texts mapped to it |
+| `batches.json` | cross-kind port order: nodes `<kind>:<port_batch>`, 194 `requires` edges (with examples), a topological `order` of 72 nodes, 2 small `requires_cycles` (port together) and 13 `co_port_pairs` |
+| `version-deltas.json` | reconciled v0.107.1 -> v0.111.0 delta list (below) |
+| `kernel-gaps.json` | combat-kernel gaps against the P0 sim: hook virtuals and dispatchers, Cmd facades and overloads, model-kind virtuals, prompt sites, per-file content readiness |
+| `run-layer-gaps.json`, `subsystems.json` | run-layer and subsystem gap inventories |
+| `corpus-inventory.json` | aggregate statistics of the recorder corpus (counts only, no trajectories) and the diff gate's mechanical v0.107.1 / v0.111.0 tree diff |
+
+### Classified schema (`sts2sim.inventory.classified/v2`)
+
+Envelope: `schema`, `kind`, `content_kind`, `game_version`, `generated_by`, `requirements_catalogue`, `batches`,
+`tier_legend`, `schema_fields` (the meaning of every normalised field), `kind_baseline` (requirement keys every
+entry of the kind needs, not listed per entry), then the classifier's own envelope fields; cards add the unified
+`port_batch_legend` and `port_batch_prerequisites` (the slice schemes are kept as `legacy_*`). Entries keep the
+raw-manifest identity fields (`id`, `model_id`, `class`, `file`) and the classifier's semantic fields
+(`mechanics`, `rng_streams`, `ascension_sensitivity`, notes, ...), plus:
+
+| Field | Meaning |
+| --- | --- |
+| `kernel_requirements` | sorted requirement keys of `requirements.json` that the entry's own code needs and the P0 sim lacks: `<Cmd>.<Method>`, `<Cmd>.<Method>(<variant>)`, `<Hook>`, `<Base>.<Virtual>`, `<area>:<id>` |
+| `kernel_requirement_notes` | the classifier's free-text requirements, kept for reading |
+| `dependencies` | `{requires, reads, co_port}` of `{kind: [id]}`: applied / created / summoned / offered models; read or type-tested only; definitions that call each other |
+| `prompts` | `ChoicePromptKind` records (`HandSelect`, `HandUpgrade`, `PileSelect`, `ChooseCard`, `SimpleGrid`, `DeckUpgrade`, `DeckTransform`, `DeckEnchant`, `DeckRemove`, `DeckGeneric`, `RewardsGrid`, `Bundle`, `CardReward`; `sim/CONTRACTS.md` B1): `kind`, `entry`, `site`, `opened_by`, `via`, `pile`, `min`, `max`, `require_confirm`, `can_skip`, `cancelable`, `context`, `filter`, `cite`, `notes`. `via` names the applied power, spawned monster or offered relic whose own prompt it is. 155 records, 33 of them indirect |
+| `phases` | run-scope decision phases (`Rewards`, `RestSite`, `EventCombat`, `CrystalSphere`, `Shop`, `PotionUse`, `AbandonRun`): `phase`, `role`, `entry`, `site`, `opened_by`, `via`, `detail`, `cite`; 47 records |
+| `nested_prompts` | prompts of cards the entry auto-plays (cards only) |
+| `version_delta_v107` | the classifier's comparison with v0.107.1: `status` `same`, `cosmetic`, `rule-change`, `new`, `decompile-gap` or `unknown`, `note`, evidence fields |
+| `tier` | own code only, 1-4: the classifier's tier raised to the highest level of `kernel_requirements`; test mocks 4; D9 sites (arrays recovered from IL) are no longer 4 |
+| `tier_with_deps` | max `tier` over the entry and everything it depends on (all three relations), transitively |
+| `tier_classifier`, `tier_from_requirements`, `tier_adjustments` | the classifier's tier, the requirement level, and why `tier` differs (245 entries differ) |
+| `port_batch` | the kind's batch; cards use one scheme for all three slices (0-12, `port_batch_legend`), with `port_batch_legacy` and `card_batch_raised_by` (required powers or tokens with a later batch) |
+
+Tier levels: 1 = only facades and hooks the P0 sim has (or the kind's baseline runtime); 2 = game facades, hooks,
+hook parameters or model APIs the P0 sim lacks; 3 = a player prompt or a new subsystem; 4 = unreadable,
+cross-cutting or test-only. Counts over the 1621 entries: `tier` 626 / 328 / 608 / 59, `tier_with_deps`
+342 / 456 / 758 / 65. Power tiers have one source, `powers.classified.json`; the power tiers copied into
+`cards-silent-defect` (`dependency_powers`, `depends_on.powers`), `cards-necrobinder-regent`
+(`power_dependencies`) and `monsters` (`deps.powers[].tier_hint`, `powers_classified`) are rewritten from it.
+
+### version-deltas.json
+
+The union of every classifier `version_delta_v107` flag (status other than `same`) and the diff gate's mechanical
+diff (`corpus-inventory.json` `version_diff_v0_107_1_vs_v0_111_0`: `content_files`, `version_exclusive_content`,
+`engine_files`), each entry triaged:
+
+| Triage | Meaning |
+| --- | --- |
+| `changed` | a single-player run can observe the difference (values, effects, prompts, pool members, odds), or a game model (not a test mock) exists in one tree only; models no single-player run can meet keep their classifier's verdict and carry `single_player_reachable: false` |
+| `refactor_only` | no single-player run can observe the difference: decompiler style, renames, UI/VFX, history logging, branches that run only with other players, pool members filtered out in single player, test mocks, IL-recovered arrays equal to v0.107.1 |
+| `unknown` | flagged but not adjudicated |
+
+Entry fields: `key` (`<kind>:<Class>`), `kind`, `class`, `id`, `model_id`, `delta_type` (`modified`, `added`,
+`removed`), `single_player_reachable` (false for test mocks, `MultiplayerOnly` cards, powers only such content
+applies, relics whose `IsAllowed` needs more than one player; `single_player_note` says which), `files` (path in each tree), `classifier` (file, status, note), `diff_gate` (`flagged` plus its value,
+enum and call differences), `sources` (`both`, `classifier`, `diff_gate`), `triage`, `basis` (`classifier`,
+`manual`, `il`, `membership`, `presence`), `note`, `evidence` (`<path>:<line>` citations in both trees, up to 3
+per tree; v0.111.0 paths drop `MegaCrit.Sts2.Core.` as everywhere here, v0.107.1 paths are relative to
+`artifacts/knowledge/decompiled-v0.107.1/MegaCrit/sts2/Core`), `evidence_method`; pools add `members_added`,
+`members_removed`, `members_multiplayer_only`; removed models add `referenced_by_v0.107.1`.
+
+Counts: 518 content entries, `changed` 171, `refactor_only` 347, `unknown` 0 (475 modified, 40 added, 3 removed;
+233 flagged by both sources, 249 by a classifier only, 36 by the diff gate only). The 21 files the diff gate flags
+while their classifier says `same` (w0-critique C20) are adjudicated in `triage.py`: `Orobas` is `changed`
+(relic option pools moved `SandCastle`), the other 20 are `refactor_only` (`DualWield` is a diff-gate false
+positive). Of the 11 pools the gate flags, 5 change single-player membership; the other 6 add only
+`MultiplayerOnly` cards or are test pools. The 86 `engine_entries` (engine files the gate flags) are `unknown`:
+no classifier reviews engine code. Taint rule for the v0.107.1 corpus: a trajectory stays comparable while it
+touches no content entry triaged `changed` or `unknown` with `single_player_reachable: true`; engine entries need
+adjudication first.

@@ -1,0 +1,612 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "afflictions",
+ "content_kind": "afflictions",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_afflictions.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "kernel:afflictions"
+ ],
+ "raw_manifest": "sim/specs/inventory/afflictions.json",
+ "raw_source_digest": "d9299a6dc7b3ff05a9be9a3ebdae6bb9fdb9695ea94f8dcc0827409d44d5073f",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "affliction core: AfflictionModel on a CardInstance (Amount, stacking, CanAfflict); ships with the power that applies it"
+ },
+ "count": 10,
+ "entries": [
+  {
+   "id": "BOUND",
+   "model_id": "AFFLICTION.BOUND",
+   "class": "Bound",
+   "file": "Models.Afflictions/Bound.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker: extra card text only",
+    "effect in ChainsOfBindingPower: afflicts drawn cards up to Amount per turn (CardAfflictedEntry count this turn) and gates their play (BeforeCardPlayed / ShouldPlay for Bound cards)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "CHAINS_OF_BINDING_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Bound.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by ChainsOfBindingPower (Queen boss); port together with that power",
+   "open_questions": []
+  },
+  {
+   "id": "ENTANGLED",
+   "model_id": "AFFLICTION.ENTANGLED",
+   "class": "Entangled",
+   "file": "Models.Afflictions/Entangled.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker",
+    "effect in TangledPower: afflicts the owner's Attacks; Entangled cards cannot be played while the power holds"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "TANGLED_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Entangled.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by TangledPower (VineShambler)",
+   "open_questions": []
+  },
+  {
+   "id": "GALVANIZED",
+   "model_id": "AFFLICTION.GALVANIZED",
+   "class": "Galvanized",
+   "file": "Models.Afflictions/Galvanized.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker; IsStackable",
+    "effect in GalvanicPower: afflicts the owner's Power cards with Amount; playing a Galvanized card deals Amount Unpowered damage to its owner"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "GALVANIC_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Galvanized.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by GalvanicPower (GlobeHead)",
+   "open_questions": []
+  },
+  {
+   "id": "HEXED",
+   "model_id": "AFFLICTION.HEXED",
+   "class": "Hexed",
+   "file": "Models.Afflictions/Hexed.cs",
+   "class_line": 10,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "AfterCardEnteredCombat (this card): CardCmd.ClearAffliction when the owner no longer has HexPower",
+    "effect in HexPower (TryModifyKeywordsInCombat adds keywords to Hexed cards)"
+   ],
+   "hooks": [
+    {
+     "member": "AfterCardEnteredCombat",
+     "cite": "Models.Afflictions/Hexed.cs:14"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "CardCmd.ClearAffliction",
+    "kernel:afflictions",
+    "kernel:card_listeners"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "HEX_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Hexed.cs"
+   },
+   "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by HexPower (KnightsElite)",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_NO_UNPLAYABLE_AFFLICTION",
+   "model_id": "AFFLICTION.MOCK_NO_UNPLAYABLE_AFFLICTION",
+   "class": "MockNoUnplayableAffliction",
+   "file": "Models.Afflictions.Mocks/MockNoUnplayableAffliction.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "CanAfflictUnplayableCards = false"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "IsMock => true added (test mock)",
+    "v107_file": "Models/Afflictions/Mocks/MockNoUnplayableAffliction.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      }
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_SELF_DAMAGE_AFFLICTION",
+   "model_id": "AFFLICTION.MOCK_SELF_DAMAGE_AFFLICTION",
+   "class": "MockSelfDamageAffliction",
+   "file": "Models.Afflictions.Mocks/MockSelfDamageAffliction.cs",
+   "class_line": 14,
+   "base_class": "AfflictionModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "OnPlay: CreatureCmd.Damage(owner, Amount, Unpowered|Move); IsStackable"
+   ],
+   "hooks": [
+    {
+     "member": "OnPlay",
+     "cite": "Models.Afflictions.Mocks/MockSelfDamageAffliction.cs:85"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "IsMock => true added (test mock)",
+    "v107_file": "Models/Afflictions/Mocks/MockSelfDamageAffliction.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      }
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_USELESS_AFFLICTION",
+   "model_id": "AFFLICTION.MOCK_USELESS_AFFLICTION",
+   "class": "MockUselessAffliction",
+   "file": "Models.Afflictions.Mocks/MockUselessAffliction.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "no effect"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "IsMock => true added (test mock)",
+    "v107_file": "Models/Afflictions/Mocks/MockUselessAffliction.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      }
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "RINGING",
+   "model_id": "AFFLICTION.RINGING",
+   "class": "Ringing",
+   "file": "Models.Afflictions/Ringing.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker",
+    "effect in RingingPower: afflicts the owner's cards entering combat and restricts plays of Ringing cards"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "RINGING_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Ringing.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by RingingPower (CeremonialBeast boss)",
+   "open_questions": []
+  },
+  {
+   "id": "SMOG",
+   "model_id": "AFFLICTION.SMOG",
+   "class": "Smog",
+   "file": "Models.Afflictions/Smog.cs",
+   "class_line": 3,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker",
+    "effect in SmoggyPower: afflicts Skills once a Skill was played this turn (combat history) and restricts their play"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "SMOGGY_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Smog.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by SmoggyPower (LivingFog)",
+   "open_questions": []
+  },
+  {
+   "id": "TAINTED",
+   "model_id": "AFFLICTION.TAINTED",
+   "class": "Tainted",
+   "file": "Models.Afflictions/Tainted.cs",
+   "class_line": 8,
+   "base_class": "AfflictionModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "dynamic_vars": null,
+   "constants": {},
+   "mechanics": [
+    "marker; IsStackable; CanAfflictCardType: Skill only",
+    "effect in VitalSparkPower: playing a Tainted card applies TaintedPower(Amount) to its owner"
+   ],
+   "hooks": [
+    {
+     "member": "CanAfflictCardType",
+     "cite": "Models.Afflictions/Tainted.cs:16"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:afflictions"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {
+     "powers": [
+      "VITAL_SPARK_POWER"
+     ]
+    }
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Afflictions/Tainted.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "applied by VitalSparkPower (InfestedPrisms elite)",
+   "open_questions": []
+  }
+ ]
+}

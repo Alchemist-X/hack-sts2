@@ -6,13 +6,25 @@
   "citation_format": "<ns-dir>/<File>.cs:<line> with MegaCrit.Sts2.Core. dropped",
   "sim_baseline": "commit 819d7c6; build 0 errors; 367/367 tests",
   "companion_doc": "docs/sim-port/design-combat-kernel.md",
-  "scripts": "tmp/sim-port/kernel/*.py (Python 3 stdlib, not committed)",
+  "scripts": "sim/tools/inventory/classify/kernel/*.py (Python 3 stdlib; order in sim/tools/inventory/classify/README.md)",
   "notes": [
    "override counts are per file (a file overriding a hook once counts 1), mocks excluded from totals",
    "Cmd usage counts are per method name across overloads, models directories only (uses_by_kind keeps core:* callers separately)",
    "readiness checks only the hook-virtual and Cmd surfaces; listener kinds other than powers are not wired in the sim yet"
   ]
  },
+ "generated_by": [
+  "sim/tools/inventory/classify/kernel/virtuals.py",
+  "sim/tools/inventory/classify/kernel/hooks.py",
+  "sim/tools/inventory/classify/kernel/cmds.py",
+  "sim/tools/inventory/classify/kernel/readiness.py",
+  "sim/tools/inventory/classify/kernel/annotate_cmds.py",
+  "sim/tools/inventory/classify/kernel/kindvirt.py",
+  "sim/tools/inventory/classify/kernel/prompts.py",
+  "sim/tools/inventory/classify/kernel/sites.py",
+  "sim/tools/inventory/classify/kernel/tables.py",
+  "sim/tools/inventory/classify/kernel/build_json.py"
+ ],
  "counts": {
   "content": {
    "Cards": 596,

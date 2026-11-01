@@ -1,11 +1,13 @@
 {
  "schema": "sts2sim.inventory/v1",
+ "generated_by": [
+  "sim/tools/inventory/classify/subsystems/gen_main.py"
+ ],
  "kind": "subsystems",
  "game_version": "0.111.0",
  "decompile_root": "/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled",
  "citation_format": "<ns-dir>/<File>.cs:<line>, MegaCrit.Sts2.Core. prefix dropped",
  "companion_doc": "docs/sim-port/design-subsystems.md",
- "generated_by": "tmp/sim-port/subsys/gen_main.py (scratch, git-ignored); usage counts from tmp/sim-port/subsys/usage.py over Models.* directories",
  "scope": "standard single-player runs (GameMode.Standard, no modifiers, one player, no mods)",
  "decision_vocabulary": {
   "port": "port the game logic 1:1",

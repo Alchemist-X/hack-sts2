@@ -1,7 +1,46 @@
 {
- "schema": "sts2sim.inventory.classified/v1",
+ "schema": "sts2sim.inventory.classified/v2",
  "kind": "potions",
+ "content_kind": "potions",
  "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/relics-potions/vdiff.py",
+  "sim/tools/inventory/classify/relics-potions/build.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "kernel:potion_runtime",
+  "BeforePotionUsed",
+  "AfterPotionUsed",
+  "PotionModel.OnUse",
+  "PotionModel.PassesCustomUsabilityCheck",
+  "PotionModel.CanBeGeneratedInCombat"
+ ],
  "source_manifest": "sim/specs/inventory/potions.json",
  "source_manifest_digest": "e50cf5f51d113aed8656205ec9824401813d3c1f03a5b156477744265951a4ce",
  "compared_tree": "artifacts/knowledge/decompiled-v0.107.1 (v0.107.1)",
@@ -24,13 +63,7 @@
   "notes",
   "open_questions"
  ],
- "tier_legend": {
-  "1": "combat behaviour through hooks and Cmd facades that exist in the sim (var overloads of ported methods count as existing); power content from the power wave is a dependency, not a tier raise",
-  "2": "needs hooks, Cmd facades or card/combat-state APIs that exist in the game but not in the sim (AfterCombatEnd/Victory, combat-room AfterRoomEntered, CardCmd.Upgrade, room type, gold in combat, ...)",
-  "3": "needs a player prompt or a new subsystem: orbs, Osty/pets, stars, forge, card generation, combat history, potion slots, extra turns, enchantments, or any run-layer behaviour (run layer = new subsystem)",
-  "4": "decompile loss or cross-cutting behaviour spanning several subsystems"
- },
- "prompt_type_legend": {
+ "legacy_prompt_type_legend": {
   "HandSelect": "CardSelectCmd.FromHand / FromHandForDiscard (in combat)",
   "PileSelect": "CardSelectCmd.FromCombatPile (draw pile sorted by rarity then id, discard pile in order)",
   "ChooseCard": "CardSelectCmd.FromChooseACardScreen (1 of n generated cards, optional skip)",
@@ -185,10 +218,27 @@
     }
    ],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime",
+    "run:potions_out_of_combat",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "AMBERGRIS_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "AmbergrisPower",
@@ -208,7 +258,13 @@
     "status": "new",
     "note": "not present in v0.107.1"
    },
-   "tier": 1,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:potions_out_of_combat, ui:node_rule)"
+   ],
    "port_batch": 2,
    "acquisition": [
     "potion pool: EVENT",
@@ -308,19 +364,39 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "HandSelect",
-     "call": "CardSelectCmd.FromHand",
-     "site": "OnUse",
-     "source": "Hand",
-     "min": "0",
-     "max": "999999999",
-     "flags": "UsePotionAction context (inline); RMC"
+     "kind": "HandSelect",
+     "entry": "CardSelectCmd.FromHand",
+     "site": "ASHWATER:OnUse",
+     "opened_by": "potions:ASHWATER",
+     "via": null,
+     "pile": "Hand",
+     "min": 0,
+     "max": 999999999,
+     "require_confirm": true,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/Ashwater.cs:157",
+     "notes": "UsePotionAction context (inline); RMC"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromHand",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromHand"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -331,6 +407,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: IRONCLAD",
@@ -421,21 +501,44 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "ChooseCard",
-     "call": "CardSelectCmd.FromChooseACardScreen",
-     "site": "OnUse",
-     "source": "generated (3)",
-     "min": "1",
-     "max": "1",
-     "flags": "canSkip=true"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "ATTACK_POTION:OnUse",
+     "opened_by": "potions:ATTACK_POTION",
+     "via": null,
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/AttackPotion.cs:131",
+     "notes": "canSkip=true"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromChooseACardScreen",
+    "kernel:card_generation",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromChooseACardScreen",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -448,6 +551,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -565,10 +672,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "SHRINK_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "ShrinkPower",
@@ -589,6 +711,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -682,10 +808,22 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.Upgrade",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardCmd.Upgrade"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -696,6 +834,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: SHARED",
@@ -796,10 +938,22 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CreatureCmd.GainBlock(BlockVar)",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CreatureCmd.GainBlock(BlockVar) overload"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -810,6 +964,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -922,10 +1080,23 @@
     }
    ],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime",
+    "run:potions_out_of_combat",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -935,7 +1106,13 @@
     "status": "same",
     "note": ""
    },
-   "tier": 1,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:potions_out_of_combat, ui:node_rule)"
+   ],
    "port_batch": 1,
    "acquisition": [
     "potion pool: IRONCLAD",
@@ -1043,11 +1220,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "OstyCmd.Summon",
+    "PlayerCmd.AddPet",
+    "kernel:osty",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "OstyCmd.Summon",
     "Osty/pets (OstyCmd.Summon, PlayerCmd.AddPet, Creature.PetOwner)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1058,6 +1249,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: NECROBINDER",
@@ -1164,10 +1359,23 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterCardChangedPiles",
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardPileCmd.Add(CardPile|clonedBy)",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardPileCmd.Add (partial in sim)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1180,6 +1388,10 @@
     "note": ""
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: SHARED",
@@ -1297,9 +1509,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "CLARITY_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "ClarityPower",
@@ -1320,6 +1547,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -1410,21 +1641,44 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "ChooseCard",
-     "call": "CardSelectCmd.FromChooseACardScreen",
-     "site": "OnUse",
-     "source": "generated (3)",
-     "min": "1",
-     "max": "1",
-     "flags": "canSkip=true"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "COLORLESS_POTION:OnUse",
+     "opened_by": "potions:COLORLESS_POTION",
+     "via": null,
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/ColorlessPotion.cs:132",
+     "notes": "canSkip=true"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromChooseACardScreen",
+    "kernel:card_generation",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromChooseACardScreen",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1437,6 +1691,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -1535,11 +1793,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.Upgrade",
+    "kernel:card_generation",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardCmd.Upgrade",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1552,6 +1824,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: REGENT",
@@ -1655,12 +1931,29 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.Upgrade",
+    "kernel:fixed_card_creation",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardCmd.Upgrade",
     "Shiv card",
     "Shiv.CreateInHand"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "SHIV"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [
@@ -1676,6 +1969,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: SILENT",
@@ -1791,9 +2088,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1804,6 +2112,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -1876,10 +2188,21 @@
    "combat_behaviour": [],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -1890,6 +2213,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": null,
    "acquisition": [
     "potion pool: DEPRECATED"
@@ -1994,9 +2321,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "DEXTERITY_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "DexterityPower",
@@ -2017,6 +2359,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -2122,11 +2468,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.AutoPlay",
+    "CardPileCmd.AutoPlayFromDrawPile",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardPileCmd.AutoPlayFromDrawPile",
     "CardCmd.AutoPlay"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2137,6 +2496,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: SHARED",
@@ -2225,20 +2588,42 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "PileSelect",
-     "call": "CardSelectCmd.FromCombatPile",
-     "site": "OnUse",
-     "source": "Draw (sorted by rarity then id)",
-     "min": "1",
-     "max": "1",
-     "flags": ""
+     "kind": "PileSelect",
+     "entry": "CardSelectCmd.FromCombatPile",
+     "site": "DROPLET_OF_PRECOGNITION:OnUse",
+     "opened_by": "potions:DROPLET_OF_PRECOGNITION",
+     "via": null,
+     "pile": "Draw",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/DropletOfPrecognition.cs:130",
+     "notes": null
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterCardChangedPiles",
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardPileCmd.Add",
+    "CardSelectCmd.FromCombatPile",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardPileCmd.Add (partial in sim)",
     "CardSelectCmd.FromCombatPile"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2249,6 +2634,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -2337,9 +2726,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "DUPLICATION_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "DuplicationPower",
@@ -2360,6 +2764,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -2467,9 +2875,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2480,6 +2899,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -2572,12 +2995,26 @@
     }
    ],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "PotionCmd.TryToProcure",
+    "kernel:potion_runtime",
+    "run:potions_out_of_combat",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)",
     "PotionCmd.TryToProcure",
     "potion slots and procurement (PotionCmd.TryToProcure, PotionFactory)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2590,6 +3027,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: SHARED",
@@ -2682,11 +3123,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "OrbCmd.Channel",
+    "kernel:orbs",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "OrbCmd.Channel",
     "Defect orbs (OrbQueue, OrbCmd)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2697,6 +3151,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: DEFECT",
@@ -2808,9 +3266,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2821,6 +3290,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -2927,11 +3400,22 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion as hook listener (after relics)",
     "automatic use path (PotionUsage.Automatic: ShouldDie gate + OnUseWrapper from AfterPreventingDeath)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -2942,6 +3426,10 @@
     "note": ""
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: SHARED",
@@ -3051,10 +3539,21 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -3065,6 +3564,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -3172,9 +3675,28 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "FLEX_POTION_POWER"
+     ]
+    },
+    "reads": {
+     "powers": [
+      "STRENGTH_POWER"
+     ]
+    },
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "FlexPotionPower",
@@ -3199,6 +3721,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -3304,9 +3830,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "FOCUS_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "FocusPower",
@@ -3327,6 +3868,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: DEFECT",
@@ -3415,9 +3960,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -3428,6 +3984,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -3581,7 +4141,22 @@
     }
    ],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "ModifyGoldGained",
+    "PlayerCmd.GainGold",
+    "PlayerCmd.LoseGold",
+    "kernel:potion_runtime",
+    "kernel:room_context",
+    "kernel:run_effects",
+    "run:gold",
+    "run:merchant",
+    "run:potions_out_of_combat",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)",
     "PlayerCmd.GainGold",
@@ -3591,6 +4166,11 @@
     "node-coupled usability (GetFoulPotionMerchantTarget reads NMerchantRoom/NFakeMerchant)",
     "merchant/event callbacks"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -3601,6 +4181,10 @@
     "note": "UI node API differences only"
    },
    "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 6,
    "acquisition": [
     "potion pool: EVENT",
@@ -3707,10 +4291,23 @@
     }
    ],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime",
+    "run:potions_out_of_combat",
+    "ui:node_rule"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "out-of-combat potion use (run layer, Nodes.Potions/NPotionPopup.cs:285-345)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -3720,7 +4317,13 @@
     "status": "same",
     "note": ""
    },
-   "tier": 1,
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "raised to the level of its own requirements (run:potions_out_of_combat, ui:node_rule)"
+   ],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -3833,9 +4436,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "DEXTERITY_POWER",
+      "STRENGTH_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "DexterityPower",
@@ -3864,6 +4483,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -3961,20 +4584,41 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "HandSelect",
-     "call": "CardSelectCmd.FromHandForDiscard",
-     "site": "OnUse",
-     "source": "Hand",
-     "min": "0",
-     "max": "999999999",
-     "flags": "UsePotionAction context (inline)"
+     "kind": "HandSelect",
+     "entry": "CardSelectCmd.FromHandForDiscard",
+     "site": "GAMBLERS_BREW:OnUse",
+     "opened_by": "potions:GAMBLERS_BREW",
+     "via": null,
+     "pile": "Hand",
+     "min": 0,
+     "max": 999999999,
+     "require_confirm": true,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/GamblersBrew.cs:126",
+     "notes": "UsePotionAction context (inline)"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.DiscardAndDraw",
+    "CardSelectCmd.FromHandForDiscard",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardCmd.DiscardAndDraw",
     "CardSelectCmd.FromHandForDiscard"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -3985,6 +4629,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -4088,9 +4736,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "INTANGIBLE_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "IntangiblePower",
@@ -4111,6 +4774,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SILENT",
@@ -4221,9 +4888,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "GIGANTIFICATION_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "GigantificationPower",
@@ -4244,6 +4926,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -4354,9 +5040,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -4367,6 +5064,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: EVENT",
@@ -4470,9 +5171,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "PLATING_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "PlatingPower",
@@ -4493,6 +5209,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -4596,11 +5316,28 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "ForgeCmd.Forge",
+    "kernel:forge",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "ForgeCmd.Forge",
     "Forge (ForgeCmd, SovereignBlade)"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "SOVEREIGN_BLADE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [
@@ -4616,6 +5353,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: REGENT",
@@ -4719,9 +5460,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "THORNS_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "ThornsPower",
@@ -4742,6 +5498,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -4841,21 +5601,44 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "PileSelect",
-     "call": "CardSelectCmd.FromCombatPile",
-     "site": "OnUse",
-     "source": "Discard (pile order)",
-     "min": "1",
-     "max": "1",
-     "flags": ""
+     "kind": "PileSelect",
+     "entry": "CardSelectCmd.FromCombatPile",
+     "site": "LIQUID_MEMORIES:OnUse",
+     "opened_by": "potions:LIQUID_MEMORIES",
+     "via": null,
+     "pile": "Discard",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/LiquidMemories.cs:136",
+     "notes": null
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterCardChangedPiles",
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardPileCmd.Add",
+    "CardSelectCmd.FromCombatPile",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardPileCmd.Add (partial in sim)",
     "CardSelectCmd.FromCombatPile",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -4866,6 +5649,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -4969,9 +5756,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "BUFFER_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "BufferPower",
@@ -4992,6 +5794,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -5096,9 +5902,28 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "RITUAL_POWER"
+     ]
+    },
+    "reads": {
+     "powers": [
+      "STRENGTH_POWER"
+     ]
+    },
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "RitualPower",
@@ -5123,6 +5948,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -5235,20 +6064,41 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "HandSelect",
-     "call": "CardSelectCmd.FromHandForDiscard",
-     "site": "OnUse",
-     "source": "Hand",
-     "min": "2",
-     "max": "2",
-     "flags": "mock"
+     "kind": "HandSelect",
+     "entry": "CardSelectCmd.FromHandForDiscard",
+     "site": "MOCK_DISCARD_AND_ADD_SHIVS_POTION:OnUse",
+     "opened_by": "potions:MOCK_DISCARD_AND_ADD_SHIVS_POTION",
+     "via": null,
+     "pile": "Hand",
+     "min": 2,
+     "max": 2,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions.Mocks/MockDiscardAndAddShivsPotion.cs:157",
+     "notes": "mock"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardCmd.Discard",
+    "CardSelectCmd.FromHandForDiscard",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardCmd.Discard (partial in sim)",
     "CardSelectCmd.FromHandForDiscard"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -5258,7 +6108,13 @@
     "status": "cosmetic",
     "note": "IsMock override added"
    },
-   "tier": 3,
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [
+    "test-only mock"
+   ],
    "port_batch": null,
    "acquisition": [
     "potion pool: MOCK"
@@ -5344,12 +6200,27 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardPileCmd.AddGeneratedCardsToCombat",
+    "kernel:card_generation",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardPileCmd.AddGeneratedCardsToCombat",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -5362,6 +6233,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: SHARED",
@@ -5484,10 +6359,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "POISON_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "PoisonPower",
@@ -5508,6 +6398,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SILENT",
@@ -5631,9 +6525,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "VULNERABLE_POWER",
+      "WEAK_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "VulnerablePower",
@@ -5662,6 +6572,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -5766,11 +6680,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "OrbCmd.AddSlots",
+    "kernel:orbs",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "OrbCmd.AddSlots",
     "Defect orbs (OrbQueue, OrbCmd)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -5781,6 +6708,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: DEFECT",
@@ -5892,10 +6823,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "DOOM_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "DoomPower",
@@ -5916,6 +6862,10 @@
     "note": ""
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: NECROBINDER",
@@ -6014,11 +6964,23 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CreatureCmd.Damage(DamageVar)",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API",
     "CreatureCmd.Damage(DamageVar) overload"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -6029,6 +6991,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: TOKEN",
@@ -6130,11 +7096,27 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:fixed_card_creation",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "Soul card",
     "Soul.CreateInHand"
    ],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "SOUL"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [
@@ -6150,6 +7132,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: NECROBINDER",
@@ -6251,10 +7237,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "DEMISE_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "DemisePower",
@@ -6275,6 +7276,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -6365,21 +7370,44 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "ChooseCard",
-     "call": "CardSelectCmd.FromChooseACardScreen",
-     "site": "OnUse",
-     "source": "generated (3)",
-     "min": "1",
-     "max": "1",
-     "flags": "canSkip=true"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "POWER_POTION:OnUse",
+     "opened_by": "potions:POWER_POTION",
+     "via": null,
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/PowerPotion.cs:131",
+     "notes": "canSkip=true"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromChooseACardScreen",
+    "kernel:card_generation",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromChooseACardScreen",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -6392,6 +7420,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -6504,9 +7536,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "RADIANCE_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "RadiancePower",
@@ -6527,6 +7574,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -6634,9 +7685,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "REGEN_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "RegenPower",
@@ -6657,6 +7723,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -6772,9 +7842,28 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "SHACKLING_POTION_POWER"
+     ]
+    },
+    "reads": {
+     "powers": [
+      "STRENGTH_POWER"
+     ]
+    },
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "ShacklingPotionPower",
@@ -6799,6 +7888,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -6905,10 +7998,26 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CreatureCmd.GainBlock(BlockVar)",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CreatureCmd.GainBlock(BlockVar) overload"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "BLOCK_NEXT_TURN_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "BlockNextTurnPower",
@@ -6929,6 +8038,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -7019,21 +8132,44 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "ChooseCard",
-     "call": "CardSelectCmd.FromChooseACardScreen",
-     "site": "OnUse",
-     "source": "generated (3)",
-     "min": "1",
-     "max": "1",
-     "flags": "canSkip=true"
+     "kind": "ChooseCard",
+     "entry": "CardSelectCmd.FromChooseACardScreen",
+     "site": "SKILL_POTION:OnUse",
+     "opened_by": "potions:SKILL_POTION",
+     "via": null,
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": true,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/SkillPotion.cs:131",
+     "notes": "canSkip=true"
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromChooseACardScreen",
+    "kernel:card_generation",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromChooseACardScreen",
     "CardFactory combat generation over unlock-filtered pools (CardPoolModel.GetUnlockedCards(UnlockState))",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -7046,6 +8182,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -7155,11 +8295,23 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)",
     "CardEnergyCost.SetThisTurnOrUntilPlayed"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -7172,6 +8324,10 @@
     "note": "decompiler style differences only"
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: SHARED",
@@ -7266,10 +8422,22 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardModel.BaseReplayCount (replay plays)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -7280,6 +8448,10 @@
     "note": ""
    },
    "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
    "port_batch": 3,
    "acquisition": [
     "potion pool: IRONCLAD",
@@ -7386,9 +8558,28 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "SPEED_POTION_POWER"
+     ]
+    },
+    "reads": {
+     "powers": [
+      "DEXTERITY_POWER"
+     ]
+    },
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "SpeedPotionPower",
@@ -7413,6 +8604,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -7517,9 +8712,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "RETAIN_HAND_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "RetainHandPower",
@@ -7540,6 +8750,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 2,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 2,
    "acquisition": [
     "potion pool: SHARED",
@@ -7635,11 +8849,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "PlayerCmd.GainStars",
+    "kernel:potion_runtime",
+    "kernel:stars"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "PlayerCmd.GainStars",
     "Stars (PlayerCombatState.Stars, star costs)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -7650,6 +8877,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 4,
    "acquisition": [
     "potion pool: REGENT",
@@ -7763,9 +8994,24 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "STRENGTH_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "StrengthPower",
@@ -7786,6 +9032,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -7891,9 +9141,20 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -7904,6 +9165,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -7991,21 +9256,42 @@
    "run_behaviour": [],
    "prompts": [
     {
-     "type": "HandSelect",
-     "call": "CardSelectCmd.FromHand",
-     "site": "OnUse",
-     "source": "Hand (CostsEnergyOrStars)",
-     "min": "1",
-     "max": "1",
-     "flags": ""
+     "kind": "HandSelect",
+     "entry": "CardSelectCmd.FromHand",
+     "site": "TOUCH_OF_INSANITY:OnUse",
+     "opened_by": "potions:TOUCH_OF_INSANITY",
+     "via": null,
+     "pile": "Hand",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Potions/TouchOfInsanity.cs:97",
+     "notes": null
     }
    ],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "CardSelectCmd.FromHand",
+    "kernel:card_model_ops",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "CardSelectCmd.FromHand",
     "temporary card cost modifiers (SetToFreeThisTurn/Combat, AddUntilPlayed, SetThisTurnOrUntilPlayed)",
     "CardModel.SetToFreeThisCombat"
    ],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [],
    "powers_referenced": [],
    "cards_referenced": [],
@@ -8016,6 +9302,10 @@
     "note": "TargetType Self -> AnyPlayer and the effect applies to target.Player (multiplayer throw); identical in single player"
    },
    "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
    "port_batch": 5,
    "acquisition": [
     "potion pool: SHARED",
@@ -8129,10 +9419,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "VULNERABLE_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "VulnerablePower",
@@ -8153,6 +9458,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",
@@ -8267,10 +9576,25 @@
    ],
    "run_behaviour": [],
    "prompts": [],
+   "phases": [],
    "kernel_requirements": [
+    "AfterPotionUsed",
+    "BeforePotionUsed",
+    "kernel:potion_runtime"
+   ],
+   "kernel_requirement_notes": [
     "PotionModel runtime (slots, UsePotionAction CombatPlayPhaseOnly, OnUseWrapper: RemoveBeforeUse, BeforePotionUsed, OnUse, History.PotionUsed, AfterPotionUsed, CheckForEmptyHand; Models/PotionModel.cs:147-322)",
     "potion enemy target in the decision API"
    ],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "WEAK_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
    "powers_applied": [
     {
      "power": "WeakPower",
@@ -8291,6 +9615,10 @@
     "note": ""
    },
    "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
    "port_batch": 1,
    "acquisition": [
     "potion pool: SHARED",

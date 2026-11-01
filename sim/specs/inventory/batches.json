@@ -1,0 +1,2577 @@
+{
+ "schema": "sts2sim.inventory.batches/v1",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "node_form": "<content kind>:<port_batch> (cards use the unified card scheme; the other kinds keep their classifier's scheme)",
+ "edge_rule": "from -> to when an entry of batch `to` requires an unported entry of batch `from` (dependencies.requires of the classified manifests); P0-ported dependencies are dropped; reads do not order batches; co_port pairs (definitions that call each other) are listed separately",
+ "card_batch_mapping": {
+  "cards-ironclad-colorless": {
+   "0": 0,
+   "1": 1,
+   "2": 2,
+   "3": 3,
+   "4": 4,
+   "5": 5,
+   "6": 6,
+   "7": "split7",
+   "8": 11,
+   "9": 12
+  },
+  "cards-necrobinder-regent": {
+   "1": 1,
+   "2": 2,
+   "3": 3,
+   "4": 4,
+   "5": 5,
+   "6": 6,
+   "7": 9,
+   "8": 11,
+   "9": 12
+  },
+  "cards-silent-defect": {
+   "1": 1,
+   "2": 2,
+   "3": 3,
+   "4": 4,
+   "5": 5,
+   "6": 7,
+   "7": 8,
+   "8": "split8",
+   "99": 12
+  }
+ },
+ "card_batch_prerequisites": {
+  "0": [],
+  "1": [],
+  "2": [
+   "1"
+  ],
+  "3": [
+   "1",
+   "2"
+  ],
+  "4": [
+   "3"
+  ],
+  "5": [
+   "3"
+  ],
+  "6": [
+   "3"
+  ],
+  "7": [
+   "3"
+  ],
+  "8": [
+   "4",
+   "7"
+  ],
+  "9": [
+   "3",
+   "4",
+   "5"
+  ],
+  "10": [
+   "3",
+   "5"
+  ],
+  "11": [
+   "3",
+   "5",
+   "6",
+   "9",
+   "10"
+  ],
+  "12": []
+ },
+ "schemes": {
+  "cards": {
+   "0": {
+    "title": "ported in P0: re-verify against the expanded kernel",
+    "members": 6
+   },
+   "1": {
+    "title": "basics on the current kernel: existing facades, every dependency ported",
+    "members": 137
+   },
+   "2": {
+    "title": "needs unported powers or token cards: with power batches 1-2",
+    "members": 108
+   },
+   "3": {
+    "title": "card-kernel facades and hooks (card listeners, CardCmd ops, clone/create, calculated vars, auto-play, Sly, attack context)",
+    "members": 84
+   },
+   "4": {
+    "title": "combat-history readers",
+    "members": 30
+   },
+   "5": {
+    "title": "player prompts (choice runtime, combat prompt kinds)",
+    "members": 39
+   },
+   "6": {
+    "title": "card generation from unlock-filtered pools (CardFactory + UnlockProfile)",
+    "members": 15
+   },
+   "7": {
+    "title": "orb core (OrbQueue, the five orbs, Channel/Evoke, Focus): Defect starters",
+    "members": 23
+   },
+   "8": {
+    "title": "orb advanced (evoke loops, passive counts, slots, random orbs, orb history)",
+    "members": 19
+   },
+   "9": {
+    "title": "character subsystems Osty, Stars, Forge",
+    "members": 75
+   },
+   "10": {
+    "title": "other subsystems: potions runtime, gold in combat, enchantments, monster-driven prompts",
+    "members": 8
+   },
+   "11": {
+    "title": "run layer and cross-cutting: deck-resident hooks, saved properties, deck persistence, combat-end rewards",
+    "members": 15
+   },
+   "12": {
+    "title": "multiplayer-only: unreachable in single-player pools",
+    "members": 37
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 8
+   }
+  },
+  "powers": {
+   "1": {
+    "title": "existing kernel: pure numbers/hooks the sim already has",
+    "members": 61
+   },
+   "2": {
+    "title": "combat-kernel surface: side-turn participants, missing combat hooks/Cmd overloads, temporary-stat family, Doom",
+    "members": 65
+   },
+   "3": {
+    "title": "card-model operations: keywords, upgrade/downgrade, clones, fixed-card creation, auto-play, result-location hook",
+    "members": 10
+   },
+   "4": {
+    "title": "combat history readers",
+    "members": 9
+   },
+   "5": {
+    "title": "pool card generation, afflictions, mid-combat monster summons",
+    "members": 14
+   },
+   "6": {
+    "title": "character subsystems: orbs (Defect), Osty (Necrobinder), stars and forge (Regent)",
+    "members": 34
+   },
+   "7": {
+    "title": "player-choice prompts",
+    "members": 5
+   },
+   "8": {
+    "title": "run-layer coupled (combat-end rewards, gold, deck)",
+    "members": 7
+   },
+   "9": {
+    "title": "monster-coupled: port together with the named monster",
+    "members": 40
+   },
+   "10": {
+    "title": "out of single-player scope or deferred: multiplayer-only powers, unreferenced content, the UI-ordered RollingBoulder",
+    "members": 23
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 18
+   }
+  },
+  "relics": {
+   "1": {
+    "title": "combat, tier 1, only ported powers (Strength, Dexterity, Vulnerable, Weak, Thorns, Frail, Shrink) or none",
+    "members": 80
+   },
+   "2": {
+    "title": "combat, tier 1, needs power/card content from earlier content batches (Vigor, Plating, Poison, Blur, Confused, Soul, ...)",
+    "members": 10
+   },
+   "3": {
+    "title": "combat, tier 2 (missing hooks/facades: combat-end hooks, combat-room AfterRoomEntered, in-combat upgrade/keyword/clone, room type, gold)",
+    "members": 45
+   },
+   "4": {
+    "title": "combat, tier 3 subsystems except character mechanics (card generation, combat history, auto-play, extra turns, potion slots, enchantment reads)",
+    "members": 12
+   },
+   "5": {
+    "title": "character mechanics (orbs, Osty/pets, stars, forge); port with the character subsystem",
+    "members": 18
+   },
+   "6": {
+    "title": "in-combat prompts (turn-setup prompt sites)",
+    "members": 4
+   },
+   "7": {
+    "title": "run layer, simple effects (pickup, room entry, combat end): max HP, heal, gold, potion slots, fixed cards, curses, random upgrades/transforms/enchants",
+    "members": 52
+   },
+   "8": {
+    "title": "run layer, modifiers and generated offers: rewards, card reward options, shop, rest site options, map, relic bags, reward screens",
+    "members": 49
+   },
+   "9": {
+    "title": "run layer, deck prompts (remove/transform/upgrade/enchant/generic, choose card/bundle, simple grid)",
+    "members": 23
+   },
+   "10": {
+    "title": "tier 4, cross-cutting, multiplayer-only or deprecated",
+    "members": 6
+   }
+  },
+  "potions": {
+   "1": {
+    "title": "OnUse through ported facades and ported powers",
+    "members": 19
+   },
+   "2": {
+    "title": "OnUse needs power content from the power wave",
+    "members": 18
+   },
+   "3": {
+    "title": "OnUse needs missing facades/card APIs (in-combat upgrade, pile moves, Shiv/Soul creation, cost randomization, replay count)",
+    "members": 6
+   },
+   "4": {
+    "title": "subsystems: orbs, Osty, stars, forge, doom, auto-play, potion procurement, automatic use, card generation without prompt",
+    "members": 11
+   },
+   "5": {
+    "title": "in-combat prompts",
+    "members": 9
+   },
+   "6": {
+    "title": "cross-cutting (FoulPotion)",
+    "members": 1
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 2
+   }
+  },
+  "monsters": {
+   "0": {
+    "title": "ported in P0 (sim/Sts2Sim.Core/Monsters/Defs, Monsters/Encounters)",
+    "members": 11
+   },
+   "1": {
+    "title": "plain: own code uses ported facades only; power deps need at most W1 hook work (side-turn participants, power internal data)",
+    "members": 61
+   },
+   "2": {
+    "title": "kernel facades: monster-as-listener hooks, generic CardPileCmd.AddToCombatAndPreview<T>, CreatureCmd.Escape, raw HP writes",
+    "members": 8
+   },
+   "3": {
+    "title": "afflictions: depends on affliction-applying powers (Galvanized, Tainted, Smog, Hexed, Entangled, Ringing, Bound)",
+    "members": 6
+   },
+   "4": {
+    "title": "summons: mid-combat CreatureCmd.Add into encounter slots (own move or a death power)",
+    "members": 8
+   },
+   "5": {
+    "title": "revive / dead-but-present creatures and multi-phase bosses (Reattach, Illusion, Adaptable, SteamEruption)",
+    "members": 8
+   },
+   "6": {
+    "title": "run-layer coupled: gold theft, deck theft, extra combat rewards, event custom state",
+    "members": 6
+   },
+   "7": {
+    "title": "player prompt during the enemy turn and/or decompile-broken data (KnowledgeDemon)",
+    "members": 1
+   },
+   "8": {
+    "title": "player-side pets (Osty, relic pets): ship with the Osty/pet subsystem and their cards/relics",
+    "members": 3
+   },
+   "9": {
+    "title": "not content: test monsters, mocks, deprecated or unused models (port only as test seams)",
+    "members": 15
+   }
+  },
+  "encounters": {
+   "0": {
+    "title": "ported in P0 (sim/Sts2Sim.Core/Monsters/Defs, Monsters/Encounters)",
+    "members": 8
+   },
+   "1": {
+    "title": "plain: own code uses ported facades only; power deps need at most W1 hook work (side-turn participants, power internal data)",
+    "members": 50
+   },
+   "2": {
+    "title": "kernel facades: monster-as-listener hooks, generic CardPileCmd.AddToCombatAndPreview<T>, CreatureCmd.Escape, raw HP writes",
+    "members": 8
+   },
+   "3": {
+    "title": "afflictions: depends on affliction-applying powers (Galvanized, Tainted, Smog, Hexed, Entangled, Ringing, Bound)",
+    "members": 6
+   },
+   "4": {
+    "title": "summons: mid-combat CreatureCmd.Add into encounter slots (own move or a death power)",
+    "members": 6
+   },
+   "5": {
+    "title": "revive / dead-but-present creatures and multi-phase bosses (Reattach, Illusion, Adaptable, SteamEruption)",
+    "members": 5
+   },
+   "6": {
+    "title": "run-layer coupled: gold theft, deck theft, extra combat rewards, event custom state",
+    "members": 6
+   },
+   "7": {
+    "title": "player prompt during the enemy turn and/or decompile-broken data (KnowledgeDemon)",
+    "members": 1
+   },
+   "8": {
+    "title": "player-side pets (Osty, relic pets): ship with the Osty/pet subsystem and their cards/relics",
+    "members": 0
+   },
+   "9": {
+    "title": "not content: test monsters, mocks, deprecated or unused models (port only as test seams)",
+    "members": 9
+   }
+  },
+  "events": {
+   "0": {
+    "title": "not ported (deprecated save placeholders, test mock)",
+    "members": 3
+   },
+   "1": {
+    "title": "W2 gate set: Neow and the act-2/3 ancients (option generation is a W2 oracle), TheArchitect (terminal victory) and the tier-1 events",
+    "members": 21
+   },
+   "2": {
+    "title": "tier-2 events without prompts (grab bag, card generation, random upgrades, potion/relic trades, profile input)",
+    "members": 9
+   },
+   "3": {
+    "title": "prompt events: deck prompts, grid picks and the rewards screen (needs the W1 resumable prompt API)",
+    "members": 27
+   },
+   "4": {
+    "title": "event combats and combat-layout events (needs event encounters/monsters and EventCombatSynchronizer)",
+    "members": 4
+   },
+   "5": {
+    "title": "special subsystems: Crystal Sphere minigame, FakeMerchant shop + FoulPotion rule, LanternKey -> WarHistorianRepy chain",
+    "members": 3
+   },
+   "6": {
+    "title": "blocked on IL re-verification of lost static arrays (ColossalFlower, TinkerTime)",
+    "members": 2
+   }
+  },
+  "enchantments": {
+   "1": {
+    "title": "enchantment core: EnchantmentModel on a CardInstance (Amount, Status, DeckVersion), the damage/block pre-pass, EnchantPlayCount, OnPlay after the card, OnEnchant keyword/cost edits, enchantments as listeners after their card",
+    "members": 16
+   },
+   "2": {
+    "title": "enchantments that call other kernel features: block/draw/energy facades with vars, turn-1 auto-play, temporary costs, deck-version writes",
+    "members": 5
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 3
+   }
+  },
+  "afflictions": {
+   "1": {
+    "title": "affliction core: AfflictionModel on a CardInstance (Amount, stacking, CanAfflict); ships with the power that applies it",
+    "members": 7
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 3
+   }
+  },
+  "orbs": {
+   "1": {
+    "title": "orb core: OrbQueue, the five orbs, Channel/Evoke/Passive, ModifyOrbValue (Focus), hook-counted passive triggers",
+    "members": 5
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 2
+   }
+  },
+  "modifiers": {
+   "1": {
+    "title": "custom and daily run modifiers: outside the standard single-player scope; after the run layer",
+    "members": 16
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 1
+   }
+  },
+  "acts": {
+   "1": {
+    "title": "standard acts with the W2 run layer: room sets, map point counts, ancient and unlock gates",
+    "members": 4
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 1
+   }
+  },
+  "characters": {
+   "1": {
+    "title": "playable characters with the W2 run layer: starting deck, relics, HP, gold, energy, orb slots, pools",
+    "members": 5
+   },
+   "null": {
+    "title": "not scheduled (mock, deprecated, unreferenced)",
+    "members": 3
+   }
+  }
+ },
+ "edges": [
+  {
+   "from": "afflictions:1",
+   "to": "monsters:3",
+   "dependencies": 6,
+   "examples": [
+    "monsters:CEREMONIAL_BEAST <- afflictions:RINGING",
+    "monsters:GLOBE_HEAD <- afflictions:GALVANIZED",
+    "monsters:INFESTED_PRISM <- afflictions:TAINTED",
+    "monsters:QUEEN <- afflictions:BOUND",
+    "monsters:SPECTRAL_KNIGHT <- afflictions:HEXED",
+    "monsters:VINE_SHAMBLER <- afflictions:ENTANGLED"
+   ]
+  },
+  {
+   "from": "afflictions:1",
+   "to": "monsters:4",
+   "dependencies": 1,
+   "examples": [
+    "monsters:LIVING_FOG <- afflictions:SMOG"
+   ]
+  },
+  {
+   "from": "afflictions:1",
+   "to": "powers:5",
+   "dependencies": 7,
+   "examples": [
+    "powers:CHAINS_OF_BINDING_POWER <- afflictions:BOUND",
+    "powers:GALVANIC_POWER <- afflictions:GALVANIZED",
+    "powers:HEX_POWER <- afflictions:HEXED",
+    "powers:RINGING_POWER <- afflictions:RINGING",
+    "powers:SMOGGY_POWER <- afflictions:SMOG",
+    "powers:TANGLED_POWER <- afflictions:ENTANGLED"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "cards:2",
+   "dependencies": 3,
+   "examples": [
+    "cards:BOOST_AWAY <- cards:DAZED",
+    "cards:FIGHT_THROUGH <- cards:WOUND",
+    "cards:OVERCLOCK <- cards:BURN"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "cards:3",
+   "dependencies": 4,
+   "examples": [
+    "cards:COLLISION_COURSE <- cards:DEBRIS",
+    "cards:COMPACT <- cards:FUEL",
+    "cards:CRASH_LANDING <- cards:DEBRIS",
+    "cards:PRIMAL_FORCE <- cards:GIANT_ROCK"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "cards:5",
+   "dependencies": 3,
+   "examples": [
+    "cards:BEGONE <- cards:MINION_STRIKE",
+    "cards:CHARGE <- cards:MINION_DIVE_BOMB",
+    "cards:GUARDS <- cards:MINION_SACRIFICE"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "characters:1",
+   "dependencies": 9,
+   "examples": [
+    "characters:DEFECT <- cards:DEFEND_DEFECT",
+    "characters:DEFECT <- cards:STRIKE_DEFECT",
+    "characters:NECROBINDER <- cards:DEFEND_NECROBINDER",
+    "characters:NECROBINDER <- cards:STRIKE_NECROBINDER",
+    "characters:REGENT <- cards:DEFEND_REGENT",
+    "characters:REGENT <- cards:STRIKE_REGENT"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "events:1",
+   "dependencies": 7,
+   "examples": [
+    "events:BUGSLAYER <- cards:EXTERMINATE",
+    "events:BUGSLAYER <- cards:SQUASH",
+    "events:LOST_WISP <- cards:DECAY",
+    "events:TRASH_HEAP <- cards:CALTROPS",
+    "events:TRASH_HEAP <- cards:CLASH",
+    "events:TRASH_HEAP <- cards:ENTRENCH"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "events:2",
+   "dependencies": 3,
+   "examples": [
+    "events:REFLECTIONS <- cards:BAD_LUCK",
+    "events:THIS_OR_THAT <- cards:CLUMSY",
+    "events:UNREST_SITE <- cards:POOR_SLEEP"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "events:3",
+   "dependencies": 8,
+   "examples": [
+    "events:AMALGAMATOR <- cards:ULTIMATE_DEFEND",
+    "events:AMALGAMATOR <- cards:ULTIMATE_STRIKE",
+    "events:GRAVE_OF_THE_FORGOTTEN <- cards:DECAY",
+    "events:LUMINOUS_CHOIR <- cards:SPORE_MIND",
+    "events:TRIAL <- cards:DOUBT",
+    "events:TRIAL <- cards:SHAME"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "events:4",
+   "dependencies": 1,
+   "examples": [
+    "events:PUNCH_OFF <- cards:INJURY"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:CRYSTAL_SPHERE <- cards:DOUBT"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "monsters:1",
+   "dependencies": 3,
+   "examples": [
+    "monsters:ENTOMANCER <- cards:DAZED",
+    "monsters:NOISEBOT <- cards:DAZED",
+    "monsters:SOUL_FYSH <- cards:BECKON"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "monsters:2",
+   "dependencies": 7,
+   "examples": [
+    "monsters:AEONGLASS <- cards:WITHER",
+    "monsters:CHOMPER <- cards:DAZED",
+    "monsters:HAUNTED_SHIP <- cards:DAZED",
+    "monsters:MECHA_KNIGHT <- cards:BURN",
+    "monsters:MYTE <- cards:TOXIC",
+    "monsters:VANTOM <- cards:WOUND"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "monsters:4",
+   "dependencies": 1,
+   "examples": [
+    "monsters:PHROG_PARASITE <- cards:INFECTION"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "monsters:5",
+   "dependencies": 3,
+   "examples": [
+    "monsters:EYE_WITH_TEETH <- cards:DAZED",
+    "monsters:TEST_SUBJECT <- cards:BURN",
+    "monsters:TEST_SUBJECT <- cards:WOUND"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "powers:9",
+   "dependencies": 3,
+   "examples": [
+    "powers:PAINFUL_STABS_POWER <- cards:WOUND",
+    "powers:PERSONAL_HIVE_POWER <- cards:DAZED",
+    "powers:WITHERING_PRESENCE_POWER <- cards:WITHER"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "relics:3",
+   "dependencies": 3,
+   "examples": [
+    "relics:BLESSED_ANTLER <- cards:DAZED",
+    "relics:RADIANT_PEARL <- cards:LUMINESCE",
+    "relics:TEA_OF_DISCOURTESY <- cards:DAZED"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "relics:5",
+   "dependencies": 1,
+   "examples": [
+    "relics:BYRDPIP <- cards:BYRD_SWOOP"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "relics:7",
+   "dependencies": 6,
+   "examples": [
+    "relics:ARCHAIC_TOOTH <- cards:BREAK",
+    "relics:ARCHAIC_TOOTH <- cards:DOUBT",
+    "relics:ARCHAIC_TOOTH <- cards:NEUTRALIZE",
+    "relics:ARCHAIC_TOOTH <- cards:SUPPRESS",
+    "relics:STORYBOOK <- cards:BRIGHTEST_FLAME",
+    "relics:TANXS_WHISTLE <- cards:WHISTLE"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "relics:8",
+   "dependencies": 1,
+   "examples": [
+    "relics:CALLING_BELL <- cards:CURSE_OF_THE_BELL"
+   ]
+  },
+  {
+   "from": "cards:1",
+   "to": "relics:9",
+   "dependencies": 3,
+   "examples": [
+    "relics:BIIIG_HUG <- cards:SOOT",
+    "relics:HEFTY_TABLET <- cards:INJURY",
+    "relics:PRESERVED_FOG <- cards:FOLLY"
+   ]
+  },
+  {
+   "from": "cards:10",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:CRYSTAL_SPHERE <- cards:DEBT"
+   ]
+  },
+  {
+   "from": "cards:10",
+   "to": "monsters:7",
+   "dependencies": 4,
+   "examples": [
+    "monsters:KNOWLEDGE_DEMON <- cards:DISINTEGRATION",
+    "monsters:KNOWLEDGE_DEMON <- cards:MIND_ROT",
+    "monsters:KNOWLEDGE_DEMON <- cards:SLOTH",
+    "monsters:KNOWLEDGE_DEMON <- cards:WASTE_AWAY"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:BYRDONIS_NEST <- cards:BYRDONIS_EGG"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "events:3",
+   "dependencies": 2,
+   "examples": [
+    "events:THE_LEGENDS_WERE_TRUE <- cards:SPOILS_MAP",
+    "events:WELLSPRING <- cards:GUILTY"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "events:4",
+   "dependencies": 1,
+   "examples": [
+    "events:THE_LANTERN_KEY <- cards:LANTERN_KEY"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:WAR_HISTORIAN_REPY <- cards:LANTERN_KEY"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "events:6",
+   "dependencies": 1,
+   "examples": [
+    "events:TINKER_TIME <- cards:MAD_SCIENCE"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "relics:5",
+   "dependencies": 1,
+   "examples": [
+    "relics:BYRDPIP <- cards:BYRDONIS_EGG"
+   ]
+  },
+  {
+   "from": "cards:11",
+   "to": "relics:7",
+   "dependencies": 2,
+   "examples": [
+    "relics:DOWSING_ROD <- cards:DOWSING",
+    "relics:NEOWS_SACRIFICE <- cards:GUILTY"
+   ]
+  },
+  {
+   "from": "cards:2",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:TRASH_HEAP <- cards:OUTMANEUVER"
+   ]
+  },
+  {
+   "from": "cards:2",
+   "to": "events:3",
+   "dependencies": 2,
+   "examples": [
+    "events:ENDLESS_CONVEYOR <- cards:FEEDING_FRENZY",
+    "events:WOOD_CARVINGS <- cards:TORIC_TOUGHNESS"
+   ]
+  },
+  {
+   "from": "cards:2",
+   "to": "monsters:1",
+   "dependencies": 1,
+   "examples": [
+    "monsters:THE_INSATIABLE <- cards:FRANTIC_ESCAPE"
+   ]
+  },
+  {
+   "from": "cards:2",
+   "to": "relics:7",
+   "dependencies": 2,
+   "examples": [
+    "relics:DISTINGUISHED_CAPE <- cards:APPARITION",
+    "relics:PAELS_HORN <- cards:RELAX"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "cards:10",
+   "dependencies": 1,
+   "examples": [
+    "cards:BLADE_OF_INK <- cards:SHIV"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "cards:12",
+   "dependencies": 3,
+   "examples": [
+    "cards:BLADE_SYMPHONY <- cards:SHIV",
+    "cards:GLIMPSE_BEYOND <- cards:SOUL",
+    "cards:SOULBOUND <- cards:SOUL"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "cards:4",
+   "dependencies": 1,
+   "examples": [
+    "cards:PHANTOM_BLADES <- cards:SHIV"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "cards:5",
+   "dependencies": 2,
+   "examples": [
+    "cards:HIDDEN_DAGGERS <- cards:SHIV",
+    "cards:SEANCE <- cards:SOUL"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "cards:9",
+   "dependencies": 2,
+   "examples": [
+    "cards:DEVOUR_LIFE <- cards:SOUL",
+    "cards:DIRGE <- cards:SOUL"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "events:1",
+   "dependencies": 2,
+   "examples": [
+    "events:TRASH_HEAP <- cards:REBOUND",
+    "events:TRASH_HEAP <- cards:STACK"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:TRIAL <- cards:REGRET"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "potions:3",
+   "dependencies": 2,
+   "examples": [
+    "potions:CUNNING_POTION <- cards:SHIV",
+    "potions:POT_OF_GHOULS <- cards:SOUL"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "relics:2",
+   "dependencies": 2,
+   "examples": [
+    "relics:FUNERARY_MASK <- cards:SOUL",
+    "relics:HELICAL_DART <- cards:SHIV"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "relics:3",
+   "dependencies": 1,
+   "examples": [
+    "relics:NINJA_SCROLL <- cards:SHIV"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "relics:7",
+   "dependencies": 2,
+   "examples": [
+    "relics:BLOOD_SOAKED_ROSE <- cards:ENTHRALLED",
+    "relics:JEWELRY_BOX <- cards:APOTHEOSIS"
+   ]
+  },
+  {
+   "from": "cards:3",
+   "to": "relics:9",
+   "dependencies": 2,
+   "examples": [
+    "relics:CLAWS <- cards:MAUL",
+    "relics:SCROLL_BOXES <- cards:CLAW"
+   ]
+  },
+  {
+   "from": "cards:4",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:FIELD_OF_MAN_SIZED_HOLES <- cards:NORMALITY"
+   ]
+  },
+  {
+   "from": "cards:5",
+   "to": "characters:1",
+   "dependencies": 1,
+   "examples": [
+    "characters:SILENT <- cards:SURVIVOR"
+   ]
+  },
+  {
+   "from": "cards:5",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:TRASH_HEAP <- cards:DUAL_WIELD"
+   ]
+  },
+  {
+   "from": "cards:5",
+   "to": "relics:7",
+   "dependencies": 2,
+   "examples": [
+    "relics:NEOWS_TORMENT <- cards:NEOWS_FURY",
+    "relics:SERE_TALON <- cards:WISH"
+   ]
+  },
+  {
+   "from": "cards:6",
+   "to": "cards:11",
+   "dependencies": 1,
+   "examples": [
+    "cards:DOWSING <- cards:ABUNDANCE"
+   ]
+  },
+  {
+   "from": "cards:6",
+   "to": "events:1",
+   "dependencies": 2,
+   "examples": [
+    "events:TRASH_HEAP <- cards:DISTRACTION",
+    "events:TRASH_HEAP <- cards:HELLO_WORLD"
+   ]
+  },
+  {
+   "from": "cards:6",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:SPIRIT_GRAFTER <- cards:METAMORPHOSIS"
+   ]
+  },
+  {
+   "from": "cards:7",
+   "to": "characters:1",
+   "dependencies": 2,
+   "examples": [
+    "characters:DEFECT <- cards:DUALCAST",
+    "characters:DEFECT <- cards:ZAP"
+   ]
+  },
+  {
+   "from": "cards:7",
+   "to": "relics:7",
+   "dependencies": 1,
+   "examples": [
+    "relics:ARCHAIC_TOOTH <- cards:DUALCAST"
+   ]
+  },
+  {
+   "from": "cards:8",
+   "to": "relics:7",
+   "dependencies": 1,
+   "examples": [
+    "relics:ARCHAIC_TOOTH <- cards:QUADCAST"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "cards:12",
+   "dependencies": 1,
+   "examples": [
+    "cards:HAMMER_TIME <- cards:SOVEREIGN_BLADE"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "characters:1",
+   "dependencies": 4,
+   "examples": [
+    "characters:NECROBINDER <- cards:BODYGUARD",
+    "characters:NECROBINDER <- cards:UNLEASH",
+    "characters:REGENT <- cards:FALLING_STAR",
+    "characters:REGENT <- cards:VENERATE"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "potions:4",
+   "dependencies": 1,
+   "examples": [
+    "potions:KINGS_COURAGE <- cards:SOVEREIGN_BLADE"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "powers:3",
+   "dependencies": 1,
+   "examples": [
+    "powers:SENTRY_MODE_POWER <- cards:SWEEPING_GAZE"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "relics:5",
+   "dependencies": 1,
+   "examples": [
+    "relics:FENCING_MANUAL <- cards:SOVEREIGN_BLADE"
+   ]
+  },
+  {
+   "from": "cards:9",
+   "to": "relics:7",
+   "dependencies": 4,
+   "examples": [
+    "relics:ARCHAIC_TOOTH <- cards:FALLING_STAR",
+    "relics:ARCHAIC_TOOTH <- cards:METEOR_SHOWER",
+    "relics:ARCHAIC_TOOTH <- cards:PROTECTOR",
+    "relics:ARCHAIC_TOOTH <- cards:UNLEASH"
+   ]
+  },
+  {
+   "from": "enchantments:1",
+   "to": "cards:10",
+   "dependencies": 1,
+   "examples": [
+    "cards:BLADE_OF_INK <- enchantments:INKY"
+   ]
+  },
+  {
+   "from": "enchantments:1",
+   "to": "events:1",
+   "dependencies": 2,
+   "examples": [
+    "events:NONUPEIPE <- enchantments:SWIFT",
+    "events:TANX <- enchantments:INSTINCT"
+   ]
+  },
+  {
+   "from": "enchantments:1",
+   "to": "events:3",
+   "dependencies": 9,
+   "examples": [
+    "events:GRAVE_OF_THE_FORGOTTEN <- enchantments:SOULS_POWER",
+    "events:SAPPHIRE_SEED <- enchantments:SOWN",
+    "events:SELF_HELP_BOOK <- enchantments:NIMBLE",
+    "events:SELF_HELP_BOOK <- enchantments:SHARP",
+    "events:SELF_HELP_BOOK <- enchantments:SWIFT",
+    "events:SPIRALING_WHIRLPOOL <- enchantments:SPIRAL"
+   ]
+  },
+  {
+   "from": "enchantments:2",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:PAEL <- enchantments:GOOPY"
+   ]
+  },
+  {
+   "from": "enchantments:2",
+   "to": "events:3",
+   "dependencies": 2,
+   "examples": [
+    "events:FIELD_OF_MAN_SIZED_HOLES <- enchantments:PERFECT_FIT",
+    "events:WOOD_CARVINGS <- enchantments:SLITHER"
+   ]
+  },
+  {
+   "from": "enchantments:2",
+   "to": "monsters:6",
+   "dependencies": 1,
+   "examples": [
+    "monsters:THIEVING_HOPPER <- enchantments:IMBUED"
+   ]
+  },
+  {
+   "from": "encounters:1",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:THE_ARCHITECT <- encounters:THE_ARCHITECT_EVENT_ENCOUNTER"
+   ]
+  },
+  {
+   "from": "encounters:1",
+   "to": "events:4",
+   "dependencies": 2,
+   "examples": [
+    "events:PUNCH_OFF <- encounters:PUNCH_OFF_EVENT_ENCOUNTER",
+    "events:THE_LANTERN_KEY <- encounters:MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER"
+   ]
+  },
+  {
+   "from": "encounters:1",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:FAKE_MERCHANT <- encounters:FAKE_MERCHANT_EVENT_ENCOUNTER"
+   ]
+  },
+  {
+   "from": "encounters:2",
+   "to": "events:4",
+   "dependencies": 1,
+   "examples": [
+    "events:DENSE_VEGETATION <- encounters:DENSE_VEGETATION_EVENT_ENCOUNTER"
+   ]
+  },
+  {
+   "from": "encounters:6",
+   "to": "events:4",
+   "dependencies": 3,
+   "examples": [
+    "events:BATTLEWORN_DUMMY <- encounters:BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER",
+    "events:BATTLEWORN_DUMMY <- encounters:BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER",
+    "events:BATTLEWORN_DUMMY <- encounters:BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER"
+   ]
+  },
+  {
+   "from": "encounters:6",
+   "to": "powers:8",
+   "dependencies": 1,
+   "examples": [
+    "powers:SWIPE_POWER <- encounters:THIEVING_HOPPER_WEAK"
+   ]
+  },
+  {
+   "from": "events:1",
+   "to": "acts:1",
+   "dependencies": 8,
+   "examples": [
+    "acts:GLORY <- events:NONUPEIPE",
+    "acts:GLORY <- events:TANX",
+    "acts:GLORY <- events:VAKUU",
+    "acts:HIVE <- events:OROBAS",
+    "acts:HIVE <- events:PAEL",
+    "acts:HIVE <- events:TEZCATARA"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "encounters:1",
+   "dependencies": 65,
+   "examples": [
+    "encounters:BOWLBUGS_NORMAL <- monsters:BOWLBUG_EGG",
+    "encounters:BOWLBUGS_NORMAL <- monsters:BOWLBUG_NECTAR",
+    "encounters:BOWLBUGS_NORMAL <- monsters:BOWLBUG_ROCK",
+    "encounters:BOWLBUGS_NORMAL <- monsters:BOWLBUG_SILK",
+    "encounters:BOWLBUGS_WEAK <- monsters:BOWLBUG_EGG",
+    "encounters:BOWLBUGS_WEAK <- monsters:BOWLBUG_NECTAR"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "encounters:2",
+   "dependencies": 1,
+   "examples": [
+    "encounters:TUNNELER_NORMAL <- monsters:TUNNELER"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "encounters:3",
+   "dependencies": 3,
+   "examples": [
+    "encounters:KNIGHTS_ELITE <- monsters:FLAIL_KNIGHT",
+    "encounters:KNIGHTS_ELITE <- monsters:MAGI_KNIGHT",
+    "encounters:QUEEN_BOSS <- monsters:TORCH_HEAD_AMALGAM"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "encounters:4",
+   "dependencies": 5,
+   "examples": [
+    "encounters:FABRICATOR_NORMAL <- monsters:GUARDBOT",
+    "encounters:FABRICATOR_NORMAL <- monsters:NOISEBOT",
+    "encounters:FABRICATOR_NORMAL <- monsters:STABBOT",
+    "encounters:FABRICATOR_NORMAL <- monsters:ZAPBOT",
+    "encounters:LIVING_FOG_NORMAL <- monsters:GAS_BOMB"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "encounters:6",
+   "dependencies": 1,
+   "examples": [
+    "encounters:GREMLIN_MERC_NORMAL <- monsters:SNEAKY_GREMLIN"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:THE_ARCHITECT <- monsters:ARCHITECT"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "events:4",
+   "dependencies": 2,
+   "examples": [
+    "events:PUNCH_OFF <- monsters:PUNCH_CONSTRUCT",
+    "events:THE_LANTERN_KEY <- monsters:MYSTERIOUS_KNIGHT"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:FAKE_MERCHANT <- monsters:FAKE_MERCHANT_MONSTER"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "monsters:3",
+   "dependencies": 1,
+   "examples": [
+    "monsters:QUEEN <- monsters:TORCH_HEAD_AMALGAM"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "monsters:4",
+   "dependencies": 5,
+   "examples": [
+    "monsters:FABRICATOR <- monsters:GUARDBOT",
+    "monsters:FABRICATOR <- monsters:NOISEBOT",
+    "monsters:FABRICATOR <- monsters:STABBOT",
+    "monsters:FABRICATOR <- monsters:ZAPBOT",
+    "monsters:LIVING_FOG <- monsters:GAS_BOMB"
+   ]
+  },
+  {
+   "from": "monsters:1",
+   "to": "monsters:6",
+   "dependencies": 1,
+   "examples": [
+    "monsters:GREMLIN_MERC <- monsters:SNEAKY_GREMLIN"
+   ]
+  },
+  {
+   "from": "monsters:2",
+   "to": "encounters:2",
+   "dependencies": 8,
+   "examples": [
+    "encounters:AEONGLASS_BOSS <- monsters:AEONGLASS",
+    "encounters:CHOMPERS_NORMAL <- monsters:CHOMPER",
+    "encounters:DENSE_VEGETATION_EVENT_ENCOUNTER <- monsters:WRIGGLER",
+    "encounters:HAUNTED_SHIP_NORMAL <- monsters:HAUNTED_SHIP",
+    "encounters:MECHA_KNIGHT_ELITE <- monsters:MECHA_KNIGHT",
+    "encounters:MYTES_NORMAL <- monsters:MYTE"
+   ]
+  },
+  {
+   "from": "monsters:2",
+   "to": "encounters:4",
+   "dependencies": 2,
+   "examples": [
+    "encounters:OVICOPTER_NORMAL <- monsters:TOUGH_EGG",
+    "encounters:PHROG_PARASITE_ELITE <- monsters:WRIGGLER"
+   ]
+  },
+  {
+   "from": "monsters:2",
+   "to": "events:4",
+   "dependencies": 1,
+   "examples": [
+    "events:DENSE_VEGETATION <- monsters:WRIGGLER"
+   ]
+  },
+  {
+   "from": "monsters:2",
+   "to": "monsters:4",
+   "dependencies": 2,
+   "examples": [
+    "monsters:OVICOPTER <- monsters:TOUGH_EGG",
+    "monsters:PHROG_PARASITE <- monsters:WRIGGLER"
+   ]
+  },
+  {
+   "from": "monsters:3",
+   "to": "encounters:3",
+   "dependencies": 6,
+   "examples": [
+    "encounters:CEREMONIAL_BEAST_BOSS <- monsters:CEREMONIAL_BEAST",
+    "encounters:GLOBE_HEAD_NORMAL <- monsters:GLOBE_HEAD",
+    "encounters:INFESTED_PRISMS_ELITE <- monsters:INFESTED_PRISM",
+    "encounters:KNIGHTS_ELITE <- monsters:SPECTRAL_KNIGHT",
+    "encounters:QUEEN_BOSS <- monsters:QUEEN",
+    "encounters:VINE_SHAMBLER_NORMAL <- monsters:VINE_SHAMBLER"
+   ]
+  },
+  {
+   "from": "monsters:4",
+   "to": "encounters:4",
+   "dependencies": 6,
+   "examples": [
+    "encounters:AXEBOTS_NORMAL <- monsters:AXEBOT",
+    "encounters:FABRICATOR_NORMAL <- monsters:FABRICATOR",
+    "encounters:LIVING_FOG_NORMAL <- monsters:LIVING_FOG",
+    "encounters:OVICOPTER_NORMAL <- monsters:OVICOPTER",
+    "encounters:PHROG_PARASITE_ELITE <- monsters:PHROG_PARASITE",
+    "encounters:TWO_TAILED_RATS_NORMAL <- monsters:TWO_TAILED_RAT"
+   ]
+  },
+  {
+   "from": "monsters:4",
+   "to": "encounters:5",
+   "dependencies": 2,
+   "examples": [
+    "encounters:FOGMOG_NORMAL <- monsters:FOGMOG",
+    "encounters:THE_OBSCURA_NORMAL <- monsters:THE_OBSCURA"
+   ]
+  },
+  {
+   "from": "monsters:5",
+   "to": "encounters:5",
+   "dependencies": 7,
+   "examples": [
+    "encounters:DECIMILLIPEDE_ELITE <- monsters:DECIMILLIPEDE_SEGMENT_BACK",
+    "encounters:DECIMILLIPEDE_ELITE <- monsters:DECIMILLIPEDE_SEGMENT_FRONT",
+    "encounters:DECIMILLIPEDE_ELITE <- monsters:DECIMILLIPEDE_SEGMENT_MIDDLE",
+    "encounters:FOGMOG_NORMAL <- monsters:EYE_WITH_TEETH",
+    "encounters:TEST_SUBJECT_BOSS <- monsters:TEST_SUBJECT",
+    "encounters:THE_OBSCURA_NORMAL <- monsters:PARAFRIGHT"
+   ]
+  },
+  {
+   "from": "monsters:5",
+   "to": "monsters:4",
+   "dependencies": 2,
+   "examples": [
+    "monsters:FOGMOG <- monsters:EYE_WITH_TEETH",
+    "monsters:THE_OBSCURA <- monsters:PARAFRIGHT"
+   ]
+  },
+  {
+   "from": "monsters:6",
+   "to": "encounters:6",
+   "dependencies": 6,
+   "examples": [
+    "encounters:BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER <- monsters:BATTLE_FRIEND_V1",
+    "encounters:BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER <- monsters:BATTLE_FRIEND_V2",
+    "encounters:BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER <- monsters:BATTLE_FRIEND_V3",
+    "encounters:GREMLIN_MERC_NORMAL <- monsters:FAT_GREMLIN",
+    "encounters:GREMLIN_MERC_NORMAL <- monsters:GREMLIN_MERC",
+    "encounters:THIEVING_HOPPER_WEAK <- monsters:THIEVING_HOPPER"
+   ]
+  },
+  {
+   "from": "monsters:6",
+   "to": "events:4",
+   "dependencies": 3,
+   "examples": [
+    "events:BATTLEWORN_DUMMY <- monsters:BATTLE_FRIEND_V1",
+    "events:BATTLEWORN_DUMMY <- monsters:BATTLE_FRIEND_V2",
+    "events:BATTLEWORN_DUMMY <- monsters:BATTLE_FRIEND_V3"
+   ]
+  },
+  {
+   "from": "monsters:7",
+   "to": "encounters:7",
+   "dependencies": 1,
+   "examples": [
+    "encounters:KNOWLEDGE_DEMON_BOSS <- monsters:KNOWLEDGE_DEMON"
+   ]
+  },
+  {
+   "from": "monsters:9",
+   "to": "encounters:9",
+   "dependencies": 9,
+   "examples": [
+    "encounters:MOCK_ARTIFACT_ENCOUNTER <- monsters:MOCK_ARTIFACT_MONSTER",
+    "encounters:MOCK_ATTACK_AND_SUMMON_ENCOUNTER <- monsters:BIG_DUMMY",
+    "encounters:MOCK_ATTACK_AND_SUMMON_ENCOUNTER <- monsters:MOCK_ATTACK_AND_SUMMON_MINION_MONSTER",
+    "encounters:MOCK_BOSS_ENCOUNTER <- monsters:BIG_DUMMY",
+    "encounters:MOCK_ELITE_ENCOUNTER <- monsters:BIG_DUMMY",
+    "encounters:MOCK_MONSTER_ENCOUNTER <- monsters:BIG_DUMMY"
+   ]
+  },
+  {
+   "from": "orbs:1",
+   "to": "cards:12",
+   "dependencies": 2,
+   "examples": [
+    "cards:HIBERNATE <- orbs:FROST_ORB",
+    "cards:IGNITION <- orbs:PLASMA_ORB"
+   ]
+  },
+  {
+   "from": "orbs:1",
+   "to": "cards:7",
+   "dependencies": 17,
+   "examples": [
+    "cards:BALL_LIGHTNING <- orbs:LIGHTNING_ORB",
+    "cards:CHILL <- orbs:FROST_ORB",
+    "cards:COLD_SNAP <- orbs:FROST_ORB",
+    "cards:COOLHEADED <- orbs:FROST_ORB",
+    "cards:FUSION <- orbs:PLASMA_ORB",
+    "cards:GLACIER <- orbs:FROST_ORB"
+   ]
+  },
+  {
+   "from": "orbs:1",
+   "to": "cards:8",
+   "dependencies": 13,
+   "examples": [
+    "cards:CHAOS <- orbs:DARK_ORB",
+    "cards:CHAOS <- orbs:FROST_ORB",
+    "cards:CHAOS <- orbs:GLASS_ORB",
+    "cards:CHAOS <- orbs:LIGHTNING_ORB",
+    "cards:CHAOS <- orbs:PLASMA_ORB",
+    "cards:CONSUMING_SHADOW <- orbs:DARK_ORB"
+   ]
+  },
+  {
+   "from": "orbs:1",
+   "to": "powers:6",
+   "dependencies": 3,
+   "examples": [
+    "powers:LIGHTNING_ROD_POWER <- orbs:LIGHTNING_ORB",
+    "powers:SPINNER_POWER <- orbs:GLASS_ORB",
+    "powers:STORM_POWER <- orbs:LIGHTNING_ORB"
+   ]
+  },
+  {
+   "from": "potions:1",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:DROWNING_BEACON <- potions:GLOWWATER_POTION"
+   ]
+  },
+  {
+   "from": "potions:6",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:POTION_COURIER <- potions:FOUL_POTION"
+   ]
+  },
+  {
+   "from": "potions:6",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:FAKE_MERCHANT <- potions:FOUL_POTION"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:10",
+   "dependencies": 2,
+   "examples": [
+    "cards:MIND_ROT <- powers:MIND_ROT_POWER",
+    "cards:WASTE_AWAY <- powers:WASTE_AWAY_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:11",
+   "dependencies": 2,
+   "examples": [
+    "cards:MAD_SCIENCE <- powers:CURIOUS_POWER",
+    "cards:THE_HUNT <- powers:THE_HUNT_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:2",
+   "dependencies": 51,
+   "examples": [
+    "cards:ACCELERANT <- powers:ACCELERANT_POWER",
+    "cards:AFTERIMAGE <- powers:AFTERIMAGE_POWER",
+    "cards:APPARITION <- powers:INTANGIBLE_POWER",
+    "cards:ARSENAL <- powers:ARSENAL_POWER",
+    "cards:AUTOMATION <- powers:AUTOMATION_POWER",
+    "cards:BARRICADE <- powers:BARRICADE_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:3",
+   "dependencies": 4,
+   "examples": [
+    "cards:ACCURACY <- powers:ACCURACY_POWER",
+    "cards:FAN_OF_KNIVES <- powers:FAN_OF_KNIVES_POWER",
+    "cards:HAUNT <- powers:HAUNT_POWER",
+    "cards:SHIV <- powers:FAN_OF_KNIVES_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:5",
+   "dependencies": 1,
+   "examples": [
+    "cards:SCAVENGE <- powers:ENERGY_NEXT_TURN_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "cards:9",
+   "dependencies": 3,
+   "examples": [
+    "cards:CONVERGENCE <- powers:ENERGY_NEXT_TURN_POWER",
+    "cards:INVOKE <- powers:ENERGY_NEXT_TURN_POWER",
+    "cards:REFINE_BLADE <- powers:ENERGY_NEXT_TURN_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:1",
+   "dependencies": 6,
+   "examples": [
+    "monsters:GAS_BOMB <- powers:MINION_POWER",
+    "monsters:INKLET <- powers:SLIPPERY_POWER",
+    "monsters:KIN_FOLLOWER <- powers:MINION_POWER",
+    "monsters:SOUL_FYSH <- powers:INTANGIBLE_POWER",
+    "monsters:TERROR_EEL <- powers:VIGOR_POWER",
+    "monsters:TORCH_HEAD_AMALGAM <- powers:MINION_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:2",
+   "dependencies": 2,
+   "examples": [
+    "monsters:TOUGH_EGG <- powers:MINION_POWER",
+    "monsters:VANTOM <- powers:SLIPPERY_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:3",
+   "dependencies": 1,
+   "examples": [
+    "monsters:INFESTED_PRISM <- powers:TAINTED_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:4",
+   "dependencies": 2,
+   "examples": [
+    "monsters:FABRICATOR <- powers:MINION_POWER",
+    "monsters:OVICOPTER <- powers:MINION_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:5",
+   "dependencies": 3,
+   "examples": [
+    "monsters:EYE_WITH_TEETH <- powers:MINION_POWER",
+    "monsters:PARAFRIGHT <- powers:MINION_POWER",
+    "monsters:TEST_SUBJECT <- powers:INTANGIBLE_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "monsters:9",
+   "dependencies": 2,
+   "examples": [
+    "monsters:MOCK_ATTACK_AND_SUMMON_MINION_MONSTER <- powers:MINION_POWER",
+    "monsters:MOCK_INTANGIBLE_MONSTER <- powers:INTANGIBLE_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "potions:2",
+   "dependencies": 6,
+   "examples": [
+    "potions:AMBERGRIS <- powers:AMBERGRIS_POWER",
+    "potions:GHOST_IN_A_JAR <- powers:INTANGIBLE_POWER",
+    "potions:GIGANTIFICATION_POTION <- powers:GIGANTIFICATION_POWER",
+    "potions:LUCKY_TONIC <- powers:BUFFER_POWER",
+    "potions:RADIANT_TINCTURE <- powers:RADIANCE_POWER",
+    "potions:SHIP_IN_A_BOTTLE <- powers:BLOCK_NEXT_TURN_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "powers:2",
+   "dependencies": 3,
+   "examples": [
+    "powers:POISON_POWER <- powers:ACCELERANT_POWER",
+    "powers:PREP_TIME_POWER <- powers:VIGOR_POWER",
+    "powers:VULNERABLE_POWER <- powers:CRUELTY_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "powers:5",
+   "dependencies": 1,
+   "examples": [
+    "powers:VITAL_SPARK_POWER <- powers:TAINTED_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "powers:9",
+   "dependencies": 2,
+   "examples": [
+    "powers:ILLUSION_POWER <- powers:MINION_POWER",
+    "powers:NEMESIS_POWER <- powers:INTANGIBLE_POWER"
+   ]
+  },
+  {
+   "from": "powers:1",
+   "to": "relics:2",
+   "dependencies": 4,
+   "examples": [
+    "relics:AKABEKO <- powers:VIGOR_POWER",
+    "relics:FAKE_SNECKO_EYE <- powers:CONFUSED_POWER",
+    "relics:SELF_FORMING_CLAY <- powers:SELF_FORMING_CLAY_POWER",
+    "relics:SNECKO_EYE <- powers:CONFUSED_POWER"
+   ]
+  },
+  {
+   "from": "powers:10",
+   "to": "cards:12",
+   "dependencies": 16,
+   "examples": [
+    "cards:BEACON_OF_HOPE <- powers:BEACON_OF_HOPE_POWER",
+    "cards:CACOPHONY <- powers:CACOPHONY_POWER",
+    "cards:CONCOCT <- powers:CONCOCT_POWER",
+    "cards:COORDINATE <- powers:COORDINATE_POWER",
+    "cards:FADE <- powers:FADE_POWER",
+    "cards:FLANKING <- powers:FLANKING_POWER"
+   ]
+  },
+  {
+   "from": "powers:10",
+   "to": "cards:2",
+   "dependencies": 1,
+   "examples": [
+    "cards:ROLLING_BOULDER <- powers:ROLLING_BOULDER_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:10",
+   "dependencies": 2,
+   "examples": [
+    "cards:DISINTEGRATION <- powers:DISINTEGRATION_POWER",
+    "cards:SLOTH <- powers:SLOTH_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:11",
+   "dependencies": 1,
+   "examples": [
+    "cards:MAD_SCIENCE <- powers:STRANGLE_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:12",
+   "dependencies": 2,
+   "examples": [
+    "cards:PLOT <- powers:DRAW_CARDS_NEXT_TURN_POWER",
+    "cards:UNDERWORLD <- powers:DOOM_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:2",
+   "dependencies": 64,
+   "examples": [
+    "cards:ACCELERANT <- powers:POISON_POWER",
+    "cards:ANTICIPATE <- powers:ANTICIPATE_POWER",
+    "cards:BATTLE_TRANCE <- powers:NO_DRAW_POWER",
+    "cards:BLIGHT_STRIKE <- powers:DOOM_POWER",
+    "cards:BLUR <- powers:BLUR_POWER",
+    "cards:BORROWED_TIME <- powers:BORROWED_TIME_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:3",
+   "dependencies": 7,
+   "examples": [
+    "cards:END_OF_DAYS <- powers:DOOM_POWER",
+    "cards:MIRAGE <- powers:POISON_POWER",
+    "cards:MONOLOGUE <- powers:MONOLOGUE_POWER",
+    "cards:NO_ESCAPE <- powers:DOOM_POWER",
+    "cards:SHADOW_STEP <- powers:DOUBLE_DAMAGE_POWER",
+    "cards:SHADOW_STEP <- powers:SHADOW_STEP_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:4",
+   "dependencies": 2,
+   "examples": [
+    "cards:DEATHS_DOOR <- powers:DOOM_POWER",
+    "cards:PALE_BLUE_DOT <- powers:DRAW_CARDS_NEXT_TURN_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "cards:9",
+   "dependencies": 6,
+   "examples": [
+    "cards:CONVERGENCE <- powers:RETAIN_HAND_POWER",
+    "cards:DYING_STAR <- powers:DYING_STAR_POWER",
+    "cards:GLOW <- powers:DRAW_CARDS_NEXT_TURN_POWER",
+    "cards:GUIDING_STAR <- powers:DRAW_CARDS_NEXT_TURN_POWER",
+    "cards:NEUTRON_AEGIS <- powers:PLATING_POWER",
+    "cards:REFLECT <- powers:REFLECT_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "events:6",
+   "dependencies": 1,
+   "examples": [
+    "events:TINKER_TIME <- powers:STRANGLE_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "modifiers:1",
+   "dependencies": 1,
+   "examples": [
+    "modifiers:TERMINAL <- powers:PLATING_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "monsters:1",
+   "dependencies": 11,
+   "examples": [
+    "monsters:CALCIFIED_CULTIST <- powers:RITUAL_POWER",
+    "monsters:CUBEX_CONSTRUCT <- powers:ARTIFACT_POWER",
+    "monsters:DAMP_CULTIST <- powers:RITUAL_POWER",
+    "monsters:DEVOTED_SCULPTOR <- powers:RITUAL_POWER",
+    "monsters:FROG_KNIGHT <- powers:PLATING_POWER",
+    "monsters:LAGAVULIN_MATRIARCH <- powers:PLATING_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "monsters:2",
+   "dependencies": 3,
+   "examples": [
+    "monsters:AEONGLASS <- powers:ARTIFACT_POWER",
+    "monsters:CHOMPER <- powers:ARTIFACT_POWER",
+    "monsters:MECHA_KNIGHT <- powers:ARTIFACT_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "monsters:9",
+   "dependencies": 5,
+   "examples": [
+    "monsters:MOCK_ARTIFACT_MONSTER <- powers:ARTIFACT_POWER",
+    "monsters:MOCK_PLATING_MONSTER <- powers:PLATING_POWER",
+    "monsters:THE_ADVERSARY_MK_ONE <- powers:ARTIFACT_POWER",
+    "monsters:THE_ADVERSARY_MK_THREE <- powers:ARTIFACT_POWER",
+    "monsters:THE_ADVERSARY_MK_TWO <- powers:ARTIFACT_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "potions:2",
+   "dependencies": 11,
+   "examples": [
+    "potions:CLARITY <- powers:CLARITY_POWER",
+    "potions:DUPLICATOR <- powers:DUPLICATION_POWER",
+    "potions:FLEX_POTION <- powers:FLEX_POTION_POWER",
+    "potions:HEART_OF_IRON <- powers:PLATING_POWER",
+    "potions:MAZALETHS_GIFT <- powers:RITUAL_POWER",
+    "potions:POISON_POTION <- powers:POISON_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "potions:4",
+   "dependencies": 1,
+   "examples": [
+    "potions:POTION_OF_DOOM <- powers:DOOM_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "powers:10",
+   "dependencies": 4,
+   "examples": [
+    "powers:CONCOCT_POWER <- powers:POISON_POWER",
+    "powers:COORDINATE_POWER <- powers:TEMPORARY_STRENGTH_POWER",
+    "powers:FADE_POWER <- powers:TEMPORARY_DEXTERITY_POWER",
+    "powers:UNDERWORLD_POWER <- powers:DOOM_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "powers:4",
+   "dependencies": 1,
+   "examples": [
+    "powers:PALE_BLUE_DOT_POWER <- powers:DRAW_CARDS_NEXT_TURN_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "powers:9",
+   "dependencies": 2,
+   "examples": [
+    "powers:ASLEEP_POWER <- powers:PLATING_POWER",
+    "powers:PLOW_POWER <- powers:TEMPORARY_STRENGTH_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "relics:2",
+   "dependencies": 3,
+   "examples": [
+    "relics:DIAMOND_DIADEM <- powers:BLUR_POWER",
+    "relics:HELICAL_DART <- powers:HELICAL_DART_POWER",
+    "relics:TWISTED_FUNNEL <- powers:POISON_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "relics:3",
+   "dependencies": 1,
+   "examples": [
+    "relics:GORGET <- powers:PLATING_POWER"
+   ]
+  },
+  {
+   "from": "powers:2",
+   "to": "relics:4",
+   "dependencies": 1,
+   "examples": [
+    "relics:REPTILE_TRINKET <- powers:REPTILE_TRINKET_POWER"
+   ]
+  },
+  {
+   "from": "powers:3",
+   "to": "cards:3",
+   "dependencies": 8,
+   "examples": [
+    "cards:AGGRESSION <- powers:AGGRESSION_POWER",
+    "cards:CORRUPTION <- powers:CORRUPTION_POWER",
+    "cards:HELLRAISER <- powers:HELLRAISER_POWER",
+    "cards:INFINITE_BLADES <- powers:INFINITE_BLADES_POWER",
+    "cards:MASTER_PLANNER <- powers:MASTER_PLANNER_POWER",
+    "cards:MAYHEM <- powers:MAYHEM_POWER"
+   ]
+  },
+  {
+   "from": "powers:3",
+   "to": "cards:5",
+   "dependencies": 1,
+   "examples": [
+    "cards:NIGHTMARE <- powers:NIGHTMARE_POWER"
+   ]
+  },
+  {
+   "from": "powers:3",
+   "to": "cards:9",
+   "dependencies": 1,
+   "examples": [
+    "cards:SENTRY_MODE <- powers:SENTRY_MODE_POWER"
+   ]
+  },
+  {
+   "from": "powers:4",
+   "to": "cards:4",
+   "dependencies": 9,
+   "examples": [
+    "cards:ECHO_FORM <- powers:ECHO_FORM_POWER",
+    "cards:FERAL <- powers:FERAL_POWER",
+    "cards:ITERATION <- powers:ITERATION_POWER",
+    "cards:JUGGLING <- powers:JUGGLING_POWER",
+    "cards:LETHALITY <- powers:LETHALITY_POWER",
+    "cards:NOSTALGIA <- powers:NOSTALGIA_POWER"
+   ]
+  },
+  {
+   "from": "powers:5",
+   "to": "cards:11",
+   "dependencies": 1,
+   "examples": [
+    "cards:CREATIVE_AI <- powers:CREATIVE_AI_POWER"
+   ]
+  },
+  {
+   "from": "powers:5",
+   "to": "cards:6",
+   "dependencies": 4,
+   "examples": [
+    "cards:CALAMITY <- powers:CALAMITY_POWER",
+    "cards:CALL_OF_THE_VOID <- powers:CALL_OF_THE_VOID_POWER",
+    "cards:HELLO_WORLD <- powers:HELLO_WORLD_POWER",
+    "cards:SPECTRUM_SHIFT <- powers:SPECTRUM_SHIFT_POWER"
+   ]
+  },
+  {
+   "from": "powers:5",
+   "to": "monsters:3",
+   "dependencies": 6,
+   "examples": [
+    "monsters:CEREMONIAL_BEAST <- powers:RINGING_POWER",
+    "monsters:GLOBE_HEAD <- powers:GALVANIC_POWER",
+    "monsters:INFESTED_PRISM <- powers:VITAL_SPARK_POWER",
+    "monsters:QUEEN <- powers:CHAINS_OF_BINDING_POWER",
+    "monsters:SPECTRAL_KNIGHT <- powers:HEX_POWER",
+    "monsters:VINE_SHAMBLER <- powers:TANGLED_POWER"
+   ]
+  },
+  {
+   "from": "powers:5",
+   "to": "monsters:4",
+   "dependencies": 3,
+   "examples": [
+    "monsters:AXEBOT <- powers:STOCK_POWER",
+    "monsters:LIVING_FOG <- powers:SMOGGY_POWER",
+    "monsters:PHROG_PARASITE <- powers:INFESTED_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "cards:12",
+   "dependencies": 2,
+   "examples": [
+    "cards:HIBERNATE <- powers:HIBERNATE_POWER",
+    "cards:LEGION_OF_BONE <- powers:DIE_FOR_YOU_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "cards:7",
+   "dependencies": 9,
+   "examples": [
+    "cards:DEFRAGMENT <- powers:FOCUS_POWER",
+    "cards:FOCUSED_STRIKE <- powers:FOCUSED_STRIKE_POWER",
+    "cards:FOCUSED_STRIKE <- powers:FOCUS_POWER",
+    "cards:HOTFIX <- powers:FOCUS_POWER",
+    "cards:HOTFIX <- powers:HOTFIX_POWER",
+    "cards:HYPERBEAM <- powers:FOCUS_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "cards:8",
+   "dependencies": 9,
+   "examples": [
+    "cards:CONSUMING_SHADOW <- powers:CONSUMING_SHADOW_POWER",
+    "cards:COOLANT <- powers:COOLANT_POWER",
+    "cards:HAILSTORM <- powers:HAILSTORM_POWER",
+    "cards:LIGHTNING_ROD <- powers:LIGHTNING_ROD_POWER",
+    "cards:LOOP <- powers:LOOP_POWER",
+    "cards:SPINNER <- powers:SPINNER_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "cards:9",
+   "dependencies": 32,
+   "examples": [
+    "cards:AFTERLIFE <- powers:DIE_FOR_YOU_POWER",
+    "cards:BIASED_COGNITION <- powers:BIASED_COGNITION_POWER",
+    "cards:BIASED_COGNITION <- powers:FOCUS_POWER",
+    "cards:BLACK_HOLE <- powers:BLACK_HOLE_POWER",
+    "cards:BODYGUARD <- powers:DIE_FOR_YOU_POWER",
+    "cards:CALCIFY <- powers:CALCIFY_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "potions:2",
+   "dependencies": 1,
+   "examples": [
+    "potions:FOCUS_POTION <- powers:FOCUS_POWER"
+   ]
+  },
+  {
+   "from": "powers:6",
+   "to": "relics:3",
+   "dependencies": 1,
+   "examples": [
+    "relics:DATA_DISK <- powers:FOCUS_POWER"
+   ]
+  },
+  {
+   "from": "powers:7",
+   "to": "cards:5",
+   "dependencies": 5,
+   "examples": [
+    "cards:ENTROPY <- powers:ENTROPY_POWER",
+    "cards:FOREGONE_CONCLUSION <- powers:FOREGONE_CONCLUSION_POWER",
+    "cards:STRATAGEM <- powers:STRATAGEM_POWER",
+    "cards:TOOLS_OF_THE_TRADE <- powers:TOOLS_OF_THE_TRADE_POWER",
+    "cards:TYRANNY <- powers:TYRANNY_POWER"
+   ]
+  },
+  {
+   "from": "powers:8",
+   "to": "cards:11",
+   "dependencies": 3,
+   "examples": [
+    "cards:FORBIDDEN_GRIMOIRE <- powers:FORBIDDEN_GRIMOIRE_POWER",
+    "cards:MAD_SCIENCE <- powers:IMPROVEMENT_POWER",
+    "cards:ROYALTIES <- powers:ROYALTIES_POWER"
+   ]
+  },
+  {
+   "from": "powers:8",
+   "to": "monsters:6",
+   "dependencies": 5,
+   "examples": [
+    "monsters:FAT_GREMLIN <- powers:HEIST_POWER",
+    "monsters:GREMLIN_MERC <- powers:HEIST_POWER",
+    "monsters:GREMLIN_MERC <- powers:SURPRISE_POWER",
+    "monsters:GREMLIN_MERC <- powers:THIEVERY_POWER",
+    "monsters:THIEVING_HOPPER <- powers:SWIPE_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "cards:2",
+   "dependencies": 1,
+   "examples": [
+    "cards:FRANTIC_ESCAPE <- powers:SANDPIT_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "events:4",
+   "dependencies": 1,
+   "examples": [
+    "events:BATTLEWORN_DUMMY <- powers:BATTLEWORN_DUMMY_TIME_LIMIT_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:1",
+   "dependencies": 27,
+   "examples": [
+    "monsters:BOWLBUG_ROCK <- powers:IMBALANCED_POWER",
+    "monsters:BYGONE_EFFIGY <- powers:SLOW_POWER",
+    "monsters:BYRDONIS <- powers:TERRITORIAL_POWER",
+    "monsters:CRUSHER <- powers:BACK_ATTACK_LEFT_POWER",
+    "monsters:CRUSHER <- powers:CRAB_RAGE_POWER",
+    "monsters:ENTOMANCER <- powers:PERSONAL_HIVE_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:2",
+   "dependencies": 2,
+   "examples": [
+    "monsters:AEONGLASS <- powers:WITHERING_PRESENCE_POWER",
+    "monsters:TOUGH_EGG <- powers:HATCH_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:3",
+   "dependencies": 1,
+   "examples": [
+    "monsters:CEREMONIAL_BEAST <- powers:PLOW_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:5",
+   "dependencies": 11,
+   "examples": [
+    "monsters:DECIMILLIPEDE_SEGMENT <- powers:REATTACH_POWER",
+    "monsters:DECIMILLIPEDE_SEGMENT_BACK <- powers:REATTACH_POWER",
+    "monsters:DECIMILLIPEDE_SEGMENT_FRONT <- powers:REATTACH_POWER",
+    "monsters:DECIMILLIPEDE_SEGMENT_MIDDLE <- powers:REATTACH_POWER",
+    "monsters:EYE_WITH_TEETH <- powers:ILLUSION_POWER",
+    "monsters:PARAFRIGHT <- powers:ILLUSION_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:6",
+   "dependencies": 5,
+   "examples": [
+    "monsters:BATTLE_FRIEND_V1 <- powers:BATTLEWORN_DUMMY_TIME_LIMIT_POWER",
+    "monsters:BATTLE_FRIEND_V2 <- powers:BATTLEWORN_DUMMY_TIME_LIMIT_POWER",
+    "monsters:BATTLE_FRIEND_V3 <- powers:BATTLEWORN_DUMMY_TIME_LIMIT_POWER",
+    "monsters:THIEVING_HOPPER <- powers:ESCAPE_ARTIST_POWER",
+    "monsters:THIEVING_HOPPER <- powers:FLUTTER_POWER"
+   ]
+  },
+  {
+   "from": "powers:9",
+   "to": "monsters:9",
+   "dependencies": 1,
+   "examples": [
+    "monsters:MOCK_REATTACH_MONSTER <- powers:REATTACH_POWER"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "characters:1",
+   "dependencies": 1,
+   "examples": [
+    "characters:SILENT <- relics:RING_OF_THE_SNAKE"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "events:1",
+   "dependencies": 15,
+   "examples": [
+    "events:DARV <- relics:RUNIC_PYRAMID",
+    "events:DARV <- relics:VELVET_CHOKER",
+    "events:DOLL_ROOM <- relics:DAUGHTER_OF_THE_WIND",
+    "events:DOLL_ROOM <- relics:MR_STRUGGLES",
+    "events:LOST_WISP <- relics:LOST_WISP",
+    "events:NONUPEIPE <- relics:BRILLIANT_SCARF"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "events:2",
+   "dependencies": 2,
+   "examples": [
+    "events:ROUND_TEA_PARTY <- relics:ROYAL_POISON",
+    "events:WELCOME_TO_WONGOS <- relics:WONGO_CUSTOMER_APPRECIATION_BADGE"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:GRAVE_OF_THE_FORGOTTEN <- relics:FORGOTTEN_SOUL"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "events:5",
+   "dependencies": 6,
+   "examples": [
+    "events:FAKE_MERCHANT <- relics:FAKE_ANCHOR",
+    "events:FAKE_MERCHANT <- relics:FAKE_BLOOD_VIAL",
+    "events:FAKE_MERCHANT <- relics:FAKE_HAPPY_FLOWER",
+    "events:FAKE_MERCHANT <- relics:FAKE_MERCHANTS_RUG",
+    "events:FAKE_MERCHANT <- relics:FAKE_ORICHALCUM",
+    "events:FAKE_MERCHANT <- relics:FAKE_STRIKE_DUMMY"
+   ]
+  },
+  {
+   "from": "relics:1",
+   "to": "events:6",
+   "dependencies": 1,
+   "examples": [
+    "events:COLOSSAL_FLOWER <- relics:POLLINOUS_CORE"
+   ]
+  },
+  {
+   "from": "relics:10",
+   "to": "events:1",
+   "dependencies": 5,
+   "examples": [
+    "events:NEOW <- relics:MASSIVE_SCROLL",
+    "events:NONUPEIPE <- relics:FUR_COAT",
+    "events:TEZCATARA <- relics:GOLDEN_COMPASS",
+    "events:VAKUU <- relics:LORDS_PARASOL",
+    "events:VAKUU <- relics:WHISPERING_EARRING"
+   ]
+  },
+  {
+   "from": "relics:2",
+   "to": "events:1",
+   "dependencies": 2,
+   "examples": [
+    "events:DARV <- relics:SNECKO_EYE",
+    "events:NONUPEIPE <- relics:DIAMOND_DIADEM"
+   ]
+  },
+  {
+   "from": "relics:2",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:FAKE_MERCHANT <- relics:FAKE_SNECKO_EYE"
+   ]
+  },
+  {
+   "from": "relics:3",
+   "to": "characters:1",
+   "dependencies": 1,
+   "examples": [
+    "characters:IRONCLAD <- relics:BURNING_BLOOD"
+   ]
+  },
+  {
+   "from": "relics:3",
+   "to": "events:1",
+   "dependencies": 12,
+   "examples": [
+    "events:DARV <- relics:PHILOSOPHERS_STONE",
+    "events:NEOW <- relics:BOOMING_CONCH",
+    "events:NONUPEIPE <- relics:BLESSED_ANTLER",
+    "events:OROBAS <- relics:RADIANT_PEARL",
+    "events:PAEL <- relics:PAELS_TEARS",
+    "events:TANX <- relics:THROWING_AXE"
+   ]
+  },
+  {
+   "from": "relics:3",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:ROOM_FULL_OF_CHEESE <- relics:CHOSEN_CHEESE"
+   ]
+  },
+  {
+   "from": "relics:4",
+   "to": "events:1",
+   "dependencies": 3,
+   "examples": [
+    "events:NONUPEIPE <- relics:DELICATE_FROND",
+    "events:PAEL <- relics:PAELS_EYE",
+    "events:TANX <- relics:CROSSBOW"
+   ]
+  },
+  {
+   "from": "relics:4",
+   "to": "events:5",
+   "dependencies": 1,
+   "examples": [
+    "events:WAR_HISTORIAN_REPY <- relics:HISTORY_COURSE"
+   ]
+  },
+  {
+   "from": "relics:5",
+   "to": "characters:1",
+   "dependencies": 3,
+   "examples": [
+    "characters:DEFECT <- relics:CRACKED_CORE",
+    "characters:NECROBINDER <- relics:BOUND_PHYLACTERY",
+    "characters:REGENT <- relics:DIVINE_RIGHT"
+   ]
+  },
+  {
+   "from": "relics:5",
+   "to": "events:1",
+   "dependencies": 1,
+   "examples": [
+    "events:PAEL <- relics:PAELS_LEGION"
+   ]
+  },
+  {
+   "from": "relics:6",
+   "to": "events:1",
+   "dependencies": 2,
+   "examples": [
+    "events:TEZCATARA <- relics:TOASTY_MITTENS",
+    "events:VAKUU <- relics:CHOICES_PARADOX"
+   ]
+  },
+  {
+   "from": "relics:7",
+   "to": "events:1",
+   "dependencies": 34,
+   "examples": [
+    "events:DARV <- relics:DUSTY_TOME",
+    "events:DARV <- relics:PANDORAS_BOX",
+    "events:DOLL_ROOM <- relics:BING_BONG",
+    "events:HUNGRY_FOR_MUSHROOMS <- relics:BIG_MUSHROOM",
+    "events:HUNGRY_FOR_MUSHROOMS <- relics:FRAGRANT_MUSHROOM",
+    "events:NEOW <- relics:CURSED_PEARL"
+   ]
+  },
+  {
+   "from": "relics:7",
+   "to": "events:5",
+   "dependencies": 3,
+   "examples": [
+    "events:FAKE_MERCHANT <- relics:FAKE_LEES_WAFFLE",
+    "events:FAKE_MERCHANT <- relics:FAKE_MANGO",
+    "events:FAKE_MERCHANT <- relics:FAKE_VENERABLE_TEA_SET"
+   ]
+  },
+  {
+   "from": "relics:8",
+   "to": "events:1",
+   "dependencies": 25,
+   "examples": [
+    "events:DARV <- relics:BLACK_STAR",
+    "events:DARV <- relics:CALLING_BELL",
+    "events:DARV <- relics:ECTOPLASM",
+    "events:DARV <- relics:SOZU",
+    "events:NEOW <- relics:ARCANE_SCROLL",
+    "events:NEOW <- relics:KALEIDOSCOPE"
+   ]
+  },
+  {
+   "from": "relics:8",
+   "to": "events:2",
+   "dependencies": 1,
+   "examples": [
+    "events:WELCOME_TO_WONGOS <- relics:WONGOS_MYSTERY_TICKET"
+   ]
+  },
+  {
+   "from": "relics:8",
+   "to": "events:3",
+   "dependencies": 1,
+   "examples": [
+    "events:DROWNING_BEACON <- relics:FRESNEL_LENS"
+   ]
+  },
+  {
+   "from": "relics:9",
+   "to": "events:1",
+   "dependencies": 18,
+   "examples": [
+    "events:DARV <- relics:ASTROLABE",
+    "events:DARV <- relics:EMPTY_CAGE",
+    "events:NEOW <- relics:HEFTY_TABLET",
+    "events:NEOW <- relics:LEAD_PAPERWEIGHT",
+    "events:NEOW <- relics:NEW_LEAF",
+    "events:NEOW <- relics:POMANDER"
+   ]
+  }
+ ],
+ "order": [
+  "cards:0",
+  "monsters:0",
+  "encounters:0",
+  "events:0",
+  "powers:1",
+  "cards:1",
+  "orbs:1",
+  "enchantments:1",
+  "afflictions:1",
+  "potions:1",
+  "relics:1",
+  "powers:2",
+  "modifiers:1",
+  "enchantments:2",
+  "powers:4",
+  "relics:4",
+  "powers:5",
+  "potions:5",
+  "powers:6",
+  "potions:2",
+  "powers:3",
+  "cards:3",
+  "cards:9",
+  "relics:2",
+  "potions:3",
+  "relics:3",
+  "cards:4",
+  "potions:4",
+  "cards:6",
+  "potions:6",
+  "relics:6",
+  "powers:7",
+  "cards:5",
+  "cards:7",
+  "cards:8",
+  "relics:8",
+  "events:2",
+  "monsters:8",
+  "powers:9",
+  "monsters:2",
+  "monsters:5",
+  "relics:9",
+  "monsters:9",
+  "encounters:9",
+  "powers:10",
+  "cards:2",
+  "monsters:1",
+  "encounters:1",
+  "encounters:2",
+  "monsters:3",
+  "encounters:3",
+  "monsters:4",
+  "encounters:4",
+  "encounters:5",
+  "monsters:6",
+  "encounters:6",
+  "powers:8",
+  "cards:10",
+  "monsters:7",
+  "encounters:7",
+  "relics:10",
+  "cards:11",
+  "events:3",
+  "events:4",
+  "relics:5",
+  "characters:1",
+  "events:6",
+  "relics:7",
+  "events:1",
+  "acts:1",
+  "events:5",
+  "cards:12"
+ ],
+ "requires_cycles": {
+  "note": "batch nodes whose requires-edges form a cycle: port them in the same wave",
+  "groups": [
+   [
+    "encounters:6",
+    "monsters:6",
+    "powers:8"
+   ],
+   [
+    "cards:3",
+    "cards:9",
+    "powers:3"
+   ]
+  ]
+ },
+ "co_port_pairs": [
+  {
+   "batches": [
+    "afflictions:1",
+    "powers:5"
+   ],
+   "pairs": 7,
+   "examples": [
+    "afflictions:BOUND ~ powers:CHAINS_OF_BINDING_POWER",
+    "afflictions:ENTANGLED ~ powers:TANGLED_POWER",
+    "afflictions:GALVANIZED ~ powers:GALVANIC_POWER",
+    "afflictions:HEXED ~ powers:HEX_POWER",
+    "afflictions:RINGING ~ powers:RINGING_POWER",
+    "afflictions:SMOG ~ powers:SMOGGY_POWER"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:0",
+    "powers:9"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:RAVENOUS_POWER ~ monsters:CORPSE_SLUG"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:1",
+    "powers:8"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:SURPRISE_POWER ~ monsters:SNEAKY_GREMLIN"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:1",
+    "powers:9"
+   ],
+   "pairs": 8,
+   "examples": [
+    "powers:ASLEEP_POWER ~ monsters:LAGAVULIN_MATRIARCH",
+    "powers:BURROWED_POWER ~ monsters:TUNNELER",
+    "powers:CURL_UP_POWER ~ monsters:LOUSE_PROGENITOR",
+    "powers:IMBALANCED_POWER ~ monsters:BOWLBUG_ROCK",
+    "powers:RAMPART_POWER ~ monsters:TURRET_OPERATOR",
+    "powers:SANDPIT_POWER ~ monsters:THE_INSATIABLE"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:2",
+    "powers:2"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:SHRINK_POWER ~ monsters:VANTOM"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:2",
+    "powers:5"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:INFESTED_POWER ~ monsters:WRIGGLER"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:3",
+    "powers:9"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:PLOW_POWER ~ monsters:CEREMONIAL_BEAST"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:4",
+    "powers:5"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:STOCK_POWER ~ monsters:AXEBOT"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:5",
+    "powers:9"
+   ],
+   "pairs": 4,
+   "examples": [
+    "powers:ADAPTABLE_POWER ~ monsters:TEST_SUBJECT",
+    "powers:ILLUSION_POWER ~ monsters:PARAFRIGHT",
+    "powers:REATTACH_POWER ~ monsters:DECIMILLIPEDE_SEGMENT",
+    "powers:STEAM_ERUPTION_POWER ~ monsters:WATERFALL_GIANT"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:6",
+    "powers:8"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:SURPRISE_POWER ~ monsters:FAT_GREMLIN"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:6",
+    "powers:9"
+   ],
+   "pairs": 1,
+   "examples": [
+    "powers:FLUTTER_POWER ~ monsters:THIEVING_HOPPER"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:8",
+    "powers:6"
+   ],
+   "pairs": 3,
+   "examples": [
+    "powers:CALCIFY_POWER ~ monsters:OSTY",
+    "powers:NECRO_MASTERY_POWER ~ monsters:OSTY",
+    "powers:SIC_EM_POWER ~ monsters:OSTY"
+   ]
+  },
+  {
+   "batches": [
+    "monsters:8",
+    "powers:9"
+   ],
+   "pairs": 2,
+   "examples": [
+    "powers:PERSONAL_HIVE_POWER ~ monsters:OSTY",
+    "powers:SANDPIT_POWER ~ monsters:OSTY"
+   ]
+  }
+ ]
+}
