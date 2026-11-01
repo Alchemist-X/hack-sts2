@@ -70,7 +70,7 @@ public sealed class CardInstance : ICanonical, IComparable<CardInstance>
 
     public int InstanceId { get; private set; }
 
-    public CardType Type => Def.Type;
+    public CardType Type => Def.GetCardType(this);
 
     public CardRarity Rarity => Def.Rarity;
 

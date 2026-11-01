@@ -148,6 +148,14 @@ public abstract class PowerModel : AbstractModel, ICanonical
         return clone;
     }
 
+    public PowerModel CloneDetached()
+    {
+        var clone = (PowerModel)MemberwiseClone();
+        clone._owner = null;
+        clone.CopyMutableReferenceState(this);
+        return clone;
+    }
+
     protected virtual void CopyMutableReferenceState(PowerModel source)
     {
     }

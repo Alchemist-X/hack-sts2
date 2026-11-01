@@ -57,6 +57,32 @@ public static partial class CardCmd
         return Transform(cs, original, replacement);
     }
 
+    public static CardPileAddResult TransformDeckCardTo(RunState rs, CardInstance original, string replacementId)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(original);
+        if (!original.IsTransformable(null))
+        {
+            throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable.");
+        }
+        if (!original.IsInDeck)
+        {
+            throw new InvalidOperationException("Can't transform " + original.Id + " because it has no pile.");
+        }
+        var owner = original.Owner;
+        var replacement = new CardInstance(CardRegistry.Get(replacementId), rs.AllocateCardInstanceId());
+        replacement.AttachTo(owner);
+        replacement.Def.AfterCreated(replacement);
+        original.RemoveFromCurrentPile(null);
+        replacement = Hook.ModifyCardBeingAddedToDeck(rs, replacement);
+        owner.Deck.Add(replacement);
+        Hook.AfterCardChangedPiles(rs, null, replacement, PileType.Deck, null);
+        original.Def.AfterTransformedFrom(null, original);
+        replacement.Def.AfterTransformedTo(null, replacement);
+        original.RemoveFromState(null);
+        return new CardPileAddResult(true, replacement, null, PileType.None, null);
+    }
+
     public static CardPileAddResult? Transform(CombatState cs, CardInstance original, CardInstance replacement)
     {
         var results = Transform(cs, new[] { new CardTransformation(cs, original, replacement) }, null);
