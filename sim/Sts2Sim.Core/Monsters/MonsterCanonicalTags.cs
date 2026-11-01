@@ -9,4 +9,6 @@ public static class MonsterCanonicalTags
     public const ushort NibbitExtra = 0x4D10;
     public const ushort ToadpoleExtra = 0x4D31;
     public const ushort CorpseSlugExtra = 0x4D41;
+    public const ushort BowlbugRockExtra = 0x4DA0;
+    public const ushort FrogKnightExtra = 0x4DA1;
 }
