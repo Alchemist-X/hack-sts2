@@ -227,3 +227,102 @@ Cruelty lookup (pipeline §8–§9); monsters — `BeforeRemovedFromRoom`/`Reset
 `Player.AfterCombatEnd` after victory, side-turn `participants`, `ModifyKeywordsInCombat`,
 undispatched hooks and history, slot sorting, the additional stripped wait sites, interactive
 turn-end-card timing (loop §3.6, §7, §9).
+
+## 7. W1 integrate, round 1 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11). Branch `claude/sim-source-recreation-9392df`,
+base `94424e5` (phase-0 scaffold `46d1918` plus its fixes). .NET SDK 9.0.117, runtime 9.0.16,
+Apple M4 Pro (Arm64, 12 cores); other agents were running (load average about 3).
+
+### 7.1 Commits and merges
+
+| Step | Result |
+| --- | --- |
+| In-place INV track | `687077a` "specs: inventory normalisation (INV track)", 154 files: `sim/tools/inventory/**` (classifier pipeline `classify/`, `test_classify.py`, `extract_models.py`, `test_inventory.py`), `sim/specs/inventory/**` (new `acts`, `afflictions`, `characters`, `enchantments`, `modifiers`, `orbs` `.classified.json`, `batches.json`, `requirements.json`, `version-deltas.json`; refreshed classified manifests, `kernel-gaps.json`, `subsystems.json`, `summary.json`), `docs/sim-port/inventory-*.md` (new `inventory-minor-kinds.md`). |
+| In-place REC track | `4094c1e` "recorder: passive anchor additions R0-R5/R7/R11 (REC track, not installed)", 18 files: `mod/**` and `docs/hook-map.md`. Nothing was installed into the game's `mods/` directory. |
+| Merge list | Nine entries, every one `819d7c6873f0703198892190f24a244407301e25` (the `origin/main` tip, "Merge pull request #28", the P0 merge and an ancestor of the base). Each `git merge --no-ff --no-edit` printed "Already up to date." and made no commit. No W1 track was integrated (§7.5, row 1). |
+| Conflicts | None (no merge applied a change). |
+| Trailers | `Co-Authored-By: Claude Opus 5.5`, the attribution this execution session must use, in place of the brief's `Claude Fable 5.1`. The two track commits were first written with the brief's trailer (`f1fb42b`, `18c6908`) and re-created with identical trees. |
+
+### 7.2 Build and tests
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` (incremental and `--no-incremental`) | 0 warnings, 0 errors; no edit needed. |
+| `dotnet run --project sim/Sts2Sim.Tests` | 367 passed, 0 failed, 367 total: the Part A suite. No W1 suite (`ChoiceTests`, `HookTests`, `StateKernelTests`, `CardKernelTests`, `TurnFlowTests`, `RelicPotionTests`, `CharacterMechanicsTests`, `MonsterKernelTests`) is in the tree. |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | Bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0. |
+| Recorder core tests, a check of `4094c1e` (`dotnet test mod/tests/Sts2Recorder.Core.Tests.csproj`) | 78 passed, 0 failed. `mod/Sts2Recorder.csproj` compiles with 0 warnings, 0 errors (output in `mod/bin`, nothing installed). |
+| Inventory tool tests, a check of `687077a` (`python3 -m unittest discover -s sim/tools/inventory -p 'test_*.py'`) | 42 passed. |
+
+Failures fixed: none. Test changes: none. Cross-area edits: none; the integration commit changes
+only this file.
+
+### 7.3 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 664 642 | 2.645 µs | 1.266 µs |
+| 2 | 666 603 | 2.627 µs | 1.263 µs |
+| 3 | 676 647 | 2.872 µs | 1.260 µs |
+| Median | 666 603 | 2.645 µs | 1.263 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (about 2 200×); `Clone()` ≤ 1 ms passes (about 380×).
+Against the recorded P0 figures (705 048 decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`,
+2026-10-30): throughput 0.945×, clone 1.045×, hash 1.45×.
+
+### 7.4 Where the regression comes from
+
+Only two commits since P0 change sim code: the phase-0 scaffold `46d1918` and its fixes `94424e5`.
+To separate code from machine load, the P0 tree (`83c7ee9`, whose `sim/` code equals `819d7c6`) was
+exported with `git archive`, built in Release and benched interleaved with this tree in the same
+session:
+
+| Tree | decisions/s (3 runs → median) | `Clone()` median (range) | `StateHash()` median (range) |
+| --- | --- | --- | --- |
+| P0 `83c7ee9` | 633 752 / 610 856 / 563 744 → 610 856 | 2.641 µs (1.845–2.778) | 1.148 µs (1.003–1.261) |
+| W1 round 1 `4094c1e` | 582 754 / 594 387 / 610 221 → 594 387 | 2.911 µs (2.788–2.948) | 1.265 µs (1.228–1.338) |
+| W1 / P0 | 0.973× | 1.10× | 1.10× |
+
+Allocation per call on the bench's mid-fight state (10 000 calls,
+`GC.GetAllocatedBytesForCurrentThread`), and canonical length of that state:
+
+| Measure | P0 | W1 round 1 | Change |
+| --- | --- | --- | --- |
+| `Clone()` | 5 384 B | 6 640 B | +1 256 B (+23 %) |
+| `CombatSim.Create` | 7 520 B | 8 776 B | +1 256 B (+17 %) |
+| `StateHash()` | 0 B | 0 B | 0 |
+| Canonical bytes | 2 042 B | 2 368 B | +326 B (+16 %) |
+
+The scaffold wired the Part B state additions into clone and canonical:
+
+- D4 (every `CombatState` has a `Run`): `CombatState.DeepClone` first builds a `RunState` through
+  `RunState.CloneWithoutCombat` (a player list, a modifier list, `ChoiceRuntime.DeepClone`,
+  `FidelityLog.DeepClone`), then `CloneInto`; `WriteCanonical` writes the run fields (ascension,
+  `UnlockProfile`, player list, RNG, modifiers, choice runtime, fidelity log) before the combat
+  fields.
+- B2 combat fields: an ally list, `CombatHistory` (deep-cloned and hashed),
+  `PlayersTakingExtraTurn`, `CardOrPotionEffectDepth`.
+- D3 player fields on `PlayerState`: gold, relic list, potion-slot array, base orb slots,
+  `CanUseOrRemovePotions`, deck list, `OrbQueue`, pet ids; on `MonsterState`: `PetOwnerId`,
+  `Listener`. Each list or array is a new allocation per clone even when empty, and each writes a
+  tag and a count.
+
+The step path gained only constant-cost changes: the ported dispatchers take the `RunState` and
+check `ReferenceEquals(rs.Combat, cs)` (`Hook.RequireAttachedCombat`), and the side-turn hooks pass
+the existing monster or ally list as `participants` (no allocation); every new dispatcher, model
+kind and `Choice` member is a stub that no P0 content reaches. Decisions/s therefore moves through
+those checks and the larger `Create` (+1 256 B per episode of about 20 decisions): −2.7 % at the
+same load, inside the run-to-run spread (the P0 tree alone measured 564k–634k in this session).
+`Clone()` and `StateHash()` rise about 10 % at the same load, from the +23 % allocation and +16 %
+canonical bytes on top of fixed per-object costs. The rest of the gap to the recorded P0 figures is
+machine load: the unchanged P0 tree measured 0.87× of its recorded throughput in this session.
+
+### 7.5 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | The merge list carried the `origin/main` tip nine times instead of the nine W1 track commits (B11 has nine owner rows besides scaffold and integrate: choice, hooks, state, pipeline, cards-kernel, loop, relics-potions, character-mechanics, monsters-kernel). No commit descending from the base `94424e5` exists in the object store apart from this round's own commits (every ref, reflog and unreachable commit searched), so the tracks either never committed or ran from `origin/main`, which lacks the Part B scaffold. | Re-collect the track SHAs (each based on `94424e5`) and run round 2. |
+| 2 | Gates F1 (clone/hash equality at random points with pilot relics, potions and prompt cards), F4 (legal-action closure with prompts), F5 (invariants after every step) and the B2 chain (`GremlinHorn` or `DarkEmbracePower` + `HellraiserPower` + `SeekerStrike`) cannot be evaluated: their content and suites are absent, and 137 `throw new NotImplementedException` scaffold sites remain in 15 files of `Sts2Sim.Core` (73 in `Combat/Pipeline/Hook.cs`, 22 in `State/CombatHistory.cs`). | Round 2. |
+| 3 | Only build, the Part A suite, the diff gate and the bench hold, so the W1 wave is not complete. | Round 2. |
+| 4 | The bench covers the scaffold only (§7.4); the track content (relics, potions, orbs, history appends, hook dispatch) will change it. | Re-run after round 2. |
+| 5 | The REC track (`4094c1e`) is compiled and tested but not installed; the game keeps the previously installed `Sts2Recorder`. | `scripts/install_mod.sh` when the recorder change is to go live. |
