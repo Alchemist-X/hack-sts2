@@ -36,6 +36,8 @@ public abstract class CardDef
 
     public virtual bool CanBeGeneratedByModifiers => true;
 
+    public virtual CardMultiplayerConstraint MultiplayerConstraint => CardMultiplayerConstraint.None;
+
     public virtual IReadOnlyCollection<CardKeyword> CanonicalKeywords => Array.Empty<CardKeyword>();
 
     public virtual IReadOnlyCollection<CardTag> CanonicalTags => Array.Empty<CardTag>();
@@ -65,9 +67,26 @@ public abstract class CardDef
 
     public virtual bool HasTurnEndInHandEffect => false;
 
+    public CardPool Pool => CardPools.PoolOf(Id) ?? throw new InvalidProgramException($"Card {Id} is not in any card pool!");
+
+    public string SelectionScreenPromptKey => Id + ".selectionScreenPrompt";
+
     protected virtual IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();
 
-    public DynamicVarSet CreateVars() => new(CanonicalVars);
+    public DynamicVarSet CreateVars()
+    {
+        var vars = new DynamicVarSet(CanonicalVars);
+        vars.InitializeWithOwner();
+        return vars;
+    }
+
+    public virtual TargetType GetTargetType(CardInstance card) => TargetType;
+
+    public virtual bool GetGainsBlock(CardInstance card) => GainsBlock;
+
+    public virtual CardExtraState? CreateExtraState() => null;
+
+    public virtual AbstractModel? CreateListener(CardInstance card) => null;
 
     public abstract void OnPlay(CombatState cs, CardPlay play);
 
@@ -79,6 +98,22 @@ public abstract class CardDef
     {
     }
 
+    public virtual void AfterCloned(CardInstance card)
+    {
+    }
+
+    public virtual void AfterDowngraded(CardInstance card)
+    {
+    }
+
+    public virtual void AfterTransformedFrom(CombatState? cs, CardInstance card)
+    {
+    }
+
+    public virtual void AfterTransformedTo(CombatState? cs, CardInstance card)
+    {
+    }
+
     public virtual bool IsPlayable(CombatState cs, CardInstance card) => true;
 
     public virtual void OnTurnEndInHand(CombatState cs, CardInstance card)
@@ -87,11 +122,11 @@ public abstract class CardDef
 
     public virtual CardLocation GetResultLocationForCardPlay(CombatState cs, CardInstance card)
     {
-        if (card.IsDupe || Type == CardType.Power)
+        if (card.IsDupe || card.Type == CardType.Power)
         {
             return new CardLocation(PileType.None, CardPilePosition.Bottom);
         }
-        if (card.ExhaustOnNextPlay || card.HasKeyword(CardKeyword.Exhaust))
+        if (card.ExhaustOnNextPlay || card.HasKeywordInCombat(cs, CardKeyword.Exhaust))
         {
             card.ExhaustOnNextPlay = false;
             return new CardLocation(PileType.Exhaust, CardPilePosition.Bottom);

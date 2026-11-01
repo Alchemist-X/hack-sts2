@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Sts2Sim.Core.Cards;
 
 public sealed class AscendersBane : CardDef
@@ -5,7 +7,7 @@ public sealed class AscendersBane : CardDef
     public const string CardId = "ASCENDERS_BANE";
     public const int Cost = -1;
 
-    private static readonly CardKeyword[] Keywords = { CardKeyword.Eternal, CardKeyword.Unplayable, CardKeyword.Ethereal };
+    private static readonly ReadOnlyCollection<CardKeyword> Keywords = Array.AsReadOnly(new[] { CardKeyword.Eternal, CardKeyword.Unplayable, CardKeyword.Ethereal });
 
     public AscendersBane()
         : base(CardId, Cost, CardType.Curse, CardRarity.Curse, TargetType.None)

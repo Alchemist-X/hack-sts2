@@ -1,10 +1,19 @@
 using System.Collections.ObjectModel;
+using CardPoolTable = Sts2Sim.Core.Cards.CardPools;
 
 namespace Sts2Sim.Core.Unlocks;
 
 public sealed class UnlockProfile
 {
     public const int AllNumberOfRuns = 999999999;
+
+    public const string Silent1EpochId = "SILENT1_EPOCH";
+
+    public const string Regent1EpochId = "REGENT1_EPOCH";
+
+    public const string Necrobinder1EpochId = "NECROBINDER1_EPOCH";
+
+    public const string Defect1EpochId = "DEFECT1_EPOCH";
 
     private static readonly ReadOnlyCollection<string> EpochIds = Array.AsReadOnly(new[]
     {
@@ -105,6 +114,62 @@ public sealed class UnlockProfile
     public bool HasSeenEncounter(string encounterId) => IdNode.Contains(_encountersSeen, encounterId);
 
     public int EncountersSeenCount => _encountersSeenCount;
+
+    public IReadOnlyList<string> Characters
+    {
+        get
+        {
+            var characters = new List<string>(CardPoolTable.AllCharacterIds);
+            if (!IsEpochRevealed(Silent1EpochId))
+            {
+                characters.Remove(CardPoolTable.SilentCharacterId);
+            }
+            if (!IsEpochRevealed(Regent1EpochId))
+            {
+                characters.Remove(CardPoolTable.RegentCharacterId);
+            }
+            if (!IsEpochRevealed(Necrobinder1EpochId))
+            {
+                characters.Remove(CardPoolTable.NecrobinderCharacterId);
+            }
+            if (!IsEpochRevealed(Defect1EpochId))
+            {
+                characters.Remove(CardPoolTable.DefectCharacterId);
+            }
+            return characters;
+        }
+    }
+
+    public IReadOnlyList<CardPool> CharacterCardPools
+    {
+        get
+        {
+            var characters = Characters;
+            var pools = new List<CardPool>(characters.Count);
+            for (int i = 0; i < characters.Count; i++)
+            {
+                pools.Add(CardPoolTable.ForCharacter(characters[i]));
+            }
+            return pools;
+        }
+    }
+
+    public IReadOnlyList<CardPool> CardPools
+    {
+        get
+        {
+            var pools = new List<CardPool>(CharacterCardPools);
+            var shared = CardPoolTable.AllSharedCardPools;
+            for (int i = 0; i < shared.Count; i++)
+            {
+                if (!pools.Contains(shared[i]))
+                {
+                    pools.Add(shared[i]);
+                }
+            }
+            return pools;
+        }
+    }
 
     public IReadOnlyList<string> UnlockedEpochIds()
     {

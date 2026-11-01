@@ -121,7 +121,7 @@ public sealed class CardEnergyCost : ICanonical
             return Base;
         }
         int num = ApplyLocalModifiers(Base, modifiers);
-        if ((modifiers & CostModifiers.Global) != 0)
+        if ((modifiers & CostModifiers.Global) != 0 && card.IsInCombat(cs))
         {
             num = (int)Hook.ModifyEnergyCostInCombat(cs, card, num);
         }
@@ -141,7 +141,7 @@ public sealed class CardEnergyCost : ICanonical
     {
         if (CostsX)
         {
-            return cs.Player.Energy;
+            return (card.HasOwner ? card.Owner : cs.Player).Energy;
         }
         return Math.Max(0, GetWithModifiers(cs, card, CostModifiers.All));
     }
