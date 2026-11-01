@@ -1,0 +1,45 @@
+# encounters-2 (wave B) index
+
+Common drops for every row: CustomBgm, AmbientSfx, HasCustomBackground, HasScene, BossNodePath/Spine, ExtraAssetPaths, GetCameraScaling/GetCameraOffset (presentation). Monsters are referenced by id through MonsterRegistry (owned by monsters-1..4). Monster flags the game sets on `ToMutable()` copies go through `EncounterMonsterConfig.Set(m, "<Member>", value)` (reflection onto the monster's extra state; member name = the game's property name).
+
+- SOUL_NEXUS_ELITE — Models.Encounters/SoulNexusElite.cs:8 — Elite; SOUL_NEXUS
+- SPINY_TOAD_NORMAL — Models.Encounters/SpinyToadNormal.cs:8 — Monster; SPINY_TOAD
+- TERROR_EEL_ELITE — Models.Encounters/TerrorEelElite.cs:8 — Elite; TERROR_EEL
+- THE_ARCHITECT_EVENT_ENCOUNTER — Models.Encounters/TheArchitectEventEncounter.cs:8 — Monster; ARCHITECT; non-sealed in the game, kept non-sealed
+- THE_INSATIABLE_BOSS — Models.Encounters/TheInsatiableBoss.cs:8 — Boss; THE_INSATIABLE
+- THE_KIN_BOSS — Models.Encounters/TheKinBoss.cs:10 — Boss; slots slot1/slot2/leaderSlot; slot1 KinFollower.StartsWithDance = true
+- THE_LOST_AND_FORGOTTEN_NORMAL — Models.Encounters/TheLostAndForgottenNormal.cs:8 — Monster; THE_LOST, THE_FORGOTTEN
+- TUNNELER_WEAK — Models.Encounters/TunnelerWeak.cs:9 — Monster, weak, tag Burrower
+- TURRET_OPERATOR_WEAK — Models.Encounters/TurretOperatorWeak.cs:8 — Monster, weak; LIVING_SHIELD then TURRET_OPERATOR
+- AEONGLASS_BOSS — Models.Encounters/AeonglassBoss.cs:10 — Boss; AEONGLASS
+- CHOMPERS_NORMAL — Models.Encounters/ChompersNormal.cs:9 — Monster, tag Chomper; second Chomper.ScreamFirst = true
+- DENSE_VEGETATION_EVENT_ENCOUNTER — Models.Encounters/DenseVegetationEventEncounter.cs:9 — Monster; 4 wrigglers in wriggler1..4, each Wriggler.StartStunned = false
+- HAUNTED_SHIP_NORMAL — Models.Encounters/HauntedShipNormal.cs:8 — Monster; HAUNTED_SHIP
+- MECHA_KNIGHT_ELITE — Models.Encounters/MechaKnightElite.cs:9 — Elite; MECHA_KNIGHT
+- MYTES_NORMAL — Models.Encounters/MytesNormal.cs:9 — Monster; slots first/second, MYTE in each
+- TUNNELER_NORMAL — Models.Encounters/TunnelerNormal.cs:9 — Monster, tags Burrower+Chomper; Chomper (ScreamFirst) then Tunneler
+- VANTOM_BOSS — Models.Encounters/VantomBoss.cs:10 — Boss; VANTOM
+- CEREMONIAL_BEAST_BOSS — Models.Encounters/CeremonialBeastBoss.cs:10 — Boss; CEREMONIAL_BEAST
+- GLOBE_HEAD_NORMAL — Models.Encounters/GlobeHeadNormal.cs:9 — Monster; GLOBE_HEAD
+- INFESTED_PRISMS_ELITE — Models.Encounters/InfestedPrismsElite.cs:9 — Elite; INFESTED_PRISM
+- KNIGHTS_ELITE — Models.Encounters/KnightsElite.cs:11 — Elite, tag Knights; spawns in "first"/"second"/"third" but the game declares no Slots override (kept: Slots empty)
+- QUEEN_BOSS — Models.Encounters/QueenBoss.cs:10 — Boss; slots amalgam/queen; TORCH_HEAD_AMALGAM then QUEEN
+- VINE_SHAMBLER_NORMAL — Models.Encounters/VineShamblerNormal.cs:9 — Monster; VINE_SHAMBLER
+- AXEBOTS_NORMAL — Models.Encounters/AxebotsNormal.cs:8 — Monster; slot front; AXEBOT
+- FABRICATOR_NORMAL — Models.Encounters/FabricatorNormal.cs:10 — Monster; slots bot1,bot2,fabricator,bot3,bot4; AllPossibleMonsters = Fabricator + defenseSpawns (Guardbot, Noisebot) + aggroSpawns (Zapbot, Stabbot); SetBotFallPosition (node visuals) dropped
+- LIVING_FOG_NORMAL — Models.Encounters/LivingFogNormal.cs:9 — Monster; slots bomb1..5, livingFog
+- OVICOPTER_NORMAL — Models.Encounters/OvicopterNormal.cs:9 — Monster; slots egg1..5, ovicopter
+- PHROG_PARASITE_ELITE — Models.Encounters/PhrogParasiteElite.cs:9 — Elite; slots phrog, wriggler1..4; GetWrigglerSlotName(index) kept
+- TWO_TAILED_RATS_NORMAL — Models.Encounters/TwoTailedRatsNormal.cs:9 — Monster; encounter Rng NextInt(3) → StarterMoveIndex n,(n+1)%3,(n+2)%3 in slots third/fourth/fifth
+- DECIMILLIPEDE_ELITE — Models.Encounters/DecimillipedeElite.cs:9 — Elite; encounter Rng NextInt(3) → StarterMoveIdx rotation over front/middle/back in segment1..3
+- FOGMOG_NORMAL — Models.Encounters/FogmogNormal.cs:8 — Monster; slots illusion/fogmog
+- TEST_SUBJECT_BOSS — Models.Encounters/TestSubjectBoss.cs:9 — Boss; TEST_SUBJECT
+- THE_OBSCURA_NORMAL — Models.Encounters/TheObscuraNormal.cs:8 — Monster; slots illusion/obscura
+- WATERFALL_GIANT_BOSS — Models.Encounters/WaterfallGiantBoss.cs:9 — Boss; WATERFALL_GIANT
+- BATTLEWORN_DUMMY_EVENT_ENCOUNTER — Models.Encounters/BattlewornDummyEventEncounter.cs:5 — abstract base, no registry id; GAP: RanOutOfTime + Save/LoadCustomState need mutable per-combat encounter state (Get/SetRanOutOfTime throw "W3 gap")
+- BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER — Models.Encounters/BattlewornDummyEventV1Encounter.cs:8 — Monster, ShouldGiveRewards false; BATTLE_FRIEND_V1
+- BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER — Models.Encounters/BattlewornDummyEventV2Encounter.cs:8 — Monster, ShouldGiveRewards false; BATTLE_FRIEND_V2
+- BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER — Models.Encounters/BattlewornDummyEventV3Encounter.cs:8 — Monster, ShouldGiveRewards false; BATTLE_FRIEND_V3
+- GREMLIN_MERC_NORMAL — Models.Encounters/GremlinMercNormal.cs:11 — Monster; GREMLIN_MERC in slot merc; GAP: GoldWasStolen/MarkGoldStolen and CalculateGoldProportion (needs CombatState.EscapedCreatures + mutable encounter state) throw "W3 gap"
+- THIEVING_HOPPER_WEAK — Models.Encounters/ThievingHopperWeak.cs:9 — Monster, weak, tag Thieves
+- KNOWLEDGE_DEMON_BOSS — Models.Encounters/KnowledgeDemonBoss.cs:10 — Boss; KNOWLEDGE_DEMON

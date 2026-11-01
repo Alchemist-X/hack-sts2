@@ -108,7 +108,15 @@ public abstract class EncounterDef
 
     public string Id { get; }
 
+    public virtual RoomType RoomType => RoomType.Monster;
+
     public virtual bool IsWeak => false;
+
+    public virtual bool ShouldGiveRewards => true;
+
+    public virtual IReadOnlyList<EncounterTag> Tags => Array.Empty<EncounterTag>();
+
+    public virtual IReadOnlyList<string> AllPossibleMonsters => Array.Empty<string>();
 
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 
@@ -142,4 +150,24 @@ public abstract class EncounterDef
 
     protected InvalidOperationException EncounterRngRequired()
         => new($"Encounter {Id} draws from its private Rng; generate it with GenerateMonsters(cs, rng), as MonsterSpawner.SpawnEncounter does.");
+}
+
+public enum EncounterTag
+{
+    None,
+    Burrower,
+    Chomper,
+    Nibbit,
+    Shrinker,
+    Slimes,
+    Thieves,
+    Workers,
+    Crawler,
+    Mushroom,
+    Knights,
+    Scrolls,
+    Seapunk,
+    Slugs,
+    Exoskeletons,
+    Jaxfruit
 }
