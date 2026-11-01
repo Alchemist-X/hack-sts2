@@ -641,18 +641,28 @@ public static class HookTests
 
     private sealed class HookMerchantEntry : MerchantEntry
     {
+        public HookMerchantEntry() : base(null!)
+        {
+        }
     }
 
     private sealed class HookRoom : AbstractRoom
     {
+        public override RoomType RoomType => RoomType.Map;
     }
 
     private sealed class HookMap : ActMap
     {
+        public override MapPoint BossMapPoint => throw new NotSupportedException();
+
+        public override MapPoint StartingMapPoint => throw new NotSupportedException();
+
+        protected override MapPoint?[,] Grid => throw new NotSupportedException();
     }
 
     private sealed class HookEvent : EventModel
     {
+        public override string Id => "HOOK_EVENT";
     }
 
     private abstract class BaseOverride : AbstractModel
@@ -1257,7 +1267,7 @@ public static class HookTests
         Assert.False(ReferenceEquals(types, result), "the dispatcher starts from a copy of the set");
         Assert.True(result.SetEquals(types));
         Assert.True(Hook.ShouldAllowMerchantCardRemoval(rs, player));
-        Assert.False(Hook.ShouldAllowSelectingMoreCardRewards(rs, player, new CardReward()));
+        Assert.False(Hook.ShouldAllowSelectingMoreCardRewards(rs, player, new CardReward(player, new CardCreationOptions(Array.Empty<CardPool>(), CardRarityOddsType.RegularEncounter), 3)));
         Assert.True(Hook.ShouldDisableRemainingRestSiteOptions(rs, player), "no listener: the all-true default");
         Assert.Equal(0, Hook.ModifyRewards(rs, player, new List<Reward>(), new HookRoom()).Count(), "the modifier list of ModifyRewards is empty without modifiers");
         var map = new HookMap();
@@ -1269,7 +1279,7 @@ public static class HookTests
         Assert.True(Hook.ShouldAddToDeck(rs, card, out var preventer));
         Assert.Null(preventer);
         Assert.Equal(1.25m, Hook.ModifyCardRewardUpgradeOdds(rs, player, card, 1.25m));
-        Assert.False(Hook.TryModifyCardRewardOptions(rs, player, new List<CardCreationResult>(), new CardCreationOptions()));
+        Assert.False(Hook.TryModifyCardRewardOptions(rs, player, new List<CardCreationResult>(), new CardCreationOptions(Array.Empty<CardPool>(), CardRarityOddsType.RegularEncounter)));
     }
 
     public static void Test_Hooks_DetachedCombatIsRejectedByBothScopeDispatchers()

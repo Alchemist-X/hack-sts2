@@ -1,8 +1,8 @@
 # Sts2Sim contracts
 
 Part A (below, 2026-10-28/30) is the P0 walking-skeleton contract and remains the baseline.
-Part B (end of this file, 2026-11-01) is the P1 kernel-expansion (W1) contract; where the two differ,
-Part B wins.
+Part B (2026-11-01) is the P1 kernel-expansion (W1) contract; where the two differ,
+Part B wins. Part C (end of this file, 2026-11-01) is the W2 run-layer contract.
 
 # Part A — P0 walking skeleton
 
@@ -1051,3 +1051,167 @@ Rule amendments (binding for the owners):
 - **A23 (cards-kernel, B2/B7).** `CloneForCombat` = `CombatState.CloneCard` (`Combat/CombatState.cs:679-684`) + `Player.PopulateCombatState` (`Entities.Players/Player.cs:1214-1233`): owner kept, local keywords / vars / energy cost / temporary star costs copied, `Enchantment` and `Affliction` re-bound to the clone (`Models/CardModel.cs:2827-2859`), `CurrentTarget` / `CurrentPlayIndex` / `HasBeenRemovedFromState` reset (`:2861-2882`), `DeckVersionId = source.InstanceId`. Every creation path sets `Owner` (`cs.CreateCard`, `CloneForCombat`, the loop's deck build with `AttachTo`); enchantment and affliction `Card` getters return null where the game does; `GetEnchantedReplayCount` reads the card's enchantment.
 
 Gate suite seams (`integration.md` §8.3) bind the round-3 integrator: equip through `RelicCmd.Obtain` / `PotionCmd.TryToProcure` once they exist; the B2 chain applies powers with `PowerCmd.Apply` outside a `Step`; F4 adds `Confirm` / `Cancel` / `DiscardPotion` with stray indices once B1 says they are validated; F5's "a card that left every pile never returns" holds for every v0.111.0 path read so far.
+
+---
+
+# Part C — W2 run-layer contract · 2026-11-01
+
+Process (user, 2026-11-01): speed over polish. No adversarial review stage; owners self-check against
+the decompile, keep build 0 warnings and the suite green, commit. Specs are one-line indexes
+(`id — decompile file:line — dropped points / gaps`).
+
+## C0. Status of the design doc
+
+`docs/sim-port/design-run-layer.md` stays the spec (rules, draw orders, citations). Part C fixes only the
+API, the ownership and the places where the design predates Part B D3–D7:
+
+| Design text | Binding form (Part C) |
+| --- | --- |
+| `RunPlayer` (§2.2, §7.3, §8) | there is no `RunPlayer`: the run fields live on `PlayerState` (D3), partial file `Run/State/PlayerState.Run.cs` |
+| "`RunState` + `RunPlayer` new" (§1, §8.2 R1) | `Run/RunState.cs` already exists (W1 shell, D7); R1 fills it in place |
+| `PromptSelect/PromptConfirm/PromptCancel` (§3.12) | kept as `RunActionKind` names; they map 1:1 onto `ChoosePick/ChooseConfirm/ChooseCancel` of the one `ChoiceRuntime` (D1) — combat prompts and run prompts use the same runtime |
+| `ActInstance { ActDef, RoomSet, SharedAncientSubset }` (§2.1) | `ActModel` = immutable def (registry `ActRegistry`), `ActInstance` = mutable act (rooms, subset, pulls); the game's `ActModel.ToMutable` state lives in `ActInstance` |
+| `EventDef` / `EventInstance` (§8.2 R5) | one `EventModel : AbstractModel` per event (registry `EventRegistry`, a `ModelTable`: `Create(id)` = fresh mutable instance, the game's `ToMutable`); `RoomSet.events` holds ids |
+| relic / potion / card factories (§5) | D6: `CardFactory` partial (`Run/Factories/CardFactory.Run.cs`), `PotionFactory` run entry points already exist (W1, `Potions/PotionFactory.cs`), `RelicFactory` is R3 |
+| odds hold an `Rng` (game `AbstractOdds(initialValue, rng)`) | kept: odds bind the owner's stream; clones re-bind with `CloneFor(clonedRng)` |
+| `RunSim` phases A/B/C entry (§7.1) | `SavePoint` enum in `Run/Save/SavedRun.cs` |
+
+Namespace: every type under `Run/**` is in `Sts2Sim.Core.Run` (folders are ownership, not namespaces);
+partial classes of other namespaces keep theirs (`PlayerState.Run.cs` → `Sts2Sim.Core.State`,
+`CardFactory.Run.cs` → `Sts2Sim.Core.Cards`). Context rule: run code passes `RunState rs` first (the run
+analogue of Part A `CombatState cs` first); combat-reaching code still passes `cs` first.
+
+## C1. Frozen API (`Api/RunAction.cs`, scaffold; `Run/Loop/RunSim.cs`, R6)
+
+```csharp
+enum RunPhase : byte { Map, Combat, Rewards, CardReward, Shop, RestSite, Treasure, Event, Prompt, Victory, Defeat }
+enum RunActionKind : byte { PlayCard, EndTurn, UsePotion, DiscardPotion, Travel, ClaimReward, ProceedRewards,
+    PickRewardCard, RewardAlternative, BuyEntry, LeaveShop, ChooseRestOption, LeaveRestSite, OpenChest,
+    TakeTreasureRelic, SkipTreasureRelic, ChooseEventOption, LeaveEvent, PromptSelect, PromptConfirm, PromptCancel }
+readonly record struct RunAction(RunActionKind Kind, int A, int B)    // NoIndex = -1; FromCombat(GameAction); TryToCombat(out GameAction)
+sealed class RunSim {
+    static RunSim NewRun(RunConfig config);
+    static RunSim FromSave(SavedRun save, ImportOptions options);
+    RunPhase Phase; bool IsTerminal; RunState State; CombatSim? Combat;
+    IReadOnlyList<RunAction> LegalActions(); void LegalActions(List<RunAction> buffer);
+    bool IsLegal(RunAction a); void Step(RunAction a);
+    RunSim Clone(); ulong StateHash(); void WriteCanonical(CanonicalWriter w);
+}
+```
+
+| Kind | A | B | Phase |
+| --- | --- | --- | --- |
+| `PlayCard`, `UsePotion` | hand index / potion slot | target index (combat creature index) or `NoIndex` | Combat (`UsePotion`/`DiscardPotion` also every non-combat phase, B = `NoIndex`) |
+| `EndTurn` | — | — | Combat |
+| `DiscardPotion` | slot | — | any |
+| `Travel` | index into the legal map points (column ascending, §3.5) | — | Map |
+| `ClaimReward` | index in the displayed (sorted) rewards set | — | Rewards |
+| `PickRewardCard` / `RewardAlternative` | card index / alternative index | — | CardReward |
+| `BuyEntry` | index in `MerchantInventory.AllEntries` | — | Shop |
+| `ChooseRestOption` | option index | — | RestSite |
+| `ChooseEventOption` | index in `CurrentOptions` | — | Event |
+| `PromptSelect` | candidate index (strictly increasing within one prompt) | — | Prompt, or Combat with a pending combat prompt |
+| `ProceedRewards`, `LeaveShop`, `LeaveRestSite`, `OpenChest`, `TakeTreasureRelic`, `SkipTreasureRelic`, `LeaveEvent`, `PromptConfirm`, `PromptCancel` | — | — | their phase |
+
+Legal-action order (generalises P0 "`EndTurn` last"): (1) the phase's own indexed actions by ascending A
+(then B); (2) potion actions — `UsePotion` by slot ascending then target, then `DiscardPotion` by slot;
+(3) the leave / proceed / confirm / cancel action last (`PromptConfirm` before `PromptCancel`). Combat phase
+is exactly `CombatSim.LegalActions()` mapped with `RunAction.FromCombat` (same order). `Step` runs every
+automatic step to the next decision. An illegal action throws and leaves the state unchanged.
+`RunSim.WriteCanonical` = phase byte + `RunState.WriteCanonical` (+ pending prompt tape, as `CombatSim`).
+
+## C2. Run-state fields
+
+Part A §6 (clone and canonical) applies to every field; every field below is already present with its
+default, its `DeepClone` line and its `WriteCanonical` line (scaffold). Owner types implement the
+`DeepClone`/`CloneFor`/`WriteCanonical` they own; nullable fields are `null` in standalone combats.
+
+| Field (on `RunState`) | Type (owner) | Default | Clone | Canonical | Design |
+| --- | --- | --- | --- | --- | --- |
+| `Config` | `RunConfig` record (R1) | null | shared (immutable) | presence + `RunConfig.WriteCanonical` | §3.1 |
+| `Acts` | `List<ActInstance>` (R1) | empty | `ActInstance.DeepClone` | count + each | §2.3, §6.2 |
+| `CurrentActIndex`, `ActFloor`, `NextRoomId` | int (R1; setter side effects of `Runs/RunState.cs:353-360` are R1's) | 0 | value | i32 ×3 | §2.1 |
+| `Map` | `ActMap` (R2) | null | **shared** (immutable topology) | presence + `ActMap.WriteCanonical` (topology + quest overlay) | §2.6, §4 |
+| `VisitedMapCoords` | `List<MapCoord>` (R2 type) | empty | copy | list | §2.1 |
+| `MapPointHistory` | `List<MapPointHistoryEntry>` (R1) | empty | entry `DeepClone` | list | §2.5 |
+| `VisitedEventIds` | `HashSet<string>` ordinal | empty | copy | sorted ids | §2.1 |
+| `ExtraFields` | `ExtraRunFields` (R1, implemented) | zeros | memberwise | bool, i32, bool | §2.1 |
+| `Odds` | `RunOddsSet` (R3) | null | `CloneFor(clone.Rng)` | presence + own | §5 |
+| `SharedRelicGrabBag` | `RelicGrabBag` (R3) | null | `DeepClone` | presence + own | §5.4 |
+| `CurrentRooms` | `List<AbstractRoom>` (R4; `EventRoom` R5) | empty | `CloneFor(clone)` | list | §2.4 |
+| `RewardsStack` | `List<RewardsSet>` (R3) | empty | `CloneFor(player, room)` re-linked by index | list | §2.4 |
+| existing | `Players`, `Combat`, `Rng`, `Unlocks`, `Ascension`, `Modifiers`, `Choice`, `Fidelity`, `NextCardInstanceId` | — | Part B | Part B | — |
+| derived | `Act => Acts[CurrentActIndex]`, `TotalFloor => MapPointHistory.Count` | — | — | — | §6.3 |
+
+| Field (on `PlayerState`, `Run/State/PlayerState.Run.cs`, R1) | Type (owner) | Default | Clone | Canonical |
+| --- | --- | --- | --- | --- |
+| existing (W1) | `CharacterId`, `CurrentHp`, `MaxHp`, `Gold`, `Deck`, `Relics`, `PotionSlots`, `BaseMaxEnergy`, `BaseOrbSlotCount`, `CanUseOrRemovePotions`, `AscensionEffectsApplied`, `IsActiveForHooks` | — | — | — |
+| `PlayerRng` | `PlayerRngSet` (exists) | null | `DeepClone` | presence + tag 0x5204 |
+| `PlayerOdds` | `PlayerOddsSet` (R3) | null | `CloneFor(cloned PlayerRng)` | presence + own |
+| `RelicGrabBag` | `RelicGrabBag` (R3), `refreshAllowed: false` | null | `DeepClone` | presence + own |
+| `ExtraFields` | `ExtraPlayerFields` (R1, implemented: `CardShopRemovalsUsed`, `WongoPoints`) | zeros | memberwise | i32 ×2 |
+
+Not ported (log or profile only): `_allCards`, `Discovered*`, `MaxAscensionWhenRunStarted`, per-player
+`UnlockState` (the run's `Unlocks` is the union, one player). Profile fields absent from the save live in
+`RunConfig.Progress` (`RunProfileProgress { DiscoveredActIds, NumberOfRuns, WongoPoints, AllActsDiscovered }`,
+default `Veteran`). Canonical tags: run state 0x55xx (`Run/State/RunStateCanonicalTags.cs`), map 0x56xx
+(`Run/Map/MapCanonicalTags.cs`), rewards / merchant / rest / treasure / rooms 0x58xx
+(`Run/Rewards/RewardsCanonicalTags.cs`), events 0x59xx (`Run/Events/EventsCanonicalTags.cs`).
+Pin note: adding these lines moved the two pinned hashes in `EndToEndTests` (opening `0xD9F811A7035088B2`,
+final `0xA8037EFF0501E0C4`); any owner who changes the canonical form of a field that is non-null in
+standalone combats refreshes them and says so in the commit.
+
+## C3. Ownership (paths under `sim/Sts2Sim.Core/` unless stated)
+
+| Owner | Owns (create / edit) | Delivers (design §) | Tests / spec |
+| --- | --- | --- | --- |
+| R1 run-state | `Run/RunState.cs`, `Run/State/*` (`ActModel`, `ActInstance`, `RoomSet`, `MapPointHistoryEntry`, `ExtraFields`, `RunConfig`, `ContentFilter`, `PlayerState.Run.cs`, tags), `Run/Acts/*` (the 4 act defs: Overgrowth, Underdocks, Hive, Glory), ascension run effects (A1–A4, A6, A7, A10 sites stay with their owners; R1 owns `AscensionManager.ApplyEffectsTo` order) | §2, §6.1–6.4, §3.1 steps 2–5 state side | `RunStateTests.cs` / `run-state.md` |
+| R2 map | `Run/Map/*` (`MapCoord`, `MapPoint`, `ActMap`, `StandardActMap`, `SpoilsActMap`, `GoldenPathActMap`, `SavedActMap`, `MapPathPruning`, `MapPostProcessing`, `MapPointTypeCounts`, `MapTravel`, projections) | §4, §3.5 option set | `MapTests.cs` / `run-map.md` |
+| R3 odds-rewards | `Run/Odds/*`, `Run/Rewards/*` (incl. `RewardsCmd`, `Reward` subclasses, `CardRewardAlternative`), `Run/Factories/*` (`CardFactory.Run.cs`, `RelicFactory`, `CardCreationOptions`, `CardCreationResult`), `Run/Relics/RelicGrabBag.cs`, `Run/Util/GrabBag.cs` | §5, §3.6 generation and claim | `RewardsTests.cs` / `run-rewards.md` |
+| R4 rooms | `Run/Rooms/*` (`AbstractRoom`, `RoomStack`, `MapRoom`, `CombatRoom` glue §8.3, `MerchantRoom`/`MerchantInventory`/`MerchantEntry` + entries, `RestSiteRoom`/`RestSiteOption` + options, `TreasureRoom` + relic picking) | §3.7–3.9, §8.3, §3.3 steps 3, 6, 8 | `RoomTests.cs` / `run-rooms.md` |
+| R5 events | `Run/Events/*` (`EventModel`, `AncientEventModel`, `EventOption`, `EventRoom`, pages, event combat + resume, Neow, TheArchitect, option generation of Orobas, Pael, Tezcatara, Nonupeipe, Tanx, Vakuu, Darv); W3 adds the other events one file each under `Run/Events/Defs/` | §3.10, §3.11 | `EventTests.cs` / `run-events.md` |
+| R6 run loop | `Run/Loop/*` (`RunSim`, `RunLoop`, `RunLegalActionGenerator`, `RunActionExecutor`); `Sts2Sim.Bench` run-soak option | §3.1–3.5, §3.12–3.14, §8.3 composition | `RunLoopTests.cs` (incl. the soak) / `run-loop.md` |
+| R7 save import | `Run/Save/*` (`SavedRun` DTOs, `RunSaveReader`, `RunImporter`, `ImportOptions`, `RunImportResult`, `SavePoint`); `sts2rec/sts2rec/run_save.py` + its tests; fixture under `sim/Sts2Sim.Tests/Fixtures/` | §7 | `RunSaveTests.cs` / `run-save-import.md` |
+| R8 run oracles | `sim/Sts2Sim.Diff/Run/*`, `sts2rec export-run-oracles` (after R6, R7) | §7.5 | `RunOracleTests.cs` / `run-oracles.md` |
+| scaffold (frozen) | `Api/RunAction.cs`, `Registry/RunRegistries.cs` (`ActRegistry` DefTable, `EventRegistry` ModelTable) | C1 | — |
+
+Rules: never edit a file you do not own; a needed member in another owner's type is requested, and until it
+lands the caller's test wraps the call in `W1Pending.Run(test, "<owner>", body)`. Stubs throw
+`NotImplementedException("W2 <owner>: <Type>.<Member>")`. Signatures in the skeleton are the call surface;
+an owner may add members freely but changes an existing signature only together with every caller.
+
+Cross-owner call surface (who calls what):
+
+| Caller | Callee (owner) |
+| --- | --- |
+| R6 `RunLoop.CreateForNewRun` | R1 `ActModel.GetRandomList`, `ActInstance.GenerateRooms`, `ExtraRunFields`; R3 `RelicGrabBag.Populate`, `RunOddsSet`, `PlayerOddsSet`; R5 Neow entry |
+| R6 `EnterAct` / `EnterMapCoord` | R1 `ActModel.CreateMap` → R2 `StandardActMap`; R3 `UnknownMapPointOdds.Roll`/`ResetToBase`; R4 `RoomStack.CreateRoom`/`EnterRoom`/`ExitCurrentRooms`; R1 `ActInstance.Pull*`/`MarkRoomVisited` |
+| R6 legal actions | R2 `MapTravel.GetLegalMapPoints`; R3 `RewardsSet`, `CardReward.Cards/Alternatives`; R4 `MerchantInventory.AllEntries`, `RestSiteRoom.Options`, `TreasureRoom`; R5 `EventModel.CurrentOptions`; `PotionActions` (W1) for D9 |
+| R4 `CombatRoom.StartCombat` | `CombatLoop.SetUpCombat(rs, player, encounter, context)` + `StartCombat` (W1); `Hook.AfterRoomEntered` between them (§8.3) |
+| R4 `CombatRoom.OfferRoomEndRewards`, `RestSite` heal, R5 events | R3 `RewardsCmd.GenerateForRoomEnd`/`OfferCustom` |
+| R4 merchant | R3 `CardFactory.CreateForMerchant`, `RelicGrabBag.PullFromBack`; W1 `PotionFactory.CreateRandomPotionsOutOfCombat` |
+| R4 treasure, R3 elite relic, R5 events | R3 `RelicFactory.*`, `RelicGrabBag.PullFromFront`; W1 `RelicCmd.Obtain` |
+| R7 importer | R1 state constructors, R2 `SavedActMap`, R3 `RelicGrabBag`/odds load, R6 `RunSim` entry per `SavePoint` |
+| R8 | R6 `RunSim`, R7 `RunImporter`, R2 projections |
+
+## C4. Standalone combats
+
+`CombatSim.Create(...)` and `CombatLoop.SetUpCombat(...)` keep their behaviour: they build
+`RunState.CreateStandalone` (all new fields at their defaults, nullable ones null). `RunSim` embeds a combat
+through `RunState.Combat` (R4 `CombatRoom.StartCombat` sets it via `CombatLoop.SetUpCombat(rs, player, …)`
+on the run's live `Rng`, D4); `RunSim.Combat` exposes it as a `CombatSim` over the same `RunState`
+(`CombatSim.FromState`, with prompt handling as in `CombatSim`). HP, deck, relics, potions and gold are
+the shared `PlayerState` (D3): no copy-in / copy-out.
+
+## C5. Gates
+
+- Build 0 warnings 0 errors (Debug and Release); suite green; PENDING only through `W1Pending` for
+  cross-owner stubs (0 at merge of the wave); diff gate unchanged (4/4 bundles, 69/69 decisions).
+- W3 content gate: `sim/Sts2Sim.Tests/ContentSoakTests.cs` (`ContentSoak.Run(ContentSoakOptions)`, filters
+  per kind) — every encounter ×3 seeds ×300 steps, every card ×2 seeds ×150 steps, every relic and potion
+  ×2 seeds; uniform-random legal playouts; failures listed `<id>/<seed>: <Type>: <message>` (first 30 + total).
+- R6: random full-run soak, 10⁴ runs in tests, 10⁵ as a Bench option, with `RunConfig.Content =
+  ContentFilter.PortedOnly` (pulls restricted to registered content; unported events replaced by a stub
+  event owned by R5) — no exception, `Hash(x) == Hash(x.Clone())` at random points, legal-action closure.
+- R7/R8: the oracles of design §7.5 on the local saves and `.run` files (counts reported, not gated, until
+  W3 content covers the runs).

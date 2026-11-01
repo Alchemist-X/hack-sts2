@@ -1,4 +1,3 @@
-// W2 fills
 namespace Sts2Sim.Core.Run;
 
 public sealed partial class RunState : ICanonical
@@ -49,6 +48,38 @@ public sealed partial class RunState : ICanonical
 
     public int AllocateCardInstanceId() => NextCardInstanceId++;
 
+    public RunConfig? Config { get; set; }
+
+    public List<ActInstance> Acts { get; private set; } = new();
+
+    public int CurrentActIndex { get; set; }
+
+    public int ActFloor { get; set; }
+
+    public int NextRoomId { get; set; }
+
+    public ActMap? Map { get; set; }
+
+    public List<MapCoord> VisitedMapCoords { get; private set; } = new();
+
+    public List<MapPointHistoryEntry> MapPointHistory { get; private set; } = new();
+
+    public HashSet<string> VisitedEventIds { get; private set; } = new(StringComparer.Ordinal);
+
+    public ExtraRunFields ExtraFields { get; private set; } = new();
+
+    public RunOddsSet? Odds { get; set; }
+
+    public RelicGrabBag? SharedRelicGrabBag { get; set; }
+
+    public List<AbstractRoom> CurrentRooms { get; private set; } = new();
+
+    public List<RewardsSet> RewardsStack { get; private set; } = new();
+
+    public ActInstance Act => Acts[CurrentActIndex];
+
+    public int TotalFloor => MapPointHistory.Count;
+
     public static RunState CreateStandalone(PlayerState player, RunRngSet rng, int ascension, UnlockProfile? unlocks = null)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -90,10 +121,53 @@ public sealed partial class RunState : ICanonical
             modifiers.Add(sourceModifiers[i].DeepClone());
         }
         var rng = Rng is null ? null! : Rng.DeepClone();
-        return new RunState(players, rng, Unlocks, Ascension, modifiers, Choice.DeepClone(), Fidelity.DeepClone())
+        var clone = new RunState(players, rng, Unlocks, Ascension, modifiers, Choice.DeepClone(), Fidelity.DeepClone())
         {
             NextCardInstanceId = NextCardInstanceId
         };
+        CopyRunLayerInto(clone);
+        return clone;
+    }
+
+    private void CopyRunLayerInto(RunState clone)
+    {
+        clone.Config = Config;
+        var acts = Acts;
+        clone.Acts = new List<ActInstance>(acts.Count);
+        for (int i = 0; i < acts.Count; i++)
+        {
+            clone.Acts.Add(acts[i].DeepClone());
+        }
+        clone.CurrentActIndex = CurrentActIndex;
+        clone.ActFloor = ActFloor;
+        clone.NextRoomId = NextRoomId;
+        clone.Map = Map;
+        clone.VisitedMapCoords = new List<MapCoord>(VisitedMapCoords);
+        var history = MapPointHistory;
+        clone.MapPointHistory = new List<MapPointHistoryEntry>(history.Count);
+        for (int i = 0; i < history.Count; i++)
+        {
+            clone.MapPointHistory.Add(history[i].DeepClone());
+        }
+        clone.VisitedEventIds = new HashSet<string>(VisitedEventIds, StringComparer.Ordinal);
+        clone.ExtraFields = ExtraFields.DeepClone();
+        clone.Odds = Odds?.CloneFor(clone.Rng);
+        clone.SharedRelicGrabBag = SharedRelicGrabBag?.DeepClone();
+        var rooms = CurrentRooms;
+        clone.CurrentRooms = new List<AbstractRoom>(rooms.Count);
+        for (int i = 0; i < rooms.Count; i++)
+        {
+            clone.CurrentRooms.Add(rooms[i].CloneFor(clone));
+        }
+        var rewards = RewardsStack;
+        clone.RewardsStack = new List<RewardsSet>(rewards.Count);
+        for (int i = 0; i < rewards.Count; i++)
+        {
+            var set = rewards[i];
+            var room = set.Room;
+            int roomIndex = room == null ? -1 : rooms.IndexOf(room);
+            clone.RewardsStack.Add(set.CloneFor(clone.Players[Players.IndexOf(set.Player)], roomIndex < 0 ? null : clone.CurrentRooms[roomIndex]));
+        }
     }
 
     public void WriteCanonical(CanonicalWriter w)
@@ -129,5 +203,69 @@ public sealed partial class RunState : ICanonical
         }
         Choice.WriteCanonical(w);
         Fidelity.WriteCanonical(w);
+        WriteRunLayer(w);
+    }
+
+    private void WriteRunLayer(CanonicalWriter w)
+    {
+        w.WriteTag(RunStateCanonicalTags.RunLayer);
+        var config = Config;
+        w.WriteBool(config != null);
+        config?.WriteCanonical(w);
+        var acts = Acts;
+        w.WriteTag(RunStateCanonicalTags.Acts);
+        w.WriteCount(acts.Count);
+        for (int i = 0; i < acts.Count; i++)
+        {
+            acts[i].WriteCanonical(w);
+        }
+        w.WriteInt32(CurrentActIndex);
+        w.WriteInt32(ActFloor);
+        w.WriteInt32(NextRoomId);
+        var map = Map;
+        w.WriteBool(map != null);
+        map?.WriteCanonical(w);
+        var coords = VisitedMapCoords;
+        w.WriteTag(RunStateCanonicalTags.VisitedMapCoords);
+        w.WriteCount(coords.Count);
+        for (int i = 0; i < coords.Count; i++)
+        {
+            coords[i].WriteCanonical(w);
+        }
+        var history = MapPointHistory;
+        w.WriteTag(RunStateCanonicalTags.MapPointHistory);
+        w.WriteCount(history.Count);
+        for (int i = 0; i < history.Count; i++)
+        {
+            history[i].WriteCanonical(w);
+        }
+        w.WriteTag(RunStateCanonicalTags.VisitedEventIds);
+        var eventIds = VisitedEventIds.Count == 0 ? Array.Empty<string>() : VisitedEventIds.OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        w.WriteCount(eventIds.Length);
+        for (int i = 0; i < eventIds.Length; i++)
+        {
+            w.WriteString(eventIds[i]);
+        }
+        ExtraFields.WriteCanonical(w);
+        var odds = Odds;
+        w.WriteBool(odds != null);
+        odds?.WriteCanonical(w);
+        var sharedBag = SharedRelicGrabBag;
+        w.WriteBool(sharedBag != null);
+        sharedBag?.WriteCanonical(w);
+        var rooms = CurrentRooms;
+        w.WriteTag(RunStateCanonicalTags.RoomStack);
+        w.WriteCount(rooms.Count);
+        for (int i = 0; i < rooms.Count; i++)
+        {
+            rooms[i].WriteCanonical(w);
+        }
+        var rewards = RewardsStack;
+        w.WriteTag(RunStateCanonicalTags.RewardsStack);
+        w.WriteCount(rewards.Count);
+        for (int i = 0; i < rewards.Count; i++)
+        {
+            rewards[i].WriteCanonical(w);
+        }
     }
 }

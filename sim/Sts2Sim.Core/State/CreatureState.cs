@@ -135,7 +135,7 @@ public abstract class CreatureState : ICanonical
     public virtual void WriteCanonical(CanonicalWriter w) => WriteCreatureCanonical(w);
 }
 
-public sealed class PlayerState : CreatureState
+public sealed partial class PlayerState : CreatureState
 {
     public const int DefaultPotionSlotCount = 3;
 
@@ -201,6 +201,7 @@ public sealed class PlayerState : CreatureState
         }
         OrbQueue = source.OrbQueue.CloneFor(this);
         PetIds = new List<int>(source.PetIds);
+        CopyRunFieldsFrom(source);
     }
 
     public override bool IsPlayer => true;
@@ -645,6 +646,7 @@ public sealed class PlayerState : CreatureState
         {
             w.WriteInt32(pets[i]);
         }
+        WriteRunCanonical(w);
     }
 }
 
