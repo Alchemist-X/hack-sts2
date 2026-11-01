@@ -834,9 +834,10 @@ public static class CardKernelTests
         var pool = CardPools.Ironclad.GetUnlockedCards(cs.Run.Unlocks, CardPools.MultiplayerConstraintFor(cs.Run));
         var eligible = CardFactory.FilterForCombat(pool).ToList();
         var ported = eligible.Where(d => d is not UnportedCardDef).Select(d => d.Id).ToList();
-        Assert.SequenceEqual(new[] { Armaments.CardId, Headbutt.CardId }, ported, "the ported Ironclad options in pool order");
+        Assert.SequenceEqual(eligible.Where(d => CardRegistry.TryGet(d.Id, out _)).Select(d => d.Id), ported, "the ported Ironclad options in pool order");
+        Assert.True(ported.Contains(Armaments.CardId) && ported.Contains(Headbutt.CardId), "the pilot Ironclad cards are ported options");
         var stream = cs.Rng.CombatCardGeneration;
-        var reference = ported.ToList().UnstableShuffle(stream.DeepClone());
+        var reference = ported.ToList().UnstableShuffle(stream.DeepClone()).Take(3);
         int before = stream.Counter;
         var cards = CardFactory.GetDistinctForCombat(cs, cs.Player, pool, 3, stream).ToList();
         Assert.SequenceEqual(reference, cards.Select(c => c.Id), "the draw runs over the ported options only");
@@ -857,7 +858,8 @@ public static class CardKernelTests
             cs.Choice.Answerer = new PickFirstAnswerer();
             var discovery = MakeIn(cs, PileType.Play, Discovery.CardId);
             var stream = cs.Rng.CombatCardGeneration;
-            var reference = new List<string> { Armaments.CardId, Headbutt.CardId }.UnstableShuffle(stream.DeepClone());
+            var ironcladOptions = CardFactory.FilterForCombat(CardPools.Ironclad.GetUnlockedCards(cs.Run.Unlocks, CardPools.MultiplayerConstraintFor(cs.Run)));
+            var reference = ironcladOptions.Where(d => d is not UnportedCardDef).Select(d => d.Id).ToList().UnstableShuffle(stream.DeepClone());
             discovery.OnPlay(cs, new CardPlay(cs, discovery, null));
             var chosen = cs.Player.Hand.Cards.Single();
             Assert.Equal(reference[0], chosen.Id, "the first option of the generation order");
