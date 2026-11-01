@@ -10,6 +10,10 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "run")
+        {
+            return Run.RunOracleRunner.RunMain(args[1..]);
+        }
         string? input = null;
         string? reportPath = null;
         bool verbose = false;
