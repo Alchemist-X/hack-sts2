@@ -14,6 +14,10 @@ public static class Program
         {
             return Run.RunOracleRunner.RunMain(args[1..]);
         }
+        if (args.Length > 0 && args[0].StartsWith("replay", StringComparison.Ordinal))
+        {
+            return Replay.ReplayCli.Run(args);
+        }
         string? input = null;
         string? reportPath = null;
         bool verbose = false;
