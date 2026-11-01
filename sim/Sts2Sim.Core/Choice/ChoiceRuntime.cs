@@ -14,13 +14,16 @@ public readonly struct ContextScope : IDisposable
     public void Dispose() => _runtime?.PopContext(_depth);
 }
 
+public readonly record struct ChoiceContextFrame(ChoiceContextKind Kind, Action? OnFirstPause);
+
 public sealed class ChoiceRuntime : ICanonical
 {
     private readonly List<IChoiceAnswerer> _selectors;
+    private List<ChoiceContextFrame>? _contexts;
 
     public ChoiceRuntime()
+        : this(new List<IChoiceAnswerer>())
     {
-        _selectors = new List<IChoiceAnswerer>();
     }
 
     private ChoiceRuntime(List<IChoiceAnswerer> selectors)
@@ -32,11 +35,27 @@ public sealed class ChoiceRuntime : ICanonical
 
     public IReadOnlyList<IChoiceAnswerer> Selectors => _selectors;
 
+    public IReadOnlyList<ChoiceContextFrame> Contexts => (IReadOnlyList<ChoiceContextFrame>?)_contexts ?? Array.Empty<ChoiceContextFrame>();
+
+    public int ContextDepth => _contexts?.Count ?? 0;
+
     public ContextScope PushContext(ChoiceContextKind kind, Action? onFirstPause = null)
-        => throw new NotImplementedException("ChoiceRuntime.PushContext: choice agent (CONTRACTS Part B §B1)");
+    {
+        var contexts = _contexts ??= new List<ChoiceContextFrame>(4);
+        int depth = contexts.Count;
+        contexts.Add(new ChoiceContextFrame(kind, onFirstPause));
+        return new ContextScope(this, depth);
+    }
 
     internal void PopContext(int depth)
-        => throw new NotImplementedException("ChoiceRuntime.PopContext: choice agent (CONTRACTS Part B §B1)");
+    {
+        int count = ContextDepth;
+        if (depth != count - 1)
+        {
+            throw new InvalidOperationException($"Choice context {depth} popped out of order: the context stack holds {count} contexts.");
+        }
+        _contexts!.RemoveAt(depth);
+    }
 
     public void PushSelector(IChoiceAnswerer selector)
     {

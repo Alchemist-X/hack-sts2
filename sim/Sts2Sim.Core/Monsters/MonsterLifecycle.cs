@@ -94,4 +94,10 @@ public static class MonsterLifecycle
     public static bool IntendsToAttack(MonsterState monster) => monster.HasAi && monster.Ai.IntendsToAttack;
 
     public static IReadOnlyList<CreatureState> PlayerCreatures(CombatState cs) => new CreatureState[] { cs.Player };
+
+    public static IReadOnlyList<CreatureState> PlayerSideParticipants(CombatState cs)
+        => throw new NotImplementedException("MonsterLifecycle.PlayerSideParticipants: monsters-kernel (Combat/CombatManager.cs:4873-4882, Combat/CombatState.cs:620, :831; CONTRACTS Part B section B12 A17)");
+
+    public static IReadOnlyList<CreatureState> EnemySideParticipants(CombatState cs)
+        => throw new NotImplementedException("MonsterLifecycle.EnemySideParticipants: monsters-kernel (Combat/CombatManager.cs:2055-2088, Combat/CombatState.cs:620, :831; CONTRACTS Part B section B12 A17)");
 }

@@ -584,3 +584,157 @@ suite stays at 367): slot counts per ascension, clone, growth to 5, shrink 5 →
 4 → 2 discarding, a full shrink throwing, `ModifyDamage` `(cs)` == `(rs, cs)`, `(rs, null)` →
 `NotImplementedException`, a detached combat → `InvalidOperationException`, an empty-modifier `AfterModifying*`
 with `cs = null` as a no-op, and overrides receiving `rs` with `rs.Combat == cs`. All pass.
+
+## 16. Round-3 amendments, phase 0b (CONTRACTS Part B §B12, 2026-11-01)
+
+On top of `75ec0b6`. Scaffold amendment rows A10, A11, A12, A13, A15s, A5s of Part B §B12, plus the hot-path
+bodies the owners' P0 tests need while they wire the new calls. Each body is a line-by-line port with its
+citation; the owner named in the last column re-verifies it and keeps the file. This section supersedes the rows of
+§2, §7, §10, §12 and §14 that it names (`CombatState.CreateCard`, `CardInstance.CloneForCombat`, the `OrbQueue`
+and `ChoiceRuntime` stubs, the canonical layout of §10, M27's `CreateStandalone`). Events the game raises only
+for UI (`silent` parameters, `Flashed`, `*Changed`) are dropped as in the rest of the sim.
+
+### 16.1 Members added or implemented
+
+| # | Member | Sim file | Game source | Body | Owner afterwards |
+| --- | --- | --- | --- | --- | --- |
+| A10 | `PlayerState.AddRelicInternal(relic, index = -1)` | `State/CreatureState.cs` | `Entities.Players/Player.cs:883-903` | owner set through `RelicModel.AttachTo` (the game's `Owner` setter, `Models/RelicModel.cs:225-242`: a different existing owner throws), then `Add` for `-1`, else `Insert(index)`; the `Flashed` subscription and the `RelicObtained` event are dropped with `silent` (§16.6 item 2) | state |
+| A10 | `PlayerState.RemoveRelicInternal(relic)` | same | `Player.cs:905-922` | `InvalidOperationException` when the player lacks it; `Remove`; `HasBeenRemovedFromState = true` (= `RelicModel.RemoveInternal`, `Models/RelicModel.cs:635-638`); the owner is kept, as in the game | state |
+| A10 | `PlayerState.MeltRelicInternal(relic)` | same | `Player.cs:924-947` | the game's three checks in its order (not wax, already melted, not owned), then `IsMelted = true`, `Status = RelicStatus.Disabled`. `GetRelic` still returns melted relics (`:949-957`, unchanged) | state |
+| A10 | `PlayerState.GetPotionSlotIndex(potion)` | same | `Player.cs:959-962` | `Array.IndexOf` (reference equality: no model overrides `Equals`, `Models/AbstractModel.cs`) | state |
+| A10 | `PlayerState.AddPotionInternal(potion, slotIndex = -1) → PotionProcureResult` | same | `Player.cs:1020-1070` | `slotIndex < 0` → first empty slot; no empty slot or an occupied slot → `(false, potion, TooFull)` with the owner untouched; else owner through `PotionModel.AttachTo` (`Models/PotionModel.cs:450-467`), slot write, `(true, potion, None)`; `AddPotionFailed` / `PotionProcured` dropped | state |
+| A10 | `PlayerState.DiscardPotionInternal(potion)`, `RemoveUsedPotionInternal(potion)` | same | `Player.cs:1072-1079`, `:1081-1085` | both `RemovePotionInternal`; `PotionDiscarded` / `UsedPotionRemoved` dropped (subscribers are UI: `Nodes.Potions/NPotionContainer.cs:296-299`, `Nodes.Multiplayer/NMultiplayerPlayerState.cs:1116-1119`) | state |
+| A10 | `PlayerState.RemovePotionInternal(potion)` (private, as in the game) | same | `Player.cs:1087-1096` | `InvalidOperationException` when absent, else the slot is nulled; `HasBeenRemovedFromState` is set by the callers in the game (`PotionModel.Discard` / `RemoveBeforeUse`, `Models/PotionModel.cs:589-599`), not here | state |
+| A10 | `enum PotionProcureFailureReason { None, TooFull, NotAllowed }` | `Enums/RelicPotionEnums.cs` | `Entities.Potions/PotionProcureFailureReason.cs:3-8` | game ordinals 0, 1, 2 | scaffold |
+| A10 | `readonly record struct PotionProcureResult(bool Success, PotionModel Potion, PotionProcureFailureReason FailureReason)` | `Enums/RelicPotionEnums.cs` | `Entities.Potions/PotionProcureResult.cs:5-12` | the game's class with public fields `success`, `potion`, `failureReason`, in that order (§16.6 item 1) | scaffold |
+| A11 | `CardPlay(CombatState cs, CardInstance card, CreatureState? target)`, `int PlayId` | `Cards/CardPlay.cs` | `Entities.Cards/CardPlay.cs:9-101` (no id; compared by reference, `Models.Powers/UnmovablePower.cs:37`) | `PlayId = cs.AllocateCardPlayId()` in the constructor; the two-argument constructor is gone | frozen (scaffold) |
+| A11 | `CardPlay.Resources` (`ResourceInfo`, replaces `EnergySpent` / `StarsSpent`) | `Cards/CardPlay.cs` | `Entities.Cards/CardPlay.cs:52-60`, `Entities.Cards/ResourceInfo.cs:5-47` | settable like the other P0 members | frozen (scaffold) |
+| A11 | `CombatState.NextCardPlayId`, `AllocateCardPlayId()` | `State/CombatState.cs` | B12 A11 | per-combat counter from 0, copied by the copy constructor, written in the `CombatKernel` block (`0x530E`) after `CardOrPotionEffectDepth` | state |
+| A11 | `ActionExecutor.PlayCard`, `OnPlayWrapper(cs, card, target, isAutoPlay, ResourceInfo resources)` | `Combat/Loop/ActionExecutor.cs` | `GameActions/PlayCardAction.cs:157-165` (manual play: `EnergySpent = EnergyValue`, `StarsSpent = StarValue`), `Models/CardModel.cs:758-768` (one `CardPlay` per play index, carrying `resources`) | the auto-play values (`EnergySpent = 0`, `EnergyValue = GetAmountToSpend()`, `StarsSpent = 0`, `StarValue = max(0, GetStarCostWithModifiers())`, `Commands/CardCmd.cs:515-522`) come with the loop's `CardCmd.AutoPlay` | loop |
+| A11 | `HistoryCardPlay(int PlayId, …)` (first field, written first), `HistoryCardPlay.From(CardPlay)` | `State/CombatHistory.cs` | `Entities.Cards/CardPlay.cs:12-94` | `From` copies `PlayId`, card instance id and model id, `PlayerId` = the card owner's id (the game's `Player = cardModel.Owner`, `Models/CardModel.cs:761`; `CombatHistory.NoId` for an ownerless test card), `TargetId` (or `NoId`), `ResultPile`, `Resources`, `IsAutoPlay`, `PlayIndex`, `PlayCount`. The `Append*` that record a play (`AppendCardPlayStarted` / `Finished`, `AppendBlockGained`) are to build their entry with it when the state agent fills their bodies | state |
+| A11 | test call sites | `Sts2Sim.Tests/PipelineTests.cs` (7), `CardTests.cs` (9) | | `new CardPlay(card, target)` → `new CardPlay(cs, card, target)` (the combat in scope; `CardTests` line 745 passes `other`). No test read `EnergySpent` / `StarsSpent` | test owners |
+| A12 | `PlayerState.AscensionEffectsApplied` | `State/CreatureState.cs` | `Entities.Ascension/AscensionManager.cs:27-39`, applied once per player at `Runs/RunManager.cs:3856-3866` (`InitializeNewRun`) and `Runs/RunState.cs:977-981` (a player added to a run in progress) | copied by the copy constructor; written in `PlayerPersistent` (`0x5307`) after `CanUseOrRemovePotions` | state |
+| A12 | `RunState.CreateStandalone` | `Run/RunState.cs` | as above | TightBelt (`SubtractFromMaxPotionCount(1)` at `ascension >= TightBelt`) only while the flag is false, then the flag is set at every ascension; a player passed through `CreateStandalone` twice keeps 2 slots at A4+ (M27 otherwise unchanged) | state |
+| A13 | `RunState.NextCardInstanceId`, `AllocateCardInstanceId()` | `Run/RunState.cs` | Part A §5, B12 A13 | copied by `CloneWithoutCombat`; written once, in the run fields right after `Ascension` | state |
+| A13 | `CombatState.NextCardInstanceId` (get/set), `AllocateCardInstanceId()` | `State/CombatState.cs` | B12 A13 | forward to `Run`; removed from the combat copy constructor and from `WriteCombatFields`. P0 behaviour is unchanged (every P0 combat owns a fresh standalone run, so the counter still starts at 0) | state |
+| A15s | `CreatureCmd.Add(cs, MonsterDef monster, CombatSide side = Enemy, string? slotName = null) → MonsterState`; `CreatureCmd.Add(cs, CreatureState creature)` | `Combat/Pipeline/CreatureCmd.cs` | `Commands/CreatureCmd.cs:3564`, `:3575` | stub | pipeline |
+| A15s | `PlayerCmd.AddPet(cs, PlayerState owner, MonsterDef def) → MonsterState` | `Combat/Loop/PlayerCmd.cs` | `Commands/PlayerCmd.cs:946-967` | stub | loop |
+| A15s | `MonsterSpawner.SpawnPet(cs, def, owner)`, `MonsterSpawner.SpawnForAdd(cs, def, side, slotName)` → `MonsterState` | `Monsters/MonsterDef.cs` | `Commands/PlayerCmd.cs:946-955`, `Commands/CreatureCmd.cs:3564-3572`, `Combat/CombatState.cs:709-724` | stubs | monsters-kernel |
+| A15s | `MonsterLifecycle.PlayerSideParticipants(cs)`, `EnemySideParticipants(cs)` → `IReadOnlyList<CreatureState>` | `Monsters/MonsterLifecycle.cs` | `Combat/CombatManager.cs:4873-4882`, `:2055-2088`; `Combat/CombatState.cs:620`, `:831` | stubs | monsters-kernel |
+| A15s | `StarsCmd.GainStars(cs, player, decimal)`, `LoseStars(cs, player, decimal)`, `SetStars(cs, player, decimal)`, `SpendStars(cs, player, int)` (new file) | `Combat/Pipeline/StarsCmd.cs` | `Commands/PlayerCmd.cs:844` (state machine `:358-423`, gate `:390`, `AfterStarsGained((int)amount)` `:393`), `:857-866`, `:868` (`:695-793`, gate `:742`); `Models/CardModel.cs:3435-3446` (private `SpendStars(int)`, state machine `:1399-1466`, `AfterStarsSpent` `:1436`) | stubs. Parameter types are the game's (`decimal` amounts, `int` for the spend); the order `(cs, player, amount)` is B12 A15s's, not the game's `(amount, player)` | character-mechanics |
+| A5s | `FidelityFlag.ApproximatedRule` (= 1, appended) | `State/Fidelity.cs` | B12 A5s | enum value | state |
+| hot path | `CombatState.CreateCard(def, owner)` | `State/CombatState.cs` | `Combat/CombatState.cs:671-677` (`ToMutable`, `AddCard(card, owner)` `:686-690` → `Owner` setter `Models/CardModel.cs:1777-1794`, `AfterCreated`) | a new `CardInstance(def, AllocateCardInstanceId())`, `AttachTo(owner)`, then `def.AfterCreated(card)`; the combat's `_allCards` registry (`:982-991`) has no sim counterpart and no reader | state |
+| hot path | `CardDef.AfterCreated(CardInstance card)` (new virtual, empty default) | `Cards/CardDef.cs` | `Models/CardModel.cs:2884-2886` | the only v0.111.0 override is `Models.Cards/SpoilsMap.cs:146-149` (sets `SpoilsActIndex`); the card is passed because per-instance state lives on `CardInstance`. Plumbing in a cards-kernel file | cards-kernel |
+| hot path | `CardInstance.CloneForCombat(newInstanceId)`; `InstanceId` setter now private | `Cards/CardInstance.cs` | `Combat/CombatState.cs:679-684` (`CloneCard` = `ClonePreservingMutability` + `AddCard`), `Models/AbstractModel.cs:155-181` (`MutableClone` = `MemberwiseClone`, `DeepCloneFields`, `AfterCloned`), `Models/CardModel.cs:2826-2859` (local keywords, dynamic vars, energy cost, temporary star costs; enchantment and affliction cloned and re-applied with their amounts, `:3137-3167`, `Models/EnchantmentModel.cs:330-348`, `Models/AfflictionModel.cs:238-243`), `:2861-2882` (`CurrentTarget` null, `CurrentPlayIndex` 0, `DeckVersion` null, `HasBeenRemovedFromState` false), `Entities.Players/Player.cs:1214-1233` (`DeckVersion` = the deck card) | `CloneFor(owner)` (the M20 clone: vars, energy cost and temporary star costs deep-copied, keyword mask and flags copied, `Enchantment` / `Affliction` `CloneFor(clone)`, listener per M19; the owner is kept as `MemberwiseClone` keeps it in the game), then the new instance id, `CurrentTargetId = NoTarget`, `CurrentPlayIndex = 0`, `HasBeenRemovedFromState = false`, `DeckVersionId = source.InstanceId` | cards-kernel |
+| hot path | `OrbQueue.Clear()` | `Orbs/OrbQueue.cs` | `Entities.Orbs/OrbQueue.cs:408-412` | orbs cleared, capacity 0 | character-mechanics |
+| hot path | `OrbQueue.BeforeTurnEnd(cs)`, `AfterTurnStart(cs)` | `Orbs/OrbQueue.cs` | `:462-474` (state machine `:117-210`), `:476-488` (`:20-113`) | iterate a copy of the orbs (`Enumerable.ToList`, `:149`, `:52`); before each orb, return unless the owner's creature still has a combat (`:170`, `:73`), then `OrbModel.BeforeTurnEndOrbTrigger(cs)` / `AfterTurnStartOrbTrigger(cs)` (`Models/OrbModel.cs:470`, `:475`). The queue holds no owner reference, so "owner in a combat" is "a `PlayerState` in `cs.Allies` owns this queue". No allocation when the queue is empty. The choice context argument is dropped | character-mechanics |
+| hot path | `ChoiceRuntime.PushContext(kind, onFirstPause)`, `PopContext(depth)`, `Contexts`, `ContextDepth`; `readonly record struct ChoiceContextFrame(ChoiceContextKind Kind, Action? OnFirstPause)` | `Choice/ChoiceRuntime.cs` | Part B §B1 | transient stack: `PushContext` appends a frame and returns `ContextScope(depth)`, `ContextScope.Dispose` pops it; a pop that is not the top throws `InvalidOperationException`; allocated on the first push; not cloned (a clone starts empty) and not hashed. `Ask` stays a stub; no pause semantics | choice |
+| hot path | seven `Hook` dispatchers (§16.2) | `Combat/Pipeline/Hook.cs` | §16.2 | mechanical ports over `ListenerSnapshot` (Part B §B3) | hooks |
+
+### 16.2 Hot-path dispatchers (list for the hooks owner)
+
+Enumerated by reading every `Hook.*` call in `Combat/CombatManager.cs` `SetupPlayerTurn` (state machine
+`:4066-4316`), `RunAutoPrePlayPhase` (`:3812-3931`), `DoTurnEnd` (`:1141-1320`) with `DoTurnEndCards`, `StartTurn`
+(`:4669-5413`), `EndCombatInternal` (`:1578-1836`), `EndPlayerTurnPhaseOneInternal` (`:2189-2705`, the auto-post-play
+phase) and `Models/CardModel.cs` `OnPlayWrapper` (state machine `:257-1064`), then one level into the commands and
+properties they call directly (`CardPileCmd.Add` / `AddDuringManualCardPlay` / `RemoveFromCombat` / `Draw`,
+`CardCmd.Exhaust`, `CheckForEmptyHand`, `CheckWinCondition`, `Creature.BeforeTurnStart` / `AfterTurnStart`,
+`PlayerCombatState`, `CardModel.Keywords`). Of the dispatchers found, these seven were stubs; all the others were already
+implemented in P0.
+
+| Dispatcher (sim) | Game | Called from | Passes, listener source | Pattern |
+| --- | --- | --- | --- | --- |
+| `AfterAutoPrePlayPhaseEntered(cs, player)` | `Hooks/Hook.cs:9688`, state machine `:316-515` | `RunAutoPrePlayPhase` (`Combat/CombatManager.cs:3891`) | three fresh guarded snapshots: `AfterAutoPrePlayPhaseEnteredEarly`, `AfterAutoPrePlayPhaseEntered`, `AfterAutoPrePlayPhaseEnteredLate` | plain; the `LocalContext.NetId.HasValue` gate is always true in single player (design-combat-kernel §2.2) |
+| `AfterAutoPostPlayPhaseEntered(cs, player)` | `:9673`, `:214-312` | `EndPlayerTurnPhaseOneInternal` (`Combat/CombatManager.cs:2389`) | one guarded snapshot | plain; NetId gate as above |
+| `ModifyCardPlayResultLocation(cs, card, isAutoPlay, resources, cardLocation[, ref modifiers])` | `:10188-10211` | `OnPlayWrapper` (`Models/CardModel.cs:936`) | one guarded snapshot | ref modifier: a model joins the list when the location it returns differs (`!=` on the record struct; the game's `CardLocation` also carries the player, constant in single player, `Entities.Cards/CardLocation.cs:7-20`). The per-modifier `AfterModifyingCardPlayResultLocation` call is inline in `OnPlayWrapper` (`Models/CardModel.cs:524`), not a dispatcher: the loop calls the virtual on each listed model |
+| `AfterCombatEnd(rs, cs, room)` | `:9085`, `:1617-1705` | `EndCombatInternal` (`Combat/CombatManager.cs:1708`) | one run snapshot (`runState.IterateHookListeners(combatState)`) | plain; `RequireAttachedCombat` (M26): `cs == null` → `NotImplementedException` (hooks agent), a detached `cs` → `InvalidOperationException` |
+| `AfterCombatVictory(rs, cs, room)` | `:9115`, `:1709-1849` | `EndCombatInternal` (`:1781`) | two run snapshots: `AfterCombatVictoryEarly`, `AfterCombatVictory` | plain; M26 |
+| `AfterCardChangedPiles(rs, cs, card, oldPile, clonedBy)` | `:8935`, `:799-943` | `CardPileCmd.Add` (`Commands/CardPileCmd.cs:444`, `:3466`), `AddDuringManualCardPlay` (`:980`), `RemoveFromCombat` (`:2421`): every card move of `OnPlayWrapper`, `DoTurnEndCards` and the turn draw | two run snapshots: `AfterCardChangedPiles`, `AfterCardChangedPilesLate` | plain; M26 (a deck-pile move has no combat and stays with the hooks agent) |
+| `ModifyKeywordsInCombat(cs, card, keywords)` | `:10458-10473` | `CardModel.GetKeywordsWithSources` (`Models/CardModel.cs:2775-2814`, call `:2812`) behind `Keywords` (`:1940`), read by `DoTurnEnd` (Ethereal, `Combat/CombatManager.cs:1282`), `SetupPlayerTurn` (Innate, `:4266`), `ResolveTurnEndCardEffects` (Ethereal, `:7336`) and the result location (Exhaust) | one combat snapshot (`combatState.IterateHookListeners()`) | plain; the `TryModifyKeywordsInCombat` result is ignored, as in the game |
+
+Not dispatchers: `Player.ReviveBeforeCombatEnd` (`Entities.Players/Player.cs:36-99`, `:1237-1247`: `CreatureCmd.Heal(creature,
+1)` when the player is dead, called per player at `Combat/CombatManager.cs:1689`) and `Player.AfterCombatEnd`
+(`:1249-1254`) are loop work (B12 A18) over the existing `CreatureCmd.Heal`. Reached only off these paths, left as stubs:
+`BeforeCardAutoPlayed` (`CardCmd.AutoPlay`, `Commands/CardCmd.cs:551`), `AfterStarsSpent` (only when stars are spent,
+`Models/CardModel.cs:1436`), `ShouldGainStars` / `AfterStarsGained` (`PlayerCmd.GainStars`), the orb dispatchers (no orb
+in a power-only combat), and the deck-pile dispatchers of `CardPileCmd` (`ShouldAddToDeck`, `ModifyCardBeingAddedToDeck`,
+`BeforeCardRemoved`).
+
+### 16.3 Test infrastructure (`sim/Sts2Sim.Tests/W1Pending.cs`)
+
+`W1Pending.Count` and `W1Pending.Run(test, dependsOnArea, body)`: the body runs; a `NotImplementedException`
+(only that type and its subclasses) is caught, counted and printed as `PENDING <test> (<area>): <message>`; any other
+exception propagates. An internal overload takes the `TextWriter` so the self-test does not print to the console.
+`TestRunner` prints `PENDING total: N` as the last line of its summary (after the failed-test list). The self-test
+`W1PendingTests.Test_W1Pending_CountsNotImplementedAndPropagatesOtherExceptions` checks a completing body (not counted,
+no output), a stub body (counted, exact line) and an `InvalidOperationException` body (propagates, not counted, no
+line), and restores `Count`, so it adds no PENDING line and does not change the total. A gate that greps the output
+for per-test lines must match `PENDING ` followed by anything but `total:`, or read N from the total line.
+
+### 16.4 Refreshed pins
+
+| Pin | Old | New | Why |
+| --- | --- | --- | --- |
+| `EndToEndTests.PinnedSeedOneOpeningHash` | `0x2D2E7E7036D7EA8F` | `0xCA1423508C1168E3` | intended canonical layout change, no behaviour change |
+| `EndToEndTests.PinnedSeedOneFinalHash` | `0x5908EE3EB054BB48` | `0xD7B055DC9B9E326E` | same |
+
+Layout change per state, +5 bytes: +4 `RunState.NextCardInstanceId` after `Ascension` in the run fields (A13), +1
+`AscensionEffectsApplied` in `PlayerPersistent` (A12; `01` for every `CreateStandalone` player), −4 the combat-field
+`NextCardInstanceId` after `NextCreatureId` (A13), +4 `NextCardPlayId` in `CombatKernel` (A11). Probe (scratch console
+projects against the parent tree and this tree, not committed): every registered encounter (8) × seeds 1–6 (A0 odd,
+A10 even), seeded random legal play, 1 028 states. The action sequence and a per-state projection (HP, block, energy,
+hand ids and instance ids, pile sizes, monsters, outcome, round, slots, `NextCardInstanceId`) are identical; a byte
+alignment finds exactly these four edits in every state; the run header's new int equals `NextCardInstanceId`. The
+`LoopTests` pin `NextCardInstanceId == 12` is unchanged (the loop owner moves it when deck cards get ids, A13). No other
+test pins bytes.
+
+A second probe (102 checks, scratch, not committed) covers the bodies of §16.1: relic add / insert / remove / melt and
+their throws; potion slots (explicit, first empty, occupied and full → `TooFull` with no owner change), discard and used
+removal; `PlayId` from the combat counter, manual-play `Resources == (1, 1, 0, 0)` for Strike, `NextCardPlayId` cloned and
+hashed; `HistoryCardPlay.From`; TightBelt once per player across two `CreateStandalone` calls, the flag cloned and hashed;
+the run allocator behind both counters, cloned by both clone paths, hashed at byte 6; `CreateCard` (id, owner,
+`AfterCreated`, no pile); `CloneForCombat` (new id, `DeckVersionId`, owner, resets, deep copies, enchantment and affliction
+re-bound, later deck edits not shared, an ownerless source); orb triggers in queue order over a snapshot, skipped for a
+queue whose owner is not in the combat, `Clear`; context stack push / pop / LIFO throw / not cloned / not hashed /
+`default(ContextScope)`; each dispatcher's passes and order, the modifier rule, guarded silence once the combat is over
+while run and combat sources still visit, `cs == null` → `NotImplementedException`, a detached combat →
+`InvalidOperationException`, a power whose owner left the combat skipped; every A15s stub throws.
+
+### 16.5 Gates
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` (Debug and Release, `--no-incremental`) | 0 warnings, 0 errors |
+| `dotnet run --project sim/Sts2Sim.Tests` (Debug and Release) | 372 passed, 2 failed, 374 total (the 373 of round 2 plus the W1Pending self-test); the two failures are the known content gates `W1GateTests.Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline` and `Test_W1Gate_PilotContentIsRegistered`; `PENDING total: 0`, no per-test PENDING line |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundle set) | bundles 4 (agree 4), decisions 69/69, outcome 4/4, soft diffs 0 |
+| Bench (`Sts2Sim.Bench -c Release`, `NIBBITS_WEAK`, 3 s, parent tree `75ec0b6` from `git archive` and this tree interleaved; medians) | quiet session: `Clone()` 2.581 → 2.572 µs, `StateHash()` 1.169 → 1.197 µs, 648 509 → 665 776 decisions/s; final tree, two later sessions (load average 3.3–4.7, the game client running): 2.940 → 2.827 µs, 1.222 → 1.230 µs, 607 696 → 584 581 decisions/s (per-run spread 532k–679k) and 2.562 → 2.548 µs, 1.087 → 1.138 µs, 670 186 → 663 637 decisions/s. No change beyond noise: the canonical form grows by 5 bytes, a play allocates nothing it did not allocate before, and the context stack is allocated only on the first push. Two sessions where both trees fell to about 105k decisions/s and 12 µs per clone (scheduler mode under load) were discarded |
+
+### 16.6 Open questions and contract change requests
+
+1. **`PotionProcureResult` is not an enum.** B12 A10 says "→ `PotionProcureResult` (… game enum ordinals)". In v0.111.0
+   `PotionProcureResult` is a class (`success`, `potion`, `failureReason`, `Entities.Potions/PotionProcureResult.cs:5-12`) and
+   the enum with ordinals is `PotionProcureFailureReason { None, TooFull, NotAllowed }`. Ported as a record struct plus the
+   enum; contract change request: A10 should read "→ `PotionProcureResult(Success, Potion, FailureReason)` with
+   `PotionProcureFailureReason` (game ordinals)". `PotionCmd.TryToProcure`'s `NotAllowed` result (`Commands/PotionCmd.cs:253-266`)
+   is relics-potions'.
+2. **`RelicObtained` is rule-relevant in W2.** `CardReward` subscribes to `Player.RelicObtained` (`Rewards/CardReward.cs:535`)
+   and lets the obtained relic modify the pending reward's options (`:574-589`, `TryModifyCardRewardOptions[Late]`).
+   `AddRelicInternal` drops the event with `silent`; W2's card reward must restore the notification for non-silent adds.
+3. **`RemovePotionInternal` is private**, as in the game; owners call `DiscardPotionInternal` or `RemoveUsedPotionInternal`.
+   `SetMaxPotionCountInternal` (M27) still discards by truncation; it is equivalent to the game's `DiscardPotionInternal`
+   there and was left untouched.
+4. **`CardPlay` needs the combat.** Every directly constructed play (tests, content) allocates a `PlayId` from that combat;
+   `NextCardPlayId` is hashed, so a test that builds a play changes the state hash.
+5. **`HistoryCardPlay.From` and ownerless cards.** P0 combat cards have no owner yet, so `PlayerId` is `NoId` for them; the
+   branch dies once every creation path sets `Owner` (B12 A23, loop and cards-kernel).
+6. **Orb owner check.** `OrbQueue` finds its owner through `cs.Allies`; if character-mechanics gives the queue an owner
+   reference (the game's `_owner`, `Entities.Orbs/OrbQueue.cs:388`), that replaces the scan.
+7. **Context stack strictness.** An out-of-order `PopContext` throws. The `TurnSetup` first-pause steps run "with the context
+   stack reset to the turn-loop root" (Part B §B1); saving and restoring the stack around them keeps the LIFO rule (choice).
+8. **`CardDef.AfterCreated`** was added to a cards-kernel file because `CreateCard` must run the game's `AfterCreated` step.
+9. **Line ranges in the brief.** The brief cites `OnPlayWrapper` as `Models/CardModel.cs:667-909`; in this decompile the state
+   machine spans `:257-1064` and the cited lines are its loop body. The citations above use this decompile.
+10. **TightBelt and W2 players.** With the flag, `CreateStandalone` no longer applies TightBelt to a player whose ascension
+    effects were applied before. W2's `ApplyAscensionEffects` (`Runs/RunManager.cs:4827-4830`) sets
+    `AscensionEffectsApplied` when it applies `AscensionManager.ApplyEffectsTo`; then a W2 player passed through
+    `CreateStandalone` keeps its slots, which supersedes the warning of §14 item 14 (state, W2).

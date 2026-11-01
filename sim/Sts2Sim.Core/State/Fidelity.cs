@@ -2,7 +2,8 @@ namespace Sts2Sim.Core.State;
 
 public enum FidelityFlag : byte
 {
-    DeferredListenerPromptInline
+    DeferredListenerPromptInline,
+    ApproximatedRule
 }
 
 public readonly record struct FidelityEntry(FidelityFlag Flag, string Site);

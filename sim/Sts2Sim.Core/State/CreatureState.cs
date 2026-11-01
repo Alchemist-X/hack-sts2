@@ -178,6 +178,7 @@ public sealed class PlayerState : CreatureState
         Gold = source.Gold;
         BaseOrbSlotCount = source.BaseOrbSlotCount;
         CanUseOrRemovePotions = source.CanUseOrRemovePotions;
+        AscensionEffectsApplied = source.AscensionEffectsApplied;
         var sourceRelics = source.Relics;
         Relics = new List<RelicModel>(sourceRelics.Count);
         for (int i = 0; i < sourceRelics.Count; i++)
@@ -254,6 +255,8 @@ public sealed class PlayerState : CreatureState
 
     public bool CanUseOrRemovePotions { get; set; } = true;
 
+    public bool AscensionEffectsApplied { get; set; }
+
     public int BaseOrbSlotCount { get; set; }
 
     public List<CardInstance> Deck { get; }
@@ -276,6 +279,88 @@ public sealed class PlayerState : CreatureState
     }
 
     public bool HasRelic(string relicId) => GetRelic(relicId) != null;
+
+    public void AddRelicInternal(RelicModel relic, int index = -1)
+    {
+        ArgumentNullException.ThrowIfNull(relic);
+        relic.AttachTo(this);
+        if (index == -1)
+        {
+            Relics.Add(relic);
+        }
+        else
+        {
+            Relics.Insert(index, relic);
+        }
+    }
+
+    public void RemoveRelicInternal(RelicModel relic)
+    {
+        ArgumentNullException.ThrowIfNull(relic);
+        if (!Relics.Contains(relic))
+        {
+            throw new InvalidOperationException($"Player does not have relic {relic.Id}");
+        }
+        Relics.Remove(relic);
+        relic.HasBeenRemovedFromState = true;
+    }
+
+    public void MeltRelicInternal(RelicModel relic)
+    {
+        ArgumentNullException.ThrowIfNull(relic);
+        if (!relic.IsWax)
+        {
+            throw new InvalidOperationException($"{relic.Id} is not wax.");
+        }
+        if (relic.IsMelted)
+        {
+            throw new InvalidOperationException($"{relic.Id} is already melted.");
+        }
+        if (!Relics.Contains(relic))
+        {
+            throw new InvalidOperationException($"Player does not have relic {relic.Id}");
+        }
+        relic.IsMelted = true;
+        relic.Status = RelicStatus.Disabled;
+    }
+
+    public int GetPotionSlotIndex(PotionModel potion) => Array.IndexOf(PotionSlots, potion);
+
+    public PotionProcureResult AddPotionInternal(PotionModel potion, int slotIndex = -1)
+    {
+        ArgumentNullException.ThrowIfNull(potion);
+        var slots = PotionSlots;
+        if (slotIndex < 0)
+        {
+            slotIndex = Array.IndexOf(slots, null);
+        }
+        if (slotIndex < 0)
+        {
+            return new PotionProcureResult(false, potion, PotionProcureFailureReason.TooFull);
+        }
+        if (slots[slotIndex] is not null)
+        {
+            return new PotionProcureResult(false, potion, PotionProcureFailureReason.TooFull);
+        }
+        potion.AttachTo(this);
+        slots[slotIndex] = potion;
+        return new PotionProcureResult(true, potion, PotionProcureFailureReason.None);
+    }
+
+    public void DiscardPotionInternal(PotionModel potion) => RemovePotionInternal(potion);
+
+    public void RemoveUsedPotionInternal(PotionModel potion) => RemovePotionInternal(potion);
+
+    private void RemovePotionInternal(PotionModel potion)
+    {
+        ArgumentNullException.ThrowIfNull(potion);
+        int index = Array.IndexOf(PotionSlots, potion);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Tried to remove potion you don't have: {potion.Id}");
+        }
+        PotionSlots[index] = null;
+    }
 
     public void AddToMaxPotionCount(int maxPotionCountIncrease) => SetMaxPotionCountInternal(PotionSlots.Length + maxPotionCountIncrease);
 
@@ -412,6 +497,7 @@ public sealed class PlayerState : CreatureState
         w.WriteInt32(Gold);
         w.WriteInt32(BaseOrbSlotCount);
         w.WriteBool(CanUseOrRemovePotions);
+        w.WriteBool(AscensionEffectsApplied);
         var relics = Relics;
         w.WriteTag(StateCanonicalTags.RelicList);
         w.WriteCount(relics.Count);

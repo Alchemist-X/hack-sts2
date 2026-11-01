@@ -1586,19 +1586,73 @@ public static class Hook
         => throw new NotImplementedException("Hook.BeforeCardAutoPlayed: hooks agent (Hooks/Hook.cs:8919)");
 
     public static void AfterCardChangedPiles(RunState rs, CombatState? cs, CardInstance card, PileType oldPile, AbstractModel? clonedBy)
-        => throw new NotImplementedException("Hook.AfterCardChangedPiles: hooks agent (Hooks/Hook.cs:8935)");
+    {
+        RequireAttachedCombat(rs, cs, "Hook.AfterCardChangedPiles (Hooks/Hook.cs:8935)");
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterCardChangedPiles(rs, card, oldPile, clonedBy);
+                }
+            }
+        }
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterCardChangedPilesLate(rs, card, oldPile, clonedBy);
+                }
+            }
+        }
+    }
 
     public static void BeforeCardRemoved(RunState rs, CardInstance card)
         => throw new NotImplementedException("Hook.BeforeCardRemoved: hooks agent (Hooks/Hook.cs:9057)");
 
     public static void AfterCombatEnd(RunState rs, CombatState? cs, CombatRoom? room)
-        => throw new NotImplementedException("Hook.AfterCombatEnd: hooks agent (Hooks/Hook.cs:9085)");
+    {
+        RequireAttachedCombat(rs, cs, "Hook.AfterCombatEnd (Hooks/Hook.cs:9085)");
+        using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run);
+        for (int i = 0; i < listeners.Count; i++)
+        {
+            if (listeners.TryGetLive(cs, i, out var model))
+            {
+                model.AfterCombatEnd(rs, room);
+            }
+        }
+    }
 
     public static void BeforeCombatRewardOffered(RunState rs, RewardsSet rewards, CombatRoom room)
         => throw new NotImplementedException("Hook.BeforeCombatRewardOffered: hooks agent (Hooks/Hook.cs:9100)");
 
     public static void AfterCombatVictory(RunState rs, CombatState? cs, CombatRoom? room)
-        => throw new NotImplementedException("Hook.AfterCombatVictory: hooks agent (Hooks/Hook.cs:9115)");
+    {
+        RequireAttachedCombat(rs, cs, "Hook.AfterCombatVictory (Hooks/Hook.cs:9115)");
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterCombatVictoryEarly(rs, room);
+                }
+            }
+        }
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Run))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterCombatVictory(rs, room);
+                }
+            }
+        }
+    }
 
     public static void AfterGoldGained(RunState rs, PlayerState player)
         => throw new NotImplementedException("Hook.AfterGoldGained: hooks agent (Hooks/Hook.cs:9251)");
@@ -1637,10 +1691,50 @@ public static class Hook
         => throw new NotImplementedException("Hook.AfterOstyRevived: hooks agent (Hooks/Hook.cs:9644)");
 
     public static void AfterAutoPostPlayPhaseEntered(CombatState cs, PlayerState player)
-        => throw new NotImplementedException("Hook.AfterAutoPostPlayPhaseEntered: hooks agent (Hooks/Hook.cs:9673)");
+    {
+        using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded);
+        for (int i = 0; i < listeners.Count; i++)
+        {
+            if (listeners.TryGetLive(cs, i, out var model))
+            {
+                model.AfterAutoPostPlayPhaseEntered(cs, player);
+            }
+        }
+    }
 
     public static void AfterAutoPrePlayPhaseEntered(CombatState cs, PlayerState player)
-        => throw new NotImplementedException("Hook.AfterAutoPrePlayPhaseEntered: hooks agent (Hooks/Hook.cs:9688)");
+    {
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterAutoPrePlayPhaseEnteredEarly(cs, player);
+                }
+            }
+        }
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterAutoPrePlayPhaseEntered(cs, player);
+                }
+            }
+        }
+        using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
+        {
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (listeners.TryGetLive(cs, i, out var model))
+                {
+                    model.AfterAutoPrePlayPhaseEnteredLate(cs, player);
+                }
+            }
+        }
+    }
 
     public static void AfterPotionDiscarded(RunState rs, CombatState? cs, PotionModel potion)
         => throw new NotImplementedException("Hook.AfterPotionDiscarded: hooks agent (Hooks/Hook.cs:9703)");
@@ -1694,7 +1788,23 @@ public static class Hook
     }
 
     public static CardLocation ModifyCardPlayResultLocation(CombatState cs, CardInstance card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation, ref List<AbstractModel>? modifiers)
-        => throw new NotImplementedException("Hook.ModifyCardPlayResultLocation: hooks agent (Hooks/Hook.cs:10188)");
+    {
+        using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded);
+        for (int i = 0; i < listeners.Count; i++)
+        {
+            if (!listeners.TryGetLive(cs, i, out var model))
+            {
+                continue;
+            }
+            var before = cardLocation;
+            cardLocation = model.ModifyCardPlayResultLocation(cs, card, isAutoPlay, resources, cardLocation);
+            if (before != cardLocation)
+            {
+                AddModifier(ref modifiers, model);
+            }
+        }
+        return cardLocation;
+    }
 
     public static IEnumerable<AbstractModel> ModifyCardRewardAlternatives(RunState rs, PlayerState player, CardReward cardReward, List<CardRewardAlternative> alternatives)
         => throw new NotImplementedException("Hook.ModifyCardRewardAlternatives: hooks agent (Hooks/Hook.cs:10213)");
@@ -1715,7 +1825,16 @@ public static class Hook
         => throw new NotImplementedException("Hook.ModifyCardRewardUpgradeOdds: hooks agent (Hooks/Hook.cs:10309)");
 
     public static void ModifyKeywordsInCombat(CombatState cs, CardInstance card, ISet<CardKeyword> keywords)
-        => throw new NotImplementedException("Hook.ModifyKeywordsInCombat: hooks agent (Hooks/Hook.cs:10458)");
+    {
+        using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Combat);
+        for (int i = 0; i < listeners.Count; i++)
+        {
+            if (listeners.TryGetLive(cs, i, out var model))
+            {
+                model.TryModifyKeywordsInCombat(cs, card, keywords);
+            }
+        }
+    }
 
     public static decimal ModifyGoldGained(RunState rs, CombatState? cs, decimal amount, PlayerState player)
     {

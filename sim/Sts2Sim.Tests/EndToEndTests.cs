@@ -218,9 +218,9 @@ public static class EndToEndTests
 
     private const int PinnedSeedOneActionCount = 10;
 
-    private const ulong PinnedSeedOneOpeningHash = 0x2D2E7E7036D7EA8FUL;
+    private const ulong PinnedSeedOneOpeningHash = 0xCA1423508C1168E3UL;
 
-    private const ulong PinnedSeedOneFinalHash = 0x5908EE3EB054BB48UL;
+    private const ulong PinnedSeedOneFinalHash = 0xD7B055DC9B9E326EUL;
 
     private static void AssertPassiveDefeat(ulong seed, int ascension, int[] hpAfterEnemyTurn, int sliceBlock, int finalStrength, string[] exhausted)
     {

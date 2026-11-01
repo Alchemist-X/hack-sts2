@@ -42,3 +42,12 @@ public enum EnchantmentStatus
     Normal,
     Disabled
 }
+
+public enum PotionProcureFailureReason
+{
+    None,
+    TooFull,
+    NotAllowed
+}
+
+public readonly record struct PotionProcureResult(bool Success, PotionModel Potion, PotionProcureFailureReason FailureReason);

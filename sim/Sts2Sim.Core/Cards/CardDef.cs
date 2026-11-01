@@ -75,6 +75,10 @@ public abstract class CardDef
     {
     }
 
+    public virtual void AfterCreated(CardInstance card)
+    {
+    }
+
     public virtual bool IsPlayable(CombatState cs, CardInstance card) => true;
 
     public virtual void OnTurnEndInHand(CombatState cs, CardInstance card)

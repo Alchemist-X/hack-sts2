@@ -350,4 +350,10 @@ public static class CreatureCmd
     {
         MonsterLifecycle.StunInternal(cs, creature, stunMove, nextMoveId);
     }
+
+    public static MonsterState Add(CombatState cs, MonsterDef monster, CombatSide side = CombatSide.Enemy, string? slotName = null)
+        => throw new NotImplementedException("CreatureCmd.Add(cs, monster, side, slotName): pipeline (Commands/CreatureCmd.cs:3564)");
+
+    public static void Add(CombatState cs, CreatureState creature)
+        => throw new NotImplementedException("CreatureCmd.Add(cs, creature): pipeline (Commands/CreatureCmd.cs:3575)");
 }

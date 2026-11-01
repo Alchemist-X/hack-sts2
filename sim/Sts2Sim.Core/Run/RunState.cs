@@ -32,12 +32,20 @@ public sealed partial class RunState : ICanonical
 
     public FidelityLog Fidelity { get; }
 
+    public int NextCardInstanceId { get; set; }
+
+    public int AllocateCardInstanceId() => NextCardInstanceId++;
+
     public static RunState CreateStandalone(PlayerState player, RunRngSet rng, int ascension, UnlockProfile? unlocks = null)
     {
         ArgumentNullException.ThrowIfNull(player);
-        if (ascension >= (int)AscensionLevel.TightBelt)
+        if (!player.AscensionEffectsApplied)
         {
-            player.SubtractFromMaxPotionCount(1);
+            if (ascension >= (int)AscensionLevel.TightBelt)
+            {
+                player.SubtractFromMaxPotionCount(1);
+            }
+            player.AscensionEffectsApplied = true;
         }
         var players = new List<PlayerState>(DefaultPlayerCapacity) { player };
         return new RunState(players, rng, unlocks ?? UnlockProfile.All, ascension, new List<ModifierModel>(), new ChoiceRuntime(), new FidelityLog());
@@ -69,7 +77,10 @@ public sealed partial class RunState : ICanonical
             modifiers.Add(sourceModifiers[i].DeepClone());
         }
         var rng = Rng is null ? null! : Rng.DeepClone();
-        return new RunState(players, rng, Unlocks, Ascension, modifiers, Choice.DeepClone(), Fidelity.DeepClone());
+        return new RunState(players, rng, Unlocks, Ascension, modifiers, Choice.DeepClone(), Fidelity.DeepClone())
+        {
+            NextCardInstanceId = NextCardInstanceId
+        };
     }
 
     public void WriteCanonical(CanonicalWriter w)
@@ -84,6 +95,7 @@ public sealed partial class RunState : ICanonical
     {
         w.WriteTag(RunCanonicalTags.RunState);
         w.WriteInt32(Ascension);
+        w.WriteInt32(NextCardInstanceId);
         Unlocks.WriteCanonical(w);
         var players = Players;
         w.WriteTag(RunCanonicalTags.PlayerList);

@@ -684,9 +684,9 @@ public static class CardTests
         var monster = AddMonster(cs);
         var strike = CardInstance.Create(cs, StrikeIronclad.CardId);
         var bash = CardInstance.Create(cs, Bash.CardId);
-        Assert.Throws<ArgumentNullException>(() => strike.OnPlay(cs, new CardPlay(strike, null)));
-        Assert.Throws<ArgumentNullException>(() => bash.OnPlay(cs, new CardPlay(bash, null)));
-        Assert.Throws<ArgumentException>(() => strike.OnPlay(cs, new CardPlay(bash, monster)));
+        Assert.Throws<ArgumentNullException>(() => strike.OnPlay(cs, new CardPlay(cs, strike, null)));
+        Assert.Throws<ArgumentNullException>(() => bash.OnPlay(cs, new CardPlay(cs, bash, null)));
+        Assert.Throws<ArgumentException>(() => strike.OnPlay(cs, new CardPlay(cs, bash, monster)));
         Assert.Equal(40, monster.CurrentHp);
     }
 
@@ -695,7 +695,7 @@ public static class CardTests
         var cs = NewCombat(3);
         var monster = AddMonster(cs);
         var strike = CardInstance.Create(cs, StrikeIronclad.CardId);
-        strike.OnPlay(cs, new CardPlay(strike, monster));
+        strike.OnPlay(cs, new CardPlay(cs, strike, monster));
         Assert.Equal(34, monster.CurrentHp);
         Assert.Equal(80, cs.Player.CurrentHp);
         Assert.Equal(0, cs.Player.Block);
@@ -706,7 +706,7 @@ public static class CardTests
         var cs = NewCombat(3);
         var monster = AddMonster(cs);
         var defend = CardInstance.Create(cs, DefendIronclad.CardId);
-        defend.OnPlay(cs, new CardPlay(defend, null));
+        defend.OnPlay(cs, new CardPlay(cs, defend, null));
         Assert.Equal(5, cs.Player.Block);
         Assert.Equal(40, monster.CurrentHp);
     }
@@ -716,7 +716,7 @@ public static class CardTests
         var cs = NewCombat(3);
         var monster = AddMonster(cs);
         var bash = CardInstance.Create(cs, Bash.CardId);
-        bash.OnPlay(cs, new CardPlay(bash, monster));
+        bash.OnPlay(cs, new CardPlay(cs, bash, monster));
         Assert.Equal(32, monster.CurrentHp);
         var vulnerable = Assert.NotNull(monster.GetPower<VulnerablePower>());
         Assert.Equal(2, vulnerable.Amount);
@@ -730,19 +730,19 @@ public static class CardTests
         var monster = AddMonster(cs, 60);
         var strike = CardInstance.Create(cs, StrikeIronclad.CardId);
         strike.Upgrade();
-        strike.OnPlay(cs, new CardPlay(strike, monster));
+        strike.OnPlay(cs, new CardPlay(cs, strike, monster));
         Assert.Equal(51, monster.CurrentHp);
 
         var defend = CardInstance.Create(cs, DefendIronclad.CardId);
         defend.Upgrade();
-        defend.OnPlay(cs, new CardPlay(defend, null));
+        defend.OnPlay(cs, new CardPlay(cs, defend, null));
         Assert.Equal(8, cs.Player.Block);
 
         var other = NewCombat(3);
         var target = AddMonster(other, 60);
         var bash = CardInstance.Create(other, Bash.CardId);
         bash.Upgrade();
-        bash.OnPlay(other, new CardPlay(bash, target));
+        bash.OnPlay(other, new CardPlay(other, bash, target));
         Assert.Equal(50, target.CurrentHp);
         Assert.Equal(3, Assert.NotNull(target.GetPower<VulnerablePower>()).Amount);
     }

@@ -46,7 +46,7 @@ public sealed class CombatState : ICanonical
         IsInProgress = source.IsInProgress;
         IsStarting = source.IsStarting;
         NextCreatureId = source.NextCreatureId;
-        NextCardInstanceId = source.NextCardInstanceId;
+        NextCardPlayId = source.NextCardPlayId;
     }
 
     public RunState Run { get; }
@@ -85,11 +85,19 @@ public sealed class CombatState : ICanonical
 
     public int NextCreatureId { get; set; }
 
-    public int NextCardInstanceId { get; set; }
+    public int NextCardInstanceId
+    {
+        get => Run.NextCardInstanceId;
+        set => Run.NextCardInstanceId = value;
+    }
+
+    public int NextCardPlayId { get; set; }
 
     public int AllocateCreatureId() => NextCreatureId++;
 
-    public int AllocateCardInstanceId() => NextCardInstanceId++;
+    public int AllocateCardInstanceId() => Run.AllocateCardInstanceId();
+
+    public int AllocateCardPlayId() => NextCardPlayId++;
 
     public bool HasAscension(AscensionLevel level) => Ascension >= (int)level;
 
@@ -172,7 +180,14 @@ public sealed class CombatState : ICanonical
         => throw new NotImplementedException("CombatState.RemoveAlly: state agent (Combat/CombatState.cs:739 RemoveCreature on _allies, CONTRACTS Part B §B2)");
 
     public CardInstance CreateCard(CardDef def, PlayerState owner)
-        => throw new NotImplementedException("CombatState.CreateCard: state agent (Combat/CombatState.cs:671-677)");
+    {
+        ArgumentNullException.ThrowIfNull(def);
+        ArgumentNullException.ThrowIfNull(owner);
+        var card = new CardInstance(def, AllocateCardInstanceId());
+        card.AttachTo(owner);
+        def.AfterCreated(card);
+        return card;
+    }
 
     public CombatState DeepClone()
     {
@@ -221,7 +236,6 @@ public sealed class CombatState : ICanonical
         w.WriteBool(IsInProgress);
         w.WriteBool(IsStarting);
         w.WriteInt32(NextCreatureId);
-        w.WriteInt32(NextCardInstanceId);
         int playerIndex = Run.Players.IndexOf(Player);
         w.WriteInt32(playerIndex);
         if (playerIndex < 0)
@@ -250,6 +264,7 @@ public sealed class CombatState : ICanonical
         }
         w.WriteTag(StateCanonicalTags.CombatKernel);
         w.WriteInt32(CardOrPotionEffectDepth);
+        w.WriteInt32(NextCardPlayId);
         var extraTurns = PlayersTakingExtraTurn;
         w.WriteCount(extraTurns.Count);
         for (int i = 0; i < extraTurns.Count; i++)

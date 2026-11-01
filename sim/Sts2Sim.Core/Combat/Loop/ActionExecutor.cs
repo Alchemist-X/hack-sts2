@@ -19,7 +19,8 @@ public static class ActionExecutor
             throw new InvalidOperationException($"{card.Id} (hand index {handIndex}) cannot target {(target == null ? "nothing" : "creature " + target.CombatId)}.");
         }
         var (energySpent, starsSpent) = SpendResources(cs, card);
-        OnPlayWrapper(cs, card, target, isAutoPlay: false, energySpent, starsSpent);
+        var resources = new ResourceInfo(EnergySpent: energySpent, EnergyValue: energySpent, StarsSpent: starsSpent, StarValue: starsSpent);
+        OnPlayWrapper(cs, card, target, isAutoPlay: false, resources);
     }
 
     public static (int EnergySpent, int StarsSpent) SpendResources(CombatState cs, CardInstance card)
@@ -38,7 +39,7 @@ public static class ActionExecutor
         return (energyToSpend, starsToSpend);
     }
 
-    public static void OnPlayWrapper(CombatState cs, CardInstance card, CreatureState? target, bool isAutoPlay, int energySpent, int starsSpent)
+    public static void OnPlayWrapper(CombatState cs, CardInstance card, CreatureState? target, bool isAutoPlay, ResourceInfo resources)
     {
         var player = cs.Player;
         card.SetCurrentTarget(target);
@@ -60,11 +61,10 @@ public static class ActionExecutor
         for (int i = 0; i < playCount && !CombatStatus.IsOverOrEnding(cs); i++)
         {
             card.CurrentPlayIndex = i;
-            var play = new CardPlay(card, target)
+            var play = new CardPlay(cs, card, target)
             {
                 ResultPile = resultLocation.PileType,
-                EnergySpent = energySpent,
-                StarsSpent = starsSpent,
+                Resources = resources,
                 IsAutoPlay = isAutoPlay,
                 PlayIndex = i,
                 PlayCount = playCount

@@ -24,15 +24,33 @@ public readonly record struct HistoryStamp(int Sequence, int ActorId, int RoundN
     }
 }
 
-public readonly record struct HistoryCardPlay(int CardInstanceId, string CardId, int PlayerId, int TargetId, PileType ResultPile, ResourceInfo Resources, bool IsAutoPlay, int PlayIndex, int PlayCount)
+public readonly record struct HistoryCardPlay(int PlayId, int CardInstanceId, string CardId, int PlayerId, int TargetId, PileType ResultPile, ResourceInfo Resources, bool IsAutoPlay, int PlayIndex, int PlayCount)
 {
     public bool IsFirstInSeries => PlayIndex == 0;
 
     public bool IsLastInSeries => PlayIndex == PlayCount - 1;
 
+    public static HistoryCardPlay From(CardPlay cardPlay)
+    {
+        ArgumentNullException.ThrowIfNull(cardPlay);
+        var card = cardPlay.Card;
+        return new HistoryCardPlay(
+            cardPlay.PlayId,
+            card.InstanceId,
+            card.Id,
+            card.HasOwner ? card.Owner.CombatId : CombatHistory.NoId,
+            cardPlay.Target?.CombatId ?? CombatHistory.NoId,
+            cardPlay.ResultPile,
+            cardPlay.Resources,
+            cardPlay.IsAutoPlay,
+            cardPlay.PlayIndex,
+            cardPlay.PlayCount);
+    }
+
     internal void WriteCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardPlay);
+        w.WriteInt32(PlayId);
         w.WriteInt32(CardInstanceId);
         w.WriteString(CardId);
         w.WriteInt32(PlayerId);

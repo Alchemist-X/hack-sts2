@@ -91,6 +91,12 @@ public static class MonsterSpawner
         return monster;
     }
 
+    public static MonsterState SpawnPet(CombatState cs, MonsterDef def, PlayerState owner)
+        => throw new NotImplementedException("MonsterSpawner.SpawnPet: monsters-kernel (Commands/PlayerCmd.cs:946-955, Combat/CombatState.cs:709-724; CONTRACTS Part B section B12 A15)");
+
+    public static MonsterState SpawnForAdd(CombatState cs, MonsterDef def, CombatSide side, string? slotName)
+        => throw new NotImplementedException("MonsterSpawner.SpawnForAdd: monsters-kernel (Commands/CreatureCmd.cs:3564-3572, Combat/CombatState.cs:709-724; CONTRACTS Part B section B8)");
+
     public static void SpawnEncounter(CombatState cs, EncounterDef encounter, List<MonsterState>? spawned = null)
         => SpawnEncounter(cs, encounter, CombatRunContext.Default, spawned);
 

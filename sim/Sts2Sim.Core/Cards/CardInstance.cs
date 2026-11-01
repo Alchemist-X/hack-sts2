@@ -59,7 +59,7 @@ public sealed class CardInstance : ICanonical
 
     public string Id => Def.Id;
 
-    public int InstanceId { get; }
+    public int InstanceId { get; private set; }
 
     public CardType Type => Def.Type;
 
@@ -447,7 +447,15 @@ public sealed class CardInstance : ICanonical
     }
 
     public CardInstance CloneForCombat(int newInstanceId)
-        => throw new NotImplementedException("CardInstance.CloneForCombat: cards-kernel (Entities.Players/Player.cs:1214-1233, Combat/CombatState.cs:679-684)");
+    {
+        var clone = CloneFor(_owner);
+        clone.InstanceId = newInstanceId;
+        clone.CurrentTargetId = NoTarget;
+        clone.CurrentPlayIndex = 0;
+        clone.HasBeenRemovedFromState = false;
+        clone.DeckVersionId = InstanceId;
+        return clone;
+    }
 
     public CardInstance DeepClone() => CloneFor(_owner);
 

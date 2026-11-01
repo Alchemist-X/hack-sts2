@@ -181,7 +181,7 @@ public static class PipelineTests
     private static AttackCommand PlayerAttack(CombatState cs, CreatureState target, decimal damage, int hits = 1)
     {
         var card = NewAttackCard();
-        var play = new CardPlay(card, target);
+        var play = new CardPlay(cs, card, target);
         return DamageCmd.Attack(cs, damage).FromCard(card, play).Targeting(target).WithHitCount(hits).Execute();
     }
 
@@ -317,7 +317,7 @@ public static class PipelineTests
         Give<WeakPower>(cs, cs.Player, 1m, m);
         Give<VulnerablePower>(cs, m, 1m, cs.Player);
         var card = NewAttackCard();
-        DamageCmd.Attack(cs, 6m).FromCard(card, new CardPlay(card, m)).Targeting(m).Unpowered().Execute();
+        DamageCmd.Attack(cs, 6m).FromCard(card, new CardPlay(cs, card, m)).Targeting(m).Unpowered().Execute();
         Assert.Equal(44, m.CurrentHp);
     }
 
@@ -449,7 +449,7 @@ public static class PipelineTests
         Give<VulnerablePower>(cs, a, 1m, cs.Player);
         c.CurrentHp = 0;
         var card = NewAttackCard();
-        var cmd = DamageCmd.Attack(cs, 6m).FromCard(card, new CardPlay(card, null)).TargetingAllOpponents().Execute();
+        var cmd = DamageCmd.Attack(cs, 6m).FromCard(card, new CardPlay(cs, card, null)).TargetingAllOpponents().Execute();
         Assert.Equal(50 - 9, a.CurrentHp);
         Assert.Equal(50 - 6, b.CurrentHp);
         Assert.Equal(0, c.CurrentHp);
@@ -637,7 +637,7 @@ public static class PipelineTests
     {
         var cs = NewCombat();
         var card = NewSkillCard();
-        var play = new CardPlay(card, null);
+        var play = new CardPlay(cs, card, null);
         Assert.Equal(5m, CreatureCmd.GainBlock(cs, cs.Player, 5m, ValueProp.Move, play));
         Assert.Equal(5, cs.Player.Block);
         Give<DexterityPower>(cs, cs.Player, 2m, cs.Player);
@@ -649,7 +649,7 @@ public static class PipelineTests
     {
         var cs = NewCombat();
         var card = NewSkillCard();
-        var play = new CardPlay(card, null);
+        var play = new CardPlay(cs, card, null);
         Give<FrailPower>(cs, cs.Player, 2m, cs.Monsters[0]);
         Assert.Equal(3.75m, CreatureCmd.GainBlock(cs, cs.Player, 5m, ValueProp.Move, play));
         Assert.Equal(3, cs.Player.Block);
@@ -665,7 +665,7 @@ public static class PipelineTests
     public static void Test_Pipeline_NegativeDexterityClampsBlockAtZero()
     {
         var cs = NewCombat();
-        var play = new CardPlay(NewSkillCard(), null);
+        var play = new CardPlay(cs, NewSkillCard(), null);
         Give<DexterityPower>(cs, cs.Player, -7m, cs.Monsters[0]);
         Assert.Equal(0m, CreatureCmd.GainBlock(cs, cs.Player, 5m, ValueProp.Move, play));
         Assert.Equal(0, cs.Player.Block);
@@ -674,7 +674,7 @@ public static class PipelineTests
     public static void Test_Pipeline_UnpoweredBlockIgnoresDexterityAndFrail()
     {
         var cs = NewCombat();
-        var play = new CardPlay(NewSkillCard(), null);
+        var play = new CardPlay(cs, NewSkillCard(), null);
         Give<DexterityPower>(cs, cs.Player, 3m, cs.Player);
         Give<FrailPower>(cs, cs.Player, 1m, cs.Monsters[0]);
         Assert.Equal(5m, CreatureCmd.GainBlock(cs, cs.Player, 5m, ValueProp.Move | ValueProp.Unpowered, play));

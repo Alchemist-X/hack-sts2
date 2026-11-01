@@ -22,7 +22,11 @@ public sealed class OrbQueue : ICanonical
 
     public int Capacity => _capacity;
 
-    public void Clear() => throw new NotImplementedException("OrbQueue.Clear: character-mechanics (Entities.Orbs/OrbQueue.cs:408)");
+    public void Clear()
+    {
+        _orbs.Clear();
+        _capacity = 0;
+    }
 
     public void AddCapacity(int capacity) => throw new NotImplementedException("OrbQueue.AddCapacity: character-mechanics (Entities.Orbs/OrbQueue.cs:414)");
 
@@ -34,9 +38,54 @@ public sealed class OrbQueue : ICanonical
 
     public void Insert(int idx, OrbModel orb) => throw new NotImplementedException("OrbQueue.Insert: character-mechanics (Entities.Orbs/OrbQueue.cs:452)");
 
-    public void BeforeTurnEnd(CombatState cs) => throw new NotImplementedException("OrbQueue.BeforeTurnEnd: character-mechanics (Entities.Orbs/OrbQueue.cs:463)");
+    public void BeforeTurnEnd(CombatState cs)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        if (_orbs.Count == 0)
+        {
+            return;
+        }
+        var orbs = _orbs.ToArray();
+        for (int i = 0; i < orbs.Length; i++)
+        {
+            if (!IsOwnerInCombat(cs))
+            {
+                return;
+            }
+            orbs[i].BeforeTurnEndOrbTrigger(cs);
+        }
+    }
 
-    public void AfterTurnStart(CombatState cs) => throw new NotImplementedException("OrbQueue.AfterTurnStart: character-mechanics (Entities.Orbs/OrbQueue.cs:477)");
+    public void AfterTurnStart(CombatState cs)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        if (_orbs.Count == 0)
+        {
+            return;
+        }
+        var orbs = _orbs.ToArray();
+        for (int i = 0; i < orbs.Length; i++)
+        {
+            if (!IsOwnerInCombat(cs))
+            {
+                return;
+            }
+            orbs[i].AfterTurnStartOrbTrigger(cs);
+        }
+    }
+
+    private bool IsOwnerInCombat(CombatState cs)
+    {
+        var allies = cs.Allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (allies[i] is PlayerState player && ReferenceEquals(player.OrbQueue, this))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public OrbQueue CloneFor(PlayerState? newOwner)
     {
