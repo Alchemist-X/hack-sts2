@@ -463,3 +463,304 @@ hook masks) is measured yet; re-bench after the tracks merge.
 | 4 | The bench covers the scaffold only (§8.4). | Re-run after round 3. |
 | 5 | The REC track (`4094c1e`) is still compiled and tested but not installed. | `scripts/install_mod.sh` when the recorder change is to go live. |
 | 6 | Gate-suite seams §8.3 rows 1–4. | Round-3 integrator. |
+
+## 9. W1 integrate, round 3 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11, §B12). Branch `claude/sim-source-recreation-9392df`, start
+`263810d` (phase-0b amendments). `git status --short` was empty at the start. .NET SDK 9.0.117, runtime 9.0.16, Apple
+M4 Pro (Arm64, 12 cores); other agents were running (load average 3.4 to 9).
+
+### 9.1 Merges
+
+All nine track commits descend from `263810d` (`git merge-base --is-ancestor`), so none was skipped. Each was merged
+with `git merge --no-ff --no-edit` in the dependency order of the brief.
+
+| Track | Commit (commits above the base) | Merge commit | Textual conflicts |
+| --- | --- | --- | --- |
+| hooks | `152006c` (1) | `401d6d1` | none |
+| state | `0ba84d7` (1) | `f906788` | none |
+| cards-kernel | `cbf3459` (1) | `f34f151` | none |
+| choice | `bb52894` (1) | `d180da4` | none |
+| pipeline | `9e4bc7b` (3) | `7fc82f6` | none |
+| monsters-kernel | `6b7ecd6` (1) | `75150c3` | none |
+| character-mechanics | `76378e2` (1) | `b16a682` | none |
+| relics-potions | `1667af4` (2) | `5e44bec` | none |
+| loop | `7545932` (1) | `674ee65` | none |
+
+Every track touched only its B11 files (checked with `git diff --stat 263810d <sha>`), so git reported no conflict.
+One build-level conflict surfaced instead: the type `CardPileAddResult` was defined by cards-kernel
+(`Cards/CardPileAddResult.cs`) and by the loop (`Combat/Loop/CardPileCmd.cs:3`), see §9.2. The merge commits carry
+git's default messages; every fix of this section is in the commit `sim: W1 integrate round 3`, so the merge commits
+after cards-kernel, relics-potions and loop do not build on their own.
+
+### 9.2 Build after each merge (`dotnet build sim/Sts2Sim.sln`)
+
+| After | Result | Smallest fix |
+| --- | --- | --- |
+| hooks, state, choice, pipeline, monsters-kernel, character-mechanics | 0 warnings, 0 errors | none |
+| cards-kernel | 2 × CS8602, `Combat/Pipeline/ListenerSnapshot.cs:400`, `:405` (hooks) | cards-kernel made `AfflictionModel.Card` and `EnchantmentModel.Card` nullable (B12 A23: null where the game's getter is); the two liveness checks pattern-match `Card is { } card`, the same test as `HasCard && Card…` (`Combat/CombatState.cs:1051-1053`) |
+| relics-potions | 2 × CS0200 in tests: `HookTests.cs:842` sets `PotionModel.HasBeenRemovedFromState`, `StateKernelTests.cs:1044` sets `RelicModel.StackCount` | relics-potions made both setters private as in the game; `HookTests` calls `q1.RemoveBeforeUse()` (the same two writes, `Models/PotionModel.cs:595-599`), the state probe calls `IncrementStackCount()` on its test relic, which now overrides `IsStackable` |
+| loop | 6 × CS0104, `CardPileAddResult` ambiguous between `Sts2Sim.Core.Cards` and `Sts2Sim.Core.Combat.Loop` | one type, cards-kernel's (`Entities.Cards/CardPileAddResult.cs:6-17`: `oldPile` is a nullable `CardPile`); the loop's copy is deleted, `CardPileCmd.AddCore` stores `null` for "no old pile" and passes `OldPile ?? PileType.None` to `AfterCardChangedPiles` as the game does (`Commands/CardPileCmd.cs:282-314`, `:440-444`) |
+
+Final: `dotnet build sim/Sts2Sim.sln` 0 warnings, 0 errors (Debug incremental and `--no-incremental`, Release).
+
+### 9.3 Tests (`dotnet run --project sim/Sts2Sim.Tests`)
+
+First run after the nine merges: 691 passed, 30 failed, 721 total, `PENDING total: 5`. Final: **721 passed, 0 failed,
+721 total, `PENDING total: 0`** in Debug and in Release (`-c Release`). The base had 374 tests (the Part A 367, the six
+gate tests, `W1Pending`'s self-test); the tracks added 347 (Choice 31, Hook 34, StateKernel 43, CardKernel 45,
+TurnFlow 22, RelicPotion 47, CharacterMechanics 60, MonsterKernel 28, Pipeline +37). No test was skipped, and no
+gate test was weakened.
+
+| Failure (count) | Cause | Fix | Citation |
+| --- | --- | --- | --- |
+| 4 PENDING (two Hellraiser tests, AttackPotion, GamblingChip); `W1Gate_B2Chain` and `W1Gate_F1` failed on the same stubs | the forwarding seams of pipeline and relics-potions still threw; their targets exist now | `Powers/CardCmdForwarders.cs` → `CardCmd.AutoPlay`, `CardCmd.Discard`, `CardCmd.TransformToRandom`; `Relics/PendingKernelCalls.cs` → `CardCmd.Upgrade`, `CardCmd.DiscardAndDraw`, `CardFactory.GetDistinctForCombat(cs, player, CardPools.ForCharacter(player.CharacterId).GetUnlockedCards(cs.Run.Unlocks, CardPools.MultiplayerConstraintFor(cs.Run)).Where(c => c.Type == type), count, rng)` | `Models.Potions/AttackPotion.cs:71`, `Models.Relics/Whetstone.cs`, `GamblingChip.cs` |
+| PENDING `MonsterKernel_KillDuringItsOwnMoveRunsBeforeRemovedFromRoom` | `CreatureCmd.Kill` never ran `CombatManager.RemoveCreature` | `MonsterLifecycle.RemoveCreature(cs, monster)` (`BeforeRemovedFromRoom`, `ResetStateMachine`) for every enemy that `Kill` removes, before the `IsPerformingMove`-gated list removal, and in `Escape` before the list removal | `Commands/CreatureCmd.cs:2812-2822`, `:3936`; `Combat/CombatManager.cs:7171-7180` |
+| 10 StateKernel tests: `PushSelector` throws | choice requires an `IChoiceSelector` with a stable id, and a selector with canonical state must be an `IStatefulChoiceSelector` so clones never share it (B12 A14) | the test double `KernelSelector` implements `IStatefulChoiceSelector` (`SelectorId`, `DeepClone`); its label stays in its canonical form | B12 A14 |
+| 4 StateKernel tests: "the clone shares mutable objects: StatelessListener" | hooks added `AbstractModel._overriddenHooks`, a per-type `HookMask` cache (copied by `MemberwiseClone`, not hashed); the reflective inspector counts any non-readonly field as state | the inspector skips that field (declared on `AbstractModel`, type `HookMask`) | hooks.md §9.1 |
+| 6 RelicPotion tests, `W1Gate_F4`, `W1Gate_F5`: `InvalidCastException` `DynamicVar` → `CardsVar` / `EnergyVar` | four relics built `new DynamicVar(CardsName, …)` because the typed vars did not exist at the base; cards-kernel's `DynamicVarSet.Cards` and `.Energy` cast like the game's | the relics use `CardsVar` / `EnergyVar` as the game does | `Models.Relics/Nunchaku.cs:183-184`, `HappyFlower.cs:188`, `Whetstone.cs:20`, `CentennialPuzzle.cs:111` |
+| `RelicPotion_RelicsAndPotionSlotsAreCombatListenersInGameOrder` | the test expected the powers of an inactive player to stay listed | test expects only the monster's power: the list stops after the inactive player's powers and those powers are not live at yield | `Combat/CombatState.cs:870-873`, `:1061` |
+| `RelicPotion_FairyInABottlePreventsTheOwnersDeathThroughCreatureCmd` | the test read `Monsters[0]` after killing it; pipeline's `Kill` removes dead enemies | the test keeps the monster reference | `Commands/CreatureCmd.cs:2812-2822` |
+| `RelicPotion_AttackPotionOffersThreeAttacksAndMakesThePickFree` | the test hard-coded three offered attacks; of the generatable Ironclad attacks only `HEADBUTT` is ported, and `GetDistinctForCombat` draws over the ported options and records `ApproximatedRule` | the test expects `min(3, ported)` options, clips its pick, asserts the flag whenever options were dropped, and asserts the `CombatCardGeneration` draw only with two or more options (a one-element `UnstableShuffle` draws nothing) | cards-kernel.md §7.4; relics-potions.md §11 item 14 |
+| `CharacterMechanics_SummonCreatesOstyThroughAddPetAndDieForYou`, `TurnFlow_AddPetRegistersThePetOnItsOwner`: "already in this combat" | the loop's `PlayerCmd.AddPet(cs, owner, def)` called `MonsterSpawner.SpawnPet`, which already adds the pet, then `AddPet(cs, pet, owner)`, which adds it again | `MonsterSpawner.CreateCreature(cs, def, owner.Side, null)`, then `AddPet(cs, pet, owner)` = `AddPetInternal` + `CreatureCmd.Add`, the game's sequence | `Commands/PlayerCmd.cs:946-967`, `:123-124` |
+| `Hooks_AfflictionListenerFollowsItsCard`, `Hooks_ModifyBlockAppliesTheEnchantmentPrePassFirst` | the tests made an unbound affliction or enchantment by assigning the card slot; cards-kernel's slot setters now bind the model | the tests unbind with `ClearInternal()` right after the assignment, the state they meant | `Models/AfflictionModel.cs:252-256`, `Models/EnchantmentModel.cs:350-354` |
+| `Cards_UpgradedDeckReplaysDeterministicallyThroughReshuffles` | asserted after every step, the victory included, that the combat piles hold every card; A18 clears them at victory | at a victory the test asserts empty piles and a full deck; every other step is unchanged | `Entities.Players/Player.cs:1249-1254`; loop.md §12.16 |
+| `Choice_TurnSetupFirstPauseStepsRunOnceBeforeTheAnswer` | the probe's TurnSetup frame now sits above the Inline frame that `ActionExecutor.PlayCard` pushes for the play action (B1) | the steps run at depth 1 (the runtime truncates the stack to the frames below the TurnSetup frame, choice.md §3.3) and the depth after the answer is 2 | B1 context table |
+| `Choice_TurnSetupStepsThatEndTheCombatUnwindToTheTerminalState` | asserted five hand cards at the victory; A18 clears the piles | the test asserts empty piles; the unwind itself stays covered by the absent prompt, the equal fast-path hash and the direct `ChoiceUnwindException` | B12 A18 |
+| `EndToEnd_CanonicalHashesArePinnedAcrossProcesses` | opening pin | `0x79C886C6235C2D9B` → `0x07F5FF6679103FF9`; the final pin `0x77FA4D8665BA0CC3` is unchanged (below) | |
+| `RelicPotion_StackCountAndRemovalFlagsChangeOnlyThroughThePortedMutators` (after the relic CR of §9.8) | it pinned the interim `internal set` | asserts the game's `private set` | `Models/RelicModel.cs:420-427` |
+
+Pin attribution. Seed-1 hashes of the base plus one track each (scratch copies, Release):
+
+| Tree | Opening | Final |
+| --- | --- | --- |
+| base `263810d`; + hooks, state, cards-kernel, choice, character-mechanics or relics-potions | `0xCA1423508C1168E3` | `0xD7B055DC9B9E326E` |
+| + pipeline | unchanged | `0xB899C4BCA7235886` (history entries, pipeline.md §11) |
+| + monsters-kernel | `0x870EF2BE2AE3F04D` (the monster listener's presence byte) | `0xF07E158ED5F0B079` (`MonsterPerformedMove`) |
+| + loop | `0x79C886C6235C2D9B` (deck A13, history B6) | `0x77FA4D8665BA0CC3` (A18) |
+| merged | `0x07F5FF6679103FF9` | `0x77FA4D8665BA0CC3` |
+
+The merged opening is the loop's form plus the monsters' listener bytes. The merged final equals the loop's because at
+the victory A18 has cleared the history and the combat piles and the dead monsters have left the list, so neither the
+pipeline's entries nor the listener bytes reach that state. Both values were reproduced in three processes (Debug
+twice, Release once). The trajectory is unchanged: the EndToEnd reference-model tests and the victory snapshot pass,
+and the diff gate agrees on every decision.
+
+### 9.4 Gate-suite seams of §8.3 and the A17 overloads
+
+| Row | Round 3 |
+| --- | --- |
+| 1 | `EquipPlayer` equips through `RelicCmd.Obtain(rs, relic, player)` and `PotionCmd.TryToProcure(rs, potion, player, slot)` (success asserted); the B2 chain's `GREMLIN_HORN` branch uses `RelicCmd.Obtain` as well. `AfterObtained` now runs (Whetstone upgrades two deck attacks on `Niche`) and so do `ShouldProcurePotion` / `AfterPotionProcured`. Relics are still equipped after `Create`, so their turn-1 hooks (GamblingChip) stay unexercised by F1 |
+| 2 | unchanged: the B2 chain applies its powers with `PowerCmd.Apply` at the first decision, outside a `Step` |
+| 3 | F4 candidates add `DiscardPotion(slot)` with a stray `TargetIndex`, `Pick(0)` with a stray `TargetIndex`, and `Confirm` / `Cancel` with each stray index, the cases choice.md §6.2-§6.3 validates; a legal unlisted candidate must now be a `Pick` with `TargetIndex == NoIndex` (B1 lists only ascending picks at unordered prompts). All the new candidates are rejected |
+| 4 | unchanged: no v0.111.0 path read so far returns a card that left every pile |
+
+The scaffold's live-list overloads `Hook.BeforeSideTurnStart / AfterSideTurnStart / BeforeSideTurnEnd /
+AfterSideTurnEnd(cs, side)` are kept. Core has no caller left (the loop passes the `MonsterLifecycle` snapshots, A17),
+but `PipelineTests.cs` (13 calls) and `WurmBeetleTests.cs` (7 calls) still use them, and A17 deletes only overloads
+without a caller. Moving those 20 calls to the three-argument overloads (`cs.Allies` / `cs.Monsters`, today's
+behaviour exactly) lets the next integrator delete them.
+
+### 9.5 W1 gates (CONTRACTS §B11)
+
+| Gate | Result | Numbers |
+| --- | --- | --- |
+| Build | pass | 0 warnings, 0 errors (Debug, `--no-incremental`, Release) |
+| Suite | pass | 721 passed, 0 failed; `PENDING total: 0`; Release the same |
+| Diff harness (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | pass | bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0 |
+| F1 clone/hash equality | pass | 32 playouts (8 encounters × 4 seeds, 0 capped), 708 steps, 183 clone checks, 337 clone steps, 431 lockstep steps, 160 hash-coverage probes, 116 prompt answers, 63 potion actions; per playout 7 pilot relics + the counter double, 64 pilot potions in all |
+| F4 legal-action closure | pass | 24 playouts, 663 decision states, 142 prompt states, 3 854 listed actions stepped on clones, 60 562 candidates checked, 2 652 illegal actions stepped (all threw, hash and bytes unchanged), 48 potion actions |
+| F5 invariants | pass | 32 playouts, 780 steps, 812 invariant checks, 155 prompt answers, 64 potion actions; the ledger still rejects its 10 broken states |
+| B2 chain | pass | 8 playouts on `NIBBITS_WEAK` (`DARK_EMBRACE_POWER` + `HELLRAISER_POWER`, deck 6 `SEEKER_STRIKE` + 4 `ASCENDERS_BANE`), 44 steps, 19 prompt answers, 5 playouts recorded `DeferredListenerPromptInline` |
+| Pilot coverage | pass | relics 7, potions 6, the six prompt cards, the pilot powers, orbs 5, enchantment `GLAM`, affliction `HEXED`, monster `OSTY` |
+| Bench | pass | §9.7 |
+
+The pilot clauses that rounds 1–2 could not evaluate (§8.3) now run: F1 and F5 step real relic and potion listeners,
+F4 sees 142 exposed prompts and 48 potion actions, and the B2 chain reaches the per-listener prompt inline.
+
+### 9.6 Cross-area edits (outside the integration files)
+
+| File (owner) | Edit | Reason |
+| --- | --- | --- |
+| `Combat/Pipeline/ListenerSnapshot.cs` (hooks) | affliction and enchantment liveness use `Card is { } card` | CS8602 after cards-kernel's nullable `Card` (A23); same rule (`Combat/CombatState.cs:1051-1053`) |
+| `Combat/Loop/CardPileCmd.cs` (loop) | the duplicate `CardPileAddResult` is deleted; `AddCore` stores `null` for no old pile | one result type, cards-kernel's (§9.2) |
+| `Combat/Loop/PlayerCmd.cs` (loop) | `AddPet(cs, owner, def)` creates the creature with `MonsterSpawner.CreateCreature` instead of `SpawnPet` | the pet was added twice (§9.3) |
+| `Combat/Pipeline/CreatureCmd.cs` (pipeline) | `MonsterLifecycle.RemoveCreature` in `Kill` and `Escape` | wiring requested by pipeline and monsters-kernel (§9.3) |
+| `Powers/CardCmdForwarders.cs` (pipeline) | three forwarders call `CardCmd` | the seam's targets exist |
+| `Relics/PendingKernelCalls.cs` (relics-potions) | three seams call `CardCmd.Upgrade`, `CardCmd.DiscardAndDraw`, `CardFactory.GetDistinctForCombat` | the seam's targets exist |
+| `Relics/Defs/{Nunchaku,HappyFlower,Whetstone,CentennialPuzzle}.cs` (relics-potions) | `CardsVar` / `EnergyVar` | cards-kernel's typed accessors cast (§9.3) |
+| `Relics/RelicModel.cs` (relics-potions) | `HasBeenRemovedFromState` setter `internal` → `private` | relics-potions CR, once state calls `RemoveInternal` |
+| `State/CreatureState.cs` (state) | `RemoveRelicInternal` calls `relic.RemoveInternal()` | relics-potions CR; `Entities.Players/Player.cs:913` |
+| `Cards/Defs/SovereignBlade.cs` (cards-kernel) | also implements `ISovereignBladeDef` (its `AddDamage(card, amount)` already matches) | `ForgeCmd` looked for `ISovereignBladeDef`, the blade implemented only `IForgeBladeDef`, so every forge of the real blade took the flagged fallback and skipped `CurrentDamage` (`Models.Cards/SovereignBlade.cs:359-364`) |
+| `Tests/HookTests.cs` (hooks) | `RemoveBeforeUse`; two `ClearInternal` calls; `BindAffliction` calls `CardInstance.AfflictInternal` instead of reflection | §9.2, §9.3; hooks CR 1 |
+| `Tests/StateKernelTests.cs` (state) | relic stack probe; `KernelSelector` as `IStatefulChoiceSelector`; the inspector skips the `HookMask` cache | §9.2, §9.3 |
+| `Tests/RelicPotionTests.cs` (relics-potions) | inactive-player listener list; FairyInABottle monster reference; AttackPotion offer count; setter visibility | §9.3 |
+| `Tests/CardUpgradeTests.cs` (cards, P0) | the victory step asserts empty piles and a full deck | A18 |
+| `Tests/ChoiceTests.cs` (choice) | TurnSetup depths; A18 piles | §9.3 |
+| `Tests/EndToEndTests.cs` (loop) | opening pin | §9.3 |
+| `Tests/CharacterMechanicsTests.cs` (character-mechanics) | one added assertion: a forge of the registered `SOVEREIGN_BLADE` records no fallback flag | checks the `SovereignBlade` wiring |
+
+`Tests/W1GateTests.cs` (the seams of §9.4) and this file are the integrate step's own.
+
+### 9.7 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+The machine alternated between two speed states for every tree (the same binary measured about 150k and about 60–80k
+decisions/s in consecutive runs; the P0 tree 667k and 213k), so only same-session ratios rank anything.
+
+Runs of this tree (5 s windows):
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 147 982 | 2.201 µs | 2.479 µs |
+| 2 | 135 696 | 2.138 µs | 2.498 µs |
+| 3 | 143 311 | 2.273 µs | 2.578 µs |
+| 4 | 75 419 | 2.162 µs | 6.955 µs |
+| 5 | 68 788 | 5.476 µs | 4.057 µs |
+| Median | 135 696 | 2.201 µs | 2.578 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (the slowest run of the session, 55 446, is about 185×); `Clone()` ≤ 1 ms
+passes (the slowest clone of the session, 10.9 µs, is about 90×). Against the recorded P0 figures (705 048
+decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`): throughput 0.19×, clone 0.87×, hash 2.96× (median runs).
+
+Same session, equal load. Three ways, all with the P0 tree (`819d7c6`) and the base (`263810d`) exported with
+`git archive` and built in Release:
+
+| Comparison | decisions/s merged / P0 | merged / base | `Clone()` merged / P0 | `StateHash()` merged / P0 |
+| --- | --- | --- | --- | --- |
+| interleaved, 11 runs per tree, medians (P0 314 391, base 328 960, merged 66 592 decisions/s) | 0.21× | 0.20× | 1.79× (5.848 / 3.275 µs) | 1.93× (4.016 / 2.076 µs) |
+| side by side (the three processes at once), 4 rounds, median of the per-round ratios | 0.25× (0.18–0.25) | 0.24× (0.19–0.25) | 1.34× (0.98–2.17) | 2.10× (1.54–2.64) |
+
+Deterministic measures (a scratch harness with the bench's seeds and policy, `GC.GetAllocatedBytesForCurrentThread`,
+2 000 episodes; every tree plays the same 40 299 decisions with an equal trajectory digest, so the W1 port changes no
+outcome for P0 content):
+
+| Measure | P0 | base | merged | choice alone | loop alone |
+| --- | --- | --- | --- | --- | --- |
+| allocated bytes per decision, `Step(a)` | 935 | 1 008 | 17 165 (3 373 on the fast path) | 7 732 | 2 232 |
+| allocated bytes per `Clone()` | 5 384 | 6 648 | 12 752 | 6 656 | 10 896 |
+| canonical bytes, the bench's mid-fight state | 2 042 | 2 373 | 3 792 | 2 373 | 5 102 |
+
+Fast path: in one process, alternating 1.5 s windows (6 each), `Step(a)` gave a median of 147 554 decisions/s and
+`Step(a, answerer)` 194 041 (1.32×; best runs 149 892 and 238 153, 1.59×).
+
+Where the regression comes from. Each track was benched alone on the base in the same 11 interleaved runs (median
+decisions/s, ratio to the base): hooks 192 028 (0.58), choice 169 040 (0.51), loop 216 265 (0.66), cards-kernel
+252 359 (0.77), pipeline 291 933 (0.89), relics-potions 294 774 (0.90), monsters-kernel 304 858 (0.93),
+character-mechanics 314 149 (0.95), state 316 480 (0.96). All the cost is contract-required work:
+
+1. B1 tape engine (choice, choice.md §5.1): `Step(a)` takes a full `DeepClone` of the state before every action as the
+   pre-step backup. On the merged state that copy allocates 12.8 KB, most of the 17.2 KB per decision, and it is 25–37 %
+   of the merged decision: the fast path, which skips it, is 1.32–1.59× faster.
+2. B3 listener walk (hooks, hooks.md §9.1): every dispatch now visits every slot the game visits (relics, potion
+   slots, orbs, each card of the five piles with its affliction and enchantment slots, monster listeners, modifiers),
+   where P0 visited powers only (56 passes per decision, counted on P0 content).
+3. B6 turn flow (loop, loop.md §12.19): the auto phases and per-turn dispatchers, `AfterCardChangedPiles` after every
+   pile move, the history appends, and the run deck in clone and canonical form (A13; with its history entries the
+   loop alone adds 4.2 KB per clone).
+4. B7 keywords (cards-kernel, cards-kernel.md §15): every in-combat keyword query runs `Hook.ModifyKeywordsInCombat`,
+   about seven times per decision.
+5. History entries (pipeline, monsters-kernel; D11) and the relic and potion slots (relics-potions).
+
+The parts compound: the per-step clone copies the deck and the history the other tracks add, and each keyword query
+pays the full listener walk. In time units the per-track deltas add up to 8.8 µs over the base's 3.0 µs per decision
+(about 0.26×), and the merged tree measures 15.0 µs (0.20×) in the same runs. The clone grows less than its
+allocation (2.37× the P0 bytes, 1.3–1.8× the P0 time at equal load): the history clones as 19 plain list copies with
+no per-entry work (state.md W1.6.6). The canonical form is 1.86× the P0 bytes and the hash takes about 2× the time;
+the form stays below the loop track's own 5 102 bytes because the merged history writes a per-type digest chain
+instead of its entries (state.md W1.6.7).
+
+Next steps (none needed for the W1 gates; listed in §9.9): H3, a listener array cached behind structural version
+counters (A20); C9, skipping the keyword snapshot when no live listener overrides it; P8, sharing history between
+clones; `ListenerSnapshot.InlineCapacity` retuned with W1 content; rollouts on the fast path.
+
+### 9.8 Contract change requests of the nine owners, with dispositions
+
+Dispositions: **resolved** (done in this round, or already satisfied by the merged code; the evidence is named),
+**needs contract change** (the code is consistent; the text of CONTRACTS, a design note or a later wave must record or
+decide it), **open** (a real follow-up for the named owner, listed again in §9.9), **rejected** (with the reason).
+
+| # | From → to | Request (short) | Disposition |
+| --- | --- | --- | --- |
+| H1 | hooks → cards-kernel | port `AfflictInternal` / `EnchantInternal` onto `CardInstance`; switch `HookTests.BindAffliction` from reflection | resolved: both exist (`Cards/CardInstance.cs:576-593`); `BindAffliction` now calls `AfflictInternal` |
+| H2 | hooks → design note owner | `design-combat-kernel.md` §2.2: only `AfterSideTurnEnd` joins after each pass; `BeforeFlush`, `BeforeSideTurnEnd` once after all passes; `AfterDeath`, `AfterDiedToDoom`, `BeforeSideTurnStart` never | needs contract change (doc fix; the code follows `Hooks/Hook.cs` and hooks.md §4.5) |
+| H3 | hooks → state, cards, relics, orbs, monsters | optional structural version counters for an O(1)-validated cached listener array | open (performance, §9.7; A20 allows the cache only with full invalidation) |
+| H4 | hooks → integrate | the A17 deletion breaks `PipelineTests` (13 calls) and `WurmBeetleTests` (7 calls) | resolved: the overloads are kept until those callers move (§9.4) |
+| S1 | state → pipeline | A19: `CombatStatus` attachment and side queries count `cs.Allies`; `Kill` drops a dead pet from `PetIds` right after the `ShouldDie` gate | resolved: `CombatStatus.IsAttached` / `GetCreaturesOnSide` already walk `cs.Allies` then `cs.Monsters`; `KillWithoutCheckingWinCondition` calls its `InvokeDiedEvent` right after `ShouldDie` (`Commands/CreatureCmd.cs:2770`), with the `PlayerCombatState.OnPetDied` rule (`Entities.Players/PlayerCombatState.cs:433-445`); delegating to `cs.ContainsCreature` is cleanup (§9.9) |
+| S2 | state → loop | `ResetCombatState` at setup; `CombatStateAfterCombatEnd` at A18; `AddPet` = `AddPetInternal` + `CreatureCmd.Add`; `CardPlay` fields stable between the two history appends | resolved: `CombatLoop.ResetCombatState` and `PlayerAfterCombatEnd` have the same effects as the state members (piles, energy, stars, pets, orb queue to `BaseOrbSlotCount`; powers, piles, pets, block); `AddPet` fixed here; `CardPlay` is written only in its object initializer (`CardCmd.Play.cs` `PlayLoop`) |
+| S3 | state → cards-kernel | `CardInstance.WriteCanonical` should write a stateful listener's form; `CardInstance.DeepClone` keeps the owner | resolved: `WriteCanonical` writes presence, type name and any `ICanonical` listener state (`Cards/CardInstance.cs:776-786`); `CardPile.DeepClone` refuses owned cards and the state clones through `CloneFor(newOwner)` |
+| S4 | state → choice | `ChoiceRuntime.DeepClone` shared selector objects | resolved: `IStatefulChoiceSelector.DeepClone` (B12 A14); the state test double now uses it |
+| S5 | state → CONTRACTS | per-history side stores, the new snapshot fields, `HistoryCardPlay` equality by `PlayId`, the history canonical form | needs contract change (B2 / A22 text) |
+| S6 | state → W2 | `RunState.Combat` rejects a combat of another run | needs contract change (W2 note) |
+| C1 | cards-kernel → CONTRACTS | `CanAfflict(cs, card)`, `PickRandomTargets(cs, rng, cards, count)` (the game reads the combat keywords, `Models/AfflictionModel.cs:206`) | needs contract change (no other caller) |
+| C2 | cards-kernel → loop | `ACROBATICS` should reach `CardCmd.Discard` | resolved: `CardPileCmd.Discard` forwards to `CardCmd.Discard` (`Combat/Loop/CardPileCmd.cs:346`) |
+| C3 | cards-kernel → loop | deck via `AttachTo`, copies via `CloneForCombat`, `cs.CreateCard`, combat keywords at the play and turn-end sites, Retain/Sly at the flush, card → enchantment → affliction `OnPlay`, `ShouldStartAtBottomOfDrawPile` on turn 1, X capture in `AutoPlay`, pins | resolved: `CombatLoop.BuildDeck` / `PopulateCombatState`, `CardPileCmd.HasKeywordInCombat` / `IsSlyThisTurn` / `ShouldRetainThisTurn` (the same rule as `CardInstance.HasKeywordInCombat`), `PlayLoop` order, `TurnFlow.cs:147`, `AutoPlay` inlines `CaptureXValuesForAutoPlay`'s two writes, pins §9.3; the duplicate keyword helpers are cleanup (§9.9) |
+| C4 | cards-kernel → state | `RunState.CardMultiplayerConstraint` (`Runs/IRunState.cs:74-84`) | needs contract change (W2; `CardPools.MultiplayerConstraintFor(rs)` serves) |
+| C5 | cards-kernel → loop | `CardPileCmd.Add` returns `Cards.CardPileAddResult` | resolved (§9.2) |
+| C6 | cards-kernel → character-mechanics | `ForgeCmd` should reach the blade through `IForgeBladeDef` | resolved the other way round: `SovereignBlade` also implements `ForgeCmd`'s `ISovereignBladeDef` (one method serves both); `CreatedThroughForge` stays unwritten, a VFX-only flag (character-mechanics.md §7) |
+| C7 | cards-kernel → hooks | per pile card visit card listener, affliction, enchantment with their liveness | resolved: `ListenerSnapshot.AppendPile` / `IsLive` (the holder stands in for an ownerless card); the card-listener dispatch tests pass with 0 PENDING |
+| C8 | cards-kernel → state | `CombatHistory`'s private `HasKeywordInCombat` can call `card.HasKeywordInCombat` | open (cleanup, state; `State/CombatHistory.cs:1120`) |
+| C9 | cards-kernel → hooks | skip the `ModifyKeywordsInCombat` snapshot when no live listener overrides it | open (performance, §9.7) |
+| C10 | cards-kernel → CONTRACTS | B7 counts: 24 subclasses + `DynamicVar` + `DynamicVarSet`; 13 of 19 `EnchantmentModel` virtuals ported, 6 UI-only stripped | needs contract change |
+| Ch1 | choice → CONTRACTS | `ChoiceSource source` required on the `CardSelectCmd` entry points | needs contract change |
+| Ch2 | choice → CONTRACTS | record the pending-tuple encoding and that `State` keeps its identity (the pre-step `DeepClone` is the backup) | needs contract change |
+| Ch3 | choice → state / W3 | end-turn readiness set for `VoidForm` / `WhisperingEarring`, cleared by `UndoEndTurnIfNecessary` | needs contract change (W3 content; same field as L5) |
+| Ch4 | choice → CONTRACTS | B1 unordered-prompt legality lists only completable picks | needs contract change |
+| Ch5 | choice → CONTRACTS | `UsePotion` `TargetIndex -2` never legal; the player is `NoIndex` | needs contract change |
+| Ch6 | choice → CONTRACTS | `PushSelector` could take `IChoiceSelector` | needs contract change |
+| P1 | pipeline → integrate | point `CardCmdForwarders` at the real `CardCmd` members | resolved |
+| P2 | pipeline → monsters-kernel | `MonsterSpawner.SpawnForAdd` / `AddToCombat` duplicate `CreatureCmd.Add(cs, creature)` | open (dedupe; both bodies follow `Commands/CreatureCmd.cs:219-330` step for step, so no rule differs) |
+| P3 | pipeline → monsters-kernel / integrate | wire `MonsterLifecycle.RemoveCreature` into `Kill` and `Escape`; `MonsterLifecycle.InvokeDiedEvent` / `OnPetDied` duplicate the pipeline's Died bookkeeping | resolved for the wiring (§9.3); the duplicate is open (dedupe; the pipeline's copy is the live one) |
+| P4 | pipeline → character-mechanics | `PlayerPets.GetOsty` duplicates `CombatStatus.GetOsty` | open (dedupe; same rule) |
+| P5 | pipeline → state | `CreatureState.HpDisplay` for Hellraiser's `IsInfinite` | needs contract change (exact until `HardenedShellPower` / `WaterfallGiant` are ported) |
+| P6 | pipeline → state | escaped-creature list (`Combat/CombatState.cs:618`, `:733-737`) | needs contract change (W2 reward gold) |
+| P7 | pipeline → state | `GetCreatureById` should search pets | resolved: it walks `cs.Allies` before `cs.Monsters` (`State/CombatState.cs:115-134`) |
+| P8 | pipeline → state | `CombatHistory.DeepClone` copies every entry list on each clone | open (performance, §9.7) |
+| P9 | pipeline → loop | recompute the EndToEnd final pin | resolved: with A18 the final pin stays the loop's `0x77FA4D8665BA0CC3`; the opening pin moved (§9.3) |
+| P10 | pipeline → loop | a batch `CardPileCmd.RemoveFromCombat(cards)` would drop `HandlePlayerDeathFidelitySite` | open: the loop's batch overload exists now (`Combat/Loop/CardPileCmd.cs:190`); pipeline can switch `HandlePlayerDeath` (multiplayer-only path) |
+| P11 | pipeline → hooks | the snapshot must include the powers of pets in `cs.Allies` | resolved: `AppendCombatPart` walks `cs.Allies` |
+| P12 | pipeline → CONTRACTS | calculated damage is a `Func<CombatState, CreatureState?, decimal>` delegate | needs contract change |
+| P13 | pipeline → CONTRACTS | `PowerCmd.Apply<T>(cs, targets, …)` returns `IReadOnlyList<T>` | needs contract change |
+| P14 | pipeline → itself | delete `ShrinkPower.IsTurnParticipant` once `WurmBeetleTests` uses `CombatStatus.ContainsById` | open (cleanup) |
+| M1 | monsters-kernel → hooks | the monster listener right after its creature's powers, allies first; live while in `cs.Monsters` or `cs.Allies` | resolved: `AppendCreature`; the dispatch-order test passes |
+| M2 | monsters-kernel → pipeline | `Kill`: Died event, `RemoveCreature`, allies attached, owner death kills an alive Osty; `Escape`: `RemoveCreature`; `CreatureCmd.Add` routes to the spawner | resolved: `RemoveCreature` wired here; Died bookkeeping, allies and the Osty kill are the pipeline's equivalent bodies (`CombatStatus.GetOsty`); `CreatureCmd.Add(cs, def)` calls `SpawnForAdd`; the `Add(cs, creature)` duplicate is P2 |
+| M3 | monsters-kernel → loop | `PlayerCmd.AddPet` must not add twice; `SwitchSides` calls `OnSideSwitch` for pets | resolved: `AddPet` fixed here (the game's `CreateCreature` + `AddPet(pet, player)` rather than `SpawnPet`); `SwitchSides` walks `SnapshotMonsterCreatures`, pets included |
+| M4 | monsters-kernel → state | implement `AddAlly` / `RemoveAlly` | resolved (the four pending tests run) |
+| M5 | monsters-kernel | rebuttal: no `MonsterState.ResetAi()` | accepted (no change) |
+| CM1 | character-mechanics → loop | orb queue, stars and pets reset at setup | resolved: `CombatLoop.ResetCombatState` (`OrbQueue.Clear` + `AddCapacity(BaseOrbSlotCount)`, stars 0, pets cleared) |
+| CM2 | character-mechanics → loop | `OrbQueue.BeforeTurnEnd` first in `DoTurnEnd`; `AfterTurnStart` after the player side's `AfterSideTurnStart` | resolved: `TurnFlow.TurnEnd.cs:62`, `TurnFlow.cs:299` (a TurnSetup first-pause step) |
+| CM3 | character-mechanics → loop | spend stars through `StarsCmd.SpendStars` | resolved: `ActionExecutor.SpendStars` |
+| CM4 | character-mechanics → loop | `AddPet` through `PlayerPets.AddPetInternal` | open (dedupe: four copies of the rule, in `PlayerCmd`, `MonsterSpawner`, `PlayerPets` and `PlayerState`) |
+| CM5 | character-mechanics → pipeline | pet Died bookkeeping; a dying player clears its orbs, then kills an alive Osty | resolved (pipeline's equivalent bodies, `Combat/Pipeline/CreatureCmd.cs` `KillWithoutCheckingWinCondition`) |
+| CM6 | character-mechanics → cards-kernel | `SOVEREIGN_BLADE` implements `ISovereignBladeDef.AddDamage` | resolved (C6) |
+| CM7 | character-mechanics → hooks | orbs after potions in queue order with their liveness; the 12 area dispatchers guarded; `null` modifiers when empty | resolved: `AppendCreature`, `ListenerSnapshot.Guarded` in all of them, lazy modifier lists |
+| CM8 | character-mechanics → CONTRACTS | star commands live in `StarsCmd`; A16 cites `Models/CardModel.cs:1432-1436`; no capacity cap in the queue | needs contract change |
+| RP1 | relics-potions → state | `RemoveRelicInternal` → `relic.RemoveInternal()`; then a private setter | resolved here (§9.6) |
+| RP2 | relics-potions → hooks | relics then potion slots between powers and orbs; the five potion dispatchers | resolved (the seven pending tests run) |
+| RP3 | relics-potions → integrate | route `PendingKernelCalls` | resolved |
+| RP4 | relics-potions → loop / choice | win check after potion actions; listing through `PotionActions.CanUse` / `CanDiscard`; no potions at a prompt; `PotionModel` should call the loop's effect helpers | resolved except the last point: `CombatLoop.ExecuteResolvedAction` checks the win after both potion kinds, `LegalActionGenerator` lists `UsePotion` through `CanUse` and gates `DiscardPotion` with the same rules, prompts allow answers only; `PotionModel`'s private effect pair is open (it lacks the dead-player card removal of `Combat/CombatManager.cs:1430-1480`, reachable only with another player alive) |
+| RP5 | relics-potions → pipeline | look PaperPhrog / PaperKrane up by id (`GetRelic<T>`) | rejected for W1: B12 A5 prescribes the interface scan, which picks the same relic while only these two relics implement the interfaces |
+| RP6 | relics-potions → W2 | `TotalFloor`, grab bags, map history, out-of-combat potions | needs contract change (W2) |
+| L1 | loop → cards-kernel | `CardCmd` is `public static partial` in `Sts2Sim.Core.Combat.Pipeline` | resolved (compiles) |
+| L2 | loop → cards-kernel | `Slimed` through `cs.CreateCard`; the `CardUpgradeTests` terminal assert | resolved: `Slimed.AddToCombatAndPreview` uses `cs.CreateCard`; the test fixed here (§9.3) |
+| L3 | loop → choice | `TryResolve` resolves `UsePotion` / `DiscardPotion` | resolved (F4: 48 potion actions) |
+| L4 | loop → choice | `PushContext(kind, onFirstPause)` semantics | resolved (the TurnSetup tests pass under the real loop) |
+| L5 | loop → state | cloned and hashed ready-to-end-turn request for `PlayerCmd.EndTurn` | needs contract change (W3 content, with Ch3) |
+| L6 | loop → state | `CombatState.AddAlly` | resolved |
+| L7 | loop → hooks | relics and potions in the combat snapshot | resolved |
+| L8 | loop → pipeline | `OnPetDied` in the death path | resolved (S1) |
+| L9 | loop → pipeline | `EnergyCmd.SpendEnergy` appends `EnergySpent` | resolved (`Combat/Pipeline/EnergyCmd.cs`, one entry per spend) |
+| L10 | loop → character-mechanics | `OrbQueue` stubs | resolved |
+| L11 | loop → CONTRACTS | A13 says deck ids `1..n`; the allocator starts at 0 | needs contract change (text: "the first n ids") |
+
+### 9.9 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | Throughput regression (§9.7): about 0.2× of P0 on the decision API at equal load. Every contributor is contract-required (B1 tape engine, B3 listener walk, B6 turn flow and history, B7 keywords), and the W1 gate holds by orders of magnitude, but rollouts that need P0-like speed must use the fast path `Step(a, answerer)` until the walk is cheaper | a performance pass before W2 rollouts: H3 (cached listener array under A20), C9 (keyword fast path), P8 (history clone sharing), `ListenerSnapshot.InlineCapacity` retuned with W1 content |
+| 2 | Duplicate implementations of one rule (no behaviour difference found): `MonsterSpawner.AddToCombat` vs `CreatureCmd.Add(cs, creature)` (P2); pet Died bookkeeping in pipeline, `MonsterLifecycle`, `PlayerPets` and `CombatState` / `PlayerState` (P3); `AddPetInternal` ×4 (CM4); `GetOsty` ×3 (P4); `HasKeywordInCombat` in `CardPileCmd` and `CardInstance` (C3); `ResetCombatState` in the loop and `PlayerState` (S2); the X capture inlined in `AutoPlay`; `PotionModel`'s private effect pair (RP4, multiplayer-only difference) | one owner each: keep the live copy, make the others call it |
+| 3 | `AttackPotion` offers one attack: `HEADBUTT` is the only ported generatable Ironclad attack, and the draw over ported options is flagged `ApproximatedRule` (cards-kernel.md §7.4) | W3 content; the test switches back to three offers automatically |
+| 4 | The four `(cs, side)` side-turn overloads stay in `Hook.cs` for 20 calls in `PipelineTests` / `WurmBeetleTests` (§9.4) | pipeline (and the P0 monsters owner) move the calls; the next integrator deletes the overloads |
+| 5 | Twelve `throw new NotImplementedException` sites remain in Core (137 at round 2), plus the nine placeholder members of `UnportedCardDef`; none is on a W1 path: W2 run layer (`ModifierModel` ×2, deck-card transform, `MimicRestSiteHeal`, transforms outside combat, `IsBeforeAct3TreasureChest(rs)`, out-of-combat potions), `PlayerCmd.EndTurn` (needs L5), the unported-card guards (`CardInstance`, `CardFactory.CreateRandomCardForTransform`), and the game's own `RngSet` seed guards (×2) | W2 / W3 |
+| 6 | Contract text: the 20 "needs contract change" rows of §9.8 | the Part B owner folds them into CONTRACTS |
+| 7 | Cleanups: C8, P10, P14 | owners named in §9.8 |
+| 8 | The REC track (`4094c1e`) is still compiled and tested but not installed | `scripts/install_mod.sh` when the recorder change goes live |

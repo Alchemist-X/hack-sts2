@@ -420,6 +420,7 @@ public static class CreatureCmd
             }
             if (shouldRemoveFromCombat && creature.Side == CombatSide.Enemy && creature is MonsterState monster && cs.Monsters.Contains(monster))
             {
+                MonsterLifecycle.RemoveCreature(cs, monster);
                 if (!(monster.HasAi && monster.Ai.IsPerformingMove))
                 {
                     cs.RemoveMonster(monster);
@@ -533,6 +534,10 @@ public static class CreatureCmd
         var removed = new List<PowerModel>(creature.Powers.Count);
         CreatureInternals.RemoveAllPowersInternal(creature, removed);
         cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, EscapeFidelitySite);
+        if (creature is MonsterState escaping)
+        {
+            MonsterLifecycle.RemoveCreature(cs, escaping);
+        }
         if (creature is MonsterState monster && cs.Monsters.Contains(monster))
         {
             cs.RemoveMonster(monster);

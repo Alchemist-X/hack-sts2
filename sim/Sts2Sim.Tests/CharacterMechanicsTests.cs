@@ -1449,6 +1449,7 @@ public static class CharacterMechanicsTests
             Assert.Equal(13m, exhausted.Vars.Damage.BaseValue, "the exhausted blade is forged as well");
             Assert.Equal(10m, dupe.Vars.Damage.BaseValue);
             Assert.SequenceEqual(new[] { "forge:3:source=none" }, log);
+            Assert.False(cs.Run.Fidelity.Entries.Any(e => e.Site == ForgeCmd.AddDamageFallbackSite), "the registered SOVEREIGN_BLADE takes the ISovereignBladeDef seam");
         });
     }
 

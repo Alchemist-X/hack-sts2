@@ -25,10 +25,10 @@ public sealed class Nunchaku : RelicModel
         }
     }
 
-    protected override IEnumerable<DynamicVar> CanonicalVars => new[]
+    protected override IEnumerable<DynamicVar> CanonicalVars => new DynamicVar[]
     {
-        new DynamicVar(DynamicVarSet.CardsName, 10m),
-        new DynamicVar(DynamicVarSet.EnergyName, 1m)
+        new CardsVar(10),
+        new EnergyVar(1)
     };
 
     private bool IsActivating

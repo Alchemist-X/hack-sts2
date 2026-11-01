@@ -1,7 +1,5 @@
 namespace Sts2Sim.Core.Combat.Loop;
 
-public readonly record struct CardPileAddResult(bool Success, CardInstance CardAdded, PileType OldPile, PileType TargetPile, IReadOnlyList<AbstractModel>? ModifyingModels);
-
 public static class CardPileCmd
 {
     public const int MaxCardsInHand = CardPile.MaxCardsInHand;
@@ -143,7 +141,7 @@ public static class CardPileCmd
         if (results.Count == 0)
         {
             cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, GeneratedCardOutsideCombatSite);
-            return new CardPileAddResult(false, card, PileType.None, PileType.None, null);
+            return new CardPileAddResult(false, card, null, PileType.None, null);
         }
         return results[0];
     }
@@ -510,7 +508,7 @@ public static class CardPileCmd
         {
             for (int i = 0; i < n; i++)
             {
-                results[i] = new CardPileAddResult(false, cards[i], PileType.None, PileType.None, null);
+                results[i] = new CardPileAddResult(false, cards[i], null, PileType.None, null);
             }
             return results;
         }
@@ -520,7 +518,8 @@ public static class CardPileCmd
             var card = cards[i];
             ArgumentNullException.ThrowIfNull(card);
             var owner = OwnerOf(rs, cs, card);
-            var oldPile = PileTypeOf(owner, card);
+            var oldPileType = PileTypeOf(owner, card);
+            PileType? oldPile = oldPileType == PileType.None ? null : oldPileType;
             if (card.HasBeenRemovedFromState || owner.IsDead)
             {
                 results[i] = new CardPileAddResult(false, card, oldPile, newPileType, null);
@@ -574,9 +573,9 @@ public static class CardPileCmd
                 target = owner.DiscardPile;
             }
             var added = card;
-            if (result.OldPile != PileType.None)
+            if (result.OldPile is { } oldPile)
             {
-                RemoveFromCurrentPile(owner, card, result.OldPile);
+                RemoveFromCurrentPile(owner, card, oldPile);
             }
             else if (targetType == PileType.Deck)
             {
@@ -596,7 +595,7 @@ public static class CardPileCmd
             {
                 target!.AddInternal(added, PositionIndex(rs, position, target.Count));
             }
-            if (result.OldPile == PileType.None && CardPile.IsCombatPileType(targetType) && !isChangingOwners)
+            if (result.OldPile == null && CardPile.IsCombatPileType(targetType) && !isChangingOwners)
             {
                 Hook.AfterCardEnteredCombat(cs!, card);
             }
@@ -610,9 +609,9 @@ public static class CardPileCmd
             }
             var cardAdded = result.CardAdded;
             var now = PileTypeOf(OwnerOf(rs, cs, cardAdded), cardAdded);
-            if (result.OldPile == PileType.None || result.OldPile != now)
+            if (result.OldPile == null || result.OldPile != now)
             {
-                Hook.AfterCardChangedPiles(rs, CardPile.IsCombatPileType(now) ? cs : null, cardAdded, result.OldPile, clonedBy);
+                Hook.AfterCardChangedPiles(rs, CardPile.IsCombatPileType(now) ? cs : null, cardAdded, result.OldPile ?? PileType.None, clonedBy);
             }
         }
         return results;

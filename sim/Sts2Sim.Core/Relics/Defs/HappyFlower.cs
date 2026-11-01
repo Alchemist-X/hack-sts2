@@ -31,7 +31,7 @@ public sealed class HappyFlower : RelicModel
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[]
     {
-        new DynamicVar(DynamicVarSet.EnergyName, 1m),
+        new EnergyVar(1),
         new DynamicVar(TurnsKey, 3m)
     };
 

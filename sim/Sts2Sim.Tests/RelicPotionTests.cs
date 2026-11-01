@@ -335,7 +335,7 @@ public static class RelicPotionTests
         stackable.IncrementStackCount();
         Assert.Equal(3, stackable.StackCount);
         Assert.True(typeof(RelicModel).GetProperty(nameof(RelicModel.StackCount))!.SetMethod!.IsPrivate);
-        Assert.True(typeof(RelicModel).GetProperty(nameof(RelicModel.HasBeenRemovedFromState))!.SetMethod!.IsAssembly);
+        Assert.True(typeof(RelicModel).GetProperty(nameof(RelicModel.HasBeenRemovedFromState))!.SetMethod!.IsPrivate, "private as in the game (Models/RelicModel.cs:420-427) now that PlayerState.RemoveRelicInternal calls RemoveInternal (Entities.Players/Player.cs:913)");
         Assert.True(typeof(PotionModel).GetProperty(nameof(PotionModel.HasBeenRemovedFromState))!.SetMethod!.IsPrivate);
         relic.RemoveInternal();
         Assert.True(relic.HasBeenRemovedFromState);
@@ -920,7 +920,7 @@ public static class RelicPotionTests
             Assert.SequenceEqual(new AbstractModel[] { playerPower, a, c, p0, p2, monsterPower }, buffer, "player powers, unmelted relics, potion slots, then the enemies");
             cs.Player.DeactivateHooks();
             Hook.IterateHookListeners(cs, buffer);
-            Assert.SequenceEqual(new AbstractModel[] { playerPower, monsterPower }, buffer, "an inactive player stops after its powers (Combat/CombatState.cs:870-873)");
+            Assert.SequenceEqual(new AbstractModel[] { monsterPower }, buffer, "an inactive player stops after its powers (Combat/CombatState.cs:870-873), and those powers are not live at yield (:1061)");
             cs.Player.ActivateHooks();
             RelicCmd.Remove(rs, c);
             Hook.IterateHookListeners(cs, buffer);
@@ -1444,8 +1444,9 @@ public static class RelicPotionTests
 
             var guarded = NewCombat();
             Slot(guarded, new FairyInABottle(), 0);
-            CreatureCmd.Damage(guarded, guarded.Monsters[0], 60m, ValueProp.Unpowered, guarded.Player, null, null);
-            Assert.True(guarded.Monsters[0].IsDead, "the bottle saves only its owner");
+            var guardedMonster = guarded.Monsters[0];
+            CreatureCmd.Damage(guarded, guardedMonster, 60m, ValueProp.Unpowered, guarded.Player, null, null);
+            Assert.True(guardedMonster.IsDead, "the bottle saves only its owner");
             Assert.True(guarded.Player.PotionSlots[0] is FairyInABottle);
         });
     }
@@ -1477,18 +1478,29 @@ public static class RelicPotionTests
         {
             var cs = NewCombat();
             Slot(cs, new AttackPotion(), 0);
-            var answerer = new RecordingAnswerer(1);
+            var attackOptions = CardFactory.FilterForCombat(CardPools.ForCharacter(cs.Player.CharacterId).GetUnlockedCards(cs.Run.Unlocks, CardPools.MultiplayerConstraintFor(cs.Run)).Where(c => c.Type == CardType.Attack)).ToList();
+            int ported = attackOptions.Count(c => c is not UnportedCardDef);
+            int offered = Math.Min(3, ported);
+            int pick = Math.Min(1, offered - 1);
+            var answerer = new RecordingAnswerer(pick);
             cs.Choice.Answerer = answerer;
             int generationBefore = cs.Rng.CombatCardGeneration.Counter;
             PotionActions.UsePotion(cs, 0, null);
             var prompt = answerer.Prompts.Single();
             Assert.Equal(ChoicePromptKind.ChooseCard, prompt.Kind);
             Assert.Equal("ATTACK_POTION:OnUse", prompt.SiteId);
-            Assert.Equal(3, prompt.Options.Count);
+            Assert.Equal(offered, prompt.Options.Count, "three distinct attacks; while fewer than three are ported the draw runs over the ported ones (cards-kernel.md section 7.4)");
+            if (ported < attackOptions.Count)
+            {
+                Assert.True(cs.Run.Fidelity.Contains(FidelityFlag.ApproximatedRule), "the draw over the ported options is flagged (cards-kernel.md section 7.4)");
+            }
             Assert.True(prompt.CanSkip);
-            Assert.True(cs.Rng.CombatCardGeneration.Counter > generationBefore, "the offer draws on CombatCardGeneration");
+            if (ported > 1)
+            {
+                Assert.True(cs.Rng.CombatCardGeneration.Counter > generationBefore, "the offer draws on CombatCardGeneration (a one-option shuffle draws nothing, Random/RngCollectionExtensions.cs UnstableShuffle)");
+            }
             var picked = cs.Player.Hand.Cards.Single();
-            Assert.Equal(prompt.Options[1].InstanceId, picked.InstanceId);
+            Assert.Equal(prompt.Options[pick].InstanceId, picked.InstanceId);
             Assert.Equal(CardType.Attack, picked.Type);
             Assert.Equal(0, picked.EnergyCost.GetResolved(cs, picked), "free this turn");
             Assert.Null(cs.Player.PotionSlots[0]);

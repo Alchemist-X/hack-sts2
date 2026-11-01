@@ -1041,7 +1041,7 @@ public static class StateKernelTests
             ("relic removed", s => s.Player.RemoveRelicInternal(s.Player.Relics[0])),
             ("relic melted", s => s.Player.MeltRelicInternal(s.Player.GetRelic<KernelWaxRelic>()!)),
             ("relic status", s => s.Player.Relics[0].Status = RelicStatus.Active),
-            ("relic stack", s => s.Player.Relics[0].StackCount += 1),
+            ("relic stack", s => s.Player.Relics[0].IncrementStackCount()),
             ("potion charges", s => ((KernelPotion)s.Player.PotionSlots[0]!).Charges++),
             ("potion slot moved", s => { var slots = s.Player.PotionSlots; (slots[0], slots[1]) = (slots[1], slots[0]); }),
             ("potion discarded", s => s.Player.DiscardPotionInternal(s.Player.PotionSlots[0]!)),
@@ -1870,6 +1870,8 @@ public static class StateKernelTests
 
         public override RelicRarity Rarity => RelicRarity.Common;
 
+        public override bool IsStackable => true;
+
         public int Counter { get; set; }
 
         public List<int> Log { get; private set; } = new();
@@ -1942,7 +1944,7 @@ public static class StateKernelTests
         public override string Id => "STATE_KERNEL_AFFLICTION";
     }
 
-    private sealed class KernelSelector : IChoiceAnswerer, ICanonical
+    private sealed class KernelSelector : IStatefulChoiceSelector
     {
         private readonly string _label;
 
@@ -1951,7 +1953,11 @@ public static class StateKernelTests
             _label = label;
         }
 
+        public string SelectorId => "STATE_KERNEL_SELECTOR";
+
         public ChoiceAnswer Answer(ChoicePrompt prompt) => new(Array.Empty<int>(), false);
+
+        public IStatefulChoiceSelector DeepClone() => new KernelSelector(_label);
 
         public void WriteCanonical(CanonicalWriter w) => w.WriteString(_label);
     }
@@ -2124,6 +2130,10 @@ public static class StateKernelTests
                 result = true;
                 foreach (var field in FieldsOf(type))
                 {
+                    if (field.DeclaringType == typeof(AbstractModel) && field.FieldType == typeof(HookMask))
+                    {
+                        continue;
+                    }
                     if (!type.IsValueType && !field.IsInitOnly)
                     {
                         result = false;

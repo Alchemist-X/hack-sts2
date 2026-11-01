@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 
 namespace Sts2Sim.Core.Cards;
 
-public sealed class SovereignBlade : CardDef, IForgeBladeDef
+public sealed class SovereignBlade : CardDef, IForgeBladeDef, ISovereignBladeDef
 {
     public const string CardId = "SOVEREIGN_BLADE";
     public const int Cost = 2;

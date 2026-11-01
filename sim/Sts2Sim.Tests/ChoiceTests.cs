@@ -804,7 +804,7 @@ public static class ChoiceTests
         var observed = sim.State.Player.GetPower<ChoiceProbePower>()!;
         Assert.Equal(1, observed.Fired, "the first pause ran the steps before the prompt is exposed");
         Assert.Equal(gold + 1, sim.State.Player.Gold);
-        Assert.Equal(0, observed.DepthInSteps, "the steps run with the context stack reset to the turn-loop root");
+        Assert.Equal(1, observed.DepthInSteps, "the steps run with the context stack truncated to the frames below the turn-setup frame: here the play action's Inline frame (ActionExecutor.PlayCard, B1)");
         Assert.Equal((int)ChoiceContextKind.Inline, observed.KindInSteps);
         Assert.Equal(-1, observed.GoldAtAnswer);
 
@@ -813,7 +813,7 @@ public static class ChoiceTests
         var mid = sim.State.Player.GetPower<ChoiceProbePower>()!;
         Assert.Equal(1, mid.Fired, "the second pause does not run the steps again");
         Assert.Equal(gold + 1, mid.GoldAtAnswer, "the steps ran before the answer was applied");
-        Assert.Equal(1, mid.DepthAfterAnswer, "the turn-setup frame is restored after its steps");
+        Assert.Equal(2, mid.DepthAfterAnswer, "the turn-setup frame is restored after its steps, above the play action's Inline frame");
         Assert.True(mid.DoneAfterAnswer);
         sim.Step(GameAction.Pick(0));
         Assert.Null(sim.PendingChoice);
@@ -833,7 +833,7 @@ public static class ChoiceTests
         Assert.Null(sim.PendingChoice, "the combat ended in the deferred steps: no prompt is exposed");
         Assert.True(sim.IsTerminal);
         Assert.Equal(CombatOutcome.Victory, sim.Outcome);
-        Assert.Equal(5, sim.State.Player.Hand.Count, "the rest of the play was unwound: nothing was discarded");
+        Assert.Equal(0, sim.State.Player.AllPiles.Sum(p => p.Count), "the victory cleared the combat piles (B12 A18, Player.AfterCombatEnd, Entities.Players/Player.cs:1249-1254); no prompt was exposed, so the rest of the play was unwound");
         Assert.Equal(0, sim.LegalActions().Count);
         Assert.Equal(0, sim.State.Choice.ContextDepth);
 

@@ -12,7 +12,7 @@ public sealed class CentennialPuzzle : RelicModel
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[]
     {
-        new DynamicVar(DynamicVarSet.CardsName, 3m)
+        new CardsVar(3)
     };
 
     public bool UsedThisCombat

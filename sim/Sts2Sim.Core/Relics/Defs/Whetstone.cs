@@ -12,7 +12,7 @@ public sealed class Whetstone : RelicModel
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[]
     {
-        new DynamicVar(DynamicVarSet.CardsName, 2m)
+        new CardsVar(2)
     };
 
     public override void AfterObtained(RunState rs)

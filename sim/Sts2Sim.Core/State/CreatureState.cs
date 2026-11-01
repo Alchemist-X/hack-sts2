@@ -342,7 +342,7 @@ public sealed class PlayerState : CreatureState
             throw new InvalidOperationException($"Player does not have relic {relic.Id}");
         }
         Relics.Remove(relic);
-        relic.HasBeenRemovedFromState = true;
+        relic.RemoveInternal();
     }
 
     public void MeltRelicInternal(RelicModel relic)

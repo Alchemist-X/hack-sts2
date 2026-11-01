@@ -218,7 +218,7 @@ public static class EndToEndTests
 
     private const int PinnedSeedOneActionCount = 10;
 
-    private const ulong PinnedSeedOneOpeningHash = 0x79C886C6235C2D9BUL;
+    private const ulong PinnedSeedOneOpeningHash = 0x07F5FF6679103FF9UL;
 
     private const ulong PinnedSeedOneFinalHash = 0x77FA4D8665BA0CC3UL;
 

@@ -254,6 +254,12 @@ public static class CardUpgradeTests
                 Assert.Equal(sim.StateHash(), clone.StateHash(), $"seed {seed} step {step}: a clone steps to the same state");
                 hashes.Add(sim.StateHash());
                 var cards = CombatCards(sim.State).ToList();
+                if (sim.IsTerminal && sim.State.Outcome == CombatOutcome.Victory)
+                {
+                    Assert.Equal(0, cards.Count, $"seed {seed} step {step}: a victory clears the combat piles (Player.AfterCombatEnd, Entities.Players/Player.cs:1249-1254)");
+                    Assert.Equal(deck.Length, sim.State.Player.Deck.Count, $"seed {seed} step {step}: the deck keeps every card");
+                    continue;
+                }
                 Assert.Equal(deck.Length, cards.Count, $"seed {seed} step {step}: no card is lost");
                 Assert.SequenceEqual(upgradedIds, cards.Where(c => c.IsUpgraded).Select(c => c.InstanceId).OrderBy(i => i), $"seed {seed} step {step}: upgrades stay on their instances");
             }

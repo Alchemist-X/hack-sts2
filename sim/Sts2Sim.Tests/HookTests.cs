@@ -730,10 +730,8 @@ public static class HookTests
 
     private static void BindAffliction(AfflictionModel affliction, CardInstance card)
     {
-        var field = typeof(AfflictionModel).GetFields(BindingFlags.Instance | BindingFlags.NonPublic).SingleOrDefault(f => f.FieldType == typeof(CardInstance));
-        Assert.NotNull(field, "AfflictionModel stores its card in one CardInstance field");
-        field!.SetValue(affliction, card);
-        card.Affliction = affliction;
+        card.AfflictInternal(affliction, affliction.Amount);
+        Assert.True(ReferenceEquals(card, affliction.Card), "AfflictInternal binds the affliction to its card");
     }
 
     private static CardPlay PlayOf(CombatState cs) => new(cs, new CardInstance(new HookCardDef(), cs.AllocateCardInstanceId()), null);
@@ -838,8 +836,7 @@ public static class HookTests
             }
             player.RemoveRelicInternal(r2);
             c1.HasBeenRemovedFromState = true;
-            player.RemoveUsedPotionInternal(q1);
-            q1.HasBeenRemovedFromState = true;
+            q1.RemoveBeforeUse();
             s.Monsters.Remove(m2);
             Power(player, new PowerProbe(rec, "P3"));
         };
@@ -1008,6 +1005,7 @@ public static class HookTests
         var card = new CardInstance(new HookCardDef(), cs.AllocateCardInstanceId());
         var enchantment = new EnchantmentProbe(rec, "E") { BlockAdd = 3m, BlockMul = 1.5m };
         card.Enchantment = enchantment;
+        enchantment.ClearInternal();
         var potion = Potion(cs.Player, new PotionProbe(rec, "Q") { BlockBonus = 2m }, 0);
         var power = Power(cs.Player, new PowerProbe(rec, "P") { BlockFactor = 0.75m });
         List<AbstractModel>? modifiers = new() { power };
@@ -1497,6 +1495,7 @@ public static class HookTests
         Assert.SequenceEqual(new[] { "C2" }, FullCombatList(cs), "HasCard && !Card.HasBeenRemovedFromState && Card.Owner.IsActiveForHooks");
         var unbound = new AfflictionProbe(rec, "U");
         player.Hand[1].Affliction = unbound;
+        unbound.ClearInternal();
         Assert.SequenceEqual(new[] { "C2" }, FullCombatList(cs), "an affliction without a card is not live");
     }
 

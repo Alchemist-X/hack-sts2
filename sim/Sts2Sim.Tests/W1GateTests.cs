@@ -172,7 +172,7 @@ public static class W1GateTests
                         }
                         if (sim.IsLegal(candidate))
                         {
-                            Assert.True(candidate.Kind == ActionKind.ChoosePick, $"{label}: {candidate} is legal but LegalActions does not list it");
+                            Assert.True(candidate.Kind == ActionKind.ChoosePick && candidate.TargetIndex == GameAction.NoIndex, $"{label}: {candidate} is legal but LegalActions does not list it");
                             continue;
                         }
                         illegal.Add(candidate);
@@ -328,9 +328,7 @@ public static class W1GateTests
             }
             if (hasGremlinHorn)
             {
-                var horn = RelicRegistry.Create(GremlinHornRelicId);
-                horn.AttachTo(player);
-                player.Relics.Add(horn);
+                RelicCmd.Obtain(cs.Run, RelicRegistry.Create(GremlinHornRelicId), player);
             }
             PowerCmd.Apply(cs, PowerRegistry.Create(HellraiserPowerId), player, 1m, player, null);
             playouts++;
@@ -454,13 +452,9 @@ public static class W1GateTests
         }
         foreach (var id in relicIds)
         {
-            var relic = RelicRegistry.Create(id);
-            relic.AttachTo(player);
-            player.Relics.Add(relic);
+            RelicCmd.Obtain(cs.Run, RelicRegistry.Create(id), player);
         }
-        var counter = new GateCounterRelic();
-        counter.AttachTo(player);
-        player.Relics.Add(counter);
+        RelicCmd.Obtain(cs.Run, new GateCounterRelic(), player);
         var potionIds = PotionRegistry.AllIds;
         var slots = player.PotionSlots;
         int filled = seed % 2UL == 0UL ? slots.Length : Math.Max(0, slots.Length - 1);
@@ -477,8 +471,8 @@ public static class W1GateTests
             {
                 potion = new GateChargePotion();
             }
-            potion.AttachTo(player);
-            slots[i] = potion;
+            var procured = PotionCmd.TryToProcure(cs.Run, potion, player, i);
+            Assert.True(procured.Success, $"gate potion {potion.Id} fills slot {i}");
         }
         counts.PilotRelics = relicIds.Count;
         counts.PilotPotions += pilotPotions;
@@ -625,13 +619,19 @@ public static class W1GateTests
                 candidates.Add(GameAction.UsePotion(slot, target));
             }
             candidates.Add(GameAction.DiscardPotion(slot));
+            candidates.Add(new GameAction(ActionKind.DiscardPotion, slot, 0));
         }
         for (int option = -1; option <= MaxPickCandidate; option++)
         {
             candidates.Add(GameAction.Pick(option));
         }
+        candidates.Add(new GameAction(ActionKind.ChoosePick, 0, 0));
         candidates.Add(GameAction.Confirm);
+        candidates.Add(new GameAction(ActionKind.ChooseConfirm, 0, GameAction.NoIndex));
+        candidates.Add(new GameAction(ActionKind.ChooseConfirm, GameAction.NoIndex, 0));
         candidates.Add(GameAction.Cancel);
+        candidates.Add(new GameAction(ActionKind.ChooseCancel, 0, GameAction.NoIndex));
+        candidates.Add(new GameAction(ActionKind.ChooseCancel, GameAction.NoIndex, 0));
         candidates.Add(new GameAction((ActionKind)250, 0, 0));
     }
 

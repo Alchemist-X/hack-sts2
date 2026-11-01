@@ -77,7 +77,7 @@ public static class PlayerCmd
         ArgumentNullException.ThrowIfNull(cs);
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(def);
-        var pet = MonsterSpawner.SpawnPet(cs, def, owner);
+        var pet = MonsterSpawner.CreateCreature(cs, def, owner.Side, null);
         AddPet(cs, pet, owner);
         return pet;
     }

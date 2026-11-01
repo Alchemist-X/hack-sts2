@@ -96,7 +96,7 @@ public abstract class RelicModel : AbstractModel, ICanonical
 
     public virtual int DisplayAmount => 0;
 
-    public bool HasBeenRemovedFromState { get; internal set; }
+    public bool HasBeenRemovedFromState { get; private set; }
 
     public void AttachTo(PlayerState owner)
     {

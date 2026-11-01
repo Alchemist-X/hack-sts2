@@ -397,12 +397,12 @@ internal ref struct ListenerSnapshot
             case ListenerKind.Affliction:
             {
                 var affliction = (AfflictionModel)entry.Model;
-                return affliction.HasCard && !affliction.Card.HasBeenRemovedFromState && OwnerOf(affliction.Card, entry.Player).IsActiveForHooks;
+                return affliction.Card is { } card && !card.HasBeenRemovedFromState && OwnerOf(card, entry.Player).IsActiveForHooks;
             }
             case ListenerKind.Enchantment:
             {
                 var enchantment = (EnchantmentModel)entry.Model;
-                return enchantment.HasCard && !enchantment.Card.HasBeenRemovedFromState && OwnerOf(enchantment.Card, entry.Player).IsActiveForHooks;
+                return enchantment.Card is { } card && !card.HasBeenRemovedFromState && OwnerOf(card, entry.Player).IsActiveForHooks;
             }
             default:
                 return true;
