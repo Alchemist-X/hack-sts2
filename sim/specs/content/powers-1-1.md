@@ -1,0 +1,31 @@
+# W3 powers-1-1 (wave A) index
+
+- ACCELERANT_POWER — Models.Powers/AccelerantPower.cs:7 — marker only; read by PoisonPower (other owner); ExtraHoverTips dropped
+- ACCURACY_POWER — Models.Powers/AccuracyPower.cs:9 — none
+- AFTERIMAGE_POWER — Models.Powers/AfterimagePower.cs:16 — Data dictionary keyed by CardInstance.InstanceId instead of CardModel reference; cloned + hashed sorted by id; `fast: true` dropped
+- AMBERGRIS_POWER — Models.Powers/AmbergrisPower.cs:12 — IsVisibleInternal kept as a plain property (no visibility consumer in the kernel)
+- ARSENAL_POWER — Models.Powers/ArsenalPower.cs:15 — ThrowingPlayerChoiceContext -> cs.Choice.PushContext(Throwing); Flash dropped
+- AUTOMATION_POWER — Models.Powers/AutomationPower.cs:14 — Data.cardsLeft -> CardsLeft (hashed); DisplayAmount kept as plain property; InvokeDisplayAmountChanged/Flash dropped; BaseCards DynamicVar -> const 10
+- BARRICADE_POWER — Models.Powers/BarricadePower.cs:10 — AfterApplied only fills the ApplierName StringVar (UI), dropped
+- BLOCK_NEXT_TURN_POWER — Models.Powers/BlockNextTurnPower.cs:15 — Flash dropped
+- BUFFER_POWER — Models.Powers/BufferPower.cs:16 — GetScaledAmountForMultiplayer (players>1 only) not ported, base throws NotSupported
+- COLOSSUS_POWER — Models.Powers/ColossusPower.cs:19 — DamageDecrease DynamicVar -> const 0.5m
+- CONFUSED_POWER — Models.Powers/ConfusedPower.cs:9 — TestEnergyCostOverride (TestMode) and NCard randomize anim dropped; rng = cs.Rng.CombatEnergyCosts.NextInt(4)
+- CRIMSON_MANTLE_POWER — Models.Powers/CrimsonMantlePower.cs:18 — SelfDamage DamageVar -> hashed decimal field (start 0, IncrementSelfDamage +1), props Unblockable|Unpowered; Flash dropped
+- CRUELTY_POWER — Models.Powers/CrueltyPower.cs:9 — implements IVulnerableMultiplierModifier (called by VulnerablePower)
+- CURIOUS_POWER — Models.Powers/CuriousPower.cs:6 — none
+- DANSE_MACABRE_POWER — Models.Powers/DanseMacabrePower.cs:16 — EnergyVar(2) -> const; GetResolved via the cs-aware overload (global cost hooks included, as the game's card-bound cost does); Flash dropped
+- DEMESNE_POWER — Models.Powers/DemesnePower.cs:8 — none
+- ENERGY_NEXT_TURN_POWER — Models.Powers/EnergyNextTurnPower.cs:14 — none
+- FAN_OF_KNIVES_POWER — Models.Powers/FanOfKnivesPower.cs:5 — marker read by the Shiv card (other owner)
+- FASTEN_POWER — Models.Powers/FastenPower.cs:12 — AfterModifyingBlockAmount is Flash only, dropped; game class is non-sealed but has no subclass, ported sealed
+- FEEL_NO_PAIN_POWER — Models.Powers/FeelNoPainPower.cs:15 — none
+- FLAME_BARRIER_POWER — Models.Powers/FlameBarrierPower.cs:16 — none
+- FREE_ATTACK_POWER — Models.Powers/FreeAttackPower.cs:12 — `card.Pile?.Type` -> card.GetPileType(cs) (None/Deck when out of combat piles)
+- FREE_POWER_POWER — Models.Powers/FreePowerPower.cs:12 — as FREE_ATTACK_POWER with CardType.Power
+- FREE_SKILL_POWER — Models.Powers/FreeSkillPower.cs:12 — as FREE_ATTACK_POWER with CardType.Skill
+- FRIENDSHIP_POWER — Models.Powers/FriendshipPower.cs:8 — none
+- GIGANTIFICATION_POWER — Models.Powers/GigantificationPower.cs:16 — Data.commandToModify -> CommandToModify reference (shared by MemberwiseClone; canonical writes only its presence); `ModelSource is CardModel` -> ModelSource != null
+- HANG_POWER — Models.Powers/HangPower.cs:11 — `cardSource is Hang` -> id "HANG"
+- HAUNT_POWER — Models.Powers/HauntPower.cs:17 — `card is Soul` -> id "SOUL"; target = cs.Rng.CombatTargets.NextItem(hittable monsters)
+- INFERNO_POWER — Models.Powers/InfernoPower.cs:22 — Cmd.CustomScaledWait and NFireBurstVfx dropped; SelfDamage as CRIMSON_MANTLE_POWER
