@@ -113,6 +113,8 @@ public sealed class CardInstance : ICanonical, IComparable<CardInstance>
 
     public bool IsDupe { get; set; }
 
+    public bool IsClone { get; set; }
+
     public int CurrentTargetId { get; set; } = NoTarget;
 
     public int CurrentPlayIndex { get; set; }
