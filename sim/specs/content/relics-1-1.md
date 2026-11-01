@@ -1,0 +1,44 @@
+# relics-1-1 (W3 wave A) — index
+
+Paths are under `MegaCrit.Sts2.Core.Models.Relics/`. Dropped everywhere: `Flash()`, `FlashSfx`, `HoverTips`, `InvokeDisplayAmountChanged`, `AssertMutable`, VFX, `fast:` block flag, `choiceContext` plumbing. Hittable enemies = `cs.Monsters` filtered by `CombatStatus.IsHittable` (`Combat/CombatState.cs:622`). Counter relics' `DoActivateVisuals` (fire-and-forget with `Cmd.Wait(1f)`) collapsed to `IsActivating = true; IsActivating = false;` as in the Nunchaku pilot.
+
+- ANCHOR — Anchor.cs:15 — BeforeCombatStart GainBlock 10.
+- BAG_OF_MARBLES — BagOfMarbles.cs:19 — Vulnerable 1 to hittable enemies at turn <= 1 (BeforeSideTurnStart).
+- BAG_OF_PREPARATION — BagOfPreparation.cs:8 — ModifyHandDraw +2 at turn <= 1.
+- BEATING_REMNANT — BeatingRemnant.cs:14 — AfterModifyingHpLostAfterOsty is Flash-only, not overridden; `CombatManager.IsInProgress` read as `rs.Combat?.IsInProgress`.
+- BLOOD_VIAL — BloodVial.cs:15 — AfterPlayerTurnStartLate heal 2 at turn <= 1.
+- BREAD — Bread.cs:18 — ModifyMaxEnergy's `PlayerCombatState == null` branch not reachable (hook is combat-scope).
+- BRILLIANT_SCARF — BrilliantScarf.cs:14 — ShowCounter (UI, global combat lookup) dropped; pile check via `GetPileType(cs)`.
+- BRIMSTONE — Brimstone.cs:19 — ThrowingPlayerChoiceContext → `PushContext(Throwing)`; enemy targets = opponents alive (not hittable), applier null.
+- CANDELABRA — Candelabra.cs:17 — +2 energy on turn 2.
+- CAPTAINS_WHEEL — CaptainsWheel.cs:16 — AfterBlockCleared block 18 on turn 3.
+- CHANDELIER — Chandelier.cs:17 — +3 energy on turn 3.
+- CHARONS_ASHES — CharonsAshes.cs:16 — AfterCardExhausted 3 dmg to hittable enemies.
+- CHEMICAL_X — ChemicalX.cs:9 — BeforeCardPlayed is Flash-only, not overridden; ModifyXValue +2.
+- CIRCLET — Circlet.cs:5 — no logic (None rarity, stackable).
+- CLOAK_CLASP — CloakClasp.cs:20 — BeforeSideTurnEnd block = (int)(hand count × 1).
+- DAUGHTER_OF_THE_WIND — DaughterOfTheWind.cs:16 — `fast: true` dropped.
+- DEMON_TONGUE — DemonTongue.cs:17 — `Owner.Creature.CombatState != null` → `CombatStatus.IsAttached`; flag not reset at combat end (as in the game).
+- FAKE_ANCHOR — FakeAnchor.cs:15 — MerchantCost 50, block 4.
+- FAKE_BLOOD_VIAL — FakeBloodVial.cs:15 — MerchantCost 50, heal 1.
+- FAKE_HAPPY_FLOWER — FakeHappyFlower.cs:20 — HappyFlower with Turns 5, MerchantCost 50.
+- FAKE_MERCHANTS_RUG — FakeMerchantsRug.cs:5 — no logic.
+- FAKE_ORICHALCUM — FakeOrichalcum.cs:19 — BeforeSideTurnEnd has no participants check in the game (kept).
+- FAKE_STRIKE_DUMMY — FakeStrikeDummy.cs:11 — Strike tag read via `CardInstance.HasTag` (canonical tags).
+- FESTIVE_POPPER — FestivePopper.cs:18 — 9 dmg to hittable enemies on turn 1 (AfterPlayerTurnStart).
+- FIDDLE — Fiddle.cs:9 — AfterPreventingDraw is Flash-only, not overridden.
+- FORGOTTEN_SOUL — ForgottenSoul.cs:16 — target via `Rng.CombatTargets.NextItem(hittable)`.
+- GAME_PIECE — GamePiece.cs:16 — draw 1 on Power play.
+- GREMLIN_HORN — GremlinHorn.cs:16 — AfterDeath uses `rs.Combat!` (only reached for an opposing creature).
+- HAND_DRILL — HandDrill.cs:17 — `breaker.PetOwner` → `CombatStatus.PetOwnerOf(cs, breaker)`.
+- HAPPY_FLOWER — HappyFlower.cs:20 — W1 pilot, not re-ported.
+- HORN_CLEAT — HornCleat.cs:16 — AfterBlockCleared block 14 on turn 2.
+- ICE_CREAM — IceCream.cs:6 — ShouldPlayerResetEnergy.
+- IRON_CLUB — IronClub.cs:18 — CardsPlayed persists across combats (SavedProperty, no reset).
+- KUNAI — Kunai.cs:22 — ShowCounter (global combat lookup) dropped.
+- KUSARIGAMA — Kusarigama.cs:21 — ShowCounter dropped; target roll before visuals.
+- LANTERN — Lantern.cs:17 — +1 energy at turn <= 1.
+- LETTER_OPENER — LetterOpener.cs:21 — ShowCounter dropped; GetSkillsPlayedForTest kept.
+- LIZARD_TAIL — LizardTail.cs:15 — gap: AfterPreventingDeath without an attached combat throws NotImplementedException (CreatureCmd.Heal needs a CombatState; W2 run layer).
+- LOST_WISP — LostWisp.cs:18 — 8 dmg to hittable enemies on Power play.
+- MERCURY_HOURGLASS — MercuryHourglass.cs:17 — 3 dmg to hittable enemies each owner turn start.
