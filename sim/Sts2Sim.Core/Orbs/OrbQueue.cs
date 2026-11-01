@@ -22,21 +22,57 @@ public sealed class OrbQueue : ICanonical
 
     public int Capacity => _capacity;
 
+    public void ResetForNewCombat(int baseOrbSlotCount)
+    {
+        Clear();
+        AddCapacity(baseOrbSlotCount);
+    }
+
     public void Clear()
     {
         _orbs.Clear();
         _capacity = 0;
     }
 
-    public void AddCapacity(int capacity) => throw new NotImplementedException("OrbQueue.AddCapacity: character-mechanics (Entities.Orbs/OrbQueue.cs:414)");
+    public void AddCapacity(int capacity)
+    {
+        _capacity += capacity;
+    }
 
-    public void RemoveCapacity(int capacity) => throw new NotImplementedException("OrbQueue.RemoveCapacity: character-mechanics (Entities.Orbs/OrbQueue.cs:419)");
+    public void RemoveCapacity(int capacity)
+    {
+        _capacity = Math.Max(0, _capacity - capacity);
+        while (_orbs.Count > _capacity)
+        {
+            Remove(_orbs[_orbs.Count - 1]);
+        }
+    }
 
-    public bool TryEnqueue(OrbModel orb) => throw new NotImplementedException("OrbQueue.TryEnqueue: character-mechanics (Entities.Orbs/OrbQueue.cs:429)");
+    public bool TryEnqueue(OrbModel orb)
+    {
+        if (_capacity == 0)
+        {
+            return false;
+        }
+        ArgumentNullException.ThrowIfNull(orb);
+        if (_orbs.Count >= _capacity)
+        {
+            throw new InvalidOperationException("OrbQueue is full");
+        }
+        _orbs.Add(orb);
+        return true;
+    }
 
-    public bool Remove(OrbModel orb) => throw new NotImplementedException("OrbQueue.Remove: character-mechanics (Entities.Orbs/OrbQueue.cs:447)");
+    public bool Remove(OrbModel orb) => _orbs.Remove(orb);
 
-    public void Insert(int idx, OrbModel orb) => throw new NotImplementedException("OrbQueue.Insert: character-mechanics (Entities.Orbs/OrbQueue.cs:452)");
+    public void Insert(int idx, OrbModel orb)
+    {
+        if (idx >= _capacity)
+        {
+            throw new InvalidOperationException("idx cannot be greater than capacity");
+        }
+        _orbs.Insert(idx, orb);
+    }
 
     public void BeforeTurnEnd(CombatState cs)
     {
