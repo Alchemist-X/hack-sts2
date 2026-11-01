@@ -52,7 +52,7 @@ public sealed class MusicBox : RelicModel
         {
             return;
         }
-        var card = cs.CloneCard(cardPlay.Card);
+        var card = cardPlay.Card.CreateClone(cs);
         card.ExhaustOnNextPlay = false;
         CardCmd.ApplyKeyword(card, CardKeyword.Ethereal);
         CardPileCmd.AddGeneratedCardToCombat(cs, card, PileType.Hand, Owner);

@@ -50,6 +50,7 @@ public static partial class CombatLoop
         if (playerSide)
         {
             SetPhaseForAllPlayers(cs, PlayerTurnPhase.Start);
+            cs.PlayersReadyToEndTurn.Clear();
             if (!isExtraPlayerTurn)
             {
                 var monsters = cs.Monsters;
@@ -102,7 +103,7 @@ public static partial class CombatLoop
                 RunAutoPrePlayPhase(cs, player);
             }
             steps.RunWinCheck();
-            return false;
+            return cs.IsInProgress && cs.CurrentSide == CombatSide.Player && cs.AllPlayersReadyToEndTurn();
         }
         catch (TurnSetupUnwindException) when (!cs.IsInProgress)
         {

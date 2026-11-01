@@ -23,7 +23,7 @@ public sealed class Undeath : CardDef
     {
         var undeath = play.Card;
         CreatureCmd.GainBlock(cs, undeath.Owner, undeath.Vars.Block, play);
-        var card = cs.CloneCard(undeath);
+        var card = undeath.CreateClone(cs);
         card.ExhaustOnNextPlay = false;
         CardPileCmd.AddGeneratedCardToCombat(cs, card, PileType.Discard, undeath.Owner);
     }

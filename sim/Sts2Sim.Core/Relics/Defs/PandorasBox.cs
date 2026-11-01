@@ -13,13 +13,11 @@ public sealed class PandorasBox : RelicModel
     public override void AfterObtained(RunState rs)
     {
         var originals = Owner.Deck.Where(c => c != null && c.IsBasicStrikeOrDefend && c.IsRemovable).ToList();
-        var transformations = new List<(CardInstance Original, CardInstance Replacement)>(originals.Count);
+        var transformations = new List<CardTransformation>(originals.Count);
         foreach (var c in originals)
         {
-            var options = CardFactory.GetDefaultTransformationOptions(rs, c, false);
-            var pick = rs.Rng.Niche.NextItem(options)!;
-            transformations.Add((c, CardFactory.CreateRunCard(rs, pick, Owner)));
+            transformations.Add(new CardTransformation(null, c, CardFactory.CreateRandomCardForTransform(rs, c, false, rs.Rng.Niche)));
         }
-        CardCmd.TransformInDeck(rs, transformations);
+        CardCmd.Transform(rs, transformations, null);
     }
 }

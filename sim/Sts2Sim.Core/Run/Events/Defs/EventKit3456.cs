@@ -139,34 +139,11 @@ internal static class EventKit3456
 
     public static CardInstance TransformToRandomInDeck(RunState rs, CardInstance original, Rng rng)
     {
-        if (!original.IsTransformable(null))
-        {
-            throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable.");
-        }
         if (!original.IsInDeck)
         {
             throw new InvalidOperationException("Can't transform " + original.Id + " because it has no pile.");
         }
-        var options = new List<CardDef>(CardFactory.GetDefaultTransformationOptions(rs, original, false));
-        int unported = options.RemoveAll(static c => c is UnportedCardDef);
-        if (unported > 0)
-        {
-            rs.Fidelity.Record(FidelityFlag.ApproximatedRule, UnportedTransformOptionsSite);
-        }
-        if (options.Count == 0)
-        {
-            throw new NotImplementedException("W3 gap: no ported transform option for " + original.Id);
-        }
-        var owner = original.Owner;
-        var replacement = CardFactory.CreateRunCard(rs, rng.NextItem((IReadOnlyList<CardDef>)options), owner);
-        original.RemoveFromCurrentPile(null);
-        replacement = Hook.ModifyCardBeingAddedToDeck(rs, replacement);
-        owner.Deck.Add(replacement);
-        Hook.AfterCardChangedPiles(rs, null, replacement, PileType.Deck, null);
-        original.Def.AfterTransformedFrom(null, original);
-        replacement.Def.AfterTransformedTo(null, replacement);
-        original.RemoveFromState(null);
-        return replacement;
+        return CardCmd.TransformToRandom(rs, original, rng).CardAdded;
     }
 
     public static IReadOnlyList<CardInstance> FromDeckForUpgrade(RunState rs, PlayerState player, CardSelectorPrefs prefs, string siteId, string sourceId)

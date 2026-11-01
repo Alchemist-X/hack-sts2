@@ -115,6 +115,8 @@ public sealed class CardInstance : ICanonical, IComparable<CardInstance>
 
     public bool IsClone { get; set; }
 
+    public int? FloorAddedToDeck { get; set; }
+
     public int CurrentTargetId { get; set; } = NoTarget;
 
     public int CurrentPlayIndex { get; set; }
@@ -705,6 +707,27 @@ public sealed class CardInstance : ICanonical, IComparable<CardInstance>
         return clone;
     }
 
+    public CardInstance CreateClone(CombatState cs)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        if (GetCombatPile(cs) == null && IsInDeck)
+        {
+            throw new InvalidOperationException("Cannot create a clone of a card that is not in a combat pile.");
+        }
+        var clone = cs.CloneCard(this);
+        clone.IsClone = true;
+        clone.ExhaustOnNextPlay = false;
+        return clone;
+    }
+
+    public CardInstance CreateCloneForPlayer(CombatState cs, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        var clone = CreateClone(cs);
+        clone._owner = player;
+        return clone;
+    }
+
     public CardInstance DeepClone() => CloneFor(_owner);
 
     public CardInstance CloneFor(PlayerState? newOwner)
@@ -751,6 +774,8 @@ public sealed class CardInstance : ICanonical, IComparable<CardInstance>
         w.WriteBool(HasSingleTurnSly);
         w.WriteInt32(BaseReplayCount);
         w.WriteBool(IsDupe);
+        w.WriteBool(IsClone);
+        w.WriteInt32(FloorAddedToDeck ?? -1);
         w.WriteInt32(CurrentTargetId);
         w.WriteInt32(CurrentPlayIndex);
         w.WriteInt32(_baseStarCost);

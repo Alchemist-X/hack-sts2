@@ -4,6 +4,8 @@ public sealed class FoulPotion : PotionModel
 {
     public const string PotionId = "FOUL_POTION";
 
+    public const string FakeMerchantEventId = "FAKE_MERCHANT";
+
     public override string Id => PotionId;
 
     public override PotionRarity Rarity => PotionRarity.Event;
@@ -30,6 +32,14 @@ public sealed class FoulPotion : PotionModel
             CreatureCmd.Damage(cs, targets, damage.BaseValue, damage.Props, Owner, null, null);
             return;
         }
-        throw new NotImplementedException("W3 run-layer: FoulPotion.OnUse out of combat (MerchantRoom GainGold / FakeMerchant.FoulPotionThrown)");
+        var currentRoom = RoomStack.CurrentRoom(rs);
+        if (currentRoom is MerchantRoom)
+        {
+            PlayerCmd.GainGold(rs, DynamicVars.Gold.BaseValue, Owner);
+        }
+        if (currentRoom is EventRoom eventRoom && eventRoom.CanonicalEvent.Id == FakeMerchantEventId)
+        {
+            throw new NotImplementedException("W3 content: FoulPotion thrown in the FAKE_MERCHANT event calls FakeMerchant.FoulPotionThrown (Models.Potions/FoulPotion.cs:67-77); the event is not ported");
+        }
     }
 }

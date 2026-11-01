@@ -4,10 +4,6 @@ public sealed class BattlewornDummyTimeLimitPower : PowerModel
 {
     public const string PowerId = "BATTLEWORN_DUMMY_TIME_LIMIT_POWER";
 
-    public const string BattlewornDummyEventEncounterId = "BATTLEWORN_DUMMY_EVENT_ENCOUNTER";
-
-    public const string RanOutOfTimeSite = "BATTLEWORN_DUMMY_TIME_LIMIT_POWER: BattlewornDummyEventEncounter.RanOutOfTime = true has no encounter state in the kernel (Models.Powers/BattlewornDummyTimeLimitPower.cs:83-86)";
-
     public override string Id => PowerId;
 
     public override PowerType Type => PowerType.Buff;
@@ -25,9 +21,9 @@ public sealed class BattlewornDummyTimeLimitPower : PowerModel
             PowerCmd.Decrement(cs, this);
             return;
         }
-        if (cs.EncounterId == BattlewornDummyEventEncounterId)
+        if (BattlewornDummyEventEncounter.IsBattlewornDummyEncounter(cs))
         {
-            cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, RanOutOfTimeSite);
+            BattlewornDummyEventEncounter.SetRanOutOfTime(cs, true);
         }
         CreatureCmd.Escape(cs, Owner);
     }

@@ -138,16 +138,20 @@ public static partial class CombatLoop
             case ActionKind.PlayCard:
                 ActionExecutor.PlayCard(cs, action.CardIndex, target);
                 CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
                 break;
             case ActionKind.UsePotion:
                 PotionActions.UsePotion(cs, action.CardIndex, target);
                 CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
                 break;
             case ActionKind.DiscardPotion:
                 PotionActions.DiscardPotion(cs, action.CardIndex);
                 CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
                 break;
             case ActionKind.EndTurn:
+                PlayerCmd.EndTurn(cs, cs.Player, canBackOut: true);
                 if (EndTurnAndSwitchSides(cs))
                 {
                     RunTurnLoop(cs);
@@ -159,6 +163,18 @@ public static partial class CombatLoop
                 throw new InvalidOperationException($"{action.Kind} answers a pending prompt; CombatSim applies it through the choice engine, not CombatLoop.");
             default:
                 throw new InvalidOperationException($"Unknown action kind {action.Kind}.");
+        }
+    }
+
+    private static void EndTurnIfAllPlayersReady(CombatState cs)
+    {
+        if (!cs.IsInProgress || cs.CurrentSide != CombatSide.Player || !cs.AllPlayersReadyToEndTurn())
+        {
+            return;
+        }
+        if (EndTurnAndSwitchSides(cs))
+        {
+            RunTurnLoop(cs);
         }
     }
 
@@ -203,6 +219,7 @@ public static partial class CombatLoop
             {
                 card.Upgrade();
             }
+            card.FloorAddedToDeck = 1;
             player.Deck.Add(card);
         }
     }
@@ -240,7 +257,12 @@ public static partial class CombatLoop
         else
         {
             encounter ??= EncounterRegistry.Get(encounterId);
+            cs.EncounterExtra = encounter.CreateExtraState();
             MonsterSpawner.SpawnEncounter(cs, encounter, context);
+        }
+        if (encounter != null && cs.EncounterExtra == null)
+        {
+            cs.EncounterExtra = encounter.CreateExtraState();
         }
         cs.IsStarting = true;
         ResetCombatState(cs, player);

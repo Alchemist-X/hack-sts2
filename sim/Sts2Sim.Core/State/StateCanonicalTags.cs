@@ -16,4 +16,5 @@ public static class StateCanonicalTags
     public const ushort MonsterKernel = 0x530C;
     public const ushort AllyList = 0x530D;
     public const ushort CombatKernel = 0x530E;
+    public const ushort CombatEncounter = 0x530F;
 }

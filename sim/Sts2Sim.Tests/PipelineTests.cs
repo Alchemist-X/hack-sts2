@@ -1533,7 +1533,7 @@ public static class PipelineTests
         });
     }
 
-    public static void Test_Pipeline_EscapeStripsPowersSilentlyRemovesAndFlags()
+    public static void Test_Pipeline_EscapeStripsPowersSilentlyRemovesAndRecords()
     {
         var cs = NewCombatWithIds(2);
         var m = cs.Monsters[0];
@@ -1545,11 +1545,10 @@ public static class PipelineTests
         Assert.Equal(0, m.Powers.Count);
         Assert.Equal(0, log.Count, "escape removes powers without AfterRemoved");
         Assert.True(m.IsAlive);
-        Assert.Equal(1, cs.Run.Fidelity.Count);
-        Assert.Equal(FidelityFlag.ApproximatedRule, cs.Run.Fidelity.Entries[0].Flag);
-        Assert.Equal(CreatureCmd.EscapeFidelitySite, cs.Run.Fidelity.Entries[0].Site);
+        Assert.Equal(0, cs.Run.Fidelity.Count);
+        Assert.SequenceEqual(new CreatureState[] { m }, cs.EscapedCreatures);
         CreatureCmd.Escape(cs, m);
-        Assert.Equal(1, cs.Run.Fidelity.Count, "a creature that already left is ignored");
+        Assert.Equal(1, cs.EscapedCreatures.Count, "a creature that already left is ignored");
         var dead = cs.Monsters[0];
         dead.CurrentHp = 0;
         CreatureCmd.Escape(cs, dead);

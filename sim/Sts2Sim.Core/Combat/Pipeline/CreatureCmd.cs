@@ -2,7 +2,6 @@ namespace Sts2Sim.Core.Combat.Pipeline;
 
 public static partial class CreatureCmd
 {
-    public const string EscapeFidelitySite = "CreatureCmd.Escape: CombatState.EscapedCreatures (Combat/CombatState.cs:733-737) has no sim field; the escaped creature is removed but not listed";
 
     public const string HandlePlayerDeathFidelitySite = "CreatureCmd.HandlePlayerDeath: CardPileCmd.RemoveFromCombat(cards) batch (Commands/CardPileCmd.cs:2205-2460) replaced by per-card removal";
 
@@ -418,7 +417,65 @@ public static partial class CreatureCmd
         {
             Hook.AfterDamageReceived(rs, null, target, result, props, null, null);
         }
+        else
+        {
+            Kill(rs, target);
+        }
         return result;
+    }
+
+    public static void Kill(RunState rs, CreatureState creature, bool force = false)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(creature);
+        if (rs.Combat != null)
+        {
+            Kill(rs.Combat, creature, force);
+            return;
+        }
+        KillOutOfCombat(rs, creature, force, 0);
+    }
+
+    private static void KillOutOfCombat(RunState rs, CreatureState creature, bool force, int recursion)
+    {
+        if (creature is not PlayerState player)
+        {
+            return;
+        }
+        if (rs.Players.Count > 1 && !force)
+        {
+            Heal(rs, creature, 1m);
+            return;
+        }
+        int currentHp = creature.CurrentHp;
+        if (currentHp > 0)
+        {
+            CreatureInternals.LoseHpInternal(creature, currentHp, ValueProp.Unblockable | ValueProp.Unpowered);
+            Hook.AfterCurrentHpChanged(rs, null, creature, -currentHp);
+        }
+        Hook.BeforeDeath(rs, null, creature);
+        AbstractModel? preventer = null;
+        if (force || creature.MaxHp <= 0 || Hook.ShouldDie(rs, null, creature, out preventer))
+        {
+            Hook.AfterDeath(rs, null, creature, false);
+            if (creature.Powers.Count > 0)
+            {
+                throw new InvalidOperationException("CreatureCmd.Kill out of combat: a player carries powers outside a combat (Entities.Creatures/Creature.cs RemoveAllPowersAfterDeath).");
+            }
+            player.OrbQueue.Clear();
+            player.DeactivateHooks();
+            return;
+        }
+        if (recursion >= 10)
+        {
+            throw new InvalidOperationException("Combat is ending, but something is continually preventing the last creature from being killed!");
+        }
+        Hook.AfterDeath(rs, null, creature, true);
+        Hook.AfterPreventingDeath(rs, null, preventer!, creature);
+        if (creature.IsDead)
+        {
+            KillOutOfCombat(rs, creature, force, recursion + 1);
+        }
     }
 
     public static void SetMaxAndCurrentHp(CombatState cs, CreatureState creature, decimal amount)
@@ -458,9 +515,9 @@ public static partial class CreatureCmd
             for (int i = 0; i < snapshot.Length; i++)
             {
                 var creature = snapshot[i];
-                if (creature.IsPlayer && creature.IsDead && CombatStatus.IsAttached(cs, creature) && cs.CurrentSide == CombatSide.Player)
+                if (creature is PlayerState deadPlayer && creature.IsDead && CombatStatus.IsAttached(cs, creature) && cs.CurrentSide == CombatSide.Player)
                 {
-                    throw new InvalidOperationException("CreatureCmd.Kill: a dead player while another player lives ends that player's turn through PlayerCmd.EndTurn (Commands/CreatureCmd.cs:2414-2438), a multiplayer-only path.");
+                    PlayerCmd.EndTurn(cs, deadPlayer, canBackOut: false);
                 }
             }
         }
@@ -611,25 +668,14 @@ public static partial class CreatureCmd
         {
             return;
         }
-        var removed = new List<PowerModel>(creature.Powers.Count);
-        CreatureInternals.RemoveAllPowersInternal(creature, removed);
-        cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, EscapeFidelitySite);
-        if (creature is MonsterState escaping)
-        {
-            MonsterLifecycle.RemoveCreature(cs, escaping);
-        }
-        if (creature is MonsterState monster && cs.Monsters.Contains(monster))
-        {
-            cs.RemoveMonster(monster);
-        }
-        else if (creature is MonsterState ally)
-        {
-            cs.RemoveAlly(ally);
-        }
-        else
+        if (creature is not MonsterState escaping)
         {
             throw new InvalidOperationException("CreatureCmd.Escape: the sim cannot remove a player from its combat (Combat/CombatState.cs:739-768 removes it from _allies and unattaches it).");
         }
+        var removed = new List<PowerModel>(creature.Powers.Count);
+        CreatureInternals.RemoveAllPowersInternal(creature, removed);
+        MonsterLifecycle.RemoveCreature(cs, escaping);
+        cs.CreatureEscaped(escaping);
     }
 
     public static void Stun(CombatState cs, MonsterState creature, string? nextMoveId = null)

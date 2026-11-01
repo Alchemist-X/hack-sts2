@@ -47,6 +47,7 @@ public static class MonsterSpawner
             }
             def.InitPrivateRng(cs, monster, known.CreateMonsterRng(cs.Rng.Seed, monster.CombatId));
         }
+        cs.OnCreatureSpawned(monster);
         return monster;
     }
 

@@ -14,5 +14,11 @@ public sealed class SlingOfCourage : RelicModel
     };
 
     public override void AfterRoomEntered(RunState rs, AbstractRoom room)
-        => throw new NotImplementedException("W3 run-layer: SlingOfCourage.AfterRoomEntered (AbstractRoom.RoomType == Elite)");
+    {
+        if (room.RoomType == RoomType.Elite)
+        {
+            var cs = rs.Combat ?? throw new InvalidOperationException("SLING_OF_COURAGE: an elite room was entered without a combat set up (Models.Relics/SlingOfCourage.cs AfterRoomEntered).");
+            PowerCmd.Apply<StrengthPower>(cs, Owner, DynamicVars.Strength.BaseValue, Owner, null);
+        }
+    }
 }

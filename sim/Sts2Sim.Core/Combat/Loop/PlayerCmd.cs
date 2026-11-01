@@ -95,7 +95,43 @@ public static class PlayerCmd
         => HealRestSiteOption.ExecuteRestSiteHeal(rs, player, true);
 
     public static void EndTurn(CombatState cs, PlayerState player, bool canBackOut)
-        => throw new NotImplementedException("PlayerCmd.EndTurn: needs the turn state's ready-to-end-turn set on CombatState, which the state kernel does not hold yet (Commands/PlayerCmd.cs:984-994, Combat/CombatManager.cs:6811-6857)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(player);
+        if (!IsPlayerReadyToEndTurn(cs, player))
+        {
+            SetReadyToEndTurn(cs, player, canBackOut);
+        }
+    }
+
+    public static bool IsPlayerReadyToEndTurn(CombatState cs, PlayerState player)
+        => cs.IsInProgress && cs.IsPlayerReadyToEndTurn(player);
+
+    public static void SetReadyToEndTurn(CombatState cs, PlayerState player, bool canBackOut)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(player);
+        if (!cs.IsInProgress)
+        {
+            return;
+        }
+        var ready = cs.PlayersReadyToEndTurn;
+        if (ready.Contains(player.CombatId))
+        {
+            return;
+        }
+        ready.Add(player.CombatId);
+    }
+
+    public static void UndoReadyToEndTurn(CombatState cs, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(player);
+        if (cs.IsInProgress)
+        {
+            cs.PlayersReadyToEndTurn.Remove(player.CombatId);
+        }
+    }
 
     public static void CompleteQuest(RunState rs, CardInstance questCard)
     {
