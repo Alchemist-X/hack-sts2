@@ -9,7 +9,6 @@ public sealed class Nightmare : CardDef
     public const int CostUpgrade = -1;
     public const int SelectCount = 1;
     public const decimal PowerAmount = 3m;
-    public const string NightmarePowerId = "NIGHTMARE_POWER";
 
     private static readonly ReadOnlyCollection<CardKeyword> Keywords = Array.AsReadOnly(new[] { CardKeyword.Exhaust });
 
@@ -30,8 +29,8 @@ public sealed class Nightmare : CardDef
         var selectedCard = CardSelectCmd.FromHand(cs, owner, prefs, null, ChoiceSource.For(card, "OnPlay")).FirstOrDefault();
         if (selectedCard != null)
         {
-            PowerCmd.Apply(cs, PowerRegistry.Create(NightmarePowerId), owner, PowerAmount, owner, card);
-            throw new NotImplementedException("W3 gap: NightmarePower.SetSelectedCard (power class owned by another agent; wire the applied power's SetSelectedCard(selectedCard) once it lands)");
+            var power = PowerCmd.Apply<NightmarePower>(cs, owner, PowerAmount, owner, card);
+            power!.SetSelectedCard(cs, selectedCard);
         }
     }
 

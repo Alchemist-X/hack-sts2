@@ -10,7 +10,7 @@ public sealed class AmbergrisPower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public bool IsVisibleInternal => false;
+    protected override bool IsVisibleInternal => false;
 
     public override bool ShouldTakeExtraTurn(CombatState cs, PlayerState player)
     {

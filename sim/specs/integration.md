@@ -764,3 +764,21 @@ decide it), **open** (a real follow-up for the named owner, listed again in §9.
 | 6 | Contract text: the 20 "needs contract change" rows of §9.8 | the Part B owner folds them into CONTRACTS |
 | 7 | Cleanups: C8, P10, P14 | owners named in §9.8 |
 | 8 | The REC track (`4094c1e`) is still compiled and tested but not installed | `scripts/install_mod.sh` when the recorder change goes live |
+
+## W2/W3 integrate A (2026-11-01)
+
+Base `72edde8` (W2 scaffold). All 32 W3 branches were cut from `14c25e8` (the scaffold's parent), so none descends from the base; none touches a file the scaffold changed, so they were merged (3-way) rather than skipped.
+
+Merged, in order: powers-1-1, powers-1-2, powers-2-1, powers-2-2, powers-3457, powers-6, cards-1-1, cards-1-2, cards-1-3, cards-1-4, cards-2-1, cards-2-2, cards-2-3, cards-3-1, cards-3-2, cards-3-3, cards-4-1, cards-5-1, cards-6-10, cards-7-1, cards-8-1, cards-9-1, cards-9-2, relics-1-1, relics-1-2, relics-2-4-6, relics-3-1, relics-3-2, relics-5-1, potions-1, potions-2, orbs-ench-affl.
+
+Conflicts: only `sim/Sts2Sim.Tests/CardKernelTests.cs` (the two Ironclad-pool tests, edited the same way by eight owners); HEAD side kept each time. Duplicate kernel members (`PowerModel.IsVisible`/`IsVisibleInternal`, `CardInstance.IsClone`) merged to a single copy.
+
+Fixes:
+- `AmbergrisPower.IsVisibleInternal`: `public` hid the base member (CS0114); now `protected override` (Models.Powers/AmbergrisPower.cs:87).
+- `Nightmare.OnPlay`: wired `PowerCmd.Apply<NightmarePower>(...)!.SetSelectedCard(cs, selected)` (Models.Cards/Nightmare.cs:173-175), replacing the W3-gap throw.
+- `RollingBoulderPower` ported (unowned; Models.Powers/RollingBoulderPower.cs): AfterPlayerTurnStart deals Amount unpowered to hittable enemies, then Amount += 5.
+- `VoidForm` card marked `[SimExclude]` (calls `PlayerCmd.EndTurn`, a kernel stub, see L5); removed from the cards-9-2 ported-id list.
+
+Gates: build 0 warnings 0 errors; tests 830/830, PENDING 0; content soak green (cards 1084, encounters 24, potions 128, relics 340); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded defs: `VOID_FORM` (NotImplementedException from `PlayerCmd.EndTurn`).

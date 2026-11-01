@@ -61,3 +61,9 @@ Notes:
 - The decision API `Step(a)` takes one `DeepClone` per action (B1 tape engine); the fast path is 1.32x to 1.59x faster in the same process. The rest of the regression is the full listener walk (B3), the B6 turn flow and history, and the B7 keyword hook. Per-track breakdown: `sim/specs/integration.md` section 9.7.
 
 Caveat: these numbers come from a single small encounter with a 10-card deck. Costs will rise as more cards, powers and monsters are ported, so re-run the bench after each content batch.
+
+## W2/W3 stage A (2026-11-01, NIBBITS_WEAK, 1 run, 5 s)
+
+| Row | decisions/s | Clone() | StateHash() |
+|---|---|---|---|
+| W2/W3 stage A | 136,592 | 21.229 us | 5.928 us |
