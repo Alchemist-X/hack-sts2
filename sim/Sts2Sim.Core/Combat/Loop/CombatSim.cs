@@ -40,6 +40,16 @@ public sealed class CombatSim
         return Begin(CombatLoop.SetUpCombat(seed, deckIds, encounterId, ascension, populateMonsters));
     }
 
+    public static CombatSim FromSetUp(CombatState setUp)
+    {
+        ArgumentNullException.ThrowIfNull(setUp);
+        if (!setUp.IsStarting || setUp.IsInProgress)
+        {
+            throw new InvalidOperationException("FromSetUp needs a combat that SetUpCombat prepared and that has not started yet.");
+        }
+        return Begin(setUp);
+    }
+
     public static CombatSim FromState(CombatState state)
     {
         ArgumentNullException.ThrowIfNull(state);
