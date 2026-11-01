@@ -60,7 +60,34 @@ public static partial class CreatureCmd
         {
             MonsterLifecycle.PrepareForNextTurn(cs, monster, rollNewMove: false);
         }
+        AppendToRoomHistory(cs, monster);
         Hook.AfterCreatureAddedToCombat(cs, monster);
+    }
+
+    // Commands/CreatureCmd.cs:302-307: an enemy added mid-combat is appended (once per id) to the MonsterIds of the
+    // current map point's last room entry, so spawned-then-removed minions stay in the floor summary. The room entry
+    // is a record shared with clones, hence copy-on-write.
+    internal static void AppendToRoomHistory(CombatState cs, MonsterState monster)
+    {
+        if (monster.Side != CombatSide.Enemy)
+        {
+            return;
+        }
+        var history = cs.Run.CurrentMapPointHistoryEntry;
+        if (history == null || history.Rooms.Count == 0)
+        {
+            return;
+        }
+        var last = history.Rooms[^1];
+        string id = monster.Def.Id;
+        if (last.MonsterIds.Contains(id))
+        {
+            return;
+        }
+        var ids = new List<string>(last.MonsterIds.Count + 1);
+        ids.AddRange(last.MonsterIds);
+        ids.Add(id);
+        history.Rooms[^1] = last with { MonsterIds = ids };
     }
 
     private static EncounterDef? EncounterOf(CombatState cs)

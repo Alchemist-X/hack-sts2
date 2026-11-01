@@ -14,9 +14,8 @@ public static class SimProjector
 
     public static readonly IReadOnlySet<string> PowersWithDisplayAmountOverride = new HashSet<string>(StringComparer.Ordinal)
     {
-        "AUTOMATION_POWER", "CACOPHONY_POWER", "FERAL_POWER", "HARDENED_SHELL_POWER", "MONOLOGUE_POWER",
-        "ORBIT_POWER", "PALE_BLUE_DOT_POWER", "PANACHE_POWER", "SLOTH_POWER", "SLOW_POWER", "TAG_TEAM_POWER",
-        "TENDER_POWER", "WITHERING_PRESENCE_POWER"
+        "AUTOMATION_POWER", "CACOPHONY_POWER", "FERAL_POWER", "MONOLOGUE_POWER", "ORBIT_POWER", "PALE_BLUE_DOT_POWER",
+        "PANACHE_POWER", "SLOTH_POWER", "TAG_TEAM_POWER", "WITHERING_PRESENCE_POWER"
     };
 
     public static readonly IReadOnlySet<string> PowersWithVisibilityOverride = new HashSet<string>(StringComparer.Ordinal)
@@ -163,6 +162,18 @@ public static class SimProjector
 
     public static int DisplayAmount(PowerModel power)
     {
+        switch (power)
+        {
+            // Models.Powers/HardenedShellPower.cs:25 `Max(0, Amount - damageReceivedThisTurn)`
+            case HardenedShellPower shell:
+                return (int)Math.Max(0m, shell.Amount - shell.DamageReceivedThisTurn);
+            // Models.Powers/SlowPower.cs:24 `DynamicVars["SlowAmount"].IntValue * 10`
+            case SlowPower slow:
+                return slow.SlowAmount * 10;
+            // Models.Powers/TenderPower.cs:229 `CardsPlayedThisTurn`
+            case TenderPower tender:
+                return tender.CardsPlayedThisTurn;
+        }
         if (PowersWithDisplayAmountOverride.Contains(power.Id))
         {
             throw new ProjectionGapException($"{power.Id} overrides PowerModel.DisplayAmount in the game; the diff projection has no rule for it yet");

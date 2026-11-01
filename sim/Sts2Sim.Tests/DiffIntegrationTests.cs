@@ -38,6 +38,18 @@ public static class DiffIntegrationTests
 
     private static string Roster(CombatSim sim) => string.Join(",", sim.State.Monsters.Select(m => $"{m.CombatId}:{m.MonsterId}"));
 
+    // W4.1: the harness combat carries its relics and a CombatRoom on the room stack, so the whole-state hash differs
+    // from a bare CombatSim.Create by construction; the opening is compared as the combat projection, the draw pile
+    // order and every run Rng stream instead.
+    private static string Opening(CombatSim sim)
+    {
+        var cs = sim.State;
+        string projection = ProjectionJson.Write(SimProjector.Project(cs)).ToJsonString();
+        string draw = string.Join(",", cs.Player.DrawPile.Cards.Select(c => c.Id));
+        string rng = string.Join(",", Enum.GetValues<RunRngType>().Select(t => cs.Rng.Get(t).ToSnapshot().ToString()));
+        return projection + "|" + draw + "|" + rng;
+    }
+
     public static void Test_DiffIntegration_RunContextFollowsBundleSourceAndSeeding()
     {
         Assert.Equal(CombatRunContext.ForAct(1, 2), BundleRunner.RunContext(Bundle(RngSetup.SeedingXxh64, Seeds[0], 1, 2)));
@@ -65,7 +77,7 @@ public static class DiffIntegrationTests
                     var expected = CombatSim.Create(RngSetup.CreateForBundle(b), BundleRunner.DeckSpecs(b), b.EncounterId, b.Ascension,
                         b.PlayerHp, b.PlayerMaxHp, CombatRunContext.ForAct(1, floor, null, null, scheme));
                     Assert.Equal(Roster(expected), Roster(viaHarness), $"{seeding} {seed} floor {floor}: roster");
-                    Assert.Equal(expected.StateHash(), viaHarness.StateHash(), $"{seeding} {seed} floor {floor}: whole opening state");
+                    Assert.Equal(Opening(expected), Opening(viaHarness), $"{seeding} {seed} floor {floor}: whole opening state");
                     var withDefault = CombatSim.Create(RngSetup.CreateForBundle(b), BundleRunner.DeckSpecs(b), b.EncounterId, b.Ascension,
                         b.PlayerHp, b.PlayerMaxHp, CombatRunContext.Default);
                     if (Roster(withDefault) != Roster(viaHarness))
@@ -86,7 +98,7 @@ public static class DiffIntegrationTests
             {
                 var b = Bundle(seeding, Seeds[2], 1, floor, "NIBBITS_WEAK");
                 var plain = CombatSim.Create(RngSetup.CreateForBundle(b), BundleRunner.DeckSpecs(b), b.EncounterId, b.Ascension, b.PlayerHp, b.PlayerMaxHp);
-                Assert.Equal(plain.StateHash(), BundleRunner.CreateSim(b).StateHash(), $"{seeding} floor {floor}: NIBBITS_WEAK draws from no private Rng");
+                Assert.Equal(Opening(plain), Opening(BundleRunner.CreateSim(b)), $"{seeding} floor {floor}: NIBBITS_WEAK draws from no private Rng");
             }
         }
     }

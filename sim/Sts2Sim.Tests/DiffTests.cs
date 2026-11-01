@@ -675,11 +675,11 @@ public static class DiffTests
             Assert.True(result.Reason!.Contains(reasonFragment, StringComparison.Ordinal), result.Reason);
             Assert.Equal(0, result.DecisionsCompared);
         }
-        Skips(j => j["character"] = "SILENT", "character SILENT");
+        Skips(j => j["character"] = "NOT_A_CHARACTER", "character NOT_A_CHARACTER");
         Skips(j => j["seed"] = "old" + TestSeed, "'old' prefix");
         Skips(j => j["encounter_id"] = "NOT_AN_ENCOUNTER", "encounter NOT_AN_ENCOUNTER");
         Skips(j => j["deck"]![0]!["id"] = "NOT_A_CARD", "card NOT_A_CARD");
-        Skips(j => j["relics"]!.AsArray().Add("BOOMING_CONCH"), "relic BOOMING_CONCH");
+        Skips(j => j["relics"]!.AsArray().Add("NOT_A_RELIC"), "relic NOT_A_RELIC");
 
         var badHp = BundleNode(recorded);
         badHp["player"]!["hp"] = 0;
@@ -756,11 +756,11 @@ public static class DiffTests
         Assert.Null(BundleRunner.IneligibleReason(parsed, includeExporterIneligible: true));
 
         var silent = BundleNode(recorded);
-        silent[BundleJson.IneligibleReasonsKey] = new JsonArray("character_not_ported:SILENT");
-        silent["character"] = "SILENT";
+        silent[BundleJson.IneligibleReasonsKey] = new JsonArray("character_not_ported:NOT_A_CHARACTER");
+        silent["character"] = "NOT_A_CHARACTER";
         var gate = BundleRunner.Run(Reparse(silent), includeExporterIneligible: true);
         Assert.Equal(BundleStatus.Skipped, gate.Status, "the flag never bypasses the sim gate");
-        Assert.True(gate.Reason!.Contains("character SILENT", StringComparison.Ordinal), gate.Reason);
+        Assert.True(gate.Reason!.Contains("character NOT_A_CHARACTER", StringComparison.Ordinal), gate.Reason);
 
         var empty = BundleNode(recorded);
         empty[BundleJson.IneligibleReasonsKey] = new JsonArray();

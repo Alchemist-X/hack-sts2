@@ -28,10 +28,9 @@ public sealed class VigorPower : PowerModel
         {
             return;
         }
-        if (command.IsFromMonster)
-        {
-            return;
-        }
+        // Models.Powers/VigorPower.cs BeforeAttack: `ModelSource != null && !(ModelSource is CardModel)` returns early.
+        // A monster attack has no ModelSource (Commands.Builders/AttackCommand.cs:781-791 FromMonster sets only the
+        // attacker), so it is modified and consumed like a card attack; the sim's ModelSource is always a card.
         CommandToModify = command;
         AmountWhenAttackStarted = Amount;
     }

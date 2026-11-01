@@ -132,10 +132,15 @@ public static class V2Runner
         CombatDriver driver;
         if (segment.CombatStart is { } shell)
         {
-            result.StartMode = run.FromV1 ? "v1" : "v1_start";
+            result.StartMode = run.FromV1 ? "v1" : segment.McrJoinedPart != null ? "mcr_join" : "v1_start";
             string? skip = BundleRunner.IneligibleReason(shell, options.IncludeIneligible);
             if (skip != null)
             {
+                if (segment.McrJoinNote != null)
+                {
+                    Skip(result, DivergenceClass.AnchorError, segment.McrJoinNote + "; " + skip);
+                    return null;
+                }
                 Skip(result, ClassifySkip(skip), skip);
                 return null;
             }
@@ -159,11 +164,7 @@ public static class V2Runner
             CombatSim sim;
             try
             {
-                sim = BundleRunner.CreateSim(shell);
-                foreach (var potion in RunBundleJson.StartPotions(segment))
-                {
-                    sim.State.Player.AddPotionInternal(PotionRegistry.Create(RunScreenProjector.StripCategory(potion.Id)), potion.Slot);
-                }
+                sim = BundleRunner.CreateSim(shell, StartExtras(segment));
             }
             catch (ArgumentException ex)
             {
@@ -181,6 +182,10 @@ public static class V2Runner
         }
         else
         {
+            if (segment.McrJoinNote != null)
+            {
+                throw new StartFailure(DivergenceClass.AnchorError, segment.McrJoinNote);
+            }
             var runSim = StartRunSim(run, segment, live, chainBroken, result);
             if (runSim.Phase != RunPhase.Combat)
             {
@@ -190,6 +195,18 @@ public static class V2Runner
         }
         ReplayCombat(segment, driver, result);
         return result.Status == BundleStatus.Agree ? driver.Run : null;
+    }
+
+    // X3.1 combat start extras (sim/specs/diff-bundle-v2.md): potions [{slot,id}], max_potion_slots and gold from the
+    // first battle snapshot; slots are set before the potions are added.
+    public static CombatStartExtras StartExtras(BundleSegment segment)
+    {
+        var potions = RunBundleJson.StartPotions(segment)
+            .Select(p => new KeyValuePair<int, string>(p.Slot, RunScreenProjector.StripCategory(p.Id)))
+            .ToList();
+        int? slots = segment.Start?["max_potion_slots"] is JsonValue sv && sv.TryGetValue(out int s) ? s : null;
+        int? gold = segment.Start?["gold"] is JsonValue gv && gv.TryGetValue(out int g) ? g : null;
+        return new CombatStartExtras(potions, slots, gold);
     }
 
     private static string? CombatConsistency(BundleSegment segment)
@@ -484,9 +501,23 @@ public static class V2Runner
                 result.DecisionsUnobserved++;
             }
             FieldDiff? actionDiff;
+            V2Action applied = d.Action;
             try
             {
-                actionDiff = ActionMapper.ApplyCombat(driver, d.Action);
+                var copies = d.Action.Type == V2Action.Choose
+                    ? ResolveHandCopies(driver, d.Action, i + 1 < segment.Decisions.Count ? segment.Decisions[i + 1].PreState : null)
+                    : null;
+                var play = d.Action.Type == V2Action.PlayCard && IsMcrDecision(d)
+                    ? ResolveMcrPlayIndex(driver, d.Action, i + 1 < segment.Decisions.Count ? segment.Decisions[i + 1] : null)
+                    : null;
+                if (play != null)
+                {
+                    result.McrPlayIndicesResolved++;
+                    applied = play;
+                }
+                actionDiff = copies != null
+                    ? ActionMapper.ApplyChoose(driver, copies, d.Action.Bool("skipped") == true, d.Action.Bool("confirm"))
+                    : ActionMapper.ApplyCombat(driver, applied);
             }
             catch (Exception ex)
             {
@@ -498,7 +529,7 @@ public static class V2Runner
                 Diverged(result, V2DivergenceKind.Action, i, new[] { actionDiff }, d, d.PreState, simJson ?? SafeCombatProjection(driver));
                 return;
             }
-            result.ActionsPrefix.Add(d.Action.ToJson());
+            result.ActionsPrefix.Add(applied.ToJson());
             if (d.PreState != null)
             {
                 result.DecisionsAgreed++;
@@ -545,7 +576,7 @@ public static class V2Runner
             }
             else
             {
-                diffs.AddRange(RunScreenComparer.Compare(new JsonObject { ["select"] = oracleSelect.DeepClone() }, simJson));
+                diffs.AddRange(CompareCombatSelect(oracleSelect, simSelect));
             }
             if (!RunScreenComparer.IsCombatProjection(pre))
             {
@@ -574,12 +605,228 @@ public static class V2Runner
             {
                 simJson = simCombat;
             }
+            if (d.Oracle?["rolled_forward"] is JsonValue rf && rf.TryGetValue(out bool rolled) && rolled)
+            {
+                diffs = diffs.Select(SoftenRolledForwardCounter).ToList();
+            }
             return diffs.Where(x => x.Severity == DiffSeverity.Hard).Concat(diffs.Where(x => x.Severity == DiffSeverity.Soft)).ToList();
         }
         if (diffs.Count == 0 && simJson == null)
         {
             diffs.Add(new FieldDiff("pre_state", pre.DeepClone(), null, DiffSeverity.Hard, "a combat pre_state is a v1 projection or a 'select' projection"));
         }
+        return diffs;
+    }
+
+    // Powers whose shown amount moves without a recorded event (SLOW_POWER per card in AfterCardPlayed,
+    // Models.Powers/SlowPower.cs:32-38; HARDENED_SHELL_POWER per hit, HardenedShellPower.cs:25; TENDER_POWER per card,
+    // TenderPower.cs:229). The exporter's roll-forward (`oracle.rolled_forward`, diff-bundle-v2.md) replays pending
+    // events onto an older snapshot and cannot advance them, so on such pre_states their amount is soft.
+    public static readonly IReadOnlySet<string> EventlessCounterPowers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "SLOW_POWER", "HARDENED_SHELL_POWER", "TENDER_POWER"
+    };
+
+    public const string RolledForwardCounterNote = "rolled-forward pre_state: the exporter cannot advance this event-less counter";
+
+    public static FieldDiff SoftenRolledForwardCounter(FieldDiff diff)
+    {
+        if (diff.Severity != DiffSeverity.Hard || !diff.Path.EndsWith("].amount", StringComparison.Ordinal))
+        {
+            return diff;
+        }
+        int open = diff.Path.LastIndexOf("powers[", StringComparison.Ordinal);
+        if (open < 0)
+        {
+            return diff;
+        }
+        string id = diff.Path[(open + "powers[".Length)..^"].amount".Length];
+        return EventlessCounterPowers.Contains(id) ? diff with { Severity = DiffSeverity.Soft, Note = RolledForwardCounterNote } : diff;
+    }
+
+    public static bool IsMcrDecision(SegmentDecision d)
+        => d.PreState == null && d.Oracle?["source"] is JsonValue v && v.TryGetValue(out string? s) && s == "mcr";
+
+    private static string CardKey(CardInstance c) => c.IsUpgraded ? c.Id + "+" : c.Id;
+
+    // W4.1 mcr hand indices by simulation (sim/specs/mcr-replay.md): the converter's hand index comes from the replay's
+    // checksum states (none in v0.107.1, `hand_index_unresolved`) and takes the first of identical copies. The sim
+    // replays from the decoded start, so the index is re-resolved against the sim hand: among the hand cards with the
+    // recorded id and upgrade, the one whose play leaves the hand of the next decision's checksum state
+    // (`oracle.checksum_state.hand`, ids with `+`) is taken, else the recorded index when it matches, else the first
+    // match. Returns null when the recorded index stands.
+    public static V2Action? ResolveMcrPlayIndex(CombatDriver driver, V2Action a, SegmentDecision? next)
+    {
+        if (driver.PendingChoice != null || driver.State is not { } cs || a.Str("card_id") is not { } id)
+        {
+            return null;
+        }
+        bool? upgraded = a.Bool("upgraded");
+        var hand = cs.Player.Hand;
+        var matches = new List<int>();
+        for (int k = 0; k < hand.Count; k++)
+        {
+            if (hand[k].Id == id && (upgraded is not bool u || u == hand[k].IsUpgraded))
+            {
+                matches.Add(k);
+            }
+        }
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+        int recorded = a.Int("hand_index") ?? -1;
+        int chosen = matches.Contains(recorded) ? recorded : matches[0];
+        if (matches.Count > 1 && next?.Oracle?["checksum_state"]?["hand"] is JsonArray want)
+        {
+            var wanted = want.Select(x => x?.GetValue<string>()).ToList();
+            foreach (int k in matches)
+            {
+                var trial = WithHandIndex(a, k);
+                var clone = driver.Clone();
+                if (ActionMapper.ApplyCombat(clone, trial) != null || clone.State == null)
+                {
+                    continue;
+                }
+                var after = clone.State.Player.Hand;
+                if (after.Count == wanted.Count && Enumerable.Range(0, after.Count).All(j => CardKey(after[j]) == wanted[j]))
+                {
+                    chosen = k;
+                    break;
+                }
+            }
+        }
+        return chosen == recorded ? null : WithHandIndex(a, chosen);
+    }
+
+    private static V2Action WithHandIndex(V2Action a, int index)
+    {
+        var raw = (JsonObject)a.Raw.DeepClone();
+        raw["hand_index"] = index;
+        return new V2Action(a.Type, raw, a.Picks);
+    }
+
+    public const int MaxHandCopyAssignments = 64;
+
+    // Hand selects with identical copies: the recorder's pick index is into its UI-ordered candidate list, so which hand
+    // copy was picked is not recorded (sim/specs/diff-report-w4-run.md T7 `choice identity`), but it decides the hand
+    // order afterwards. The copy is the one whose pick leaves the sim hand in the order of the next observed pre_state;
+    // without a next hand, or when no assignment reproduces it, the first unpicked copy is taken (null = no ambiguity).
+    public static IReadOnlyList<ChoosePick>? ResolveHandCopies(CombatDriver driver, V2Action a, JsonNode? nextPreState)
+    {
+        if (!string.Equals(a.Str("kind"), "hand", StringComparison.Ordinal) || driver.PendingChoice is not { } prompt
+            || nextPreState?["player"]?["hand"] is not JsonArray nextHand)
+        {
+            return null;
+        }
+        var picks = ActionMapper.HandPicksByIdentity(a);
+        var options = prompt.Options;
+        var perPick = new List<List<int>>(picks.Count);
+        foreach (var p in picks)
+        {
+            string? id = p.CardId != null ? RunScreenProjector.StripCategory(p.CardId) : null;
+            var matches = new List<int>();
+            for (int k = 0; k < options.Count; k++)
+            {
+                if (id != null && string.Equals(options[k].ModelId, id, StringComparison.Ordinal) && (p.Upgraded is not bool up || up == options[k].UpgradeLevel > 0))
+                {
+                    matches.Add(k);
+                }
+            }
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+            perPick.Add(matches);
+        }
+        if (perPick.All(m => m.Count <= 1))
+        {
+            return null;
+        }
+        var want = nextHand.Select(c => (c?["id"]?.GetValue<string>(), c?["upgraded"] is JsonValue u && u.TryGetValue(out bool b) && b)).ToList();
+        int tried = 0;
+        foreach (var assignment in Assignments(perPick, 0, new List<int>()))
+        {
+            if (++tried > MaxHandCopyAssignments)
+            {
+                break;
+            }
+            var candidate = picks.Select((p, k) => p with { Index = assignment[k] }).ToList();
+            var clone = driver.Clone();
+            if (ActionMapper.ApplyChoose(clone, candidate, a.Bool("skipped") == true, a.Bool("confirm")) != null || clone.State == null)
+            {
+                continue;
+            }
+            var hand = clone.State.Player.Hand;
+            if (hand.Count == want.Count && Enumerable.Range(0, want.Count).All(k => hand[k].Id == want[k].Item1 && hand[k].IsUpgraded == want[k].Item2))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static IEnumerable<List<int>> Assignments(List<List<int>> perPick, int k, List<int> prefix)
+    {
+        if (k == perPick.Count)
+        {
+            yield return new List<int>(prefix);
+            yield break;
+        }
+        foreach (int option in perPick[k])
+        {
+            if (prefix.Contains(option))
+            {
+                continue;
+            }
+            prefix.Add(option);
+            foreach (var a in Assignments(perPick, k + 1, prefix))
+            {
+                yield return a;
+            }
+            prefix.RemoveAt(prefix.Count - 1);
+        }
+    }
+
+    public static readonly string[] UnprojectedSelectFields = { "mode", "can_confirm" };
+
+    // Combat selection screens. `mode` / `can_confirm` and the candidates' `index` are recorder UI fields without a
+    // sim projection (soft). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
+    // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded).
+    public static List<FieldDiff> CompareCombatSelect(JsonObject oracleSelect, JsonObject simSelect)
+    {
+        var o = (JsonObject)oracleSelect.DeepClone();
+        var s = (JsonObject)simSelect.DeepClone();
+        var soft = new List<FieldDiff>();
+        foreach (var name in UnprojectedSelectFields)
+        {
+            if (o[name] is { } value)
+            {
+                soft.Add(new FieldDiff("select." + name, value.DeepClone(), null, DiffSeverity.Soft, RunScreenComparer.NotProjectedNote));
+                o.Remove(name);
+            }
+        }
+        bool hand = string.Equals(o["kind"]?.GetValue<string>(), "hand_select", StringComparison.Ordinal);
+        foreach (var obj in new[] { o, s })
+        {
+            if (obj["candidates"] is not JsonArray arr)
+            {
+                continue;
+            }
+            var items = arr.Select(x => x!.DeepClone()).ToList();
+            foreach (var item in items)
+            {
+                (item as JsonObject)?.Remove("index");
+            }
+            if (hand)
+            {
+                items = items.OrderBy(x => x!["id"]?.GetValue<string>(), StringComparer.Ordinal)
+                    .ThenBy(x => x!["upgraded"]?.ToJsonString(), StringComparer.Ordinal).ToList();
+            }
+            obj["candidates"] = new JsonArray(items.ToArray());
+        }
+        var diffs = RunScreenComparer.Compare(new JsonObject { ["select"] = o }, new JsonObject { ["select"] = s });
+        diffs.AddRange(soft);
         return diffs;
     }
 
