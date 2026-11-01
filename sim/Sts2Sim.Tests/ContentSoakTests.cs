@@ -170,7 +170,8 @@ public static class ContentSoak
                 var random = new System.Random(unchecked((int)seed));
                 var deck = RandomDeck(pool, options.RandomDeckSize, random);
                 RunCase(report, $"{id}/{seed}", random, options.ModelStepCap, () => CombatSim.Create(new RunRngSet(seed), deck, options.WeakEncounterId, 0, null, null),
-                    sim => RelicCmd.Obtain(sim.State.Run, RelicRegistry.Create(id), sim.State.Player));
+                    sim => Content_relics_9_1Tests.WithObtainPrompts(sim.State.Run, sim.State.Player, seed.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        () => RelicCmd.Obtain(sim.State.Run, RelicRegistry.Create(id), sim.State.Player)));
             }
         }
     }
