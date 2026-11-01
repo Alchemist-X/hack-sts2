@@ -415,7 +415,7 @@ public static class V2Runner
         return diffs;
     }
 
-    private static void ReplayCombat(BundleSegment segment, CombatDriver driver, SegmentResult result)
+    public static void ReplayCombat(BundleSegment segment, CombatDriver driver, SegmentResult result)
     {
         for (int i = 0; i < segment.Decisions.Count; i++)
         {

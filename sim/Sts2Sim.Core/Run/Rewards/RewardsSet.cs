@@ -44,6 +44,8 @@ public sealed partial class RewardsSet : ICanonical
 
     public int Id { get; set; } = -1;
 
+    public string? ContinuationRelicId { get; set; }
+
     public static bool ShouldGiveRewards(EncounterDef encounter) => Array.IndexOf(NoRewardEncounterIds, encounter.Id) < 0;
 
     public static int MinGoldReward(RunState rs, EncounterDef encounter, RoomType roomType)
@@ -191,7 +193,8 @@ public sealed partial class RewardsSet : ICanonical
             Id = Id,
             _allowEmptyRewards = _allowEmptyRewards,
             _disallowSkipping = _disallowSkipping,
-            _isGenerated = _isGenerated
+            _isGenerated = _isGenerated,
+            ContinuationRelicId = ContinuationRelicId
         };
         for (int i = 0; i < Rewards.Count; i++)
         {
@@ -210,6 +213,11 @@ public sealed partial class RewardsSet : ICanonical
         w.WriteBool(_isGenerated);
         w.WriteBool(Room != null);
         w.WriteInt32(Room?.Id ?? -1);
+        if (ContinuationRelicId != null)
+        {
+            w.WriteTag(RewardsCanonicalTags.RewardsSetContinuation);
+            w.WriteString(ContinuationRelicId);
+        }
         w.WriteCount(Rewards.Count);
         for (int i = 0; i < Rewards.Count; i++)
         {

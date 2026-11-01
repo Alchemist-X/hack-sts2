@@ -1,6 +1,6 @@
 namespace Sts2Sim.Core.Relics;
 
-public sealed class NeowsBones : RelicModel
+public sealed class NeowsBones : RelicModel, IRewardsSetContinuation
 {
     public const string RelicId = "NEOWS_BONES";
 
@@ -96,7 +96,16 @@ public sealed class NeowsBones : RelicModel
             }
             rewards.Add(new RelicReward(RelicRegistry.Create(id), Owner));
         }
-        new RewardsSet(Owner).WithCustomRewards(rewards).WithSkippingDisallowed().Offer(rs);
+        var set = new RewardsSet(Owner).WithCustomRewards(rewards).WithSkippingDisallowed();
+        set.ContinuationRelicId = Id;
+        if (!set.Offer(rs))
+        {
+            AfterRewardsSetClosed(rs);
+        }
+    }
+
+    public void AfterRewardsSetClosed(RunState rs)
+    {
         var availableCurses = CardPools.Curse.GetUnlockedCards(rs.Unlocks, CardPools.MultiplayerConstraintFor(rs))
             .Where(c => c.CanBeGeneratedByModifiers)
             .OrderBy(c => c.Id, StringComparer.Ordinal)

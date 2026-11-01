@@ -159,6 +159,17 @@ public static class RunActionExecutor
                 rewards[i].OnSkipped(rs);
             }
         }
+        if (set.ContinuationRelicId is { } continuationId)
+        {
+            foreach (var relic in set.Player.Relics)
+            {
+                if (relic.Id == continuationId && relic is IRewardsSetContinuation continuation)
+                {
+                    continuation.AfterRewardsSetClosed(rs);
+                    break;
+                }
+            }
+        }
         if (set.IsTerminal)
         {
             RunLoop.ProceedTerminal(rs, loop);
