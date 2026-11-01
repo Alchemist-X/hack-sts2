@@ -119,3 +119,15 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   powers:8（run 耦合 7 个能力）漏分配，连带 GremlinMerc / ThievingHopper / FORBIDDEN_GRIMOIRE / ROYALTIES；
   `PlayerCmd.EndTurn`、`CombatState.EscapedCreatures`、战斗外 `CardCmd.Transform` 等内核缝使 9 个定义被 `[SimExclude]`。
   下一步：W3.5 补缝（3 个所有者 + 集成）与 W4（exporter v2、harness v2、.mcr 解码、F1–F8 自洽、G3 整局重放与分诊）合为一个工作流。
+
+- 2026-11-01（续 5）：W3.5 补缝 + W4 差分闸一次跑完（run `wf_6beabaad-e16`，11 个 Opus 代理，3.5M token，1.8 小时）。
+  集成 1 `c145de0`：房间入口 / 胜利流程 / 存档导入补齐，`PlayerCmd.EndTurn`、逃跑生物、遭遇实例状态、战斗外改牌落地，
+  powers:8 与遗漏怪物补上，9 个 `[SimExclude]` 全部解除；**整局随机 soak 真跑：10⁴ 局 × 5 角色、68.8 万步、0 失败**。
+  W4 工具：`sts2rec export-bundles-v2`（19 局 → 1,664 段 / 11,724 决策）、harness v2（run 段、覆盖计数、基线 ratchet）、
+  `.mcr` 解码器（723 个回放全部可读；手牌索引与 v0.107.1 模型表校验未解）、F2–F8 自洽测试与 `RunExporter.ToSave`。
+  集成 2 `4809101`：1,028/1,028 测试，PENDING 0，内容 soak 0 失败，G0 4/4 · 69/69，基准 141k 决策/秒。
+  **真实录像回放**：战斗级 131/131 决策一致（扩展实验：v0.111.0 210/210，`.mcr` 拼接 502/534），无确认的移植错误；
+  整局级 G3 从种子重放 10 局 v0.111.0：Neow 与一幕地图 10/10，748/753 决策一致，首次分歧前层数 1–13（中位 6），
+  修了 2 个 run 层移植错误（地图历史怪物 id、NEOWS_BONES 诅咒掷骰顺序）。待修：事件抽取 T1、生成怪物未入历史 T2、
+  商店金额、FOSSIL_STALKER 候选序、投影缺 HARDENED_SHELL/SLOW 规则、harness v2 读取拒绝 83 段、`[SavedProperty]`、CRYSTAL_SPHERE。
+  同时启动 LLM 可玩性工具（`wf_5516f712-66a`：HTTP 对局服务器 + Python 客户端 + 代理手册），用 Sonnet 代理试玩（用户批准）。
