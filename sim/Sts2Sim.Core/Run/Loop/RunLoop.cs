@@ -214,7 +214,7 @@ public static class RunLoop
         GenerateMap(rs);
     }
 
-    private static void GenerateMap(RunState rs)
+    public static void GenerateMap(RunState rs)
     {
         var map = rs.Act.Def.CreateMap(rs, replaceTreasureWithElites: false);
         map = Hook.ModifyGeneratedMap(rs, map, rs.CurrentActIndex);
