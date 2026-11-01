@@ -45,6 +45,33 @@ public sealed class FidelityLog : ICanonical
         return false;
     }
 
+    public bool Contains(FidelityFlag flag, string site)
+    {
+        var entries = _entries;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (entries[i].Flag == flag && string.Equals(entries[i].Site, site, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public int CountOf(FidelityFlag flag)
+    {
+        int n = 0;
+        var entries = _entries;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (entries[i].Flag == flag)
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
     public FidelityLog DeepClone() => new(new List<FidelityEntry>(_entries));
 
     public void WriteCanonical(CanonicalWriter w)
