@@ -63,12 +63,12 @@ public static class RunLegalActionGenerator
     {
         if (prompt != null)
         {
-            return action.TryToCombat(out var ga) && LegalActionGenerator.TryResolvePrompt(prompt, picks, ga, out _);
+            return action.TryToCombat(out var ga) && RunAction.FromCombat(ga) == action && LegalActionGenerator.TryResolvePrompt(prompt, picks, ga, out _);
         }
         if (loop.Phase == RunPhase.Combat)
         {
             var cs = rs.Combat;
-            return cs != null && action.TryToCombat(out var ga) && ga.Kind is not (ActionKind.ChoosePick or ActionKind.ChooseConfirm or ActionKind.ChooseCancel) && LegalActionGenerator.IsLegal(cs, ga);
+            return cs != null && action.TryToCombat(out var ga) && RunAction.FromCombat(ga) == action && ga.Kind is not (ActionKind.ChoosePick or ActionKind.ChooseConfirm or ActionKind.ChooseCancel) && LegalActionGenerator.IsLegal(cs, ga);
         }
         var buffer = new List<RunAction>(16);
         Fill(rs, loop, null, Array.Empty<int>(), buffer);

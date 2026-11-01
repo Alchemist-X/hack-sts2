@@ -161,11 +161,11 @@ public static class RunImporter
         rs.CurrentActIndex = save.CurrentActIndex;
         rs.VisitedMapCoords.AddRange(save.VisitedMapCoords);
         rs.VisitedEventIds.UnionWith(save.EventsSeen.Select(RunSaveReader.StripCategory));
-        foreach (var act in save.MapPointHistory)
+        for (int actIndex = 0; actIndex < save.MapPointHistory.Count; actIndex++)
         {
-            foreach (var entry in act)
+            foreach (var entry in save.MapPointHistory[actIndex])
             {
-                rs.MapPointHistory.Add(ToHistoryEntry(entry));
+                rs.MapPointHistory.Add(ToHistoryEntry(entry, actIndex));
             }
         }
         rs.ExtraFields.StartedWithNeow = save.ExtraFields.StartedWithNeow;
@@ -333,11 +333,14 @@ public static class RunImporter
         return act;
     }
 
-    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved)
+    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved) => ToHistoryEntry(saved, 0);
+
+    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved, int actIndex)
     {
         ArgumentNullException.ThrowIfNull(saved);
         var entry = new MapPointHistoryEntry(saved.MapPointType)
         {
+            ActIndex = actIndex,
             GoldGained = saved.GoldGained ?? 0
         };
         foreach (var room in saved.Rooms)
