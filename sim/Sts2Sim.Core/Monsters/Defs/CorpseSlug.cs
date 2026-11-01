@@ -2,8 +2,6 @@ namespace Sts2Sim.Core.Monsters;
 
 public sealed class CorpseSlugExtraState : MonsterExtraState
 {
-    public const ushort CanonicalTag = 0x4D41;
-
     public int StarterMoveIdx { get; set; }
 
     public bool IsRavenous { get; set; }
@@ -16,7 +14,7 @@ public sealed class CorpseSlugExtraState : MonsterExtraState
 
     public override void WriteCanonical(CanonicalWriter w)
     {
-        w.WriteTag(CanonicalTag);
+        w.WriteTag(MonsterCanonicalTags.CorpseSlugExtra);
         w.WriteInt32(StarterMoveIdx);
         w.WriteBool(IsRavenous);
     }

@@ -2,8 +2,6 @@ namespace Sts2Sim.Core.Monsters;
 
 public sealed class ToadpoleExtraState : MonsterExtraState
 {
-    public const ushort CanonicalTag = 0x4D31;
-
     public bool IsFront { get; set; }
 
     public override MonsterExtraState DeepClone() => new ToadpoleExtraState
@@ -13,7 +11,7 @@ public sealed class ToadpoleExtraState : MonsterExtraState
 
     public override void WriteCanonical(CanonicalWriter w)
     {
-        w.WriteTag(CanonicalTag);
+        w.WriteTag(MonsterCanonicalTags.ToadpoleExtra);
         w.WriteBool(IsFront);
     }
 }
