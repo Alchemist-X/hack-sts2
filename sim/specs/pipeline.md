@@ -865,7 +865,27 @@ count reaches 11 and resets at the owner's turn end); choice — `ToolsOfTheTrad
 | Behaviour | 2 000 random `NIBBITS_WEAK` playouts (seeds 1000-2999): 40 447 steps on both the base and this tree (identical trajectories) |
 | Deterministic cost (`NIBBITS_WEAK` bench mid-fight state, Release) | canonical form 2 373 → 3 212 bytes (15 history entries); allocation per `Clone()` 6 648 → 7 760 B; allocation per playout step 1 005 → 1 343 B; 50.2 history entries per finished episode (the P0 loop clears nothing at combat end; B12 A18's `History.Clear` is the loop's) |
 
-The timing bench is reported in §11.21 (the machine was loaded during this round).
+Attribution (a scratch copy of this tree whose `CombatHistory` neither stores nor counts entries, same probe):
+canonical form 2 373 bytes and 6 648 B per `Clone()`, both equal to the base, and 1 047 B per playout step. The
+history entries carry all of the canonical and clone growth and 296 of the 338 extra bytes per step; the rest of
+this round's changes add 42 B per step. The same scratch copy passes the 14 tests named `*EndToEnd*`, including
+`Test_EndToEnd_CanonicalHashesArePinnedAcrossProcesses` with the old final-state pin `0xD7B055DC9B9E326E`, so the
+history entries are the only reason that pin moves.
+
+Timing (`dotnet run -c Release --project sim/Sts2Sim.Bench`, the base and this tree interleaved, 3 runs each, load
+average 15 to 22 from other agents):
+
+| Metric | Base, 3 runs | This tree, 3 runs |
+| --- | --- | --- |
+| `Clone()` (clone+hash minus hash-only) | 4.873 / 2.886 / 20.681 us | 5.778 / 4.191 / 3.755 us |
+| `StateHash()` | 2.503 / 1.635 / 5.102 us | 3.417 / 2.134 / 3.418 us |
+| Random playouts, 5 s window | 164 175 / 259 267 / 126 261 decisions/s | 311 600 / 199 410 / 128 169 decisions/s |
+
+Both trees play 20.1 decisions per episode and win 97.8 to 97.9 % of them. The same base binary's clone time varies
+7x and its throughput 2x between runs, and a CPU-time probe (`Process.TotalProcessorTime`, 3 rounds of 20 000
+playouts, 200 000 clones and hashes) varies 2.5x as well, so these runs rank nothing: the deterministic figures
+above are the comparison, and a quiet-machine bench at integrate updates `BENCH.md`. Both W1 Part B gates pass at
+the worst run: 128 169 decisions/s against >= 300 (about 400x) and 5.8 us per clone against <= 1 ms (about 170x).
 
 ### 11.21 Open questions and contract change requests
 
@@ -885,3 +905,21 @@ The timing bench is reported in §11.21 (the machine was loaded during this roun
    the hooks owner's `(rs, null)` path.
 7. A batch `CardPileCmd.RemoveFromCombat(cards)` (loop) would remove the `HandlePlayerDeath` flag (§11.6).
 8. `ShrinkPower.IsTurnParticipant` can be deleted once `WurmBeetleTests` stops calling it (§11.14).
+9. History storage (state): `CombatHistory.DeepClone` copies every non-empty entry list, nested arrays included, on
+   each `Clone()`, which is the whole canonical and clone growth of this round (§11.20). The history is append-only
+   between `Clear` calls, so a clone could share the entries written before it (a chunked or persistent list)
+   instead of copying them.
+
+### 11.22 Read-only trial overlay with the other round-3 tracks
+
+A scratch copy of this tree with the files of `w1-r3/monsters-kernel` (`6b7ecd6`), `w1-r3/character-mechanics`
+(`76378e2`) and `w1-r3/relics-potions` (`1667af4`) copied over (no file overlaps with this area; nothing merged, no
+ref touched) builds with 0 warnings and gives 543 passed, 3 failed (the same three as §11.20), 57 PENDING.
+`RelicPotionTests.Test_RelicPotion_PaperPhrogAndPaperKraneThroughVulnerableAndWeak` runs for real against the
+re-ported Vulnerable / Weak and passes, and `Test_Pipeline_AddMonsterDefSpawnsThroughTheSpawner` runs against the
+monsters-kernel `SpawnForAdd` and passes (the attached-result guard of §11.3). Integrate items seen there:
+`MonsterKernelTests.Test_MonsterKernel_KillDuringItsOwnMoveRunsBeforeRemovedFromRoom` waits for `Kill` to call
+`MonsterLifecycle.RemoveCreature` (§11.6, §11.21 item 5); `MonsterLifecycle.InvokeDiedEvent` / `OnPetDied`,
+`MonsterSpawner.AddToCombat` and the character-mechanics `PlayerPets.GetOsty` duplicate `CreatureCmd`'s pet
+bookkeeping, `CreatureCmd.Add(Creature)` and `CombatStatus.GetOsty` with the same rules; the relics-potions
+`PendingKernelCalls` and this area's `CardCmdForwarders` route to the same missing `CardCmd` members.
