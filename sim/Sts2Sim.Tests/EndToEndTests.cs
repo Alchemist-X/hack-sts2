@@ -212,15 +212,15 @@ public static class EndToEndTests
     private static readonly Snapshot PinnedSeedOneVictory = new(
         Round: 3, Turn: 3, Side: CombatSide.Player, Outcome: CombatOutcome.Victory,
         PlayerHp: 67, PlayerMaxHp: 80, PlayerBlock: 0, Energy: 0,
-        Hand: "DS", Draw: "BSDDD", Discard: "SS", Play: "S", Exhaust: "",
+        Hand: "", Draw: "", Discard: "", Play: "", Exhaust: "",
         Monsters: 0, MonsterHp: 0, MonsterMaxHp: 0, MonsterBlock: 0, MonsterStrength: 0, MonsterVulnerable: 0,
         Intent: null);
 
     private const int PinnedSeedOneActionCount = 10;
 
-    private const ulong PinnedSeedOneOpeningHash = 0xCA1423508C1168E3UL;
+    private const ulong PinnedSeedOneOpeningHash = 0x79C886C6235C2D9BUL;
 
-    private const ulong PinnedSeedOneFinalHash = 0xD7B055DC9B9E326EUL;
+    private const ulong PinnedSeedOneFinalHash = 0x77FA4D8665BA0CC3UL;
 
     private static void AssertPassiveDefeat(ulong seed, int ascension, int[] hpAfterEnemyTurn, int sliceBlock, int finalStrength, string[] exhausted)
     {
@@ -538,6 +538,12 @@ public static class EndToEndTests
             if (_monsterHp == 0)
             {
                 _outcome = CombatOutcome.Victory;
+                _hand.Clear();
+                _draw.Clear();
+                _discard.Clear();
+                _play.Clear();
+                _exhaust.Clear();
+                _playerBlock = 0;
                 return;
             }
             _play.RemoveAt(_play.Count - 1);

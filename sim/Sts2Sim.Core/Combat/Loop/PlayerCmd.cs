@@ -8,6 +8,116 @@ public static class PlayerCmd
 
     public static void SetEnergy(CombatState cs, decimal amount, PlayerState player) => EnergyCmd.SetEnergy(cs, amount, player);
 
+    public static void GainStars(CombatState cs, decimal amount, PlayerState player) => StarsCmd.GainStars(cs, player, amount);
+
+    public static void LoseStars(CombatState cs, decimal amount, PlayerState player) => StarsCmd.LoseStars(cs, player, amount);
+
+    public static void SetStars(CombatState cs, decimal amount, PlayerState player) => StarsCmd.SetStars(cs, player, amount);
+
+    public static void GainGold(CombatState cs, decimal amount, PlayerState player, bool wasStolenBack = false)
+        => GainGold(cs.Run, amount, player, wasStolenBack);
+
+    public static void GainGold(RunState rs, decimal amount, PlayerState player, bool wasStolenBack = false)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(player);
+        var cs = rs.Combat;
+        List<AbstractModel>? modifiers = null;
+        amount = Hook.ModifyGoldGained(rs, cs, amount, player, ref modifiers);
+        Hook.AfterModifyingGoldGained(rs, cs, modifiers, player, amount);
+        if (amount > 0m)
+        {
+            player.Gold += (int)amount;
+            Hook.AfterGoldGained(rs, player);
+        }
+    }
+
+    public static void LoseGold(CombatState cs, decimal amount, PlayerState player, GoldLossType goldLossType = GoldLossType.Lost)
+        => LoseGold(cs.Run, amount, player, goldLossType);
+
+    public static void LoseGold(RunState rs, decimal amount, PlayerState player, GoldLossType goldLossType = GoldLossType.Lost)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(player);
+        player.Gold = int.Max(0, player.Gold - (int)amount);
+    }
+
+    public static void SetGold(CombatState cs, decimal amount, PlayerState player) => SetGold(cs.Run, amount, player);
+
+    public static void SetGold(RunState rs, decimal amount, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        int gold = player.Gold;
+        if (gold < amount)
+        {
+            GainGold(rs, amount - gold, player);
+        }
+        else if (gold > amount)
+        {
+            LoseGold(rs, gold - amount, player);
+        }
+    }
+
+    public static void GainMaxPotionCount(RunState rs, int amount, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        player.AddToMaxPotionCount(amount);
+    }
+
+    public static void LoseMaxPotionCount(RunState rs, int amount, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        player.SubtractFromMaxPotionCount(amount);
+    }
+
+    public static MonsterState AddPet(CombatState cs, PlayerState owner, string monsterId) => AddPet(cs, owner, MonsterRegistry.Get(monsterId));
+
     public static MonsterState AddPet(CombatState cs, PlayerState owner, MonsterDef def)
-        => throw new NotImplementedException("PlayerCmd.AddPet: loop (Commands/PlayerCmd.cs:946-967)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(def);
+        var pet = MonsterSpawner.SpawnPet(cs, def, owner);
+        AddPet(cs, pet, owner);
+        return pet;
+    }
+
+    public static void AddPet(CombatState cs, MonsterState pet, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(pet);
+        ArgumentNullException.ThrowIfNull(player);
+        AddPetInternal(player, pet);
+        CreatureCmd.Add(cs, pet);
+    }
+
+    public static void MimicRestSiteHeal(RunState rs, PlayerState player)
+        => throw new NotImplementedException("PlayerCmd.MimicRestSiteHeal: W2 rest site (Commands/PlayerCmd.cs:971, HealRestSiteOption.ExecuteRestSiteHeal(player, isMimicked: true))");
+
+    public static void EndTurn(CombatState cs, PlayerState player, bool canBackOut)
+        => throw new NotImplementedException("PlayerCmd.EndTurn: needs the turn state's ready-to-end-turn set on CombatState, which the state kernel does not hold yet (Commands/PlayerCmd.cs:984-994, Combat/CombatManager.cs:6811-6857)");
+
+    public static void CompleteQuest(RunState rs, CardInstance questCard)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(questCard);
+    }
+
+    private static void AddPetInternal(PlayerState player, MonsterState pet)
+    {
+        var pets = player.PetIds;
+        if (pets.Contains(pet.CombatId))
+        {
+            return;
+        }
+        if (pet.PetOwnerId != player.CombatId)
+        {
+            if (pet.PetOwnerId != PowerModel.NoCreature)
+            {
+                throw new InvalidOperationException($"Pet {pet.MonsterId}#{pet.CombatId} already has an owner.");
+            }
+            pet.PetOwnerId = player.CombatId;
+        }
+        pets.Add(pet.CombatId);
+    }
 }

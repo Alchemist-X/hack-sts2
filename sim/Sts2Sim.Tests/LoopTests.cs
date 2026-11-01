@@ -100,7 +100,7 @@ public static class LoopTests
         Assert.Equal(3, m.GetPowerAmount<DexterityPower>());
         Assert.Equal(5, s.Player.Hand.Count, "the turn-1 hand draw is unaffected");
         Assert.Equal(5, s.Player.DrawPile.Count);
-        Assert.Equal(12, s.NextCardInstanceId, "ten deck cards plus the two refused generated cards");
+        Assert.Equal(22, s.NextCardInstanceId, "ten deck cards, their ten combat copies and the two refused generated cards");
         Assert.Equal(16m, CreatureCmd.GainBlock(s, m, 13m, ValueProp.Move, null), "the same GainBlock works once the combat is in progress");
         Assert.Equal(16, m.Block);
     }
@@ -168,10 +168,11 @@ public static class LoopTests
         Assert.Equal(0, s.Monsters.Count, "the killed dummy is removed from combat");
         Assert.Equal(PlayerTurnPhase.None, p.Phase);
         Assert.Equal(2, p.Energy);
-        Assert.Equal(4, p.Hand.Count);
-        Assert.Equal(1, p.PlayPile.Count, "the killing card stays in the play pile: the move to the discard pile is refused while the combat is ending");
+        Assert.Equal(0, p.Hand.Count, "Player.AfterCombatEnd clears the combat piles at victory");
+        Assert.Equal(0, p.PlayPile.Count, "the killing card is never moved to the discard pile while the combat is ending, and the victory clears the play pile");
         Assert.Equal(0, p.DiscardPile.Count);
-        Assert.Equal(5, p.DrawPile.Count);
+        Assert.Equal(0, p.DrawPile.Count);
+        Assert.Equal(10, p.Deck.Count, "the deck keeps its cards");
         Assert.Equal(3, s.RoundNumber);
         Assert.Equal(0, sim.LegalActions().Count, "no actions after the combat ends");
         Assert.Throws<InvalidOperationException>(() => sim.Step(GameAction.EndTurn));
@@ -341,7 +342,7 @@ public static class LoopTests
         const ulong seed = 20261028UL;
         var deck = new[] { Strike, Strike, Strike, Strike, Strike, Defend, Defend, Defend, Defend, BashId };
         var sim = CombatSim.Create(seed, deck, TestEncounterId, 0, Spawn(new LoopDummy("LOOP_DUMMY_A", 500)));
-        var expected = Enumerable.Range(0, 10).ToList();
+        var expected = Enumerable.Range(10, 10).ToList();
         GameUnstableShuffle(expected, new RunRngSet(seed).Shuffle);
         var p = sim.State.Player;
         Assert.SequenceEqual(expected.Take(5), p.Hand.Cards.Select(c => c.InstanceId), "hand = top five of the shuffled draw pile, in draw order");
