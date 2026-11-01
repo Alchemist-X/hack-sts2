@@ -308,6 +308,7 @@ public static class G3Loop
         public int DroppedSkips;
         public int PickOrderFixes;
         public int DroppedDuplicateProceeds;
+        public int LaggingRelicLists;
     }
 
     public static List<SegmentResult> Run(RunBundle run, Counters counters)
@@ -401,6 +402,13 @@ public static class G3Loop
                 return;
             }
         }
+        if (RoomStack.CurrentRoom(sim.State) is EventRoom { CanonicalEvent: SimStubEvent stub })
+        {
+            result.Status = BundleStatus.Skipped;
+            result.Class = DivergenceClass.ContentNotPorted;
+            result.Reason = $"content_not_ported: event {stub.Id} is a SimStubEvent (pull eligibility ported, options not)";
+            return;
+        }
         var picked = PickedOffers(segment.FloorSummary);
         int pickPtr = 0;
         var done = new bool[segment.Decisions.Count];
@@ -483,6 +491,17 @@ public static class G3Loop
                 }
                 var diffs = RunScreenComparer.Compare(oracle, simProjection);
                 var hard = diffs.Where(x => x.Severity == DiffSeverity.Hard).ToList();
+                if (hard.Count > 0 && hard.All(x => x.Path.StartsWith("player.relics", StringComparison.Ordinal))
+                    && IsLaggingRelicList(oracle, simProjection, PickedRelics(segment.FloorSummary)))
+                {
+                    // recorder_gap (R8 snapshot timing): the pre_state's relic list lags a relic obtained on this floor
+                    // (e.g. ROOM_FULL_OF_CHEESE SEARCH: RelicCmd.Obtain adds it synchronously, Commands/RelicCmd.cs:403-410,
+                    // before SetEventFinished, yet the proceed pre_state lacks it). Compare the rest of the screen.
+                    counters.LaggingRelicLists++;
+                    ((JsonObject)oracle["player"]!)["relics"] = simProjection["player"]?["relics"]?.DeepClone();
+                    diffs = RunScreenComparer.Compare(oracle, simProjection);
+                    hard = diffs.Where(x => x.Severity == DiffSeverity.Hard).ToList();
+                }
                 if (hard.Count > 0 && Probe(sim, d.Action) != null && TryHoist(sim, segment, i, done, counters))
                 {
                     disturbed[i] = true;
@@ -590,6 +609,45 @@ public static class G3Loop
     }
 
     private const int HoistWindow = 8;
+
+    private static List<string> PickedRelics(JsonObject? summary)
+    {
+        var list = new List<string>();
+        if (summary?["player_stats"]?["relic_choices"] is JsonArray choices)
+        {
+            foreach (var c in choices)
+            {
+                if (c?["was_picked"] is JsonValue p && p.TryGetValue(out bool wp) && wp && c["choice"]?.GetValue<string>() is { } id)
+                {
+                    list.Add(RunScreenProjector.StripCategory(id));
+                }
+            }
+        }
+        return list;
+    }
+
+    /// <summary>The oracle relic ids are the sim's minus relics picked on this floor, in the sim's order.</summary>
+    public static bool IsLaggingRelicList(JsonObject oracle, JsonObject sim, IReadOnlyCollection<string> pickedThisFloor)
+    {
+        static List<string> Ids(JsonNode? relics) => (relics as JsonArray ?? new JsonArray())
+            .Select(r => r is JsonObject o ? o["id"]?.GetValue<string>() : r?.GetValue<string>())
+            .Select(id => RunScreenProjector.StripCategory(id ?? string.Empty)).ToList();
+        var o = Ids(oracle["player"]?["relics"]);
+        var s = Ids(sim["player"]?["relics"]);
+        if (pickedThisFloor.Count == 0 || o.Count >= s.Count)
+        {
+            return false;
+        }
+        var missing = new List<string>(s);
+        foreach (var id in o)
+        {
+            if (!missing.Remove(id))
+            {
+                return false;
+            }
+        }
+        return missing.All(pickedThisFloor.Contains) && s.Where(id => !missing.Contains(id)).SequenceEqual(o);
+    }
 
     private static List<string> PickedOffers(JsonObject? summary)
     {

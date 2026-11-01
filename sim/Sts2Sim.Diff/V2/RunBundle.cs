@@ -91,6 +91,14 @@ public sealed class BundleSegment
     public string Sha256 { get; init; } = string.Empty;
 
     public string? FormatError { get; set; }
+
+    /// <summary>
+    /// Contract fields the exporter wrote as <c>null</c> on an ineligible segment because the recording does not carry
+    /// them (diff-bundle-v2.md X3.5 <c>start.deck</c> under <c>recorder_gap:deck_order</c> /
+    /// <c>deck_reconstruction_failed</c>, X4.6 <c>decisions[i].action</c> under <c>decision_unresolved</c>). Read as
+    /// unavailable, not as a parse failure; the runner skips the segment with its eligibility reasons.
+    /// </summary>
+    public List<string> UnavailableFields { get; } = new();
 }
 
 public sealed class RunBundle
@@ -374,7 +382,7 @@ public static class RunBundleJson
         };
         foreach (var segment in segments)
         {
-            if (segment.FormatError == null && segment.Kind == SegmentKinds.Combat && segment.Start != null && IsV1ShapedStart(segment.Start))
+            if (segment.FormatError == null && segment.UnavailableFields.Count == 0 && segment.Kind == SegmentKinds.Combat && segment.Start != null && IsV1ShapedStart(segment.Start))
             {
                 try
                 {
@@ -440,6 +448,11 @@ public static class RunBundleJson
             r.RequireObject(startEl, p + ".start");
             start = JsonNode.Parse(startEl.GetRawText())!.AsObject();
         }
+        var unavailable = new List<string>();
+        if (start != null && kind == SegmentKinds.Combat && start.ContainsKey("deck") && start["deck"] == null && MarkedIneligible(s))
+        {
+            unavailable.Add("start.deck");
+        }
         var decisions = new List<SegmentDecision>();
         var decisionsEl = r.Property(s, "decisions", p);
         r.RequireArray(decisionsEl, p + ".decisions");
@@ -459,8 +472,17 @@ public static class RunBundleJson
             {
                 throw new BundleFormatException(dp + ".screen", $"unknown screen '{screen}'");
             }
-            var action = V2Action.Read(r, r.Property(d, "action", dp), dp + ".action");
-            if (kind == SegmentKinds.Combat && !V2Action.CombatTypes.Contains(action.Type))
+            V2Action action;
+            if (d.TryGetProperty("action", out var rawAction) && rawAction.ValueKind == JsonValueKind.Null && MarkedIneligible(s))
+            {
+                action = new V2Action(V2Action.Unavailable, new JsonObject { ["type"] = V2Action.Unavailable });
+                unavailable.Add("decisions[" + i + "].action");
+            }
+            else
+            {
+                action = V2Action.Read(r, r.Property(d, "action", dp), dp + ".action");
+            }
+            if (kind == SegmentKinds.Combat && action.Type != V2Action.Unavailable && !V2Action.CombatTypes.Contains(action.Type))
             {
                 throw new BundleFormatException(dp + ".action.type", $"action '{action.Type}' is not a combat action");
             }
@@ -511,7 +533,7 @@ public static class RunBundleJson
             r.RequireObject(fs, p + ".floor_summary");
             floorSummary = JsonNode.Parse(fs.GetRawText())!.AsObject();
         }
-        return new BundleSegment
+        var segment = new BundleSegment
         {
             Id = r.String(s, "id", p),
             Kind = kind,
@@ -531,6 +553,8 @@ public static class RunBundleJson
             EligibilityReasons = reasons,
             Sha256 = Sha(s.GetRawText())
         };
+        segment.UnavailableFields.AddRange(unavailable);
+        return segment;
     }
 
     private static DiffBundle BuildCombatStart(RunBundle run, BundleSegment segment, string path)

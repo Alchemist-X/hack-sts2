@@ -158,8 +158,10 @@ public sealed class ActInstance : ICanonical
 
     private static EventModel CreateEvent(RunState? runState, string eventId)
     {
+        // An unregistered event (CRYSTAL_SPHERE, FAKE_MERCHANT) becomes a SimStubEvent instead of throwing: its pull
+        // eligibility is ported (UnportedEventRules), its options are not.
         var content = runState?.Config?.Content;
-        return content == null || content.AllowsEvent(eventId) ? EventRegistry.Create(eventId) : new SimStubEvent(eventId);
+        return EventRegistry.Models.Contains(eventId) && (content == null || content.AllowsEvent(eventId)) ? EventRegistry.Create(eventId) : new SimStubEvent(eventId);
     }
 
     public EncounterDef PullNextEncounter(RoomType roomType) => roomType switch

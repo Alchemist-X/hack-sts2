@@ -152,7 +152,10 @@ def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
     s.event("room_entered", room_type="RestSite", room_model_id=None, act=0, floor=3)
     rest_state = s.state({"state_type": "rest_site", "rest_site": {"options": [{"index": 0, "id": "HEAL", "is_enabled": True}, {"index": 1, "id": "SMITH", "is_enabled": True}]}, "player": player_block()})
     s.action("player_choice", rest_state, choice_type="DeckCard", cards=["CARD.BASH"], picked=True)
-    s.action("rest_site_option", rest_state, option_id="SMITH")
+    # The opener hook fires after its deck choice resolved (cf. MerchantCardRemovalEntry.OnTryPurchaseWrapper paying
+    # first): its own state is post-resolution, so the exporter gives it the choice's pre_state.
+    rest_done = s.state({"state_type": "rest_site", "rest_site": {"options": []}, "player": player_block(gold=98)})
+    s.action("rest_site_option", rest_done, option_id="SMITH")
     m3 = s.state(map_state(1, 2, [(1, 3, "Shop")]))
     move(s, m3, 1, 3)
     s.event("floor_summary", map_point_type="rest", rooms=[{"model_id": None}], player_stats=[{"upgraded_cards": ["CARD.BASH"], "rest_site_choices": ["SMITH"]}])
@@ -272,6 +275,9 @@ def test_run_level_decisions_in_logical_order(v2_corpus: Path, tmp_path: Path) -
     assert rest[1]["action"]["type"] == "choose" and rest[1]["action"]["context"] == "rest"
     assert rest[1]["action"]["picks"][0]["card_id"] == BASH and rest[1]["action"]["picks"][0]["resolved_by"] == "deck_multiset"
     assert rest[1]["oracle"]["recorded_order"] == "before_opener"
+    assert rest[0]["oracle"]["pre_state_seq"] == rest[1]["oracle"]["state_seq"]
+    assert rest[0]["pre_state"]["player"]["gold"] == 99, "the opener's pre_state is the state before its deck choice"
+    assert rest[0]["pre_state"]["rest_site"]["options"], "not the post-resolution snapshot"
     assert segments[7]["decisions"][0]["action"] == {"type": "shop_buy", "category": "card", "item_id": CLASH, "price": 50, "slot": 0}
     for segment in segments:
         if segment["kind"] != "combat":

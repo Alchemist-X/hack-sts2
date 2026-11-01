@@ -38,6 +38,14 @@ public static class V2Runner
                 live = null;
                 continue;
             }
+            if (segment.FormatError == null && segment.UnavailableFields.Count > 0)
+            {
+                string reasons = segment.EligibilityReasons.Count > 0 ? string.Join(", ", segment.EligibilityReasons) : "segment marked ineligible";
+                Skip(result, DivergenceClass.ExporterIneligible, "exporter ineligible (" + reasons + "); unavailable: " + string.Join(", ", segment.UnavailableFields));
+                chainBroken = true;
+                live = null;
+                continue;
+            }
             if (segment.FormatError != null)
             {
                 string why = "unreadable segment: " + segment.FormatError;

@@ -1,3 +1,4 @@
+using Sts2Sim.Core.Combat.Pipeline;
 using Sts2Sim.Core.Run;
 using Sts2Sim.Core.Unlocks;
 
@@ -353,6 +354,7 @@ public static class RoomPullOracle
     {
         int compared = 0;
         int n = Math.Min(acts.Count, record.Floors.Count);
+        RunOracleReplay.AddStartingRelics(rs, record.CharacterId);
         for (int a = 0; a < n; a++)
         {
             var rooms = acts[a].Rooms.DeepClone();
@@ -363,6 +365,7 @@ public static class RoomPullOracle
                 if (floors[i].Rooms.Count == 0)
                 {
                     rs.MapPointHistory.Add(new MapPointHistoryEntry(floors[i].PointType) { ActIndex = a });
+                    RunOracleReplay.ApplyFloorEnd(rs, floors[i].Stats);
                     continue;
                 }
                 var room = floors[i].Rooms[0];
@@ -378,9 +381,14 @@ public static class RoomPullOracle
                         var considered = Considered(rooms, rs, room.ModelId);
                         rooms.EnsureNextEventIsValid(rs);
                         expected = rooms.events.Count > 0 ? rooms.NextEventId : "<none>";
+                        if (EventRegistry.Models.Contains(expected))
+                        {
+                            // Models/ActModel.cs:383 Hook.ModifyNextEvent (LANTERN_KEY in act 3 -> WAR_HISTORIAN_REPY)
+                            expected = Hook.ModifyNextEvent(rs, EventRegistry.Create(expected)).Id;
+                        }
                         if (!string.Equals(expected, room.ModelId, StringComparison.Ordinal))
                         {
-                            var unported = considered.Concat(new[] { expected }).FirstOrDefault(id => !EventRegistry.Models.Contains(id) && id != room.ModelId);
+                            var unported = considered.Concat(new[] { expected }).FirstOrDefault(id => !EventRegistry.Models.Contains(id) && !UnportedEventRules.Has(id) && id != room.ModelId);
                             if (unported != null)
                             {
                                 return RunOracleCheck.Unsupported(RunOracleNames.EventPulls, record.Source,
@@ -397,13 +405,14 @@ public static class RoomPullOracle
                 }
                 rooms.MarkVisited(room.RoomType);
                 rs.MapPointHistory.Add(new MapPointHistoryEntry(floors[i].PointType) { ActIndex = a });
+                RunOracleReplay.ApplyFloorEnd(rs, floors[i].Stats);
             }
             if (acts[a].Expected is { } s && rooms.eventsVisited != s.EventsVisited)
             {
                 return RunOracleCheck.Diverge(RunOracleNames.EventPulls, record.Source, compared, $"act {a} events_visited oracle {s.EventsVisited} sim {rooms.eventsVisited}");
             }
         }
-        return RunOracleCheck.Agree(RunOracleNames.EventPulls, record.Source, compared, "event IsAllowed evaluated on an oracle run state (floor and act replayed; no gold/hp/deck/potion replay)");
+        return RunOracleCheck.Agree(RunOracleNames.EventPulls, record.Source, compared, "event IsAllowed evaluated on an oracle run state (floor, act, gold, hp, potions, relics and deck ids replayed from player_stats)");
     }
 
     private static List<string> Considered(RoomSet rooms, RunState rs, string? oracleId)

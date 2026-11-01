@@ -81,7 +81,7 @@ public sealed class RoomSet : ICanonical
     }
 
     private static bool IsEventAllowed(RunState runState, string eventId)
-        => !EventRegistry.Models.Contains(eventId) || EventRegistry.Create(eventId).IsAllowed(runState);
+        => EventRegistry.Models.Contains(eventId) ? EventRegistry.Create(eventId).IsAllowed(runState) : UnportedEventRules.IsAllowed(eventId, runState);
 
     public RoomSet DeepClone()
     {

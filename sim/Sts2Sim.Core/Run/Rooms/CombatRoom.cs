@@ -39,6 +39,10 @@ public sealed partial class CombatRoom : AbstractRoom
 
     public EncounterExtraState? EncounterExtra { get; private set; }
 
+    /// <summary>Rooms/CombatRoom.cs:685-686 <c>encounterModel.LoadCustomState(serializableRoom.EncounterState)</c>.</summary>
+    public void LoadEncounterCustomState(IReadOnlyDictionary<string, string> state)
+        => EncounterExtra = EncounterCustomState.Load(Encounter, state);
+
     public void AddExtraReward(Reward reward)
     {
         ArgumentNullException.ThrowIfNull(reward);

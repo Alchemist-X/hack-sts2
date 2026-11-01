@@ -92,10 +92,14 @@ public static class ReplayCombatsW4Tests
         Assert.Equal(2, results.Count);
         Assert.Equal(BundleStatus.Skipped, results[0].Status);
         Assert.Equal(DivergenceClass.ExporterIneligible, results[0].Class);
-        Assert.True(results[0].Reason!.Contains("'deck'", StringComparison.Ordinal), results[0].Reason);
+        // W4.1: read as unavailable fields with the segment's eligibility reasons, not as a parse failure.
+        Assert.True(results[0].Reason!.Contains("unavailable: start.deck", StringComparison.Ordinal), results[0].Reason);
+        Assert.True(results[0].Reason!.Contains("recorder_gap:deck_order", StringComparison.Ordinal), results[0].Reason);
+        Assert.False(results[0].Reason!.Contains("unreadable", StringComparison.Ordinal), results[0].Reason);
         Assert.Equal(BundleStatus.Skipped, results[1].Status);
         Assert.Equal(DivergenceClass.ExporterIneligible, results[1].Class);
-        Assert.True(results[1].Reason!.Contains("'action'", StringComparison.Ordinal), results[1].Reason);
+        Assert.True(results[1].Reason!.Contains("unavailable: decisions[0].action", StringComparison.Ordinal), results[1].Reason);
+        Assert.True(results[1].Reason!.Contains("decision_unresolved", StringComparison.Ordinal), results[1].Reason);
         segments.Add(CombatSegment("s3", StarterDeck(), null, true));
         bool threw = false;
         try

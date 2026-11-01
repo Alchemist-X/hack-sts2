@@ -76,6 +76,7 @@ public static class RunExporter
                     EncounterId = combat.Encounter.Id,
                     IsPreFinished = true,
                     GoldProportion = (float)combat.GoldProportion,
+                    EncounterState = EncounterCustomState.Save(combat.EncounterExtra),
                     ParentEventId = combat.ParentEventId,
                     ShouldResumeParentEvent = combat.ShouldResumeParentEventAfterCombat
                 };
@@ -281,16 +282,30 @@ public static class RunExporter
     {
         ArgumentNullException.ThrowIfNull(model);
         var props = new SavedProperties();
-        var members = model.GetType()
-            .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            .Where(p => p.CanRead && p.GetCustomAttribute<SavedPropertyAttribute>(true) != null)
-            .OrderBy(p => p.Name, StringComparer.Ordinal);
-        foreach (var member in members)
+        var registered = SavedPropertyRegistry.Ordered(model.GetType()).ToList();
+        var members = registered.Select(x => (x.Spec, x.Member))
+            .Concat(model.GetType()
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(p => p.CanRead && p.GetCustomAttribute<SavedPropertyAttribute>(true) != null && !registered.Any(r => r.Member.Name == p.Name))
+                .OrderBy(p => p.Name, StringComparer.Ordinal)
+                .Select(p => (Spec: new SavedPropertySpec(p.Name), Member: p)))
+            .ToList();
+        foreach (var (spec, member) in members)
         {
             var value = member.GetValue(model);
+            if (!SavedPropertyRegistry.ShouldSave(spec, value))
+            {
+                continue;
+            }
             switch (value)
             {
                 case null:
+                    break;
+                case string id when spec.IsModelId:
+                    props.ModelIds.Add(new KeyValuePair<string, string>(member.Name, id));
+                    break;
+                case Enum e:
+                    props.Ints.Add(new KeyValuePair<string, int>(member.Name, Convert.ToInt32(e, CultureInfo.InvariantCulture)));
                     break;
                 case int i:
                     props.Ints.Add(new KeyValuePair<string, int>(member.Name, i));

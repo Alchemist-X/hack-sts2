@@ -6,9 +6,39 @@ public sealed record RunAncientChoice(string TextKey, bool WasChosen);
 
 public sealed record RunFloorRoom(RoomType RoomType, string? ModelId, IReadOnlyList<string> MonsterIds);
 
+/// <summary>
+/// The end-of-floor <c>player_stats</c> of a <c>.run</c> history entry (Runs.History/PlayerMapPointHistoryEntry): the
+/// state the next room is entered with. Bought relics/potions/cards are also listed in <c>relic_choices</c> /
+/// <c>potion_choices</c> / <c>cards_gained</c>, so only those lists are read for gains.
+/// </summary>
+public sealed class RunFloorStats
+{
+    public int Gold { get; init; }
+
+    public int CurrentHp { get; init; }
+
+    public int MaxHp { get; init; }
+
+    public List<string> PotionsGained { get; init; } = new();
+
+    public List<string> PotionsUsed { get; init; } = new();
+
+    public List<string> PotionsDiscarded { get; init; } = new();
+
+    public List<string> RelicsGained { get; init; } = new();
+
+    public List<string> CardsGained { get; init; } = new();
+
+    public List<string> CardsRemoved { get; init; } = new();
+
+    public List<(string Original, string Final)> CardsTransformed { get; init; } = new();
+}
+
 public sealed class RunFloor
 {
     public MapPointType PointType { get; init; }
+
+    public RunFloorStats? Stats { get; set; }
 
     public List<RunFloorRoom> Rooms { get; init; } = new();
 
@@ -190,7 +220,23 @@ public static class RunRecordReader
         var stats = Array(entry, "player_stats");
         if (stats.Count > 0)
         {
-            foreach (var choice in Array(stats[0], "ancient_choice"))
+            var s = stats[0];
+            floor.Stats = new RunFloorStats
+            {
+                Gold = Int(s, "current_gold"),
+                CurrentHp = Int(s, "current_hp"),
+                MaxHp = Int(s, "max_hp"),
+                PotionsGained = Array(s, "potion_choices").Where(Picked).Select(c => Strip(Str(c, "choice"))).ToList(),
+                PotionsUsed = Strings(s, "potion_used"),
+                PotionsDiscarded = Strings(s, "potion_discarded"),
+                RelicsGained = Array(s, "relic_choices").Where(Picked).Select(c => Strip(Str(c, "choice"))).ToList(),
+                CardsGained = Ids(s, "cards_gained"),
+                CardsRemoved = Ids(s, "cards_removed"),
+                CardsTransformed = Array(s, "cards_transformed")
+                    .Select(t => (Strip(t.TryGetProperty("original_card", out var o) ? Str(o, "id") : null), Strip(t.TryGetProperty("final_card", out var f) ? Str(f, "id") : null)))
+                    .ToList()
+            };
+            foreach (var choice in Array(s, "ancient_choice"))
             {
                 string? key = Str(choice, "TextKey");
                 if (key != null)
@@ -228,6 +274,13 @@ public static class RunRecordReader
         }
         return ids;
     }
+
+    private static bool Picked(JsonElement c) => c.TryGetProperty("was_picked", out var p) && p.ValueKind == JsonValueKind.True;
+
+    private static string Strip(string? id) => id != null ? RunSaveReader.StripCategory(id) : string.Empty;
+
+    private static List<string> Strings(JsonElement e, string name)
+        => Array(e, name).Where(x => x.ValueKind == JsonValueKind.String).Select(x => RunSaveReader.StripCategory(x.GetString()!)).ToList();
 
     private static List<string> Ids(JsonElement e, string name)
         => Array(e, name).Select(x => x.ValueKind == JsonValueKind.Object ? Str(x, "id") : null).Where(x => x != null).Select(x => RunSaveReader.StripCategory(x!)).ToList();

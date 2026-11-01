@@ -1517,6 +1517,12 @@ def build_run_decisions(
             if select_screen != "select":
                 out[-1]["oracle"]["select_state"] = select_screen
         elif kind in ("rest_site_option", "shop_card_removal"):
+            if pending_choice is not None and isinstance(pending_choice["state"], Mapping):
+                # The opener is recorded after its deck choice resolved (MerchantCardRemovalEntry.OnTryPurchaseWrapper
+                # pays first, so its own pre_state is post-payment); the state before the choice is the opener's
+                # pre_state.
+                pre_state = project_run_screen(pending_choice["state"], map_graph=False)
+                oracle["pre_state_seq"] = pending_choice["action"].state_seq
             if kind == "rest_site_option":
                 emit({"type": "rest_option", "option_id": params.get("option_id")}, "rest_site")
                 context = "rest"
