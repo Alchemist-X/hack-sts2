@@ -22,10 +22,15 @@ public sealed class WeakPower : PowerModel
         {
             return 1m;
         }
+        var cs = rs.Combat!;
         decimal num = DamageDecrease;
+        if (target != null && MultiplierModifiers.FirstWeakRelic(target as PlayerState) is { } relic)
+        {
+            num = relic.ModifyWeakMultiplier(cs, target, num, props, dealer, cardSource);
+        }
         if (dealer.GetPower(MultiplierModifierIds.DebilitatePower) is IWeakMultiplierModifier debilitate)
         {
-            num = debilitate.ModifyWeakMultiplier(rs.Combat!, dealer, num, props, dealer, cardSource);
+            num = debilitate.ModifyWeakMultiplier(cs, dealer, num, props, dealer, cardSource);
         }
         return num;
     }

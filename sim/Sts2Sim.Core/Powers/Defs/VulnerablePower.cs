@@ -22,14 +22,23 @@ public sealed class VulnerablePower : PowerModel
         {
             return 1m;
         }
+        var cs = rs.Combat!;
         decimal num = DamageIncrease;
-        if (dealer != null && dealer.GetPower(MultiplierModifierIds.CrueltyPower) is IVulnerableMultiplierModifier cruelty)
+        if (dealer != null)
         {
-            num = cruelty.ModifyVulnerableMultiplier(rs.Combat!, target, num, props, dealer, cardSource);
+            if (MultiplierModifiers.FirstVulnerableRelic(dealer as PlayerState) is { } relic)
+            {
+                num = relic.ModifyVulnerableMultiplier(cs, target, num, props, dealer, cardSource);
+            }
+            var cruelty = dealer.GetPower(MultiplierModifierIds.CrueltyPower) ?? CombatStatus.PetOwnerOf(cs, dealer)?.GetPower(MultiplierModifierIds.CrueltyPower);
+            if (cruelty is IVulnerableMultiplierModifier crueltyModifier)
+            {
+                num = crueltyModifier.ModifyVulnerableMultiplier(cs, target, num, props, dealer, cardSource);
+            }
         }
         if (target.GetPower(MultiplierModifierIds.DebilitatePower) is IVulnerableMultiplierModifier debilitate)
         {
-            num = debilitate.ModifyVulnerableMultiplier(rs.Combat!, target, num, props, dealer, cardSource);
+            num = debilitate.ModifyVulnerableMultiplier(cs, target, num, props, dealer, cardSource);
         }
         return num;
     }

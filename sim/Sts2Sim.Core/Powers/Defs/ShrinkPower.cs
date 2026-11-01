@@ -20,7 +20,7 @@ public sealed class ShrinkPower : PowerModel
 
     public override void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
-        if (!IsInfinite && IsTurnParticipant(cs, side))
+        if (!IsInfinite && CombatStatus.ContainsById(participants, Owner))
         {
             PowerCmd.Decrement(cs, this);
         }
