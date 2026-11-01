@@ -92,7 +92,7 @@ public static class PlayerCmd
     }
 
     public static void MimicRestSiteHeal(RunState rs, PlayerState player)
-        => throw new NotImplementedException("PlayerCmd.MimicRestSiteHeal: W2 rest site (Commands/PlayerCmd.cs:971, HealRestSiteOption.ExecuteRestSiteHeal(player, isMimicked: true))");
+        => HealRestSiteOption.ExecuteRestSiteHeal(rs, player, true);
 
     public static void EndTurn(CombatState cs, PlayerState player, bool canBackOut)
         => throw new NotImplementedException("PlayerCmd.EndTurn: needs the turn state's ready-to-end-turn set on CombatState, which the state kernel does not hold yet (Commands/PlayerCmd.cs:984-994, Combat/CombatManager.cs:6811-6857)");

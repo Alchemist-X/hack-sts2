@@ -1,6 +1,6 @@
 namespace Sts2Sim.Core.Combat.Pipeline;
 
-public static class CreatureCmd
+public static partial class CreatureCmd
 {
     public const string EscapeFidelitySite = "CreatureCmd.Escape: CombatState.EscapedCreatures (Combat/CombatState.cs:733-737) has no sim field; the escaped creature is removed but not listed";
 
