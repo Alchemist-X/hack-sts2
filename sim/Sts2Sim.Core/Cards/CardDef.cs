@@ -82,6 +82,8 @@ public abstract class CardDef
         return vars;
     }
 
+    public virtual CardType GetCardType(CardInstance card) => Type;
+
     public virtual TargetType GetTargetType(CardInstance card) => TargetType;
 
     public virtual bool GetGainsBlock(CardInstance card) => GainsBlock;
