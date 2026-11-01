@@ -180,7 +180,12 @@ public sealed class LiftRestSiteOption : RestSiteOption
 
     public override string OptionId => "LIFT";
 
-    public override bool OnSelect(RunState rs) => throw new NotImplementedException("W3 content: LiftRestSiteOption.OnSelect needs Girya.TimesLifted");
+    public override bool OnSelect(RunState rs)
+    {
+        var girya = Owner.GetRelic<Girya>() ?? throw new InvalidOperationException("LiftRestSiteOption.OnSelect: owner has no Girya.");
+        girya.TimesLifted++;
+        return true;
+    }
 }
 
 public sealed class KindleRestSiteOption : RestSiteOption
