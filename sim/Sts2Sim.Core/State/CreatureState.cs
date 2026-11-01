@@ -137,6 +137,8 @@ public abstract class CreatureState : ICanonical
 
 public sealed class PlayerState : CreatureState
 {
+    public const int DefaultPotionSlotCount = 3;
+
     private CardPile[]? _allPiles;
 
     public PlayerState(int combatId, string characterId, int currentHp, int maxHp, int maxEnergy)
@@ -151,6 +153,11 @@ public sealed class PlayerState : CreatureState
         DiscardPile = new CardPile(PileType.Discard);
         ExhaustPile = new CardPile(PileType.Exhaust);
         PlayPile = new CardPile(PileType.Play);
+        Relics = new List<RelicModel>();
+        PotionSlots = new PotionModel?[DefaultPotionSlotCount];
+        Deck = new List<CardInstance>();
+        OrbQueue = new OrbQueue();
+        PetIds = new List<int>();
     }
 
     private PlayerState(PlayerState source)
@@ -163,11 +170,34 @@ public sealed class PlayerState : CreatureState
         TurnNumber = source.TurnNumber;
         Phase = source.Phase;
         IsActiveForHooks = source.IsActiveForHooks;
-        DrawPile = source.DrawPile.DeepClone();
-        Hand = source.Hand.DeepClone();
-        DiscardPile = source.DiscardPile.DeepClone();
-        ExhaustPile = source.ExhaustPile.DeepClone();
-        PlayPile = source.PlayPile.DeepClone();
+        DrawPile = source.DrawPile.CloneFor(this);
+        Hand = source.Hand.CloneFor(this);
+        DiscardPile = source.DiscardPile.CloneFor(this);
+        ExhaustPile = source.ExhaustPile.CloneFor(this);
+        PlayPile = source.PlayPile.CloneFor(this);
+        Gold = source.Gold;
+        BaseOrbSlotCount = source.BaseOrbSlotCount;
+        CanUseOrRemovePotions = source.CanUseOrRemovePotions;
+        var sourceRelics = source.Relics;
+        Relics = new List<RelicModel>(sourceRelics.Count);
+        for (int i = 0; i < sourceRelics.Count; i++)
+        {
+            Relics.Add(sourceRelics[i].CloneFor(this));
+        }
+        var sourceSlots = source.PotionSlots;
+        PotionSlots = new PotionModel?[sourceSlots.Length];
+        for (int i = 0; i < sourceSlots.Length; i++)
+        {
+            PotionSlots[i] = sourceSlots[i]?.CloneFor(this);
+        }
+        var sourceDeck = source.Deck;
+        Deck = new List<CardInstance>(sourceDeck.Count);
+        for (int i = 0; i < sourceDeck.Count; i++)
+        {
+            Deck.Add(sourceDeck[i].CloneFor(this));
+        }
+        OrbQueue = source.OrbQueue.CloneFor(this);
+        PetIds = new List<int>(source.PetIds);
     }
 
     public override bool IsPlayer => true;
@@ -197,6 +227,55 @@ public sealed class PlayerState : CreatureState
     public CardPile PlayPile { get; }
 
     public IReadOnlyList<CardPile> AllPiles => _allPiles ??= new[] { Hand, DrawPile, DiscardPile, ExhaustPile, PlayPile };
+
+    public int Gold { get; set; }
+
+    public List<RelicModel> Relics { get; }
+
+    public PotionModel?[] PotionSlots { get; set; }
+
+    public int MaxPotionCount => PotionSlots.Length;
+
+    public bool HasOpenPotionSlot
+    {
+        get
+        {
+            var slots = PotionSlots;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i] is null)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    public bool CanUseOrRemovePotions { get; set; } = true;
+
+    public int BaseOrbSlotCount { get; set; }
+
+    public List<CardInstance> Deck { get; }
+
+    public OrbQueue OrbQueue { get; }
+
+    public List<int> PetIds { get; }
+
+    public RelicModel? GetRelic(string relicId)
+    {
+        var relics = Relics;
+        for (int i = 0; i < relics.Count; i++)
+        {
+            if (relics[i].Id == relicId)
+            {
+                return relics[i];
+            }
+        }
+        return null;
+    }
+
+    public bool HasRelic(string relicId) => GetRelic(relicId) != null;
 
     public CardPile GetPile(PileType type) => type switch
     {
@@ -292,6 +371,41 @@ public sealed class PlayerState : CreatureState
         DiscardPile.WriteCanonical(w);
         ExhaustPile.WriteCanonical(w);
         PlayPile.WriteCanonical(w);
+        w.WriteTag(StateCanonicalTags.PlayerPersistent);
+        w.WriteInt32(Gold);
+        w.WriteInt32(BaseOrbSlotCount);
+        w.WriteBool(CanUseOrRemovePotions);
+        var relics = Relics;
+        w.WriteTag(StateCanonicalTags.RelicList);
+        w.WriteCount(relics.Count);
+        for (int i = 0; i < relics.Count; i++)
+        {
+            relics[i].WriteCanonical(w);
+        }
+        var slots = PotionSlots;
+        w.WriteTag(StateCanonicalTags.PotionSlots);
+        w.WriteCount(slots.Length);
+        for (int i = 0; i < slots.Length; i++)
+        {
+            var potion = slots[i];
+            w.WriteBool(potion is not null);
+            potion?.WriteCanonical(w);
+        }
+        var deck = Deck;
+        w.WriteTag(StateCanonicalTags.Deck);
+        w.WriteCount(deck.Count);
+        for (int i = 0; i < deck.Count; i++)
+        {
+            deck[i].WriteCanonical(w);
+        }
+        w.WriteTag(StateCanonicalTags.PlayerCombatExtras);
+        OrbQueue.WriteCanonical(w);
+        var pets = PetIds;
+        w.WriteCount(pets.Count);
+        for (int i = 0; i < pets.Count; i++)
+        {
+            w.WriteInt32(pets[i]);
+        }
     }
 }
 
@@ -317,6 +431,8 @@ public sealed class MonsterState : CreatureState
         SlotName = source.SlotName;
         MaxHpBeforeModification = source.MaxHpBeforeModification;
         SpawnedThisTurn = source.SpawnedThisTurn;
+        PetOwnerId = source.PetOwnerId;
+        Listener = source.Listener is IOwnedListener<MonsterState> owned ? owned.CloneFor(this) : source.Listener;
         _ai = source._ai?.DeepClone();
     }
 
@@ -348,6 +464,10 @@ public sealed class MonsterState : CreatureState
 
     public bool SpawnedThisTurn { get; set; }
 
+    public int PetOwnerId { get; set; } = PowerModel.NoCreature;
+
+    public AbstractModel? Listener { get; set; }
+
     public bool IsStunned => _ai?.NextMove?.Id == StunnedMoveId;
 
     public MonsterState DeepClone()
@@ -373,5 +493,8 @@ public sealed class MonsterState : CreatureState
         var ai = _ai;
         w.WriteBool(ai != null);
         ai?.WriteCanonical(w);
+        w.WriteTag(StateCanonicalTags.MonsterKernel);
+        w.WriteInt32(PetOwnerId);
+        w.WriteBool(Listener != null);
     }
 }

@@ -67,9 +67,9 @@ public static class PipelineTests
 
         public override PowerInstanceType InstanceType => PowerInstanceType.Instanced;
 
-        public override void AfterSideTurnStart(CombatState cs, CombatSide side) => _log.Add(_tag + ":start");
+        public override void AfterSideTurnStart(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants) => _log.Add(_tag + ":start");
 
-        public override void AfterSideTurnStartLate(CombatState cs, CombatSide side) => _log.Add(_tag + ":late");
+        public override void AfterSideTurnStartLate(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants) => _log.Add(_tag + ":late");
 
         public override void AfterDamageReceived(CombatState cs, CreatureState target, DamageResult result, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
         {

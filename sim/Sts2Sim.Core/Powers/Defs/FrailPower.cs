@@ -25,7 +25,7 @@ public sealed class FrailPower : PowerModel
         return BlockMultiplier;
     }
 
-    public override void AfterSideTurnEnd(CombatState cs, CombatSide side)
+    public override void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         if (side == CombatSide.Enemy)
         {

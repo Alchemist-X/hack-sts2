@@ -8,4 +8,5 @@ public static class CardCanonicalTags
     public const ushort VarSet = 0xCA04;
     public const ushort Var = 0xCA05;
     public const ushort TemporaryCardCost = 0xCA06;
+    public const ushort CardKernel = 0xCA07;
 }

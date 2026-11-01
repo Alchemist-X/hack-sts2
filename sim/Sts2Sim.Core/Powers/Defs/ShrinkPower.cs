@@ -18,7 +18,7 @@ public sealed class ShrinkPower : PowerModel
 
     public bool IsInfinite => Amount < 0;
 
-    public override void AfterSideTurnEnd(CombatState cs, CombatSide side)
+    public override void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         if (!IsInfinite && IsTurnParticipant(cs, side))
         {

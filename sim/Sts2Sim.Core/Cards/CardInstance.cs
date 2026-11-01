@@ -4,6 +4,11 @@ public sealed class CardInstance : ICanonical
 {
     public const int NoTarget = -1;
 
+    public const int NoDeckVersion = -1;
+
+    public const int NoOwner = -1;
+
+    private PlayerState? _owner;
     private int _upgradeLevel;
     private int _baseStarCost;
     private List<TemporaryCardCost>? _temporaryStarCosts;
@@ -118,6 +123,20 @@ public sealed class CardInstance : ICanonical
     public bool WasStarCostJustUpgraded { get; private set; }
 
     public int LastStarsSpent { get; set; }
+
+    public PlayerState Owner => _owner ?? throw new InvalidOperationException($"Card {Id}#{InstanceId} has no owner");
+
+    public bool HasOwner => _owner != null;
+
+    public EnchantmentModel? Enchantment { get; set; }
+
+    public AfflictionModel? Affliction { get; set; }
+
+    public AbstractModel? Listener { get; set; }
+
+    public bool HasBeenRemovedFromState { get; set; }
+
+    public int DeckVersionId { get; set; } = NoDeckVersion;
 
     public IReadOnlyList<TemporaryCardCost> TemporaryStarCosts => _temporaryStarCosts is null ? Array.Empty<TemporaryCardCost>() : _temporaryStarCosts;
 
@@ -417,12 +436,31 @@ public sealed class CardInstance : ICanonical
         FinalizeUpgradeInternal();
     }
 
-    public CardInstance DeepClone()
+    public void AttachTo(PlayerState owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (_owner != null && !ReferenceEquals(_owner, owner))
+        {
+            throw new InvalidOperationException($"Cannot move card {Id}#{InstanceId} from one owner to another");
+        }
+        _owner = owner;
+    }
+
+    public CardInstance CloneForCombat(int newInstanceId)
+        => throw new NotImplementedException("CardInstance.CloneForCombat: cards-kernel (Entities.Players/Player.cs:1214-1233, Combat/CombatState.cs:679-684)");
+
+    public CardInstance DeepClone() => CloneFor(_owner);
+
+    public CardInstance CloneFor(PlayerState? newOwner)
     {
         var clone = (CardInstance)MemberwiseClone();
         clone.Vars = Vars.DeepClone();
         clone.EnergyCost = EnergyCost.DeepClone();
         clone._temporaryStarCosts = _temporaryStarCosts is { Count: > 0 } costs ? new List<TemporaryCardCost>(costs) : null;
+        clone._owner = _owner is null ? null : newOwner;
+        clone.Enchantment = Enchantment?.CloneFor(clone);
+        clone.Affliction = Affliction?.CloneFor(clone);
+        clone.Listener = Listener is IOwnedListener<CardInstance> owned ? owned.CloneFor(clone) : Listener;
         return clone;
     }
 
@@ -452,6 +490,17 @@ public sealed class CardInstance : ICanonical
         }
         EnergyCost.WriteCanonical(w);
         Vars.WriteCanonical(w);
+        w.WriteTag(CardCanonicalTags.CardKernel);
+        w.WriteInt32(_owner?.CombatId ?? NoOwner);
+        w.WriteInt32(DeckVersionId);
+        w.WriteBool(HasBeenRemovedFromState);
+        var enchantment = Enchantment;
+        w.WriteBool(enchantment != null);
+        enchantment?.WriteCanonical(w);
+        var affliction = Affliction;
+        w.WriteBool(affliction != null);
+        affliction?.WriteCanonical(w);
+        w.WriteBool(Listener != null);
     }
 
     private static int CountLivingPlayerCreatures(CombatState cs) => cs.Player.IsAlive ? 1 : 0;

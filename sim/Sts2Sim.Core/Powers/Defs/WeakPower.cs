@@ -30,7 +30,7 @@ public sealed class WeakPower : PowerModel
         return num;
     }
 
-    public override void AfterSideTurnEnd(CombatState cs, CombatSide side)
+    public override void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         if (side == CombatSide.Enemy)
         {

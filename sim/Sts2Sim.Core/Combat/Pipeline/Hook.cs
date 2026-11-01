@@ -8,6 +8,9 @@ public static class Hook
 
     public static void IterateRunHookListeners(CombatState cs, List<AbstractModel> buffer) => Fill(cs, ListenerSource.Run, buffer);
 
+    public static void IterateRunHookListeners(RunState rs, CombatState? cs, List<AbstractModel> buffer)
+        => throw new NotImplementedException("Hook.IterateRunHookListeners(rs, cs): hooks agent (Runs/RunState.cs:829-933)");
+
     private static void Fill(CombatState cs, ListenerSource source, List<AbstractModel> buffer)
     {
         buffer.Clear();
@@ -25,6 +28,9 @@ public static class Hook
     {
         (modifiers ??= new List<AbstractModel>(2)).Add(model);
     }
+
+    private static IReadOnlyList<CreatureState> SideTurnParticipants(CombatState cs, CombatSide side)
+        => side == CombatSide.Enemy ? cs.Monsters : cs.Allies;
 
     private static bool ContainsModel(IReadOnlyList<AbstractModel> models, AbstractModel model)
     {
@@ -627,14 +633,16 @@ public static class Hook
         return true;
     }
 
-    public static bool ShouldPlay(CombatState cs, CardInstance card) => ShouldPlay(cs, card, out _);
+    public static bool ShouldPlay(CombatState cs, CardInstance card) => ShouldPlay(cs, card, out _, AutoPlayType.None);
 
-    public static bool ShouldPlay(CombatState cs, CardInstance card, out AbstractModel? preventer)
+    public static bool ShouldPlay(CombatState cs, CardInstance card, out AbstractModel? preventer) => ShouldPlay(cs, card, out preventer, AutoPlayType.None);
+
+    public static bool ShouldPlay(CombatState cs, CardInstance card, out AbstractModel? preventer, AutoPlayType autoPlayType)
     {
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded);
         for (int i = 0; i < listeners.Count; i++)
         {
-            if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldPlay(cs, card))
+            if (listeners.TryGetLive(cs, i, out var model) && !model.ShouldPlay(cs, card, autoPlayType))
             {
                 preventer = model;
                 return false;
@@ -775,19 +783,23 @@ public static class Hook
         }
     }
 
-    public static void BeforeSideTurnStart(CombatState cs, CombatSide side)
+    public static void BeforeSideTurnStart(CombatState cs, CombatSide side) => BeforeSideTurnStart(cs, side, SideTurnParticipants(cs, side));
+
+    public static void BeforeSideTurnStart(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded);
         for (int i = 0; i < listeners.Count; i++)
         {
             if (listeners.TryGetLive(cs, i, out var model))
             {
-                model.BeforeSideTurnStart(cs, side);
+                model.BeforeSideTurnStart(cs, side, participants);
             }
         }
     }
 
-    public static void AfterSideTurnStart(CombatState cs, CombatSide side)
+    public static void AfterSideTurnStart(CombatState cs, CombatSide side) => AfterSideTurnStart(cs, side, SideTurnParticipants(cs, side));
+
+    public static void AfterSideTurnStart(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
         {
@@ -795,7 +807,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterSideTurnStart(cs, side);
+                    model.AfterSideTurnStart(cs, side, participants);
                 }
             }
         }
@@ -805,7 +817,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterSideTurnStartLate(cs, side);
+                    model.AfterSideTurnStartLate(cs, side, participants);
                 }
             }
         }
@@ -845,7 +857,9 @@ public static class Hook
         }
     }
 
-    public static void BeforeSideTurnEnd(CombatState cs, CombatSide side)
+    public static void BeforeSideTurnEnd(CombatState cs, CombatSide side) => BeforeSideTurnEnd(cs, side, SideTurnParticipants(cs, side));
+
+    public static void BeforeSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
         {
@@ -853,7 +867,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.BeforeSideTurnEndVeryEarly(cs, side);
+                    model.BeforeSideTurnEndVeryEarly(cs, side, participants);
                 }
             }
         }
@@ -863,7 +877,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.BeforeSideTurnEndEarly(cs, side);
+                    model.BeforeSideTurnEndEarly(cs, side, participants);
                 }
             }
         }
@@ -873,13 +887,15 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.BeforeSideTurnEnd(cs, side);
+                    model.BeforeSideTurnEnd(cs, side, participants);
                 }
             }
         }
     }
 
-    public static void AfterSideTurnEnd(CombatState cs, CombatSide side)
+    public static void AfterSideTurnEnd(CombatState cs, CombatSide side) => AfterSideTurnEnd(cs, side, SideTurnParticipants(cs, side));
+
+    public static void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
         using (var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded))
         {
@@ -887,7 +903,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterSideTurnEnd(cs, side);
+                    model.AfterSideTurnEnd(cs, side, participants);
                 }
             }
         }
@@ -897,7 +913,7 @@ public static class Hook
             {
                 if (listeners.TryGetLive(cs, i, out var model))
                 {
-                    model.AfterSideTurnEndLate(cs, side);
+                    model.AfterSideTurnEndLate(cs, side, participants);
                 }
             }
         }
@@ -1490,4 +1506,249 @@ public static class Hook
             modifier.AfterPreventingDraw(cs);
         }
     }
+
+    public static void AfterActEntered(RunState rs)
+        => throw new NotImplementedException("Hook.AfterActEntered: hooks agent (Hooks/Hook.cs:8813)");
+
+    public static void BeforeCardAutoPlayed(CombatState cs, CardInstance card, CreatureState? target, AutoPlayType type)
+        => throw new NotImplementedException("Hook.BeforeCardAutoPlayed: hooks agent (Hooks/Hook.cs:8919)");
+
+    public static void AfterCardChangedPiles(RunState rs, CombatState? cs, CardInstance card, PileType oldPile, AbstractModel? clonedBy)
+        => throw new NotImplementedException("Hook.AfterCardChangedPiles: hooks agent (Hooks/Hook.cs:8935)");
+
+    public static void BeforeCardRemoved(RunState rs, CardInstance card)
+        => throw new NotImplementedException("Hook.BeforeCardRemoved: hooks agent (Hooks/Hook.cs:9057)");
+
+    public static void AfterCombatEnd(RunState rs, CombatState? cs, CombatRoom? room)
+        => throw new NotImplementedException("Hook.AfterCombatEnd: hooks agent (Hooks/Hook.cs:9085)");
+
+    public static void BeforeCombatRewardOffered(RunState rs, RewardsSet rewards, CombatRoom room)
+        => throw new NotImplementedException("Hook.BeforeCombatRewardOffered: hooks agent (Hooks/Hook.cs:9100)");
+
+    public static void AfterCombatVictory(RunState rs, CombatState? cs, CombatRoom? room)
+        => throw new NotImplementedException("Hook.AfterCombatVictory: hooks agent (Hooks/Hook.cs:9115)");
+
+    public static void AfterGoldGained(RunState rs, PlayerState player)
+        => throw new NotImplementedException("Hook.AfterGoldGained: hooks agent (Hooks/Hook.cs:9251)");
+
+    public static void AfterDiedToDoom(CombatState cs, IReadOnlyList<CreatureState> creatures)
+        => throw new NotImplementedException("Hook.AfterDiedToDoom: hooks agent (Hooks/Hook.cs:9265)");
+
+    public static void AfterForge(CombatState cs, decimal amount, PlayerState forger, AbstractModel? source)
+        => throw new NotImplementedException("Hook.AfterForge: hooks agent (Hooks/Hook.cs:9339)");
+
+    public static void AfterItemPurchased(RunState rs, PlayerState player, MerchantEntry itemPurchased, int goldSpent)
+        => throw new NotImplementedException("Hook.AfterItemPurchased: hooks agent (Hooks/Hook.cs:9385)");
+
+    public static void AfterMapGenerated(RunState rs, ActMap map, int actIndex)
+        => throw new NotImplementedException("Hook.AfterMapGenerated: hooks agent (Hooks/Hook.cs:9401)");
+
+    public static void AfterModifyingCardRewardOptions(RunState rs, IReadOnlyList<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.AfterModifyingCardRewardOptions: hooks agent (Hooks/Hook.cs:9448)");
+
+    public static void AfterModifyingGoldGained(RunState rs, CombatState? cs, IReadOnlyList<AbstractModel>? modifiers, PlayerState player, decimal amount)
+        => throw new NotImplementedException("Hook.AfterModifyingGoldGained: hooks agent (Hooks/Hook.cs:9492)");
+
+    public static void AfterModifyingOrbPassiveTriggerCount(CombatState cs, OrbModel orb, IReadOnlyList<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.AfterModifyingOrbPassiveTriggerCount: hooks agent (Hooks/Hook.cs:9553)");
+
+    public static void AfterModifyingRewards(RunState rs, IReadOnlyList<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.AfterModifyingRewards: hooks agent (Hooks/Hook.cs:9598)");
+
+    public static void AfterOrbChanneled(CombatState cs, PlayerState player, OrbModel orb)
+        => throw new NotImplementedException("Hook.AfterOrbChanneled: hooks agent (Hooks/Hook.cs:9612)");
+
+    public static void AfterOrbEvoked(CombatState cs, OrbModel orb, IEnumerable<CreatureState> targets)
+        => throw new NotImplementedException("Hook.AfterOrbEvoked: hooks agent (Hooks/Hook.cs:9628)");
+
+    public static void AfterOstyRevived(CombatState cs, CreatureState osty)
+        => throw new NotImplementedException("Hook.AfterOstyRevived: hooks agent (Hooks/Hook.cs:9644)");
+
+    public static void AfterAutoPostPlayPhaseEntered(CombatState cs, PlayerState player)
+        => throw new NotImplementedException("Hook.AfterAutoPostPlayPhaseEntered: hooks agent (Hooks/Hook.cs:9673)");
+
+    public static void AfterAutoPrePlayPhaseEntered(CombatState cs, PlayerState player)
+        => throw new NotImplementedException("Hook.AfterAutoPrePlayPhaseEntered: hooks agent (Hooks/Hook.cs:9688)");
+
+    public static void AfterPotionDiscarded(RunState rs, CombatState? cs, PotionModel potion)
+        => throw new NotImplementedException("Hook.AfterPotionDiscarded: hooks agent (Hooks/Hook.cs:9703)");
+
+    public static void AfterPotionProcured(RunState rs, CombatState? cs, PotionModel potion)
+        => throw new NotImplementedException("Hook.AfterPotionProcured: hooks agent (Hooks/Hook.cs:9718)");
+
+    public static void BeforePotionUsed(RunState rs, CombatState? cs, PotionModel potion, CreatureState? target)
+        => throw new NotImplementedException("Hook.BeforePotionUsed: hooks agent (Hooks/Hook.cs:9733)");
+
+    public static void AfterPotionUsed(RunState rs, CombatState? cs, PotionModel potion, CreatureState? target)
+        => throw new NotImplementedException("Hook.AfterPotionUsed: hooks agent (Hooks/Hook.cs:9749)");
+
+    public static void AfterRestSiteHeal(RunState rs, PlayerState player, bool isMimicked)
+        => throw new NotImplementedException("Hook.AfterRestSiteHeal: hooks agent (Hooks/Hook.cs:9846)");
+
+    public static void AfterRestSiteSmith(RunState rs, PlayerState player)
+        => throw new NotImplementedException("Hook.AfterRestSiteSmith: hooks agent (Hooks/Hook.cs:9861)");
+
+    public static void AfterRewardTaken(RunState rs, PlayerState player, Reward reward)
+        => throw new NotImplementedException("Hook.AfterRewardTaken: hooks agent (Hooks/Hook.cs:9875)");
+
+    public static void BeforeRoomEntered(RunState rs, AbstractRoom room)
+        => throw new NotImplementedException("Hook.BeforeRoomEntered: hooks agent (Hooks/Hook.cs:9890)");
+
+    public static void AfterRoomEntered(RunState rs, AbstractRoom room)
+        => throw new NotImplementedException("Hook.AfterRoomEntered: hooks agent (Hooks/Hook.cs:9904)");
+
+    public static void AfterStarsGained(CombatState cs, int amount, PlayerState gainer)
+        => throw new NotImplementedException("Hook.AfterStarsGained: hooks agent (Hooks/Hook.cs:9963)");
+
+    public static void AfterStarsSpent(CombatState cs, int amount, PlayerState spender)
+        => throw new NotImplementedException("Hook.AfterStarsSpent: hooks agent (Hooks/Hook.cs:9978)");
+
+    public static void AfterSummon(CombatState cs, PlayerState summoner, decimal amount)
+        => throw new NotImplementedException("Hook.AfterSummon: hooks agent (Hooks/Hook.cs:9993)");
+
+    public static CardInstance ModifyCardBeingAddedToDeck(RunState rs, CardInstance card)
+    {
+        List<AbstractModel>? modifyingModels = null;
+        return ModifyCardBeingAddedToDeck(rs, card, ref modifyingModels);
+    }
+
+    public static CardInstance ModifyCardBeingAddedToDeck(RunState rs, CardInstance card, ref List<AbstractModel>? modifyingModels)
+        => throw new NotImplementedException("Hook.ModifyCardBeingAddedToDeck: hooks agent (Hooks/Hook.cs:10121)");
+
+    public static CardLocation ModifyCardPlayResultLocation(CombatState cs, CardInstance card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation)
+    {
+        List<AbstractModel>? modifiers = null;
+        return ModifyCardPlayResultLocation(cs, card, isAutoPlay, resources, cardLocation, ref modifiers);
+    }
+
+    public static CardLocation ModifyCardPlayResultLocation(CombatState cs, CardInstance card, bool isAutoPlay, ResourceInfo resources, CardLocation cardLocation, ref List<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.ModifyCardPlayResultLocation: hooks agent (Hooks/Hook.cs:10188)");
+
+    public static IEnumerable<AbstractModel> ModifyCardRewardAlternatives(RunState rs, PlayerState player, CardReward cardReward, List<CardRewardAlternative> alternatives)
+        => throw new NotImplementedException("Hook.ModifyCardRewardAlternatives: hooks agent (Hooks/Hook.cs:10213)");
+
+    public static CardCreationOptions ModifyCardRewardCreationOptions(RunState rs, PlayerState player, CardCreationOptions options)
+        => throw new NotImplementedException("Hook.ModifyCardRewardCreationOptions: hooks agent (Hooks/Hook.cs:10235)");
+
+    public static bool TryModifyCardRewardOptions(RunState rs, PlayerState player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions)
+    {
+        List<AbstractModel>? modifiers = null;
+        return TryModifyCardRewardOptions(rs, player, cardRewardOptions, creationOptions, ref modifiers);
+    }
+
+    public static bool TryModifyCardRewardOptions(RunState rs, PlayerState player, List<CardCreationResult> cardRewardOptions, CardCreationOptions creationOptions, ref List<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.TryModifyCardRewardOptions: hooks agent (Hooks/Hook.cs:10266)");
+
+    public static decimal ModifyCardRewardUpgradeOdds(RunState rs, PlayerState player, CardInstance card, decimal originalOdds)
+        => throw new NotImplementedException("Hook.ModifyCardRewardUpgradeOdds: hooks agent (Hooks/Hook.cs:10309)");
+
+    public static void ModifyKeywordsInCombat(CombatState cs, CardInstance card, ISet<CardKeyword> keywords)
+        => throw new NotImplementedException("Hook.ModifyKeywordsInCombat: hooks agent (Hooks/Hook.cs:10458)");
+
+    public static decimal ModifyGoldGained(RunState rs, CombatState? cs, decimal amount, PlayerState player)
+    {
+        List<AbstractModel>? modifiers = null;
+        return ModifyGoldGained(rs, cs, amount, player, ref modifiers);
+    }
+
+    public static decimal ModifyGoldGained(RunState rs, CombatState? cs, decimal amount, PlayerState player, ref List<AbstractModel>? modifiers)
+        => throw new NotImplementedException("Hook.ModifyGoldGained: hooks agent (Hooks/Hook.cs:10501)");
+
+    public static IReadOnlyList<string> ModifyExtraRestSiteHealText(RunState rs, PlayerState player, IReadOnlyList<string> extraText)
+        => throw new NotImplementedException("Hook.ModifyExtraRestSiteHealText: hooks agent (Hooks/Hook.cs:10527)");
+
+    public static ActMap ModifyGeneratedMap(RunState rs, ActMap map, int actIndex)
+        => throw new NotImplementedException("Hook.ModifyGeneratedMap: hooks agent (Hooks/Hook.cs:10545)");
+
+    public static ActMap ModifyGeneratedMapLate(RunState rs, ActMap map, int actIndex)
+        => throw new NotImplementedException("Hook.ModifyGeneratedMapLate: hooks agent (Hooks/Hook.cs:10564)");
+
+    public static void ModifyMerchantCardCreationResults(RunState rs, PlayerState player, List<CardCreationResult> cards)
+        => throw new NotImplementedException("Hook.ModifyMerchantCardCreationResults: hooks agent (Hooks/Hook.cs:10732)");
+
+    public static IEnumerable<CardDef> ModifyMerchantCardPool(RunState rs, PlayerState player, IEnumerable<CardDef> options)
+        => throw new NotImplementedException("Hook.ModifyMerchantCardPool: hooks agent (Hooks/Hook.cs:10749)");
+
+    public static CardRarity ModifyMerchantCardRarity(RunState rs, PlayerState player, CardRarity rarity)
+        => throw new NotImplementedException("Hook.ModifyMerchantCardRarity: hooks agent (Hooks/Hook.cs:10767)");
+
+    public static decimal ModifyMerchantPrice(RunState rs, PlayerState player, MerchantEntry entry, decimal result)
+        => throw new NotImplementedException("Hook.ModifyMerchantPrice: hooks agent (Hooks/Hook.cs:10785)");
+
+    public static EventModel ModifyNextEvent(RunState rs, EventModel currentEvent)
+        => throw new NotImplementedException("Hook.ModifyNextEvent: hooks agent (Hooks/Hook.cs:10803)");
+
+    public static float ModifyOddsIncreaseForUnrolledRoomType(RunState rs, RoomType roomType, float oddsIncrease)
+        => throw new NotImplementedException("Hook.ModifyOddsIncreaseForUnrolledRoomType: hooks agent (Hooks/Hook.cs:10822)");
+
+    public static int ModifyOrbPassiveTriggerCount(CombatState cs, OrbModel orb, int triggerCount)
+    {
+        List<AbstractModel>? modifyingModels = null;
+        return ModifyOrbPassiveTriggerCount(cs, orb, triggerCount, ref modifyingModels);
+    }
+
+    public static int ModifyOrbPassiveTriggerCount(CombatState cs, OrbModel orb, int triggerCount, ref List<AbstractModel>? modifyingModels)
+        => throw new NotImplementedException("Hook.ModifyOrbPassiveTriggerCount: hooks agent (Hooks/Hook.cs:10840)");
+
+    public static decimal ModifyOrbValue(CombatState cs, OrbModel orb, decimal amount)
+        => throw new NotImplementedException("Hook.ModifyOrbValue: hooks agent (Hooks/Hook.cs:10865)");
+
+    public static decimal ModifyRestSiteHealAmount(RunState rs, CreatureState creature, decimal amount)
+        => throw new NotImplementedException("Hook.ModifyRestSiteHealAmount: hooks agent (Hooks/Hook.cs:10953)");
+
+    public static IEnumerable<AbstractModel> ModifyRestSiteOptions(RunState rs, PlayerState player, ICollection<RestSiteOption> options)
+        => throw new NotImplementedException("Hook.ModifyRestSiteOptions: hooks agent (Hooks/Hook.cs:10972)");
+
+    public static IEnumerable<AbstractModel> ModifyRestSiteHealRewards(RunState rs, PlayerState player, List<Reward> rewards, bool isMimicked)
+        => throw new NotImplementedException("Hook.ModifyRestSiteHealRewards: hooks agent (Hooks/Hook.cs:10994)");
+
+    public static IEnumerable<AbstractModel> ModifyRewards(RunState rs, PlayerState player, List<Reward> rewards, AbstractRoom? room)
+        => throw new NotImplementedException("Hook.ModifyRewards: hooks agent (Hooks/Hook.cs:11016)");
+
+    public static decimal ModifySummonAmount(CombatState cs, PlayerState summoner, decimal amount, AbstractModel? source)
+        => throw new NotImplementedException("Hook.ModifySummonAmount: hooks agent (Hooks/Hook.cs:11094)");
+
+    public static IReadOnlySet<RoomType> ModifyUnknownMapPointRoomTypes(RunState rs, IReadOnlySet<RoomType> roomTypes)
+        => throw new NotImplementedException("Hook.ModifyUnknownMapPointRoomTypes: hooks agent (Hooks/Hook.cs:11132)");
+
+    public static bool ShouldAddToDeck(RunState rs, CardInstance card) => ShouldAddToDeck(rs, card, out _);
+
+    public static bool ShouldAddToDeck(RunState rs, CardInstance card, out AbstractModel? preventer)
+        => throw new NotImplementedException("Hook.ShouldAddToDeck: hooks agent (Hooks/Hook.cs:11170)");
+
+    public static bool ShouldAfflict(CombatState cs, CardInstance card, AfflictionModel affliction)
+        => throw new NotImplementedException("Hook.ShouldAfflict: hooks agent (Hooks/Hook.cs:11193)");
+
+    public static bool ShouldAllowAncient(RunState rs, PlayerState player, AncientEventModel ancient)
+        => throw new NotImplementedException("Hook.ShouldAllowAncient: hooks agent (Hooks/Hook.cs:11214)");
+
+    public static bool ShouldAllowMerchantCardRemoval(RunState rs, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldAllowMerchantCardRemoval: hooks agent (Hooks/Hook.cs:11256)");
+
+    public static bool ShouldAllowSelectingMoreCardRewards(RunState rs, PlayerState player, CardReward reward)
+        => throw new NotImplementedException("Hook.ShouldAllowSelectingMoreCardRewards: hooks agent (Hooks/Hook.cs:11277)");
+
+    public static bool ShouldDisableRemainingRestSiteOptions(RunState rs, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldDisableRemainingRestSiteOptions: hooks agent (Hooks/Hook.cs:11405)");
+
+    public static bool ShouldGenerateTreasure(RunState rs, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldGenerateTreasure: hooks agent (Hooks/Hook.cs:11491)");
+
+    public static bool ShouldGainStars(CombatState cs, decimal amount, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldGainStars: hooks agent (Hooks/Hook.cs:11512)");
+
+    public static bool ShouldProceedToNextMapPoint(RunState rs)
+        => throw new NotImplementedException("Hook.ShouldProceedToNextMapPoint: hooks agent (Hooks/Hook.cs:11598)");
+
+    public static bool ShouldProcurePotion(RunState rs, CombatState? cs, PotionModel potion, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldProcurePotion: hooks agent (Hooks/Hook.cs:11619)");
+
+    public static bool ShouldRefillMerchantEntry(RunState rs, MerchantEntry entry, PlayerState player)
+        => throw new NotImplementedException("Hook.ShouldRefillMerchantEntry: hooks agent (Hooks/Hook.cs:11640)");
+
+    public static bool ShouldForcePotionReward(RunState rs, PlayerState player, RoomType roomType)
+        => throw new NotImplementedException("Hook.ShouldForcePotionReward: hooks agent (Hooks/Hook.cs:11703)");
+
+    public static bool ShouldAllowFreeTravel(RunState rs)
+        => throw new NotImplementedException("Hook.ShouldAllowFreeTravel: hooks agent (Hooks/Hook.cs:11722)");
 }

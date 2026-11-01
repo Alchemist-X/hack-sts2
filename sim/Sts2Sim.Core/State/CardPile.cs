@@ -132,6 +132,17 @@ public sealed class CardPile : ICanonical
         return new CardPile(Type, cards);
     }
 
+    public CardPile CloneFor(PlayerState? newOwner)
+    {
+        var source = _cards;
+        var cards = new List<CardInstance>(Math.Max(source.Count, MinCloneCapacity));
+        for (int i = 0; i < source.Count; i++)
+        {
+            cards.Add(source[i].CloneFor(newOwner));
+        }
+        return new CardPile(Type, cards);
+    }
+
     public void WriteCanonical(CanonicalWriter w)
     {
         w.WriteTag(StateCanonicalTags.CardPile);
