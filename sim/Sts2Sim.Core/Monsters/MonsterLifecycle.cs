@@ -96,8 +96,52 @@ public static class MonsterLifecycle
     public static IReadOnlyList<CreatureState> PlayerCreatures(CombatState cs) => new CreatureState[] { cs.Player };
 
     public static IReadOnlyList<CreatureState> PlayerSideParticipants(CombatState cs)
-        => throw new NotImplementedException("MonsterLifecycle.PlayerSideParticipants: monsters-kernel (Combat/CombatManager.cs:4873-4882, Combat/CombatState.cs:620, :831; CONTRACTS Part B section B12 A17)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        var extraTurn = cs.PlayersTakingExtraTurn;
+        if (extraTurn.Count > 0)
+        {
+            var players = new CreatureState[extraTurn.Count];
+            for (int i = 0; i < players.Length; i++)
+            {
+                players[i] = FindPlayer(cs, extraTurn[i]);
+            }
+            return players;
+        }
+        return Snapshot(cs.Allies);
+    }
 
     public static IReadOnlyList<CreatureState> EnemySideParticipants(CombatState cs)
-        => throw new NotImplementedException("MonsterLifecycle.EnemySideParticipants: monsters-kernel (Combat/CombatManager.cs:2055-2088, Combat/CombatState.cs:620, :831; CONTRACTS Part B section B12 A17)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        return Snapshot(cs.Monsters);
+    }
+
+    private static CreatureState FindPlayer(CombatState cs, int playerCombatId)
+    {
+        var allies = cs.Allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (allies[i] is PlayerState player && player.CombatId == playerCombatId)
+            {
+                return player;
+            }
+        }
+        throw new InvalidOperationException($"Player {playerCombatId} is taking an extra turn but is not in this combat.");
+    }
+
+    private static CreatureState[] Snapshot<T>(IReadOnlyList<T> side) where T : CreatureState
+    {
+        int n = side.Count;
+        if (n == 0)
+        {
+            return Array.Empty<CreatureState>();
+        }
+        var copy = new CreatureState[n];
+        for (int i = 0; i < n; i++)
+        {
+            copy[i] = side[i];
+        }
+        return copy;
+    }
 }

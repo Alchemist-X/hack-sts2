@@ -12,5 +12,24 @@ public static class StarsCmd
         => throw new NotImplementedException("StarsCmd.SetStars: character-mechanics (Commands/PlayerCmd.cs:868, state machine :695-793; gate :742)");
 
     public static void SpendStars(CombatState cs, PlayerState player, int amount)
-        => throw new NotImplementedException("StarsCmd.SpendStars: character-mechanics (Models/CardModel.cs:3435-3446, state machine :1399-1466; AfterStarsSpent :1436)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(player);
+        if (amount > 0)
+        {
+            LoseStarsInternal(cs, player, amount);
+            Hook.AfterStarsSpent(cs, amount, player);
+        }
+    }
+
+    private static void LoseStarsInternal(CombatState cs, PlayerState player, decimal amount)
+    {
+        int before = player.Stars;
+        player.LoseStars(amount);
+        int after = player.Stars;
+        if (after != before)
+        {
+            cs.History.AppendStarsModified(cs, after - before, player);
+        }
+    }
 }

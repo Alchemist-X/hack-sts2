@@ -357,55 +357,199 @@ public sealed class CombatHistory : ICanonical
     public IReadOnlyList<CardPlayFinishedEntry> CardPlaysFinished => CardPlayFinishedEntries;
 
     public void AppendBlockGained(CombatState cs, CreatureState receiver, int amount, ValueProp props, CardPlay? cardPlay)
-        => throw new NotImplementedException("CombatHistory.AppendBlockGained: state agent (Combat.History/CombatHistory.cs:119)");
+    {
+        int actor = receiver.CombatId;
+        HistoryCardPlay? play = cardPlay == null ? null : HistoryCardPlay.From(cardPlay);
+        Add(ref _blockGained, new BlockGainedEntry(NextStamp(cs, actor), amount, props, play));
+    }
 
     public void AppendCardAfflicted(CombatState cs, CardInstance card, AfflictionModel affliction)
-        => throw new NotImplementedException("CombatHistory.AppendCardAfflicted: state agent (Combat.History/CombatHistory.cs:84)");
+    {
+        int actor = ActorOf(card);
+        string afflictionId = affliction.Id;
+        Add(ref _cardAfflicted, new CardAfflictedEntry(NextStamp(cs, actor), card.InstanceId, card.Id, afflictionId));
+    }
 
     public void AppendCardDiscarded(CombatState cs, CardInstance card)
-        => throw new NotImplementedException("CombatHistory.AppendCardDiscarded: state agent (Combat.History/CombatHistory.cs:89)");
+    {
+        int actor = ActorOf(card);
+        Add(ref _cardDiscarded, new CardDiscardedEntry(NextStamp(cs, actor), card.InstanceId, card.Id));
+    }
 
     public void AppendCardDrawn(CombatState cs, CardInstance card, bool fromHandDraw)
-        => throw new NotImplementedException("CombatHistory.AppendCardDrawn: state agent (Combat.History/CombatHistory.cs:94)");
+    {
+        int actor = ActorOf(card);
+        Add(ref _cardDrawn, new CardDrawnEntry(NextStamp(cs, actor), card.InstanceId, card.Id, fromHandDraw));
+    }
 
     public void AppendCardExhausted(CombatState cs, CardInstance card)
-        => throw new NotImplementedException("CombatHistory.AppendCardExhausted: state agent (Combat.History/CombatHistory.cs:99)");
+    {
+        int actor = ActorOf(card);
+        Add(ref _cardExhausted, new CardExhaustedEntry(NextStamp(cs, actor), card.InstanceId, card.Id));
+    }
 
     public void AppendCardGenerated(CombatState cs, CardInstance card, PlayerState? creator)
-        => throw new NotImplementedException("CombatHistory.AppendCardGenerated: state agent (Combat.History/CombatHistory.cs:104)");
+    {
+        int actor = ActorOf(card);
+        Add(ref _cardGenerated, new CardGeneratedEntry(NextStamp(cs, actor), card.InstanceId, card.Id, creator?.CombatId ?? NoId));
+    }
 
     public void AppendCardPlayFinished(CombatState cs, CardPlay cardPlay)
-        => throw new NotImplementedException("CombatHistory.AppendCardPlayFinished: state agent (Combat.History/CombatHistory.cs:79)");
+    {
+        var play = HistoryCardPlay.From(cardPlay);
+        int actor = ActorOf(cardPlay.Card);
+        bool wasEthereal = HasKeywordInCombat(cs, cardPlay.Card, CardKeyword.Ethereal);
+        Add(ref _cardPlayFinished, new CardPlayFinishedEntry(NextStamp(cs, actor), play, wasEthereal));
+    }
 
     public void AppendCardPlayStarted(CombatState cs, CardPlay cardPlay)
-        => throw new NotImplementedException("CombatHistory.AppendCardPlayStarted: state agent (Combat.History/CombatHistory.cs:74)");
+    {
+        var play = HistoryCardPlay.From(cardPlay);
+        int actor = ActorOf(cardPlay.Card);
+        Add(ref _cardPlayStarted, new CardPlayStartedEntry(NextStamp(cs, actor), play));
+    }
 
     public void AppendCreatureAttacked(CombatState cs, CreatureState attacker, IReadOnlyList<DamageResult> damageResults)
-        => throw new NotImplementedException("CombatHistory.AppendCreatureAttacked: state agent (Combat.History/CombatHistory.cs:109)");
+    {
+        int actor = attacker.CombatId;
+        int n = damageResults.Count;
+        var results = n == 0 ? Array.Empty<HistoryDamageResult>() : new HistoryDamageResult[n];
+        for (int i = 0; i < n; i++)
+        {
+            results[i] = ToHistory(damageResults[i]);
+        }
+        Add(ref _creatureAttacked, new CreatureAttackedEntry(NextStamp(cs, actor), results));
+    }
 
     public void AppendDamageReceived(CombatState cs, CreatureState receiver, CreatureState? dealer, DamageResult result, CardInstance? cardSource)
-        => throw new NotImplementedException("CombatHistory.AppendDamageReceived: state agent (Combat.History/CombatHistory.cs:114)");
+    {
+        int actor = receiver.CombatId;
+        var damage = ToHistory(result);
+        Add(ref _damageReceived, new DamageReceivedEntry(NextStamp(cs, actor), damage, dealer?.CombatId ?? NoId, cardSource?.InstanceId ?? NoId, cardSource?.Id));
+    }
 
     public void AppendEnergySpent(CombatState cs, int amount, PlayerState player)
-        => throw new NotImplementedException("CombatHistory.AppendEnergySpent: state agent (Combat.History/CombatHistory.cs:124)");
+    {
+        int actor = player.CombatId;
+        Add(ref _energySpent, new EnergySpentEntry(NextStamp(cs, actor), amount));
+    }
 
     public void AppendMonsterPerformedMove(CombatState cs, MonsterState monster, MoveStateDef move, IEnumerable<CreatureState>? targets)
-        => throw new NotImplementedException("CombatHistory.AppendMonsterPerformedMove: state agent (Combat.History/CombatHistory.cs:129)");
+    {
+        int actor = monster.CombatId;
+        string monsterId = monster.MonsterId;
+        string moveId = move.Id;
+        var targetIds = TargetIdsOf(targets);
+        Add(ref _monsterPerformedMove, new MonsterPerformedMoveEntry(NextStamp(cs, actor), monsterId, moveId, targetIds));
+    }
 
     public void AppendOrbChanneled(CombatState cs, OrbModel orb)
-        => throw new NotImplementedException("CombatHistory.AppendOrbChanneled: state agent (Combat.History/CombatHistory.cs:134)");
+    {
+        int actor = orb.HasOwner ? orb.Owner.CombatId : NoId;
+        string orbId = orb.Id;
+        Add(ref _orbChanneled, new OrbChanneledEntry(NextStamp(cs, actor), orbId));
+    }
 
     public void AppendPotionUsed(CombatState cs, PotionModel potion, CreatureState? target)
-        => throw new NotImplementedException("CombatHistory.AppendPotionUsed: state agent (Combat.History/CombatHistory.cs:139)");
+    {
+        int actor = potion.HasOwner ? potion.Owner.CombatId : NoId;
+        string potionId = potion.Id;
+        Add(ref _potionUsed, new PotionUsedEntry(NextStamp(cs, actor), potionId, target?.CombatId ?? NoId));
+    }
 
     public void AppendPowerReceived(CombatState cs, PowerModel power, decimal amount, CreatureState? applier)
-        => throw new NotImplementedException("CombatHistory.AppendPowerReceived: state agent (Combat.History/CombatHistory.cs:144)");
+    {
+        int actor = power.HasOwner ? power.Owner.CombatId : NoId;
+        string powerId = power.Id;
+        Add(ref _powerReceived, new PowerReceivedEntry(NextStamp(cs, actor), powerId, amount, applier?.CombatId ?? NoId));
+    }
 
     public void AppendStarsModified(CombatState cs, int amount, PlayerState player)
-        => throw new NotImplementedException("CombatHistory.AppendStarsModified: state agent (Combat.History/CombatHistory.cs:149)");
+    {
+        int actor = player.CombatId;
+        Add(ref _starsModified, new StarsModifiedEntry(NextStamp(cs, actor), amount));
+    }
 
     public void AppendSummoned(CombatState cs, int amount, PlayerState player)
-        => throw new NotImplementedException("CombatHistory.AppendSummoned: state agent (Combat.History/CombatHistory.cs:154)");
+    {
+        int actor = player.CombatId;
+        Add(ref _summoned, new SummonedEntry(NextStamp(cs, actor), amount));
+    }
+
+    private HistoryStamp NextStamp(CombatState cs, int actorId)
+    {
+        var stamp = new HistoryStamp(_count, actorId, cs.RoundNumber, cs.CurrentSide, cs.Player.TurnNumber);
+        _count++;
+        return stamp;
+    }
+
+    private static void Add<T>(ref List<T>? list, T entry)
+    {
+        (list ??= new List<T>()).Add(entry);
+    }
+
+    private static int ActorOf(CardInstance card) => card.HasOwner ? card.Owner.CombatId : NoId;
+
+    private static HistoryDamageResult ToHistory(DamageResult result)
+        => new HistoryDamageResult(result.Receiver.CombatId, result.Props, result.BlockedDamage, result.UnblockedDamage, result.OverkillDamage, result.WasBlockBroken, result.WasFullyBlocked, result.WasTargetKilled);
+
+    private static IReadOnlyList<int>? TargetIdsOf(IEnumerable<CreatureState>? targets)
+    {
+        if (targets == null)
+        {
+            return null;
+        }
+        if (targets is IReadOnlyList<CreatureState> list)
+        {
+            int n = list.Count;
+            if (n == 0)
+            {
+                return Array.Empty<int>();
+            }
+            var ids = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                ids[i] = list[i].CombatId;
+            }
+            return ids;
+        }
+        var buffer = new List<int>();
+        foreach (var target in targets)
+        {
+            buffer.Add(target.CombatId);
+        }
+        return buffer.Count == 0 ? Array.Empty<int>() : buffer.ToArray();
+    }
+
+    private static bool HasKeywordInCombat(CombatState cs, CardInstance card, CardKeyword keyword)
+    {
+        var keywords = new HashSet<CardKeyword>();
+        uint mask = (uint)card.KeywordMask;
+        for (int k = 0; mask != 0; k++, mask >>= 1)
+        {
+            if ((mask & 1u) != 0)
+            {
+                keywords.Add((CardKeyword)k);
+            }
+        }
+        Hook.ModifyKeywordsInCombat(cs, card, keywords);
+        return keywords.Contains(keyword);
+    }
+
+    private static T[] CopyList<T>(IReadOnlyList<T> source)
+    {
+        int n = source.Count;
+        if (n == 0)
+        {
+            return Array.Empty<T>();
+        }
+        var copy = new T[n];
+        for (int i = 0; i < n; i++)
+        {
+            copy[i] = source[i];
+        }
+        return copy;
+    }
 
     public IReadOnlyList<T> Entries<T>() where T : struct, IHistoryEntry
     {
@@ -548,7 +692,13 @@ public sealed class CombatHistory : ICanonical
         }
         if (_creatureAttacked is { Count: > 0 } creatureAttacked)
         {
-            clone._creatureAttacked = new List<CreatureAttackedEntry>(creatureAttacked);
+            var copy = new List<CreatureAttackedEntry>(creatureAttacked.Count);
+            for (int i = 0; i < creatureAttacked.Count; i++)
+            {
+                var entry = creatureAttacked[i];
+                copy.Add(entry with { DamageResults = CopyList(entry.DamageResults) });
+            }
+            clone._creatureAttacked = copy;
         }
         if (_damageReceived is { Count: > 0 } damageReceived)
         {
@@ -560,7 +710,13 @@ public sealed class CombatHistory : ICanonical
         }
         if (_monsterPerformedMove is { Count: > 0 } monsterPerformedMove)
         {
-            clone._monsterPerformedMove = new List<MonsterPerformedMoveEntry>(monsterPerformedMove);
+            var copy = new List<MonsterPerformedMoveEntry>(monsterPerformedMove.Count);
+            for (int i = 0; i < monsterPerformedMove.Count; i++)
+            {
+                var entry = monsterPerformedMove[i];
+                copy.Add(entry.TargetIds is { } targetIds ? entry with { TargetIds = CopyList(targetIds) } : entry);
+            }
+            clone._monsterPerformedMove = copy;
         }
         if (_orbChanneled is { Count: > 0 } orbChanneled)
         {

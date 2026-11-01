@@ -1583,7 +1583,16 @@ public static class Hook
         => throw new NotImplementedException("Hook.AfterActEntered: hooks agent (Hooks/Hook.cs:8813)");
 
     public static void BeforeCardAutoPlayed(CombatState cs, CardInstance card, CreatureState? target, AutoPlayType type)
-        => throw new NotImplementedException("Hook.BeforeCardAutoPlayed: hooks agent (Hooks/Hook.cs:8919)");
+    {
+        using var listeners = ListenerSnapshot.Take(cs, ListenerSource.Guarded);
+        for (int i = 0; i < listeners.Count; i++)
+        {
+            if (listeners.TryGetLive(cs, i, out var model))
+            {
+                model.BeforeCardAutoPlayed(cs, card, target, type);
+            }
+        }
+    }
 
     public static void AfterCardChangedPiles(RunState rs, CombatState? cs, CardInstance card, PileType oldPile, AbstractModel? clonedBy)
     {
