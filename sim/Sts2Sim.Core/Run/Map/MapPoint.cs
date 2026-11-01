@@ -33,5 +33,7 @@ public sealed partial class MapPoint : IComparable<MapPoint>
         child.parents.Remove(this);
     }
 
-    public override string ToString() => $"MapPoint {coord} {PointType}";
+    internal void SetColumn(int col) => coord = new MapCoord(col, coord.row);
+
+    public override string ToString() => $"Point[{coord.col},{coord.row}]";
 }
