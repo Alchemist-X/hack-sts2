@@ -18,6 +18,10 @@ public static class Program
         {
             return Replay.ReplayCli.Run(args);
         }
+        if (V2.V2Cli.Wants(args))
+        {
+            return V2.V2Cli.RunMain(args);
+        }
         string? input = null;
         string? reportPath = null;
         bool verbose = false;
