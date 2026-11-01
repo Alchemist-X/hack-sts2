@@ -66,6 +66,8 @@ public abstract partial class ActModel
 
     public abstract IEnumerable<EncounterDef> GenerateAllEncounters();
 
+    public virtual IReadOnlyList<string> DeclaredEncounterIds => Array.Empty<string>();
+
     public abstract bool IsUnlocked(UnlockProfile unlockState);
 
     public abstract IEnumerable<string> GetUnlockedAncientIds(UnlockProfile state);

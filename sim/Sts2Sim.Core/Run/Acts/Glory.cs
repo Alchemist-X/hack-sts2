@@ -69,6 +69,8 @@ public sealed class Glory : ActModel
 
     public override IEnumerable<EncounterDef> GenerateAllEncounters() => EncounterIds.Where(EncounterRegistry.Defs.Contains).Select(EncounterRegistry.Get).ToArray();
 
+    public override IReadOnlyList<string> DeclaredEncounterIds => EncounterIds;
+
     public override IEnumerable<string> GetUnlockedAncientIds(UnlockProfile state) => AllAncientIds.ToList();
 
     public override bool IsUnlocked(UnlockProfile unlockState) => true;

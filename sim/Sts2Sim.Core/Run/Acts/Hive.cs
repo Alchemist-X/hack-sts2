@@ -78,6 +78,8 @@ public sealed class Hive : ActModel
 
     public override IEnumerable<EncounterDef> GenerateAllEncounters() => EncounterIds.Where(EncounterRegistry.Defs.Contains).Select(EncounterRegistry.Get).ToArray();
 
+    public override IReadOnlyList<string> DeclaredEncounterIds => EncounterIds;
+
     public override IEnumerable<string> GetUnlockedAncientIds(UnlockProfile state)
     {
         var val = AllAncientIds.ToList();

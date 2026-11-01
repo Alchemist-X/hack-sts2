@@ -37,6 +37,16 @@ public static class Content_relics_9_1Tests
             rs.InitializeSeed(player, seedText);
         }
         rs.Config ??= new RunConfig(seedText, player.CharacterId, 0) { Content = ContentFilter.PortedOnly };
+        if (player.RelicGrabBag == null)
+        {
+            player.RelicGrabBag = new RelicGrabBag(false);
+            player.RelicGrabBag.Populate(rs, player, rs.Rng.UpFront);
+        }
+        if (rs.SharedRelicGrabBag == null)
+        {
+            rs.SharedRelicGrabBag = new RelicGrabBag(true);
+            rs.SharedRelicGrabBag.Populate(RelicGrabBag.SharedPoolRelics(rs), rs.Rng.UpFront);
+        }
         var previous = rs.Choice.Answerer;
         rs.Choice.Answerer = new PickFirst();
         try

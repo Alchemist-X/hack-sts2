@@ -31,11 +31,18 @@ public static class RunOracleState
         ArgumentNullException.ThrowIfNull(record);
         var player = new PlayerState(RunImporter.ImportedPlayerCombatId, record.CharacterId, OraclePlayerHp, OraclePlayerHp, 3);
         var rs = RunState.CreateStandalone(player, new RunRngSet(record.Seed), record.Ascension, unlocks);
-        if (string.Equals(record.CharacterId, StartingDecks.IroncladCharacterId, StringComparison.Ordinal))
+        IReadOnlyList<string>? deck = CharacterRegistry.TryGet(record.CharacterId, out var character)
+            ? character.StartingDeck
+            : string.Equals(record.CharacterId, StartingDecks.IroncladCharacterId, StringComparison.Ordinal) ? StartingDecks.Ironclad : null;
+        if (deck != null)
         {
-            foreach (var id in StartingDecks.ApplyAscensionEffectsToDeck(StartingDecks.Ironclad, record.Ascension))
+            foreach (var id in StartingDecks.ApplyAscensionEffectsToDeck(deck, record.Ascension))
             {
-                var card = new CardInstance(CardRegistry.Get(id), rs.AllocateCardInstanceId());
+                if (!CardRegistry.TryGet(id, out var def))
+                {
+                    continue;
+                }
+                var card = new CardInstance(def, rs.AllocateCardInstanceId());
                 card.AttachTo(player);
                 player.Deck.Add(card);
             }
@@ -474,6 +481,12 @@ public static class MapOracle
             {
                 return RunOracleCheck.Unsupported(RunOracleNames.MapGenerated, record.Source, $"act {act.Id} is not ported (W3 content)");
             }
+            var r = act.Rooms;
+            var missing = r.NormalEncounterIds.Concat(r.EliteEncounterIds).Concat(new[] { r.BossId, r.SecondBossId }.OfType<string>()).FirstOrDefault(e => !EncounterRegistry.Defs.Contains(e));
+            if (missing != null)
+            {
+                return RunOracleCheck.Unsupported(RunOracleNames.MapGenerated, record.Source, $"encounter {missing} is not ported (W3 content)");
+            }
         }
         var rs = RunOracleState.NewRunState(record, RunOracleState.UnlocksFor(record, options));
         foreach (var act in save.Acts)
@@ -532,9 +545,14 @@ public static class RunStartOracle
         ArgumentNullException.ThrowIfNull(record);
         foreach (var id in record.ActIds)
         {
-            if (!ActRegistry.TryGet(id, out _))
+            if (!ActRegistry.TryGet(id, out var act))
             {
                 throw new NotSupportedException($"act {id} is not ported (W3 content)");
+            }
+            var unported = act.DeclaredEncounterIds.Where(e => !EncounterRegistry.Defs.Contains(e)).ToArray();
+            if (unported.Length > 0)
+            {
+                throw new NotSupportedException($"act {id}: encounters {string.Join(",", unported)} are not ported (W3 content)");
             }
         }
         RunLoop.GetCharacterStart(record.CharacterId);

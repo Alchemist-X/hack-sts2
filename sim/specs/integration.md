@@ -806,3 +806,25 @@ Gates: build 0 warnings 0 errors; tests 922/922, PENDING 6; content soak green (
 Pending (later owners): act defs (`Models.Acts/*`: Events.EventCombatGoesThroughRoomStack, Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns, Test_Map_CreateForUsesTheActMapStream, Test_SaveImport_FullStateThroughRunLayerOwners); relic `MEAL_TICKET` (Test_Rooms_MerchantInventoryLayout).
 
 Excluded defs (`[SimExclude]`, monster not ported → `KeyNotFoundException`): `BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER` / `_V2_` / `_V3_` (BATTLE_FRIEND_V1..V3), `GREMLIN_MERC_NORMAL` (GREMLIN_MERC), `THIEVING_HOPPER_WEAK` (THIEVING_HOPPER).
+
+## W2/W3 integrate C (2026-11-01)
+
+Base `8eda7fb` (integrate B). All 12 branches descend from the base; none skipped.
+
+Merged, in order: w2/oracles, w3/events-12-1, w3/events-3456-1, w3/events-3456-2, w3/relics-7-1, w3/relics-7-2, w3/relics-8-1, w3/relics-8-2, w3/relics-9-1, w3/relics-10-1, w3/cards-11-monsters-6-8, w3/characters-acts.
+
+Conflicts and resolutions:
+- `CreatureCmd.cs` (relics-7-1 vs relics-7-2): relics-7-1's RunState overloads kept (`LoseMaxHp` goes through the hooked `Damage(RunState, ...)`).
+- `CardCmd.cs`: both kept — relics-7-1 `Transform(RunState, IEnumerable<CardTransformation>, Rng?)` + `CreateRunTransformReplacement`, relics-7-2 `TransformInDeck(RunState, IReadOnlyList<(Original, Replacement)>)`.
+- `CreatureCmd.Run.cs` (events-3456-2) deleted: `Damage/Heal/GainMaxHp(RunState, ...)` duplicated relics-7-1. Its out-of-combat `Heal` fired `AfterCurrentHpChanged`; the game fires it only when `creature.CombatState != null` (Commands/CreatureCmd.cs Heal), so the relics-7-1 copy is the correct one.
+
+Fixes:
+- Tests: `Content_relics_9_1Tests.WithObtainPrompts` populates the player / shared relic grab bags when null (CALLING_BELL, LARGE_CAPSULE, SMALL_CAPSULE, TOY_BOX threw in the relic soak and W1 F5).
+- Oracles: `RunOracleState.NewRunState` gives the oracle player the character's starting deck from `CharacterRegistry` (event `IsAllowed` such as THE_LEGENDS_WERE_TRUE needs a non-empty deck).
+- `ActModel.DeclaredEncounterIds` (overridden by the four acts) exposes the unfiltered encounter list; `RunStartOracle.Generate` and `MapOracle.CheckGenerated` report Unsupported when an act or saved room set names an unported encounter (GREMLIN_MERC_NORMAL), instead of a divergence / KeyNotFoundException.
+
+Gates: build 0 warnings 0 errors; tests 965/965, PENDING 3; content soak green (cards 1108, encounters 252, potions 128, relics 586, 0 failures); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending (later owners): W2 R1 `EventRoom.EnterInternal` (Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns); W3 encounter GREMLIN_MERC_NORMAL (Test_SaveImport_FullStateThroughRunLayerOwners).
+
+Excluded defs (owner-declared `[SimExclude]`, unchanged here): cards `FORBIDDEN_GRIMOIRE`, `MAD_SCIENCE`, `ROYALTIES`; relics `ASTROLABE`, `CLAWS`, `NEW_LEAF`, `PRECARIOUS_SHEARS`.
