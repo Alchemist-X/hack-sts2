@@ -1,10 +1,13 @@
 // Ported from STS2MCP (https://github.com/Gennadiyev/STS2MCP) — McpMod.StateBuilder.cs (reward/selection sections).
 // Copyright 2026 Yikun Ji (Kunologist). MIT License; this attribution is retained per license.
 // Sts2Recorder adaptations (game v0.99.1): read-only; button states are reported, never clicked.
+// Addition (docs/hook-map.md, v0.111.0 addendum, R4): reward offers in the rewards state
+// (card reward cards, relic id, special card), populated model-side before display.
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -49,6 +52,37 @@ public static partial class PassiveStateBuilder
                 item["potion_name"] = SafeGetText(() => potionReward.Potion.Title);
                 item["potion_description"] = SafeGetText(() => potionReward.Potion.DynamicDescription);
             }
+            else if (reward is RelicReward relicReward && relicReward.Relic != null)
+            {
+                item["relic_id"] = relicReward.Relic.Id.Entry;
+                item["relic_name"] = SafeGetText(() => relicReward.Relic.Title);
+                item["relic_description"] = SafeGetText(() => relicReward.Relic.DynamicDescription);
+            }
+            else if (reward is CardReward cardReward)
+            {
+                try
+                {
+                    var offered = new List<Dictionary<string, object?>>();
+                    foreach (var card in cardReward.Cards)
+                        offered.Add(BuildOfferedCard(card, offered.Count));
+                    item["cards"] = offered;
+                    item["can_reroll"] = cardReward.CanReroll;
+                    item["can_skip"] = cardReward.CanSkip;
+                }
+                catch (Exception ex)
+                {
+                    item["cards"] = SectionError(ex);
+                }
+            }
+            else if (reward is SpecialCardReward specialCardReward)
+            {
+                var card = RewardOffers.SpecialCard(specialCardReward);
+                if (card != null)
+                {
+                    try { item["card"] = BuildOfferedCard(card, 0); }
+                    catch (Exception ex) { item["card"] = SectionError(ex); }
+                }
+            }
 
             items.Add(item);
             index++;
@@ -60,6 +94,16 @@ public static partial class PassiveStateBuilder
         state["can_proceed"] = proceedButton?.IsEnabled ?? false;
 
         return state;
+    }
+
+    /// <summary>Display fields plus {upgrade_level, enchantment} for an offered card.</summary>
+    private static Dictionary<string, object?> BuildOfferedCard(CardModel card, int index)
+    {
+        var cardInfo = BuildCardInfo(card);
+        cardInfo["index"] = index;
+        cardInfo["upgrade_level"] = card.CurrentUpgradeLevel;
+        cardInfo["enchantment"] = BuildEnchantmentState(card);
+        return cardInfo;
     }
 
     private static string GetRewardTypeName(Reward reward) => reward switch
@@ -85,9 +129,7 @@ public static partial class PassiveStateBuilder
             var card = holder.CardModel;
             if (card == null) continue;
 
-            var cardInfo = BuildCardInfo(card);
-            cardInfo["index"] = index;
-            cards.Add(cardInfo);
+            cards.Add(BuildOfferedCard(card, index));
             index++;
         }
         state["cards"] = cards;

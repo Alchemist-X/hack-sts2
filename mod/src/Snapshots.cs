@@ -61,7 +61,7 @@ public static class Snapshots
                 () => CombatManager.Instance.StateTracker.CombatStateChanged += OnCombatStateChanged);
         }
         RecorderMod.TrySubscribe("event:CombatManager.CombatSetUp",
-            () => CombatManager.Instance.CombatSetUp += _ => TakeSnapshot("phase"));
+            () => CombatManager.Instance.CombatSetUp += _ => TakeSnapshot("phase", includeDeck: true));
         RecorderMod.TrySubscribe("event:CombatManager.TurnStarted",
             () => CombatManager.Instance.TurnStarted += _ => TakeSnapshot("phase"));
         RecorderMod.TrySubscribe("event:CombatManager.TurnEnded",
@@ -85,8 +85,10 @@ public static class Snapshots
     /// resetting its window). Never throws into game code; a builder failure
     /// is reported and the snapshot skipped. The builder is timed and reported
     /// into the session's perf counters (manifest "perf.snapshot_build_ms").
+    /// <paramref name="includeDeck"/> adds the master deck to an in-combat
+    /// snapshot (combat setup); non-combat snapshots always carry it.
     /// </summary>
-    public static void TakeSnapshot(string trigger)
+    public static void TakeSnapshot(string trigger, bool includeDeck = false)
     {
         try
         {
@@ -97,7 +99,7 @@ public static class Snapshots
                 return;
             }
             var stopwatch = Stopwatch.StartNew();
-            PassiveStateBuilder.TryBuildSnapshot(runState, out var screen, out var state);
+            PassiveStateBuilder.TryBuildSnapshot(runState, includeDeck, out var screen, out var state);
             stopwatch.Stop();
             session.RecordState(trigger, screen, state, stopwatch.Elapsed.TotalMilliseconds);
             Throttle.NoteSnapshotTaken();

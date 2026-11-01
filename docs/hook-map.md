@@ -3,6 +3,10 @@
 > **NOTE (2026-07-14):** the game moved to **v0.107.1** and the mod (v0.2.0) has been updated —
 > see the "**v0.107.1 drift addendum**" at the bottom. The body below is kept intact as the
 > v0.99.1 baseline; where the addendum contradicts it, the addendum wins.
+>
+> **NOTE (2026-11-01):** re-verified against **v0.111.0** (commit `41cef1ea`) for recorder v0.3.0,
+> which adds the passive native anchors R1–R5, R7, R11 — see the "**v0.111.0 drift addendum**"
+> at the very bottom (it wins over both earlier sections).
 
 Definitive hook map for the Sts2Recorder mod. Every entry below was proposed by a
 static-analysis pass over the decompiled tree and then **adversarially re-verified against the
@@ -703,3 +707,167 @@ MCP-injected actions are info, and only human-EXCLUSIVE funnel hits fail.
 - Meta-only new screens (no run-decision capture needed): Bestiary, daily-run leaderboards,
   Phobia-mode / MP-map-drawings settings. Random-character button is not new drift (exists in
   both trees; resolved at embark, run-start capture unaffected).
+
+---
+
+## v0.111.0 drift addendum
+
+2026-11-01, recorder v0.3.0. Evidence: the v0.111.0 decompile
+`output/server-bootstrap/linux-decompiled` (citations `<ns-dir>/<File>.cs:<line>` with the
+`MegaCrit.Sts2.Core.` prefix dropped; same managed code as the installed macOS build
+`v0.111.0` / `41cef1ea`) against the v0.107.1 tree `artifacts/knowledge/decompiled-v0.107.1`
+(`v107:` prefix). Method: every Harmony target, event, FieldRef and reflected member of
+`mod/src/**` was located in both trees (existence, signature, parameter names used for Harmony
+injection, call sites where the recorder relies on them), the Release build was compiled
+against the v0.111.0 `sts2.dll` (0 warnings, 0 errors: every compile-bound member exists), and
+the UI node names the state builder reads (`%Chest`, `%RelicCollection`, `%PreviewContainer`,
+…, 26 names) are all still referenced by the v0.111.0 node classes. Async methods were read by
+following the state-machine labels, not the textual order. Finally a reflection-only binding
+check loaded the installed `sts2.dll` and the built `Sts2Recorder.dll` into a throwaway
+`AssemblyLoadContext` (nothing patched, no game code run) and resolved every target the way the
+mod does: 33 Harmony targets resolve to exactly one method and every patch parameter binds by
+name and type (`__instance`/`__result` by type), 9 FieldRefs and 2 private properties have the
+expected types, 17 events have the expected handler types — all OK.
+
+**Result: every hook verifies; `RecorderMod.KnownGoodVersions = ["v0.107.1", "v0.111.0"]`.**
+Three drifts (one behavioural, two internal) and four corrections to earlier sections; none breaks a hook.
+
+### Patched members (all verified)
+
+| Hook id | v0.111.0 target | v107 line | v0.111.0 line | Signature / parameters bound |
+|---|---|---|---|---|
+| `patch:RunManager.OnEnded` | `Runs/RunManager.cs` | 1517 | 4684 | `SerializableRun OnEnded(bool isVictory)` |
+| `patch:RunHistoryUtilities.CreateRunHistoryEntry` | `Runs/RunHistoryUtilities.cs` | 17 | 18 | `(SerializableRun run, bool victory, bool isAbandoned, PlatformType platformType)` |
+| `patch:RunManager.CleanUp` (prefix + **finalizer**, new) | `Runs/RunManager.cs` | 1465 | 4635 | `void CleanUp(bool graceful = true)`; writes the replay at 4655-4657 |
+| `patch:RunHistorySaveManager.SaveHistory` | `Saves.Managers/RunHistorySaveManager.cs` | 52 | 49 | `void SaveHistory(RunHistory history)`; path `saves/history/{StartTime}.run` (:44-53) |
+| `patch:CombatReplayWriter.WriteReplay` | `Multiplayer.Replay/CombatReplayWriter.cs` | 162 | 177 | `void WriteReplay(string filePath, bool stopRecording)`; synchronous file write |
+| `patch:ActionQueueSynchronizer.RequestEnqueue` | `GameActions.Multiplayer/ActionQueueSynchronizer.cs` | 130 | 155 | `void RequestEnqueue(GameAction action)` |
+| `patch:EndPlayerTurnAction.ExecuteAction` | `GameActions/EndPlayerTurnAction.cs` | 35 | 27 | `Task ExecuteAction()`; still calls `PlayerCmd.EndTurn` synchronously (:32) |
+| `patch:CardModel.TryManualPlay` | `Models/CardModel.cs` | 1796 | 3387 | `bool TryManualPlay(Creature? target)`; callers `Nodes.Combat/NCardPlay.cs:174,190` |
+| `patch:NEndTurnButton.CallReleaseLogic` | `Nodes.Combat/NEndTurnButton.cs` | 577 | 486 | End vs Undo enqueue unchanged (:500-509) |
+| `patch:NEndTurnButton.SecretEndTurnLogicViaFtue` | `Nodes.Combat/NEndTurnButton.cs` | 602 | 513 | enqueues `EndPlayerTurnAction` (:524) |
+| `patch:PotionModel.EnqueueManualUse` | `Models/PotionModel.cs` | 236 | 601 | `void EnqueueManualUse(Creature? target)`; `Owner` :450 |
+| `patch:NPotionPopup.OnDiscardButtonPressed` | `Nodes.Potions/NPotionPopup.cs` | 322 | 396 | `void OnDiscardButtonPressed(NButton _)` |
+| `patch:NMapScreen.OnMapPointSelectedLocally` | `Nodes.Screens.Map/NMapScreen.cs` | 915 | 1449 | `void OnMapPointSelectedLocally(NMapPoint point)` |
+| `patch:TreasureRoomRelicSynchronizer.PickRelicLocally` | `Multiplayer.Game/TreasureRoomRelicSynchronizer.cs` | 151 | 210 | `(int? index)`; `SkipRelicLocally` (:205) → `PickRelicLocally(null)` (:207) |
+| `patch:NEventRoom.OptionButtonClicked` | `Nodes.Rooms/NEventRoom.cs` | 297 | 428 | `(EventOption option, int index)`; locked/proceed/choose branches unchanged (:430-442) |
+| `patch:EventSynchronizer.SaveEventOptionToHistory` | `Multiplayer.Game/EventSynchronizer.cs` | 272 | 395 | `(Player player, EventOption option)`; called after `option.Chosen()` (:391-392), same order as v107 |
+| `patch:MerchantEntry.OnTryPurchaseWrapper` | `Entities.Merchant/MerchantEntry.cs` | 69 | 308 | `async Task<bool> (MerchantInventory? inventory, bool ignoreCost = false)` |
+| `patch:MerchantCardRemovalEntry.OnTryPurchaseWrapper` | `Entities.Merchant/MerchantCardRemovalEntry.cs` | 35 | 335 | `(MerchantInventory?, bool ignoreCost = false, bool cancelable = true)` |
+| `patch:RewardsSetSynchronizer.SelectLocalReward` | `Multiplayer.Game/RewardsSetSynchronizer.cs` | 194 | 624 | `async Task<bool> (Reward reward)`; UI caller `Nodes.Rewards/NRewardButton.cs:118`; `Rewards/RewardsSet.cs:245` still TestMode-only (gate :290) |
+| `patch:Reward.SelectUnsynchronized` | `Rewards/Reward.cs` | 120 | 242 | `async Task<bool>()`; callers `Models.Modifiers/Draft.cs:67`, `RewardsSetSynchronizer.cs:451,723` |
+| `patch:RewardsSetSynchronizer.SkipLocalRewardsSet` | `Multiplayer.Game/RewardsSetSynchronizer.cs` | 221 | 650 | `void ()`; caller `Nodes.Screens/NRewardsScreen.cs:715` |
+| `patch:RewardSynchronizer.SyncLocal*` (8) | `Multiplayer.Game/RewardSynchronizer.cs` | 72-166 | 248, 253, 275, 280, 302, 307, 329, 346 | parameter names `card` / `relic` / `potion` / `goldAmount` / `goldLost` unchanged; callers are merchant entries and `Events.Custom.CrystalSphereEvent.CrystalSphereItems/CrystalSphereCurse.cs:94` only |
+| `patch:PlayerChoiceSynchronizer.SyncLocalChoice` | `GameActions.Multiplayer/PlayerChoiceSynchronizer.cs` | 90 | 222 | `(Player player, uint choiceId, PlayerChoiceResult result)` |
+| `patch:PlayerChoiceContext.PushModel` | `GameActions.Multiplayer/PlayerChoiceContext.cs` | 39 | 32 | `void PushModel(AbstractModel model)` |
+| `patch:NTreasureRoom.OnChestButtonReleased` | `Nodes.Rooms/NTreasureRoom.cs` | 307 | 578 | `void OnChestButtonReleased(NButton _)` |
+| `patch:CardReward.Reroll` (**new**, R4) | `Rewards/CardReward.cs` | 322 | 761 | `void Reroll()`; sole caller the REROLL alternative, synchronous (`Entities.CardRewardAlternatives/CardRewardAlternative.cs:75-81`) |
+
+Events: `RunManager.RunStarted` (v107 :211 → `Runs/RunManager.cs:3451`, invoked in `Launch` :4037),
+`RoomEntered`/`RoomExited`/`ActEntered` (:3481/:3515/:3549), `SaveManager.Saved`
+(`Saves/SaveManager.cs:1028`, forwards to `RunSaveManager.Saved`, invoked
+`Saves.Managers/RunSaveManager.cs:186`), `CombatManager.PlayerEndedTurn` (`Combat/CombatManager.cs:6358`,
+invoked in `SetReadyToEndTurn` :6835 after the already-ready check :6825-6829),
+`CombatSetUp`/`CombatEnded`/`CombatWon`/`TurnStarted`/`TurnEnded` (:6148/:6208/:6238/:6298/:6328;
+`CombatEnded` fires on the win path :1810 and the loss path :7140), `CombatManager.Instance` still an
+eager static (:6030), `CombatHistory.Changed`/`Entries` (`Combat.History/CombatHistory.cs:30/24`),
+`CombatStateTracker.CombatStateChanged` (`Combat/CombatStateTracker.cs:113`),
+`ChecksumTracker.ChecksumGenerated`/`IsEnabled` (`Multiplayer.Game/ChecksumTracker.cs:110/72`),
+`RestSiteSynchronizer.AfterPlayerOptionChosen` (`Multiplayer.Game/RestSiteSynchronizer.cs:472`),
+`GameAction.BeforeExecuted`/`BeforeCancelled` (`GameActions/GameAction.cs:323/353`).
+
+FieldRefs and reflection: `RunManager._startTime` (long, :3032), `EndPlayerTurnAction._turnNumber` /
+`UndoEndPlayerTurnAction._turnNumber` (int, :15 each), `DiscardPotionGameAction._potionSlotIndex`
+(uint, :99), `VoteForMapCoordAction._source` (`MapLocation`, :14) / `_destination` (`MapVote?`, :16),
+`MoveToMapCoordAction._destination` (`MapCoord`, :140), `PickRelicAction._relicIndex` (int?, :15),
+private `CombatHistoryEntry.RoundNumber`/`CurrentSide` (`Combat.History/CombatHistoryEntry.cs:22/29`),
+`NTreasureRoom._relicCollection` (:446), `NTreasureRoom._chestButton` (:440, see drift), and the new
+`fieldref:SpecialCardReward._card` (`Rewards/SpecialCardReward.cs:95`, v107 :26).
+
+### Drift found
+
+| Member | v0.107.1 | v0.111.0 | Effect on the recorder |
+|---|---|---|---|
+| `ChecksumTracker.IsEnabled` default | enabled only for Host/Client/Replay (v107 `Runs/RunManager.cs:389-399`) | `IsEnabled = !TestMode.IsOn` (`Runs/RunManager.cs:3781`): singleplayer checksums are on by default | `EventTap` still sets `IsEnabled = true` per run; now a no-op. The v0.111.0 corpus nevertheless holds no `checksum` events (open question below). |
+| `NTreasureRoom._chestButton` type | `NButton` (v107 :169) | `NTreasureButton` (:440), `NTreasureButton : NButton` (`Nodes.TreasureRooms/NTreasureButton.cs:15`) | none: the state builder casts to `NClickableControl`. |
+| `CombatManager.SetReadyToEndTurn` internals | `PlayersReadyToEndTurn` set on the manager | per-turn `CombatTurnState` with `ReadyLock` (:6817-6834) | none: the dedupe still precedes the `PlayerEndedTurn` invoke. |
+
+### Corrections to the earlier sections (both versions)
+
+- `SaveEventOptionToHistory` returns early when `ShouldSaveChoiceToHistory` is false
+  (`EventSynchronizer.cs:399-402`), but a Harmony postfix still runs, so `event_option` records exist
+  for those options too (the body's "never reach it" is about the game's own history entry only).
+- `RunManager.CleanUp` writes `latest.mcr` (`Runs/RunManager.cs:4655-4657`) after the recorder's
+  prefix had already closed the session, so the replay of a lost or quit combat (the only write for
+  it; losses never reach `CombatManager.cs:1763`) was never archived. Fixed below (R2).
+- `NTreasureRoom._hasRelicBeenClaimed`, read by the treasure state builder, exists in neither tree;
+  the read is a guarded no-op (`relic_claimed` is never emitted).
+- The event state's `body` was read from `EventRoom.CanonicalEvent.Description`, which is never set:
+  `Description` changes only in `SetEventState`, which asserts a mutable model
+  (`Models/EventModel.cs:790-800`), and the options belong to the per-player mutable copy
+  (`Rooms/EventRoom.cs:317` → `Multiplayer.Game/EventSynchronizer.cs:440-449`). `body` was therefore
+  always null; v0.3.0 reads it, with the page key, from the local mutable event.
+
+### New passive anchors (recorder v0.3.0)
+
+Channels: **privileged** = `native/` files and `events.jsonl` (never read by agent-facing tools);
+**observation** = `states.jsonl` (and the matching action params). Hidden run state (seed, RNG
+counters, grab bags, odds) only ever lands in `native/saves/*.save`. Ids follow each channel's
+convention: states use `Id.Entry`, actions/events the full `CATEGORY.ENTRY`.
+
+| # | Channel | Hook (all passive) | Decompile evidence | Output |
+|---|---|---|---|---|
+| R1 | privileged | existing `event:SaveManager.Saved` handler (`RunLifecycle.OnSaved`); resume copy in `OnRunStarted` | `Saved` fires after the write completes (`Saves.Managers/RunSaveManager.cs:176-190`; `GodotFileIo.WriteFileAsync` writes `.tmp`, fsyncs, renames, `Saves/GodotFileIo.cs:379-411`). Path `<profile>/saves/current_run.save` (`RunSaveManager.cs:226,241,450-453`; `SaveManager.GetProfileScopedPath` `Saves/SaveManager.cs:1139`). Callers: map point (`Runs/RunManager.cs:618`), combat exit after `MarkPreFinished` (`Combat/CombatManager.cs:1747-1748`), ancient finished (`Rooms/EventRoom.cs:417`), and `IncrementNumReloads` (`Saves/SaveManager.cs:442-480`), which on resume runs before `RunStarted` (`Runs/RunManager.cs:2921` → `InitializeShared` → `Launch` :4037) | `native/saves/<seq:06d>.save` (byte copy) + event `run_saved` |
+| R2 | privileged | existing `patch:CombatReplayWriter.WriteReplay` postfix (now binds `stopRecording`), CleanUp prefix detaches and the finalizer disposes the session | win path `Combat/CombatManager.cs:1763` (`stopRecording: true`), CleanUp `Runs/RunManager.cs:4655-4657`, client divergence :4617, `DevConsole.ConsoleCommands/GetLogsConsoleCmd.cs:447,546`; `RunManager.IsCleaningUp` :3103 | `native/replays/<seq:06d>.mcr` + event `replay_archived`; `native/replay.mcr` keeps its old meaning (latest copy while the session is live) |
+| R3 | observation | state builder `player.deck`; `CombatSetUp` snapshot passes `includeDeck` | `Player.Deck` (`Entities.Players/Player.cs:312`), `CardModel.CurrentUpgradeLevel` (`Models/CardModel.cs:2127`), `Enchantment` (:2026), `EnchantmentModel.Amount` (`Models/EnchantmentModel.cs:151`). Order is visible: the deck view defaults to `SortingOrders.Ascending` (`Nodes.Screens/NDeckViewScreen.cs:647`), i.e. pile order (`Nodes.Cards/NCardGrid.cs:624`) | `player.deck: [{id, upgrade_level, enchantment {id, amount} \| null}]` in every non-combat state and the combat-setup state |
+| R4 | observation + actions + events | state builder rewards items and card-reward screen; `patch:Reward.SelectUnsynchronized` captures the offer before the first await; new `patch:CardReward.Reroll` postfix; new `fieldref:SpecialCardReward._card` | offers populated before display (`Rewards/RewardsSet.cs:206` `GenerateWithoutOffering`, :307 `ShowScreen`; `Rewards/CardReward.cs:549-571` `Populate`); `CardReward.Cards` :451, `CanReroll`/`CanSkip` :475/:484, pick removes the card from `_cards` (:687); `RelicReward.Relic` (`Rewards/RelicReward.cs:115`); `SpecialCardReward._card` (:95); `Reward.SelectUnsynchronized` awaits `OnSelect` first (`Rewards/Reward.cs:242-256`) | `rewards.items[]`: card rewards `cards[]` (display fields + `upgrade_level`, `enchantment`), `can_reroll`, `can_skip`; relic `relic_id/name/description`; special card `card`. `card_reward.cards[]` gains `upgrade_level`, `enchantment`. `reward_taken` params gain `offer` and, for card rewards, `picked_cards` (offered cards now in the deck). Event `card_reward_rerolled {player, cards, can_reroll}` + a deferred snapshot |
+| R5 | observation + actions | state builder event options; `event_option` record (index from the `OptionButtonClicked` prefix) | `EventOption.TextKey` (`Events/EventOption.cs:123`), `Relic` (:191); page from the local mutable event (`Rooms/EventRoom.cs:317`) `Description.LocEntryKey` (`Models/EventModel.cs:346`, set in `SetEventState` :790-800); non-shared choice is synchronous in the click (`Multiplayer.Game/EventSynchronizer.cs:323-349`) | `event.options[].text_key`, `relic_id`; `event.description_key`, `event.page_key` (`X.pages.<PAGE>.…` segment); `event.body` now from the same local event; `event_option` params gain `text_key`, `relic_id`, `index` |
+| R7 | observation | state builder relics | the game's prebuilt `[SavedProperty]` list `ModelIdSerializationCache.GetJsonPropertiesForType` (`Multiplayer.Serialization/ModelIdSerializationCache.cs:406-419`, pure lookup) and the type dispatch of `SavedProperties.FromInternal` (`Saves.Runs/SavedProperties.cs:63-203`). `SavedProperties.From` is deliberately not called: its default check instantiates models into a game-side cache (`Saves.Runs/SerializationConditionExtensions.cs:23-51`) | `player.relics[].props: {ints\|bools\|strings\|int_arrays\|model_ids\|cards\|card_arrays: [{name, value}]}` — the save's `props` shape, but default values are kept |
+| R11 | privileged | `OnRunStarted`, once per session part | `SaveManager.Progress` (`Saves/SaveManager.cs:999`): `DiscoveredActs` (`Saves/ProgressState.cs:88`), `WongoPoints` (:151), `TestSubjectKills` (:178), `Wins`/`Losses` (:197/:199), `NumberOfRuns` (:225), `GetStatsForCharacter` (:458). Read by `Models/ActModel.cs:487`, `Runs/RunManager.cs:4241`, `Models.Events/WelcomeToWongos.cs:419,634`, `Models.Events/TheArchitect.cs:1044-1045`, `Models.Monsters/TestSubject.cs:1119`; changed only at run end (`Saves.Managers/ProgressSaveManager.cs:217-262`), so every part sees the run-start values | event `unlock_profile` |
+
+Not in this release (other R items of `docs/sim-port/design-diff-gate.md` §4.3): R6 choice
+identity, R8 settled post-action snapshot, R9 RNG counters, R10 Crystal Sphere clicks.
+
+### Formats
+
+- **File naming.** `<seq:06d>` is the envelope seq of the `run_saved` / `replay_archived` event, so
+  each file sorts with the trajectory (`native/saves/001234.save` ↔ event seq 1234, the
+  `design-diff-gate.md` §5 anchor `ref`). The bytes are read in the game's own handler/postfix,
+  copied, hashed and handed to an off-thread writer (`Core/NativeFileWriter`: temp file, fsync,
+  rename with no overwrite; failures go to `recorder.log`). `Complete` and `Dispose` drain it. The
+  game's files are only read. No gzip: `native/` stays plain as before.
+- **After `Complete`.** A replay written by CleanUp after the run ended (the losing combat) is
+  still archived, but the streams are closed, so there is no event; its seq is above every record
+  seq. Tooling indexes `native/replays/` by listing the directory and matches files to events by name.
+- `run_saved` data: `file`, `sha256` (full hex), `bytes`, `trigger` (`saved` | `run_started`),
+  `anchor_kind` (`room_entry` without `pre_finished_room`; `combat_exit` for monster/elite/boss;
+  `ancient_exit` for event; else `pre_finished`), `state_seq` (latest snapshot, null before the
+  first), live `act` (0-based `CurrentActIndex`, as in `room_entered`), `floor` (`TotalFloor`: at a
+  room-entry save the new room is not in the history yet), `room_type`, `room_model_id`,
+  `map_point_type`, `map_coord {col,row}` (the point being entered), and from the save header
+  `pre_finished`, `pre_finished_room_type`, `schema_version`, `start_time`, `save_act_index`,
+  `num_reloads` (`parse_error` only when the header could not be read). The `run_started` copy is
+  taken only when the save's `start_time` equals the session's (a resumed part), never a stale save.
+- `replay_archived` data: `file`, `sha256`, `bytes`, `trigger` (`write_replay`), `stop_recording`,
+  `during_cleanup`, and the same live context fields.
+- `unlock_profile` data: `source`, `discovered_acts` (ordinal-sorted ids), `number_of_runs`, `wins`,
+  `losses`, `wongo_points`, `test_subject_kills`, `character_id`, `character_wins`. The profile
+  `UniqueId` (read by `LoomingFruit` for an icon only) is never recorded.
+- Snapshot throttle and `mods/Sts2Recorder.conf` behaviour are unchanged.
+
+### Installing
+
+The rebuilt DLL (`mod/bin/Release/net9.0/Sts2Recorder.dll`, manifest `version` 0.3.0) is not
+installed by this change. Installing replaces the recorder used for the human dataset, so it
+goes through `scripts/install_mod.sh` only after the user confirms, followed by one short live
+session to check that `native/saves/`, `native/replays/` and the new events appear and that
+`degraded_hooks` is empty.
+
+### Open questions
+
+- The corpus scan (`docs/sim-port/design-diff-gate.md` §1.3) found `checksum` events only in 13
+  v0.107.1 parts, although v0.111.0 enables singleplayer checksums by default and the tap
+  subscribes per run (`EventTap.OnRunStarted`, unchanged since the first recorder version). Static
+  reading does not explain the gap; check after the next install whether `checksum` events appear.
+- `run_saved.floor` and `anchor_kind` are derived as above; the exporter's anchor index (X2) should
+  cross-check them against the save's own `map_point_history` and `visited_map_coords`.

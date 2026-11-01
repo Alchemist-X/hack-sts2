@@ -4,10 +4,13 @@
 // tag (reflects the CURRENT amount, e.g. negative Strength reads as Debuff; PowerModel.Type
 // exists too but is the static declaration). Draw pile stays SORTED (rarity, then id):
 // true draw order is hidden information and never appears in the observation channel.
+// Additions (docs/hook-map.md, v0.111.0 addendum): master deck in deck order (R3; the
+// deck view's default sort is this order) and relic saved properties (R7).
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -16,13 +19,15 @@ using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Monsters;
+using MegaCrit.Sts2.Core.Multiplayer.Serialization;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
+using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace Sts2Recorder.Game;
 
 public static partial class PassiveStateBuilder
 {
-    private static Dictionary<string, object?> BuildPlayerState(Player player)
+    private static Dictionary<string, object?> BuildPlayerState(Player player, bool includeDeck = false)
     {
         var state = new Dictionary<string, object?>();
         var creature = player.Creature;
@@ -113,6 +118,11 @@ public static partial class PassiveStateBuilder
             }
         }
 
+        if (includeDeck || !CombatManager.Instance.IsInProgress)
+        {
+            state["deck"] = BuildDeckState(player);
+        }
+
         state["gold"] = player.Gold;
 
         // Powers (status effects)
@@ -122,14 +132,18 @@ public static partial class PassiveStateBuilder
         var relics = new List<Dictionary<string, object?>>();
         foreach (var relic in player.Relics)
         {
-            relics.Add(new Dictionary<string, object?>
+            var relicState = new Dictionary<string, object?>
             {
                 ["id"] = relic.Id.Entry,
                 ["name"] = SafeGetText(() => relic.Title),
                 ["description"] = SafeGetText(() => relic.DynamicDescription),
                 ["counter"] = relic.ShowCounter ? relic.DisplayAmount : null,
                 ["keywords"] = BuildHoverTips(relic.HoverTipsExcludingRelic)
-            });
+            };
+            var props = BuildSavedProps(relic);
+            if (props != null)
+                relicState["props"] = props;
+            relics.Add(relicState);
         }
         state["relics"] = relics;
 
@@ -157,6 +171,143 @@ public static partial class PassiveStateBuilder
         state["max_potion_slots"] = player.MaxPotionCount;
 
         return state;
+    }
+
+    /// <summary>R3: the master deck in deck (obtained) order.</summary>
+    private static object BuildDeckState(Player player)
+    {
+        try
+        {
+            var deck = new List<Dictionary<string, object?>>();
+            foreach (var card in player.Deck.Cards)
+                deck.Add(BuildCardIdentity(card));
+            return deck;
+        }
+        catch (Exception ex)
+        {
+            return SectionError(ex);
+        }
+    }
+
+    /// <summary>{id, upgrade_level, enchantment {id, amount} | null}.</summary>
+    private static Dictionary<string, object?> BuildCardIdentity(CardModel card)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["id"] = card.Id.Entry,
+            ["upgrade_level"] = card.CurrentUpgradeLevel,
+            ["enchantment"] = BuildEnchantmentState(card)
+        };
+    }
+
+    private static Dictionary<string, object?>? BuildEnchantmentState(CardModel card)
+    {
+        var enchantment = card.Enchantment;
+        if (enchantment == null) return null;
+        return new Dictionary<string, object?>
+        {
+            ["id"] = enchantment.Id.Entry,
+            ["amount"] = enchantment.Amount
+        };
+    }
+
+    /// <summary>
+    /// R7: the model's [SavedProperty] values grouped like the run save's "props"
+    /// ({ints|bools|strings|int_arrays|model_ids|cards|card_arrays: [{name, value}]}),
+    /// read through the game's prebuilt property list
+    /// (ModelIdSerializationCache.GetJsonPropertiesForType, a pure lookup). Unlike the
+    /// save, default values are kept (SavedProperties.From is not called: its default
+    /// check instantiates models into a game-side cache). Null when the model has none.
+    /// </summary>
+    private static JsonObject? BuildSavedProps(AbstractModel model)
+    {
+        try
+        {
+            var properties = ModelIdSerializationCache.GetJsonPropertiesForType(model.GetType());
+            if (properties == null || properties.Count == 0) return null;
+            var groups = new Dictionary<string, JsonArray>();
+            foreach (var property in properties)
+            {
+                string? group;
+                JsonNode? node;
+                try
+                {
+                    var value = property.GetValue(model);
+                    if (value == null) continue;
+                    (group, node) = SavedPropValue(value);
+                }
+                catch { continue; }
+                if (group == null) continue;
+                if (!groups.TryGetValue(group, out var array))
+                {
+                    array = new JsonArray();
+                    groups[group] = array;
+                }
+                array.Add(new JsonObject { ["name"] = property.Name, ["value"] = node });
+            }
+            if (groups.Count == 0) return null;
+            var result = new JsonObject();
+            foreach (var group in SavedPropGroups)
+            {
+                if (groups.TryGetValue(group, out var array))
+                    result[group] = array;
+            }
+            return result;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static readonly string[] SavedPropGroups =
+        { "ints", "bools", "strings", "int_arrays", "model_ids", "cards", "card_arrays" };
+
+    /// <summary>Same type dispatch as SavedProperties.FromInternal (Saves.Runs/SavedProperties.cs:63).</summary>
+    private static (string? Group, JsonNode? Node) SavedPropValue(object value)
+    {
+        switch (value)
+        {
+            case int i:
+                return ("ints", JsonValue.Create(i));
+            case int[] ints:
+                return ("int_arrays", new JsonArray(ints.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray()));
+            case Enum e:
+                return ("ints", JsonValue.Create(Convert.ToInt32(e)));
+            case Enum[] enums:
+                return ("int_arrays", new JsonArray(enums.Select(v => (JsonNode?)JsonValue.Create(Convert.ToInt32(v))).ToArray()));
+            case ModelId id:
+                return ("model_ids", JsonValue.Create(id.ToString()));
+            case bool b:
+                return ("bools", JsonValue.Create(b));
+            case string str:
+                return ("strings", JsonValue.Create(str));
+            case SerializableCard card:
+                return ("cards", SerializableCardNode(card));
+            case List<SerializableCard> cards:
+                return ("card_arrays", new JsonArray(cards.Select(SerializableCardNode).ToArray()));
+            default:
+                return (null, null);
+        }
+    }
+
+    private static JsonNode? SerializableCardNode(SerializableCard? card)
+    {
+        if (card == null) return null;
+        var node = new JsonObject
+        {
+            ["id"] = card.Id?.ToString(),
+            ["current_upgrade_level"] = card.CurrentUpgradeLevel
+        };
+        if (card.Enchantment != null)
+        {
+            node["enchantment"] = new JsonObject
+            {
+                ["id"] = card.Enchantment.Id?.ToString(),
+                ["amount"] = card.Enchantment.Amount
+            };
+        }
+        return node;
     }
 
     private static string GetCostDisplay(CardModel card)

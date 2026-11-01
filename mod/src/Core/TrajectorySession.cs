@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
 namespace Sts2Recorder.Core;
@@ -16,6 +18,8 @@ public sealed class TrajectorySession : IDisposable
     private static readonly IReadOnlyList<string> AllowedActionStatuses =
         new[] { "committed", "executed", "cancelled" };
 
+    private static readonly TimeSpan NativeDrainTimeout = TimeSpan.FromSeconds(10);
+
     private readonly object _lock = new();
     private readonly IClock _clock;
     private readonly SessionMeta _meta;
@@ -24,6 +28,7 @@ public sealed class TrajectorySession : IDisposable
     private readonly JsonlStreamWriter _actions;
     private readonly JsonlStreamWriter _events;
     private readonly ErrorLog _errorLog;
+    private readonly NativeFileWriter _native;
     private readonly List<string> _degradedHooks = new();
 
     private long _nextSeq = 1;
@@ -45,6 +50,7 @@ public sealed class TrajectorySession : IDisposable
         _meta = meta;
         _clock = clock;
         _errorLog = new ErrorLog(directory, clock);
+        _native = new NativeFileWriter(OnStreamError);
         // Dispose-on-throw: a failing constructor must not leak already-opened
         // JSONL FileStream handles into game code.
         JsonlStreamWriter? states = null;
@@ -65,6 +71,7 @@ public sealed class TrajectorySession : IDisposable
             states?.Dispose();
             actions?.Dispose();
             events?.Dispose();
+            _native.Dispose();
             throw;
         }
     }
@@ -238,6 +245,73 @@ public sealed class TrajectorySession : IDisposable
     }
 
     /// <summary>
+    /// Archives a native snapshot the caller already read (the bytes are copied
+    /// on entry; the game's own file is never opened here). Assigns the next seq,
+    /// records <paramref name="entry"/> on the events stream with
+    /// <paramref name="data"/> plus file, sha256 and bytes, and queues an
+    /// off-thread write to native/&lt;category&gt;/&lt;seq:D6&gt;&lt;extension&gt;
+    /// that never overwrites. After Complete the file is still written but no
+    /// event is recorded (EventRecorded=false); its seq is above every record seq.
+    /// </summary>
+    public NativeArchiveReceipt ArchiveNativeSnapshot(
+        string category, string extension, string entry, byte[] bytes, JsonObject data)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+        ArgumentNullException.ThrowIfNull(extension);
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(data);
+        if (!IsSafeSegment(category))
+        {
+            throw new ArgumentException($"invalid native category '{category}'", nameof(category));
+        }
+        if (extension.Length < 2 || extension[0] != '.' || !IsSafeSegment(extension[1..]))
+        {
+            throw new ArgumentException($"invalid native extension '{extension}'", nameof(extension));
+        }
+        var owned = (byte[])bytes.Clone();
+        var sha256 = Convert.ToHexString(SHA256.HashData(owned)).ToLowerInvariant();
+        lock (_lock)
+        {
+            ThrowIfUnusable();
+            var seq = _nextSeq++;
+            var fileName = seq.ToString("D6", CultureInfo.InvariantCulture) + extension;
+            var relative = SessionPaths.NativeDirName + "/" + category + "/" + fileName;
+            var absolute = Path.Combine(Directory, SessionPaths.NativeDirName, category, fileName);
+            var recorded = !_completed;
+            if (recorded)
+            {
+                var payload = new JsonObject
+                {
+                    ["file"] = relative,
+                    ["sha256"] = sha256,
+                    ["bytes"] = owned.Length,
+                };
+                foreach (var pair in data)
+                {
+                    if (!payload.ContainsKey(pair.Key))
+                    {
+                        payload[pair.Key] = pair.Value?.DeepClone();
+                    }
+                }
+                _events.Enqueue(JsonlLine.Event(seq, _clock.Now, entry, payload.ToJsonString()));
+            }
+            _native.Enqueue(absolute, owned);
+            return new NativeArchiveReceipt(seq, relative, sha256, owned.Length, recorded);
+        }
+    }
+
+    /// <summary>Blocks until every queued native snapshot write has finished; false on timeout.</summary>
+    public bool WaitForNativeWrites(TimeSpan timeout)
+    {
+        lock (_lock)
+        {
+            ThrowIfUnusable();
+        }
+        return _native.WaitIdle(timeout);
+    }
+
+    /// <summary>
     /// Rate-limited error report; appended to recorder.log in the session dir.
     /// After Dispose this is a silent no-op (the error path must never throw
     /// into game code, so it does not use the throwing disposed gate).
@@ -287,6 +361,7 @@ public sealed class TrajectorySession : IDisposable
             }
             _result = result;
             _completed = true;
+            _native.WaitIdle(NativeDrainTimeout);
             // Freeze the streams (final flush + close) so the compressor sees
             // stable bytes; LineCount/BytesWritten remain readable afterwards.
             _states.Dispose();
@@ -320,6 +395,7 @@ public sealed class TrajectorySession : IDisposable
                 _states.Dispose();
                 _actions.Dispose();
                 _events.Dispose();
+                _native.Dispose();
             }
         }
     }
@@ -392,6 +468,22 @@ public sealed class TrajectorySession : IDisposable
         {
             throw new ObjectDisposedException(nameof(TrajectorySession));
         }
+    }
+
+    private static bool IsSafeSegment(string value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
+        foreach (var c in value)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-'))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static bool Contains(IReadOnlyList<string> values, string candidate)

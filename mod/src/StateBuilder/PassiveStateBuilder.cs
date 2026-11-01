@@ -39,10 +39,17 @@ public static partial class PassiveStateBuilder
     /// fail are embedded as {"section_error": "..."} and the snapshot still succeeds.
     /// </summary>
     public static bool TryBuildSnapshot(RunState runState, out string screen, out JsonNode state)
+        => TryBuildSnapshot(runState, includeDeck: false, out screen, out state);
+
+    /// <summary>
+    /// As above; <paramref name="includeDeck"/> forces the master deck into the
+    /// player section while a combat is in progress (combat-setup snapshot).
+    /// </summary>
+    public static bool TryBuildSnapshot(RunState runState, bool includeDeck, out string screen, out JsonNode state)
     {
         try
         {
-            var result = BuildSnapshotDict(runState);
+            var result = BuildSnapshotDict(runState, includeDeck);
             screen = result.TryGetValue("state_type", out var st) ? st as string ?? "unknown" : "unknown";
             state = ToJsonNode(result) ?? new JsonObject();
             return true;
@@ -59,7 +66,7 @@ public static partial class PassiveStateBuilder
         }
     }
 
-    private static Dictionary<string, object?> BuildSnapshotDict(RunState? runState)
+    private static Dictionary<string, object?> BuildSnapshotDict(RunState? runState, bool includeDeck)
     {
         var result = new Dictionary<string, object?>();
         var tree = Godot.Engine.GetMainLoop() as SceneTree;
@@ -244,7 +251,7 @@ public static partial class PassiveStateBuilder
         {
             var player = LocalContext.GetMe(runState);
             if (player != null)
-                result["player"] = Guarded(() => BuildPlayerState(player));
+                result["player"] = Guarded(() => BuildPlayerState(player, includeDeck));
         }
         catch (Exception ex)
         {

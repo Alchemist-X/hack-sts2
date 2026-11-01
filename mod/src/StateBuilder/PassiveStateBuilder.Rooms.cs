@@ -8,6 +8,9 @@
 //     directly (populated model-side in BeforeEventStarted) and emit "not_opened" if absent.
 //   * Treasure: upstream ForceClick()ed the chest; we read the chest button state and emit
 //     {"relics": "not_opened"} until the player opens the chest (contents stay hidden info).
+// Addition (docs/hook-map.md, v0.111.0 addendum, R5): event option text_key / relic_id and
+// the current page key; body text and page come from the local mutable event the option
+// buttons belong to (the canonical event's Description is never set).
 
 using System;
 using System.Collections.Generic;
@@ -26,6 +29,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 using MegaCrit.Sts2.Core.Nodes.Screens.TreasureRoomRelic;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
+using Sts2Recorder.Core;
 
 namespace Sts2Recorder.Game;
 
@@ -55,8 +59,16 @@ public static partial class PassiveStateBuilder
         }
         state["in_dialogue"] = inDialogue;
 
-        // Event body text
-        state["body"] = SafeGetText(() => eventModel.Description);
+        // Event body text and page (R5). Description is only ever set on the local
+        // mutable event (SetEventState asserts mutability), never on CanonicalEvent.
+        EventModel? localEvent = null;
+        try { localEvent = eventRoom.LocalMutableEvent; } catch { }
+        var pageEvent = localEvent ?? eventModel;
+        state["body"] = SafeGetText(() => pageEvent.Description);
+        string? descriptionKey = null;
+        try { descriptionKey = pageEvent.Description?.LocEntryKey; } catch { }
+        state["description_key"] = descriptionKey;
+        state["page_key"] = LocKeys.PageKey(descriptionKey);
 
         // Options from UI (read-only)
         var options = new List<Dictionary<string, object?>>();
@@ -74,10 +86,12 @@ public static partial class PassiveStateBuilder
                     ["description"] = SafeGetText(() => opt.Description),
                     ["is_locked"] = opt.IsLocked,
                     ["is_proceed"] = opt.IsProceed,
-                    ["was_chosen"] = opt.WasChosen
+                    ["was_chosen"] = opt.WasChosen,
+                    ["text_key"] = SafeGetText(() => opt.TextKey)
                 };
                 if (opt.Relic != null)
                 {
+                    optData["relic_id"] = SafeGetText(() => opt.Relic.Id.Entry);
                     optData["relic_name"] = SafeGetText(() => opt.Relic.Title);
                     optData["relic_description"] = SafeGetText(() => opt.Relic.DynamicDescription);
                 }

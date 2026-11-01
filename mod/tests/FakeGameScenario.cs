@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json.Nodes;
 using Sts2Recorder.Core;
 
@@ -106,6 +108,140 @@ public static class FakeGameScenario
 
         session.Complete(new RunResult(Win: true, Abandoned: false, EndTime: clock.Now));
         return session.Directory;
+    }
+
+    // --- native anchors (R1 run saves, R2 replays, R11 unlock profile) ---
+
+    public const string HiddenSeed = "SECRETSEED77";
+    public const int NativeExpectedStates = 3;
+    public const int NativeExpectedActions = 3;
+    public const int NativeExpectedEvents = 5;   // unlock_profile, 2 run_saved, card_drawn, replay_archived
+    public const int NativeExpectedSaves = 2;
+    public const int NativeExpectedReplays = 2;  // win-path replay + post-Complete CleanUp replay
+
+    /// <summary>Result of <see cref="RunWithNativeAnchors"/>.</summary>
+    public sealed record NativeAnchorRun(
+        string SessionDir,
+        string GameSavePath,
+        string GameReplayPath,
+        IReadOnlyList<NativeArchiveReceipt> Receipts,
+        IReadOnlyList<byte[]> SourceBytes);
+
+    /// <summary>
+    /// Scripted mini-run that drives the native-anchor writers the way the game
+    /// adapter does: the unlock profile at run start, a copy of current_run.save
+    /// after every SaveManager.Saved (room entry, then combat exit), a copy of
+    /// latest.mcr after every WriteReplay, and the CleanUp-time replay that the
+    /// game writes after the run already ended (no event, file only).
+    /// </summary>
+    public static NativeAnchorRun RunWithNativeAnchors(string outputRoot)
+    {
+        var clock = new FakeClock(StartTime, 0.25);
+        var gameDir = Path.Combine(outputRoot, "fake-profile", "saves");
+        Directory.CreateDirectory(gameDir);
+        var savePath = Path.Combine(gameDir, "current_run.save");
+        var replayPath = Path.Combine(gameDir, "latest.mcr");
+        var receipts = new List<NativeArchiveReceipt>();
+        var sources = new List<byte[]>();
+        string sessionDir;
+        using (var session = TrajectorySession.Begin(outputRoot, Meta, clock))
+        {
+            session.RecordEvent(
+                NativeAnchorEvents.UnlockProfileEntry,
+                NativeAnchorEvents.UnlockProfile(new UnlockProfileSnapshot(
+                    new[] { "ACT.OVERGROWTH", "ACT.HIVE", "ACT.GLORY" },
+                    NumberOfRuns: 162, Wins: 40, Losses: 122, WongoPoints: 1500,
+                    TestSubjectKills: 3, CharacterId: "CHARACTER.DEFECT", CharacterWins: 12)));
+
+            var map = session.RecordState("phase", "map", new JsonObject { ["screen"] = "map", ["floor"] = 0 });
+
+            sources.Add(GameWritesSave(savePath, preFinishedRoomType: null));
+            receipts.Add(CaptureSave(session, savePath,
+                new AnchorContext(0, 0, null, null, "Monster", 3, 1, session.LatestStateSeq)));
+            session.RecordAction(
+                "hook:NMapScreen.OnMapPointSelectedLocally", "vote_for_map_coord",
+                new JsonObject { ["destination"] = new JsonObject { ["col"] = 3, ["row"] = 1 } }, "committed", map);
+
+            var combat = session.RecordState("phase", "monster", CombatState(floor: 1, energy: 3, hand: 5));
+            session.RecordEvent("card_drawn", new JsonObject { ["card"] = new JsonObject { ["id"] = "CARD.ZAP" } });
+            session.RecordAction(
+                "hook:ActionQueueSynchronizer.RequestEnqueue", "play_card",
+                new JsonObject { ["card_model_id"] = "CARD.ZAP" }, "executed", combat);
+
+            sources.Add(GameWritesSave(savePath, preFinishedRoomType: "monster"));
+            receipts.Add(CaptureSave(session, savePath,
+                new AnchorContext(0, 1, "Monster", "ENCOUNTER.NIBBITS_WEAK", "Monster", 3, 1, session.LatestStateSeq)));
+            sources.Add(GameWritesReplay(replayPath, combatIndex: 1));
+            receipts.Add(CaptureReplay(session, replayPath, duringCleanUp: false,
+                new AnchorContext(0, 1, "Monster", "ENCOUNTER.NIBBITS_WEAK", "Monster", 3, 1, session.LatestStateSeq)));
+
+            var rewards = session.RecordState("phase", "rewards", new JsonObject { ["screen"] = "rewards", ["floor"] = 1 });
+            session.RecordAction(
+                "hook:Reward.SelectUnsynchronized", "reward_taken",
+                new JsonObject { ["reward_type"] = "gold_reward", ["amount"] = 15 }, "committed", rewards);
+
+            session.Complete(new RunResult(Win: false, Abandoned: false, EndTime: clock.Now));
+
+            sources.Add(GameWritesReplay(replayPath, combatIndex: 2));
+            receipts.Add(CaptureReplay(session, replayPath, duringCleanUp: true, AnchorContext.Unknown));
+            Require(session.WaitForNativeWrites(TimeSpan.FromSeconds(10)), "native writes must drain");
+            sessionDir = session.Directory;
+        }
+        return new NativeAnchorRun(sessionDir, savePath, replayPath, receipts, sources);
+    }
+
+    /// <summary>The adapter's R1 path: read the finished save, summarize, archive.</summary>
+    public static NativeArchiveReceipt CaptureSave(TrajectorySession session, string savePath, AnchorContext context)
+    {
+        var bytes = File.ReadAllBytes(savePath);
+        var info = RunSaveInfo.Read(bytes);
+        return session.ArchiveNativeSnapshot(
+            NativeAnchorEvents.SavesCategory, NativeAnchorEvents.SaveExtension, NativeAnchorEvents.RunSavedEntry,
+            bytes, NativeAnchorEvents.RunSaved(NativeAnchorEvents.TriggerSaved, info, context));
+    }
+
+    /// <summary>The adapter's R2 path: read the finished replay and archive it.</summary>
+    public static NativeArchiveReceipt CaptureReplay(
+        TrajectorySession session, string replayPath, bool duringCleanUp, AnchorContext context)
+    {
+        var bytes = File.ReadAllBytes(replayPath);
+        return session.ArchiveNativeSnapshot(
+            NativeAnchorEvents.ReplaysCategory, NativeAnchorEvents.ReplayExtension,
+            NativeAnchorEvents.ReplayArchivedEntry, bytes,
+            NativeAnchorEvents.ReplayArchived(stopRecording: true, duringCleanUp, context));
+    }
+
+    /// <summary>A schema-20-shaped current_run.save carrying hidden RNG state.</summary>
+    public static byte[] SaveJson(string? preFinishedRoomType, int numReloads = 0, long startTime = StartTime)
+    {
+        var preFinished = preFinishedRoomType == null
+            ? ""
+            : $"\"pre_finished_room\":{{\"room_type\":\"{preFinishedRoomType}\",\"encounter_id\":\"ENCOUNTER.NIBBITS_WEAK\",\"is_pre_finished\":true}},";
+        var json = "{\"schema_version\":20,\"acts\":[{\"id\":\"ACT.OVERGROWTH\",\"rooms\":{\"normal_encounters_visited\":1}}],"
+            + "\"current_act_index\":0,\"events_seen\":[],"
+            + preFinished
+            + $"\"rng\":{{\"seed\":\"{HiddenSeed}\",\"rngs\":{{\"shuffle\":{{\"counter\":7}}}}}},"
+            + "\"players\":[{\"character_id\":\"CHARACTER.DEFECT\",\"deck\":[{\"id\":\"CARD.ZAP\"}]}],"
+            + $"\"start_time\":{startTime},\"num_reloads\":{numReloads},\"platform_type\":\"steam\"}}";
+        return Encoding.UTF8.GetBytes(json);
+    }
+
+    private static byte[] GameWritesSave(string savePath, string? preFinishedRoomType)
+    {
+        var bytes = SaveJson(preFinishedRoomType);
+        File.WriteAllBytes(savePath, bytes);
+        return bytes;
+    }
+
+    private static byte[] GameWritesReplay(string replayPath, int combatIndex)
+    {
+        var bytes = new byte[64 + combatIndex];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = (byte)((i * 31 + combatIndex) & 0xFF);
+        }
+        File.WriteAllBytes(replayPath, bytes);
+        return bytes;
     }
 
     private static JsonNode CombatState(int floor, int energy, int hand) =>
