@@ -15,4 +15,8 @@ public static class MonsterCanonicalTags
     public const ushort KinFollowerExtra = 0x4DC1;
     public const ushort PunchConstructExtra = 0x4DC2;
     public const ushort ScrollOfBitingExtra = 0x4DC3;
+    public const ushort ToughEggExtra = 0x4DE1;
+    public const ushort AeonglassExtra = 0x4DE2;
+    public const ushort ChomperExtra = 0x4DE3;
+    public const ushort WrigglerExtra = 0x4DE4;
 }
