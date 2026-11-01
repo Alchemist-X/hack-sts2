@@ -46,6 +46,30 @@ public static class PowerCmd
         return powers;
     }
 
+    public static PowerModel? Apply(CombatState cs, string powerId, CreatureState target, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
+    {
+        if (CombatStatus.IsEnding(cs))
+        {
+            return null;
+        }
+        if (!CombatStatus.CanReceivePowers(cs, target))
+        {
+            return null;
+        }
+        var canonical = PowerRegistry.Create(powerId);
+        var power = FindExistingInstanceForStacking(canonical, target, applier);
+        if (power == null)
+        {
+            power = canonical;
+            Apply(cs, power, target, amount, applier, cardSource, silent);
+        }
+        else if (ModifyAmount(cs, power, amount, applier, cardSource, silent) == 0)
+        {
+            power = null;
+        }
+        return power;
+    }
+
     public static void Apply(CombatState cs, PowerModel power, CreatureState target, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
     {
         if (CombatStatus.IsEnding(cs) || amount == 0m || !CombatStatus.CanReceivePowers(cs, target))
