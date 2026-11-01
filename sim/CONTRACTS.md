@@ -1,4 +1,10 @@
-# Sts2Sim contracts (P0 walking skeleton)
+# Sts2Sim contracts
+
+Part A (below, 2026-10-28/30) is the P0 walking-skeleton contract and remains the baseline.
+Part B (end of this file, 2026-11-01) is the P1 kernel-expansion (W1) contract; where the two differ,
+Part B wins.
+
+# Part A — P0 walking skeleton
 
 Headless, deterministic port of the Slay the Spire 2 combat rules. Rule truth is the
 decompile tree (read-only):
@@ -20,8 +26,8 @@ dotnet run -c Release --project sim/Sts2Sim.Bench [encounterId] [seconds]
   port gets a `file:line` citation in `sim/specs/<area>.md` (your area's spec file).
 - Pure BCL, net9.0. No NuGet, no Godot, no new project references. Nullable on.
 - No narrative comments in code. Explanations and citations go in the spec file.
-- **Keep the solution building.** Six agents share one build. Never leave a file that does
-  not compile. Stubs throw `NotImplementedException`.
+- **Keep the solution building.** Agents share one build (or merge back from isolated
+  worktrees). Never leave a file that does not compile. Stubs throw `NotImplementedException`.
 - **Synchronous rewrite.** Every `async Task` / `await` in the game becomes a plain
   synchronous call, in the same order. VFX, SFX, animation, waits, tweens, `TalkCmd`/`VfxCmd`
   and `choiceContext` plumbing are dropped. Record each dropped point in your spec when it
@@ -150,8 +156,8 @@ Semantics (loop agent implements, spec in `specs/loop.md`):
   the enemy turn, and the next player turn start, and returns at the next decision point or
   at a terminal state. Illegal actions throw `InvalidOperationException` and leave state
   unchanged.
-- No card-choice prompts in P0. A card that needs a player choice is out of scope until a
-  `ActionKind` for choices is added by the orchestrator.
+- No card-choice prompts in P0. Superseded by Part B §B1 (W1 adds `UsePotion`, `DiscardPotion`,
+  `ChoosePick`, `ChooseConfirm`, `ChooseCancel` and the `ChoicePrompt` runtime).
 
 ### 4.3 Random (`Random/`, rng agent)
 
@@ -610,10 +616,12 @@ the sim analogue of the game's `ModelDb`:
 - Combat outcome has no game enum; `CombatOutcome` is sim-only.
 - Cards, monsters and relics are hook listeners in the game too; P0 only makes powers
   listeners. Card/monster hooks get added when a ported model needs one.
-- `PlayerChoiceContext` (card selection prompts) is dropped in P0.
+- `PlayerChoiceContext` (card selection prompts) is dropped in P0 — Part B §B1 replaces it with
+  `ChoiceContextKind` and the pause emulation table.
 - Multiplayer scaling (`ShouldScaleInMultiplayer`, `GetScaledAmountForMultiplayer`) is out of
   scope: single player only.
-- The run layer (events, Neow, map, rewards, relics) is out of scope. Its effect on a combat's
+- (P0) The run layer (events, Neow, map, rewards, relics) is out of scope — Part B §B2 adds the
+  `RunState` shell, shared `PlayerState`, relics and potions; W2 adds the rest. Its effect on a combat's
   starting state enters through `Create`'s inputs: the deck (`StartingDecks.IroncladAtRunStart`,
   or the starter-deck rule of §4.2 for Ascender's Bane), HP (`currentHp`/`maxHp`, e.g.
   `StartingDecks.IroncladHpAfterNeowArrival`), and the RNG streams (`Create(RunRngSet, ...)`).
@@ -621,3 +629,376 @@ the sim analogue of the game's `ModelDb`:
   `AttackIntent.BaseDamage`, `AttackCommand.HitsCompleted`, `CardInstance.InstanceId`.
 - `CombatState.Rng` may be `null` in hand-built test states (§4.4); every combat built by
   `CombatLoop`/`CombatSim` has a `RunRngSet`.
+
+
+---
+
+# Part B — P1 kernel expansion (W1) contract · 2026-11-01
+
+Part A above is the P0 baseline and stays binding; where Part B differs, Part B wins. Reading
+order for W1 agents: Part A §1 and §5–§8 → this part → your area's rows in
+`docs/sim-port/design-combat-kernel.md` (every table carries decompile citations) → the
+machine-readable companions `sim/specs/inventory/kernel-gaps.json` (per-hook, per-Cmd,
+per-file data) and `sim/specs/inventory/hooks.json` (182 hooks with scopes and overriders).
+`docs/sim-port/w0-critique.md` lists the conflicts this part settles (its B1–B6, C1–C21, G1–G20).
+
+## B0. Decisions that settle the W0 conflicts
+
+| # | Decision | Settles |
+| --- | --- | --- |
+| D1 | One `ChoiceRuntime` for combat (W1) and run (W2): answer-tape re-execution over an `IChoiceAnswerer` seam; one action vocabulary `ChoosePick` / `ChooseConfirm` / `ChooseCancel`; one `ChoicePromptKind` enum covering combat and run prompts; `Ordered = true` at every site unless a spec note proves the result order cannot matter | B1, B3, C1, C4, G19 |
+| D2 | A prompt that pauses inside a per-listener hook context runs **inline** and records `FidelityFlag.DeferredListenerPromptInline(site)`; never an exception. Exact emulation of the game's deferral is a backlog item gated on a recording of such a chain | B2, C2, G3 |
+| D3 | One `PlayerState` shared by run and combat (the game's `Player`): relics, potion slots, gold, HP, deck, max energy and base orb slots live on it; combat piles hold copies linked by `DeckVersionId` (`Entities.Players/Player.cs:1214-1233`). No `RunEffects` log | B4 rows 1–2, C5 |
+| D4 | Every `CombatState` has a `Run` (a `RunState`; standalone combats own a minimal one). `CombatState.Rng` is `Run.Rng`; the loop never clones it; the `CombatSim.Create(RunRngSet)` facade clones its argument once, so Part A §4.2 still holds for callers | B4 row 3, K6 |
+| D5 | The unlock input has one name, `UnlockProfile` (port of `Unlocks/UnlockState.cs`), on `RunState.Unlocks`, default `UnlockProfile.All` (veteran profile) | B4 row 4 |
+| D6 | Factories follow the game: one `CardFactory`, one `PotionFactory`, each a `partial class` split by file — combat entry points in W1 (`Cards/CardFactory.cs`, `Potions/PotionFactory.cs`), run entry points in W2 (`*.Run.cs`). `RelicFactory` is W2 | B4 row 5, C7 |
+| D7 | Run-scope dispatchers land in W1 against **shell** run types (`Run/*`: partial classes that hold only the members W1 signatures need); W2 fills them in place | B5, G2 |
+| D8 | Rules are v0.111.0 only. `GameVersion` reaches the sim through two seams: `RngSeedingScheme` (exists) and a registry filter for version-exclusive classes. No per-version rule branch (hard cap ≤30, each shipped with a legacy bundle that proves it) | C9 |
+| D9 | `output/server-bootstrap/linux-assembly/sts2.dll` is the IL truth for decompile losses; the nine arrays recovered in `docs/sim-port/w0-critique.md` §7 are accepted and cited as `IL:<Type>.<member>` | critique §7 |
+| D10 | Counts: 182 hook virtuals, 148 public dispatchers, 199 Cmd overloads (45 strip), ascension A0–A10, no orb / scry / retain / stance prompt exists in v0.111.0 | C10–C12 |
+| D11 | `CombatHistory` entries mirror the game's 17 entry types field-for-field (ids instead of references) so the recorder's `events.jsonl` can be compared per entry | G14 |
+| D12 | Side-turn hooks regain `participants`; `ShouldPlay` regains `AutoPlayType`; `deathAnimLength` is dropped; the automatically resolved result of a pile prompt is in **pile order**, not sorted option order (`Commands/CardSelectCmd.cs:3397-3399` vs `:3403-3405`) | G4, kernel §7 |
+
+## B1. Decision API v2 (`Api/GameAction.cs` scaffold-frozen; `Combat/Loop/CombatSim.cs` choice agent)
+
+```csharp
+enum ActionKind : byte { PlayCard, EndTurn, UsePotion, DiscardPotion, ChoosePick, ChooseConfirm, ChooseCancel }  // append-only
+readonly record struct GameAction(ActionKind Kind, int CardIndex, int TargetIndex)
+//  PlayCard:      CardIndex = hand index; TargetIndex = enemy index (State.Monsters) or NoIndex
+//  UsePotion:     CardIndex = potion slot; TargetIndex >= 0 enemy index, NoIndex none/self, <= -2 ally Allies[-2 - TargetIndex]
+//  DiscardPotion: CardIndex = slot
+//  ChoosePick:    CardIndex = option index           ChooseConfirm, ChooseCancel: no indices
+//  static UsePotion(slot, target = NoIndex), DiscardPotion(slot), Pick(option), Confirm, Cancel
+```
+
+Prompt types (`Choice/*`, namespace `Sts2Sim.Core.Choice`; types frozen in phase 0, bodies by the choice agent):
+
+```csharp
+enum ChoicePromptKind : byte {
+    HandSelect, HandUpgrade, PileSelect, ChooseCard, SimpleGrid,        // combat (W1): FromHand/FromHandForDiscard, FromHandForUpgrade, FromCombatPile, FromChooseACardScreen, FromSimpleGrid
+    DeckUpgrade, DeckTransform, DeckEnchant, DeckRemove, DeckGeneric,   // run (W2): FromDeckForUpgrade/Transformation/Enchantment/Removal, FromDeckGeneric
+    RewardsGrid, Bundle, CardReward }                                   // run (W2): FromSimpleGridForRewards, FromChooseABundleScreen, CardReward.Select (offered cards, then alternatives)
+enum ChoiceResultType : byte { CombatCard, Index }                      // recorder PlayerChoiceType
+enum ChoiceContextKind : byte { Inline, TurnSetup, PerListener, Throwing }
+readonly record struct ChoiceOption(int InstanceId, string ModelId, int UpgradeLevel)
+sealed record ChoicePrompt(ChoicePromptKind Kind, string SiteId, string SourceId, int SourceInstanceId, PileType? Pile,
+    IReadOnlyList<ChoiceOption> Options, int MinSelect, int MaxSelect, bool RequireConfirm, bool CanSkip, bool Cancelable,
+    bool Ordered, ChoiceResultType ResultType)
+readonly record struct ChoiceAnswer(IReadOnlyList<int> Picks, bool Cancelled)   // option indices in pick order
+interface IChoiceAnswerer { ChoiceAnswer Answer(ChoicePrompt prompt); }
+sealed class ChoicePendingException : Exception { ChoicePrompt Prompt { get; } }
+sealed class CardSelectorPrefs      // CardSelection/CardSelectorPrefs.cs: MinSelect, MaxSelect, RequireManualConfirmation
+                                    //   (default: MinSelect >= 0 && MinSelect != MaxSelect, :114), Cancelable, prompt key
+sealed class ChoiceRuntime          // one per RunState; CombatState.Choice == Run.Choice
+    ContextScope PushContext(ChoiceContextKind kind)   // disposable struct; the context stack is transient (not cloned, not hashed): re-execution rebuilds it
+    void PushSelector(IChoiceAnswerer s); void PopSelector()   // content selectors (VakuuCardSelector); part of the state: cloned and hashed
+    ChoiceAnswer Ask(ChoicePrompt prompt)             // selector top answers first, else Answerer; the tape answerer throws ChoicePendingException when its tape is exhausted
+    IChoiceAnswerer? Answerer { get; set; }           // installed by CombatSim for the duration of one Step
+static class CardSelectCmd          // Choice/CardSelectCmd.cs; game names and parameter order, cs first, choiceContext dropped
+    FromHand, FromHandForDiscard, FromHandForUpgrade, FromCombatPile, FromChooseACardScreen, FromSimpleGrid        // W1
+```
+
+`SiteId` = `<model id>:<method>` (`ACROBATICS:OnPlay`, `GAMBLING_CHIP:AfterPlayerTurnStart`), stable across
+runs. `MinSelect`/`MaxSelect` are clipped to the option count. Option order = what agents and the harness
+index: hand order (HandSelect, HandUpgrade); draw pile sorted by (rarity, `ModelId`) — the selector branch's
+order, `Commands/CardSelectCmd.cs:3403-3405`, which also hides the draw order from agents; discard pile
+order; generation order (ChooseCard, SimpleGrid). A prompt is **exposed** iff the game would open UI: at
+least one option and no automatic rule (`!RequireConfirm && n <= MinSelect` → all options;
+`FromHandForUpgrade` with `n <= 1` → that card or null; 0 options → empty). A `ChooseCard` with one card
+and no skip is still exposed (a forced move keeps the decision stream aligned with recordings). Automatic
+selections return their options in pile order (D12).
+
+Prompt vs phase (binding for W2 as well): a `ChoicePrompt` is any point where the game awaits a selection
+screen **inside an effect** (`CardSelectCmd.*`, the card-reward pick inside `CardReward.Select`, the
+bundle screen). A **phase** is a top-level screen shown between effects (the combat play phase; in W2 map,
+rewards list, shop, rest site, treasure, event page) whose actions are top-level action kinds.
+
+`CombatSim` additions (choice agent):
+
+```csharp
+ChoicePrompt? PendingChoice { get; }     IReadOnlyList<int> PendingPicks { get; }
+void Step(GameAction action)                             // decision API: tape engine, one DeepClone per Step
+void Step(GameAction action, IChoiceAnswerer answerer)   // rollout fast path: no clone, no exception, prompts answered inline
+```
+
+Engine: at a decision point `Step(a)` keeps the current state `S0` untouched, runs `a` on
+`work = S0.DeepClone()` with a tape answerer over the stored tape, and either completes (`State = work`,
+tape cleared) or meets a prompt without a taped answer: the runtime first performs the pause semantics
+below, then throws `ChoicePendingException(prompt)`; `Step` catches it and stores
+`(S0, a, tape, prompt, picks = [], observation = work)`. Each `Pick`/`Confirm`/`Cancel` that completes the
+prompt appends the answer to the tape and re-runs `a` from a fresh `S0.DeepClone()`; the result is a
+completed state or the next prompt. `Create` may itself stop at a turn-1 prompt (Toolbox in
+`BeforeHandDraw`, GamblingChip in `AfterPlayerTurnStart`): there `S0` is the post-`SetUpCombat` state and
+the action is an internal `Begin`. A debug invariant checks on every re-run that prompt k equals the
+prompt recorded with tape entry k (kind, `SiteId`, option ids).
+
+- `State` at a prompt is the observation (the partial state up to the prompt, including deferred
+  siblings), read-only by contract; `IsTerminal` is false; `State.IsInProgress` is true.
+- `StateHash` at a prompt = `H(S0 ‖ action ‖ tape ‖ picks)`; `Clone` copies `S0`, action, tape, picks and
+  prompt; the observation is cloned or regenerated.
+- Legal actions at a prompt, in order: `Pick(i)` for every unpicked `i` ascending while
+  `picks < MaxSelect` (when `Ordered` is false only `i` greater than the last pick is listed, and `Step`
+  sorts the answer before it enters the tape so transpositions hash equal); then `Confirm` iff
+  `(RequireConfirm || CanSkip) && MinSelect <= picks <= MaxSelect`; then `Cancel` iff `Cancelable`
+  (the answer is empty with `Cancelled = true`; the ported caller treats it as the game treats a cancelled
+  screen). The prompt completes automatically when `!RequireConfirm && picks == MaxSelect`. Plays, potions
+  and `EndTurn` are illegal at a prompt (the game's selection UI is modal; hand selections also cancel
+  queued play-card actions, `Commands/CardSelectCmd.cs:3685`).
+- Legal actions outside a prompt, in order: plays (hand index ascending, target ascending), then
+  `UsePotion` (slot ascending, target ascending), then `DiscardPotion` (slot ascending), then `EndTurn`
+  last. `UsePotion(slot, t)` is legal iff `IsInProgress`, the player is in the play phase
+  (`UsePotionAction` is `CombatPlayPhaseOnly`), the slot holds a potion whose `Usage` is `CombatOnly` or
+  `AnyTime`, `PassesCustomUsabilityCheck` holds and `t` is valid for its `TargetType`;
+  `DiscardPotion(slot)` iff the slot holds a potion and `CanUseOrRemovePotions` (the node-layer rule,
+  `Nodes.Potions/NPotionPopup.cs:285-345`, ported as a rule).
+- A prompt inside the enemy turn (KnowledgeDemon `ChooseCurse`; a player listener that prompts in
+  reaction to an enemy attack, `Commands.Builders/AttackCommand.cs:1132`, `:1146`) is exposed while
+  `CurrentSide == Enemy`; the answer re-runs `EndTurn` from `S0` through the rest of the enemy turn and
+  the next player turn start, which may expose further prompts.
+
+Pause emulation (kernel design §4.6). The game signals `SignalPlayerChoiceBegun` **before** counting
+options for `FromHand`, `FromSimpleGrid`, `FromCombatPile` and `FromHandForUpgrade`
+(`Commands/CardSelectCmd.cs:3681-3686`, `:3306-3310`, `:3375-3379`), so the reordering below happens even
+for empty or automatic selections; `FromChooseACardScreen` with no card returns before signalling.
+
+| `ChoiceContextKind` | Where the game builds the context | Sim effect at the first pause |
+| --- | --- | --- |
+| `Inline` | `PlayCardAction`, `UsePotionAction` (`GameActionPlayerChoiceContext`), every `BlockingPlayerChoiceContext` site, the end-of-turn hook context | none |
+| `TurnSetup` | `SetupPlayerTurn` and `RunAutoPrePlayPhase` (`Combat/CombatManager.cs:5059-5061`, `:5204-5205`) | run `Hook.AfterSideTurnStart(Player, participants)` (`:5080`), every player's `OrbQueue.AfterTurnStart` (`:5118-5120`), the dead-player auto-ready check (`:5143-5160`) and `CheckWinCondition` (`:5226`) with the context stack reset to the turn-loop root; then answer and continue `SetupPlayerTurn`; `StartTurn` later skips the steps already done, runs the body of `RunAutoPrePlayPhase` (`:3902-3914`) and does not repeat the win check. A first pause inside `RunAutoPrePlayPhase` runs only `CheckWinCondition` first. If that deferred win check ends the combat, unwind to the terminal state |
+| `PerListener` | the six dispatchers that build a `HookPlayerChoiceContext` per listener (`Hooks/Hook.cs:2364`, `:2467`, `:6170`, `:7776`, `:8398`, `:8607`) | **inline**, plus `FidelityFlag.DeferredListenerPromptInline(SiteId)` on `cs.Run.Fidelity` (D2) |
+| `Throwing` | commands issued by monster code with `ThrowingPlayerChoiceContext` | `InvalidOperationException` (a prompt there is impossible in the game as well) |
+
+An installed selector suppresses the pause, as in the game. Turn-setup prompt sites in v0.111.0:
+`BeforeHandDraw` (Toolbox, ForegoneConclusionPower), the turn-start draw's `AfterShuffle`
+(StratagemPower), `AfterPlayerTurnStart` (EntropyPower, ToolsOfTheTradePower, TyrannyPower,
+ChoicesParadox, GamblingChip, ToastyMittens); auto-play chains (Mayhem, HistoryCourse, Imbued,
+Hellraiser in the opening draw) reach prompts through the caller's context.
+
+## B2. State kernel v2 (`State/*`, state agent; `Run/RunState.cs` shell body: state agent in W1)
+
+```csharp
+sealed partial class RunState                   // Run/RunState.cs — W1 shell of Runs/RunState.cs; W2 (R1) takes the file over in place
+    List<PlayerState> Players; CombatState? Combat; RunRngSet Rng; UnlockProfile Unlocks; int Ascension
+    List<ModifierModel> Modifiers; ChoiceRuntime Choice; FidelityLog Fidelity
+    static RunState CreateStandalone(PlayerState player, RunRngSet rng, int ascension, UnlockProfile? unlocks = null)
+    RunState DeepClone(); void WriteCanonical(CanonicalWriter w)      // clones players, rng, choice and the combat once each and re-links
+
+sealed class CombatState                        // additions
+    RunState Run (never null); RunRngSet Rng => Run.Rng; ChoiceRuntime Choice => Run.Choice
+    IReadOnlyList<CreatureState> Allies         // [0] = Player, then pets in insertion order (the game's _allies)
+    void AddAlly(MonsterState pet); void RemoveAlly(MonsterState pet)
+    CombatHistory History; int CardOrPotionEffectDepth; List<int> PlayersTakingExtraTurn
+    CardInstance CreateCard(CardDef def, PlayerState owner)   // ToMutable + owner + AfterCreated (Combat/CombatState.cs:671-677)
+    CombatState DeepClone()                     // standalone: clones Run (which clones Player and Rng) and re-links; embedded: Run.DeepClone() is the entry
+
+sealed class PlayerState                        // persistent members added (Entities.Players/Player.cs)
+    int Gold; List<RelicModel> Relics; PotionModel?[] PotionSlots (Length = MaxPotionCount, :142); int BaseOrbSlotCount (:373)
+    List<CardInstance> Deck                     // deck order (Deck.Cards, :312)
+    bool HasRelic(string id); RelicModel? GetRelic(string id); bool HasOpenPotionSlot (:280)
+    OrbQueue OrbQueue; List<int> PetIds         // combat members added
+sealed class MonsterState                       // additions
+    int PetOwnerId (= PowerModel.NoCreature when none); AbstractModel? Listener   // MonsterDef hook adapter (monsters-kernel)
+sealed class CardInstance                       // additions (cards-kernel owns the file; these members are frozen here)
+    PlayerState Owner; EnchantmentModel? Enchantment; AfflictionModel? Affliction; AbstractModel? Listener
+    bool HasBeenRemovedFromState; int DeckVersionId (-1 when none)
+    CardInstance CloneForCombat(int newInstanceId)   // Player.PopulateCombatState: state.CloneCard(deck card) + DeckVersion (Entities.Players/Player.cs:1214-1233)
+
+sealed class CombatHistory : ICanonical         // State/CombatHistory.cs — Combat.History/CombatHistory.cs
+    // 17 entry types mirrored field-for-field from Combat.History/*Entry.cs (ids instead of references),
+    // stamped with round, side and player turn; Append* per type; the queries the 45 readers use
+    // (by type, by actor, HappenedThisTurn, HappenedLastPlayerTurn); Clear() at combat end
+sealed class FidelityLog : ICanonical           // State/Fidelity.cs — (FidelityFlag, string Site) list, hashed
+enum FidelityFlag : byte { DeferredListenerPromptInline, /* owners append when a rule is knowingly approximated */ }
+sealed class UnlockProfile                      // Unlocks/UnlockProfile.cs — fields of Unlocks/UnlockState.cs:16-139; UnlockProfile.All; immutable, shared by clones; canonical = digest of sorted ids
+```
+
+Clone and canonical: Part A §6 applies to every new type. Objects reachable twice (`Player` is both
+`cs.Player` and `rs.Players[0]`; `Rng`; `Choice`) are cloned **once** and re-linked, and the canonical form
+writes each once (through `RunState`). Defs and `UnlockProfile` are shared, not cloned. `CombatHistory`
+clone must stay ≤ 50 µs on a 500-entry log (copy-on-write or array copy; the state agent measures and
+records the number in `state.md`). Hand-built test states may still omit `Rng` (Part A §4.4) but always
+have a `Run` (`RunState.CreateStandalone`).
+
+Canonical tag ranges (one `*CanonicalTags.cs` per area; existing: rng 0x52xx, state 0x53xx, powers
+0x54xx, monsters 0x4Dxx, cards 0xCAxx): **W1** relics / potions / enchantments / afflictions / modifiers
+0x57xx, choice 0x5Axx, orbs 0x5Bxx, history 0x5Cxx, unlocks / fidelity / run shell 0x5Dxx; **reserved for
+W2** run state 0x55xx, map 0x56xx, rewards / merchant / rest / treasure 0x58xx, events 0x59xx.
+
+No approximation without a flag: whenever an owner knowingly deviates from the decompile (a VFX-driven
+order, an unreadable body), the code records a `FidelityFlag` at the site and the spec explains it. The
+diff harness maps flags to ineligibility reasons; a flag is never a silent pass.
+
+## B3. Listeners and hooks (`Combat/Pipeline/{AbstractModel,Hook,ListenerSnapshot,HookMask}.cs`, hooks agent)
+
+- `AbstractModel` declares all **182** hook virtuals with the game's names, parameters and default
+  return values (`Models/AbstractModel.cs`; names, scopes and overriders in `hooks.json`). First
+  parameter: `CombatState cs` for hooks dispatched only in combat; `RunState rs` for run-scope and
+  both-scope hooks (the combat, when attached, is `rs.Combat`). `PlayerChoiceContext` parameters are
+  dropped; `deathAnimLength` is dropped; side-turn hooks take `IReadOnlyList<CreatureState> participants`;
+  `ShouldPlay` takes `AutoPlayType`. Game types map `Creature`→`CreatureState`, `Player`→`PlayerState`,
+  `CardModel`→`CardInstance`, `PowerModel`/`RelicModel`/`PotionModel`/`OrbModel` → the sim bases, run
+  types → `Run/*` shells (D7).
+- `Hook` has all **148** public dispatchers (same names; `ModifyDamageInternal` stays private). Dispatch
+  patterns per kernel design §2.2: `ref List<AbstractModel>? modifiers` on the `Modify*` dispatchers that
+  return modifiers (`ModifyCardPlayResultLocation`, `ModifyOrbPassiveTriggerCount`, `ModifyGoldGained`
+  join Part A's list); `out AbstractModel? preventer` on `Should*` gates; a fresh snapshot per pass of a
+  multi-pass dispatcher; guarded iteration yields nothing once `IsOverOrEnding && !IsStarting`
+  (`Hooks/Hook.cs:8792-8810`).
+- Listener order is `kernel-gaps.json → listener_order.combat_list` (`Combat/CombatState.cs:855-956`):
+  allies then enemies; per creature its powers in list order, then (monster) the monster listener; for the
+  player: stop if `!IsActiveForHooks`, relics in list order skipping `IsMelted`, potion slots in order
+  skipping null, orbs in queue order, then for each pile in `[Hand, Draw, Discard, Exhaust, Play]` each
+  card, then its affliction, then its enchantment; then `Modifiers`; badges and the scaling model are
+  inert. The list is built at the first `MoveNext`; liveness is checked per element at yield
+  (`listener_order.liveness`). Run order is `design-run-layer.md` §2.7 (`Runs/RunState.cs:830-933`):
+  `Hook.IterateRunHookListeners(rs, cs?)` — deck cards each followed by its enchantment, then (only
+  without an attached combat) relics and potions, then modifiers, then the combat's own listeners.
+- Per-type override masks (`HookMask`): a model type is visited only for hooks it overrides; the ordered
+  listener array is cached and invalidated by a mutation version counter on the state. Observable
+  semantics must equal the full iteration (tests compare both paths on random states).
+- `Run/*` shells (phase 0): `sealed partial class` or enum for every run-layer type a hook or Cmd
+  signature mentions (`RunState`, `AbstractRoom`, `MapPoint`, `RewardsSet`, `Reward`, `CardReward`,
+  `MerchantEntry`, `RestSiteOption`, `EventModel`, `ActModel`, `MapPointHistoryEntry`, `RoomType`,
+  `MapPointType`, …), each with a `// W2 fills` header and only the members W1 code reads.
+
+## B4. Cmd facades (the game's `Commands/*.cs`; 199 public overloads listed in `kernel-gaps.json → cmd_facades`)
+
+| Facade | W1 owner | Notes |
+| --- | --- | --- |
+| `CreatureCmd`, `PowerCmd`, `DamageCmd` / `AttackCommand`, `EnergyCmd`, `CombatStatus` | pipeline | Osty block/HP redirection (`Commands/CreatureCmd.cs:3697-3725`), `CreatureCmd.Add` (summons), `Stun` (wrapper body missing in the decompile → IL, D9) |
+| `CardPileCmd`, `PlayerCmd`, the play half of `CardCmd` (`Combat/Loop/CardCmd.Play.cs`: `AutoPlay`, `Discard`, `DiscardAndDraw`, `Exhaust`, …) | loop | deck edits write `Player.Deck` through `DeckVersionId` |
+| the card half of `CardCmd` (`Combat/Pipeline/CardCmd.cs`: `Upgrade`, `Downgrade`, `Transform*`, `Enchant`, `Afflict`, keywords, costs) | cards-kernel | `partial class CardCmd` across the two owners' files |
+| `CardSelectCmd` | choice | B1 |
+| `RelicCmd`, `PotionCmd`, `PotionActions` | relics-potions | `PotionCmd.TryToProcure` / `Discard`; `RelicCmd.Obtain` / `Remove` / `Replace` / `Melt` on their combat paths |
+| `OrbCmd`, `OstyCmd`, `ForgeCmd`, `StarsCmd` | character-mechanics | |
+| `MapCmd`, `RewardsCmd`, `RelicSelectCmd` | W2 | `RelicSelectCmd.FromChooseARelicScreen` has no caller in v0.111.0 |
+| `SfxCmd`, `TalkCmd`, `ThinkCmd`, `VfxCmd`, `Cmd.Wait` / `CustomScaledWait` | strip | never ported; every overload marked `strip` in `cmd_facades` is listed once in its owner's spec |
+
+Method names, parameter order and default values follow the game; `cs` first; `choiceContext` and
+`showPreview`/`skipVisuals` style parameters are dropped (the drop is noted in the spec when it reorders
+side effects).
+
+## B5. New listener kinds (bases stubbed in phase 0; bodies by their owners)
+
+| Kind | Files | Owner | Contract |
+| --- | --- | --- | --- |
+| Relics | `Relics/RelicModel.cs`, `Relics/Defs/*.cs`, `Relics/RelicCanonicalTags.cs` | relics-potions | `RelicModel : AbstractModel, ICanonical` — `Id`, `Rarity`, `Pool`, the 22 virtuals of `Models/RelicModel.cs` (`AfterObtained`, `IsUsedUp`, `DisplayAmount`, `IsStackable`, …), `IsMelted` (`:267`), `Status` (`:333`), `StackCount`, `HasBeenRemovedFromState`; per-instance fields cloned by `DeepClone()` (MemberwiseClone + `CopyMutableReferenceState`) and written by `WriteCanonical` + `WriteExtraCanonical`; one class per content file, public parameterless ctor; `RelicRegistry` |
+| Potions | `Potions/PotionModel.cs`, `Potions/Defs/*.cs`, `Potions/PotionFactory.cs` | relics-potions | `OnUse`, `Usage` (`PotionUsage`), `TargetType`, `PassesCustomUsabilityCheck`, `IsValidTarget` (`Models/PotionModel.cs:618`), `OnUseWrapper` order `BeforePotionUsed` → `OnUse` → `History.PotionUsed` → `AfterPotionUsed` → `CheckForEmptyHand`; `PotionRegistry`; `GetDistinctForCombat` on `Rng.CombatPotionGeneration` |
+| Orbs | `Orbs/OrbModel.cs`, `Orbs/OrbQueue.cs`, `Orbs/Defs/*.cs` (5) | character-mechanics | `OrbQueue` (`Entities.Orbs/OrbQueue.cs`: values + `Capacity` ≤ 10 `:386`, `TryEnqueue` `:429`, `Insert`, `Remove`, `BeforeTurnEnd` `:463` / `AfterTurnStart` `:477` triggers); `OrbModel` `Passive`, `Evoke`, turn triggers, values through `Hook.ModifyOrbValue`; `OrbRegistry` |
+| Enchantments | `Cards/Enchantments/EnchantmentModel.cs`, `Cards/Enchantments/Defs/*.cs` | cards-kernel | 19 virtuals of `Models/EnchantmentModel.cs`; damage/block pre-pass (`Hooks/Hook.cs:10075-10080`, `:10332-10342`); `EnchantPlayCount`; `OnPlay` after the card's; `ShouldStartAtBottomOfDrawPile` (`Combat/CombatManager.cs:4248-4262`); listener right after its card |
+| Afflictions | `Cards/Afflictions/AfflictionModel.cs`, `Cards/Afflictions/Defs/*.cs` | cards-kernel | `CardCmd.Afflict` (`ShouldAfflict`, `History.CardAfflicted`), `ClearAffliction`; `OnPlay` after the card's; listener between card and enchantment |
+| Modifiers | `Modifiers/ModifierModel.cs` | scaffold (stub only) | `RunState.Modifiers` is empty in standard runs; no modifier is ported (excluded mode) |
+| Monster listener | `Monsters/MonsterListener.cs` | monsters-kernel | adapter that routes `AbstractModel` hooks to `MonsterDef` virtuals (`MonsterState.Listener`) |
+
+Pilot content in W1 — the minimum that exercises every new kernel path in a test (W3 ports everything
+systematically; a pilot is a complete 1:1 port with citations in the owner's spec, never a sketch):
+relics-potions ports ≥6 relics and ≥4 potions covering a counter relic, an `AfterCombatEnd` reset, a
+`Niche` reader, the turn-setup prompt relic `GamblingChip`, `FairyInABottle` (`ShouldDie` /
+`AfterPreventingDeath`), `PaperPhrog` and `PaperKrane` (consulted by powers), the prompting potion
+`AttackPotion`, the hand-prompt potion `Ashwater` and one simple stat potion; cards-kernel ports the prompt
+cards the choice tests need (`Armaments`, `Acrobatics`, `Headbutt`, `Seance`, `Discovery`, `SeekerStrike`)
+plus one enchantment def and one affliction def; pipeline ports `HellraiserPower`, `ToolsOfTheTradePower`,
+`EntropyPower`, `DarkEmbracePower`, `FocusPower`, re-ports `VulnerablePower` / `WeakPower` with the relic
+consults (`cs.Player.HasRelic("PAPER_PHROG")`, pet-owner Cruelty fallback) and `ShrinkPower` with real
+participants (critique G11); character-mechanics ports the 5 orbs and `Osty` and tests stars / forge
+through Cmd calls and test doubles. Cross-kind references are **by id string**, never by type, so no owner
+compiles against another owner's pilots.
+
+## B6. Loop and turn flow (`Combat/Loop/`, loop agent)
+
+- `CombatLoop.SetUpCombat` fills the draw pile with combat copies of `Player.Deck` (`CloneForCombat`,
+  ids from `cs.AllocateCardInstanceId()`), then the opening shuffle and monster setup; `StartCombat` keeps
+  its role. Every `CreateCombat` overload builds the `PlayerState` (deck from the specs, HP, energy) and a
+  standalone `RunState` around it (`RunState.CreateStandalone`); only the `CombatSim.Create(RunRngSet)`
+  facade clones the set (D4).
+- Turn flow (`Combat/Loop/TurnFlow*.cs`): auto pre/post play phases (`Phase = AutoPrePlay`,
+  `CheckForEmptyHand`, `AfterAutoPrePlayPhaseEntered[Early|Late]`, `AfterAutoPostPlayPhaseEntered`,
+  `Combat/CombatManager.cs:3902-3914`, `:2387-2389`); orb triggers at `DoTurnEnd` and `StartTurn`
+  (`:5118-5120`); side-turn `participants` snapshots (`:4873-4882`, `:2457`, `:2967`, `:2055-2088`);
+  effect depth (`BeginCardOrPotionEffect` / `EndCardOrPotionEffect`, `:6517-6531`, `:1430-1509`); extra
+  turns; Sly discards; auto-play (`CardCmd.AutoPlay` re-entering `OnPlayWrapper`, `Commands/CardCmd.cs:843`,
+  `:917`); the `TurnSetup` pause callbacks (B1); history recording sites; `AfterCombatEnd` and
+  `AfterCombatVictory[Early]` at combat end through `cs.Run` (`room` is null in standalone combats).
+- `Step(UsePotion)` / `Step(DiscardPotion)` go through `PotionActions` (relics-potions);
+  `UsePotionAction` target rules `GameActions/UsePotionAction.cs:96-122`.
+- Win checks only at the game's fixed points: after each action except `EndPlayerTurn` /
+  `ReadyToBeginEnemyTurn` (`GameActions/ActionExecutor.cs:130-139`), after each enemy, at phase boundaries.
+
+## B7. Cards kernel (`Cards/*` except `CardPlay.cs`, `Combat/Pipeline/CardCmd.cs`, `Unlocks/UnlockProfile.cs` body — cards-kernel)
+
+`Cards/DynamicVars/*` (the 26 subclasses of `Localization.DynamicVars/`; `CalculatedVar` =
+`CalculationBase + CalculationExtra × multiplier(card, target)` with the multiplier as a
+`static Func<CombatState, CardInstance, CreatureState?, decimal>` on the def); `CardFactory` combat
+entry points (`GetDistinctForCombat` = `TakeRandom`, `GetForCombat` = `NextItem`, both over
+`FilterForCombat` / `CanBeGeneratedInCombat`, `Factories/CardFactory.cs:93-121`); `Cards/Pools/*`
+(ordered pool data in `GenerateAllCards` order from `sim/specs/inventory/pools.json`;
+`GetUnlockedCards(UnlockProfile, multiplayer constraint)` removes the 37 `MultiplayerOnly` cards and
+applies the epoch gates, `Models/CardPoolModel.cs:68-86`); keywords in combat (`Hook.ModifyKeywordsInCombat`,
+`TryModifyKeywordsInCombat`); star costs and temporary costs; the card half of `CardCmd` (B4);
+enchantment and affliction bases (B5); the `CardInstance` additions (B2). Content reads canonical instances
+(`ModelDb.Card<T>()` options before `CreateCard`, `canonicalPower` in `TryModifyPowerAmountReceived`):
+keep those reads on the defs.
+
+## B8. Monsters kernel (`Monsters/*` except `Defs/Osty.cs` — monsters-kernel)
+
+`MonsterListener` adapter; the `MonsterDef` virtuals content overrides (`ShouldDisappearFromDoom` and
+`OnDieToDoom` are VFX-only and are **not** ported, critique C15); the mid-combat spawn path
+(`CreatureCmd.Add` → `MonsterSpawner`: id, HP roll, `SetUpForCombat`, `AfterCreatureAdded`,
+`AfterCreatureAddedToCombat`; `SetEnemyIndex` for slotless encounters, `Combat/CombatState.cs:966-980`);
+pets as `MonsterState` on the player side with `PetOwnerId` (owner death kills pets,
+`Commands/CreatureCmd.cs:2704-2717`); the run streams some monsters read (`Fabricator` MonsterAi,
+`ThievingHopper` CombatCardGeneration, `ToughEgg` Niche) come from `cs.Rng`, never from a def
+(`MonsterModel.Rng` is `Rng.Chaotic` for canonical models, `Models/MonsterModel.cs:395-404`).
+
+## B9. Character mechanics (`Orbs/*`, `Combat/Pipeline/{OrbCmd,OstyCmd,ForgeCmd,StarsCmd}.cs`, `Monsters/Defs/Osty.cs` — character-mechanics)
+
+Orbs (B5); Osty and pets (`OstyCmd.Summon`, `Commands/OstyCmd.cs:336-395`: `ModifySummonAmount`, alive →
+`GainMaxHp`, else revive or create via `PlayerCmd.AddPet<Osty>` + `DieForYouPower`, `SetMaxHp`, `Heal`,
+`AfterOstyRevived`, `History.Summoned`, `AfterSummon`); Stars (`PlayerCombatState.Stars` ≥ 0 with the
+`StarsModified` history entry; `PlayerCmd.GainStars` / `LoseStars` / `SetStars`, the `ShouldGainStars`
+gate, `AfterStarsGained` / `AfterStarsSpent`, `Hook.ModifyStarCost`, `ShouldPayExcessEnergyCostWithStars`
+= 2 stars per missing energy, X star costs capture the current stars); Forge (`ForgeCmd.Forge`,
+`Commands/ForgeCmd.cs:153-170`; `SovereignBlade` is a card, so character-mechanics tests forge through a
+test double and cards-kernel or W3 ports the def).
+
+## B10. Version and rule truth (D8, D9)
+
+- Registry filter: a `[VersionExclusive("<game version>")]` attribute (scaffold) marks classes that exist
+  in one version only; `Registries` include a class iff its version equals the configured `GameVersion`
+  (default `0.111.0`). No other version logic exists in Core; a legacy bundle whose content needs a v0.107.1
+  rule is `version_tainted`, not emulated.
+- Decompile losses: cite `IL:<Type>.<member>` with the value recovered in `w0-critique.md` §7; a new loss is
+  an open question in the spec, never a guess.
+
+## B11. W1 ownership, files, phase 0, gates
+
+| Agent | Owns (create or edit; paths under `sim/Sts2Sim.Core/` unless stated) | Tests (`sim/Sts2Sim.Tests/`) | Spec (`sim/specs/`) |
+| --- | --- | --- | --- |
+| scaffold (phase 0) | `Api/GameAction.cs`; `Enums/*` (every enum a W1 signature needs, game ordinals); `Registry/Registries.cs` (`RelicRegistry`, `PotionRegistry`, `OrbRegistry`, `EnchantmentRegistry`, `AfflictionRegistry`, `ModifierRegistry`, `VersionExclusive`); `GlobalUsings.cs`; base stubs `Relics/RelicModel.cs`, `Potions/PotionModel.cs`, `Orbs/OrbModel.cs`, `Orbs/OrbQueue.cs`, `Cards/Enchantments/EnchantmentModel.cs`, `Cards/Afflictions/AfflictionModel.cs`, `Modifiers/ModifierModel.cs`; `Run/*` shells; `Unlocks/UnlockProfile.cs`; `Choice/*` types and `ChoiceRuntime` / `CardSelectCmd` signatures; the `State/*` additions of B2 with clone and canonical wired; `State/CombatHistory.cs` (entry types + `Append*` signatures) and `State/Fidelity.cs`; all 182 virtuals on `AbstractModel`; all 148 dispatcher stubs on `Hook`; tag ranges; `Combat/Loop/PotionActions.cs` entry signatures | the existing suite stays green | `scaffold-w1.md` (every stub with its signature's source line) |
+| choice | `Choice/*`, `Combat/Loop/CombatSim.cs`, `Combat/Loop/LegalActionGenerator.cs` | `ChoiceTests.cs` | `choice.md` |
+| hooks | `Combat/Pipeline/{AbstractModel,Hook,ListenerSnapshot,HookMask}.cs` | `HookTests.cs` | `hooks.md` |
+| state | `State/*`, `Run/RunState.cs` (shell body) | `StateKernelTests.cs` | `state.md` (append) |
+| pipeline | `Combat/Pipeline/{CreatureCmd,PowerCmd,AttackCommand,EnergyCmd,CombatStatus,CreatureInternals,DamageResult}.cs`, `Powers/*` | `PipelineTests.cs` (append) | `pipeline.md` (append) |
+| cards-kernel | `Cards/*` except `CardPlay.cs`; `Combat/Pipeline/CardCmd.cs`; `Unlocks/UnlockProfile.cs` body | `CardKernelTests.cs` | `cards-kernel.md` |
+| loop | `Combat/Loop/{CombatLoop,ActionExecutor,CardPileCmd,PlayerCmd}.cs`, `Combat/Loop/CardCmd.Play.cs`, `Combat/Loop/TurnFlow*.cs` | `TurnFlowTests.cs` | `loop.md` (append) |
+| relics-potions | `Relics/*`, `Potions/*`, `Combat/Pipeline/{RelicCmd,PotionCmd}.cs`, `Combat/Loop/PotionActions.cs` | `RelicPotionTests.cs` | `relics-potions.md` |
+| character-mechanics | `Orbs/*`, `Combat/Pipeline/{OrbCmd,OstyCmd,ForgeCmd,StarsCmd}.cs`, `Monsters/Defs/Osty.cs` | `CharacterMechanicsTests.cs` | `character-mechanics.md` |
+| monsters-kernel | `Monsters/*` except `Defs/Osty.cs` | `MonsterKernelTests.cs` | `monsters.md` (append) |
+| integrate | any file, with the smallest change that makes merged work compile and pass; every cross-area edit is listed in `integration.md` with its reason | all | `integration.md` (append) |
+
+Rules: never edit a file you do not own (owners of a `partial class` edit only their own file);
+cross-kind references by id string; stubs throw `NotImplementedException`; every ported rule cites
+`file:line` in the spec; rules follow the `TestMode.IsOff` branch and timing follows
+`NonInteractiveMode` (design-subsystems §2); `Rng.Chaotic` is never modelled; no static mutable state
+(selector stacks and injector-style test seams live on the state); no narrative comments in code.
+
+W1 gates (all must hold before the wave is committed): build 0 warnings 0 errors; every test green
+(the Part A 367 plus every new suite); diff harness 4/4 bundles and 69/69 decisions on the P0 bundle set;
+bench ≥300 decisions/s/core and `Clone()` ≤1 ms on `NIBBITS_WEAK`, with the regression ratio against P0
+(705k decisions/s, 2.53 µs) reported and explained; F1 clone/hash equality at random points of random
+playouts that include pilot relics, potions and prompt cards; F4 legal-action closure including prompts
+(every listed action steps without exception; every exposed prompt has a legal answer; an illegal action
+leaves the state unchanged); F5 invariants after every step (HP in `[0, max]`, block ≥ 0, energy ≥ 0,
+gold ≥ 0, potions ≤ slots, card conservation across piles plus the deck, unique creature ids, consistent
+power owners, non-decreasing RNG counters); the B2 chain (`GremlinHorn` or `DarkEmbracePower` +
+`HellraiserPower` + `SeekerStrike`) steps without an exception and records the fidelity flag.
