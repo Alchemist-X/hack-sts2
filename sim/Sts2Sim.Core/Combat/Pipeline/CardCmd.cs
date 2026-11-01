@@ -133,6 +133,68 @@ public static partial class CardCmd
         return results;
     }
 
+    public static IReadOnlyList<CardPileAddResult> Transform(RunState rs, IEnumerable<CardTransformation> transformations, Rng? rng)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        var cs = rs.Combat;
+        var arr = transformations.ToArray();
+        if (arr.Length == 0 || (cs != null && CombatStatus.IsEnding(cs)))
+        {
+            return Array.Empty<CardPileAddResult>();
+        }
+        if (cs != null && arr[0].Original.IsInCombat(cs))
+        {
+            return Transform(cs, arr, rng);
+        }
+        var data = new List<(CardTransformation Transformation, int Index, CardInstance Replacement)>(arr.Length);
+        foreach (var t in arr)
+        {
+            var original = t.Original;
+            if (!original.IsTransformable(cs) || !original.IsInDeck)
+            {
+                throw new InvalidOperationException("Can't transform " + original.Id + " because it's un-transformable or has no pile.");
+            }
+            int index = original.Owner.Deck.IndexOf(original);
+            var replacement = t.Replacement ?? (rng == null ? throw new ArgumentException("RNG must be passed when replacement options is set!") : CreateRunTransformReplacement(rs, original, t.ReplacementOptions, rng));
+            original.RemoveFromCurrentPile(cs);
+            data.Add((t, index, replacement));
+        }
+        data.Sort(static (a, b) => a.Index.CompareTo(b.Index));
+        var results = new List<CardPileAddResult>(data.Count);
+        foreach (var (t, _, r) in data)
+        {
+            var original = t.Original;
+            if (!r.HasOwner || !ReferenceEquals(r.Owner, original.Owner))
+            {
+                throw new InvalidOperationException($"Attempting to transform card {original} to {r}, but the replacement has a different owner!");
+            }
+            List<AbstractModel>? modifying = null;
+            var replacement = Hook.ModifyCardBeingAddedToDeck(rs, r, ref modifying);
+            original.Owner.Deck.Add(replacement);
+            Hook.AfterCardChangedPiles(rs, null, replacement, PileType.Deck, null);
+            original.Def.AfterTransformedFrom(cs, original);
+            replacement.Def.AfterTransformedTo(cs, replacement);
+            results.Add(new CardPileAddResult(true, replacement, null, PileType.Deck, modifying));
+        }
+        foreach (var (t, _, _) in data)
+        {
+            t.Original.RemoveFromState(cs);
+        }
+        return results;
+    }
+
+    private static CardInstance CreateRunTransformReplacement(RunState rs, CardInstance original, IEnumerable<CardDef>? options, Rng rng)
+    {
+        var filtered = options == null ? CardFactory.GetDefaultTransformationOptions(rs, original, false) : CardFactory.GetFilteredTransformationOptions(rs, original, options, false);
+        var ported = filtered.Where(c => c is not UnportedCardDef).ToList();
+        if (ported.Count < filtered.Count)
+        {
+            rs.Fidelity.Record(FidelityFlag.ApproximatedRule, $"CardCmd.Transform (deck): {filtered.Count - ported.Count} of {filtered.Count} options are not ported; the draw runs over the ported ones");
+        }
+        var pick = rng.NextItem((IReadOnlyList<CardDef>)ported) ?? throw new NotImplementedException($"CardCmd.Transform (deck): none of the options for {original.Id} is ported");
+        return CardFactory.CreateRunCard(rs, pick, original.Owner);
+    }
+
     public static EnchantmentModel? Enchant<T>(CardInstance card, decimal amount) where T : EnchantmentModel, new()
         => Enchant(new T(), card, amount);
 

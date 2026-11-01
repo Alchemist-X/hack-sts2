@@ -341,6 +341,86 @@ public static class CreatureCmd
         SetMaxHp(cs, creature, Math.Max(1.0m, newMaxHp));
     }
 
+    public static void Heal(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat != null)
+        {
+            Heal(rs.Combat, creature, amount);
+            return;
+        }
+        CreatureInternals.HealInternal(creature, amount);
+    }
+
+    public static void GainMaxHp(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat != null)
+        {
+            GainMaxHp(rs.Combat, creature, amount);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use LoseMaxHp for max HP loss.");
+        }
+        int oldMaxHp = creature.MaxHp;
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(0m, creature.MaxHp + amount));
+        Heal(rs, creature, creature.MaxHp - oldMaxHp);
+    }
+
+    public static void LoseMaxHp(RunState rs, CreatureState creature, decimal amount, bool isFromCard)
+    {
+        if (rs.Combat != null)
+        {
+            LoseMaxHp(rs.Combat, creature, amount, isFromCard);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use GainMaxHp for max HP gain.");
+        }
+        decimal newMaxHp = creature.MaxHp - amount;
+        if (newMaxHp < creature.CurrentHp)
+        {
+            Damage(rs, creature, creature.CurrentHp - newMaxHp, isFromCard ? (ValueProp.Unblockable | ValueProp.Unpowered | ValueProp.Move) : (ValueProp.Unblockable | ValueProp.Unpowered));
+        }
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(1.0m, newMaxHp));
+    }
+
+    public static DamageResult Damage(RunState rs, CreatureState target, decimal amount, ValueProp props)
+    {
+        if (rs.Combat != null)
+        {
+            var inCombat = Damage(rs.Combat, target, amount, props, null, null, null);
+            return inCombat.Count > 0 ? inCombat[0] : new DamageResult(target, props);
+        }
+        if (target.IsDead)
+        {
+            return new DamageResult(target, props);
+        }
+        List<AbstractModel>? modifiers = null;
+        decimal modifiedAmount = Hook.ModifyDamage(rs, null, target, null, amount, props, null, null, ModifyDamageHookType.All, ref modifiers);
+        Hook.AfterModifyingDamageAmount(rs, null, null, modifiers);
+        Hook.BeforeDamageReceived(rs, null, target, modifiedAmount, props, null, null);
+        decimal blockedDamage = CreatureInternals.DamageBlockInternal(target, modifiedAmount, props);
+        modifiers = null;
+        decimal unblockedDamage = Hook.ModifyHpLost(rs, null, target, Math.Max(modifiedAmount - blockedDamage, 0m), props, null, null, HpLossHookPhase.BeforeOsty, ref modifiers);
+        Hook.AfterModifyingHpLostBeforeOsty(rs, null, modifiers);
+        modifiers = null;
+        unblockedDamage = Hook.ModifyHpLost(rs, null, target, unblockedDamage, props, null, null, HpLossHookPhase.AfterOsty, ref modifiers);
+        Hook.AfterModifyingHpLostAfterOsty(rs, null, modifiers);
+        var result = CreatureInternals.LoseHpInternal(target, unblockedDamage, props);
+        result.BlockedDamage = (int)blockedDamage;
+        if (result.UnblockedDamage > 0)
+        {
+            Hook.AfterCurrentHpChanged(rs, null, target, -result.UnblockedDamage);
+        }
+        if (!result.WasTargetKilled || !target.IsDead)
+        {
+            Hook.AfterDamageReceived(rs, null, target, result, props, null, null);
+        }
+        return result;
+    }
+
     public static void SetMaxAndCurrentHp(CombatState cs, CreatureState creature, decimal amount)
     {
         SetMaxHp(cs, creature, amount);
