@@ -347,7 +347,7 @@ public static class RelicPotionTests
         Assert.False(TestRelic.BeforeAct3(1, 41));
         Assert.True(TestRelic.BeforeAct3(2, 37));
         Assert.False(TestRelic.BeforeAct3(2, 38));
-        Assert.Throws<NotImplementedException>(() => TestRelic.BeforeAct3(NewCombat().Run), "the RunState overload needs W2's TotalFloor");
+        Assert.True(TestRelic.BeforeAct3(NewCombat().Run), "standalone run: TotalFloor 0");
     }
 
     public static void Test_RelicPotion_RelicPoolsResolveTheFirstPoolInModelDbOrder()

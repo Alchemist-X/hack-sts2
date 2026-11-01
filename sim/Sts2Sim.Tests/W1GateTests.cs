@@ -462,6 +462,10 @@ public static class W1GateTests
         int pilotPotions = 0;
         for (int i = 0; i < filled; i++)
         {
+            if (slots[i] != null)
+            {
+                continue;
+            }
             PotionModel potion;
             if (potionIds.Count > 0)
             {

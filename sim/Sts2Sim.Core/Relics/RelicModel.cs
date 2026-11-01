@@ -113,7 +113,7 @@ public abstract class RelicModel : AbstractModel, ICanonical
     public virtual bool IsAllowedAtNeow(RunState rs, PlayerState player) => IsAllowed(rs);
 
     protected static bool IsBeforeAct3TreasureChest(RunState rs)
-        => throw new NotImplementedException("RelicModel.IsBeforeAct3TreasureChest: W2 (needs RunState.TotalFloor, Runs/RunState.cs; rule Models/RelicModel.cs:539-543)");
+        => IsBeforeAct3TreasureChest(rs.Players.Count, rs.TotalFloor);
 
     protected static bool IsBeforeAct3TreasureChest(int playerCount, int totalFloor)
     {
