@@ -1,0 +1,45 @@
+# W3 encounters-1 (wave B) index
+
+Decompile paths are relative to `MegaCrit.Sts2.Core.Models.Encounters/`. Dropped everywhere: AllPossibleMonsters (bestiary/asset preload only), HasScene, HasCustomBackground, camera scaling/offset, BGM/ambient SFX, boss node paths/spine, FullyCenterPlayers. Monsters not in this tree are referenced by id through MonsterRegistry.Get; until monsters-1..4 merge, those encounters throw KeyNotFoundException at spawn. Extra-state setters on monsters owned by other agents go through EncounterMonsterConfig (reflection on the monster's extra-state property of the game's name); replace with typed calls once the monster classes land.
+
+- BOWLBUGS_NORMAL — BowlbugsNormal.cs:11 — rock @first + 2 workers NextItem over {Egg, Silk, Nectar} minus taken (valid count 1 each) @middle/@last; slot names passed without a Slots override, as in the game
+- BOWLBUGS_WEAK — BowlbugsWeak.cs:10 — rock @odd, NextItem {Egg, Nectar} @even
+- BYGONE_EFFIGY_ELITE — BygoneEffigyElite.cs:9 — single monster
+- BYRDONIS_ELITE — ByrdonisElite.cs:8 — single monster
+- CONSTRUCT_MENAGERIE_NORMAL — ConstructMenagerieNormal.cs:8 — Punch, Cubex, Cubex
+- CORPSE_SLUGS_NORMAL — CorpseSlugsNormal.cs:11 — 3 slugs via CorpseSlug.EnsureCorpseSlugsStartWithDifferentMoves (encounter Rng)
+- CUBEX_CONSTRUCT_NORMAL — CubexConstructNormal.cs:8 — single monster
+- CULTISTS_NORMAL — CultistsNormal.cs:8 — Calcified, Damp
+- DEVOTED_SCULPTOR_WEAK — DevotedSculptorWeak.cs:8 — weak, single monster
+- ENTOMANCER_ELITE — EntomancerElite.cs:8 — single monster
+- EXOSKELETONS_NORMAL — ExoskeletonsNormal.cs:9 — 4 slots first..fourth
+- EXOSKELETONS_WEAK — ExoskeletonsWeak.cs:9 — 3 slots first..third
+- FAKE_MERCHANT_EVENT_ENCOUNTER — FakeMerchantEventEncounter.cs:8 — slot merchant; gold 300/300 (no Poverty scaling, override)
+- FLYCONID_NORMAL — FlyconidNormal.cs:9 — NextItem {LeafSlimeM, TwigSlimeM}, then Flyconid
+- FOSSIL_STALKER_NORMAL — FossilStalkerNormal.cs:8 — single monster
+- FROG_KNIGHT_NORMAL — FrogKnightNormal.cs:8 — single monster
+- HUNTER_KILLER_NORMAL — HunterKillerNormal.cs:8 — single monster
+- INKLETS_NORMAL — InkletsNormal.cs:8 — 3 inklets, middle sets MiddleInklet (reflection setter)
+- KAISER_CRAB_BOSS — KaiserCrabBoss.cs:10 — slots crusher/rocket; custom track name constant is UI only
+- LAGAVULIN_MATRIARCH_BOSS — LagavulinMatriarchBoss.cs:9 — single monster
+- LOUSE_PROGENITOR_NORMAL — LouseProgenitorNormal.cs:8 — single monster
+- MAWLER_NORMAL — MawlerNormal.cs:8 — single monster
+- MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER — MysteriousKnightEventEncounter.cs:8 — single monster
+- NIBBITS_NORMAL — NibbitsNormal.cs:8 — slots front/back, front Nibbit IsFront = true
+- OVERGROWTH_CRAWLERS — OvergrowthCrawlers.cs:9 — ShrinkerBeetle, FuzzyWurmCrawler
+- OWL_MAGISTRATE_NORMAL — OwlMagistrateNormal.cs:8 — single monster
+- PHANTASMAL_GARDENERS_ELITE — PhantasmalGardenersElite.cs:9 — 4 slots first..fourth
+- PUNCH_CONSTRUCT_NORMAL — PunchConstructNormal.cs:8 — single monster
+- PUNCH_OFF_EVENT_ENCOUNTER — PunchOffEventEncounter.cs:8 — 2 PunchConstructs, NextInt(2,10) each in game order; first StartsWithFastPunch (reflection setters)
+- RUBY_RAIDERS_NORMAL — RubyRaidersNormal.cs:9 — 3 raiders NextItem over 5 types minus taken
+- SCROLLS_OF_BITING_NORMAL — ScrollsOfBitingNormal.cs:9 — StarterMoveIdx n, n+1, n+2 mod 3 with n = NextInt(3); fourth = 2 (reflection setter)
+- SCROLLS_OF_BITING_WEAK — ScrollsOfBitingWeak.cs:9 — as normal, 3 scrolls
+- SEAPUNK_NORMAL — SeapunkNormal.cs:9 — CalcifiedCultist, Seapunk
+- SEWER_CLAM_NORMAL — SewerClamNormal.cs:8 — single monster
+- SKULKING_COLONY_ELITE — SkulkingColonyElite.cs:8 — single monster
+- SLIMED_BERSERKER_NORMAL — SlimedBerserkerNormal.cs:8 — single monster
+- SLIMES_NORMAL — SlimesNormal.cs:10 — TwigM, LeafM, then NextBool picks small order
+- SLITHERING_STRANGLER_NORMAL — SlitheringStranglerNormal.cs:11 — NextItem over enum {Jaxfruit, MediumSlime, SmallSlimes}, then slime picks, Strangler last
+- SLUMBERING_BEETLE_NORMAL — SlumberingBeetleNormal.cs:10 — Rock @first, Silk @second, Beetle @third (no Slots override)
+- SNAPPING_JAXFRUIT_NORMAL — SnappingJaxfruitNormal.cs:9 — Jaxfruit, Flyconid
+- SOUL_FYSH_BOSS — SoulFyshBoss.cs:9 — single monster

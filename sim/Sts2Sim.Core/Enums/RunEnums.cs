@@ -54,3 +54,23 @@ public enum CardRarityOddsType
     Shop,
     Uniform
 }
+
+public enum EncounterTag
+{
+    None,
+    Burrower,
+    Chomper,
+    Nibbit,
+    Shrinker,
+    Slimes,
+    Thieves,
+    Workers,
+    Crawler,
+    Mushroom,
+    Knights,
+    Scrolls,
+    Seapunk,
+    Slugs,
+    Exoskeletons,
+    Jaxfruit
+}

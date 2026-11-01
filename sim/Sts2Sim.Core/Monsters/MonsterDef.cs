@@ -110,6 +110,29 @@ public abstract class EncounterDef
 
     public virtual bool IsWeak => false;
 
+    public virtual RoomType RoomType => RoomType.Monster;
+
+    public virtual bool ShouldGiveRewards => true;
+
+    public virtual IReadOnlyList<EncounterTag> Tags => Array.Empty<EncounterTag>();
+
+    public const double PovertyAscensionGoldMultiplier = 0.75;
+
+    public virtual int MinGoldReward(int ascension) => GoldReward(RoomType switch { RoomType.Monster => 10, RoomType.Elite => 35, RoomType.Boss => 100, _ => 0 }, ascension);
+
+    public virtual int MaxGoldReward(int ascension) => GoldReward(RoomType switch { RoomType.Monster => 20, RoomType.Elite => 45, RoomType.Boss => 100, _ => 0 }, ascension);
+
+    private static int GoldReward(double num, int ascension)
+    {
+        if (ascension >= (int)AscensionLevel.Poverty)
+        {
+            num *= PovertyAscensionGoldMultiplier;
+        }
+        return (int)num;
+    }
+
+    public bool SharesTagsWith(EncounterDef? other) => other != null && Tags.Intersect(other.Tags).Any();
+
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 
     public abstract IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs);
