@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 
 namespace Sts2Sim.Core.Cards;
 
-[SimExclude]
 public sealed class ForbiddenGrimoire : CardDef
 {
     public const string CardId = "FORBIDDEN_GRIMOIRE";

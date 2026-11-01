@@ -211,6 +211,7 @@ public static class ContentSoak
         try
         {
             var sim = create();
+            Content_leftoversTests.ConfigureTinkerTimeForSoak(sim.State);
             equip?.Invoke(sim);
             while (!sim.IsTerminal && steps < stepCap)
             {

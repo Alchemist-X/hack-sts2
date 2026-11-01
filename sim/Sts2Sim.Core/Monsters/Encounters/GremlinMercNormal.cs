@@ -23,8 +23,8 @@ public sealed class GremlinMercNormal : EncounterDef
         => new[] { new MonsterSpawn(MonsterRegistry.Get("GREMLIN_MERC"), MercSlot) };
 
     public static void MarkGoldStolen(CombatState cs)
-        => throw new NotImplementedException("W3 gap: mutable encounter instance state (GremlinMercNormal.GoldWasStolen; EncounterDef is shared and immutable)");
+        => throw new NotImplementedException("W3.5 kernel-gaps: CombatState.EncounterExtra (GremlinMercNormal.MarkGoldStolen sets GoldWasStolen; Models.Encounters/GremlinMercNormal.cs:51-54)");
 
     public static decimal CalculateGoldProportion(CombatState cs)
-        => throw new NotImplementedException("W3 gap: CombatState.EscapedCreatures + GoldWasStolen (GremlinMercNormal.CalculateGoldProportion)");
+        => throw new NotImplementedException("W3.5 kernel-gaps: CombatState.EscapedCreatures + CombatState.EncounterExtra (GremlinMercNormal.CalculateGoldProportion; Models.Encounters/GremlinMercNormal.cs:56-67)");
 }

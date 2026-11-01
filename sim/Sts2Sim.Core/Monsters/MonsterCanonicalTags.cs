@@ -29,4 +29,5 @@ public static class MonsterCanonicalTags
     public const ushort KnowledgeDemonExtra = 0x4DD7;
     public const ushort QueenExtra = 0x4DD8;
     public const ushort TestSubjectExtra = 0x4DD9;
+    public const ushort ThievingHopperExtra = 0x4DF0;
 }

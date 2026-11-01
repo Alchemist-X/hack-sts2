@@ -1,6 +1,5 @@
 namespace Sts2Sim.Core.Monsters;
 
-[Sts2Sim.Core.Registry.SimExclude]
 public sealed class ThievingHopperWeak : EncounterDef
 {
     public const string EncounterIdEntry = "THIEVING_HOPPER_WEAK";

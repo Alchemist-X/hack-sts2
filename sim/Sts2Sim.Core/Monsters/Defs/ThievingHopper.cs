@@ -1,5 +1,21 @@
 namespace Sts2Sim.Core.Monsters;
 
+public sealed class ThievingHopperExtraState : MonsterExtraState
+{
+    public bool IsHovering { get; set; }
+
+    public override MonsterExtraState DeepClone() => new ThievingHopperExtraState
+    {
+        IsHovering = IsHovering
+    };
+
+    public override void WriteCanonical(CanonicalWriter w)
+    {
+        w.WriteTag(MonsterCanonicalTags.ThievingHopperExtra);
+        w.WriteBool(IsHovering);
+    }
+}
+
 public sealed class ThievingHopper : MonsterDef
 {
     public const string MonsterIdEntry = "THIEVING_HOPPER";
@@ -44,6 +60,11 @@ public sealed class ThievingHopper : MonsterDef
     public static int HatTrickDamage(CombatState cs) => cs.GetValueIfAscension(AscensionLevel.DeadlyEnemies, HatTrickDamageDeadly, HatTrickDamageBase);
 
     public static int NabDamage(CombatState cs) => cs.GetValueIfAscension(AscensionLevel.DeadlyEnemies, NabDamageDeadly, NabDamageBase);
+
+    public static ThievingHopperExtraState GetExtra(MonsterState monster)
+        => monster.Extra as ThievingHopperExtraState ?? throw new InvalidOperationException($"Monster {monster.MonsterId} has no ThievingHopper state");
+
+    public override MonsterExtraState? CreateExtraState() => new ThievingHopperExtraState();
 
     public override void AfterAddedToRoom(CombatState cs, MonsterState self)
     {
@@ -104,7 +125,9 @@ public sealed class ThievingHopper : MonsterDef
 
     private static void SwipeSteal(CombatState cs, MonsterState self, CardInstance card)
     {
-        throw new NotImplementedException("W3 gap: SwipePower.Steal + PowerCmd.Apply(swipe, hopper, " + SwipeAmount + ") (" + SwipePowerId + " unported, powers batch 8 unowned; Models.Monsters/ThievingHopper.cs:725-739) for " + card.Id);
+        var swipe = new SwipePower();
+        swipe.Steal(cs, card);
+        PowerCmd.Apply(cs, swipe, self, SwipeAmount, self, null);
     }
 
     private static void NabMove(CombatState cs, MonsterState self, IReadOnlyList<CreatureState> targets)
@@ -119,11 +142,17 @@ public sealed class ThievingHopper : MonsterDef
 
     private static void FlutterMove(CombatState cs, MonsterState self, IReadOnlyList<CreatureState> targets)
     {
+        GetExtra(self).IsHovering = true;
         PowerCmd.Apply<FlutterPower>(cs, self, FlutterAmount, self, null);
     }
 
     private static void EscapeMove(CombatState cs, MonsterState self, IReadOnlyList<CreatureState> targets)
     {
+        var extra = GetExtra(self);
+        if (extra.IsHovering)
+        {
+            extra.IsHovering = false;
+        }
         CreatureCmd.Escape(cs, self);
     }
 }
