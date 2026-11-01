@@ -112,28 +112,26 @@ public abstract class EncounterDef
 
     public virtual RoomType RoomType => RoomType.Monster;
 
-    public virtual IReadOnlyList<string> Tags => Array.Empty<string>();
+    public virtual bool ShouldGiveRewards => true;
 
-    public bool SharesTagsWith(EncounterDef? other)
+    public virtual IReadOnlyList<EncounterTag> Tags => Array.Empty<EncounterTag>();
+
+    public const double PovertyAscensionGoldMultiplier = 0.75;
+
+    public virtual int MinGoldReward(int ascension) => GoldReward(RoomType switch { RoomType.Monster => 10, RoomType.Elite => 35, RoomType.Boss => 100, _ => 0 }, ascension);
+
+    public virtual int MaxGoldReward(int ascension) => GoldReward(RoomType switch { RoomType.Monster => 20, RoomType.Elite => 45, RoomType.Boss => 100, _ => 0 }, ascension);
+
+    private static int GoldReward(double num, int ascension)
     {
-        if (other == null)
+        if (ascension >= (int)AscensionLevel.Poverty)
         {
-            return false;
+            num *= PovertyAscensionGoldMultiplier;
         }
-        var tags = Tags;
-        var otherTags = other.Tags;
-        for (int i = 0; i < tags.Count; i++)
-        {
-            for (int j = 0; j < otherTags.Count; j++)
-            {
-                if (string.Equals(tags[i], otherTags[j], StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return (int)num;
     }
+
+    public bool SharesTagsWith(EncounterDef? other) => other != null && Tags.Intersect(other.Tags).Any();
 
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 

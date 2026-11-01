@@ -14,9 +14,9 @@ public static class RunStateTests
     {
         private readonly RoomType _roomType;
         private readonly bool _isWeak;
-        private readonly string[] _tags;
+        private readonly EncounterTag[] _tags;
 
-        public EncounterDouble(string id, RoomType roomType, bool isWeak = false, params string[] tags)
+        public EncounterDouble(string id, RoomType roomType, bool isWeak = false, params EncounterTag[] tags)
             : base(id)
         {
             _roomType = roomType;
@@ -28,7 +28,7 @@ public static class RunStateTests
 
         public override bool IsWeak => _isWeak;
 
-        public override IReadOnlyList<string> Tags => _tags;
+        public override IReadOnlyList<EncounterTag> Tags => _tags;
 
         public override IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs) => throw new NotSupportedException();
     }
@@ -75,10 +75,10 @@ public static class RunStateTests
 
     private static EncounterDef[] SampleEncounters() => new EncounterDef[]
     {
-        new EncounterDouble("W1", RoomType.Monster, true, "a"),
-        new EncounterDouble("W2", RoomType.Monster, true, "b"),
-        new EncounterDouble("N1", RoomType.Monster, false, "c"),
-        new EncounterDouble("N2", RoomType.Monster, false, "d"),
+        new EncounterDouble("W1", RoomType.Monster, true, EncounterTag.Burrower),
+        new EncounterDouble("W2", RoomType.Monster, true, EncounterTag.Chomper),
+        new EncounterDouble("N1", RoomType.Monster, false, EncounterTag.Nibbit),
+        new EncounterDouble("N2", RoomType.Monster, false, EncounterTag.Shrinker),
         new EncounterDouble("N3", RoomType.Monster, false),
         new EncounterDouble("E1", RoomType.Elite),
         new EncounterDouble("E2", RoomType.Elite),
@@ -200,7 +200,7 @@ public static class RunStateTests
         Assert.SequenceEqual(new[] { "N1", "N2", "N3" }, act.AllRegularEncounters.Select(e => e.Id));
         Assert.SequenceEqual(new[] { "E1", "E2" }, act.AllEliteEncounters.Select(e => e.Id));
         Assert.SequenceEqual(new[] { "B1", "B2" }, act.AllBossEncounters.Select(e => e.Id));
-        Assert.True(act.AllEncounters[0].SharesTagsWith(new EncounterDouble("X", RoomType.Monster, false, "z", "a")));
+        Assert.True(act.AllEncounters[0].SharesTagsWith(new EncounterDouble("X", RoomType.Monster, false, EncounterTag.Jaxfruit, EncounterTag.Burrower)));
         Assert.False(act.AllEncounters[0].SharesTagsWith(act.AllEncounters[1]));
         Assert.False(act.AllEncounters[0].SharesTagsWith(null));
     }
