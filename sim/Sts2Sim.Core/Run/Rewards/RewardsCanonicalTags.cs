@@ -6,6 +6,7 @@ public static class RewardsCanonicalTags
     public const ushort Reward = 0x5802;
     public const ushort Odds = 0x5803;
     public const ushort RelicGrabBag = 0x5804;
+    public const ushort RewardsSetContinuation = 0x5805;
     public const ushort Merchant = 0x5810;
     public const ushort RestSite = 0x5820;
     public const ushort Treasure = 0x5830;

@@ -65,18 +65,41 @@ public sealed partial class CombatRoom : AbstractRoom
         }
         var player = rs.Players[0];
         var cs = CombatLoop.SetUpCombat(rs, player, Encounter, RunContext(rs));
-        var history = RoomStack.CurrentMapPointHistoryEntry(rs);
-        if (history != null && history.Rooms.Count > 0 && history.Rooms[^1].MonsterIds is List<string> monsterIds)
-        {
-            var monsters = cs.Monsters;
-            for (int i = 0; i < monsters.Count; i++)
-            {
-                monsterIds.Add(monsters[i].Def.Id);
-            }
-        }
+        RecordMonsterIds(rs, cs, encounterSetup: true);
         Hook.AfterRoomEntered(rs, this);
         CombatLoop.StartCombat(cs);
         return cs;
+    }
+
+    public static void RecordMonsterIds(RunState rs, CombatState cs, bool encounterSetup)
+    {
+        var history = RoomStack.CurrentMapPointHistoryEntry(rs);
+        if (history == null || history.Rooms.Count == 0)
+        {
+            return;
+        }
+        var last = history.Rooms[^1];
+        var ids = new List<string>(last.MonsterIds);
+        var monsters = cs.Monsters;
+        for (int i = 0; i < monsters.Count; i++)
+        {
+            string id = monsters[i].Def.Id;
+            if (encounterSetup || !ids.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+        if (!encounterSetup)
+        {
+            foreach (var escaped in cs.EscapedCreatures)
+            {
+                if (escaped is MonsterState m && m.Side == CombatSide.Enemy && !ids.Contains(m.Def.Id))
+                {
+                    ids.Add(m.Def.Id);
+                }
+            }
+        }
+        history.Rooms[^1] = last with { MonsterIds = ids };
     }
 
     public static CombatRunContext RunContext(RunState rs)
@@ -97,6 +120,7 @@ public sealed partial class CombatRoom : AbstractRoom
     {
         ArgumentNullException.ThrowIfNull(rs);
         ArgumentNullException.ThrowIfNull(cs);
+        RecordMonsterIds(rs, cs, encounterSetup: false);
         GoldProportion = (decimal)Encounter.CalculateGoldProportion(cs);
         EncounterExtra = cs.EncounterExtra?.DeepClone();
     }
