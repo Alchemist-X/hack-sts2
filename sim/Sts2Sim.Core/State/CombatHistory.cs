@@ -1,3 +1,5 @@
+using System.Collections;
+
 namespace Sts2Sim.Core.State;
 
 public interface IHistoryEntry
@@ -5,13 +7,35 @@ public interface IHistoryEntry
     HistoryStamp Stamp { get; }
 }
 
+internal interface IHistoryEntryCanonical
+{
+    void WriteEntryCanonical(CanonicalWriter w);
+}
+
 public readonly record struct HistoryStamp(int Sequence, int ActorId, int RoundNumber, CombatSide CurrentSide, int PlayerTurnNumber)
 {
     public bool HappenedThisTurn(CombatState? cs)
-        => throw new NotImplementedException("HistoryStamp.HappenedThisTurn: state agent (Combat.History/CombatHistoryEntry.cs:67-113)");
+    {
+        if (cs is null)
+        {
+            return false;
+        }
+        if (RoundNumber != cs.RoundNumber)
+        {
+            return false;
+        }
+        if (CurrentSide != cs.CurrentSide)
+        {
+            return false;
+        }
+        return cs.Player.TurnNumber == PlayerTurnNumber;
+    }
 
     public bool HappenedLastPlayerTurn(PlayerState player)
-        => throw new NotImplementedException("HistoryStamp.HappenedLastPlayerTurn: state agent (Combat.History/CombatHistoryEntry.cs:115-125)");
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return PlayerTurnNumber == player.TurnNumber - 1;
+    }
 
     internal void WriteCanonical(CanonicalWriter w)
     {
@@ -24,11 +48,128 @@ public readonly record struct HistoryStamp(int Sequence, int ActorId, int RoundN
     }
 }
 
-public readonly record struct HistoryCardPlay(int PlayId, int CardInstanceId, string CardId, int PlayerId, int TargetId, PileType ResultPile, ResourceInfo Resources, bool IsAutoPlay, int PlayIndex, int PlayCount)
+public readonly struct HistoryList<T> : IReadOnlyList<T>, IEquatable<HistoryList<T>> where T : struct, IEquatable<T>
+{
+    private readonly List<T>? _store;
+    private readonly int _start;
+    private readonly int _count;
+
+    internal HistoryList(List<T> store, int start, int count)
+    {
+        _store = store;
+        _start = start;
+        _count = count;
+    }
+
+    public int Count => _count;
+
+    public T this[int index]
+    {
+        get
+        {
+            if ((uint)index >= (uint)_count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), index, $"The list holds {_count} items");
+            }
+            return _store![_start + index];
+        }
+    }
+
+    public Enumerator GetEnumerator() => new(this);
+
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    public T[] ToArray()
+    {
+        if (_count == 0)
+        {
+            return Array.Empty<T>();
+        }
+        var copy = new T[_count];
+        _store!.CopyTo(_start, copy, 0, _count);
+        return copy;
+    }
+
+    public bool Equals(HistoryList<T> other)
+    {
+        if (_count != other._count)
+        {
+            return false;
+        }
+        for (int i = 0; i < _count; i++)
+        {
+            if (!this[i].Equals(other[i]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public override bool Equals(object? obj) => obj is HistoryList<T> other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        int hash = _count;
+        for (int i = 0; i < _count; i++)
+        {
+            hash = unchecked(hash * 31 + this[i].GetHashCode());
+        }
+        return hash;
+    }
+
+    public static bool operator ==(HistoryList<T> left, HistoryList<T> right) => left.Equals(right);
+
+    public static bool operator !=(HistoryList<T> left, HistoryList<T> right) => !left.Equals(right);
+
+    public struct Enumerator : IEnumerator<T>
+    {
+        private readonly HistoryList<T> _list;
+        private int _index;
+
+        internal Enumerator(HistoryList<T> list)
+        {
+            _list = list;
+            _index = -1;
+        }
+
+        public readonly T Current => _list[_index];
+
+        readonly object IEnumerator.Current => Current;
+
+        public bool MoveNext() => ++_index < _list._count;
+
+        public void Reset() => _index = -1;
+
+        public readonly void Dispose()
+        {
+        }
+    }
+}
+
+public readonly record struct HistoryCardPlay(int PlayId, int CardInstanceId, string CardId, int PlayerId, int TargetId, PileType ResultPile, ResourceInfo Resources, bool IsAutoPlay, int PlayIndex, int PlayCount, CardType CardType = CardType.None, bool IsDupe = false)
 {
     public bool IsFirstInSeries => PlayIndex == 0;
 
     public bool IsLastInSeries => PlayIndex == PlayCount - 1;
+
+    public bool Equals(HistoryCardPlay other) => PlayId == other.PlayId;
+
+    public override int GetHashCode() => PlayId;
+
+    public bool IsSamePlay(CardPlay cardPlay)
+    {
+        ArgumentNullException.ThrowIfNull(cardPlay);
+        return PlayId == cardPlay.PlayId;
+    }
+
+    public bool IsPlayOf(CardInstance card)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        return CardInstanceId == card.InstanceId;
+    }
 
     public static HistoryCardPlay From(CardPlay cardPlay)
     {
@@ -44,7 +185,9 @@ public readonly record struct HistoryCardPlay(int PlayId, int CardInstanceId, st
             cardPlay.Resources,
             cardPlay.IsAutoPlay,
             cardPlay.PlayIndex,
-            cardPlay.PlayCount);
+            cardPlay.PlayCount,
+            card.Type,
+            card.IsDupe);
     }
 
     internal void WriteCanonical(CanonicalWriter w)
@@ -63,12 +206,20 @@ public readonly record struct HistoryCardPlay(int PlayId, int CardInstanceId, st
         w.WriteBool(IsAutoPlay);
         w.WriteInt32(PlayIndex);
         w.WriteInt32(PlayCount);
+        w.WriteInt32((int)CardType);
+        w.WriteBool(IsDupe);
     }
 }
 
 public readonly record struct HistoryDamageResult(int ReceiverId, ValueProp Props, int BlockedDamage, int UnblockedDamage, int OverkillDamage, bool WasBlockBroken, bool WasFullyBlocked, bool WasTargetKilled)
 {
     public int TotalDamage => BlockedDamage + UnblockedDamage;
+
+    public static HistoryDamageResult From(DamageResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new HistoryDamageResult(result.Receiver.CombatId, result.Props, result.BlockedDamage, result.UnblockedDamage, result.OverkillDamage, result.WasBlockBroken, result.WasFullyBlocked, result.WasTargetKilled);
+    }
 
     internal void WriteCanonical(CanonicalWriter w)
     {
@@ -84,11 +235,11 @@ public readonly record struct HistoryDamageResult(int ReceiverId, ValueProp Prop
     }
 }
 
-public readonly record struct BlockGainedEntry(HistoryStamp Stamp, int Amount, ValueProp Props, HistoryCardPlay? CardPlay) : IHistoryEntry
+public readonly record struct BlockGainedEntry(HistoryStamp Stamp, int Amount, ValueProp Props, HistoryCardPlay? CardPlay) : IHistoryEntry, IHistoryEntryCanonical
 {
     public int ReceiverId => Stamp.ActorId;
 
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.BlockGained);
         Stamp.WriteCanonical(w);
@@ -102,9 +253,9 @@ public readonly record struct BlockGainedEntry(HistoryStamp Stamp, int Amount, V
     }
 }
 
-public readonly record struct CardAfflictedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, string AfflictionId) : IHistoryEntry
+public readonly record struct CardAfflictedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, string AfflictionId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardAfflicted);
         Stamp.WriteCanonical(w);
@@ -114,9 +265,9 @@ public readonly record struct CardAfflictedEntry(HistoryStamp Stamp, int CardIns
     }
 }
 
-public readonly record struct CardDiscardedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId) : IHistoryEntry
+public readonly record struct CardDiscardedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardDiscarded);
         Stamp.WriteCanonical(w);
@@ -125,21 +276,22 @@ public readonly record struct CardDiscardedEntry(HistoryStamp Stamp, int CardIns
     }
 }
 
-public readonly record struct CardDrawnEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, bool FromHandDraw) : IHistoryEntry
+public readonly record struct CardDrawnEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, bool FromHandDraw, CardType CardType = CardType.None) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardDrawn);
         Stamp.WriteCanonical(w);
         w.WriteInt32(CardInstanceId);
         w.WriteString(CardId);
         w.WriteBool(FromHandDraw);
+        w.WriteInt32((int)CardType);
     }
 }
 
-public readonly record struct CardExhaustedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId) : IHistoryEntry
+public readonly record struct CardExhaustedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardExhausted);
         Stamp.WriteCanonical(w);
@@ -148,9 +300,9 @@ public readonly record struct CardExhaustedEntry(HistoryStamp Stamp, int CardIns
     }
 }
 
-public readonly record struct CardGeneratedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, int CreatorId) : IHistoryEntry
+public readonly record struct CardGeneratedEntry(HistoryStamp Stamp, int CardInstanceId, string CardId, int CreatorId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardGenerated);
         Stamp.WriteCanonical(w);
@@ -160,9 +312,9 @@ public readonly record struct CardGeneratedEntry(HistoryStamp Stamp, int CardIns
     }
 }
 
-public readonly record struct CardPlayFinishedEntry(HistoryStamp Stamp, HistoryCardPlay CardPlay, bool WasEthereal) : IHistoryEntry
+public readonly record struct CardPlayFinishedEntry(HistoryStamp Stamp, HistoryCardPlay CardPlay, bool WasEthereal) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardPlayFinished);
         Stamp.WriteCanonical(w);
@@ -171,9 +323,9 @@ public readonly record struct CardPlayFinishedEntry(HistoryStamp Stamp, HistoryC
     }
 }
 
-public readonly record struct CardPlayStartedEntry(HistoryStamp Stamp, HistoryCardPlay CardPlay) : IHistoryEntry
+public readonly record struct CardPlayStartedEntry(HistoryStamp Stamp, HistoryCardPlay CardPlay) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CardPlayStarted);
         Stamp.WriteCanonical(w);
@@ -181,25 +333,32 @@ public readonly record struct CardPlayStartedEntry(HistoryStamp Stamp, HistoryCa
     }
 }
 
-public readonly record struct CreatureAttackedEntry(HistoryStamp Stamp, IReadOnlyList<HistoryDamageResult> DamageResults) : IHistoryEntry
+public readonly record struct CreatureAttackedEntry(HistoryStamp Stamp, HistoryList<HistoryDamageResult> DamageResultList) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    public IReadOnlyList<HistoryDamageResult> DamageResults => DamageResultList;
+
+    public int AttackerId => Stamp.ActorId;
+
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.CreatureAttacked);
         Stamp.WriteCanonical(w);
-        w.WriteCount(DamageResults.Count);
-        for (int i = 0; i < DamageResults.Count; i++)
+        var results = DamageResultList;
+        w.WriteCount(results.Count);
+        for (int i = 0; i < results.Count; i++)
         {
-            DamageResults[i].WriteCanonical(w);
+            results[i].WriteCanonical(w);
         }
     }
 }
 
-public readonly record struct DamageReceivedEntry(HistoryStamp Stamp, HistoryDamageResult Result, int DealerId, int CardSourceInstanceId, string? CardSourceId) : IHistoryEntry
+public readonly record struct DamageReceivedEntry(HistoryStamp Stamp, HistoryDamageResult Result, int DealerId, int CardSourceInstanceId, string? CardSourceId, CombatSide DealerSide = CombatSide.None) : IHistoryEntry, IHistoryEntryCanonical
 {
     public int ReceiverId => Stamp.ActorId;
 
-    internal void WriteCanonical(CanonicalWriter w)
+    public bool HasDealer => DealerId != CombatHistory.NoId;
+
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.DamageReceived);
         Stamp.WriteCanonical(w);
@@ -207,12 +366,13 @@ public readonly record struct DamageReceivedEntry(HistoryStamp Stamp, HistoryDam
         w.WriteInt32(DealerId);
         w.WriteInt32(CardSourceInstanceId);
         w.WriteString(CardSourceId);
+        w.WriteInt32((int)DealerSide);
     }
 }
 
-public readonly record struct EnergySpentEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry
+public readonly record struct EnergySpentEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.EnergySpent);
         Stamp.WriteCanonical(w);
@@ -220,16 +380,20 @@ public readonly record struct EnergySpentEntry(HistoryStamp Stamp, int Amount) :
     }
 }
 
-public readonly record struct MonsterPerformedMoveEntry(HistoryStamp Stamp, string MonsterId, string MoveId, IReadOnlyList<int>? TargetIds) : IHistoryEntry
+public readonly record struct MonsterPerformedMoveEntry(HistoryStamp Stamp, string MonsterId, string MoveId, HistoryList<int>? TargetIdList) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    public IReadOnlyList<int>? TargetIds => TargetIdList;
+
+    public int MonsterCombatId => Stamp.ActorId;
+
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.MonsterPerformedMove);
         Stamp.WriteCanonical(w);
         w.WriteString(MonsterId);
         w.WriteString(MoveId);
-        w.WriteBool(TargetIds != null);
-        if (TargetIds is { } ids)
+        w.WriteBool(TargetIdList.HasValue);
+        if (TargetIdList is { } ids)
         {
             w.WriteCount(ids.Count);
             for (int i = 0; i < ids.Count; i++)
@@ -240,9 +404,9 @@ public readonly record struct MonsterPerformedMoveEntry(HistoryStamp Stamp, stri
     }
 }
 
-public readonly record struct OrbChanneledEntry(HistoryStamp Stamp, string OrbId) : IHistoryEntry
+public readonly record struct OrbChanneledEntry(HistoryStamp Stamp, string OrbId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.OrbChanneled);
         Stamp.WriteCanonical(w);
@@ -250,9 +414,9 @@ public readonly record struct OrbChanneledEntry(HistoryStamp Stamp, string OrbId
     }
 }
 
-public readonly record struct PotionUsedEntry(HistoryStamp Stamp, string PotionId, int TargetId) : IHistoryEntry
+public readonly record struct PotionUsedEntry(HistoryStamp Stamp, string PotionId, int TargetId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.PotionUsed);
         Stamp.WriteCanonical(w);
@@ -261,9 +425,9 @@ public readonly record struct PotionUsedEntry(HistoryStamp Stamp, string PotionI
     }
 }
 
-public readonly record struct PowerReceivedEntry(HistoryStamp Stamp, string PowerId, decimal Amount, int ApplierId) : IHistoryEntry
+public readonly record struct PowerReceivedEntry(HistoryStamp Stamp, string PowerId, decimal Amount, int ApplierId) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.PowerReceived);
         Stamp.WriteCanonical(w);
@@ -273,9 +437,9 @@ public readonly record struct PowerReceivedEntry(HistoryStamp Stamp, string Powe
     }
 }
 
-public readonly record struct StarsModifiedEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry
+public readonly record struct StarsModifiedEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.StarsModified);
         Stamp.WriteCanonical(w);
@@ -283,9 +447,9 @@ public readonly record struct StarsModifiedEntry(HistoryStamp Stamp, int Amount)
     }
 }
 
-public readonly record struct SummonedEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry
+public readonly record struct SummonedEntry(HistoryStamp Stamp, int Amount) : IHistoryEntry, IHistoryEntryCanonical
 {
-    internal void WriteCanonical(CanonicalWriter w)
+    void IHistoryEntryCanonical.WriteEntryCanonical(CanonicalWriter w)
     {
         w.WriteTag(HistoryCanonicalTags.Summoned);
         Stamp.WriteCanonical(w);
@@ -293,9 +457,38 @@ public readonly record struct SummonedEntry(HistoryStamp Stamp, int Amount) : IH
     }
 }
 
+public static class HistoryEntryExtensions
+{
+    public static bool HappenedThisTurn<T>(this T entry, CombatState? cs) where T : struct, IHistoryEntry => entry.Stamp.HappenedThisTurn(cs);
+
+    public static bool HappenedLastPlayerTurn<T>(this T entry, PlayerState player) where T : struct, IHistoryEntry => entry.Stamp.HappenedLastPlayerTurn(player);
+
+    public static bool IsByActor<T>(this T entry, CreatureState? actor) where T : struct, IHistoryEntry
+        => actor is not null && entry.Stamp.ActorId == actor.CombatId;
+}
+
 public sealed class CombatHistory : ICanonical
 {
     public const int NoId = -1;
+
+    private const int EntryTypeCount = 17;
+    private const int BlockGainedIndex = 0;
+    private const int CardAfflictedIndex = 1;
+    private const int CardDiscardedIndex = 2;
+    private const int CardDrawnIndex = 3;
+    private const int CardExhaustedIndex = 4;
+    private const int CardGeneratedIndex = 5;
+    private const int CardPlayFinishedIndex = 6;
+    private const int CardPlayStartedIndex = 7;
+    private const int CreatureAttackedIndex = 8;
+    private const int DamageReceivedIndex = 9;
+    private const int EnergySpentIndex = 10;
+    private const int MonsterPerformedMoveIndex = 11;
+    private const int OrbChanneledIndex = 12;
+    private const int PotionUsedIndex = 13;
+    private const int PowerReceivedIndex = 14;
+    private const int StarsModifiedIndex = 15;
+    private const int SummonedIndex = 16;
 
     private List<BlockGainedEntry>? _blockGained;
     private List<CardAfflictedEntry>? _cardAfflicted;
@@ -305,15 +498,20 @@ public sealed class CombatHistory : ICanonical
     private List<CardGeneratedEntry>? _cardGenerated;
     private List<CardPlayFinishedEntry>? _cardPlayFinished;
     private List<CardPlayStartedEntry>? _cardPlayStarted;
-    private List<CreatureAttackedEntry>? _creatureAttacked;
+    private List<CreatureAttackedRecord>? _creatureAttacked;
     private List<DamageReceivedEntry>? _damageReceived;
     private List<EnergySpentEntry>? _energySpent;
-    private List<MonsterPerformedMoveEntry>? _monsterPerformedMove;
+    private List<MonsterPerformedMoveRecord>? _monsterPerformedMove;
     private List<OrbChanneledEntry>? _orbChanneled;
     private List<PotionUsedEntry>? _potionUsed;
     private List<PowerReceivedEntry>? _powerReceived;
     private List<StarsModifiedEntry>? _starsModified;
     private List<SummonedEntry>? _summoned;
+    private List<HistoryDamageResult>? _damageResultStore;
+    private List<int>? _targetIdStore;
+    private DigestState[]? _digests;
+    private CreatureAttackedView? _creatureAttackedView;
+    private MonsterPerformedMoveView? _monsterPerformedMoveView;
     private int _count;
 
     public int Count => _count;
@@ -334,13 +532,13 @@ public sealed class CombatHistory : ICanonical
 
     public IReadOnlyList<CardPlayStartedEntry> CardPlayStartedEntries => (IReadOnlyList<CardPlayStartedEntry>?)_cardPlayStarted ?? Array.Empty<CardPlayStartedEntry>();
 
-    public IReadOnlyList<CreatureAttackedEntry> CreatureAttackedEntries => (IReadOnlyList<CreatureAttackedEntry>?)_creatureAttacked ?? Array.Empty<CreatureAttackedEntry>();
+    public IReadOnlyList<CreatureAttackedEntry> CreatureAttackedEntries => _creatureAttacked is null ? Array.Empty<CreatureAttackedEntry>() : _creatureAttackedView ??= new CreatureAttackedView(this);
 
     public IReadOnlyList<DamageReceivedEntry> DamageReceivedEntries => (IReadOnlyList<DamageReceivedEntry>?)_damageReceived ?? Array.Empty<DamageReceivedEntry>();
 
     public IReadOnlyList<EnergySpentEntry> EnergySpentEntries => (IReadOnlyList<EnergySpentEntry>?)_energySpent ?? Array.Empty<EnergySpentEntry>();
 
-    public IReadOnlyList<MonsterPerformedMoveEntry> MonsterPerformedMoveEntries => (IReadOnlyList<MonsterPerformedMoveEntry>?)_monsterPerformedMove ?? Array.Empty<MonsterPerformedMoveEntry>();
+    public IReadOnlyList<MonsterPerformedMoveEntry> MonsterPerformedMoveEntries => _monsterPerformedMove is null ? Array.Empty<MonsterPerformedMoveEntry>() : _monsterPerformedMoveView ??= new MonsterPerformedMoveView(this);
 
     public IReadOnlyList<OrbChanneledEntry> OrbChanneledEntries => (IReadOnlyList<OrbChanneledEntry>?)_orbChanneled ?? Array.Empty<OrbChanneledEntry>();
 
@@ -379,7 +577,8 @@ public sealed class CombatHistory : ICanonical
     public void AppendCardDrawn(CombatState cs, CardInstance card, bool fromHandDraw)
     {
         int actor = ActorOf(card);
-        Add(ref _cardDrawn, new CardDrawnEntry(NextStamp(cs, actor), card.InstanceId, card.Id, fromHandDraw));
+        var type = card.Type;
+        Add(ref _cardDrawn, new CardDrawnEntry(NextStamp(cs, actor), card.InstanceId, card.Id, fromHandDraw, type));
     }
 
     public void AppendCardExhausted(CombatState cs, CardInstance card)
@@ -412,20 +611,17 @@ public sealed class CombatHistory : ICanonical
     public void AppendCreatureAttacked(CombatState cs, CreatureState attacker, IReadOnlyList<DamageResult> damageResults)
     {
         int actor = attacker.CombatId;
-        int n = damageResults.Count;
-        var results = n == 0 ? Array.Empty<HistoryDamageResult>() : new HistoryDamageResult[n];
-        for (int i = 0; i < n; i++)
-        {
-            results[i] = ToHistory(damageResults[i]);
-        }
-        Add(ref _creatureAttacked, new CreatureAttackedEntry(NextStamp(cs, actor), results));
+        var (start, count) = StoreDamageResults(damageResults);
+        Add(ref _creatureAttacked, new CreatureAttackedRecord(NextStamp(cs, actor), start, count));
     }
 
     public void AppendDamageReceived(CombatState cs, CreatureState receiver, CreatureState? dealer, DamageResult result, CardInstance? cardSource)
     {
         int actor = receiver.CombatId;
-        var damage = ToHistory(result);
-        Add(ref _damageReceived, new DamageReceivedEntry(NextStamp(cs, actor), damage, dealer?.CombatId ?? NoId, cardSource?.InstanceId ?? NoId, cardSource?.Id));
+        var damage = HistoryDamageResult.From(result);
+        int dealerId = dealer?.CombatId ?? NoId;
+        var dealerSide = dealer?.Side ?? CombatSide.None;
+        Add(ref _damageReceived, new DamageReceivedEntry(NextStamp(cs, actor), damage, dealerId, cardSource?.InstanceId ?? NoId, cardSource?.Id, dealerSide));
     }
 
     public void AppendEnergySpent(CombatState cs, int amount, PlayerState player)
@@ -439,8 +635,8 @@ public sealed class CombatHistory : ICanonical
         int actor = monster.CombatId;
         string monsterId = monster.MonsterId;
         string moveId = move.Id;
-        var targetIds = TargetIdsOf(targets);
-        Add(ref _monsterPerformedMove, new MonsterPerformedMoveEntry(NextStamp(cs, actor), monsterId, moveId, targetIds));
+        var (start, count) = StoreTargetIds(targets);
+        Add(ref _monsterPerformedMove, new MonsterPerformedMoveRecord(NextStamp(cs, actor), monsterId, moveId, start, count));
     }
 
     public void AppendOrbChanneled(CombatState cs, OrbModel orb)
@@ -474,81 +670,6 @@ public sealed class CombatHistory : ICanonical
     {
         int actor = player.CombatId;
         Add(ref _summoned, new SummonedEntry(NextStamp(cs, actor), amount));
-    }
-
-    private HistoryStamp NextStamp(CombatState cs, int actorId)
-    {
-        var stamp = new HistoryStamp(_count, actorId, cs.RoundNumber, cs.CurrentSide, cs.Player.TurnNumber);
-        _count++;
-        return stamp;
-    }
-
-    private static void Add<T>(ref List<T>? list, T entry)
-    {
-        (list ??= new List<T>()).Add(entry);
-    }
-
-    private static int ActorOf(CardInstance card) => card.HasOwner ? card.Owner.CombatId : NoId;
-
-    private static HistoryDamageResult ToHistory(DamageResult result)
-        => new HistoryDamageResult(result.Receiver.CombatId, result.Props, result.BlockedDamage, result.UnblockedDamage, result.OverkillDamage, result.WasBlockBroken, result.WasFullyBlocked, result.WasTargetKilled);
-
-    private static IReadOnlyList<int>? TargetIdsOf(IEnumerable<CreatureState>? targets)
-    {
-        if (targets == null)
-        {
-            return null;
-        }
-        if (targets is IReadOnlyList<CreatureState> list)
-        {
-            int n = list.Count;
-            if (n == 0)
-            {
-                return Array.Empty<int>();
-            }
-            var ids = new int[n];
-            for (int i = 0; i < n; i++)
-            {
-                ids[i] = list[i].CombatId;
-            }
-            return ids;
-        }
-        var buffer = new List<int>();
-        foreach (var target in targets)
-        {
-            buffer.Add(target.CombatId);
-        }
-        return buffer.Count == 0 ? Array.Empty<int>() : buffer.ToArray();
-    }
-
-    private static bool HasKeywordInCombat(CombatState cs, CardInstance card, CardKeyword keyword)
-    {
-        var keywords = new HashSet<CardKeyword>();
-        uint mask = (uint)card.KeywordMask;
-        for (int k = 0; mask != 0; k++, mask >>= 1)
-        {
-            if ((mask & 1u) != 0)
-            {
-                keywords.Add((CardKeyword)k);
-            }
-        }
-        Hook.ModifyKeywordsInCombat(cs, card, keywords);
-        return keywords.Contains(keyword);
-    }
-
-    private static T[] CopyList<T>(IReadOnlyList<T> source)
-    {
-        int n = source.Count;
-        if (n == 0)
-        {
-            return Array.Empty<T>();
-        }
-        var copy = new T[n];
-        for (int i = 0; i < n; i++)
-        {
-            copy[i] = source[i];
-        }
-        return copy;
     }
 
     public IReadOnlyList<T> Entries<T>() where T : struct, IHistoryEntry
@@ -624,14 +745,198 @@ public sealed class CombatHistory : ICanonical
         throw new ArgumentException($"{typeof(T).Name} is not a combat history entry type.", nameof(T));
     }
 
+    public int CountOf<T>(Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        var entries = Entries<T>();
+        if (predicate == null)
+        {
+            return entries.Count;
+        }
+        int n = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (predicate(entries[i]))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    public bool AnyOf<T>(Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        var entries = Entries<T>();
+        if (predicate == null)
+        {
+            return entries.Count > 0;
+        }
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (predicate(entries[i]))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public int SumOf<T>(Func<T, int> selector, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        var entries = Entries<T>();
+        int sum = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (predicate == null || predicate(entry))
+            {
+                sum += selector(entry);
+            }
+        }
+        return sum;
+    }
+
+    public T? LastOf<T>(Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        var entries = Entries<T>();
+        for (int i = entries.Count - 1; i >= 0; i--)
+        {
+            var entry = entries[i];
+            if (predicate == null || predicate(entry))
+            {
+                return entry;
+            }
+        }
+        return null;
+    }
+
     public int CountThisTurn<T>(CombatState cs, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
-        => throw new NotImplementedException("CombatHistory.CountThisTurn: state agent (Combat.History/CombatHistoryEntry.cs:67-113)");
+    {
+        var entries = Entries<T>();
+        int n = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.HappenedThisTurn(cs) && (predicate == null || predicate(entry)))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    public bool AnyThisTurn<T>(CombatState cs, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        var entries = Entries<T>();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.HappenedThisTurn(cs) && (predicate == null || predicate(entry)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public int SumThisTurn<T>(CombatState cs, Func<T, int> selector, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        var entries = Entries<T>();
+        int sum = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.HappenedThisTurn(cs) && (predicate == null || predicate(entry)))
+            {
+                sum += selector(entry);
+            }
+        }
+        return sum;
+    }
 
     public int CountLastPlayerTurn<T>(PlayerState player, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
-        => throw new NotImplementedException("CombatHistory.CountLastPlayerTurn: state agent (Combat.History/CombatHistoryEntry.cs:115-125)");
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        var entries = Entries<T>();
+        int n = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.HappenedLastPlayerTurn(player) && (predicate == null || predicate(entry)))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    public bool AnyLastPlayerTurn<T>(PlayerState player, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        var entries = Entries<T>();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.HappenedLastPlayerTurn(player) && (predicate == null || predicate(entry)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public IEnumerable<T> ByActor<T>(int actorId) where T : struct, IHistoryEntry
-        => throw new NotImplementedException("CombatHistory.ByActor: state agent (Combat.History/CombatHistoryEntry.cs:15-20)");
+    {
+        var entries = Entries<T>();
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.ActorId == actorId)
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    public int CountByActor<T>(int actorId, Func<T, bool>? predicate = null) where T : struct, IHistoryEntry
+    {
+        var entries = Entries<T>();
+        int n = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry.Stamp.ActorId == actorId && (predicate == null || predicate(entry)))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    public void GetEntriesInOrder(List<IHistoryEntry> buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        buffer.Clear();
+        AddBoxed(buffer, _blockGained);
+        AddBoxed(buffer, _cardAfflicted);
+        AddBoxed(buffer, _cardDiscarded);
+        AddBoxed(buffer, _cardDrawn);
+        AddBoxed(buffer, _cardExhausted);
+        AddBoxed(buffer, _cardGenerated);
+        AddBoxed(buffer, _cardPlayFinished);
+        AddBoxed(buffer, _cardPlayStarted);
+        AddBoxed(buffer, _creatureAttacked is null ? null : CreatureAttackedEntries);
+        AddBoxed(buffer, _damageReceived);
+        AddBoxed(buffer, _energySpent);
+        AddBoxed(buffer, _monsterPerformedMove is null ? null : MonsterPerformedMoveEntries);
+        AddBoxed(buffer, _orbChanneled);
+        AddBoxed(buffer, _potionUsed);
+        AddBoxed(buffer, _powerReceived);
+        AddBoxed(buffer, _starsModified);
+        AddBoxed(buffer, _summoned);
+        buffer.Sort(static (a, b) => a.Stamp.Sequence.CompareTo(b.Stamp.Sequence));
+    }
 
     public void Clear()
     {
@@ -652,91 +957,41 @@ public sealed class CombatHistory : ICanonical
         _powerReceived?.Clear();
         _starsModified?.Clear();
         _summoned?.Clear();
+        _damageResultStore = null;
+        _targetIdStore = null;
+        _digests = null;
         _count = 0;
     }
 
     public CombatHistory DeepClone()
     {
         var clone = new CombatHistory { _count = _count };
-        if (_blockGained is { Count: > 0 } blockGained)
+        if (_count == 0)
         {
-            clone._blockGained = new List<BlockGainedEntry>(blockGained);
+            return clone;
         }
-        if (_cardAfflicted is { Count: > 0 } cardAfflicted)
+        clone._blockGained = CopyEntries(_blockGained);
+        clone._cardAfflicted = CopyEntries(_cardAfflicted);
+        clone._cardDiscarded = CopyEntries(_cardDiscarded);
+        clone._cardDrawn = CopyEntries(_cardDrawn);
+        clone._cardExhausted = CopyEntries(_cardExhausted);
+        clone._cardGenerated = CopyEntries(_cardGenerated);
+        clone._cardPlayFinished = CopyEntries(_cardPlayFinished);
+        clone._cardPlayStarted = CopyEntries(_cardPlayStarted);
+        clone._damageReceived = CopyEntries(_damageReceived);
+        clone._energySpent = CopyEntries(_energySpent);
+        clone._orbChanneled = CopyEntries(_orbChanneled);
+        clone._potionUsed = CopyEntries(_potionUsed);
+        clone._powerReceived = CopyEntries(_powerReceived);
+        clone._starsModified = CopyEntries(_starsModified);
+        clone._summoned = CopyEntries(_summoned);
+        clone._creatureAttacked = CopyEntries(_creatureAttacked);
+        clone._monsterPerformedMove = CopyEntries(_monsterPerformedMove);
+        clone._damageResultStore = CopyEntries(_damageResultStore);
+        clone._targetIdStore = CopyEntries(_targetIdStore);
+        if (_digests != null)
         {
-            clone._cardAfflicted = new List<CardAfflictedEntry>(cardAfflicted);
-        }
-        if (_cardDiscarded is { Count: > 0 } cardDiscarded)
-        {
-            clone._cardDiscarded = new List<CardDiscardedEntry>(cardDiscarded);
-        }
-        if (_cardDrawn is { Count: > 0 } cardDrawn)
-        {
-            clone._cardDrawn = new List<CardDrawnEntry>(cardDrawn);
-        }
-        if (_cardExhausted is { Count: > 0 } cardExhausted)
-        {
-            clone._cardExhausted = new List<CardExhaustedEntry>(cardExhausted);
-        }
-        if (_cardGenerated is { Count: > 0 } cardGenerated)
-        {
-            clone._cardGenerated = new List<CardGeneratedEntry>(cardGenerated);
-        }
-        if (_cardPlayFinished is { Count: > 0 } cardPlayFinished)
-        {
-            clone._cardPlayFinished = new List<CardPlayFinishedEntry>(cardPlayFinished);
-        }
-        if (_cardPlayStarted is { Count: > 0 } cardPlayStarted)
-        {
-            clone._cardPlayStarted = new List<CardPlayStartedEntry>(cardPlayStarted);
-        }
-        if (_creatureAttacked is { Count: > 0 } creatureAttacked)
-        {
-            var copy = new List<CreatureAttackedEntry>(creatureAttacked.Count);
-            for (int i = 0; i < creatureAttacked.Count; i++)
-            {
-                var entry = creatureAttacked[i];
-                copy.Add(entry with { DamageResults = CopyList(entry.DamageResults) });
-            }
-            clone._creatureAttacked = copy;
-        }
-        if (_damageReceived is { Count: > 0 } damageReceived)
-        {
-            clone._damageReceived = new List<DamageReceivedEntry>(damageReceived);
-        }
-        if (_energySpent is { Count: > 0 } energySpent)
-        {
-            clone._energySpent = new List<EnergySpentEntry>(energySpent);
-        }
-        if (_monsterPerformedMove is { Count: > 0 } monsterPerformedMove)
-        {
-            var copy = new List<MonsterPerformedMoveEntry>(monsterPerformedMove.Count);
-            for (int i = 0; i < monsterPerformedMove.Count; i++)
-            {
-                var entry = monsterPerformedMove[i];
-                copy.Add(entry.TargetIds is { } targetIds ? entry with { TargetIds = CopyList(targetIds) } : entry);
-            }
-            clone._monsterPerformedMove = copy;
-        }
-        if (_orbChanneled is { Count: > 0 } orbChanneled)
-        {
-            clone._orbChanneled = new List<OrbChanneledEntry>(orbChanneled);
-        }
-        if (_potionUsed is { Count: > 0 } potionUsed)
-        {
-            clone._potionUsed = new List<PotionUsedEntry>(potionUsed);
-        }
-        if (_powerReceived is { Count: > 0 } powerReceived)
-        {
-            clone._powerReceived = new List<PowerReceivedEntry>(powerReceived);
-        }
-        if (_starsModified is { Count: > 0 } starsModified)
-        {
-            clone._starsModified = new List<StarsModifiedEntry>(starsModified);
-        }
-        if (_summoned is { Count: > 0 } summoned)
-        {
-            clone._summoned = new List<SummonedEntry>(summoned);
+            clone._digests = (DigestState[])_digests.Clone();
         }
         return clone;
     }
@@ -745,192 +1000,267 @@ public sealed class CombatHistory : ICanonical
     {
         w.WriteTag(HistoryCanonicalTags.History);
         w.WriteInt32(_count);
-        WriteList(w, _blockGained);
-        WriteList(w, _cardAfflicted);
-        WriteList(w, _cardDiscarded);
-        WriteList(w, _cardDrawn);
-        WriteList(w, _cardExhausted);
-        WriteList(w, _cardGenerated);
-        WriteList(w, _cardPlayFinished);
-        WriteList(w, _cardPlayStarted);
-        WriteList(w, _creatureAttacked);
-        WriteList(w, _damageReceived);
-        WriteList(w, _energySpent);
-        WriteList(w, _monsterPerformedMove);
-        WriteList(w, _orbChanneled);
-        WriteList(w, _potionUsed);
-        WriteList(w, _powerReceived);
-        WriteList(w, _starsModified);
-        WriteList(w, _summoned);
+        WriteDigest(w, _blockGained, BlockGainedIndex);
+        WriteDigest(w, _cardAfflicted, CardAfflictedIndex);
+        WriteDigest(w, _cardDiscarded, CardDiscardedIndex);
+        WriteDigest(w, _cardDrawn, CardDrawnIndex);
+        WriteDigest(w, _cardExhausted, CardExhaustedIndex);
+        WriteDigest(w, _cardGenerated, CardGeneratedIndex);
+        WriteDigest(w, _cardPlayFinished, CardPlayFinishedIndex);
+        WriteDigest(w, _cardPlayStarted, CardPlayStartedIndex);
+        WriteDigest(w, _creatureAttacked is null ? null : CreatureAttackedEntries, CreatureAttackedIndex);
+        WriteDigest(w, _damageReceived, DamageReceivedIndex);
+        WriteDigest(w, _energySpent, EnergySpentIndex);
+        WriteDigest(w, _monsterPerformedMove is null ? null : MonsterPerformedMoveEntries, MonsterPerformedMoveIndex);
+        WriteDigest(w, _orbChanneled, OrbChanneledIndex);
+        WriteDigest(w, _potionUsed, PotionUsedIndex);
+        WriteDigest(w, _powerReceived, PowerReceivedIndex);
+        WriteDigest(w, _starsModified, StarsModifiedIndex);
+        WriteDigest(w, _summoned, SummonedIndex);
     }
 
-    private static void WriteList(CanonicalWriter w, List<BlockGainedEntry>? list)
+    public void WriteEntriesCanonical(CanonicalWriter w)
+    {
+        w.WriteTag(HistoryCanonicalTags.History);
+        w.WriteInt32(_count);
+        WriteEntries(w, _blockGained);
+        WriteEntries(w, _cardAfflicted);
+        WriteEntries(w, _cardDiscarded);
+        WriteEntries(w, _cardDrawn);
+        WriteEntries(w, _cardExhausted);
+        WriteEntries(w, _cardGenerated);
+        WriteEntries(w, _cardPlayFinished);
+        WriteEntries(w, _cardPlayStarted);
+        WriteEntries(w, _creatureAttacked is null ? null : CreatureAttackedEntries);
+        WriteEntries(w, _damageReceived);
+        WriteEntries(w, _energySpent);
+        WriteEntries(w, _monsterPerformedMove is null ? null : MonsterPerformedMoveEntries);
+        WriteEntries(w, _orbChanneled);
+        WriteEntries(w, _potionUsed);
+        WriteEntries(w, _powerReceived);
+        WriteEntries(w, _starsModified);
+        WriteEntries(w, _summoned);
+    }
+
+    private HistoryStamp NextStamp(CombatState cs, int actorId)
+    {
+        var stamp = new HistoryStamp(_count, actorId, cs.RoundNumber, cs.CurrentSide, cs.Player.TurnNumber);
+        _count++;
+        return stamp;
+    }
+
+    private static void Add<T>(ref List<T>? list, T entry)
+    {
+        (list ??= new List<T>()).Add(entry);
+    }
+
+    private static int ActorOf(CardInstance card) => card.HasOwner ? card.Owner.CombatId : NoId;
+
+    private (int Start, int Count) StoreDamageResults(IReadOnlyList<DamageResult> damageResults)
+    {
+        int n = damageResults.Count;
+        if (n == 0)
+        {
+            return (0, 0);
+        }
+        var store = _damageResultStore ??= new List<HistoryDamageResult>();
+        int start = store.Count;
+        try
+        {
+            for (int i = 0; i < n; i++)
+            {
+                store.Add(HistoryDamageResult.From(damageResults[i]));
+            }
+        }
+        catch
+        {
+            store.RemoveRange(start, store.Count - start);
+            throw;
+        }
+        return (start, n);
+    }
+
+    private (int Start, int Count) StoreTargetIds(IEnumerable<CreatureState>? targets)
+    {
+        if (targets == null)
+        {
+            return (0, MonsterPerformedMoveRecord.NoTargets);
+        }
+        var store = _targetIdStore ??= new List<int>();
+        int start = store.Count;
+        try
+        {
+            foreach (var target in targets)
+            {
+                store.Add(target.CombatId);
+            }
+        }
+        catch
+        {
+            store.RemoveRange(start, store.Count - start);
+            throw;
+        }
+        return (start, store.Count - start);
+    }
+
+    private CreatureAttackedEntry Materialize(CreatureAttackedRecord record)
+        => new(record.Stamp, record.ResultCount == 0 ? default : new HistoryList<HistoryDamageResult>(_damageResultStore!, record.ResultStart, record.ResultCount));
+
+    private MonsterPerformedMoveEntry Materialize(MonsterPerformedMoveRecord record)
+    {
+        HistoryList<int>? targets = record.TargetCount switch
+        {
+            MonsterPerformedMoveRecord.NoTargets => null,
+            0 => default(HistoryList<int>),
+            _ => new HistoryList<int>(_targetIdStore!, record.TargetStart, record.TargetCount)
+        };
+        return new MonsterPerformedMoveEntry(record.Stamp, record.MonsterId, record.MoveId, targets);
+    }
+
+    private static bool HasKeywordInCombat(CombatState cs, CardInstance card, CardKeyword keyword)
+    {
+        var keywords = new HashSet<CardKeyword>();
+        uint mask = (uint)card.KeywordMask;
+        for (int k = 0; mask != 0; k++, mask >>= 1)
+        {
+            if ((mask & 1u) != 0)
+            {
+                keywords.Add((CardKeyword)k);
+            }
+        }
+        Hook.ModifyKeywordsInCombat(cs, card, keywords);
+        return keywords.Contains(keyword);
+    }
+
+    private static List<T>? CopyEntries<T>(List<T>? source)
+    {
+        if (source is not { Count: > 0 })
+        {
+            return null;
+        }
+        return new List<T>(source);
+    }
+
+    private static void AddBoxed<T>(List<IHistoryEntry> buffer, IReadOnlyList<T>? list) where T : struct, IHistoryEntry
+    {
+        if (list == null)
+        {
+            return;
+        }
+        for (int i = 0; i < list.Count; i++)
+        {
+            buffer.Add(list[i]);
+        }
+    }
+
+    private void WriteDigest<T>(CanonicalWriter w, IReadOnlyList<T>? list, int typeIndex) where T : struct, IHistoryEntryCanonical
+    {
+        int n = list?.Count ?? 0;
+        w.WriteCount(n);
+        if (n == 0)
+        {
+            return;
+        }
+        var digests = _digests ??= new DigestState[EntryTypeCount];
+        var state = digests[typeIndex];
+        if (state.Folded > n)
+        {
+            state = default;
+        }
+        if (state.Folded < n)
+        {
+            ulong digest = state.Digest;
+            int start = w.Length;
+            for (int i = state.Folded; i < n; i++)
+            {
+                list![i].WriteEntryCanonical(w);
+                digest = DeterministicHash.XxHash64(w.WrittenSince(start), unchecked((long)digest));
+                w.Truncate(start);
+            }
+            state = new DigestState(n, digest);
+            digests[typeIndex] = state;
+        }
+        w.WriteUInt64(state.Digest);
+    }
+
+    private static void WriteEntries<T>(CanonicalWriter w, IReadOnlyList<T>? list) where T : struct, IHistoryEntryCanonical
     {
         int n = list?.Count ?? 0;
         w.WriteCount(n);
         for (int i = 0; i < n; i++)
         {
-            list![i].WriteCanonical(w);
+            list![i].WriteEntryCanonical(w);
         }
     }
 
-    private static void WriteList(CanonicalWriter w, List<CardAfflictedEntry>? list)
+    private readonly record struct DigestState(int Folded, ulong Digest);
+
+    private readonly record struct CreatureAttackedRecord(HistoryStamp Stamp, int ResultStart, int ResultCount);
+
+    private readonly record struct MonsterPerformedMoveRecord(HistoryStamp Stamp, string MonsterId, string MoveId, int TargetStart, int TargetCount)
     {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
+        public const int NoTargets = -1;
     }
 
-    private static void WriteList(CanonicalWriter w, List<CardDiscardedEntry>? list)
+    private sealed class CreatureAttackedView : IReadOnlyList<CreatureAttackedEntry>
     {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
+        private readonly CombatHistory _history;
+
+        public CreatureAttackedView(CombatHistory history)
         {
-            list![i].WriteCanonical(w);
+            _history = history;
         }
+
+        public int Count => _history._creatureAttacked?.Count ?? 0;
+
+        public CreatureAttackedEntry this[int index]
+        {
+            get
+            {
+                var records = _history._creatureAttacked ?? throw new ArgumentOutOfRangeException(nameof(index));
+                return _history.Materialize(records[index]);
+            }
+        }
+
+        public IEnumerator<CreatureAttackedEntry> GetEnumerator()
+        {
+            for (int i = 0; i < Count; i++)
+            {
+                yield return this[i];
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
-    private static void WriteList(CanonicalWriter w, List<CardDrawnEntry>? list)
+    private sealed class MonsterPerformedMoveView : IReadOnlyList<MonsterPerformedMoveEntry>
     {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
+        private readonly CombatHistory _history;
 
-    private static void WriteList(CanonicalWriter w, List<CardExhaustedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
+        public MonsterPerformedMoveView(CombatHistory history)
         {
-            list![i].WriteCanonical(w);
+            _history = history;
         }
-    }
 
-    private static void WriteList(CanonicalWriter w, List<CardGeneratedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
+        public int Count => _history._monsterPerformedMove?.Count ?? 0;
 
-    private static void WriteList(CanonicalWriter w, List<CardPlayFinishedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
+        public MonsterPerformedMoveEntry this[int index]
         {
-            list![i].WriteCanonical(w);
+            get
+            {
+                var records = _history._monsterPerformedMove ?? throw new ArgumentOutOfRangeException(nameof(index));
+                return _history.Materialize(records[index]);
+            }
         }
-    }
 
-    private static void WriteList(CanonicalWriter w, List<CardPlayStartedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
+        public IEnumerator<MonsterPerformedMoveEntry> GetEnumerator()
         {
-            list![i].WriteCanonical(w);
+            for (int i = 0; i < Count; i++)
+            {
+                yield return this[i];
+            }
         }
-    }
 
-    private static void WriteList(CanonicalWriter w, List<CreatureAttackedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<DamageReceivedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<EnergySpentEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<MonsterPerformedMoveEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<OrbChanneledEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<PotionUsedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<PowerReceivedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<StarsModifiedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
-    }
-
-    private static void WriteList(CanonicalWriter w, List<SummonedEntry>? list)
-    {
-        int n = list?.Count ?? 0;
-        w.WriteCount(n);
-        for (int i = 0; i < n; i++)
-        {
-            list![i].WriteCanonical(w);
-        }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

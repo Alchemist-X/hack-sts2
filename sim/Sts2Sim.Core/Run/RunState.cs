@@ -5,6 +5,8 @@ public sealed partial class RunState : ICanonical
 {
     private const int DefaultPlayerCapacity = 1;
 
+    private CombatState? _combat;
+
     private RunState(List<PlayerState> players, RunRngSet rng, UnlockProfile unlocks, int ascension, List<ModifierModel> modifiers, ChoiceRuntime choice, FidelityLog fidelity)
     {
         Players = players;
@@ -18,7 +20,18 @@ public sealed partial class RunState : ICanonical
 
     public List<PlayerState> Players { get; }
 
-    public CombatState? Combat { get; set; }
+    public CombatState? Combat
+    {
+        get => _combat;
+        set
+        {
+            if (value != null && !ReferenceEquals(value.Run, this))
+            {
+                throw new InvalidOperationException("A combat can be attached only to the run it was built on.");
+            }
+            _combat = value;
+        }
+    }
 
     public RunRngSet Rng { get; }
 

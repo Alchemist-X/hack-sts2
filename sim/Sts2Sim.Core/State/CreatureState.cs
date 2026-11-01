@@ -139,6 +139,8 @@ public sealed class PlayerState : CreatureState
 {
     public const int DefaultPotionSlotCount = 3;
 
+    public const string OstyMonsterId = "OSTY";
+
     private CardPile[]? _allPiles;
 
     public PlayerState(int combatId, string characterId, int currentHp, int maxHp, int maxEnergy)
@@ -280,6 +282,44 @@ public sealed class PlayerState : CreatureState
 
     public bool HasRelic(string relicId) => GetRelic(relicId) != null;
 
+    public T? GetRelic<T>() where T : class
+    {
+        var relics = Relics;
+        for (int i = 0; i < relics.Count; i++)
+        {
+            if (relics[i] is T t)
+            {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    public IEnumerable<PotionModel> Potions
+    {
+        get
+        {
+            var slots = PotionSlots;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i] is { } potion)
+                {
+                    yield return potion;
+                }
+            }
+        }
+    }
+
+    public PotionModel? GetPotionAtSlotIndex(int index)
+    {
+        var slots = PotionSlots;
+        if (index < 0 || index >= slots.Length)
+        {
+            throw new IndexOutOfRangeException($"Index {index} is not a valid potion slot index! Player has {slots.Length} potion slots");
+        }
+        return slots[index];
+    }
+
     public void AddRelicInternal(RelicModel relic, int index = -1)
     {
         ArgumentNullException.ThrowIfNull(relic);
@@ -368,35 +408,37 @@ public sealed class PlayerState : CreatureState
 
     private void SetMaxPotionCountInternal(int newMaxPotionCount)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(newMaxPotionCount);
         var slots = PotionSlots;
-        if (newMaxPotionCount == slots.Length)
+        if (newMaxPotionCount > slots.Length)
+        {
+            var grown = new PotionModel?[newMaxPotionCount];
+            Array.Copy(slots, grown, slots.Length);
+            PotionSlots = grown;
+            return;
+        }
+        if (newMaxPotionCount >= slots.Length)
         {
             return;
         }
-        if (newMaxPotionCount < slots.Length)
+        var working = new List<PotionModel?>(slots);
+        for (int num = working.Count - 1; num >= newMaxPotionCount; num--)
         {
-            for (int i = slots.Length - 1; i >= newMaxPotionCount; i--)
+            var potion = working[num];
+            if (potion != null)
             {
-                var potion = slots[i];
-                if (potion is null)
+                int num2 = working.IndexOf(null);
+                if (num2 < newMaxPotionCount)
                 {
-                    continue;
+                    working[num2] = potion;
                 }
-                int open = Array.IndexOf(slots, null, 0, i);
-                if (open < 0)
+                else
                 {
-                    throw new InvalidOperationException($"Cannot remove potion slot {i}: every slot is full, and the game indexes slot -1 here (Entities.Players/Player.cs:1004-1007).");
-                }
-                if (open < newMaxPotionCount)
-                {
-                    slots[open] = potion;
+                    working[working.IndexOf(potion)] = null;
                 }
             }
+            working.RemoveAt(num);
         }
-        var resized = new PotionModel?[newMaxPotionCount];
-        Array.Copy(slots, resized, Math.Min(slots.Length, newMaxPotionCount));
-        PotionSlots = resized;
+        PotionSlots = working.ToArray();
     }
 
     public CardPile GetPile(PileType type) => type switch
@@ -420,6 +462,80 @@ public sealed class PlayerState : CreatureState
             }
         }
         return null;
+    }
+
+    public void AddPetInternal(MonsterState pet)
+    {
+        ArgumentNullException.ThrowIfNull(pet);
+        if (PetIds.Contains(pet.CombatId))
+        {
+            return;
+        }
+        if (pet.PetOwnerId != CombatId)
+        {
+            pet.SetPetOwner(this);
+        }
+        PetIds.Add(pet.CombatId);
+    }
+
+    public void OnPetDied(CombatState cs, MonsterState pet)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(pet);
+        if (!PetIds.Contains(pet.CombatId))
+        {
+            throw new InvalidOperationException($"Player does not have pet {pet.MonsterId} (combat id {pet.CombatId})");
+        }
+        if (Hook.ShouldCreatureBeRemovedFromCombatAfterDeath(cs, pet))
+        {
+            PetIds.Remove(pet.CombatId);
+        }
+    }
+
+    public MonsterState? GetPet(CombatState cs, string monsterId)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        var pets = PetIds;
+        for (int i = 0; i < pets.Count; i++)
+        {
+            if (cs.GetCreatureById(pets[i]) is MonsterState pet && pet.MonsterId == monsterId)
+            {
+                return pet;
+            }
+        }
+        return null;
+    }
+
+    public MonsterState? GetOsty(CombatState cs) => GetPet(cs, OstyMonsterId);
+
+    public bool IsOstyAlive(CombatState cs) => GetOsty(cs)?.IsAlive ?? false;
+
+    public bool IsOstyMissing(CombatState cs) => !IsOstyAlive(cs);
+
+    public void ResetCombatState()
+    {
+        Hand.ClearInternal();
+        DrawPile.ClearInternal();
+        DiscardPile.ClearInternal();
+        ExhaustPile.ClearInternal();
+        PlayPile.ClearInternal();
+        PetIds.Clear();
+        TurnNumber = 1;
+        Phase = PlayerTurnPhase.None;
+        Energy = 0;
+        Stars = 0;
+        OrbQueue.Clear();
+        OrbQueue.AddCapacity(BaseOrbSlotCount);
+    }
+
+    public void CombatStateAfterCombatEnd()
+    {
+        var piles = AllPiles;
+        for (int i = 0; i < piles.Count; i++)
+        {
+            piles[i].ClearInternal();
+        }
+        PetIds.Clear();
     }
 
     public void LoseStars(decimal amount)
@@ -539,7 +655,12 @@ public sealed class MonsterState : CreatureState
     private MonsterAiRuntime? _ai;
 
     public MonsterState(int combatId, MonsterDef def, int currentHp, int maxHp, MonsterExtraState? extra, string? slotName)
-        : base(combatId, CombatSide.Enemy, currentHp, maxHp)
+        : this(combatId, def, CombatSide.Enemy, currentHp, maxHp, extra, slotName)
+    {
+    }
+
+    public MonsterState(int combatId, MonsterDef def, CombatSide side, int currentHp, int maxHp, MonsterExtraState? extra, string? slotName)
+        : base(combatId, side, currentHp, maxHp)
     {
         Def = def;
         Extra = extra;
@@ -589,7 +710,19 @@ public sealed class MonsterState : CreatureState
 
     public int PetOwnerId { get; set; } = PowerModel.NoCreature;
 
+    public bool IsPet => PetOwnerId != PowerModel.NoCreature;
+
     public AbstractModel? Listener { get; set; }
+
+    public void SetPetOwner(PlayerState owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (PetOwnerId != PowerModel.NoCreature)
+        {
+            throw new InvalidOperationException($"Pet {MonsterId} (combat id {CombatId}) already has an owner.");
+        }
+        PetOwnerId = owner.CombatId;
+    }
 
     public bool IsStunned => _ai?.NextMove?.Id == StunnedMoveId;
 
@@ -618,6 +751,6 @@ public sealed class MonsterState : CreatureState
         ai?.WriteCanonical(w);
         w.WriteTag(StateCanonicalTags.MonsterKernel);
         w.WriteInt32(PetOwnerId);
-        w.WriteBool(Listener != null);
+        ListenerCanonical.Write(w, Listener);
     }
 }
