@@ -58,8 +58,6 @@ public sealed class CrimsonMantle : CardDef
 
     private static void IncrementSelfDamage(PowerModel power)
     {
-        var method = power.GetType().GetMethod(IncrementSelfDamageMember, System.Type.EmptyTypes)
-            ?? throw new NotImplementedException("W3 gap: CrimsonMantlePower.IncrementSelfDamage");
-        method.Invoke(power, null);
+        ((CrimsonMantlePower)power).IncrementSelfDamage();
     }
 }

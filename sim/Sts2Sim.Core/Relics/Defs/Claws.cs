@@ -1,6 +1,5 @@
 namespace Sts2Sim.Core.Relics;
 
-[SimExclude]
 public sealed class Claws : RelicModel
 {
     public const string RelicId = "CLAWS";
@@ -24,11 +23,9 @@ public sealed class Claws : RelicModel
             RequireManualConfirmation = true
         };
         var enumerable = RelicDeckPromptsR91.FromDeckForTransformation(rs, Owner, prefs, RelicId);
-        var transformations = enumerable.Select(original => (Original: original, Replacement: CreateMaulFromOriginal(rs, original))).ToList();
-        if (transformations.Count > 0)
-        {
-            throw new NotImplementedException("W3 gap: CardCmd.Transform of deck cards outside a combat (Commands/CardCmd.cs:2052-2065)");
-        }
+        var transformations = enumerable.Select(original => new CardTransformation(null, original, CreateMaulFromOriginal(rs, original))).ToList();
+        var rng = Owner.PlayerRng ?? throw new InvalidOperationException("Claws.AfterObtained needs the player's rng set.");
+        CardCmd.Transform(rs, transformations, rng.Transformations);
     }
 
     private CardInstance CreateMaulFromOriginal(RunState rs, CardInstance original)

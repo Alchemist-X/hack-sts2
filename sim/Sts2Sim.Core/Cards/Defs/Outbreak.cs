@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace Sts2Sim.Core.Cards;
 
 public sealed class Outbreak : CardDef
@@ -49,9 +47,7 @@ public sealed class Outbreak : CardDef
 
     private static void TriggerPoison(CombatState cs, PowerModel power)
     {
-        var method = power.GetType().GetMethod(PoisonTriggerMethod, BindingFlags.Public | BindingFlags.Instance, new[] { typeof(CombatState) })
-            ?? throw new NotImplementedException("W3 gap: POISON_POWER.Trigger(CombatState)");
-        method.Invoke(power, new object[] { cs });
+        ((PoisonPower)power).Trigger(cs);
     }
 
     private static List<CreatureState> HittableEnemies(CombatState cs)

@@ -540,7 +540,11 @@ public static class CardPileCmd
             for (int i = 0; i < n; i++)
             {
                 var card = results[i].CardAdded;
-                if (!Hook.ShouldAddToDeck(rs, card, out var preventer))
+                if (Hook.ShouldAddToDeck(rs, card, out var preventer))
+                {
+                    card.FloorAddedToDeck = rs.TotalFloor;
+                }
+                else
                 {
                     preventer!.AfterAddToDeckPrevented(rs, card);
                     results[i] = results[i] with { Success = false };

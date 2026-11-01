@@ -393,7 +393,11 @@ public static class CardKernelTests
         var loose = Make(cs, StrikeIronclad.CardId);
         Assert.Throws<InvalidOperationException>(() => CardCmd.Transform(cs, new[] { new CardTransformation(cs, loose, Make(cs, Soul.CardId)) }, null), "a card in no pile cannot be transformed");
         var deckStrike = MakeDeck(cs, StrikeIronclad.CardId);
-        Assert.Throws<NotImplementedException>(() => CardCmd.TransformTo(cs, deckStrike, Soul.CardId), "deck transforms are run-layer work");
+        var result = CardCmd.TransformTo(cs, deckStrike, Soul.CardId);
+        Assert.True(result is { Success: true }, "a deck card transforms in place in the deck");
+        Assert.False(cs.Player.Deck.Contains(deckStrike), "the original left the deck");
+        Assert.True(cs.Player.Deck.Contains(result!.Value.CardAdded), "the replacement joined the deck");
+        Assert.Equal(cs.Run.TotalFloor, result.Value.CardAdded.FloorAddedToDeck ?? -1, "deck transforms stamp FloorAddedToDeck");
     }
 
     public static void Test_CardKernel_EnchantmentBaseVirtualsAreIdentityAndCanEnchantFollowsTheGame()

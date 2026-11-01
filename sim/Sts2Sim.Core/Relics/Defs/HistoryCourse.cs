@@ -26,14 +26,21 @@ public sealed class HistoryCourse : RelicModel
         {
             return;
         }
-        var card = FindCard(Owner, last.Value.CardInstanceId)
-            ?? throw new NotImplementedException("W3 gap: HISTORY_COURSE needs the CardInstance of a played card that has left every combat pile (the game keeps the CardModel reference in CardPlayFinishedEntry)");
+        var card = FindCard(Owner, last.Value.CardInstanceId);
+        if (card == null)
+        {
+            cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, LeftEveryPileSite);
+            card = cs.CreateCard(CardRegistry.Get(last.Value.CardId), Owner);
+        }
         CardCmd.AutoPlay(cs, CreateDupe(cs, card), null);
     }
+
+    public const string LeftEveryPileSite = "HISTORY_COURSE: the last attack played has left every combat pile; the game dupes the CardModel kept in CardPlayFinishedEntry (Models.Relics/HistoryCourse.cs:58-62), the sim dupes a fresh card of the same id";
 
     private static CardInstance CreateDupe(CombatState cs, CardInstance card)
     {
         var dupe = cs.CloneCard(card);
+        dupe.IsClone = true;
         dupe.ExhaustOnNextPlay = false;
         dupe.IsDupe = true;
         dupe.RemoveKeyword(CardKeyword.Exhaust);

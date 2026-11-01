@@ -74,6 +74,52 @@ public static partial class CardFactory
         return CreateTransformReplacement(scope, original, filtered, rng);
     }
 
+    public static CardInstance CreateRandomCardForTransform(RunState rs, CardInstance original, bool isInCombat, Rng rng)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(original);
+        if (rs.Combat is { } combat && original.IsInCombat(combat))
+        {
+            return CreateRandomCardForTransform(combat, original, isInCombat, rng);
+        }
+        var options = GetDefaultTransformationOptions(rs, original, isInCombat);
+        return CreateRunTransformReplacement(rs, original, options, rng);
+    }
+
+    public static CardInstance CreateRandomCardForTransform(RunState rs, CardInstance original, IEnumerable<CardDef> options, bool isInCombat, Rng rng)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(original);
+        if (rs.Combat is { } combat && original.IsInCombat(combat))
+        {
+            return CreateRandomCardForTransform(combat, original, options, isInCombat, rng);
+        }
+        var filtered = GetFilteredTransformationOptions(rs, original, options, isInCombat);
+        return CreateRunTransformReplacement(rs, original, filtered, rng);
+    }
+
+    private static CardInstance CreateRunTransformReplacement(RunState rs, CardInstance original, IReadOnlyList<CardDef> options, Rng rng)
+    {
+        var ported = new List<CardDef>(options.Count);
+        for (int i = 0; i < options.Count; i++)
+        {
+            if (options[i] is not UnportedCardDef)
+            {
+                ported.Add(options[i]);
+            }
+        }
+        if (ported.Count < options.Count)
+        {
+            rs.Fidelity.Record(FidelityFlag.ApproximatedRule, $"CardFactory.CreateRandomCardForTransform (run scope): {options.Count - ported.Count} of {options.Count} options are not ported; the draw runs over the ported ones");
+        }
+        if (ported.Count == 0)
+        {
+            throw new NotImplementedException($"CardFactory.CreateRandomCardForTransform: none of the {options.Count} options for {original.Id} is ported");
+        }
+        var pick = rng.NextItem((IReadOnlyList<CardDef>)ported)!;
+        return CreateRunCard(rs, pick, original.Owner);
+    }
+
     public static IReadOnlyList<CardDef> GetFilteredTransformationOptions(RunState rs, CardInstance original, IEnumerable<CardDef> originalOptions, bool isInCombat)
     {
         ArgumentNullException.ThrowIfNull(rs);

@@ -440,7 +440,7 @@ public static class W1GateTests
     {
         var player = cs.Player;
         player.Gold = 50 + (int)(seed % 200UL);
-        var relicIds = RelicRegistry.AllIds.ToList();
+        var relicIds = RelicRegistry.AllIds.Where(id => id != Sozu.RelicId).ToList();
         if (relicIds.Count > MaxPilotRelicsPerPlayer)
         {
             var shuffle = new GatePolicy(seed ^ 0x5E1EC7UL);

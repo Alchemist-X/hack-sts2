@@ -1,6 +1,5 @@
 namespace Sts2Sim.Core.Relics;
 
-[SimExclude]
 public sealed class PrecariousShears : RelicModel
 {
     public const string RelicId = "PRECARIOUS_SHEARS";
@@ -25,10 +24,11 @@ public sealed class PrecariousShears : RelicModel
         {
             CardPileCmd.RemoveFromDeck(rs, current);
         }
-        if (rs.Combat == null)
+        if (rs.Combat != null)
         {
-            throw new NotImplementedException("W3 gap: CreatureCmd.Damage outside a combat (Commands/CreatureCmd.cs Damage with a null combat state)");
+            CreatureCmd.Damage(rs.Combat, Owner, DynamicVars.Damage, null, null, null);
+            return;
         }
-        CreatureCmd.Damage(rs.Combat, Owner, DynamicVars.Damage, null, null, null);
+        CreatureCmd.Damage(rs, Owner, DynamicVars.Damage.BaseValue, DynamicVars.Damage.Props);
     }
 }

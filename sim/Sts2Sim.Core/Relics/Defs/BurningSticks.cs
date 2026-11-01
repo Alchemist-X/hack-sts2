@@ -32,8 +32,7 @@ public sealed class BurningSticks : RelicModel
         {
             return;
         }
-        var clone = cs.CloneCard(card);
-        clone.ExhaustOnNextPlay = false;
+        var clone = card.CreateClone(cs);
         CardPileCmd.AddGeneratedCardToCombat(cs, clone, PileType.Hand, Owner);
         Status = RelicStatus.Normal;
         WasUsedThisCombat = true;

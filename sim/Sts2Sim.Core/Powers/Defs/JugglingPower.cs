@@ -54,9 +54,7 @@ public sealed class JugglingPower : PowerModel
         {
             throw new InvalidOperationException("Cannot create a clone of a card that is not in a combat pile.");
         }
-        var clone = cs.CloneCard(card);
-        clone.ExhaustOnNextPlay = false;
-        return clone;
+        return card.CreateClone(cs);
     }
 
     protected override void WriteExtraCanonical(CanonicalWriter w)

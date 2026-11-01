@@ -4,6 +4,8 @@ namespace Sts2Sim.Core.Cards;
 
 public sealed class SpoilsMap : CardDef
 {
+    public const string QuestOverlaySite = "SPOILS_MAP: AfterMapGenerated MapPoint.AddQuest (Models.Cards/SpoilsMap.cs:195-198) is a map-UI marker; the sim's ActMap quest overlay is copy-on-write and RunLoop.GenerateMap assigns rs.Map after the hook, so the marker is not added";
+
     public const string CardId = "SPOILS_MAP";
     public const int Cost = -1;
     public const int BaseGold = 600;
@@ -126,7 +128,7 @@ public sealed class SpoilsMap : CardDef
             }
             if (State.SpoilsCoord.HasValue && map.HasPoint(State.SpoilsCoord.Value))
             {
-                throw new NotImplementedException("W3 gap: SpoilsMap.AfterMapGenerated MapPoint.AddQuest needs a mutable quest overlay on the map passed to Hook.AfterMapGenerated (ActMap.WithQuestAdded returns a copy; Models.Cards/SpoilsMap.cs:195-198)");
+                rs.Fidelity.Record(FidelityFlag.ApproximatedRule, QuestOverlaySite);
             }
         }
 

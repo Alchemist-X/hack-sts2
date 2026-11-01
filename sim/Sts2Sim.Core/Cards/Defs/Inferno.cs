@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace Sts2Sim.Core.Cards;
 
 public sealed class Inferno : CardDef
@@ -29,9 +27,7 @@ public sealed class Inferno : CardDef
         var power = ApplyById(cs, InfernoPowerId, owner, card.Vars[InfernoVarName].BaseValue, owner, card);
         if (power != null)
         {
-            var method = power.GetType().GetMethod(IncrementSelfDamageMethod, BindingFlags.Public | BindingFlags.Instance, System.Type.EmptyTypes)
-                ?? throw new NotImplementedException("W3 gap: INFERNO_POWER.IncrementSelfDamage()");
-            method.Invoke(power, null);
+            ((InfernoPower)power).IncrementSelfDamage();
         }
     }
 

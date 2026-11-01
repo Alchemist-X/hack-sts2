@@ -9,9 +9,38 @@ public abstract class BattlewornDummyEventEncounter : EncounterDef
     {
     }
 
+    public override EncounterExtraState CreateExtraState() => new Extra();
+
+    public static bool IsBattlewornDummyEncounter(CombatState cs)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        return cs.EncounterExtra is Extra;
+    }
+
     public static bool GetRanOutOfTime(CombatState cs)
-        => throw new NotImplementedException("W3 gap: mutable encounter instance state (BattlewornDummyEventEncounter.RanOutOfTime; EncounterDef is shared and immutable)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        return cs.GetEncounterExtra<Extra>()?.RanOutOfTime ?? false;
+    }
 
     public static void SetRanOutOfTime(CombatState cs, bool value)
-        => throw new NotImplementedException("W3 gap: mutable encounter instance state (BattlewornDummyEventEncounter.RanOutOfTime; EncounterDef is shared and immutable)");
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        var extra = cs.GetEncounterExtra<Extra>()
+            ?? throw new InvalidOperationException($"BattlewornDummyEventEncounter.RanOutOfTime: combat {cs.EncounterId} carries no battleworn-dummy encounter state.");
+        extra.RanOutOfTime = value;
+    }
+
+    public sealed class Extra : EncounterExtraState
+    {
+        public bool RanOutOfTime { get; set; }
+
+        public override EncounterExtraState DeepClone() => new Extra { RanOutOfTime = RanOutOfTime };
+
+        public override void WriteCanonical(CanonicalWriter w)
+        {
+            w.WriteTag(MonsterCanonicalTags.BattlewornDummyEventEncounterExtra);
+            w.WriteBool(RanOutOfTime);
+        }
+    }
 }

@@ -23,7 +23,7 @@ public sealed class Anger : CardDef
         ArgumentNullException.ThrowIfNull(target);
         var anger = play.Card;
         DamageCmd.Attack(cs, anger.Vars.Damage.BaseValue).FromCard(anger, play).Targeting(target).Execute();
-        var card = cs.CloneCard(anger);
+        var card = anger.CreateClone(cs);
         card.ExhaustOnNextPlay = false;
         CardPileCmd.AddGeneratedCardToCombat(cs, card, PileType.Discard, anger.Owner);
     }

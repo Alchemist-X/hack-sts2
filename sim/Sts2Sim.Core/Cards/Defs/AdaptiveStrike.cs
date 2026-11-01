@@ -30,7 +30,7 @@ public sealed class AdaptiveStrike : CardDef
         ArgumentNullException.ThrowIfNull(target);
         var adaptiveStrike = play.Card;
         DamageCmd.Attack(cs, adaptiveStrike.Vars.Damage.BaseValue).FromCard(adaptiveStrike, play).Targeting(target).Execute();
-        var cardModel = cs.CloneCard(adaptiveStrike);
+        var cardModel = adaptiveStrike.CreateClone(cs);
         cardModel.ExhaustOnNextPlay = false;
         cardModel.EnergyCost.SetThisCombat(CloneCostThisCombat);
         CardPileCmd.AddGeneratedCardToCombat(cs, cardModel, PileType.Discard, adaptiveStrike.Owner);

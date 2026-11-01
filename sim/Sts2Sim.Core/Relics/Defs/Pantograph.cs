@@ -14,8 +14,23 @@ public sealed class Pantograph : RelicModel
     };
 
     public override void AfterRoomEntered(RunState rs, AbstractRoom room)
-        => throw new NotImplementedException("W3 run-layer: Pantograph.AfterRoomEntered (RunState.Map.BossMapPoint.parents, CurrentMapPoint)");
+    {
+        if (Owner.IsDead)
+        {
+            return;
+        }
+        var map = rs.Map;
+        var coord = RoomStack.CurrentMapCoord(rs);
+        var current = coord is { } c ? map?.GetPoint(c) : null;
+        bool flag = map != null && current != null && map.BossMapPoint.parents.Contains(current);
+        Status = flag ? RelicStatus.Active : RelicStatus.Normal;
+    }
 
     public override void BeforeCombatStart(RunState rs)
-        => throw new NotImplementedException("W3 run-layer: Pantograph.BeforeCombatStart (RunState.CurrentRoom.RoomType == Boss)");
+    {
+        if (!Owner.IsDead && RoomStack.CurrentRoom(rs)?.RoomType == RoomType.Boss)
+        {
+            CreatureCmd.Heal(rs, Owner, DynamicVars.Heal.BaseValue);
+        }
+    }
 }

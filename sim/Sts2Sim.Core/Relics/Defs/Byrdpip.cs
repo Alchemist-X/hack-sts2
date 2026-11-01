@@ -33,7 +33,8 @@ public sealed class Byrdpip : RelicModel
         {
             if (cs == null)
             {
-                throw new NotImplementedException("W3 run-layer: Byrdpip.AfterObtained deck transform outside combat");
+                CardCmd.TransformTo(rs, egg, ByrdSwoopCardId);
+                continue;
             }
             CardCmd.TransformTo(cs, egg, ByrdSwoopCardId);
         }

@@ -99,6 +99,13 @@ public abstract class MonsterDef
 
 public sealed record MonsterSpawn(MonsterDef Def, string? SlotName = null, Action<MonsterState>? Configure = null);
 
+public abstract class EncounterExtraState : ICanonical
+{
+    public abstract EncounterExtraState DeepClone();
+
+    public abstract void WriteCanonical(CanonicalWriter w);
+}
+
 public abstract class EncounterDef
 {
     protected EncounterDef(string id)
@@ -134,6 +141,11 @@ public abstract class EncounterDef
     public bool SharesTagsWith(EncounterDef? other) => other != null && Tags.Intersect(other.Tags).Any();
 
     public virtual IReadOnlyList<string> AllPossibleMonsters => Array.Empty<string>();
+
+    public virtual EncounterExtraState? CreateExtraState() => null;
+
+    public virtual float CalculateGoldProportion(CombatState cs)
+        => 1f - (float)cs.EscapedCreatures.Count / (float)cs.SpawnedEnemyIds.Count;
 
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 

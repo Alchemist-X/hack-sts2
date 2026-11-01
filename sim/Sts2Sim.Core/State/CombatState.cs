@@ -24,6 +24,9 @@ public sealed class CombatState : ICanonical
         _allies = new List<CreatureState>(DefaultAllyCapacity) { player };
         History = new CombatHistory();
         PlayersTakingExtraTurn = new List<int>();
+        PlayersReadyToEndTurn = new List<int>();
+        EscapedCreatures = new List<CreatureState>();
+        SpawnedEnemyIds = new List<string>();
         RoundNumber = 1;
         CurrentSide = CombatSide.Player;
         NextCreatureId = player.CombatId + 1;
@@ -39,6 +42,15 @@ public sealed class CombatState : ICanonical
         _allies = allies;
         History = source.History.DeepClone();
         PlayersTakingExtraTurn = new List<int>(source.PlayersTakingExtraTurn);
+        PlayersReadyToEndTurn = new List<int>(source.PlayersReadyToEndTurn);
+        var escaped = source.EscapedCreatures;
+        EscapedCreatures = new List<CreatureState>(escaped.Count);
+        for (int i = 0; i < escaped.Count; i++)
+        {
+            EscapedCreatures.Add(escaped[i].DeepCloneCreature());
+        }
+        SpawnedEnemyIds = new List<string>(source.SpawnedEnemyIds);
+        EncounterExtra = source.EncounterExtra?.DeepClone();
         CardOrPotionEffectDepth = source.CardOrPotionEffectDepth;
         RoundNumber = source.RoundNumber;
         CurrentSide = source.CurrentSide;
@@ -70,6 +82,14 @@ public sealed class CombatState : ICanonical
     public int CardOrPotionEffectDepth { get; set; }
 
     public List<int> PlayersTakingExtraTurn { get; }
+
+    public List<int> PlayersReadyToEndTurn { get; }
+
+    public List<CreatureState> EscapedCreatures { get; }
+
+    public List<string> SpawnedEnemyIds { get; }
+
+    public EncounterExtraState? EncounterExtra { get; set; }
 
     public int RoundNumber { get; set; }
 
@@ -289,6 +309,49 @@ public sealed class CombatState : ICanonical
         Monsters.Insert(Math.Min(index, Monsters.Count - 1), creature);
     }
 
+    public void CreatureEscaped(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        EscapedCreatures.Add(creature);
+        RemoveCreature(creature);
+    }
+
+    public void OnCreatureSpawned(MonsterState monster)
+    {
+        ArgumentNullException.ThrowIfNull(monster);
+        if (monster.Side != CombatSide.Enemy)
+        {
+            return;
+        }
+        string id = monster.Def.Id;
+        if (!SpawnedEnemyIds.Contains(id))
+        {
+            SpawnedEnemyIds.Add(id);
+        }
+    }
+
+    public bool IsPlayerReadyToEndTurn(PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return PlayersReadyToEndTurn.Contains(player.CombatId);
+    }
+
+    public bool AllPlayersReadyToEndTurn()
+    {
+        int players = 0;
+        var allies = _allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (allies[i] is PlayerState)
+            {
+                players++;
+            }
+        }
+        return PlayersReadyToEndTurn.Count == players;
+    }
+
+    public T? GetEncounterExtra<T>() where T : EncounterExtraState => EncounterExtra as T;
+
     public void InvokeDiedEvent(CreatureState creature)
     {
         ArgumentNullException.ThrowIfNull(creature);
@@ -409,6 +472,28 @@ public sealed class CombatState : ICanonical
             w.WriteInt32(extraTurns[i]);
         }
         History.WriteCanonical(w);
+        w.WriteTag(StateCanonicalTags.CombatEncounter);
+        var ready = PlayersReadyToEndTurn;
+        w.WriteCount(ready.Count);
+        for (int i = 0; i < ready.Count; i++)
+        {
+            w.WriteInt32(ready[i]);
+        }
+        var escapedCreatures = EscapedCreatures;
+        w.WriteCount(escapedCreatures.Count);
+        for (int i = 0; i < escapedCreatures.Count; i++)
+        {
+            escapedCreatures[i].WriteCanonical(w);
+        }
+        var spawned = SpawnedEnemyIds;
+        w.WriteCount(spawned.Count);
+        for (int i = 0; i < spawned.Count; i++)
+        {
+            w.WriteString(spawned[i]);
+        }
+        var extra = EncounterExtra;
+        w.WriteBool(extra != null);
+        extra?.WriteCanonical(w);
     }
 
     private int IndexOfMonster(CreatureState creature)

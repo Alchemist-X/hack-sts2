@@ -1,6 +1,5 @@
 namespace Sts2Sim.Core.Relics;
 
-[SimExclude]
 public sealed class NewLeaf : RelicModel
 {
     public const string RelicId = "NEW_LEAF";
@@ -20,9 +19,9 @@ public sealed class NewLeaf : RelicModel
     {
         var prefs = new CardSelectorPrefs(CardSelectorPrefs.TransformSelectionPrompt, DynamicVars.Cards.IntValue);
         var val2 = RelicDeckPromptsR91.FromDeckForTransformation(rs, Owner, prefs, RelicId).ToList();
-        if (val2.Count > 0)
+        foreach (var current in val2)
         {
-            throw new NotImplementedException("W3 gap: CardCmd.TransformToRandom of a deck card outside a combat (Commands/CardCmd.cs:2052-2065, CardFactory.CreateRandomCardForTransform isInCombat:false)");
+            CardCmd.TransformToRandom(rs, current, rs.Rng.Niche);
         }
     }
 }

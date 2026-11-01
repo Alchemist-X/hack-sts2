@@ -45,10 +45,9 @@ public sealed class LizardTail : RelicModel
 
     public override void AfterPreventingDeath(RunState rs, CreatureState creature)
     {
-        var cs = rs.Combat ?? throw new NotImplementedException("W3 run-layer: LizardTail.AfterPreventingDeath out of combat (CreatureCmd.Heal without a combat)");
         WasUsed = true;
         decimal amount = Math.Max(1m, creature.MaxHp * (DynamicVars.Heal.BaseValue / 100m));
-        CreatureCmd.Heal(cs, creature, amount);
+        CreatureCmd.Heal(rs, creature, amount);
     }
 
     protected override void WriteExtraCanonical(CanonicalWriter w)

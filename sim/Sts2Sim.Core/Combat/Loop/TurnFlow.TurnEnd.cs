@@ -8,6 +8,7 @@ public static partial class CombatLoop
         {
             return false;
         }
+        PlayerCmd.SetReadyToEndTurn(cs, cs.Player, canBackOut: false);
         EndPlayerTurnPhaseOne(cs);
         if (!cs.IsInProgress)
         {

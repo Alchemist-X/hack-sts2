@@ -45,5 +45,8 @@ public sealed class BoomingConch : RelicModel
     }
 
     private static bool IsCurrentRoomElite(CombatState cs)
-        => throw new NotImplementedException("W3 gap: RunState.CurrentRoom.RoomType (Models.Relics/BoomingConch.cs ModifyHandDraw / AfterSideTurnStart)");
+    {
+        var currentRoom = RoomStack.CurrentRoom(cs.Run);
+        return currentRoom != null && currentRoom.RoomType == RoomType.Elite;
+    }
 }

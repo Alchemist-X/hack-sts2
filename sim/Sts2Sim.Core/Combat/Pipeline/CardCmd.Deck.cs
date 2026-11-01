@@ -53,19 +53,6 @@ public static partial class CardCmd
         {
             throw new InvalidOperationException("Can't transform " + original.Id + " because it has no pile.");
         }
-        var owner = original.Owner;
-        if (!ReferenceEquals(replacement.HasOwner ? replacement.Owner : null, owner))
-        {
-            throw new InvalidOperationException($"Attempting to transform card {original.Id} to {replacement.Id}, but the replacement has a different owner!");
-        }
-        original.RemoveFromCurrentPile(null);
-        List<AbstractModel>? modifying = null;
-        var added = Hook.ModifyCardBeingAddedToDeck(rs, replacement, ref modifying);
-        owner.Deck.Add(added);
-        Hook.AfterCardChangedPiles(rs, null, added, PileType.Deck, null);
-        original.Def.AfterTransformedFrom(null, original);
-        added.Def.AfterTransformedTo(null, added);
-        original.RemoveFromState(null);
-        return new CardPileAddResult(true, added, null, PileType.Deck, modifying);
+        return TransformSingle(rs, original, replacement);
     }
 }

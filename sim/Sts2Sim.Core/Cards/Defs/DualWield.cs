@@ -32,7 +32,7 @@ public sealed class DualWield : CardDef
         }
         for (int i = 0; i < card.Vars.Cards.IntValue; i++)
         {
-            var clone = cs.CloneCard(selection);
+            var clone = selection.CreateClone(cs);
             clone.ExhaustOnNextPlay = false;
             CardPileCmd.AddGeneratedCardToCombat(cs, clone, PileType.Hand, owner);
         }
