@@ -6,6 +6,8 @@ public sealed partial class RunState : ICanonical
 
     private CombatState? _combat;
 
+    private int _currentActIndex;
+
     private RunState(List<PlayerState> players, RunRngSet rng, UnlockProfile unlocks, int ascension, List<ModifierModel> modifiers, ChoiceRuntime choice, FidelityLog fidelity)
     {
         Players = players;
@@ -52,7 +54,20 @@ public sealed partial class RunState : ICanonical
 
     public List<ActInstance> Acts { get; private set; } = new();
 
-    public int CurrentActIndex { get; set; }
+    public int CurrentActIndex
+    {
+        get => _currentActIndex;
+        set
+        {
+            if (_currentActIndex != value)
+            {
+                VisitedMapCoords.Clear();
+                ActFloor = 0;
+                NextRoomId = 0;
+                _currentActIndex = value;
+            }
+        }
+    }
 
     public int ActFloor { get; set; }
 
@@ -79,6 +94,143 @@ public sealed partial class RunState : ICanonical
     public ActInstance Act => Acts[CurrentActIndex];
 
     public int TotalFloor => MapPointHistory.Count;
+
+    public const string NeowEpochId = "NEOW_EPOCH";
+
+    public MapCoord? CurrentMapCoord => VisitedMapCoords.Count != 0 ? VisitedMapCoords[^1] : null;
+
+    public MapPointHistoryEntry? CurrentMapPointHistoryEntry => MapPointHistory.Count != 0 ? MapPointHistory[^1] : null;
+
+    public bool HasAscension(AscensionLevel level) => Ascension >= (int)level;
+
+    public int GetPlayerSlotIndex(PlayerState player) => Players.IndexOf(player);
+
+    public static RunState CreateForNewRun(PlayerState player, IReadOnlyList<ActModel> acts, int ascension, string seed, UnlockProfile? unlocks = null)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(acts);
+        ArgumentNullException.ThrowIfNull(seed);
+        var rng = new RunRngSet(seed);
+        var players = new List<PlayerState>(DefaultPlayerCapacity) { player };
+        var rs = new RunState(players, rng, unlocks ?? UnlockProfile.All, ascension, new List<ModifierModel>(), new ChoiceRuntime(), new FidelityLog());
+        for (int i = 0; i < acts.Count; i++)
+        {
+            rs.Acts.Add(new ActInstance(acts[i]));
+        }
+        rs.Odds = new RunOddsSet(rng.UnknownMapPoint);
+        rs.SharedRelicGrabBag = new RelicGrabBag(refreshAllowed: true);
+        for (int i = 0; i < players.Count; i++)
+        {
+            rs.InitializeSeed(players[i], seed);
+        }
+        return rs;
+    }
+
+    public void InitializeSeed(PlayerState player, string seed)
+    {
+        var playerRng = PlayerRngSet.ForPlayer(seed, GetPlayerSlotIndex(player));
+        player.PlayerRng = playerRng;
+        player.PlayerOdds = new PlayerOddsSet(playerRng, Ascension);
+    }
+
+    public void SetStartedWithNeowFlag() => ExtraFields.StartedWithNeow = Unlocks.IsEpochRevealed(NeowEpochId);
+
+    public void ApplyAscensionEffects(PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (player.AscensionEffectsApplied)
+        {
+            return;
+        }
+        if (HasAscension(AscensionLevel.TightBelt))
+        {
+            player.SubtractFromMaxPotionCount(1);
+        }
+        if (HasAscension(AscensionLevel.AscendersBane))
+        {
+            var def = CardRegistry.Get(AscendersBane.CardId);
+            var ascendersBane = new CardInstance(def, AllocateCardInstanceId());
+            ascendersBane.AttachTo(player);
+            def.AfterCreated(ascendersBane);
+            player.Deck.Add(ascendersBane);
+        }
+        player.AscensionEffectsApplied = true;
+    }
+
+    public void GenerateRooms()
+    {
+        var upFront = Rng.UpFront;
+        var sharedAncients = ActModel.GetSharedAncientIds(Unlocks).UnstableShuffle(upFront);
+        for (int a = 1; a < Acts.Count; a++)
+        {
+            int num = upFront.NextInt(sharedAncients.Count + 1);
+            var subset = sharedAncients.Take(num).ToList();
+            sharedAncients = sharedAncients.Except(subset, StringComparer.Ordinal).ToList();
+            Acts[a].SetSharedAncientSubset(subset);
+        }
+        bool isMultiplayer = Players.Count > 1;
+        for (int i = 0; i < Acts.Count; i++)
+        {
+            var act = Acts[i];
+            act.GenerateRooms(upFront, Unlocks, isMultiplayer);
+            act.ApplyDiscoveryOrderModifications(Unlocks);
+            if (i == Acts.Count - 1 && HasAscension(AscensionLevel.DoubleBoss))
+            {
+                var bossId = act.BossEncounter.Id;
+                act.SetSecondBossEncounter(upFront.NextItem(act.Def.AllBossEncounters.Where(e => e.Id != bossId)));
+            }
+        }
+    }
+
+    public bool AddVisitedMapCoord(MapCoord coord)
+    {
+        if (VisitedMapCoords.Contains(coord))
+        {
+            return false;
+        }
+        VisitedMapCoords.Add(coord);
+        NextRoomId = 0;
+        return true;
+    }
+
+    public void ClearVisitedMapCoords() => VisitedMapCoords.Clear();
+
+    public void AddVisitedEvent(EventModel eventModel)
+    {
+        ArgumentNullException.ThrowIfNull(eventModel);
+        VisitedEventIds.Add(eventModel.Id);
+    }
+
+    public MapPointHistoryEntry AppendToMapPointHistory(MapPointType mapPointType, RoomType initialRoomType, string? roomModelId)
+    {
+        var entry = new MapPointHistoryEntry(mapPointType) { ActIndex = CurrentActIndex };
+        entry.Rooms.Add(new MapPointRoomHistoryEntry(initialRoomType, roomModelId));
+        MapPointHistory.Add(entry);
+        return entry;
+    }
+
+    public MapPointHistoryEntry? GetHistoryEntryFor(int actIndex, MapCoord? coord)
+    {
+        if (!coord.HasValue)
+        {
+            return null;
+        }
+        int row = coord.Value.row;
+        int seen = 0;
+        var history = MapPointHistory;
+        for (int i = 0; i < history.Count; i++)
+        {
+            if (history[i].ActIndex == actIndex)
+            {
+                if (seen == row)
+                {
+                    return history[i];
+                }
+                seen++;
+            }
+        }
+        return null;
+    }
 
     public static RunState CreateStandalone(PlayerState player, RunRngSet rng, int ascension, UnlockProfile? unlocks = null)
     {
@@ -138,7 +290,7 @@ public sealed partial class RunState : ICanonical
         {
             clone.Acts.Add(acts[i].DeepClone());
         }
-        clone.CurrentActIndex = CurrentActIndex;
+        clone._currentActIndex = _currentActIndex;
         clone.ActFloor = ActFloor;
         clone.NextRoomId = NextRoomId;
         clone.Map = Map;

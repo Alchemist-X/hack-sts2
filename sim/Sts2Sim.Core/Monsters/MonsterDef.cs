@@ -110,6 +110,31 @@ public abstract class EncounterDef
 
     public virtual bool IsWeak => false;
 
+    public virtual RoomType RoomType => RoomType.Monster;
+
+    public virtual IReadOnlyList<string> Tags => Array.Empty<string>();
+
+    public bool SharesTagsWith(EncounterDef? other)
+    {
+        if (other == null)
+        {
+            return false;
+        }
+        var tags = Tags;
+        var otherTags = other.Tags;
+        for (int i = 0; i < tags.Count; i++)
+        {
+            for (int j = 0; j < otherTags.Count; j++)
+            {
+                if (string.Equals(tags[i], otherTags[j], StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public virtual IReadOnlyList<string> Slots => Array.Empty<string>();
 
     public abstract IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs);

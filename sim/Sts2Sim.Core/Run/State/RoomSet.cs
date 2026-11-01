@@ -26,19 +26,106 @@ public sealed class RoomSet : ICanonical
 
     public bool HasSecondBoss => SecondBoss != null;
 
-    public string NextEventId => throw new NotImplementedException("W2 R1: RoomSet.NextEvent");
+    public string NextEventId => events[eventsVisited % events.Count];
 
-    public EncounterDef NextNormalEncounter => throw new NotImplementedException("W2 R1: RoomSet.NextNormalEncounter");
+    public EncounterDef NextNormalEncounter => normalEncounters[normalEncountersVisited % normalEncounters.Count];
 
-    public EncounterDef NextEliteEncounter => throw new NotImplementedException("W2 R1: RoomSet.NextEliteEncounter");
+    public EncounterDef NextEliteEncounter => eliteEncounters[eliteEncountersVisited % eliteEncounters.Count];
 
-    public EncounterDef NextBossEncounter => throw new NotImplementedException("W2 R1: RoomSet.NextBossEncounter");
+    public EncounterDef NextBossEncounter
+    {
+        get
+        {
+            if (bossEncountersVisited != 0 && SecondBoss != null)
+            {
+                return SecondBoss;
+            }
+            return Boss ?? throw new InvalidOperationException("RoomSet.Boss not set! You must call GenerateRooms");
+        }
+    }
 
-    public void MarkVisited(RoomType roomType) => throw new NotImplementedException("W2 R1: RoomSet.MarkVisited");
+    public void MarkVisited(RoomType roomType)
+    {
+        switch (roomType)
+        {
+            case RoomType.Monster:
+                normalEncountersVisited++;
+                break;
+            case RoomType.Elite:
+                eliteEncountersVisited++;
+                break;
+            case RoomType.Event:
+                eventsVisited++;
+                break;
+            case RoomType.Boss:
+                bossEncountersVisited++;
+                break;
+        }
+    }
 
-    public void EnsureNextEventIsValid(RunState runState) => throw new NotImplementedException("W2 R1: RoomSet.EnsureNextEventIsValid");
+    public void EnsureNextEventIsValid(RunState runState)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+        for (int i = 0; i < events.Count; i++)
+        {
+            var id = NextEventId;
+            if (IsEventAllowed(runState, id) && !runState.VisitedEventIds.Contains(id))
+            {
+                return;
+            }
+            eventsVisited++;
+        }
+    }
 
-    public RoomSet DeepClone() => throw new NotImplementedException("W2 R1: RoomSet.DeepClone");
+    private static bool IsEventAllowed(RunState runState, string eventId)
+        => !EventRegistry.Models.Contains(eventId) || EventRegistry.Create(eventId).IsAllowed(runState);
 
-    public void WriteCanonical(CanonicalWriter w) => throw new NotImplementedException("W2 R1: RoomSet.WriteCanonical");
+    public RoomSet DeepClone()
+    {
+        var clone = new RoomSet
+        {
+            eventsVisited = eventsVisited,
+            normalEncountersVisited = normalEncountersVisited,
+            eliteEncountersVisited = eliteEncountersVisited,
+            bossEncountersVisited = bossEncountersVisited,
+            AncientId = AncientId,
+            Boss = Boss,
+            SecondBoss = SecondBoss
+        };
+        clone.events.AddRange(events);
+        clone.normalEncounters.AddRange(normalEncounters);
+        clone.eliteEncounters.AddRange(eliteEncounters);
+        return clone;
+    }
+
+    public void WriteCanonical(CanonicalWriter w)
+    {
+        w.WriteTag(RunStateCanonicalTags.RoomSet);
+        w.WriteCount(events.Count);
+        for (int i = 0; i < events.Count; i++)
+        {
+            w.WriteString(events[i]);
+        }
+        w.WriteInt32(eventsVisited);
+        WriteEncounters(w, normalEncounters);
+        w.WriteInt32(normalEncountersVisited);
+        WriteEncounters(w, eliteEncounters);
+        w.WriteInt32(eliteEncountersVisited);
+        w.WriteInt32(bossEncountersVisited);
+        w.WriteString(AncientId);
+        w.WriteString(Boss?.Id);
+        w.WriteString(SecondBoss?.Id);
+    }
+
+    private static void WriteEncounters(CanonicalWriter w, List<EncounterDef> encounters)
+    {
+        w.WriteCount(encounters.Count);
+        for (int i = 0; i < encounters.Count; i++)
+        {
+            w.WriteString(encounters[i].Id);
+        }
+    }
 }
