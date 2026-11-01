@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Sts2Sim.Core.Cards;
 
 public sealed class Greed : CardDef
@@ -5,7 +7,7 @@ public sealed class Greed : CardDef
     public const string CardId = "GREED";
     public const int Cost = -1;
 
-    private static readonly CardKeyword[] Keywords = { CardKeyword.Eternal, CardKeyword.Unplayable };
+    private static readonly ReadOnlyCollection<CardKeyword> Keywords = Array.AsReadOnly(new[] { CardKeyword.Eternal, CardKeyword.Unplayable });
 
     public Greed()
         : base(CardId, Cost, CardType.Curse, CardRarity.Curse, TargetType.None)

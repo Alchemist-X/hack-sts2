@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Sts2Sim.Core.Cards;
 
 public sealed class StrikeIronclad : CardDef
@@ -8,7 +10,7 @@ public sealed class StrikeIronclad : CardDef
     public const decimal DamageUpgrade = 3m;
     public const decimal UpgradedDamage = BaseDamage + DamageUpgrade;
 
-    private static readonly CardTag[] Tags = { CardTag.Strike };
+    private static readonly ReadOnlyCollection<CardTag> Tags = Array.AsReadOnly(new[] { CardTag.Strike });
 
     public StrikeIronclad()
         : base(CardId, Cost, CardType.Attack, CardRarity.Basic, TargetType.AnyEnemy)
