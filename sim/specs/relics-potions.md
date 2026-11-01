@@ -398,3 +398,14 @@ attack, PaperPhrog / PaperKrane guards (including a melted PaperPhrog), Gambling
 | Diff gate (`Sts2Sim.Diff -c Release`, P0 bundles) | 4/4 bundles agree, 69/69 decisions, outcome 4/4, 0 soft diffs |
 | F1 / F4 / F5 | pass with the 7 registered relics and 6 registered potions equipped (clone, canonical and invariants); potion and relic hooks do not fire in this tree (listeners: hooks track) |
 | Bench (`Sts2Sim.Bench -c Release`, `NIBBITS_WEAK`), base `263810d` (`git archive`) and this tree interleaved, 3 runs each, medians | machine under heavy load from parallel tracks (load average 34-80): base `Clone()` 15.96 µs, `StateHash()` 5.76 µs, 93 487 decisions/s; this tree 13.66 µs, 6.61 µs, 97 096 decisions/s; same playout sink hash `283861034CA36B40`. The bench combat holds no relic or potion, so this track adds no work on its path; the absolute numbers are load (the integration bench recorded 2.65 µs / 1.13 µs / 668k on a quiet machine). Gates: ≥ 300 decisions/s and `Clone()` ≤ 1 ms hold |
+
+## 16. Trial merge with the other round-3 tracks available at commit time
+
+A read-only merge (`git merge-tree`, no ref changed) of this commit with `w1-r3/pipeline` (`5420a55`),
+`w1-r3/character-mechanics` and `w1-r3/monsters-kernel`, built from `git archive` in the scratchpad: no textual
+conflict, 0 warnings, 0 errors. `-- RelicPotion`: 47 passed, 11 PENDING; `PaperPhrogAndPaperKraneThroughVulnerableAndWeak`
+runs for real against the pipeline's re-ported Vulnerable / Weak (its `MultiplierModifiers.FirstVulnerableRelic` /
+`FirstWeakRelic` take the first relic implementing the interface, melted or not, which equals `GetRelic<T>` while only
+these two relics implement them; §11 item 3). The merged suite's 4 failures are outside this track: the two content
+gates, `EndToEndTests` hash pins moved by the history sites of the other tracks (scaffold §16.6 item 11) and
+`Test_Pipeline_AddMonsterDefSpawnsThroughTheSpawner` (pipeline with monsters-kernel's spawner).
