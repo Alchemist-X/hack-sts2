@@ -18,3 +18,11 @@ Decompile paths drop the `MegaCrit.Sts2.Core.` prefix. Design: `docs/sim-port/de
 - `RunImporter.FromSave` — `CheckSupported` → reasons, or `RunSim.FromSave` (R6). Contract for R6: `RunSim.FromSave` = `RunImporter.ImportState` + entry per `ImportedRun.EntryPoint` (§7.1); it must not call `RunImporter.FromSave`.
 - `sts2rec/sts2rec/run_save.py` — same location rule as `paths.profile_saves_dirs` (vanilla + modded `current_run.save`, `current_run_mp.save` opt-in), same id stripping, float32 odds via `struct`, same entry-point rule, `unsupported_reasons` for run-shape checks (content checks need the sim registries).
 - Fixture `sim/Sts2Sim.Tests/Fixtures/run_save_a8_silent_boss1.save` — copy of a local v0.111.0 modded-profile save (A8 Silent, act 1 boss won, save point B), only `map_drawings` removed (no account ids in the file).
+
+## W4 run-glue (2026-11-01)
+
+- `RunImporter.LoadUnknownMapPointOdds` — Odds/RunOddsSet.cs:38-50 — Monster/Elite/Treasure/Shop odds setters (float32 as saved).
+- `RunImporter.LoadRelicGrabBag` — Runs/RelicGrabBag.cs:358-380 — `new RelicGrabBag(refreshAllowed: false)` + `LoadFromSerializable` (unknown ids dropped, as `GetByIdOrNull`).
+- `RunImporter.LoadSavedMap` — Map/SavedActMap.cs:110-153 — `SavedActMapData` → `SerializableActMap` → `SavedActMap`; hooks run later in `RunLoop.GenerateMapOnLoad`.
+- `RunImporter.CreatePreFinishedRoom` — Rooms/AbstractRoom.cs:60-78, Rooms/CombatRoom.cs:674-718, Rooms/EventRoom.cs:336-343 — combat: encounter, saved room type, `GoldProportion`, resume flag, parent event, pre-finished; event: canonical event, pre-finished. `EncounterModel.LoadCustomState` is not called: the only override is BattlewornDummyEventEncounter (excluded, monster unported); extra rewards rejected (`CheckSupported` already reports them).
+- `Test_SaveImport_FullStateThroughRunLayerOwners` is real on the ported-only fixture with `GREMLIN_MERC_NORMAL` swapped for a ported normal encounter (all of odds, bags, map, `RunSim.FromSave` → Rewards on the pre-finished boss, ActFloor 17, clone hash); the unedited fixture stays PENDING on `content-leftovers`.

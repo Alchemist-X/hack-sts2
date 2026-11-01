@@ -197,18 +197,15 @@ public static class EventsTests
 
     public static void Test_Events_EventCombatGoesThroughRoomStack()
     {
-        W1Pending.Run("Events.EventCombatGoesThroughRoomStack", "W2 R4", () =>
-        {
-            if (ActModel.ActsByIndex.Count == 0)
-            {
-                throw new NotImplementedException("W3 content: no ActModel defs are ported; the room stack needs rs.Act");
-            }
-            var rs = NewRun("COMBAT");
-            rs.Acts.Add(new ActInstance(ActModel.ActsByIndex[0][0]));
-            var ev = new SharedCombatEvent();
-            ev.BeginEvent(rs, rs.Players[0], false);
-            ev.ChooseOption(rs, 0);
-        });
+        var rs = NewRun("COMBAT");
+        rs.Acts.Add(new ActInstance(ActModel.ActsByIndex[0][0]));
+        var ev = new SharedCombatEvent();
+        ev.BeginEvent(rs, rs.Players[0], false);
+        ev.ChooseOption(rs, 0);
+        var room = Assert.NotNull(RoomStack.CurrentRoom(rs) as CombatRoom);
+        Assert.Equal("SHARED_COMBAT_EVENT", room.ParentEventId);
+        Assert.True(room.ShouldResumeParentEventAfterCombat);
+        Assert.NotNull(rs.Combat);
     }
 
     [SimExclude]

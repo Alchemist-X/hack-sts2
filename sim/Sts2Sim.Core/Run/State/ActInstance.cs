@@ -143,15 +143,23 @@ public sealed class ActInstance : ICanonical
 
     public void RemoveEventFromSet(string eventId) => Rooms.events.Remove(eventId);
 
-    public EventModel PullAncient()
-        => EventRegistry.Create(Rooms.AncientId ?? throw new InvalidOperationException("RoomSet.Ancient not set! You must call GenerateRooms"));
+    public EventModel PullAncient() => PullAncient(null);
+
+    public EventModel PullAncient(RunState? runState)
+        => CreateEvent(runState, Rooms.AncientId ?? throw new InvalidOperationException("RoomSet.Ancient not set! You must call GenerateRooms"));
 
     public EventModel PullNextEvent(RunState runState)
     {
         Rooms.EnsureNextEventIsValid(runState);
-        var eventModel = Hook.ModifyNextEvent(runState, EventRegistry.Create(Rooms.NextEventId));
+        var eventModel = Hook.ModifyNextEvent(runState, CreateEvent(runState, Rooms.NextEventId));
         runState.AddVisitedEvent(eventModel);
         return eventModel;
+    }
+
+    private static EventModel CreateEvent(RunState? runState, string eventId)
+    {
+        var content = runState?.Config?.Content;
+        return content == null || content.AllowsEvent(eventId) ? EventRegistry.Create(eventId) : new SimStubEvent(eventId);
     }
 
     public EncounterDef PullNextEncounter(RoomType roomType) => roomType switch

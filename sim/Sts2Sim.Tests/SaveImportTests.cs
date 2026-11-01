@@ -26,7 +26,9 @@ public static class SaveImportTests
         return RunSaveReader.Read(root.ToJsonString());
     }
 
-    private static SavedRun PortedOnlyFixture() => Edit(root =>
+    private static SavedRun PortedOnlyFixture() => Edit(KeepPortedOnly);
+
+    private static void KeepPortedOnly(JsonObject root)
     {
         var player = root["players"]![0]!.AsObject();
         var deck = player["deck"]!.AsArray();
@@ -53,7 +55,7 @@ public static class SaveImportTests
                 relics.RemoveAt(i);
             }
         }
-    });
+    }
 
     public static void Test_SaveReader_ParsesFixtureFields()
     {
@@ -251,26 +253,76 @@ public static class SaveImportTests
         Assert.True(ReferenceEquals(rs.Players[0], taunt.Owner), "deck cards are attached to the imported player");
     }
 
+    private const string GremlinMercEncounter = "ENCOUNTER.GREMLIN_MERC_NORMAL";
+
+    private static SavedRun PortedOnlyFixtureWithoutGremlinMerc() => Edit(root =>
+    {
+        KeepPortedOnly(root);
+        string replacement = "ENCOUNTER." + EncounterRegistry.Defs.AllIds.First(id => id.EndsWith("_NORMAL", StringComparison.Ordinal));
+        foreach (var act in root["acts"]!.AsArray())
+        {
+            var normals = act!["rooms"]!["normal_encounter_ids"]!.AsArray();
+            for (int i = 0; i < normals.Count; i++)
+            {
+                if ((string)normals[i]! == GremlinMercEncounter)
+                {
+                    normals[i] = replacement;
+                }
+            }
+        }
+    });
+
     public static void Test_SaveImport_FullStateThroughRunLayerOwners()
     {
-        W1Pending.Run(nameof(Test_SaveImport_FullStateThroughRunLayerOwners), "W2 R1/R2/R3", () =>
+        var save = PortedOnlyFixtureWithoutGremlinMerc();
+        var reasons = RunImporter.CheckSupported(save, ImportOptions.Default);
+        Assert.Equal(0, reasons.Count, string.Join("; ", reasons));
+        var imported = RunImporter.ImportState(save, ImportOptions.Default);
+        var rs = imported.State;
+        Assert.Equal(SavePoint.PostCombatRewards, imported.EntryPoint);
+        Assert.Equal(3, rs.Acts.Count);
+        Assert.Equal(15, rs.Acts[0].Rooms.normalEncounters.Count);
+        Assert.Equal(4, rs.Acts[0].Rooms.normalEncountersVisited);
+        Assert.Equal(-0.05f, rs.Players[0].PlayerOdds!.CardRarity.CurrentValue);
+        Assert.Equal(0.20000002f, rs.Players[0].PlayerOdds!.PotionReward.CurrentValue);
+        Assert.False(rs.SharedRelicGrabBag!.RefreshAllowed);
+        Assert.Equal(save.Odds.UnknownMapPointMonsterOddsValue, rs.Odds!.UnknownMapPoint.MonsterOdds);
+        Assert.Equal(save.Odds.UnknownMapPointShopOddsValue, rs.Odds!.UnknownMapPoint.ShopOdds);
+        foreach (var (rarity, ids) in save.SharedRelicGrabBag.RelicIdLists)
         {
-            var save = PortedOnlyFixture();
-            var reasons = RunImporter.CheckSupported(save, ImportOptions.Default);
-            if (reasons.Count > 0)
+            Assert.SequenceEqual(ids.Where(RelicCatalog.Contains), rs.SharedRelicGrabBag.GetDequeContents(rarity), "shared bag " + rarity);
+        }
+        var map = Assert.NotNull(rs.Map);
+        Assert.True(map is SavedActMap);
+        var savedMap = save.Acts[save.CurrentActIndex].SavedMap!;
+        Assert.Equal(savedMap.Boss!.Coord, map.BossMapPoint.coord);
+        Assert.Equal(savedMap.Start!.Coord, map.StartingMapPoint.coord);
+        foreach (var point in savedMap.Points)
+        {
+            var loaded = Assert.NotNull(map.GetPoint(point.Coord));
+            Assert.Equal(point.Type, loaded.PointType, point.Coord.ToString());
+            Assert.Equal(point.Children.Count, loaded.Children.Count, point.Coord.ToString());
+        }
+
+        var sim = RunSim.FromSave(save, ImportOptions.Default);
+        Assert.Equal(RunPhase.Rewards, sim.Phase, "a boss saved at point B resumes on its rewards screen");
+        var room = Assert.NotNull(RoomStack.CurrentRoom(sim.State) as CombatRoom);
+        Assert.True(room.IsPreFinished);
+        Assert.Equal(RoomType.Boss, room.RoomType);
+        Assert.Equal(1, sim.State.CurrentRooms.Count);
+        Assert.Equal(17, sim.State.ActFloor, "the boss floor of act 1");
+        var clone = sim.Clone();
+        Assert.Equal(sim.StateHash(), clone.StateHash());
+        Assert.True(sim.LegalActions().Count > 0);
+
+        W1Pending.Run(nameof(Test_SaveImport_FullStateThroughRunLayerOwners) + ".GremlinMerc", "content-leftovers", () =>
+        {
+            var full = RunImporter.CheckSupported(PortedOnlyFixture(), ImportOptions.Default);
+            if (full.Count > 0)
             {
-                throw new NotImplementedException("W2 R1/W3 content: " + reasons[0]);
+                throw new NotImplementedException("content-leftovers: " + full[0]);
             }
-            var imported = RunImporter.ImportState(save, ImportOptions.Default);
-            var rs = imported.State;
-            Assert.Equal(SavePoint.PostCombatRewards, imported.EntryPoint);
-            Assert.Equal(3, rs.Acts.Count);
-            Assert.Equal(15, rs.Acts[0].Rooms.normalEncounters.Count);
-            Assert.Equal(4, rs.Acts[0].Rooms.normalEncountersVisited);
-            Assert.Equal(-0.05f, rs.Players[0].PlayerOdds!.CardRarity.CurrentValue);
-            Assert.Equal(0.20000002f, rs.Players[0].PlayerOdds!.PotionReward.CurrentValue);
-            Assert.False(rs.SharedRelicGrabBag!.RefreshAllowed);
-            Assert.NotNull(rs.Map);
+            RunImporter.ImportState(PortedOnlyFixture(), ImportOptions.Default);
         });
     }
 }

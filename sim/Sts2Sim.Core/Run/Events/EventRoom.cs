@@ -16,11 +16,8 @@ public sealed class EventRoom : AbstractRoom
 
     public override string? ModelId => CanonicalEvent.Id;
 
-    public override void Enter(RunState rs)
+    protected override void EnterInternal(RunState rs, bool isRestoringRoomStackBase)
     {
-        ArgumentNullException.ThrowIfNull(rs);
-        Id = rs.NextRoomId;
-        rs.NextRoomId = Id + 1;
         BeginEvent(rs);
         var localEvent = LocalMutableEvent!;
         Hook.AfterRoomEntered(rs, this);

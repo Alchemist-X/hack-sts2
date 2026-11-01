@@ -300,7 +300,25 @@ public sealed class CardRemovalReward : Reward
     {
     }
 
-    protected override bool OnSelect(RunState rs) => throw new NotImplementedException("W2 R3: CardRemovalReward.OnSelect (RewardSynchronizer.DoUnsyncedCardRemoval needs the run deck-removal prompt)");
+    public const string RemovalSite = "RewardSynchronizer.DoUnsyncedCardRemoval";
+
+    protected override bool OnSelect(RunState rs)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        var prefs = new CardSelectorPrefs("COMBAT_REWARD_CARD_REMOVAL.selectionScreenPrompt", 1)
+        {
+            Cancelable = true,
+            RequireManualConfirmation = true,
+        };
+        var selected = RoomPrompts.FromDeckForRemoval(rs, Player, prefs, RemovalSite, "COMBAT_REWARD_CARD_REMOVAL");
+        var card = selected.Count > 0 ? selected[0] : null;
+        if (card != null)
+        {
+            CardPileCmd.RemoveFromDeck(rs, card);
+            return true;
+        }
+        return false;
+    }
 
     protected override Reward CloneCore(PlayerState player) => new CardRemovalReward(player);
 

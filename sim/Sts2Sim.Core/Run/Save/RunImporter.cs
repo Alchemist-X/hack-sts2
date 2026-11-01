@@ -568,11 +568,84 @@ public static class RunImporter
     }
 
     private static void LoadUnknownMapPointOdds(UnknownMapPointOdds odds, SavedRunOdds saved)
-        => throw new NotImplementedException("W2 R3: UnknownMapPointOdds.MonsterOdds/EliteOdds/TreasureOdds/ShopOdds setters (Odds/UnknownMapPointOdds.cs:39-90, RunOddsSet.FromSerializable Odds/RunOddsSet.cs:38-50)");
+    {
+        odds.MonsterOdds = saved.UnknownMapPointMonsterOddsValue;
+        odds.EliteOdds = saved.UnknownMapPointEliteOddsValue;
+        odds.TreasureOdds = saved.UnknownMapPointTreasureOddsValue;
+        odds.ShopOdds = saved.UnknownMapPointShopOddsValue;
+    }
 
     private static RelicGrabBag LoadRelicGrabBag(SavedRelicGrabBag saved, bool refreshAllowed)
-        => throw new NotImplementedException("W2 R3: RelicGrabBag.LoadFromSerializable (Runs/RelicGrabBag.cs:358-380)");
+    {
+        var bag = new RelicGrabBag(refreshAllowed);
+        bag.LoadFromSerializable(saved.RelicIdLists.Select(kv => new KeyValuePair<RelicRarity, IReadOnlyList<string>>(kv.Key, kv.Value)));
+        return bag;
+    }
 
     private static ActMap LoadSavedMap(RunState rs, SavedActMapData saved)
-        => throw new NotImplementedException("W2 R2: SavedActMap from saved_map (Map/SavedActMap.cs:110-153)");
+    {
+        var serializable = new SerializableActMap
+        {
+            Points = saved.Points.Select(ToSerializablePoint).ToList(),
+            BossPoint = ToSerializablePoint(saved.Boss ?? throw new InvalidOperationException("saved_map has no boss point.")),
+            SecondBossPoint = saved.SecondBoss == null ? null : ToSerializablePoint(saved.SecondBoss),
+            StartingPoint = ToSerializablePoint(saved.Start ?? throw new InvalidOperationException("saved_map has no starting point.")),
+            StartMapPointCoords = new List<MapCoord>(saved.StartCoords),
+            GridWidth = saved.Width,
+            GridHeight = saved.Height
+        };
+        return new SavedActMap(serializable);
+    }
+
+    private static SerializableMapPoint ToSerializablePoint(SavedMapPoint saved) => new()
+    {
+        Coord = saved.Coord,
+        PointType = saved.Type,
+        CanBeModified = saved.CanModify,
+        ChildCoords = new List<MapCoord>(saved.Children)
+    };
+
+    public static AbstractRoom? CreatePreFinishedRoom(RunState rs, SavedRoom? saved)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        if (saved == null)
+        {
+            return null;
+        }
+        switch (saved.RoomType)
+        {
+            case RoomType.Monster:
+            case RoomType.Elite:
+            case RoomType.Boss:
+            {
+                if (saved.ExtraRewards.Count > 0)
+                {
+                    throw new NotSupportedException("Saved combat rooms with extra rewards are not supported.");
+                }
+                var encounter = EncounterRegistry.Get(saved.EncounterId ?? throw new InvalidOperationException("A saved combat room has no encounter id."));
+                var room = new CombatRoom(encounter, saved.RoomType)
+                {
+                    GoldProportion = (decimal)saved.GoldProportion,
+                    ShouldResumeParentEventAfterCombat = saved.ShouldResumeParentEvent,
+                    ParentEventId = saved.ParentEventId
+                };
+                if (saved.IsPreFinished)
+                {
+                    room.MarkPreFinished();
+                }
+                return room;
+            }
+            case RoomType.Event:
+            {
+                var room = new EventRoom(EventRegistry.Create(saved.EventId ?? throw new InvalidOperationException("A saved event room has no event id.")));
+                if (saved.IsPreFinished)
+                {
+                    room.MarkPreFinished();
+                }
+                return room;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(saved), saved.RoomType, "A pre-finished room is a combat or an event room.");
+        }
+    }
 }

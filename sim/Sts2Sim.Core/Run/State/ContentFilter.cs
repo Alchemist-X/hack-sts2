@@ -31,6 +31,22 @@ public sealed class ContentFilter
 
     public string Name { get; }
 
+    public ContentFilter Without(string name, IEnumerable<string>? encounters = null, IEnumerable<string>? events = null, IEnumerable<string>? cards = null, IEnumerable<string>? relics = null, IEnumerable<string>? potions = null)
+    {
+        var e = new HashSet<string>(encounters ?? Array.Empty<string>(), StringComparer.Ordinal);
+        var v = new HashSet<string>(events ?? Array.Empty<string>(), StringComparer.Ordinal);
+        var c = new HashSet<string>(cards ?? Array.Empty<string>(), StringComparer.Ordinal);
+        var r = new HashSet<string>(relics ?? Array.Empty<string>(), StringComparer.Ordinal);
+        var p = new HashSet<string>(potions ?? Array.Empty<string>(), StringComparer.Ordinal);
+        return new ContentFilter(
+            name,
+            id => !e.Contains(id) && AllowsEncounter(id),
+            id => !v.Contains(id) && AllowsEvent(id),
+            id => !c.Contains(id) && AllowsCard(id),
+            id => !r.Contains(id) && AllowsRelic(id),
+            id => !p.Contains(id) && AllowsPotion(id));
+    }
+
     public bool AllowsEncounter(string id) => _encounters?.Invoke(id) ?? true;
 
     public bool AllowsEvent(string id) => _events?.Invoke(id) ?? true;

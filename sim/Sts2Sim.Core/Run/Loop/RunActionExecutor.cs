@@ -137,8 +137,9 @@ public static class RunActionExecutor
     {
         var set = RunLegalActionGenerator.TopRewards(rs) ?? throw new InvalidOperationException("No rewards screen is open.");
         var reward = set.Rewards[index];
-        if (reward is CardReward)
+        if (reward is CardReward cardReward)
         {
+            cardReward.OnSelectWrapper(rs);
             loop.OpenCardReward = index;
             return;
         }

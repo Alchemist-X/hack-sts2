@@ -67,3 +67,15 @@ Format: `member — decompile file:line — dropped points / gaps`.
 ## Soak (C5)
 
 - `RunSoak.Run(RunSoakOptions)` — uniform random legal actions, `ContentFilter.PortedOnly`, step cap 6000, `Hash(x) == Hash(x.Clone())` every 101 steps, closure (every listed action steps on a clone) every 499 steps; failures `<seed>/<phase>/<step>: <Type>: <message>`; a `NotImplementedException` propagates (PENDING). Test: 10⁴ runs; Bench: `run-soak` 10⁵.
+
+## W4 run-glue (2026-11-01)
+
+- `RunLoop.OnCombatVictory` → `CombatRoom.AfterCombatVictory` (`OnCombatEnded` + `MarkPreFinished`) — Combat/CombatManager.cs:1648-1810; history `TurnsTaken` first; then `OfferRoomEndRewards` (terminal sets) → Rewards; no set → `ProceedTerminal`.
+- Event combat resume — Runs/RunManager.cs:2410-2470 — terminal `ProceedRewards` → `ResumePreviousRoom` → `EventRoom.Resume` → `EventModel.Resume`; test `Test_RunLoop_EventCombatVictoryResumesTheEvent`.
+- `RunActionExecutor.ClaimReward` on a `CardReward` calls `OnSelectWrapper` (opens the screen, `IsSelecting`) before the CardReward phase — Rewards/CardReward.cs OnSelect; without it every pick threw "screen is not open".
+- `RunLoop.EnterMapPointInternal` pre-finished combat with a parent event — Runs/RunManager.cs:475-720 — `EnterRoomInternal(EventRoom(parent), isRestoringRoomStackBase: true)` then `EnterRoomInternal(combat)`; no history append (was `EnterRoom` + `EnterRoomWithoutExitingCurrentRoom`).
+- `RunLoop.GenerateMapOnLoad` — Runs/RunManager.cs:2104-2160 (saved-map branch) + Nodes/NGame.cs:1549-1573 — imported `SavedActMap` → `ModifyGeneratedMapLate` → `AfterMapGenerated` → set → stale coords removed (no Neow start-point rewrite); no saved map → `GenerateMap`.
+- `RunSim.FromSave` = `RunImporter.ImportState` → `GenerateMapOnLoad` → `FromLoadedState(rs, RunImporter.CreatePreFinishedRoom)` — Nodes/NGame.cs LoadRun; no longer calls `RunImporter.FromSave` (was infinite recursion).
+- `ActInstance.PullNextEvent` / `PullAncient(rs)` — Models/ActModel.cs PullNextEvent — event id the run's `ContentFilter` rejects → `SimStubEvent` (fidelity-flagged PROCEED); `ContentFilter.All` still throws for unported ids.
+- `RunSoak` — every registered character round-robin (`CharacterIds`), `NotImplementedException` thrown outside `Sts2Sim.Core.Run` = content/kernel gap (run stopped, tallied in `ContentGaps`, not a failure); run-layer stubs and every other exception = failure; `PropagateNotImplemented` (default false) restores the old rethrow. Test: 10⁴ runs, 0 failures, gaps printed.
+- `Test_RunLoop_FullRunsReachTheArchitect` — 12 high-HP Ironclad random runs (PortedOnly) reach the Architect through every act transition; victory room = `THE_ARCHITECT`, clone hash equal.

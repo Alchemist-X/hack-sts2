@@ -24,12 +24,12 @@ public sealed class RunSim
 
     public static RunSim FromSave(SavedRun save, ImportOptions options)
     {
-        var result = RunImporter.FromSave(save, options);
-        if (result.Sim == null || !result.IsSupported)
-        {
-            throw new NotSupportedException("Unsupported save: " + string.Join("; ", result.UnsupportedReasons));
-        }
-        return result.Sim;
+        ArgumentNullException.ThrowIfNull(save);
+        ArgumentNullException.ThrowIfNull(options);
+        var imported = RunImporter.ImportState(save, options);
+        var rs = imported.State;
+        RunLoop.GenerateMapOnLoad(rs);
+        return FromLoadedState(rs, RunImporter.CreatePreFinishedRoom(rs, imported.PreFinishedRoom));
     }
 
     public static RunSim FromLoadedState(RunState state, AbstractRoom? preFinishedRoom)

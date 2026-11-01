@@ -211,17 +211,11 @@ public static class MapTests
 
     public static void Test_Map_CreateForUsesTheActMapStream()
     {
-        W1Pending.Run(nameof(Test_Map_CreateForUsesTheActMapStream), "run-state", () =>
-        {
-            var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
-            var rs = RunState.CreateStandalone(player, new RunRngSet(SaveSeed), 8);
-            if (!ActRegistry.TryGet("UNDERDOCKS", out ActModel underdocks))
-            {
-                throw new NotImplementedException("W2 R1: Underdocks act def");
-            }
-            rs.Acts.Add(new ActInstance(underdocks));
-            StandardActMap map = StandardActMap.CreateFor(rs, replaceTreasureWithElites: false);
-            Assert.Equal(UnderdocksA8SavedMap.Replace("\r\n", "\n") + "\n", SerializableActMap.FromActMap(map).ToCompactString(canModifyAfterJsonRoundTrip: true));
-        });
+        var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
+        var rs = RunState.CreateStandalone(player, new RunRngSet(SaveSeed), 8);
+        var underdocks = ActRegistry.Get("UNDERDOCKS");
+        rs.Acts.Add(new ActInstance(underdocks));
+        StandardActMap map = StandardActMap.CreateFor(rs, replaceTreasureWithElites: false);
+        Assert.Equal(UnderdocksA8SavedMap.Replace("\r\n", "\n") + "\n", SerializableActMap.FromActMap(map).ToCompactString(canModifyAfterJsonRoundTrip: true));
     }
 }
