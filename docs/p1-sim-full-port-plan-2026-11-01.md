@@ -92,3 +92,13 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   （A0–A10、182/148、无 Scry 提示、版本缝替代 GameVersion 开关、G1 提前到 W1.5）。
   差分基线复核：4/4 bundle、69/69（bundle 已拷贝到会话 scratchpad）。下一步：派发 W1
   workflow（phase 0 脚手架 → 9 路所有权并行 → 集成 → 对抗校验 → 修复 → 门）。
+- 2026-11-01（续 2）：W1 第 1–2 轮——43 个 Opus 代理、11.0M token、4.7 小时。落地：phase-0 脚手架
+  （182 虚成员 / 148 分发器 / B1–B2–B5 成员，`46d1918` + 对抗校验修复 `94424e5`）、INV 轨道
+  （`687077a`）、REC 轨道（`4094c1e`，recorder 只构建未安装）、门测试套件 `W1GateTests.cs`（F1/F4/F5
+  通过，B2 链与试点覆盖故意红）、`integration.md` §7–8、BENCH W1 行（脚手架单独代价：吞吐 0.95×、
+  Clone 2.65 µs）。**9 个所有权轨道未运行**：Workflow 的隔离 worktree 从 `origin/main` 切出、缺脚手架，
+  所有者按简报在基线检查处停下；两轮集成均为空合并。对抗校验因此审的是脚手架 + 合同 + 简报，产出
+  ~210 条发现，其中合同级错误（PotionFactory 成员名、FairyInABottle 是药水、Upgrade 不写牌组、
+  run 监听顺序重复访问 modifiers、owner 死亡只杀 Osty、UsePotionAction 行号、CardPlay 缺 ResourceInfo
+  与 PlayId、牌 id 分配器归属等）裁决为 Part B §B12 A1–A23。下一步：第 3 轮 workflow——phase-0b
+  脚手架修正 → 9 路所有者（worktree 先 reset 到基线）→ 依赖序集成 → 双视角对抗校验 → 修复 → 门。

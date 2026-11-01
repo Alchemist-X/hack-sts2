@@ -852,10 +852,13 @@ diff harness maps flags to ineligibility reasons; a flag is never a silent pass.
   card, then its affliction, then its enchantment; then `Modifiers`; badges and the scaling model are
   inert. The list is built at the first `MoveNext`; liveness is checked per element at yield
   (`listener_order.liveness`). Run order is `design-run-layer.md` §2.7 (`Runs/RunState.cs:830-933`):
-  `Hook.IterateRunHookListeners(rs, cs?)` — deck cards each followed by its enchantment, then (only
-  without an attached combat) relics and potions, then modifiers, then the combat's own listeners.
+  `Hook.IterateRunHookListeners(rs, cs?)` — deck cards each followed by its enchantment, then, **only
+  without an attached combat**, relics (skipping `IsMelted`), potions, modifiers, badges and the scaling
+  model (`Runs/RunState.cs:866-880`); with an attached combat the combat list supplies relics, potions and
+  modifiers (`Combat/CombatState.cs:916-919`), so nothing is visited twice (§B12 A8).
 - Per-type override masks (`HookMask`): a model type is visited only for hooks it overrides; the ordered
-  listener array is cached and invalidated by a mutation version counter on the state. Observable
+  listener array may be cached only if every structural change, including direct list writes by tests,
+  invalidates it (§B12 A20). Observable
   semantics must equal the full iteration (tests compare both paths on random states).
 - `Run/*` shells (phase 0): `sealed partial class` or enum for every run-layer type a hook or Cmd
   signature mentions (`RunState`, `AbstractRoom`, `MapPoint`, `RewardsSet`, `Reward`, `CardReward`,
@@ -867,7 +870,7 @@ diff harness maps flags to ineligibility reasons; a flag is never a silent pass.
 | Facade | W1 owner | Notes |
 | --- | --- | --- |
 | `CreatureCmd`, `PowerCmd`, `DamageCmd` / `AttackCommand`, `EnergyCmd`, `CombatStatus` | pipeline | Osty block/HP redirection (`Commands/CreatureCmd.cs:3697-3725`), `CreatureCmd.Add` (summons), `Stun` (wrapper body missing in the decompile → IL, D9) |
-| `CardPileCmd`, `PlayerCmd`, the play half of `CardCmd` (`Combat/Loop/CardCmd.Play.cs`: `AutoPlay`, `Discard`, `DiscardAndDraw`, `Exhaust`, …) | loop | deck edits write `Player.Deck` through `DeckVersionId` |
+| `CardPileCmd`, `PlayerCmd`, the play half of `CardCmd` (`Combat/Loop/CardCmd.Play.cs`: `AutoPlay`, `Discard`, `DiscardAndDraw`, `Exhaust`, …) | loop | `CardPileCmd.Add(…, PileType.Deck)` / `AddToDeck` / `RemoveFromDeck` write `Player.Deck` (`Commands/CardPileCmd.cs:3123-3151`, `:3368-3418`); `DeckVersionId` is only a back-link (§B12 A6) |
 | the card half of `CardCmd` (`Combat/Pipeline/CardCmd.cs`: `Upgrade`, `Downgrade`, `Transform*`, `Enchant`, `Afflict`, keywords, costs) | cards-kernel | `partial class CardCmd` across the two owners' files |
 | `CardSelectCmd` | choice | B1 |
 | `RelicCmd`, `PotionCmd`, `PotionActions` | relics-potions | `PotionCmd.TryToProcure` / `Discard`; `RelicCmd.Obtain` / `Remove` / `Replace` / `Melt` on their combat paths |
@@ -884,9 +887,9 @@ side effects).
 | Kind | Files | Owner | Contract |
 | --- | --- | --- | --- |
 | Relics | `Relics/RelicModel.cs`, `Relics/Defs/*.cs`, `Relics/RelicCanonicalTags.cs` | relics-potions | `RelicModel : AbstractModel, ICanonical` — `Id`, `Rarity`, `Pool`, the 22 virtuals of `Models/RelicModel.cs` (`AfterObtained`, `IsUsedUp`, `DisplayAmount`, `IsStackable`, …), `IsMelted` (`:267`), `Status` (`:333`), `StackCount`, `HasBeenRemovedFromState`; per-instance fields cloned by `DeepClone()` (MemberwiseClone + `CopyMutableReferenceState`) and written by `WriteCanonical` + `WriteExtraCanonical`; one class per content file, public parameterless ctor; `RelicRegistry` |
-| Potions | `Potions/PotionModel.cs`, `Potions/Defs/*.cs`, `Potions/PotionFactory.cs` | relics-potions | `OnUse`, `Usage` (`PotionUsage`), `TargetType`, `PassesCustomUsabilityCheck`, `IsValidTarget` (`Models/PotionModel.cs:618`), `OnUseWrapper` order `BeforePotionUsed` → `OnUse` → `History.PotionUsed` → `AfterPotionUsed` → `CheckForEmptyHand`; `PotionRegistry`; `GetDistinctForCombat` on `Rng.CombatPotionGeneration` |
+| Potions | `Potions/PotionModel.cs`, `Potions/Defs/*.cs`, `Potions/PotionFactory.cs` | relics-potions | `OnUse`, `Usage` (`PotionUsage`), `TargetType`, `PassesCustomUsabilityCheck`, `IsValidTarget` (`Models/PotionModel.cs:618`), `OnUseWrapper` in the traced order of §B12 A3; `PotionRegistry`; `PotionFactory` entry points with the game's names (§B12 A1) |
 | Orbs | `Orbs/OrbModel.cs`, `Orbs/OrbQueue.cs`, `Orbs/Defs/*.cs` (5) | character-mechanics | `OrbQueue` (`Entities.Orbs/OrbQueue.cs`: values + `Capacity` ≤ 10 `:386`, `TryEnqueue` `:429`, `Insert`, `Remove`, `BeforeTurnEnd` `:463` / `AfterTurnStart` `:477` triggers); `OrbModel` `Passive`, `Evoke`, turn triggers, values through `Hook.ModifyOrbValue`; `OrbRegistry` |
-| Enchantments | `Cards/Enchantments/EnchantmentModel.cs`, `Cards/Enchantments/Defs/*.cs` | cards-kernel | 19 virtuals of `Models/EnchantmentModel.cs`; damage/block pre-pass (`Hooks/Hook.cs:10075-10080`, `:10332-10342`); `EnchantPlayCount`; `OnPlay` after the card's; `ShouldStartAtBottomOfDrawPile` (`Combat/CombatManager.cs:4248-4262`); listener right after its card |
+| Enchantments | `Cards/Enchantments/EnchantmentModel.cs`, `Cards/Enchantments/Defs/*.cs` | cards-kernel | 19 virtuals of `Models/EnchantmentModel.cs`; the four damage/block pre-pass virtuals (the pre-pass itself lives in `Hook.ModifyBlock` / `ModifyDamage`, hooks owner, §B12 A9); `EnchantPlayCount`; `OnPlay` after the card's; `ShouldStartAtBottomOfDrawPile` (`Combat/CombatManager.cs:4248-4262`); listener right after its card |
 | Afflictions | `Cards/Afflictions/AfflictionModel.cs`, `Cards/Afflictions/Defs/*.cs` | cards-kernel | `CardCmd.Afflict` (`ShouldAfflict`, `History.CardAfflicted`), `ClearAffliction`; `OnPlay` after the card's; listener between card and enchantment |
 | Modifiers | `Modifiers/ModifierModel.cs` | scaffold (stub only) | `RunState.Modifiers` is empty in standard runs; no modifier is ported (excluded mode) |
 | Monster listener | `Monsters/MonsterListener.cs` | monsters-kernel | adapter that routes `AbstractModel` hooks to `MonsterDef` virtuals (`MonsterState.Listener`) |
@@ -894,21 +897,23 @@ side effects).
 Pilot content in W1 — the minimum that exercises every new kernel path in a test (W3 ports everything
 systematically; a pilot is a complete 1:1 port with citations in the owner's spec, never a sketch):
 relics-potions ports ≥6 relics and ≥4 potions covering a counter relic, an `AfterCombatEnd` reset, a
-`Niche` reader, the turn-setup prompt relic `GamblingChip`, `FairyInABottle` (`ShouldDie` /
-`AfterPreventingDeath`), `PaperPhrog` and `PaperKrane` (consulted by powers), the prompting potion
-`AttackPotion`, the hand-prompt potion `Ashwater` and one simple stat potion; cards-kernel ports the prompt
+`Niche` reader, the turn-setup prompt relic `GamblingChip`, `PaperPhrog` and `PaperKrane` (consulted by
+powers through the multiplier interfaces, §B12 A5), and the potions `AttackPotion` (prompting), `Ashwater`
+(hand prompt), `FairyInABottle` (an `Automatic` potion with `ShouldDie` / `AfterPreventingDeath`, §B12 A2)
+and one simple stat potion; cards-kernel ports the prompt
 cards the choice tests need (`Armaments`, `Acrobatics`, `Headbutt`, `Seance`, `Discovery`, `SeekerStrike`)
-plus one enchantment def and one affliction def; pipeline ports `HellraiserPower`, `ToolsOfTheTradePower`,
-`EntropyPower`, `DarkEmbracePower`, `FocusPower`, re-ports `VulnerablePower` / `WeakPower` with the relic
-consults (`cs.Player.HasRelic("PAPER_PHROG")`, pet-owner Cruelty fallback) and `ShrinkPower` with real
-participants (critique G11); character-mechanics ports the 5 orbs and `Osty` and tests stars / forge
+plus `SovereignBlade`, one enchantment def and one affliction def; pipeline ports `HellraiserPower`,
+`ToolsOfTheTradePower`, `EntropyPower`, `DarkEmbracePower`, `FocusPower`, `DieForYouPower`, re-ports
+`VulnerablePower` / `WeakPower` with the relic consults (dealer-as-player / target-as-player lookups through
+the multiplier interfaces, §B12 A5) and `ShrinkPower` with real participants (critique G11); character-mechanics ports the 5 orbs and `Osty` and tests stars / forge
 through Cmd calls and test doubles. Cross-kind references are **by id string**, never by type, so no owner
 compiles against another owner's pilots.
 
 ## B6. Loop and turn flow (`Combat/Loop/`, loop agent)
 
 - `CombatLoop.SetUpCombat` fills the draw pile with combat copies of `Player.Deck` (`CloneForCombat`,
-  ids from `cs.AllocateCardInstanceId()`), then the opening shuffle and monster setup; `StartCombat` keeps
+  ids from `cs.AllocateCardInstanceId()`, which forwards to the run allocator; deck cards are allocated
+  first, §B12 A13), then the opening shuffle and monster setup; `StartCombat` keeps
   its role. Every `CreateCombat` overload builds the `PlayerState` (deck from the specs, HP, energy) and a
   standalone `RunState` around it (`RunState.CreateStandalone`); only the `CombatSim.Create(RunRngSet)`
   facade clones the set (D4).
@@ -921,7 +926,7 @@ compiles against another owner's pilots.
   `:917`); the `TurnSetup` pause callbacks (B1); history recording sites; `AfterCombatEnd` and
   `AfterCombatVictory[Early]` at combat end through `cs.Run` (`room` is null in standalone combats).
 - `Step(UsePotion)` / `Step(DiscardPotion)` go through `PotionActions` (relics-potions);
-  `UsePotionAction` target rules `GameActions/UsePotionAction.cs:96-122`.
+  `UsePotionAction` in-combat target rules `GameActions/UsePotionAction.cs:80-95`, `:117-132` (§B12 A4).
 - Win checks only at the game's fixed points: after each action except `EndPlayerTurn` /
   `ReadyToBeginEnemyTurn` (`GameActions/ActionExecutor.cs:130-139`), after each enemy, at phase boundaries.
 
@@ -946,8 +951,8 @@ keep those reads on the defs.
 `OnDieToDoom` are VFX-only and are **not** ported, critique C15); the mid-combat spawn path
 (`CreatureCmd.Add` → `MonsterSpawner`: id, HP roll, `SetUpForCombat`, `AfterCreatureAdded`,
 `AfterCreatureAddedToCombat`; `SetEnemyIndex` for slotless encounters, `Combat/CombatState.cs:966-980`);
-pets as `MonsterState` on the player side with `PetOwnerId` (owner death kills pets,
-`Commands/CreatureCmd.cs:2704-2717`); the run streams some monsters read (`Fabricator` MonsterAi,
+pets as `MonsterState` on the player side with `PetOwnerId` (owner death clears the `OrbQueue` and kills
+only an alive Osty, `Commands/CreatureCmd.cs:2701-2717`; pet lifecycle per §B12 A15); the run streams some monsters read (`Fabricator` MonsterAi,
 `ThievingHopper` CombatCardGeneration, `ToughEgg` Niche) come from `cs.Rng`, never from a def
 (`MonsterModel.Rng` is `Rng.Chaotic` for canonical models, `Models/MonsterModel.cs:395-404`).
 
@@ -959,8 +964,7 @@ Orbs (B5); Osty and pets (`OstyCmd.Summon`, `Commands/OstyCmd.cs:336-395`: `Modi
 `StarsModified` history entry; `PlayerCmd.GainStars` / `LoseStars` / `SetStars`, the `ShouldGainStars`
 gate, `AfterStarsGained` / `AfterStarsSpent`, `Hook.ModifyStarCost`, `ShouldPayExcessEnergyCostWithStars`
 = 2 stars per missing energy, X star costs capture the current stars); Forge (`ForgeCmd.Forge`,
-`Commands/ForgeCmd.cs:153-170`; `SovereignBlade` is a card, so character-mechanics tests forge through a
-test double and cards-kernel or W3 ports the def).
+`Commands/ForgeCmd.cs:153-216`; `SovereignBlade` is a cards-kernel pilot reached by id, §B12 A16).
 
 ## B10. Version and rule truth (D8, D9)
 
@@ -1003,3 +1007,47 @@ leaves the state unchanged); F5 invariants after every step (HP in `[0, max]`, b
 gold ≥ 0, potions ≤ slots, card conservation across piles plus the deck, unique creature ids, consistent
 power owners, non-decreasing RNG counters); the B2 chain (`GremlinHorn` or `DarkEmbracePower` +
 `HellraiserPower` + `SeekerStrike`) steps without an exception and records the fidelity flag.
+
+## B12. Round-3 amendments (2026-11-01, after the round-2 adversarial review)
+
+W1 rounds 1–2 landed the phase-0 scaffold (`46d1918`, `94424e5`), the INV (`687077a`) and REC (`4094c1e`)
+tracks, the gate suite `W1GateTests.cs` and `integration.md` §7–8 (`ef7c7b9`, `e74907d`). The nine area
+tracks did not run (their isolated worktrees were cut from `origin/main`, which lacks the scaffold, and the
+owners stopped at the base check as briefed). The round-2 verification lenses reviewed the scaffold, the
+contract and the briefs against the decompile; the findings below are accepted and **override the earlier
+Part B text where they differ**. Per-area detail is in the round-2 notes handed to each owner.
+
+Scaffold amendment (phase 0b, in place, before the owners start; stubs and plumbing only):
+
+| # | Change | Source | Owner afterwards |
+| --- | --- | --- | --- |
+| A10 | `PlayerState` gains the ported relic / potion internals: `AddRelicInternal(relic, index = -1)` (`Entities.Players/Player.cs:883-903`), `RemoveRelicInternal(relic)` (`:905-922`), `MeltRelicInternal(relic)` (`:924-947`), `GetPotionSlotIndex(potion)` (`:959-962`), `AddPotionInternal(potion, slotIndex = -1) → PotionProcureResult` (`:1020-1070`, game enum ordinals), `DiscardPotionInternal(potion)` (`:1072`), `RemoveUsedPotionInternal(potion)` (`:1081`), `RemovePotionInternal(potion)` (`:1087-1096`); `silent` parameters dropped. `GetRelic` does not skip melted relics (`:949-952`) | `Player.cs` | state |
+| A11 | `CardPlay` (Part A frozen, amended here) gains `int PlayId` (per-combat counter `cs.AllocateCardPlayId()`, cloned and hashed) and `ResourceInfo Resources` (replaces `EnergySpent` / `StarsSpent`; manual plays set value = spent, `GameActions/PlayCardAction.cs:158-165`; auto-play sets `EnergySpent = 0`, `EnergyValue = EnergyCost.GetAmountToSpend()`, `StarsSpent = 0`, `StarValue = max(0, GetStarCostWithModifiers())`, `Commands/CardCmd.cs:515-522`). `HistoryCardPlay` carries `PlayId`; plays are compared by it (the game compares `CardPlay` by reference, `Models.Powers/UnmovablePower.cs:37`) | `Entities.Cards/CardPlay.cs` | frozen (scaffold) |
+| A12 | `PlayerState.AscensionEffectsApplied`; `RunState.CreateStandalone` applies the ascension effects (TightBelt) at most once per player (`Entities.Ascension/AscensionManager.cs:27-39`; applied once at `Runs/RunManager.cs:3856-3866` / `Runs/RunState.cs:977-981`) | | state |
+| A13 | The card-instance id allocator lives on `RunState` (`NextCardInstanceId`, `AllocateCardInstanceId()`), written once in the run's canonical form; `CombatState.AllocateCardInstanceId()` / `NextCardInstanceId` forward to it. Deck cards are allocated when the deck is built (1..n), combat copies after them, generated cards after those. P0 pins that encode instance ids or hashes (`LoopTests.cs` `NextCardInstanceId == 12`, `EndToEndTests` hashes) are refreshed by the loop owner with the reason in `loop.md`; the diff gate maps cards by hand index (`Sts2Sim.Diff/BundleRunner.cs:357`) and is unaffected | Part A §5 | state (allocator), loop (pins) |
+| A15s | Stubs so owners compile against each other: `CreatureCmd.Add(cs, MonsterDef monster, CombatSide side = Enemy, string? slotName = null) → MonsterState` and `CreatureCmd.Add(cs, CreatureState creature)` (`Commands/CreatureCmd.cs:3564`, `:3575`; pipeline); `PlayerCmd.AddPet(cs, PlayerState owner, MonsterDef def) → MonsterState` (`Commands/PlayerCmd.cs:946-967`; loop); `MonsterSpawner.SpawnPet(cs, def, owner)` and `MonsterSpawner.SpawnForAdd(cs, def, side, slotName)` (monsters-kernel); `MonsterLifecycle.PlayerSideParticipants(cs) / EnemySideParticipants(cs)` snapshot helpers (monsters-kernel, A17); `Combat/Pipeline/StarsCmd.cs` with `GainStars / LoseStars / SetStars / SpendStars(cs, player, amount)` (character-mechanics, A16) | | as listed |
+| A5s | `FidelityFlag.ApproximatedRule` (generic; the site string carries the detail) so any owner can flag a knowing deviation without editing `State/Fidelity.cs`; named values are added at integrate | | state |
+
+Rule amendments (binding for the owners):
+
+- **A1 (relics-potions, B5).** `PotionFactory` has no `GetDistinctForCombat`. Port the v0.111.0 members with the game's names and the caller-supplied `Rng`: `CreateRandomPotionOutOfCombat(player, rng, blacklist)` (`Factories/PotionFactory.cs:22`), `CreateRandomPotionsOutOfCombat(player, count, rng, blacklist)` (`:27`), `CreateRandomPotionInCombat(player, rng, blacklist)` (`:37-45`, filters `CanBeGeneratedInCombat`), private `CreateRandomPotions` (`:47-61`: per pick one `NextFloat` → Rare ≤ 0.1, Uncommon ≤ 0.35, else Common; then `NextItem` over that rarity's options; the pick is removed from the options), `GetPotionOptions(player)` (`:63-66`: the character pool's unlocked potions, then `SharedPotionPool`). In-combat callers pass `Rng.CombatPotionGeneration` (`Models.Cards/Alchemize.cs:78`, `Models.Potions/EntropicBrew.cs:65`). `GetDistinctForCombat` is `CardFactory`'s (`Factories/CardFactory.cs:93`).
+- **A2 (relics-potions, B5).** `FairyInABottle` is a potion (`Models.Potions/FairyInABottle.cs:14`): Rare, `Usage = Automatic`, `TargetType = Self`, `CanBeGeneratedInCombat = false`; `ShouldDie` false only for its owner's creature (`:163-170`); `AfterPreventingDeath` runs `OnUseWrapper` (`:46`) and `OnUse` heals `max(MaxHp × 0.3m, 1m)` (`:108`); `CanUse` is false for `Automatic` potions (`Nodes.Potions/NPotionPopup.cs:322-324`).
+- **A3 (relics-potions, B5).** `OnUseWrapper` traced order (`Models/PotionModel.cs:147-338`): `RemoveBeforeUse` (slot nulled, `HasBeenRemovedFromState = true`, `:147`, `:595-599`) → `Hook.BeforePotionUsed(rs, cs, potion, target)` (`:262`) → [VFX / wait stripped] → `effectId = BeginCardOrPotionEffect(owner)` (`:332`) → `OnUse` inline, exception captured (`:180-203`) → `EndCardOrPotionEffect(effectId)` (`:204`) → rethrow (`:232-240`) → only if `!Owner.Creature.IsDead` (`:242`): `History.PotionUsed` iff `cs != null && IsCurrentLiveCombat(effectId)` (`:245-248`), `Hook.AfterPotionUsed` (`:249`), map-point history (W2, `:321`), `CheckForEmptyHand(effectId)` (`:322`); `PopModel` (`:338`). Record the stripped steps in the spec.
+- **A4 (choice + relics-potions, B1/B6).** In-combat target resolution (`GameActions/UsePotionAction.cs:80-95`): with a target id, or for a non-single-target `TargetType`, the target is `GetCreature(id)` (null id → null); otherwise the owner's creature (`:94`); then the `IsValidTarget` gate (`:117`), then `OnUseWrapper` (`:121-122`), else cancel (`:132`). `LegalActionGenerator` resolves `NoIndex` to the owner for single-target types and to null for multi-target types before `IsValidTarget`, lists one action per `(slot, resolved target)`, and gates `UsePotion` as well as `DiscardPotion` on `CanUseOrRemovePotions` (`Nodes.Potions/NPotionPopup.cs:330-334`, `:560-564`). `PotionActions.CanUse` is the node-layer rule `:285-345` (potion present, owner alive, `Usage` `CombatOnly` or `AnyTime`, not `Automatic`, `CanUseOrRemovePotions`, `PassesCustomUsabilityCheck`, valid target).
+- **A5 (pipeline + relics-potions, B5).** `VulnerablePower` consults the **dealer's** relic (`dealer.Player?.GetRelic<PaperPhrog>()`, `Models.Powers/VulnerablePower.cs:111`, `:114`) and `WeakPower` the **target's** (`target?.Player?.GetRelic<PaperKrane>()`, `Models.Powers/WeakPower.cs:109`, `:112`); `Creature.Player` is null for pets and monsters, and only Cruelty has a pet-owner fallback (`VulnerablePower.cs:116`). Mechanism: `PaperPhrog` / `PaperKrane` implement `IVulnerableMultiplierModifier` / `IWeakMultiplierModifier` (`Powers/MultiplierModifiers.cs`) with their own guards (`Models.Relics/PaperPhrog.cs:18-26`: unchanged when `target == owner`, else `+0.25m`; `PaperKrane.cs:18-26`); the powers scan `(dealer as PlayerState)?.Relics` / `(target as PlayerState)?.Relics` for the interface. Never `cs.Player.HasRelic(...)`.
+- **A6 (cards-kernel, B4/B7).** `CardCmd.Upgrade` (`Commands/CardCmd.cs:1882-1947`) returns when `IsEnding`, skips cards that cannot be upgraded, adds the map history entry only when the card's pile is `Deck`, then runs `UpgradeInternal` + `FinalizeUpgradeInternal` on the passed card only. An in-combat upgrade **leaves the deck card unchanged**; `DeckVersion` is read only by `TheScythe.cs:73`, `GeneticAlgorithm.cs:66`, `Goopy.cs:37-39`, `SwipePower.cs:57-59`/`:131-137`, `DeprecatedCard.cs:78-93`, `ThievingHopper.cs:636`. Test that Armaments upgrades the combat copy and not the deck card.
+- **A7 (cards-kernel, B7).** `pools.json` card pools have `unlock_gates = []`; the gates are the `FilterThroughEpochs` overrides (`Models.CardPools/IroncladCardPool.cs:122-138`, the other four character pools `:123-138`, `ColorlessCardPool.cs:97-120`). Port them from the decompile with citations. `GetUnlockedCards(All, SingleplayerOnly)` yields 85 Ironclad / 86 per other character / 53 colorless (the 37 `MultiplayerOnly` cards are 5 per character pool plus 12 colorless); 90 / 91 / 65 are `AllCards` sizes. Tests say which count they assert.
+- **A8 (hooks, B3).** Run listener order corrected above: modifiers, badges and the scaling model only without an attached combat (`Runs/RunState.cs:866-880`).
+- **A9 (hooks, B3/B5).** The enchantment pre-pass is ported verbatim in `Hook.ModifyBlock` (`Hooks/Hook.cs:10075-10080`: additive then multiplicative on the running value, whenever `cardSource?.Enchantment != null`) and `Hook.ModifyDamage` (`:10332-10342`: each term gated by its `ModifyDamageHookType` flag), before any listener pass; the terms never enter the modifier lists.
+- **A14 (choice, B1).** The pending tuple's canonical form writes a presence byte before the action; `Begin` is the absent action, so a `Begin` tuple and any `GameAction` tuple hash differently (`ActionKind` stays frozen). The debug invariant and all tests compare prompts element-wise (`Kind`, `SiteId`, each option's `InstanceId` and `ModelId`): record equality on `IReadOnlyList` fields is reference equality. Selectors are written to the canonical form by a stable string id (never `Type.FullName`, which carries assembly versions for generics); a stateful selector is `ICanonical` and cloned by `ChoiceRuntime.DeepClone` (never shared). `default(ChoiceSource)` is rejected. `CardSelectCmd` details: `UndoEndTurnIfNecessary` runs **before** the selector check in all five methods (`Commands/CardSelectCmd.cs:3182`, `:3303`, `:3373`, `:3680`, `:3756`) and mutates the end-turn readiness (`Combat/CombatManager.cs:6859-6881`) — port it or justify its omission in the spec; `FromCombatPile` throws `InvalidOperationException` for a non-combat pile after the `IsEnding` check (`:3369-3372`); `FromChooseACardScreen` has no early-out (`:3169-3182`); `FromHand` / `FromHandForUpgrade` gate on `IsOverOrEnding` (`:3672`, `:3748`), `FromSimpleGrid` / `FromCombatPile` on `IsEnding` (`:3299`, `:3365`); the draw-pile order is a **stable** `OrderBy(Rarity).ThenBy(ModelId)` with ordinal `ModelId` comparison (`Models/ModelId.cs:66-73`).
+- **A15 (monsters-kernel + pipeline + loop, B8).** Owner death: `OrbQueue.Clear()`, then `Kill(Osty)` only if `IsOstyAlive` (`Commands/CreatureCmd.cs:2701-2717`), before `DeactivateHooks` / `HandlePlayerDeath`; no other pet dies. `PlayerCmd.AddPet` (`Commands/PlayerCmd.cs:946-967`): `CreateCreature` on the owner's side with slot null — no HP roll, no `Niche` draw, HP = `MaxInitialHp`, `MonsterMaxHpBeforeModification` null; `AddPetInternal` sets `PetOwner` (a different existing owner throws) and subscribes `Died → OnPetDied`, which drops the pet from `Pets` only if `ShouldCreatureBeRemovedFromCombatAfterDeath`; then `CreatureCmd.Add(pet)`. Pets never receive `AfterAddedToRoom`, never `RollMove` (`IsEnemy` gate), `TakeTurn` throws for them, they are player-side turn participants (`CreaturesOnCurrentSide = _allies`) and stay in `_allies` after death (`Kill` removes only `Side == Enemy`).
+- **A16 (character-mechanics, B9).** `ForgeCmd` spans `Commands/ForgeCmd.cs:153-216`: `GetSovereignBlades` (`:197-216`) counts only non-dupe blades (`!IsDupe`) for the "none owned" check and for `AddDamage`; the "none owned" check ignores the exhaust pile (`:161-168`, `:178-186`). `OrbQueue.AddCapacity` has no cap (`Entities.Orbs/OrbQueue.cs:414-417`); `OrbCmd.AddSlots` applies `Math.Min(10 - Capacity, amount)` (`Commands/OrbCmd.cs:653`) and `RemoveSlots` clamps to `Capacity` (`:663`). `GainStars` / `SetStars` are gated by `!IsEnding` (`Commands/PlayerCmd.cs:390`, `:742`); `AfterStarsGained` receives `(int)amount` (`:393`); the history delta is the clamped integer change (`Entities.Players/PlayerCombatState.cs:150`). `OrbCmd.Passive` consults `ModifyOrbPassiveTriggerCount` only when `countAffectedByHooks` (default false, `:596-608`); the orbs' turn triggers use `TriggerPassive`. `OrbCmd.Evoke` removes the orb before its `Evoke` and calls `RemoveInternal` after `AfterOrbEvoked`, skipping both when the owner's creature has no combat (`:318-364`). `OstyCmd.Summon` has no `IsOverOrEnding` gate. `GetRandomOrb` draws over the game's order Lightning, Frost, Dark, Plasma, Glass (`Models/OrbModel.cs:197-204`, `:402-405`) on `Rng.CombatOrbGeneration` from an immutable list. **Every star write goes through `StarsCmd`** (the only writer; it records `StarsModified`), including the loop's `SpendResources` → `StarsCmd.SpendStars` with `AfterStarsSpent` (`Models/CardModel.cs:1425-1428`). Osty creation applies `DieForYouPower` by id (`PowerRegistry.Create("DIE_FOR_YOU_POWER")` + `PowerCmd.Apply`); Forge creates `SOVEREIGN_BLADE` through `CardRegistry` + `cs.CreateCard`. The creation branches are exercised by the integrator's gate with registered content; the owner's unit tests cover the other branches with local doubles that carry those ids.
+- **A17 (monsters-kernel + loop + hooks, B6/B8).** Side-turn participants are snapshots from `MonsterLifecycle` helpers: player side = the extra-turn players' creatures, else a copy of `cs.Allies` (player, then pets in insertion order); enemy side = a copy of `cs.Monsters` taken at the game's points (`Combat/CombatManager.cs:4873-4882`, `:2055-2088`; `Combat/CombatState.cs:620`, `:831`). The loop passes them; hooks keeps the scaffold's live-list forwarding overloads until integrate, where the integrator deletes any overload without a caller.
+- **A18 (loop, B6).** Combat end is `EndCombatInternal` in full: `ReviveBeforeCombatEnd`, `AfterCombatEnd`, `History.Clear`, `Player.AfterCombatEnd` (powers removed, combat piles cleared, block lost, `Entities.Players/Player.cs:1249-1254`), `AfterCombatVictoryEarly` / `AfterCombatVictory`; a victory never leaves block, powers or combat piles on the player.
+- **A19 (pipeline + state, B2).** `CombatStatus` attachment and side queries count `cs.Allies`; `GetCreatureById` / `GetCreatures` include pets; `CombatState.AddAlly` / `RemoveAlly` / `CreateCard` (`Combat/CombatState.cs:993`, `:739`, `:671-677`) are state's.
+- **A20 (hooks, B3).** `HookMask` cache rule as amended above; the six per-listener dispatchers (`Hooks/Hook.cs:2364`, `:2467`, `:6170`, `:7776`, `:8398`, `:8607`) wrap each listener call in `cs.Choice.PushContext(ChoiceContextKind.PerListener)`; `IterateRunHookListeners(rs, null, …)` is implemented (the 13 both-scope dispatchers' `cs == null` path, `Runs/RunState.cs:829-933`); the `ArrayPool<AbstractModel>.Shared` use in `ListenerSnapshot` is either replaced by per-state transient scratch (neither cloned nor hashed) or recorded as the one static exception in `hooks.md`.
+- **A21 (monsters-kernel, B8).** No rule reads `MonsterModel.Rng` in v0.111.0 (only `ToughEgg`'s skin pick, `Models.Monsters/ToughEgg.cs:552`, visual); the `InitPrivateRng` seam is removed or given per-instance storage that is cloned and hashed; a test pins that spawn and move rolls draw only from `cs.Rng` streams. `MonsterListener` is immutable (def + owner id) or an `IOwnedListener` that stores only its owner, with `Hash(x) == Hash(Clone(x))` and the clone routing to the cloned monster pinned by tests.
+- **A22 (state, B2).** History inner lists (`CreatureAttackedEntry.DamageResults`, `MonsterPerformedMoveEntry.TargetIds`) are never shared between clones; `MonsterState.Listener` and `CardInstance.Listener` are written to the canonical form through `ICanonical` when they carry state; history entries cite `Combat.History.Entries/<Entry>.cs:<line>`; the 500-entry clone budget (≤ 50 µs) is measured and recorded.
+- **A23 (cards-kernel, B2/B7).** `CloneForCombat` = `CombatState.CloneCard` (`Combat/CombatState.cs:679-684`) + `Player.PopulateCombatState` (`Entities.Players/Player.cs:1214-1233`): owner kept, local keywords / vars / energy cost / temporary star costs copied, `Enchantment` and `Affliction` re-bound to the clone (`Models/CardModel.cs:2827-2859`), `CurrentTarget` / `CurrentPlayIndex` / `HasBeenRemovedFromState` reset (`:2861-2882`), `DeckVersionId = source.InstanceId`. Every creation path sets `Owner` (`cs.CreateCard`, `CloneForCombat`, the loop's deck build with `AttachTo`); enchantment and affliction `Card` getters return null where the game does; `GetEnchantedReplayCount` reads the card's enchantment.
+
+Gate suite seams (`integration.md` §8.3) bind the round-3 integrator: equip through `RelicCmd.Obtain` / `PotionCmd.TryToProcure` once they exist; the B2 chain applies powers with `PowerCmd.Apply` outside a `Step`; F4 adds `Confirm` / `Cancel` / `DiscardPotion` with stray indices once B1 says they are validated; F5's "a card that left every pile never returns" holds for every v0.111.0 path read so far.
