@@ -43,6 +43,10 @@ public abstract class PowerModel : AbstractModel, ICanonical
 
     public PowerType TypeForCurrentAmount => GetTypeForAmount(Amount);
 
+    public bool IsVisible => IsVisibleInternal;
+
+    protected virtual bool IsVisibleInternal => true;
+
     public void AttachTo(CreatureState owner)
     {
         if (_owner != null && !ReferenceEquals(_owner, owner))
