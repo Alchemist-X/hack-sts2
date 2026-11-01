@@ -828,3 +828,33 @@ Gates: build 0 warnings 0 errors; tests 965/965, PENDING 3; content soak green (
 Pending (later owners): W2 R1 `EventRoom.EnterInternal` (Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns); W3 encounter GREMLIN_MERC_NORMAL (Test_SaveImport_FullStateThroughRunLayerOwners).
 
 Excluded defs (owner-declared `[SimExclude]`, unchanged here): cards `FORBIDDEN_GRIMOIRE`, `MAD_SCIENCE`, `ROYALTIES`; relics `ASTROLABE`, `CLAWS`, `NEW_LEAF`, `PRECARIOUS_SHEARS`.
+
+## W3.5/W4 integrate 1 (2026-11-01)
+
+Base `de79cbc` (W2/W3 status log after integrate C). All 7 branches descend from the base; none skipped.
+
+Merged, in order: w4/run-glue `def0bde`, w4/kernel-gaps `d499e14`, w4/content-leftovers `db987fd`, w4/exporter-v2 `6fa744b`, w4/mcr-decoder `160de98`, w4/harness-v2 `a20513c`, w4/ftests `bbfc184`.
+
+Conflicts and resolutions:
+- `GremlinMercNormal.cs` (kernel-gaps vs content-leftovers): kernel-gaps' implementation kept (`Extra.GoldWasStolen`, `MarkGoldStolen`, `CalculateGoldProportion` override); content-leftovers' NotImplemented stubs dropped.
+- `MonsterCanonicalTags.cs`: both kept (`GremlinMercNormalEncounterExtra` 0x4DFA, `BattlewornDummyEventEncounterExtra` 0x4DFB, `ThievingHopperExtra` 0x4DF0; no collision).
+- `Sts2Sim.Diff/Program.cs` (mcr-decoder vs harness-v2): both routes kept (`replay*` → `ReplayCli`, then `--v2/--baseline/--update-baseline` → `V2Cli`, then v1).
+- `RunActionExecutor.ClaimReward`, `RunImporter.LoadRelicGrabBag/LoadSavedMap` (run-glue vs ftests): run-glue side kept (same intent; run-glue also has `CreatePreFinishedRoom`).
+
+Fixes:
+- `GREMLIN_MERC_NORMAL` un-excluded; `CombatRoom.OnCombatEnded` calls `Encounter.CalculateGoldProportion(cs)` (was 1f) and keeps a clone of `cs.EncounterExtra`; `BattlewornDummy.RanOutOfTime` reads it (Models.Events/BattlewornDummy.cs:62-67).
+- Starting deck `FloorAddedToDeck = 1` (Player.cs:1108); save import/export of `floor_added_to_deck`; F3 ignore entry removed.
+- AMBERGRIS / BLOOD_POTION / FRUIT_JUICE out of combat through the RunState `CreatureCmd` overloads (the 169 soak content gaps).
+- Harness v2 `AnchorLoader`: "saved properties … are not mapped" classified `content_not_ported` (was `out_of_scope`); the fixture save now first fails on unmapped SPOILS_MAP / GIRYA saved properties instead of unported content.
+- Tests: W1Pending routes removed and made real — `Test_SelfConsistency_F4F5_NewRunWithNeowAndEvents` (run-glue), `Test_Content_leftovers_SurpriseHandsStolenGoldToFatGremlinHeist` (now a real GREMLIN_MERC_NORMAL combat, asserts `GoldWasStolen`), `Test_Content_leftovers_BattlewornDummyOffersThreeSettings` (player rng/bags set up, asserts the V3 relic reward), `Test_SaveImport_FullStateThroughRunLayerOwners.GremlinMerc` (unedited fixture imports). `Content_encounters_2Tests` no longer skips excluded ids. New `Test_Content_leftovers_BattlewornDummyRanOutOfTimeReadsTheFinishedCombat`. F2 pins refreshed (Release = Debug verified): combat streams change only by the kernel-gaps canonical format; run seed 1 walk is now 136 steps (was 120; the walk no longer stops at a content gap).
+
+Gates: build 0 warnings 0 errors; tests 1021/1021, PENDING 0; run soak 10⁴ runs × 5 characters, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267, potions 128, relics 594, 0 failures); diff v1 4/4 bundles, 69/69 decisions; sts2rec 701 passed, 4 skipped; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded content defs: none (only the `UnportedCardDef` / `SimStubEvent` placeholders carry `[SimExclude]`).
+
+Headline numbers (not a gate), mcr-decoder bundles `tmp/diff-v2/mcr` (723 replays: v0.107.1 611, v0.110.1 41, v0.111.0 71; 0 eligible — model_table_unverified 652, unsupported_action 747, outcome_not_terminal 649, no_checksum_states 606, hand_index_unresolved 606, enchanted_card_in_deck 371, encounter_unresolved 61, non_standard_run 26): v1 harness `--include-ineligible` 6 hard divergences (all v0.107.1, `action.card_id` at decision 0-3, consistent with hand_index_unresolved), 717 skipped, 0 errors; v2 harness 723 segments skipped (content_not_ported 717, exporter_ineligible 6). No exporter-v2 bundles were present under `tmp/diff-v2`.
+
+Open issues:
+- No content def carries `[SavedProperty]` yet (e.g. GIRYA.TimesLifted, SPOILS_MAP.SpoilsActIndex are `[SavedProperty]` in the game), so saves holding such cards/relics are rejected by `RunImporter.CheckSupported`.
+- `RunImporter.CreatePreFinishedRoom` does not call `EncounterModel.LoadCustomState`; a pre-finished BATTLEWORN_DUMMY room loses `RanOutOfTime` on import.
+- mcr converter: v0.107.1 model table checksum mismatch (owner note) and hand-index resolution; harness-v2 run-level pairs are logical rather than recorded order (exporter-v2 note).

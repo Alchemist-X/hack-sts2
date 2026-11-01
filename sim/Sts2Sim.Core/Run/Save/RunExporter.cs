@@ -272,7 +272,8 @@ public static class RunExporter
             Id = card.Id,
             CurrentUpgradeLevel = card.UpgradeLevel,
             Enchantment = ench == null ? null : new SavedEnchantment { Id = ench.Id, Amount = ench.Amount, Props = ToSavedProperties(ench) },
-            Props = card.Extra == null ? null : ToSavedProperties(card.Extra)
+            Props = card.Extra == null ? null : ToSavedProperties(card.Extra),
+            FloorAddedToDeck = card.FloorAddedToDeck
         };
     }
 

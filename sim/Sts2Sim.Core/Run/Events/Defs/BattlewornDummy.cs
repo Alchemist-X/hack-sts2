@@ -83,5 +83,5 @@ public sealed class BattlewornDummy : EventModel
     }
 
     private static bool RanOutOfTime(CombatRoom combatRoom)
-        => throw new NotImplementedException("W3.5 kernel-gaps: CombatState.EncounterExtra (BattlewornDummyEventEncounter.RanOutOfTime read by BattlewornDummy.Resume; Models.Events/BattlewornDummy.cs:56-58) for " + combatRoom.Encounter.Id);
+        => combatRoom.EncounterExtra is BattlewornDummyEventEncounter.Extra { RanOutOfTime: true };
 }

@@ -23,13 +23,8 @@ public static class Content_encounters_2Tests
 
     public static void Test_Encounters2_EveryPortedIdIsRegisteredWithItsRoomAndMonsters()
     {
-        var simExcluded = new HashSet<string>(StringComparer.Ordinal) { "BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER", "BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER", "BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER", "GREMLIN_MERC_NORMAL", "THIEVING_HOPPER_WEAK" };
         foreach (var id in PortedIds)
         {
-            if (simExcluded.Contains(id))
-            {
-                continue;
-            }
             Assert.True(EncounterRegistry.TryGet(id, out var def), $"{id} is registered");
             Assert.True(def.AllPossibleMonsters.Count > 0, $"{id} lists its possible monsters");
         }

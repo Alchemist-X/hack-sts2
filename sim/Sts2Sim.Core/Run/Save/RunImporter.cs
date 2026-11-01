@@ -261,6 +261,7 @@ public static class RunImporter
         var def = CardRegistry.Get(saved.Id);
         var card = new CardInstance(def, rs.AllocateCardInstanceId());
         card.AttachTo(owner);
+        card.FloorAddedToDeck = saved.FloorAddedToDeck;
         if (saved.Props != null)
         {
             FillProperties(card.Extra ?? throw new NotSupportedException($"Card {saved.Id} has saved properties but no extra state."), saved.Props);

@@ -37,6 +37,8 @@ public sealed partial class CombatRoom : AbstractRoom
 
     public string? ParentEventId { get; set; }
 
+    public EncounterExtraState? EncounterExtra { get; private set; }
+
     public void AddExtraReward(Reward reward)
     {
         ArgumentNullException.ThrowIfNull(reward);
@@ -95,7 +97,8 @@ public sealed partial class CombatRoom : AbstractRoom
     {
         ArgumentNullException.ThrowIfNull(rs);
         ArgumentNullException.ThrowIfNull(cs);
-        GoldProportion = (decimal)CalculateGoldProportion(cs);
+        GoldProportion = (decimal)Encounter.CalculateGoldProportion(cs);
+        EncounterExtra = cs.EncounterExtra?.DeepClone();
     }
 
     public void AfterCombatVictory(RunState rs, CombatState cs)
@@ -103,8 +106,6 @@ public sealed partial class CombatRoom : AbstractRoom
         OnCombatEnded(rs, cs);
         MarkPreFinished();
     }
-
-    private static float CalculateGoldProportion(CombatState cs) => 1f;
 
     public void OfferRoomEndRewards(RunState rs)
     {
@@ -138,6 +139,7 @@ public sealed partial class CombatRoom : AbstractRoom
             GoldProportion = GoldProportion,
             ShouldResumeParentEventAfterCombat = ShouldResumeParentEventAfterCombat,
             ParentEventId = ParentEventId,
+            EncounterExtra = EncounterExtra?.DeepClone(),
         });
         var extra = ExtraRewards;
         if (extra.Count > 0)
@@ -158,6 +160,8 @@ public sealed partial class CombatRoom : AbstractRoom
         w.WriteBool(ShouldCreateCombat);
         w.WriteBool(ShouldResumeParentEventAfterCombat);
         w.WriteString(ParentEventId);
+        w.WriteBool(EncounterExtra != null);
+        EncounterExtra?.WriteCanonical(w);
         var extra = ExtraRewards;
         w.WriteCount(extra.Count);
         for (int i = 0; i < extra.Count; i++)

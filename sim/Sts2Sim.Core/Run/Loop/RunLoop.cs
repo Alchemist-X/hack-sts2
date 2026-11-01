@@ -93,6 +93,7 @@ public static class RunLoop
         for (int i = 0; i < deck.Count; i++)
         {
             var card = new CardInstance(CardRegistry.Get(deck[i]), rs.AllocateCardInstanceId());
+            card.FloorAddedToDeck = 1;
             card.AttachTo(player);
             card.Def.AfterCreated(card);
             player.Deck.Add(card);

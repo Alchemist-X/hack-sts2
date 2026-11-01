@@ -315,14 +315,9 @@ public static class SaveImportTests
         Assert.Equal(sim.StateHash(), clone.StateHash());
         Assert.True(sim.LegalActions().Count > 0);
 
-        W1Pending.Run(nameof(Test_SaveImport_FullStateThroughRunLayerOwners) + ".GremlinMerc", "content-leftovers", () =>
-        {
-            var full = RunImporter.CheckSupported(PortedOnlyFixture(), ImportOptions.Default);
-            if (full.Count > 0)
-            {
-                throw new NotImplementedException("content-leftovers: " + full[0]);
-            }
-            RunImporter.ImportState(PortedOnlyFixture(), ImportOptions.Default);
-        });
+        var full = RunImporter.CheckSupported(PortedOnlyFixture(), ImportOptions.Default);
+        Assert.Equal(0, full.Count, string.Join("; ", full));
+        var withMerc = RunImporter.ImportState(PortedOnlyFixture(), ImportOptions.Default);
+        Assert.True(withMerc.State.Acts.Any(a => a.Rooms.normalEncounters.Any(e => e.Id == "GREMLIN_MERC_NORMAL")), "GREMLIN_MERC_NORMAL imports");
     }
 }

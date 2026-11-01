@@ -36,9 +36,9 @@ public static class SelfConsistencyTests
         ("FROG_KNIGHT_NORMAL", 14UL)
     };
 
-    private const string PinnedCombatStreams = "NIBBITS_WEAK/11:18:F6FF77E2A869EDCF NIBBITS_WEAK/12:22:242D524C640F3619 INKLETS_NORMAL/13:18:1AF1EC40DDB4BC36 FROG_KNIGHT_NORMAL/14:19:8E25321A01E1BD2A";
+    private const string PinnedCombatStreams = "NIBBITS_WEAK/11:18:D954CBBD6B692983 NIBBITS_WEAK/12:22:ACFD58206F8E0BD8 INKLETS_NORMAL/13:18:89248C839411E7CD FROG_KNIGHT_NORMAL/14:19:DB175B3A2B7CA7D5";
 
-    private const string PinnedRunStreams = "1:120:CE31AC4F1686C701 2:114:954889F8E7234049 3:160:0BE918EFE222F93B 4:400:186B9CBB30E09272";
+    private const string PinnedRunStreams = "1:136:FB5C9353EE6FED4F 2:114:12712EE65F190B2B 3:160:3F8A4FF340851425 4:400:D9CE60B3529814B4";
 
     public static void Test_SelfConsistency_F2_CombatHashStreamsArePinnedAndRepeatable()
     {
@@ -124,23 +124,20 @@ public static class SelfConsistencyTests
 
     public static void Test_SelfConsistency_F4F5_NewRunWithNeowAndEvents()
     {
-        W1Pending.Run(nameof(Test_SelfConsistency_F4F5_NewRunWithNeowAndEvents), "run-glue", () =>
+        var counts = new ClosureCounts();
+        long checks = 0;
+        foreach (var seed in WalkSeeds.Take(4))
         {
-            var counts = new ClosureCounts();
-            long checks = 0;
-            foreach (var seed in WalkSeeds.Take(4))
-            {
-                var ledger = new RunLedger();
-                var walk = Walk(DefaultConfig(seed), seed, WalkStepCap, avoidEvents: false,
-                    before: (sim, step) => CheckClosure(sim, $"neow run {seed} step {step}", step, counts, avoidEvents: false),
-                    after: (sim, step) => ledger.Check(sim, $"neow run {seed} after step {step}"),
-                    rethrowGaps: true);
-                CheckTerminal(walk.Sim, $"neow run {seed} end", counts);
-                counts.Note(walk);
-                checks += ledger.Checks;
-            }
-            Console.WriteLine($"     SelfConsistency F4/F5 (Neow, events): {counts.States} states, {counts.Stepped} actions stepped on clones, {checks} invariant checks; {counts.Describe()}");
-        });
+            var ledger = new RunLedger();
+            var walk = Walk(DefaultConfig(seed), seed, WalkStepCap, avoidEvents: false,
+                before: (sim, step) => CheckClosure(sim, $"neow run {seed} step {step}", step, counts, avoidEvents: false),
+                after: (sim, step) => ledger.Check(sim, $"neow run {seed} after step {step}"),
+                rethrowGaps: true);
+            CheckTerminal(walk.Sim, $"neow run {seed} end", counts);
+            counts.Note(walk);
+            checks += ledger.Checks;
+        }
+        Console.WriteLine($"     SelfConsistency F4/F5 (Neow, events): {counts.States} states, {counts.Stepped} actions stepped on clones, {checks} invariant checks; {counts.Describe()}");
     }
 
     public static void Test_SelfConsistency_F5_RunInvariantsHoldAfterEveryStep()
@@ -778,7 +775,6 @@ public static class SelfConsistencyTests
 
     private static readonly string[] IgnoredPaths =
     {
-        "players[0].deck[*].floor_added_to_deck",
         "players[0].net_id"
     };
 

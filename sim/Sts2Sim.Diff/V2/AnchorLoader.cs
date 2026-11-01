@@ -107,7 +107,7 @@ public static class AnchorLoader
         if (reasons.Count > 0)
         {
             string first = reasons[0];
-            string cls = first.Contains("not ported", StringComparison.Ordinal) || first.Contains("is not registered", StringComparison.Ordinal)
+            string cls = first.Contains("not ported", StringComparison.Ordinal) || first.Contains("is not registered", StringComparison.Ordinal) || first.Contains("are not mapped", StringComparison.Ordinal)
                 ? DivergenceClass.ContentNotPorted
                 : DivergenceClass.OutOfScope;
             throw new StartFailure(cls, "anchor import: " + string.Join("; ", reasons));

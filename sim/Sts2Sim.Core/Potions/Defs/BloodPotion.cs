@@ -22,7 +22,6 @@ public sealed class BloodPotion : PotionModel
     protected override void OnUse(RunState rs, CreatureState? target)
     {
         AssertValidForTargetedPotion(target);
-        var cs = RequireCombat(rs);
-        CreatureCmd.Heal(cs, target, (decimal)target.MaxHp * DynamicVars[HealPercentKey].BaseValue / 100m);
+        CreatureCmd.Heal(rs, target, (decimal)target.MaxHp * DynamicVars[HealPercentKey].BaseValue / 100m);
     }
 }

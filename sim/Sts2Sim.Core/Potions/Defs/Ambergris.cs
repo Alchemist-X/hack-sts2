@@ -26,9 +26,9 @@ public sealed class Ambergris : PotionModel
     protected override void OnUse(RunState rs, CreatureState? target)
     {
         AssertValidForTargetedPotion(target);
-        var cs = RequireCombat(rs);
-        CreatureCmd.Heal(cs, target, (decimal)target.MaxHp * DynamicVars[HealPercentKey].BaseValue / 100m);
-        if (cs.IsInProgress)
+        CreatureCmd.Heal(rs, target, (decimal)target.MaxHp * DynamicVars[HealPercentKey].BaseValue / 100m);
+        var cs = rs.Combat;
+        if (cs != null && cs.IsInProgress)
         {
             PowerCmd.Apply(cs, PowerRegistry.Create(AmbergrisPowerId), target, AmbergrisAmount, Owner, null);
         }

@@ -89,10 +89,7 @@ public static class Content_leftoversTests
     private static CombatState NewMercCombat(int gold)
     {
         var ids = new[] { StrikeIronclad.CardId, StrikeIronclad.CardId, StrikeIronclad.CardId, StrikeIronclad.CardId, StrikeIronclad.CardId, DefendIronclad.CardId };
-        var sim = CombatSim.Create(7731UL, ids, "NIBBITS_WEAK", 0, cs =>
-        {
-            cs.Monsters.Add(MonsterSpawner.Spawn(cs, new MonsterSpawn(MonsterRegistry.Get(GremlinMerc.MonsterIdEntry), GremlinMercNormal.MercSlot)));
-        });
+        var sim = CombatSim.Create(7731UL, ids, GremlinMercNormal.EncounterIdEntry);
         var state = sim.State;
         state.Player.Gold = gold;
         return state;
@@ -144,7 +141,7 @@ public static class Content_leftoversTests
         var heist = cs.Monsters.Single(m => m.Def is FatGremlin).Powers.OfType<HeistPower>().Single();
         Assert.Equal(20, heist.Amount, "HEIST carries the stolen 20");
         Assert.Equal(cs.Player.CombatId, heist.TargetId, "HEIST targets the robbed player");
-        W1Pending.Run(nameof(Test_Content_leftovers_SurpriseHandsStolenGoldToFatGremlinHeist), "W3.5 kernel-gaps CombatState.EncounterExtra", () => GremlinMercNormal.MarkGoldStolen(cs));
+        Assert.True(GremlinMercNormal.GoldWasStolen(cs), "SURPRISE marks the encounter's gold as stolen");
     }
 
     public static void Test_Content_leftovers_HeistReturnsGoldAsReward()
@@ -267,14 +264,38 @@ public static class Content_leftoversTests
     {
         var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
         var rs = RunState.CreateStandalone(player, new RunRngSet(5151UL), 0, null);
+        player.PlayerRng = new PlayerRngSet(5152UL);
+        player.PlayerOdds = new PlayerOddsSet(player.PlayerRng, 0);
+        player.RelicGrabBag = new RelicGrabBag(false);
+        player.RelicGrabBag.Populate(rs, player, rs.Rng.UpFront);
+        rs.SharedRelicGrabBag = new RelicGrabBag(true);
+        rs.SharedRelicGrabBag.Populate(RelicGrabBag.SharedPoolRelics(rs), rs.Rng.UpFront);
         var ev = EventRegistry.Create(BattlewornDummy.EventId);
         ev.BeginEvent(rs, player, false);
         Assert.Equal(3, ev.CurrentOptions.Count);
         Assert.Equal("BATTLEWORN_DUMMY.pages.INITIAL.options.SETTING_3", ev.CurrentOptions[2].TextKey);
-        W1Pending.Run(nameof(Test_Content_leftovers_BattlewornDummyOffersThreeSettings), "W3.5 kernel-gaps CombatState.EncounterExtra", () =>
-        {
-            ev.Resume(rs, new CombatRoom(EncounterRegistry.Get(BattlewornDummy.V3EncounterId)));
-            Assert.True(ev.IsFinished);
-        });
+        int before = rs.RewardsStack.Count;
+        ev.Resume(rs, new CombatRoom(EncounterRegistry.Get(BattlewornDummy.V3EncounterId)));
+        Assert.True(ev.IsFinished);
+        Assert.Equal(before + 1, rs.RewardsStack.Count, "V3 victory offers a relic reward");
+    }
+
+    public static void Test_Content_leftovers_BattlewornDummyRanOutOfTimeReadsTheFinishedCombat()
+    {
+        var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
+        var rs = RunState.CreateStandalone(player, new RunRngSet(5151UL), 0, null);
+        var ev = EventRegistry.Create(BattlewornDummy.EventId);
+        ev.BeginEvent(rs, player, false);
+        var room = new CombatRoom(EncounterRegistry.Get(BattlewornDummy.V3EncounterId));
+        var cs = CombatLoop.CreateCombat(5UL, Enumerable.Repeat(StrikeIronclad.CardId, 10).ToList(), BattlewornDummy.V3EncounterId, 0);
+        BattlewornDummyEventEncounter.SetRanOutOfTime(cs, true);
+        room.OnCombatEnded(rs, cs);
+        BattlewornDummyEventEncounter.SetRanOutOfTime(cs, false);
+        Assert.True(room.EncounterExtra is BattlewornDummyEventEncounter.Extra { RanOutOfTime: true }, "the room keeps a copy of the finished combat's encounter state");
+        int before = rs.RewardsStack.Count;
+        ev.Resume(rs, room);
+        Assert.True(ev.IsFinished);
+        Assert.Equal(before, rs.RewardsStack.Count, "DEFEAT page offers nothing");
+        Assert.Equal(StateHasher.Hash(room.CloneFor(rs)), StateHasher.Hash(room), "cloned and hashed");
     }
 }

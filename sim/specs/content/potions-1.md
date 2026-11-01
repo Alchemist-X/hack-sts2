@@ -32,3 +32,4 @@
 - POISON_POTION — Models.Potions/PoisonPotion.cs:23 — gaseous VFX dropped; POISON_POWER by id (other owner)
 - POWDERED_DEMISE — Models.Potions/PowderedDemise.cs:17 — DEMISE_POWER by id (other owner), var key 'Demise'
 - RADIANT_TINCTURE — Models.Potions/RadiantTincture.cs:18 — energy (IntValue) then RADIANCE_POWER by id (other owner)
+- W4 integrate 1: AMBERGRIS, BLOOD_POTION, FRUIT_JUICE (AnyTime) heal / gain max HP through the `CreatureCmd` RunState overloads, so out-of-combat use no longer hits `PotionModel.RequireCombat` (Models.Potions/Ambergris.cs:74-92 — AMBERGRIS_POWER only while `CombatManager.IsInProgress`; BloodPotion.cs:53; FruitJuice.cs:49).

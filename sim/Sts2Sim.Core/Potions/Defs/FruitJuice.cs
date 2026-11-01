@@ -22,7 +22,6 @@ public sealed class FruitJuice : PotionModel
     protected override void OnUse(RunState rs, CreatureState? target)
     {
         AssertValidForTargetedPotion(target);
-        var cs = RequireCombat(rs);
-        CreatureCmd.GainMaxHp(cs, target, DynamicVars.MaxHp.BaseValue);
+        CreatureCmd.GainMaxHp(rs, target, DynamicVars.MaxHp.BaseValue);
     }
 }
