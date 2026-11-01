@@ -138,6 +138,8 @@ public abstract class PowerModel : AbstractModel, ICanonical
 
     public virtual bool ShouldOwnerDeathTriggerFatal() => true;
 
+    public virtual bool ShouldOwnerDeathTriggerFatal(CombatState cs) => ShouldOwnerDeathTriggerFatal();
+
     public PowerModel CloneFor(CreatureState newOwner)
     {
         var clone = (PowerModel)MemberwiseClone();
