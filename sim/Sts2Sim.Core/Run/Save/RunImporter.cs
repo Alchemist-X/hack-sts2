@@ -161,11 +161,11 @@ public static class RunImporter
         rs.CurrentActIndex = save.CurrentActIndex;
         rs.VisitedMapCoords.AddRange(save.VisitedMapCoords);
         rs.VisitedEventIds.UnionWith(save.EventsSeen.Select(RunSaveReader.StripCategory));
-        foreach (var act in save.MapPointHistory)
+        for (int actIndex = 0; actIndex < save.MapPointHistory.Count; actIndex++)
         {
-            foreach (var entry in act)
+            foreach (var entry in save.MapPointHistory[actIndex])
             {
-                rs.MapPointHistory.Add(ToHistoryEntry(entry));
+                rs.MapPointHistory.Add(ToHistoryEntry(entry, actIndex));
             }
         }
         rs.ExtraFields.StartedWithNeow = save.ExtraFields.StartedWithNeow;
@@ -333,11 +333,14 @@ public static class RunImporter
         return act;
     }
 
-    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved)
+    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved) => ToHistoryEntry(saved, 0);
+
+    public static MapPointHistoryEntry ToHistoryEntry(SavedMapPointHistoryEntry saved, int actIndex)
     {
         ArgumentNullException.ThrowIfNull(saved);
         var entry = new MapPointHistoryEntry(saved.MapPointType)
         {
+            ActIndex = actIndex,
             GoldGained = saved.GoldGained ?? 0
         };
         foreach (var room in saved.Rooms)
@@ -568,11 +571,43 @@ public static class RunImporter
     }
 
     private static void LoadUnknownMapPointOdds(UnknownMapPointOdds odds, SavedRunOdds saved)
-        => throw new NotImplementedException("W2 R3: UnknownMapPointOdds.MonsterOdds/EliteOdds/TreasureOdds/ShopOdds setters (Odds/UnknownMapPointOdds.cs:39-90, RunOddsSet.FromSerializable Odds/RunOddsSet.cs:38-50)");
+    {
+        odds.MonsterOdds = saved.UnknownMapPointMonsterOddsValue;
+        odds.EliteOdds = saved.UnknownMapPointEliteOddsValue;
+        odds.TreasureOdds = saved.UnknownMapPointTreasureOddsValue;
+        odds.ShopOdds = saved.UnknownMapPointShopOddsValue;
+    }
 
     private static RelicGrabBag LoadRelicGrabBag(SavedRelicGrabBag saved, bool refreshAllowed)
-        => throw new NotImplementedException("W2 R3: RelicGrabBag.LoadFromSerializable (Runs/RelicGrabBag.cs:358-380)");
+    {
+        var bag = new RelicGrabBag(refreshAllowed);
+        bag.LoadFromSerializable(saved.RelicIdLists.Select(p => new KeyValuePair<RelicRarity, IReadOnlyList<string>>(p.Key, p.Value)));
+        return bag;
+    }
 
     private static ActMap LoadSavedMap(RunState rs, SavedActMapData saved)
-        => throw new NotImplementedException("W2 R2: SavedActMap from saved_map (Map/SavedActMap.cs:110-153)");
+        => new SavedActMap(ToSerializableActMap(saved));
+
+    public static SerializableActMap ToSerializableActMap(SavedActMapData saved)
+    {
+        ArgumentNullException.ThrowIfNull(saved);
+        return new SerializableActMap
+        {
+            Points = saved.Points.Select(ToSerializableMapPoint).ToList(),
+            BossPoint = ToSerializableMapPoint(saved.Boss ?? throw new FormatException("saved_map has no boss point")),
+            SecondBossPoint = saved.SecondBoss != null ? ToSerializableMapPoint(saved.SecondBoss) : null,
+            StartingPoint = ToSerializableMapPoint(saved.Start ?? throw new FormatException("saved_map has no start point")),
+            StartMapPointCoords = saved.StartCoords.Count > 0 ? new List<MapCoord>(saved.StartCoords) : null,
+            GridWidth = saved.Width,
+            GridHeight = saved.Height
+        };
+    }
+
+    private static SerializableMapPoint ToSerializableMapPoint(SavedMapPoint p) => new()
+    {
+        Coord = p.Coord,
+        PointType = p.Type,
+        CanBeModified = p.CanModify,
+        ChildCoords = p.Children.Count > 0 ? new List<MapCoord>(p.Children) : null
+    };
 }

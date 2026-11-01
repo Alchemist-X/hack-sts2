@@ -139,6 +139,7 @@ public static class RunActionExecutor
         var reward = set.Rewards[index];
         if (reward is CardReward)
         {
+            reward.OnSelectWrapper(rs);
             loop.OpenCardReward = index;
             return;
         }

@@ -281,7 +281,7 @@ public sealed class RunSim
     private void StepPrompt(Pending pending, RunAction action, IChoiceAnswerer? answerer)
     {
         var prompt = pending.Prompt;
-        if (!action.TryToCombat(out var ga) || !LegalActionGenerator.TryResolvePrompt(prompt, pending.Picks, ga, out var error))
+        if (!action.TryToCombat(out var ga) || RunAction.FromCombat(ga) != action || !LegalActionGenerator.TryResolvePrompt(prompt, pending.Picks, ga, out var error))
         {
             throw new InvalidOperationException($"Illegal action {action} at prompt {prompt.SiteId}.");
         }
