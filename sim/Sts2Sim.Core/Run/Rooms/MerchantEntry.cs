@@ -159,7 +159,8 @@ public sealed class MerchantCardEntry : MerchantEntry
                 }
             }
         }
-        var options = _cardPool.Where(c => !inShop.Contains(c));
+        var content = rs.Config?.Content;
+        var options = _cardPool.Where(c => !inShop.Contains(c) && (content == null || content.AllowsCard(c.Id)));
         if (_cardType.HasValue)
         {
             CreationResult = CardFactory.CreateForMerchant(rs, Player, options, _cardType.Value);

@@ -46,3 +46,8 @@ One line per rule: `member — decompile file:line — dropped points / gaps`. P
 ## Not here
 
 - The other ~60 events (W3, `Run/Events/Defs/`). Choice history / run history entries. `EventSynchronizer` multiplayer voting. Saving at point C (R6/R7).
+
+## W4 run-glue (2026-11-01)
+
+- Note 1 resolved: `EventRoom.Enter` override removed; `EventRoom.EnterInternal(rs, isRestoringRoomStackBase)` runs begin-event → `Hook.AfterRoomEntered` → `AfterEventStarted`, id assigned by `AbstractRoom.Enter` (Rooms/AbstractRoom.cs:40-44, Rooms/EventRoom.cs EnterInternal).
+- `EventModel.CreateOptionRelic` returns null (option kept by id, obtain skipped + fidelity) when the run's `ContentFilter` rejects the relic; `EventModel.Content` captured at `BeginEvent` (sim only).

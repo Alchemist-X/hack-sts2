@@ -211,7 +211,16 @@ public sealed class CloneRestSiteOption : RestSiteOption
 
     public override string OptionId => "CLONE";
 
-    public override bool OnSelect(RunState rs) => throw new NotImplementedException("W3 content: CloneRestSiteOption.OnSelect needs RunState.CloneCard for deck cards with the Clone enchantment");
+    public override bool OnSelect(RunState rs)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        var cards = Owner.Deck.Where(c => c.Enchantment is Sts2Sim.Core.Cards.Enchantments.Clone).ToList();
+        foreach (var current in cards)
+        {
+            CardPileCmd.Add(rs, rs.CloneCard(current), PileType.Deck);
+        }
+        return true;
+    }
 }
 
 public sealed class MendRestSiteOption : RestSiteOption

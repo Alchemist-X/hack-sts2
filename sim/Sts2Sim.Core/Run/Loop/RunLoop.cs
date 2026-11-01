@@ -231,6 +231,20 @@ public static class RunLoop
         rs.VisitedMapCoords.RemoveAll(coord => !map.HasPoint(coord));
     }
 
+    public static void GenerateMapOnLoad(RunState rs)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        if (rs.Map is not SavedActMap saved)
+        {
+            GenerateMap(rs);
+            return;
+        }
+        var map = Hook.ModifyGeneratedMapLate(rs, saved, rs.CurrentActIndex);
+        Hook.AfterMapGenerated(rs, map, rs.CurrentActIndex);
+        rs.Map = map;
+        rs.VisitedMapCoords.RemoveAll(coord => !map.HasPoint(coord));
+    }
+
     public static bool AddVisitedMapCoord(RunState rs, MapCoord coord)
     {
         if (rs.VisitedMapCoords.Contains(coord))
@@ -285,8 +299,8 @@ public static class RunLoop
         }
         if (room is CombatRoom { IsPreFinished: true, ParentEventId: { } parentId })
         {
-            RoomStack.EnterRoom(rs, new EventRoom(EventRegistry.Create(parentId)));
-            RoomStack.EnterRoomWithoutExitingCurrentRoom(rs, room);
+            RoomStack.EnterRoomInternal(rs, new EventRoom(EventRegistry.Create(parentId)), isRestoringRoomStackBase: true);
+            RoomStack.EnterRoomInternal(rs, room, isRestoringRoomStackBase: false);
             return;
         }
         RoomStack.EnterRoom(rs, room);
@@ -418,12 +432,11 @@ public static class RunLoop
             return;
         }
         int turnsTaken = cs.Player.TurnNumber;
-        room.OnCombatEnded(rs, cs);
         if (CurrentMapPointHistoryEntry(rs) is { Rooms.Count: > 0 } entry)
         {
             entry.Rooms[^1] = entry.Rooms[^1] with { TurnsTaken = turnsTaken };
         }
-        room.MarkPreFinished();
+        room.AfterCombatVictory(rs, cs);
         rs.Combat = null;
         loop.MapOpen = false;
         loop.OpenCardReward = RunLoopState.NoCardReward;

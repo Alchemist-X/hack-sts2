@@ -100,11 +100,22 @@ public sealed class TreasureRoom : AbstractRoom
 
     private static int TryHandleSpoilsMap(RunState rs, PlayerState player)
     {
-        if (RoomStack.CurrentMapCoord(rs) == null || rs.Map == null || !player.Deck.Any(c => c.Id == SpoilsMapId))
+        var coord = RoomStack.CurrentMapCoord(rs);
+        if (coord == null || rs.Map?.GetPoint(coord.Value) == null)
         {
             return 0;
         }
-        throw new NotImplementedException("W2 R2 / W3 content: MapPoint.Quests + SpoilsMap.OnQuestComplete (Multiplayer.Game/OneOffSynchronizer.cs:670-700)");
+        if (!rs.Map.GetQuests(coord.Value).Contains(SpoilsMapId))
+        {
+            return 0;
+        }
+        var maps = player.Deck.Where(c => c.Id == SpoilsMapId).ToList();
+        int num = 0;
+        foreach (var current in maps)
+        {
+            num += Sts2Sim.Core.Cards.SpoilsMap.OnQuestComplete(rs, current);
+        }
+        return num;
     }
 
     public const string SpoilsMapId = "SPOILS_MAP";

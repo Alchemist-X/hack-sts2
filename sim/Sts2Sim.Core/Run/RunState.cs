@@ -50,6 +50,14 @@ public sealed partial class RunState : ICanonical
 
     public int AllocateCardInstanceId() => NextCardInstanceId++;
 
+    public CardInstance CloneCard(CardInstance mutableCard)
+    {
+        ArgumentNullException.ThrowIfNull(mutableCard);
+        var clone = mutableCard.CloneForCombat(AllocateCardInstanceId());
+        clone.DeckVersionId = CardInstance.NoDeckVersion;
+        return clone;
+    }
+
     public RunConfig? Config { get; set; }
 
     public List<ActInstance> Acts { get; private set; } = new();

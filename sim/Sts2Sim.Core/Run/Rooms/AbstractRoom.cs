@@ -12,9 +12,9 @@ public abstract partial class AbstractRoom : ICanonical
 
     public bool IsPreFinished { get; protected set; }
 
-    public virtual bool IsVictoryRoom => false;
+    public bool IsVictoryRoom => this is EventRoom eventRoom && eventRoom.CanonicalEvent is TheArchitect;
 
-    public virtual void Enter(RunState rs) => Enter(rs, false);
+    public void Enter(RunState rs) => Enter(rs, false);
 
     public void Enter(RunState rs, bool isRestoringRoomStackBase)
     {

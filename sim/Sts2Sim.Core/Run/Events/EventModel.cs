@@ -24,6 +24,8 @@ public abstract partial class EventModel : AbstractModel, ICanonical
 
     public Rng? Rng { get; protected set; }
 
+    protected ContentFilter? Content { get; private set; }
+
     public string? Description { get; private set; }
 
     public virtual string InitialDescription => Id + ".pages.INITIAL.description";
@@ -49,6 +51,7 @@ public abstract partial class EventModel : AbstractModel, ICanonical
             throw new InvalidOperationException("Tried to begin event, but it already has an owner!");
         }
         Owner = player;
+        Content = rs.Config?.Content;
         int slot = rs.Players.IndexOf(player);
         Rng = new Rng(RngSeeds.Event(rs.Rng.Seed, IsShared, slot, Id));
         try
@@ -209,7 +212,7 @@ public abstract partial class EventModel : AbstractModel, ICanonical
 
     protected RelicModel? CreateOptionRelic(string relicId)
     {
-        if (!RelicRegistry.Models.Contains(relicId))
+        if (!RelicRegistry.Models.Contains(relicId) || (Content != null && !Content.AllowsRelic(relicId)))
         {
             return null;
         }

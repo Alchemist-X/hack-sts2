@@ -78,3 +78,14 @@ One line per rule: `member — decompile file:line — dropped points / gaps`. P
 - `TakeRelic` — TreasureRoomRelicSynchronizer.cs:238-377 + node-layer NTreasureRoomRelicCollection.cs:505 — SP single vote → `RelicCmd.Obtain`; end voting. Empty consolation `StableShuffle` draws nothing.
 - `SkipRelic` — TreasureRoomRelicSynchronizer.cs:252-262, NTreasureRoom.cs:551-565 — SP sets `SingleplayerSkipped` (then proceed); `Exit` ends voting when skipped (:379-385).
 - GAP: relic-picking fight (`RelicPickingResult.GenerateRelicFight`, ≥2 voters) not ported — unreachable in SP.
+
+## W4 run-glue (2026-11-01)
+
+- `AbstractRoom.Enter(rs)` / `Enter(rs, isRestoringRoomStackBase)` non-virtual, every room enters through `EnterInternal` — Rooms/AbstractRoom.cs:40-44; `EventRoom` moved onto the pattern (no override of `Enter`), restoring the stack base is accepted (Rooms/EventRoom.cs EnterInternal, only `NEventRoom.Create` is skipped).
+- `AbstractRoom.IsVictoryRoom` = `EventRoom` whose canonical event is `TheArchitect` — Rooms/AbstractRoom.cs:28-38 (was a virtual `false`).
+- `CombatRoom.OfferRoomEndRewards` offers each set through `RewardsSet.Offer` (sets `IsTerminal` for a combat room) after `Hook.BeforeCombatRewardOffered` — Rooms/CombatRoom.cs:176-299, Rewards/RewardsSet.cs Offer; the old `RoomStack.Offer` push left boss sets non-terminal, so act transitions never ran.
+- `CloneRestSiteOption.OnSelect` — Entities.RestSite/CloneRestSiteOption.cs:141-162 — every deck card with the `Clone` enchantment → `RunState.CloneCard` → `CardPileCmd.Add(Deck)`; returns true; preview dropped.
+- `RunState.CloneCard` — Runs/RunState.cs:711-716 — `CloneForCombat(AllocateCardInstanceId())`, deck version reset (the sim's `AddCard` is the instance id allocation).
+- `TreasureRoom.TryHandleSpoilsMap` — Multiplayer.Game/OneOffSynchronizer.cs:670-700 — current map point carries a `SPOILS_MAP` quest (`ActMap.GetQuests`) → `SpoilsMap.OnQuestComplete` per SpoilsMap deck card, gold summed; no quest → 0. The quest is only placed once content calls the new `ActMap.AddQuestWhileGenerating` from `SpoilsMap.AfterMapGenerated` (content gap, see integration notes).
+- `ActMap.AddQuestWhileGenerating(coord, ownerKey)` (sim) — in-place quest add for the map passed to `Hook.AfterMapGenerated` before `rs.Map` is set (the map is shared between clones afterwards; later edits keep using `WithQuestAdded/Removed`).
+- `MerchantCardEntry.Populate` honours `RunConfig.Content.AllowsCard` (sim content filter, as `CardCreationOptions.GetPossibleCards`).

@@ -264,42 +264,36 @@ public static class RunStateTests
 
     public static void Test_ActInstance_GenerateRoomsCountsAndUpFrontOrder()
     {
-        W1Pending.Run(nameof(Test_ActInstance_GenerateRoomsCountsAndUpFrontOrder), "R3 odds-rewards (GrabBag)", () =>
-        {
-            var rs = NewRun(10);
-            rs.Acts.Add(new ActInstance(new ActDouble("ACT_A", 0, true, 15, SampleEncounters())));
-            rs.Acts.Add(new ActInstance(new ActDouble("ACT_B", 1, true, 14, SampleEncounters())));
-            rs.GenerateRooms();
-            var first = rs.Acts[0].Rooms;
-            Assert.Equal(15, first.normalEncounters.Count);
-            Assert.True(first.normalEncounters.Take(3).All(e => e.IsWeak));
-            Assert.Equal(ActModel.EliteEncounterCount, first.eliteEncounters.Count);
-            Assert.Equal(2 + ActModel.AllSharedEventIds.Count, first.events.Count);
-            Assert.NotNull(first.Boss);
-            Assert.Null(first.SecondBoss);
-            Assert.NotNull(rs.Acts[1].Rooms.SecondBoss);
-            Assert.NotEqual(rs.Acts[1].Rooms.Boss!.Id, rs.Acts[1].Rooms.SecondBoss!.Id);
-            var again = NewRun(10);
-            again.Acts.Add(new ActInstance(new ActDouble("ACT_A", 0, true, 15, SampleEncounters())));
-            again.Acts.Add(new ActInstance(new ActDouble("ACT_B", 1, true, 14, SampleEncounters())));
-            again.GenerateRooms();
-            Assert.Equal(StateHasher.Hash(rs), StateHasher.Hash(again));
-            Assert.Equal(StateHasher.Hash(rs), StateHasher.Hash(rs.DeepClone()));
-        });
+        var rs = NewRun(10);
+        rs.Acts.Add(new ActInstance(new ActDouble("ACT_A", 0, true, 15, SampleEncounters())));
+        rs.Acts.Add(new ActInstance(new ActDouble("ACT_B", 1, true, 14, SampleEncounters())));
+        rs.GenerateRooms();
+        var first = rs.Acts[0].Rooms;
+        Assert.Equal(15, first.normalEncounters.Count);
+        Assert.True(first.normalEncounters.Take(3).All(e => e.IsWeak));
+        Assert.Equal(ActModel.EliteEncounterCount, first.eliteEncounters.Count);
+        Assert.Equal(2 + ActModel.AllSharedEventIds.Count, first.events.Count);
+        Assert.NotNull(first.Boss);
+        Assert.Null(first.SecondBoss);
+        Assert.NotNull(rs.Acts[1].Rooms.SecondBoss);
+        Assert.NotEqual(rs.Acts[1].Rooms.Boss!.Id, rs.Acts[1].Rooms.SecondBoss!.Id);
+        var again = NewRun(10);
+        again.Acts.Add(new ActInstance(new ActDouble("ACT_A", 0, true, 15, SampleEncounters())));
+        again.Acts.Add(new ActInstance(new ActDouble("ACT_B", 1, true, 14, SampleEncounters())));
+        again.GenerateRooms();
+        Assert.Equal(StateHasher.Hash(rs), StateHasher.Hash(again));
+        Assert.Equal(StateHasher.Hash(rs), StateHasher.Hash(rs.DeepClone()));
     }
 
     public static void Test_RunState_CreateForNewRunSeedsPlayer()
     {
-        W1Pending.Run(nameof(Test_RunState_CreateForNewRunSeedsPlayer), "R3 odds-rewards (RunOddsSet, PlayerOddsSet)", () =>
-        {
-            var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
-            var acts = new ActModel[] { new ActDouble("ACT_A", 0, true), new ActDouble("ACT_B", 1, true) };
-            var rs = RunState.CreateForNewRun(player, acts, 0, "SEED");
-            Assert.Equal(2, rs.Acts.Count);
-            Assert.NotNull(rs.Odds);
-            Assert.NotNull(rs.SharedRelicGrabBag);
-            Assert.Equal(PlayerRngSet.ForPlayer("SEED", 0).Seed, player.PlayerRng!.Seed);
-            Assert.NotNull(player.PlayerOdds);
-        });
+        var player = new PlayerState(0, StartingDecks.IroncladCharacterId, 80, 80, 3);
+        var acts = new ActModel[] { new ActDouble("ACT_A", 0, true), new ActDouble("ACT_B", 1, true) };
+        var rs = RunState.CreateForNewRun(player, acts, 0, "SEED");
+        Assert.Equal(2, rs.Acts.Count);
+        Assert.NotNull(rs.Odds);
+        Assert.NotNull(rs.SharedRelicGrabBag);
+        Assert.Equal(PlayerRngSet.ForPlayer("SEED", 0).Seed, player.PlayerRng!.Seed);
+        Assert.NotNull(player.PlayerOdds);
     }
 }

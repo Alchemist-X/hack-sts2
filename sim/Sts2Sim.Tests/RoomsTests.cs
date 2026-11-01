@@ -176,10 +176,7 @@ public static class RoomsTests
     {
         var rs = NewRun();
         var player = rs.Players[0];
-        W1Pending.Run(nameof(Test_Rooms_RestSiteHealIsThirtyPercentAndCookRemovesTwo), "R3 odds-rewards", () =>
-        {
-            Assert.True(new HealRestSiteOption(player).OnSelect(rs));
-        });
+        Assert.True(new HealRestSiteOption(player).OnSelect(rs));
         Assert.Equal(74, player.CurrentHp, "50 + 80 * 0.3");
 
         var a = AddDeck(rs, "STRIKE_IRONCLAD");
@@ -201,39 +198,25 @@ public static class RoomsTests
         var room = new TreasureRoom(1);
         var rs = NewRun();
         rs.CurrentRooms.Add(room);
-        W1Pending.Run(nameof(Test_Rooms_TreasureRoomRejectsActIndexOutsideZeroToTwo), "R3 odds-rewards", () =>
-        {
-            room.Enter(rs);
-            Assert.NotNull(room.CurrentRelicId);
-            Assert.False(room.ProceedAllowed);
-            int gold = rs.Players[0].Gold;
-            room.OpenChest(rs);
-            Assert.True(rs.Players[0].Gold - gold is >= 42 and <= 52);
-            room.TakeRelic(rs);
-            Assert.True(room.RelicClaimed);
-        });
+        room.Enter(rs);
+        Assert.NotNull(room.CurrentRelicId);
+        Assert.False(room.ProceedAllowed);
+        int gold = rs.Players[0].Gold;
+        room.OpenChest(rs);
+        Assert.True(rs.Players[0].Gold - gold is >= 42 and <= 52);
+        room.TakeRelic(rs);
+        Assert.True(room.RelicClaimed);
     }
 
     public static void Test_Rooms_MerchantInventoryLayout()
     {
         var rs = NewRun();
-        W1Pending.Run(nameof(Test_Rooms_MerchantInventoryLayout), "R3 odds-rewards", () =>
-        {
-            MerchantInventory inventory;
-            try
-            {
-                inventory = MerchantInventory.CreateForNormalMerchant(rs, rs.Players[0]);
-            }
-            catch (KeyNotFoundException ex) when (ex.Message.StartsWith("No RelicModel registered", StringComparison.Ordinal))
-            {
-                throw new NotImplementedException("W3 content: " + ex.Message, ex);
-            }
-            Assert.Equal(5, inventory.CharacterCardEntries.Count);
-            Assert.Equal(2, inventory.ColorlessCardEntries.Count);
-            Assert.Equal(3, inventory.RelicEntries.Count);
-            Assert.Equal(3, inventory.PotionEntries.Count);
-            Assert.Equal(1, inventory.CharacterCardEntries.Count(e => e.IsOnSale));
-            Assert.Equal(14, inventory.AllEntries.Count);
-        });
+        var inventory = MerchantInventory.CreateForNormalMerchant(rs, rs.Players[0]);
+        Assert.Equal(5, inventory.CharacterCardEntries.Count);
+        Assert.Equal(2, inventory.ColorlessCardEntries.Count);
+        Assert.Equal(3, inventory.RelicEntries.Count);
+        Assert.Equal(3, inventory.PotionEntries.Count);
+        Assert.Equal(1, inventory.CharacterCardEntries.Count(e => e.IsOnSale));
+        Assert.Equal(14, inventory.AllEntries.Count);
     }
 }

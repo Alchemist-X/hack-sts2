@@ -127,6 +127,15 @@ public abstract partial class ActMap : ICanonical
 
     public IReadOnlyList<MapQuest> AllQuests => _quests;
 
+    public void AddQuestWhileGenerating(MapCoord coord, string ownerKey)
+    {
+        ArgumentNullException.ThrowIfNull(ownerKey);
+        var quests = new MapQuest[_quests.Length + 1];
+        _quests.CopyTo(quests, 0);
+        quests[^1] = new MapQuest(coord, ownerKey);
+        _quests = quests;
+    }
+
     public ActMap WithQuestAdded(MapCoord coord, string ownerKey)
     {
         var copy = (ActMap)MemberwiseClone();

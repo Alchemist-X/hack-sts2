@@ -32,7 +32,7 @@ public static class RoomStack
                 {
                     return new EventRoom(eventModel);
                 }
-                return new EventRoom(mapPointType == MapPointType.Ancient ? rs.Act.PullAncient() : rs.Act.PullNextEvent(rs));
+                return new EventRoom(mapPointType == MapPointType.Ancient ? rs.Act.PullAncient(rs) : rs.Act.PullNextEvent(rs));
             case RoomType.RestSite:
                 return new RestSiteRoom();
             case RoomType.Map:

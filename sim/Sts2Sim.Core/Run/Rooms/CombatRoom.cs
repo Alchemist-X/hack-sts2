@@ -118,7 +118,7 @@ public sealed partial class CombatRoom : AbstractRoom
         for (int i = 0; i < sets.Count; i++)
         {
             Hook.BeforeCombatRewardOffered(rs, sets[i], this);
-            RoomStack.Offer(rs, sets[i]);
+            sets[i].Offer(rs);
         }
     }
 

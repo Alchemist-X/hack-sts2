@@ -45,3 +45,7 @@ Decompile paths are given without the `MegaCrit.Sts2.Core.` prefix. One line per
 - RewardsSet.GenerateWithoutOffering — Rewards/RewardsSet.cs:45-131 — populate in list order, ModifyRewards, populate added, AfterModifyingRewards, the same `List.Sort` by RewardsSetIndex (all inside `!_isGenerated`).
 - RewardsSet.Offer — Rewards/RewardsSet.cs:159-339 — dead player → no-op; shown iff rewards or combat room or EmptyForRoom; shown = pushed on `rs.RewardsStack`, `IsTerminal = Room is CombatRoom`.
 - RewardsCmd.OfferForRoomEnd / OfferCustom / GenerateForRoomEnd / GenerateCustom — Commands/RewardsCmd.cs:294-339.
+
+## W4 run-glue (2026-11-01)
+
+- `CardRemovalReward.OnSelect` — Rewards/CardRemovalReward.cs:105-112, Multiplayer.Game/RewardSynchronizer.cs:520-536 — cancelable, manually confirmed 1-card `RoomPrompts.FromDeckForRemoval` (site `RewardSynchronizer.DoUnsyncedCardRemoval`) → `CardPileCmd.RemoveFromDeck` → true; nothing picked → false. Test `Test_RunLoop_CardRemovalRewardPromptsTheDeck`.
