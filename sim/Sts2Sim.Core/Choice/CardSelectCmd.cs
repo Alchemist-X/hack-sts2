@@ -1,6 +1,6 @@
 namespace Sts2Sim.Core.Choice;
 
-public static class CardSelectCmd
+public static partial class CardSelectCmd
 {
     public const int MaxChooseACardOptions = 3;
 
