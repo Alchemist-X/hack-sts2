@@ -326,3 +326,140 @@ machine load: the unchanged P0 tree measured 0.87× of its recorded throughput i
 | 3 | Only build, the Part A suite, the diff gate and the bench hold, so the W1 wave is not complete. | Round 2. |
 | 4 | The bench covers the scaffold only (§7.4); the track content (relics, potions, orbs, history appends, hook dispatch) will change it. | Re-run after round 2. |
 | 5 | The REC track (`4094c1e`) is compiled and tested but not installed; the game keeps the previously installed `Sts2Recorder`. | `scripts/install_mod.sh` when the recorder change is to go live. |
+
+## 8. W1 integrate, round 2 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11). Branch `claude/sim-source-recreation-9392df`,
+start `ef7c7b9` (round 1). .NET SDK 9.0.117, runtime 9.0.16, Apple M4 Pro (Arm64, 12 cores); other
+agents were running (load average 2.4 to 4.5).
+
+### 8.1 Commits and merges
+
+| Step | Result |
+| --- | --- |
+| In-place tracks | `git status --short` was empty: the INV and REC work was committed in round 1 (`687077a`, `4094c1e`), so no track commit was made. |
+| Merge list | Nine entries, again every one `819d7c6873f0703198892190f24a244407301e25` (the `origin/main` tip, "Merge pull request #28", an ancestor of `94424e5`). Each `git merge --no-ff --no-edit` printed "Already up to date." and made no commit; `HEAD` stayed at `ef7c7b9`. |
+| Search for the track work | No ref, reflog entry or unreachable commit (`git fsck --unreachable --no-reflogs`) descends from `94424e5` apart from round 1's own commits and their first versions with the brief's trailer (`f1fb42b`, `18c6908`). No other worktree holds a W1 branch. No W1 track was integrated (§8.6, row 1). |
+| Conflicts | None. |
+| Trailer | `Co-Authored-By: Claude Opus 5.5`, the attribution this execution session must use, as in round 1 (§7.1), in place of the brief's `Claude Fable 5.1`. |
+
+### 8.2 Build, tests, diff gate
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` (Debug and Release, `--no-incremental`) | 0 warnings, 0 errors. No edit was needed. |
+| `dotnet run --project sim/Sts2Sim.Tests` | 371 passed, 2 failed, 373 total: the Part A 367 plus the 6 new gate tests (§8.3). The two failures are the gates whose content is absent: `Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline` and `Test_W1Gate_PilotContentIsRegistered`. Release (`-c Release`): the same 371 / 2. |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | Bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0. |
+
+Failures fixed: none (no merged code). Test changes: the new `sim/Sts2Sim.Tests/W1GateTests.cs`; no
+existing test changed. Cross-area edits: none. Changed files: `W1GateTests.cs` (new), `sim/BENCH.md`
+(W1 rows), this file.
+
+The two failing gate tests fail until the W1 tracks land; they must not be weakened or skipped. Each
+message lists the missing ids.
+
+### 8.3 W1 gate suite (`sim/Sts2Sim.Tests/W1GateTests.cs`)
+
+No owner suite covers F1, F4, F5 or the B2 chain (none of the eight W1 suites is in the tree), so the
+integrate step added them. Content: registered content only, selected by id string, plus test doubles
+declared in the file (never discovered by the registries). Every playout starts from
+`CombatSim.Create(seed, deck, encounter, ascension)` on every registered encounter (8), at A0 for odd
+seeds and A10 for even seeds; the deck is the Ironclad starter plus every registered B5 prompt-card
+pilot (`ARMAMENTS`, `ACROBATICS`, `HEADBUTT`, `SEANCE`, `DISCOVERY`, `SEEKER_STRIKE`). At the first
+decision the player is equipped: gold 50 + seed mod 200, every registered relic (a seeded sample of 12
+when more exist) plus the test double `GateCounterRelic` (a counter and a list in its extra canonical
+state), and the potion slots filled (all slots for even seeds, all but the last for odd seeds) with
+registered potions, or with the test double `GateChargePotion` (`CombatOnly`, `Self`, a charge
+counter, inert `OnUse`) when none is registered. The policy is SplitMix64, seeded per encounter, seed
+and gate (FNV-1a of the encounter id).
+
+| Test | Result | Counts | Checks |
+| --- | --- | --- | --- |
+| `Test_W1Gate_F1_CloneHashEqualityOnRandomPlayouts` | pass | 32 playouts (8 encounters × seeds 1–4, 0 capped), 647 steps, 176 clone checks, 319 clone steps, 408 lockstep steps, 192 hash-coverage probes | At a random third of the decision points and at the terminal state: `Hash(Clone(x)) == Hash(x)`, equal `CombatSim.WriteCanonical` bytes, equal outcome and legal actions, `Hash(Clone(Clone(x)))`; the clone then takes 1–4 random legal steps and its gold, relic counter and log and potion charges are changed, after which the source's hash and bytes, the clone of the clone and a sibling clone are unchanged; the sibling then follows the source in lockstep for 3 steps with equal hashes. Per playout, six probes on clones (gold, relic counter, relic log, relic list, potion charges, potion slot) must each change the clone's hash and leave the source's. |
+| `Test_W1Gate_F4_LegalActionClosure` | pass | 24 playouts (seeds 11–13), 531 decision states, 0 prompt states, 2 629 listed actions stepped on clones, 42 062 candidates checked with `IsLegal`, 2 124 illegal actions stepped | A terminal state lists nothing; a non-terminal state lists at least one action, without duplicates; every listed action is `IsLegal` and steps on a clone without an exception; the candidate set (plays `(-1..hand) × (-2..monsters)`, `EndTurn` with and without stray indices, `UsePotion(-1..slots, -3-allies..monsters)`, `DiscardPotion(-1..slots)`, `Pick(-1..12)`, `Confirm`, `Cancel`, an unknown kind) has no legal unlisted action except a `Pick` (B1 lists only ascending picks for unordered prompts); four sampled illegal actions per state throw `InvalidOperationException` (Part A §4.2) and leave the hash and bytes unchanged. |
+| `Test_W1Gate_F5_InvariantsHoldAfterEveryStep` | pass | 32 playouts (seeds 21–24), 658 steps, 690 invariant checks | After `Create` and after every step: `Allies[0]` is the player; per creature (player, monsters, allies) HP in `[0, MaxHp]`, block ≥ 0, a unique id below `NextCreatureId`, every power owned by that creature object and held once; energy, stars, gold ≥ 0; potions ≤ slots and owned by the player; relics owned by the player; card conservation: no card object in two places among the five piles and the deck, unique instance ids in the piles and in the deck, every pile id below `NextCardInstanceId`, a pile card owned by the player when it has an owner, and a card that left every pile never returns; `NextCreatureId`, `NextCardInstanceId` and the counter of every one of the 12 run RNG streams never decrease. |
+| `Test_W1Gate_F5_LedgerRejectsBrokenStates` | pass | 10 violations | The F5 ledger rejects, for the expected reason, a card in two piles, a card that returns after leaving, a deck card also in a pile, HP above max, negative energy, negative gold, a duplicate creature id, a power held by a creature it is not attached to, a rewound RNG counter and a relic of another player. |
+| `Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline` | **fail** | 0 playouts | Content absent: `DARK_EMBRACE_POWER` (power) or `GREMLIN_HORN` (relic), `HELLRAISER_POWER` (power), `SEEKER_STRIKE` (card). |
+| `Test_W1Gate_PilotContentIsRegistered` | **fail** | 23 missing | B5 pilots absent: relics (0 registered, 6 needed; `GAMBLING_CHIP`, `PAPER_PHROG`, `PAPER_KRANE`), potions (0, 4 needed; `FAIRY_IN_A_BOTTLE`, `ATTACK_POTION`, `ASHWATER`), the six prompt cards, the five pilot powers, an enchantment, an affliction, five orbs, `OSTY`. |
+
+What F1, F4 and F5 do not cover yet: with 0 relics, 0 potions, 0 orbs and 0 prompt cards registered,
+the slots hold only the inert doubles (they reach clone and canonical but no hook: the P0 listener
+snapshot visits powers only, `Combat/Pipeline/ListenerSnapshot.cs`), `LegalActions` lists no potion or
+prompt action (the B1 `LegalActionGenerator` and `CombatSim` work of the choice track is absent), and
+no prompt is ever exposed. The pilot clauses of F1 and F4 are therefore unevaluated; they apply
+automatically once the pilots are registered, because the suite selects content by id.
+
+B2 chain scenario (runs once the content is registered): deck 6 `SEEKER_STRIKE` + 4 `ASCENDERS_BANE`,
+`NIBBITS_WEAK`, seeds 31–38; at the first decision `PowerCmd.Apply` gives the player
+`DARK_EMBRACE_POWER` 1 (when registered) and `HELLRAISER_POWER` 1, and `GREMLIN_HORN` is added to the
+relics when registered; random legal play (prompt answers included) for up to 1 000 steps per seed
+must not throw, and at least one seed must record `FidelityFlag.DeferredListenerPromptInline` on
+`State.Run.Fidelity`. Path: at the player's turn end the ethereal Ascender's Bane is exhausted
+(`causedByEthereal`, sim `CombatLoop.DoTurnEnd`) and DarkEmbrace counts it
+(`Models.Powers/DarkEmbracePower.cs:64-78`); `AfterSideTurnEnd` draws `Amount × etherealCount`
+(`:141-157`) inside the per-listener `HookPlayerChoiceContext` (`Hooks/Hook.cs:6170`); Hellraiser
+auto-plays every drawn Strike-tagged card (`Models.Powers/HellraiserPower.cs:69`, `:93`); Seeker Strike
+(Strike tag `Models.Cards/SeekerStrike.cs:178`) opens `FromCombatPile` on the draw pile (`:140-141`),
+a prompt inside a per-listener context (D2). GremlinHorn's path is `AfterDeath` (`Hooks/Hook.cs:2364`)
+→ `CardPileCmd.Draw` (`Models.Relics/GremlinHorn.cs:91`, `:130`).
+
+Seams to revisit when the tracks land:
+
+| # | Seam | Why |
+| --- | --- | --- |
+| 1 | `EquipPlayer` adds relics with `AttachTo` + `Relics.Add` and fills `PotionSlots` directly | No `RelicCmd` / `PotionCmd` exists yet; if the hooks track caches the listener array behind a mutation version counter (B3), equip through `RelicCmd.Obtain` / `PotionCmd.TryToProcure` (or bump the counter) so the relics are visited. Relics are equipped after `Create`, so their turn-1 hooks (`GamblingChip`) are not exercised by F1. |
+| 2 | B2 applies the powers with `PowerCmd.Apply` at the first decision, outside a `Step` | Under the B1 tape engine this state becomes `S0` of the next step; keep the call if the pipeline facade stays. |
+| 3 | F4 does not offer `Confirm` / `Cancel` / `DiscardPotion` with stray indices as candidates | B1 does not say whether the unused indices are validated. |
+| 4 | F5's "a card that left every pile never returns" | Holds for every v0.111.0 path read so far (`SwipePower` returns the stolen card's deck version through the run layer, `Models.Powers/SwipePower.cs:131-139`, not the combat copy); a port that needs otherwise must cite the decompile and relax the rule in this file. |
+
+### 8.4 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 664 117 | 2.652 µs | 1.107 µs |
+| 2 | 671 595 | 2.739 µs | 1.133 µs |
+| 3 | 667 858 | 2.623 µs | 1.192 µs |
+| Median | 667 858 | 2.652 µs | 1.133 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (about 2 200×); `Clone()` ≤ 1 ms passes (about 380×).
+Against the recorded P0 figures (705 048 decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`):
+throughput 0.947×, clone 1.048×, hash 1.30×.
+
+Same-session control, as in §7.4: the P0 tree (`819d7c6`, `git archive` of `sim/Sts2Sim.Core` and
+`sim/Sts2Sim.Bench`) and this tree, Release, interleaved P0, W1, P0, W1, P0, W1:
+
+| Tree | decisions/s (3 runs → median) | `Clone()` median (range) | `StateHash()` median (range) |
+| --- | --- | --- | --- |
+| P0 `819d7c6` | 673 354 / 662 310 / 670 718 → 670 718 | 1.841 µs (1.791–1.889) | 1.006 µs (0.992–1.010) |
+| W1 round 2 | 674 732 / 680 741 / 677 960 → 677 960 | 2.634 µs (2.627–2.711) | 1.156 µs (1.098–1.184) |
+| W1 / P0 | 1.01× | 1.43× | 1.15× |
+
+Where the regression comes from: `sim/Sts2Sim.Core`, `sim/Sts2Sim.Bench` and `sim/Sts2Sim.Diff` are
+byte-identical to round 1 (`git diff 94424e5 HEAD` is empty for them), so the per-call allocation and
+canonical-length figures of §7.4 still hold (`Clone()` 6 640 B against P0's 5 384 B, canonical
+2 368 B against 2 042 B). The extra clone cost comes from the phase-0 state additions only: 18 more
+objects per clone (`RunState.CloneWithoutCombat`: the `RunState`, the player list and its array, the
+modifier list, `ChoiceRuntime` and its selector list, `FidelityLog` and its entry list; the player
+copy: relic list, potion-slot array, deck list, `OrbQueue` and its orb list, pet-id list; the ally list
+and its array; `CombatHistory`, whose 17 list fields make it about 160 B; `PlayersTakingExtraTurn`),
+plus about 40 B more in each card copy for the B2 `CardInstance` fields (owner, enchantment,
+affliction, listener, `HasBeenRemovedFromState`, `DeckVersionId`), which together make the +1 256 B.
+Clone time tracks the object count more than the bytes, so it rises more than the +23 % in bytes:
+1.43× in this session and 1.10× in round 1's session; the P0 tree's own clone time moved between 1.79
+and 2.78 µs across the two sessions while this tree stayed between 2.6 and 2.9 µs. The hash covers 326 more bytes (+16 %), 1.15×
+at equal load. Throughput is flat (1.01×) because a decision does not clone: the step path gained only
+constant-cost checks (§7.4) and the larger `Create` is amortised over about 20 decisions per episode.
+The gap to the recorded P0 throughput is machine load: the unchanged P0 tree measured 0.95× of its
+recorded throughput in this session. No track content (relic and potion listeners, history appends,
+hook masks) is measured yet; re-bench after the tracks merge.
+
+### 8.5 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | The merge list again carried the `origin/main` tip nine times instead of the nine W1 track commits (choice, hooks, state, pipeline, cards-kernel, loop, relics-potions, character-mechanics, monsters-kernel). No commit descending from `94424e5` other than the integrate commits exists in the object store, so the tracks either never committed or reported their base. | Re-collect nine track SHAs that descend from `94424e5` (check `git merge-base --is-ancestor 94424e5 <sha>` before dispatching) and run round 3. |
+| 2 | W1 gates not met: B2 chain and pilot coverage fail (content absent); F1, F4 and F5 pass on P0 content and inert doubles only, with their pilot and prompt clauses unevaluated (§8.3). | Round 3, after the tracks merge. |
+| 3 | 137 `throw new NotImplementedException` scaffold sites remain in 15 files of `Sts2Sim.Core` (73 in `Combat/Pipeline/Hook.cs`, 22 in `State/CombatHistory.cs`, 8 in `Orbs/OrbQueue.cs`, 7 in `Choice/CardSelectCmd.cs`, 4 in `Cards/Enchantments/EnchantmentModel.cs`, 3 each in `State/CombatState.cs`, `Potions/PotionModel.cs`, `Combat/Loop/PotionActions.cs`, `Choice/ChoiceRuntime.cs`, `Cards/Afflictions/AfflictionModel.cs`, 2 each in `Relics/RelicModel.cs`, `Random/RngSets.cs`, `Modifiers/ModifierModel.cs`, 1 each in `Orbs/OrbModel.cs`, `Cards/CardInstance.cs`). | The tracks. |
+| 4 | The bench covers the scaffold only (§8.4). | Re-run after round 3. |
+| 5 | The REC track (`4094c1e`) is still compiled and tested but not installed. | `scripts/install_mod.sh` when the recorder change is to go live. |
+| 6 | Gate-suite seams §8.3 rows 1–4. | Round-3 integrator. |
