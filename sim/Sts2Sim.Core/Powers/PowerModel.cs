@@ -25,6 +25,8 @@ public abstract class PowerModel : AbstractModel, ICanonical
 
     public virtual bool OwnerIsSecondaryEnemy => false;
 
+    public virtual bool ShouldScaleInMultiplayer => false;
+
     public int Amount { get; private set; }
 
     public int AmountOnTurnStart { get; set; }
@@ -67,6 +69,13 @@ public abstract class PowerModel : AbstractModel, ICanonical
         }
         return Type;
     }
+
+    public CreatureState? GetApplier(CombatState cs) => CombatStatus.FindCreature(cs, ApplierId);
+
+    public CreatureState? GetTarget(CombatState cs) => CombatStatus.FindCreature(cs, TargetId);
+
+    public virtual decimal GetScaledAmountForMultiplayer(CombatState cs, CreatureState? applier, decimal amount, CreatureState target, CardInstance? cardSource)
+        => throw new NotSupportedException($"{Id}: multiplayer power scaling (Models/PowerModel.cs:619-622) is reached only with more than one player (Commands/PowerCmd.cs:550)");
 
     public bool ShouldRemoveDueToAmount()
     {

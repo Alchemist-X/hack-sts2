@@ -3,11 +3,16 @@ namespace Sts2Sim.Core.Combat.Pipeline;
 public static class DamageCmd
 {
     public static AttackCommand Attack(CombatState cs, decimal damagePerHit) => new(cs, damagePerHit);
+
+    public static AttackCommand Attack(CombatState cs, Func<CombatState, CreatureState?, decimal> calculatedDamage) => new(cs, calculatedDamage);
 }
 
 public sealed class AttackCommand
 {
+    public const decimal CalculatedDamagePerHit = -1m;
+
     private readonly List<List<DamageResult>> _hitResults = new(1);
+    private readonly Func<CombatState, CreatureState?, decimal>? _calculatedDamage;
     private AttackSourceType _sourceType;
     private bool _targetsOpponents;
     private Action<CombatState, AttackCommand>? _beforeDamage;
@@ -28,9 +33,18 @@ public sealed class AttackCommand
         AllowDuplicateRandomTargets = true;
     }
 
+    public AttackCommand(CombatState cs, Func<CombatState, CreatureState?, decimal> calculatedDamage)
+        : this(cs, CalculatedDamagePerHit)
+    {
+        ArgumentNullException.ThrowIfNull(calculatedDamage);
+        _calculatedDamage = calculatedDamage;
+    }
+
     public CombatState Combat { get; }
 
     public decimal DamagePerHit { get; }
+
+    public bool IsCalculated => _calculatedDamage != null;
 
     public int HitCount { get; private set; }
 
@@ -56,6 +70,8 @@ public sealed class AttackCommand
 
     public bool IsMultiTargeted => _targetsOpponents;
 
+    public bool IsFromMonster => _sourceType == AttackSourceType.Monster;
+
     public int HitsCompleted { get; private set; }
 
     public List<DamageResult> Results { get; } = new(2);
@@ -77,6 +93,19 @@ public sealed class AttackCommand
             throw new InvalidOperationException("CardPlay has already been set.");
         }
         Attacker = CombatStatus.CardOwnerCreature(Combat, card);
+        ModelSource = card;
+        CardPlay = cardPlay;
+        _sourceType = AttackSourceType.Card;
+        return this;
+    }
+
+    public AttackCommand FromOsty(CreatureState osty, CardInstance card, CardPlay? cardPlay)
+    {
+        if (osty is not MonsterState monster || !string.Equals(monster.MonsterId, CombatStatus.OstyMonsterId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Creature is not Osty");
+        }
+        Attacker = osty;
         ModelSource = card;
         CardPlay = cardPlay;
         _sourceType = AttackSourceType.Card;
@@ -194,7 +223,7 @@ public sealed class AttackCommand
         {
             if (_sourceType == AttackSourceType.Monster)
             {
-                buffer.Add(Combat.Player);
+                CombatStatus.GetPlayerCreatures(Combat, buffer);
                 return;
             }
             if (Attacker == null)
@@ -223,6 +252,16 @@ public sealed class AttackCommand
         return false;
     }
 
+    private Rng RandomTargetRng(CombatState cs)
+    {
+        var attacker = Attacker!;
+        if (attacker is PlayerState || CombatStatus.PetOwnerOf(cs, attacker) != null)
+        {
+            return cs.Rng.CombatTargets;
+        }
+        throw new InvalidOperationException("Random targeting reads (Attacker.Player ?? Attacker.PetOwner).RunState.Rng.CombatTargets, which has no player for a monster attacker.");
+    }
+
     public AttackCommand Execute()
     {
         var cs = Combat;
@@ -247,11 +286,26 @@ public sealed class AttackCommand
             throw new InvalidOperationException("No targets set.");
         }
         Hook.BeforeAttack(cs, this);
-        int attackCount = Hook.ModifyAttackHitCount(cs, this, HitCount);
+        decimal attackCount = Hook.ModifyAttackHitCount(cs, this, HitCount);
+        if (_sourceType == AttackSourceType.Monster)
+        {
+            using var blocking = cs.Choice.PushContext(ChoiceContextKind.Inline);
+            ExecuteHits(cs, attackCount);
+        }
+        else
+        {
+            ExecuteHits(cs, attackCount);
+        }
+        return this;
+    }
+
+    private void ExecuteHits(CombatState cs, decimal attackCount)
+    {
+        var attacker = Attacker!;
         var validTargets = new List<CreatureState>(4);
         for (int i = 0; i < attackCount; i++)
         {
-            if (Attacker.IsDead)
+            if (attacker.IsDead)
             {
                 break;
             }
@@ -276,21 +330,17 @@ public sealed class AttackCommand
                         throw new InvalidOperationException("No valid targets for attack with duplicates disallowed.");
                     }
                 }
-                if (Attacker is not PlayerState)
-                {
-                    throw new InvalidOperationException("Random targeting reads (Attacker.Player ?? Attacker.PetOwner).RunState.Rng.CombatTargets, which has no player for a monster attacker.");
-                }
-                singleTarget = cs.Rng.CombatTargets.NextItem((IReadOnlyList<CreatureState>)validTargets);
+                singleTarget = RandomTargetRng(cs).NextItem((IReadOnlyList<CreatureState>)validTargets);
             }
             _beforeDamage?.Invoke(cs, this);
-            decimal amount = DamagePerHit;
+            decimal amount = _calculatedDamage == null ? DamagePerHit : _calculatedDamage(cs, singleTarget);
             IReadOnlyList<DamageResult> results = singleTarget == null
-                ? CreatureCmd.Damage(cs, validTargets, amount, DamageProps, Attacker, ModelSource, CardPlay)
-                : CreatureCmd.Damage(cs, singleTarget, amount, DamageProps, Attacker, ModelSource, CardPlay);
+                ? CreatureCmd.Damage(cs, validTargets, amount, DamageProps, attacker, ModelSource, CardPlay)
+                : CreatureCmd.Damage(cs, singleTarget, amount, DamageProps, attacker, ModelSource, CardPlay);
             AddResultsInternal(results);
             HitsCompleted++;
         }
+        cs.History.AppendCreatureAttacked(cs, attacker, Results);
         Hook.AfterAttack(cs, this);
-        return this;
     }
 }
