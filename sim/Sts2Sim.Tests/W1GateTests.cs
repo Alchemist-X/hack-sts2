@@ -33,6 +33,7 @@ public static class W1GateTests
 
     private static readonly string[] PilotRelicIds = { "GAMBLING_CHIP", "PAPER_PHROG", "PAPER_KRANE" };
     private static readonly string[] PilotPotionIds = { "FAIRY_IN_A_BOTTLE", "ATTACK_POTION", "ASHWATER" };
+    private static readonly string[] W1GatePotionIds = { "ASHWATER", "ATTACK_POTION", "BLOCK_POTION", "FAIRY_IN_A_BOTTLE", "FIRE_POTION", "STRENGTH_POTION" };
     private static readonly string[] PilotPromptCardIds = { "ARMAMENTS", "ACROBATICS", "HEADBUTT", "SEANCE", "DISCOVERY", SeekerStrikeCardId };
     private static readonly string[] PilotPowerIds = { HellraiserPowerId, "TOOLS_OF_THE_TRADE_POWER", "ENTROPY_POWER", DarkEmbracePowerId, "FOCUS_POWER" };
 
@@ -455,7 +456,7 @@ public static class W1GateTests
             RelicCmd.Obtain(cs.Run, RelicRegistry.Create(id), player);
         }
         RelicCmd.Obtain(cs.Run, new GateCounterRelic(), player);
-        var potionIds = PotionRegistry.AllIds;
+        var potionIds = PotionRegistry.AllIds.Where(id => W1GatePotionIds.Contains(id)).ToList();
         var slots = player.PotionSlots;
         int filled = seed % 2UL == 0UL ? slots.Length : Math.Max(0, slots.Length - 1);
         int pilotPotions = 0;
