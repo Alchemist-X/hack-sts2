@@ -109,3 +109,13 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   独立审计全部跳过；此后每波只保留 简报 → 并行所有者 → 单一集成者跑自动门（构建 / 测试 / 差分 / 基准）→ 提交，
   不再设对抗校验与审计阶段，保真误差留给差分闸发现。W1.5 的存档导入并入 W2 的 R7，bundle v2 / exporter v2
   延后到 W4。下一步：W2（run 层 R1–R8）与 W3 战斗内容批次并行启动。
+
+- 2026-11-01（续 4）：W2 + W3 精简流程一次跑完（run `wf_91ccc186-a2b`，62 个 Opus 代理，14.8M token，2.1 小时，0 失败）。
+  阶段：W2 脚手架 `72edde8`（CONTRACTS Part C、RunAction/RunSim 骨架、ContentSoakTests）∥ 32 个战斗内容所有者 →
+  集成 A `0a01a90` → W2 七个所有者（R1–R7）∥ 怪物 / 配套能力 / 遭遇 → 集成 B `8eda7fb` → R8 oracle ∥ 事件 / run 侧遗物 /
+  角色 / 幕 → 集成 C `a1c0e4b`。终态：构建 0 警告，965/965 测试，PENDING 3，内容 soak 0 失败（卡 1,108、遭遇 252、
+  药水 128、遗物 586），差分 4/4 · 69/69，基准 148k 决策/秒、Clone 2.5 µs。W3 共移植 1,402 个模型，27 个按原因跳过。
+  未闭合：`EventRoom.EnterInternal`（R4 房间入口桩）挡住 RunSim 新局测试与整局随机 soak；存档导入缺 R2/R3 三个成员；
+  powers:8（run 耦合 7 个能力）漏分配，连带 GremlinMerc / ThievingHopper / FORBIDDEN_GRIMOIRE / ROYALTIES；
+  `PlayerCmd.EndTurn`、`CombatState.EscapedCreatures`、战斗外 `CardCmd.Transform` 等内核缝使 9 个定义被 `[SimExclude]`。
+  下一步：W3.5 补缝（3 个所有者 + 集成）与 W4（exporter v2、harness v2、.mcr 解码、F1–F8 自洽、G3 整局重放与分诊）合为一个工作流。
