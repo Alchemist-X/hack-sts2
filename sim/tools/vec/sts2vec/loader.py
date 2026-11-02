@@ -11,9 +11,11 @@ Discovery (first match wins):
   (file or directory; a ``.dylib``/``.so`` file also selects the native path); else the Release build dir
   ``sim/Sts2Sim.Vec/bin/Release/net9.0/`` relative to this repository;
 - runtime config: ``sts2vec.runtimeconfig.json`` next to the dll (fallback: the generated ``Sts2Sim.Vec.runtimeconfig.json``);
-- libhostfxr: ``DOTNET_ROOT``, ``/opt/homebrew/opt/dotnet@9/libexec`` (Homebrew: the real root is ``libexec``, not the
-  ``dotnet`` binary's directory), the usual install roots, then the roots reported by ``dotnet --list-runtimes``; the
-  highest ``host/fxr/<version>`` of the first root that has a ``Microsoft.NETCore.App`` 9.x runtime.
+- libhostfxr: ``DOTNET_ROOT``, ``DOTNET_INSTALL_DIR``, then per platform — macOS: ``/opt/homebrew/opt/dotnet@9/libexec``
+  (Homebrew: the real root is ``libexec``, not the ``dotnet`` binary's directory) and the usual install roots; Linux:
+  ``$HOME/.dotnet`` (dotnet-install.sh), ``/usr/lib/dotnet``, ``/usr/share/dotnet``, ``/usr/lib64/dotnet``, ``/opt/dotnet``
+  — then the real directory of ``dotnet`` on PATH and the roots reported by ``dotnet --list-runtimes``; the highest
+  ``host/fxr/<version>`` of the first root that has a ``Microsoft.NETCore.App`` 9.x runtime.
 
 Only one CLR can live in a process (hostfxr cannot re-initialise); the first successful load is cached and reused, and
 asking for a different library afterwards raises ``LoaderError``. hostfxr's own error messages are captured and put into
@@ -25,6 +27,7 @@ from __future__ import annotations
 import ctypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -167,9 +170,19 @@ def dotnet_roots() -> list[Path]:
     env = os.environ.get("DOTNET_ROOT")
     if env:
         roots.append(Path(env))
-    roots += [Path(HOMEBREW_DOTNET_ROOT), Path("/opt/homebrew/opt/dotnet/libexec"),
-              Path("/usr/local/opt/dotnet@9/libexec"), Path("/usr/local/share/dotnet"), Path("/usr/share/dotnet"),
-              Path("/usr/lib/dotnet"), Path.home() / ".dotnet"]
+    if os.environ.get("DOTNET_INSTALL_DIR"):  # dotnet-install.sh --install-dir
+        roots.append(Path(os.environ["DOTNET_INSTALL_DIR"]))
+    if sys.platform == "darwin":
+        roots += [Path(HOMEBREW_DOTNET_ROOT), Path("/opt/homebrew/opt/dotnet/libexec"),
+                  Path("/usr/local/opt/dotnet@9/libexec"), Path("/usr/local/share/dotnet")]
+    else:
+        # dotnet-install.sh default ($HOME/.dotnet), distro packages, Microsoft packages, snap
+        roots += [Path.home() / ".dotnet", Path("/usr/lib/dotnet"), Path("/usr/share/dotnet"), Path("/usr/lib64/dotnet"),
+                  Path("/opt/dotnet"), Path("/snap/dotnet-sdk/current")]
+    roots.append(Path.home() / ".dotnet")
+    exe = shutil.which("dotnet")
+    if exe:  # the root is the real directory of the dotnet host (resolves /usr/bin/dotnet -> /usr/lib/dotnet/dotnet)
+        roots.append(Path(os.path.realpath(exe)).parent)
     try:
         out = subprocess.run(["dotnet", "--list-runtimes"], capture_output=True, text=True, timeout=30).stdout
         for line in out.splitlines():
@@ -202,8 +215,8 @@ def find_hostfxr() -> tuple[Path, Path]:
                           key=lambda d: _version_key(d.name))
         if versions:
             return versions[-1] / _hostfxr_name(), root
-    raise LoaderError("libhostfxr with a .NET 9 runtime not found; set DOTNET_ROOT (Homebrew: "
-                      f"{HOMEBREW_DOTNET_ROOT}). Tried: " + ", ".join(tried))
+    hint = f"Homebrew: {HOMEBREW_DOTNET_ROOT}" if sys.platform == "darwin" else "dotnet-install.sh: $HOME/.dotnet"
+    raise LoaderError(f"libhostfxr with a .NET 9 runtime not found; set DOTNET_ROOT ({hint}). Tried: " + ", ".join(tried))
 
 
 class _InitParams(Structure):
@@ -359,8 +372,9 @@ def _load_native(path: Path) -> Library:
     try:
         lib = ctypes.CDLL(str(path))
     except OSError as e:
-        raise LoaderError(f"cannot load NativeAOT library {path}: {e} (the AOT build links Homebrew openssl/brotli: "
-                          "/opt/homebrew/lib must hold libssl.3 / libcrypto.3 / libbrotli*)") from e
+        hint = (" (the macOS AOT build links Homebrew openssl/brotli: /opt/homebrew/lib must hold libssl.3 / "
+                "libcrypto.3 / libbrotli*)") if sys.platform == "darwin" else ""
+        raise LoaderError(f"cannot load NativeAOT library {path}: {e}{hint}") from e
     functions = {}
     for export, (restype, argtypes) in EXPORTS.items():
         try:

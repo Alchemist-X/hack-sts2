@@ -13,7 +13,9 @@ uv sync --project sim/tools/vec              # numpy (+ pytest in the dev group)
 ```
 
 Requirements: a .NET 9 runtime (`Microsoft.NETCore.App 9.x`). On Homebrew the dotnet root is
-`/opt/homebrew/opt/dotnet@9/libexec` (found automatically; `DOTNET_ROOT` overrides).
+`/opt/homebrew/opt/dotnet@9/libexec`; on Linux a user-level `dotnet-install.sh` root is `$HOME/.dotnet` (both found
+automatically, as are distro roots and the real directory of `dotnet` on PATH; `DOTNET_ROOT` overrides). Linux x86_64 is
+validated: `docs/linux-validation-2026-11-01.md`, `scripts/linux_validate.sh`.
 
 ## Run
 
@@ -80,7 +82,7 @@ Lower level: `sts2vec.load()` returns the `Library` (one per process) with every
 | --- | --- |
 | `STS2VEC_DLL` | managed `Sts2Sim.Vec.dll` (file or build directory) to load instead of the Release build |
 | `STS2VEC_AOT_LIB` | NativeAOT `Sts2Sim.Vec.dylib`/`.so` (file or directory) — loaded with `ctypes.CDLL`, same exports |
-| `DOTNET_ROOT` | dotnet root holding `host/fxr` and `shared/Microsoft.NETCore.App/9.*` (default probing: Homebrew `dotnet@9`, standard roots, `dotnet --list-runtimes`) |
+| `DOTNET_ROOT` | dotnet root holding `host/fxr` and `shared/Microsoft.NETCore.App/9.*` (default probing: `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`) |
 | `STS2VEC_ALLOW_WORKSTATION_GC=1` | native: skip the Server GC assert (debugging only; ~5x lower batched throughput) |
 | `DOTNET_gcServer=0` | forces Workstation GC (create then fails with `ServerGCError`; used by a test) |
 | `STS2VEC_REQUIRE_FULL=1` | tests: the `needs V1/V2` tests fail instead of skipping on a stub build |
@@ -93,7 +95,8 @@ STS2VEC_AOT_LIB=sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.dylib uv run --project sim/t
 ```
 
 Same exports and semantics; Server GC is fixed at publish time. The Homebrew ILCompiler links openssl/brotli
-(`LIBRARY_PATH=/opt/homebrew/lib` is set by the script; the libraries must exist at run time).
+(`LIBRARY_PATH=/opt/homebrew/lib` is set by the script; the libraries must exist at run time). On Linux the script
+produces `Sts2Sim.Vec.so` (13 MB, ~35 s on Huginn) and links with gcc when clang is missing (`AOT_LINKER` overrides).
 
 ## Tests
 
