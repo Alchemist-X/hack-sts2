@@ -37,6 +37,7 @@
 #   GATES_INCREMENTAL=1       plain incremental builds (faster; warnings of up-to-date projects are not re-reported)
 #   GATES_BENCH_FILE          file the --bench row is appended to (default sim/BENCH.md)
 #   GATES_OUT                 log directory (default tmp/gates/<timestamp>)
+#   GATES_COMMIT              commit label when the tree has no .git (scripts/ci_linux.sh)
 # Portable: bash 3.2 (macOS /bin/bash) and Linux; no GNU-only tools. A step timeout is applied only when
 # 'timeout' or 'gtimeout' is on PATH (GATES_TIMEOUT seconds per step, default 3600).
 set -uo pipefail
@@ -50,7 +51,7 @@ QUICK=0
 BENCH_LABEL=""
 SKIP=","
 
-usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -83,8 +84,9 @@ TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 UV_NO_PROGRESS=1
 NOINC="--no-incremental"; [[ "${GATES_INCREMENTAL:-0}" == 1 ]] && NOINC=""
 
-COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-DIRTY=""; [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]] && DIRTY="+dirty"
+# GATES_COMMIT labels a tree without .git (scripts/ci_linux.sh runs on a 'git archive' export)
+COMMIT="${GATES_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+DIRTY=""; [[ -z "${GATES_COMMIT:-}" && -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]] && DIRTY="+dirty"
 loadavg() { (uptime 2>/dev/null || true) | sed -n 's/.*load average[s]*: *//p' | tr -d ','; }
 {
   echo "gates: commit $COMMIT$DIRTY, $(date -u +%FT%TZ), host $(hostname), $(uname -sm)"

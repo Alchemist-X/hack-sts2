@@ -59,10 +59,44 @@ Notes:
 | `GATES_OUT` | `tmp/gates/<timestamp>` | log directory |
 | `GATES_TIMEOUT` | 3600 | per-step seconds (needs `timeout` / `gtimeout`) |
 | `STS2_DECOMPILE_ROOT` | `output/server-bootstrap/linux-decompiled` (main checkout) | tree for `kernel_map.py --check` |
+| `GATES_COMMIT` | `git rev-parse --short HEAD` | commit label for a tree without `.git` (the CI export) |
 
 On Huginn (no G0 bundles, no decompile tree): `scripts/gates.sh --quick --skip g0` (the kernel-map check skips
 itself without the tree). `scripts/linux_validate.sh` remains the full Linux validation (toolchain install, AOT,
 benches); this runner is the per-integration gate.
+
+## Linux CI (`scripts/ci_linux.sh`, `docker/ci.Dockerfile`)
+
+The same gates on Linux x86_64 inside a container, on a clean `git archive` export of HEAD (committed changes
+only):
+
+```bash
+scripts/ci_linux.sh                    # gates.sh --quick --skip g0; local docker if 'docker info' works, else ssh raven
+scripts/ci_linux.sh -- --skip g0       # replace the gate arguments (here: the full suite)
+scripts/ci_linux.sh --host raven       # force the ssh path; --local forces local docker
+scripts/ci_linux.sh --attach <sha>     # re-attach to a started remote run after a dropped link
+```
+
+- **Image** `docker/ci.Dockerfile`: `mcr.microsoft.com/dotnet/sdk:9.0` (Debian 12, python3 3.11 added) plus `uv`
+  0.11.7, the same tags as the product `Dockerfile`; nothing from the repository is baked in. The checkout is
+  bind-mounted at `/work` and the container runs as the caller's uid with `HOME=/work/.ci-home`, so one image
+  serves every commit and the outputs are owned by the user.
+- **Flow**: export -> (scp to `/data/raven/hack-sts2/tmp/ci-linux/<sha>/` on Huginn) -> extract -> build the image
+  -> `docker run ... bash scripts/gates.sh <args>` with `GATES_COMMIT=<sha>`, NuGet / uv caches kept in
+  `<work root>/cache/` between runs and the container's `/tmp` on the work volume -> `logs/` (gate logs,
+  `image.log`, `timing.tsv`, `SUMMARY.txt`) -> the extracted tree is removed. The remote part runs under `nohup`
+  and the local part polls for `logs/DONE`, then copies `logs/` to `tmp/ci-linux/<sha>/`. Exit status = gates.sh's.
+- **Huginn root fs**: Docker's data root is `/data/raven/docker`, but the containerd snapshots and the build
+  cache live on the root fs, which has about 2.7 GB free; the SDK image needs about 2 GB there. The first run
+  filled it (the container's `/tmp` was on it too, and every step failed with ENOSPC); since then the runner
+  refuses to pull with less than `CI_LINUX_MIN_FREE_MB` (2500) free, keeps `/tmp` on `/data`, and over ssh
+  removes the image and the build-cache records it created after the run (`CI_LINUX_CLEANUP=1`, the default
+  there). Moving containerd's root to `/data` needs the admin (see the open items in docs/HANDOVER.md).
+- **GitHub**: `.github/workflows/gates.yml` runs the same container step and uploads the gate logs. It is a
+  skeleton, **not enabled**: only `workflow_dispatch` is declared and it has never run on GitHub; the file header
+  says how to turn it on.
+
+Reference run: see "Linux CI run" below.
 
 ## Reference run (2026-11-02, macOS M4 Pro, commit `ebc055f` + this change)
 
@@ -76,3 +110,20 @@ mean 67.6 steps; G0 4/4 bundles, 69/69 decisions; pytest-eval 67 passed; pytest-
 1114/1114, PENDING 0 (465 s in the runner); selftest 100/100; G0 4/4, 69/69; pytest-eval 67; pytest-vec 66;
 sts2rec 701 passed, 4 skipped (no flake rerun needed); py-scripts 30 unittests OK, `kernel_map.py --check` OK.
 Total 570 s.
+
+## Linux CI run (2026-11-02, Huginn, `scripts/ci_linux.sh --host raven`)
+
+Commit `feab6d5` (the code of this change; docs edited after), Huginn x86_64, 8 vCPU, Docker 29.9.2, load average
+8-12 from other users at the start. Toolchain image built cold (the SDK image pulled and later removed):
+
+| step | seconds | result |
+| --- | ---: | --- |
+| image (pull `dotnet/sdk:9.0` + `uv`, apt python3) | 63 | built |
+| `gates.sh --quick --skip g0` | 263 | **PASS**: build Release / Debug 0 warnings 0 errors (26 / 20 s); tests quick 108/108, PENDING 0 (85 s); selftest 100/100, 0 crashed; pytest-eval 76 passed; pytest-vec 66 passed; sts2rec 701 passed, 4 skipped; py-scripts 53 unittests OK (kernel-map check skipped: no tree); g0 skipped |
+| total on Huginn | 326 | cleanup: image and this run's build cache removed, root fs back to 2.8 GB free |
+
+An earlier run of the same flow (`32798c4`) gave the same results in 305 s (image 48 s, gates 257 s). The very first
+attempt (`5d8b339`) failed every step with ENOSPC: the container's `/tmp` sat on the full root fs; that run is why
+the runner now mounts `/tmp` from the work volume, checks free space first and cleans up. Logs:
+`raven:/data/raven/hack-sts2/tmp/ci-linux/<sha>/logs/` (readable by the `raven` group) and `tmp/ci-linux/<sha>/logs/`
+locally.

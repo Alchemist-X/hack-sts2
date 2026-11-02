@@ -25,7 +25,7 @@
 | LLM 与人类信息对等 | 已做：规则文案、有效数值、意图只给类型与数值、招式名默认隐藏、能力走显示数值、泄漏测试 | `sim/PLAY.md` "Hidden information"、`ServerParityTests.cs` |
 | 按平均通关进度评分（A0/A10） | 协议 v0.2 定版，官方种子集带校验和，榜单有 Sonnet 行 | `docs/sts2-bench-protocol-v0.2-2026-11-01.md` §3/§4/§8 |
 | 容器化、并行、高吞吐 | Dockerfile（arm64、amd64 实测；镜像内 NativeAOT `Sts2Sim.Vec.so` 默认启用）；`scripts/sts2_cluster.sh up N [--host raven]` 一条命令起 N 个服务器，`sts2eval --urls` 轮转；Huginn 容量：整机约 26-28 局/秒随机对局、每服务器 110-150 MiB、容器内 AOT 6.2-6.3 万 env-steps/s；Linux x86_64 全门通过；1024 局×8 线程 11.6 万 env-steps/s（Mac） | `docs/docker.md`、`docs/capacity-2026-11-02.md`、`docs/linux-validation-2026-11-01.md`、`sim/BENCH.md` |
-| 版本更新能快速定位 | `scripts/version_delta.py` 10 秒出报告（内核映射补全中） | `docs/version-migration-playbook.md`、`docs/version-delta-demo-2026-11-01.md` |
+| 版本更新能快速定位 | `scripts/version_update.sh` 一条命令串起：版本差分（10 秒）→ 逐模型工作包（`version_stubs.py`，新模型带可编译骨架）→ 录像钩子漂移检查（`hook_drift.py`）→ 构建 → 受影响测试 → selftest → G0，末尾输出人工清单；Linux 容器门 `scripts/ci_linux.sh` | `docs/version-migration-playbook.md`、`docs/version-stubs-demo-2026-11-02.md`、`docs/gates.md` |
 
 保真（E3）：战斗级 117 段 1,599/1,607 决策一致，整局 G3 1,532/1,537；录像农场放量在波次 F 中（见 §7）。
 
