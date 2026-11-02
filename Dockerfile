@@ -74,11 +74,13 @@ COPY sim/tools/play/ /app/sim/tools/play/
 COPY docker/entrypoint.sh /usr/local/bin/sts2sim
 # Python venvs from the committed lockfiles (no dev group). The project packages are installed editable, so
 # sts2vec's repo-relative discovery points at /app/sim.
+# /app/tmp -> /data/tmp: sts2eval's default output dir is <repo root>/tmp/eval/<run_id>, and /app is root-owned.
 RUN set -eux; \
     chmod 0755 /usr/local/bin/sts2sim; \
     uv sync --frozen --no-dev --project /app/sim/tools/vec; \
     uv sync --frozen --no-dev --project /app/sim/tools/eval; \
-    mkdir -p /data; \
+    mkdir -p /data/tmp; \
+    ln -s /data/tmp /app/tmp; \
     chown -R "$APP_UID" /data /app/sim/tools
 
 # version string for /health (the image has no git); declared late so a new value re-runs no build step

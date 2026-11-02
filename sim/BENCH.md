@@ -201,3 +201,21 @@ on both).
 §D7 (≥ 50k env-steps/s at 1024 x 8): met on Huginn at steady state (50.5k over 3000 batches) and with NativeAOT
 (61k at 500); the 500-batch JIT row (28k) is mostly tiered-JIT warm-up on 4 cores (`DOTNET_TieredCompilation=0`:
 51.8k at 500; probe in the doc §3.3).
+
+### Container (Docker image, linux/amd64, Huginn)
+
+2026-11-02, image built from `ebc055f` (`Dockerfile`, runtime .NET 9.0.22, Server GC), same machine as the native
+rows above, idle host; details in `docs/docker.md` (Validation, amd64). Tokyo arm64 container (2 vCPU) for reference.
+
+| Row | Huginn container | Huginn native | Tokyo arm64 container |
+|---|---|---|---|
+| Combat playouts, NIBBITS_WEAK, 5 s (decisions/s) | 41,203 | 41,400 | - |
+| Clone() / StateHash() | 8.551 / 4.481 us | 8.595 / 4.532 us | - |
+| C# vec 1024 x 8, 500 steps (env-steps/s; ms/batch) | 27,956; 36.6 (rerun 28,278; 36.2) | 28,072; 36.5 | 19,178 at 1024 x 4 |
+| C# vec 1024 x 8, 3000 steps | 50,900; 20.1 | 50,452; 20.3 | - |
+| Python `sts2vec bench --envs 1024 --threads 8 --steps 500` (pool 64) | 19,140; 53.5 (rerun 21,065; 48.6) | 21,556; 47.5 | 15,664 at 1024 x 4 |
+| `selftest 200` (random full runs, play-service path) | 18.6 s, 0 crashes | - | 13.3 s |
+| 20 random games over HTTP (`sim_play.py`, host -> published port) | 4.19 s, 1,379 steps | - | 4.2 s, 1,379 steps |
+
+Episode counts (7,286 at 500, 44,417 at 3000), Python status counts (OK 504,778, RESET 7,222) and the combat hash sink
+`40788C706BFA21E0` match the native and Mac rows: no container overhead and no cross-architecture drift.

@@ -56,6 +56,8 @@ case "$mode" in
     exec dotnet "$BENCH_DLL" "$@"
     ;;
   eval|sts2eval)
+    # default outputs go to /app/tmp -> /data/tmp (a fresh bind mount on /data has no tmp/ yet)
+    mkdir -p /data/tmp 2>/dev/null || true
     exec "$VENV_EVAL/sts2eval" "$@"
     ;;
   play)
