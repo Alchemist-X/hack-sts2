@@ -55,8 +55,10 @@ public static partial class ObservationBuilder
         return node;
     }
 
-    // GET /games/{id}/piles. draw is sorted by id (then upgrade) so the draw order stays hidden; discard and exhaust keep
-    // pile order; deck is the master deck. Combat piles are null outside a combat.
+    // GET /games/{id}/piles. draw is sorted by id, then upgrade, then the whole node (so copies that differ only in
+    // visible state, e.g. an enchantment or a grown damage var, never reveal their relative draw order; the game's pile
+    // screen sorts too, NCardPileScreen.cs:185); discard and exhaust keep pile order; deck is the master deck. Combat
+    // piles are null outside a combat.
     public static JsonObject PilesNode(GameSession g)
     {
         var cs = g.LiveCombat;
@@ -75,12 +77,30 @@ public static partial class ObservationBuilder
         {
             ["game_id"] = g.Id,
             ["in_combat"] = cs != null,
-            ["draw"] = cs != null ? Nodes(cs.Player.DrawPile.Cards.OrderBy(c => c.Id, StringComparer.Ordinal).ThenBy(c => c.UpgradeLevel)) : null,
+            ["draw"] = cs != null ? SortedDrawNodes(cs) : null,
             ["discard"] = cs != null ? Nodes(cs.Player.DiscardPile.Cards) : null,
             ["exhaust"] = cs != null ? Nodes(cs.Player.ExhaustPile.Cards) : null,
             ["hand"] = cs != null ? Nodes(cs.Player.Hand.Cards) : null,
             ["deck"] = Nodes(p.Deck)
         };
+    }
+
+    private static JsonArray SortedDrawNodes(CombatState cs)
+    {
+        var keyed = cs.Player.DrawPile.Cards
+            .Select(c => (Card: c, Node: CardNode(cs, c, 0, false)))
+            .Select(x => (x.Card, x.Node, Key: x.Node.ToJsonString()))
+            .OrderBy(x => x.Card.Id, StringComparer.Ordinal)
+            .ThenBy(x => x.Card.UpgradeLevel)
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .ToList();
+        var arr = new JsonArray();
+        for (int i = 0; i < keyed.Count; i++)
+        {
+            keyed[i].Node["index"] = i;
+            arr.Add(keyed[i].Node);
+        }
+        return arr;
     }
 
     // {"damage": {uid: per-hit damage} | null, "times": n | null, "block": n | null}, or null when the card has neither.

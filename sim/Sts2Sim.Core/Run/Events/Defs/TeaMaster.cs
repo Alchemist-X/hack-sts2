@@ -16,6 +16,13 @@ public sealed class TeaMaster : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/TeaMaster.cs:278 StringVar <Tea>Description = the relic's description).
+    public static string BoneTeaDescription => BoneTeaId;
+
+    public static string EmberTeaDescription => EmberTeaId;
+
+    public static string TeaOfDiscourtesyDescription => TeaOfDiscourtesyId;
+
     public override bool IsAllowed(RunState runState)
     {
         if (runState.CurrentActIndex < 2)

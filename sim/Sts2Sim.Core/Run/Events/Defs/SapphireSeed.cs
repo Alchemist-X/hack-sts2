@@ -10,6 +10,9 @@ public sealed class SapphireSeed : EventModel
 
     public override string Id => EventId;
 
+    // Option-text var (Models.Events/SapphireSeed.cs:213 StringVar Enchantment).
+    public static string Enchantment => SownId;
+
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs) => new[]
     {
         new EventOption("SAPPHIRE_SEED.pages.INITIAL.options.EAT", Eat),

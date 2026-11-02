@@ -60,6 +60,11 @@ public static partial class ObservationBuilder
         points.Sort((a, b) => a.coord.row != b.coord.row ? a.coord.row.CompareTo(b.coord.row) : a.coord.col.CompareTo(b.coord.col));
         var visited = new HashSet<MapCoord>(rs.VisitedMapCoords);
         var current = rs.CurrentMapCoord;
+        var quests = new Dictionary<MapCoord, int>();
+        foreach (var q in map.AllQuests)
+        {
+            quests[q.Coord] = quests.GetValueOrDefault(q.Coord) + 1;
+        }
         foreach (var pt in points)
         {
             var edges = new JsonArray();
@@ -74,7 +79,9 @@ public static partial class ObservationBuilder
                 ["type"] = pt.PointType.ToString(),
                 ["edges"] = edges,
                 ["visited"] = visited.Contains(pt.coord),
-                ["current"] = current is { } cur && cur == pt.coord
+                ["current"] = current is { } cur && cur == pt.coord,
+                // quest marks on the point (NNormalMapPoint %QuestIcon, Point.Quests; e.g. FUR_COAT)
+                ["quest"] = quests.GetValueOrDefault(pt.coord)
             });
         }
         return list;
@@ -129,13 +136,17 @@ public static partial class ObservationBuilder
             int first = Math.Clamp(at - 1, 0, keys.Count - MaxRows);
             keys = keys.GetRange(first, MaxRows);
         }
-        sb.Append("-- act map (r<row>: <col><type>[*current|x visited]><next-row cols>; M monster E elite R rest $ shop T treasure ? unknown A ancient B boss)\n");
+        sb.Append("-- act map (r<row>: <col><type>[! quest][*current|x visited]><next-row cols>; M monster E elite R rest $ shop T treasure ? unknown A ancient B boss)\n");
         foreach (var row in keys)
         {
             sb.Append(" r").Append(I(row)).Append(':');
             foreach (var n in rows[row])
             {
                 sb.Append(' ').Append(n["col"]!.ToJsonString()).Append(MapLetter(n["type"]?.GetValue<string>()));
+                if (n["quest"] is JsonValue quest && quest.GetValue<int>() > 0)
+                {
+                    sb.Append('!');
+                }
                 if (n["current"]!.GetValue<bool>())
                 {
                     sb.Append('*');
@@ -293,7 +304,7 @@ public static partial class ObservationBuilder
             {
                 enabled = false;
             }
-            options.Add(new JsonObject { ["index"] = i, ["id"] = room.Options[i].OptionId, ["enabled"] = enabled });
+            options.Add(new JsonObject { ["index"] = i, ["id"] = room.Options[i].OptionId, ["enabled"] = enabled, ["text"] = Rt(() => RestOptionText(rs, room.Options[i])) });
         }
         return new JsonObject { ["options"] = options };
     }
@@ -329,7 +340,7 @@ public static partial class ObservationBuilder
             for (int i = 0; i < ev.CurrentOptions.Count; i++)
             {
                 var opt = ev.CurrentOptions[i];
-                var node = new JsonObject { ["index"] = i, ["key"] = opt.TextKey, ["enabled"] = opt.IsEnabled, ["text"] = Rt(() => RulesText.EventOptionText(ev, opt)) };
+                var node = new JsonObject { ["index"] = i, ["key"] = opt.TextKey, ["enabled"] = opt.IsEnabled, ["text"] = Rt(() => RulesText.EventOptionText(ev, opt, rs)) };
                 if (opt.RelicId != null)
                 {
                     node["relic"] = opt.RelicId;
@@ -342,6 +353,7 @@ public static partial class ObservationBuilder
             ["id"] = ev.Id,
             ["name"] = Rt(() => RulesText.EventTitle(ev.Id)),
             ["page"] = ev.Description,
+            ["page_text"] = Rt(() => RulesText.EventPageText(ev, rs)),
             ["finished"] = ev.IsFinished,
             ["options"] = options
         };

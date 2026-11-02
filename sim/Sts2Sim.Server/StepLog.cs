@@ -462,6 +462,8 @@ public static class StepLog
             {
                 switch (e)
                 {
+                    case PowerReceivedEntry hidden when Describe.IsHiddenPowerId(hidden.PowerId):
+                        break;
                     case PowerReceivedEntry p when p.ApplierId == mover:
                         parts.Add($"{(p.Amount >= 0 ? "+" : string.Empty)}{p.PowerId} {((int)p.Amount).ToString(CultureInfo.InvariantCulture)} -> {(p.Stamp.ActorId == mover ? "self" : label(p.Stamp.ActorId))}");
                         break;

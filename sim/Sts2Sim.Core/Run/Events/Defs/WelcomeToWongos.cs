@@ -38,6 +38,9 @@ public sealed class WelcomeToWongos : EventModel
 
     public string? FeaturedItemId => _featuredItem;
 
+    // Option-text var {RandomRelic} of FEATURED_ITEM (Models.Events/WelcomeToWongos.cs: the featured relic's title).
+    public string? RandomRelic => _featuredItem;
+
     public override bool IsAllowed(RunState runState)
     {
         if (runState.CurrentActIndex == 1)

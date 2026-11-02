@@ -16,6 +16,9 @@ public sealed class DenseVegetation : EventModel
 
     public int Gold { get; private set; }
 
+    // Option-text var {Heal} (Models.Events/DenseVegetation.cs:302 HealRestSiteOption.GetHealAmount(Owner)), read by the play server.
+    public decimal HealFor(RunState rs) => Owner != null ? HealRestSiteOption.GetHealAmount(rs, Owner) : 0m;
+
     public override void CalculateVars(RunState rs)
     {
         Gold = Rng!.NextInt(MinGold, MaxGoldExclusive);

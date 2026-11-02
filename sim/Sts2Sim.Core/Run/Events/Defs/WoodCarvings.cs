@@ -16,6 +16,13 @@ public sealed class WoodCarvings : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/WoodCarvings.cs:305 StringVar BirdCard / SnakeEnchantment / ToricCard).
+    public static string BirdCard => PeckId;
+
+    public static string SnakeEnchantment => "SLITHER";
+
+    public static string ToricCard => ToricToughnessId;
+
     public override bool IsAllowed(RunState rs) => rs.Players.All(p => p.Deck.Any(c => c != null && c.Rarity == CardRarity.Basic && c.IsRemovable));
 
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs)

@@ -68,6 +68,9 @@ public static partial class ObservationBuilder
             ["result"] = g.Result,
             ["act"] = rs != null ? rs.CurrentActIndex + 1 : null,
             ["floor"] = rs != null ? rs.TotalFloor : null,
+            ["ascension"] = rs?.Ascension,
+            ["bosses"] = rs != null ? BossesNode(rs) : null,
+            ["ancient"] = rs != null ? AncientNode(rs) : null,
             ["turn"] = cs != null ? cs.Player.TurnNumber : null,
             ["player"] = PlayerNode(player, cs),
             ["combat"] = cs != null ? CombatNode(cs, g.RevealMoves) : null,
@@ -127,7 +130,7 @@ public static partial class ObservationBuilder
         sb.Append("== ").Append(g.Id).Append(' ').Append(g.PhaseName);
         if (rs != null)
         {
-            sb.Append(" | act ").Append(I(rs.CurrentActIndex + 1)).Append(" floor ").Append(I(rs.TotalFloor));
+            sb.Append(" | act ").Append(I(rs.CurrentActIndex + 1)).Append(" floor ").Append(I(rs.TotalFloor)).Append(" | ascension ").Append(I(rs.Ascension));
         }
         if (cs != null)
         {
@@ -149,6 +152,10 @@ public static partial class ObservationBuilder
             sb.Append(" | RESULT ").Append(g.Result);
         }
         sb.Append('\n');
+        if (BossLine(obs["bosses"] as JsonArray, obs["ancient"] as JsonObject) is { } bossLine)
+        {
+            sb.Append(bossLine).Append('\n');
+        }
         if (cs != null)
         {
             AppendDanger(sb, obs["combat"]?["danger"] as JsonObject, p.MaxHp);
@@ -195,9 +202,9 @@ public static partial class ObservationBuilder
         }
         if (p.OrbQueue.Capacity > 0)
         {
-            sb.Append("orbs (").Append(I(p.OrbQueue.Capacity)).Append(" slots): ").Append(p.OrbQueue.Orbs.Count == 0 ? "-" : string.Join(", ", p.OrbQueue.Orbs.Select(o => o.Id))).Append('\n');
+            sb.Append(OrbsLine(obs["player"]?["orbs"] as JsonArray, p.OrbQueue.Capacity)).Append('\n');
         }
-        sb.Append("deck(").Append(I(p.Deck.Count)).Append("): ").Append(Describe.DeckSummary(p.Deck)).Append('\n');
+        sb.Append("deck(").Append(I(p.Deck.Count)).Append("): ").Append(CardsSummary(p.Deck, sorted: false)).Append('\n');
         if (cs != null)
         {
             sb.Append("-- enemies");
@@ -271,6 +278,7 @@ public static partial class ObservationBuilder
                 }
             }
             var player = cs.Player;
+            AppendPiles(sb, combatNode?["pile_view"] as JsonObject);
             sb.Append("-- hand (draw ").Append(I(player.DrawPile.Count)).Append(", discard ").Append(I(player.DiscardPile.Count)).Append(", exhaust ").Append(I(player.ExhaustPile.Count)).Append(")\n");
             var handNodes = combatNode?["hand"] as JsonArray;
             for (int i = 0; i < player.Hand.Count; i++)
@@ -354,6 +362,10 @@ public static partial class ObservationBuilder
                 sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["upgraded"]!.GetValue<bool>() ? "+" : string.Empty);
                 AppendName(sb, o);
                 AppendText(sb, o).Append('\n');
+                if (Str(o, "upgrade_text") is { } upgradeText)
+                {
+                    sb.Append("     upgraded: ").Append(Collapse(upgradeText)).Append('\n');
+                }
             }
         }
         if (obs["map"] is JsonObject map)
@@ -391,6 +403,7 @@ public static partial class ObservationBuilder
                 {
                     sb.Append(" (").Append(string.Join(", ", vars.Select(kv => kv.Key + "=" + kv.Value!.ToJsonString()))).Append(')');
                 }
+                sb.Append(CardTags(c));
                 var kws = (JsonArray)c["keywords"]!;
                 if (kws.Count > 0)
                 {
@@ -420,7 +433,8 @@ public static partial class ObservationBuilder
             sb.Append("-- rest site\n");
             foreach (var o in (JsonArray)rest["options"]!)
             {
-                sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["enabled"]!.GetValue<bool>() ? string.Empty : " (disabled)").Append('\n');
+                sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["enabled"]!.GetValue<bool>() ? string.Empty : " (disabled)");
+                AppendText(sb, o).Append('\n');
             }
         }
         if (obs["treasure"] is JsonObject t)
@@ -439,6 +453,10 @@ public static partial class ObservationBuilder
             sb.Append("-- event ").Append(ev["id"]);
             AppendName(sb, ev);
             sb.Append(" page ").Append(ev["page"]?.GetValue<string>() ?? "-").Append(ev["finished"]!.GetValue<bool>() ? " (finished)" : string.Empty).Append('\n');
+            if (Str(ev, "page_text") is { } pageText)
+            {
+                sb.Append("   ").Append(Collapse(pageText)).Append('\n');
+            }
             foreach (var o in (JsonArray)ev["options"]!)
             {
                 sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["key"]).Append(o["enabled"]!.GetValue<bool>() ? string.Empty : " (disabled)");

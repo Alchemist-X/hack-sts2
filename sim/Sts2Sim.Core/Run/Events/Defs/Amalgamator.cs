@@ -12,6 +12,11 @@ public sealed class Amalgamator : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/Amalgamator.cs:333 StringVar Card1 / Card2), read by the play server.
+    public static string Card1 => UltimateStrikeId;
+
+    public static string Card2 => UltimateDefendId;
+
     public override bool IsAllowed(RunState runState)
     {
         var players = runState.Players;

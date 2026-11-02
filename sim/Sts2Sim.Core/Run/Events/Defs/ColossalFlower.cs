@@ -14,6 +14,13 @@ public sealed class ColossalFlower : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/ColossalFlower.cs:404 GoldVar Prize1..3).
+    public static int Prize1 => PrizeCosts[0];
+
+    public static int Prize2 => PrizeCosts[1];
+
+    public static int Prize3 => PrizeCosts[2];
+
     public int NumberOfDigs { get; private set; }
 
     public override bool IsAllowed(RunState rs) => rs.Players.All(p => p.CurrentHp >= MinHp);
