@@ -995,3 +995,38 @@ Open issues:
 - The encoder fails closed (exceptions → SIM_ERROR/CONTENT_GAP); none seen in ~60k soak episodes.
 - Clone-free `Step(a, answerer)` stepping (D7 later ticket) not started; resets are ~0.5–2 k/s at N = 1024.
 - Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.
+
+## E2b integrate (2026-11-01)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `b3ac9d6` (E2 docs). All four owner branches are single commits on `b3ac9d6`; none skipped.
+
+Merged, in order (all `--no-ff`): e2b/linux `f842712` (merge `5e76601`), e2b/docker `e9bb9d2` (merge `4f401fe`), e2b/protocol `5c97a14` (merge `b715fc8`), e2b/version-delta `7871055` (merge `40e4c37`).
+
+Conflicts: none. The four branches touch disjoint files (linux: loader.py, BENCH.md, VEC.md, vec README, vec_publish_aot.sh, new linux_validate.sh and docs; docker: Dockerfile, compose, docker/, Server Program.cs/HttpHost.cs, ServerBindTests.cs, PLAY.md flags paragraph; protocol: sim/tools/eval, protocol v0.1/v0.2 docs, handoff §11; version-delta: new scripts/ files and the migration playbook), so every merge was clean.
+
+Fixes (integration): none needed. Two owner open items checked and closed:
+- linux: "VEC.md claims a NativeAOT round-trip pytest that does not exist" — it exists (`sim/tools/vec/tests/test_loader.py::test_native_aot_library_in_subprocess`, defined only when `sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.{dylib,so}` exists, platform-aware). With the dylib present here the vec suite is 64 tests; on Huginn the AOT .so was published after pytest ran, hence 63.
+- linux: "gate commands run `uv run --project sim/tools/eval pytest -q` without the path" — `git grep` finds no such command in the tree; all committed instances carry `sim/tools/eval`.
+
+Gates (macOS, M4 Pro):
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors; Debug 0 warnings 0 errors.
+- Tests: `dotnet run -c Release --project sim/Sts2Sim.Tests -- Server Vec Parity EndToEnd SelfConsistency` 97 passed, 0 failed, PENDING 0 (27.2 s; includes the 3 new ServerBindTests).
+- Server self test `--selftest 100 --content ported_only`: 100 completed (0 wins), 0 crashed, 0 capped, 0 server errors, mean 67.6 steps (4.2 s) — identical to E2.
+- G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e2b-diff.json`): bundles 4 (agree 4, hard 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Python: `uv run --project sim/tools/eval pytest -q sim/tools/eval` 67 passed; `STS2VEC_REQUIRE_FULL=1 uv run --project sim/tools/vec pytest -q` 64 passed (incl. the AOT round-trip); `uv lock --check` clean for both projects (the Dockerfile's `uv sync --frozen` depends on it).
+- `sts2eval report` (v0.2 metric) recomputed in place on `tmp/eval/baseline-sonnet-a0-s10-v2` (smoke-a0-v1): progress 0.594 [0.444, 0.744], median 0.583, win 0/10 Wilson [0, 27.8 %], floor/48 63.1 %; and `tmp/eval/baseline-sonnet-a10-s20` (std-a10-v1): progress 0.310 [0.243, 0.377], median 0.314, win 0/20 Wilson [0, 16.1 %], floor/49 34.0 %. Both match the protocol owner's numbers; v0.1 reports kept beside them as `report.v01.{md,json}` (git-ignored).
+- Version delta: `python3 -m unittest discover -s scripts -p test_version_delta.py` 19/19 OK; demo `scripts/version_delta.py decompiled-v0.107.1 decompiled-9cb4f1ad` 10.1 s: identical 2449, cosmetic 8, modified 957, moved 3, added 120, removed 7; content 546 / kernel 134 / out of scope 407; rerun plan full_suite, G0, G3, 101 filters, registry + knowledge moves (identical to the owner run). Report in `tmp/version-delta/v107-9cb/` (git-ignored).
+- Docker proxy (no docker on this Mac): `dotnet publish -c Release -r linux-x64 --self-contained false sim/Sts2Sim.Server -o tmp/e2b/publish-linux-x64` succeeded, 0 warnings, ELF x86-64 apphost, 3.9 MB; `bash -n` on docker/entrypoint.sh and the new scripts clean.
+
+Owner-run numbers carried into this record:
+- Linux x86_64 (Huginn, 8 vCPU Xeon KVM, Ubuntu 24.04, .NET 9.0.22 user-level): build 0 warnings; full suite 1103/1103 (1171 s); filtered 100/100; selftest 300/300; vec pytest 63, eval pytest 43; AOT linux-x64 .so (gcc) PASS. Deterministic counts identical to the Mac (combat hash sink 40788C706BFA21E0, vec episodes 7,286 / 44,417 / 29,235 / 463). Throughput: combat 41.4k decisions/s (Mac 147k); C# vec 1024x8 28.1k env-steps/s at 500 steps (JIT warm-up), 50.5k at 3000 steps (§D7 met at steady state); Python sts2vec 1024x8 pool 64 hostfxr 21.6k, NativeAOT 61.4k. DOTNET_TieredCompilation=0 reaches 51.8k immediately. Details: docs/linux-validation-2026-11-01.md, sim/BENCH.md "Linux x86_64 (Huginn)".
+- Docker (Tokyo VM, linux/arm64, 2 vCPU): cold build 73 s, image 578 MB, in-image build 0 warnings and RUN_TESTS=Server 39/39; selftest 200/200; /health 257 ms after start; SIGTERM stop 268 ms exit 0; vec-check OK; vec-bench 1024x4 15.7k env-steps/s (C# 19.2k); compose 2 replicas healthy; eval profile (random, 10 games) 10/10 replayable. VM returned to its starting state. Details: docs/docker.md.
+- Protocol v0.2: docs/sts2-bench-protocol-v0.2-2026-11-01.md; frozen seed sets std-a0-v1 / std-a10-v1 / smoke-a0-v1 (sha256 in the seed files); random policy progress 0.065 (A0) / 0.051 (A10).
+
+Open issues:
+- Docker image validated on linux/arm64 only; the amd64 build and x86 container throughput are unmeasured (Huginn has no docker). The server has no auth; compose binds 127.0.0.1 by default. A runner must talk to one replica, never a balancer (game ids are per process).
+- Huginn: `~/.cache/uv` is a dangling root-owned symlink (admin fix needed; linux_validate.sh uses a run-local UV_CACHE_DIR); root fs at 91 %; ~/.dotnet (579 MB) kept for reruns. Full suite at 19.5 min is near the 20 min timeout — a sharded/parallel runner would help Linux CI.
+- Short Linux jobs are JIT-warm-up bound; consider documenting or setting TieredCompilation/TieredPGO after a cross-platform measurement (no runtime config changed).
+- Protocol: no Sonnet row on the official std-a0-v1 set (~$43); Sonnet rows were produced on server c64217d (tree now includes 8c65874's display-path change) — declare equivalence or rerun before mixing rows; no NN eval entry point (`sts2vec eval --seedset`) and no replay-audit script yet; A10 act-3 second boss and GOLDEN_COMPASS scoring are unit-test only.
+- Version delta: 28 content files with unique edits are missing from W0 version-deltas.json (e.g. Swift, EvilEye) and need triage; test filters are broad (token-based mapping); kernel-to-sim mapping finds 45/134; G0/G3 steps in version_update.sh need --bundles/--bundles-v2.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended (amending would rewrite the merged owner commits).
