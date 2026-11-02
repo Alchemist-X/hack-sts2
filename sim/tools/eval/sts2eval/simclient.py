@@ -55,9 +55,10 @@ class SimClient:
     async def health(self) -> dict:
         return await self._req("GET", "/health")
 
-    async def new_run(self, seed, character: str, ascension: int, content: str) -> dict:
-        return await self._req("POST", "/runs", {"seed": seed, "character": character,
-                                                 "ascension": ascension, "content": content})
+    async def new_run(self, seed, character: str, ascension: int, content: str, reveal_moves: bool = False) -> dict:
+        # reveal_moves is always sent, so the game's view does not depend on the server's --reveal-moves default
+        return await self._req("POST", "/runs", {"seed": seed, "character": character, "ascension": ascension,
+                                                 "content": content, "reveal_moves": bool(reveal_moves)})
 
     async def show(self, gid: str) -> dict:
         return await self._req("GET", f"/games/{gid}")

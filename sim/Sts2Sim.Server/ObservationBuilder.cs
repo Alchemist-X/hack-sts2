@@ -70,7 +70,7 @@ public static partial class ObservationBuilder
             ["floor"] = rs != null ? rs.TotalFloor : null,
             ["turn"] = cs != null ? cs.Player.TurnNumber : null,
             ["player"] = PlayerNode(player, cs),
-            ["combat"] = cs != null ? CombatNode(cs) : null,
+            ["combat"] = cs != null ? CombatNode(cs, g.RevealMoves) : null,
             ["map"] = null,
             ["rewards"] = null,
             ["card_reward"] = null,

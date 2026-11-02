@@ -17,6 +17,10 @@ public sealed record PlayServiceOptions
 
     public int MaxGames { get; init; } = 10_000;
 
+    // Default of the per-game "reveal_moves" create option (--reveal-moves). Off = parity with the game, which shows an
+    // enemy's intent but never the identity or name of the move: intents carry "move"/"move_name" null.
+    public bool RevealMoves { get; init; }
+
     // Test seam: runs inside the crash guard just before each simulator step.
     public Action<GameSession, RunAction>? BeforeStep { get; init; }
 }
@@ -192,14 +196,14 @@ public sealed class PlayService
 
     public ServiceResponse CreateRun(JsonObject body)
     {
-        var config = NormalizeRunConfig(body);
+        var config = NormalizeRunConfig(body, Options.RevealMoves);
         string id = "r" + Interlocked.Increment(ref _runCounter).ToString(CultureInfo.InvariantCulture);
         return Create(id, GameKind.Run, config);
     }
 
     public ServiceResponse CreateCombat(JsonObject body)
     {
-        var config = NormalizeCombatConfig(body);
+        var config = NormalizeCombatConfig(body, Options.RevealMoves);
         string id = "c" + Interlocked.Increment(ref _combatCounter).ToString(CultureInfo.InvariantCulture);
         return Create(id, GameKind.Combat, config);
     }
@@ -261,7 +265,7 @@ public sealed class PlayService
         return GameSession.ForCombat(id, config["seed"]!.DeepClone(), config, combat);
     }
 
-    public static JsonObject NormalizeRunConfig(JsonObject body)
+    public static JsonObject NormalizeRunConfig(JsonObject body, bool revealMovesDefault = false)
     {
         string seed = body["seed"] switch
         {
@@ -291,10 +295,11 @@ public sealed class PlayService
             "ported_only" or "ported" or "portedonly" => "ported_only",
             _ => throw new BadRequestException("content must be \"ported_only\" or \"all\"")
         };
-        return new JsonObject { ["seed"] = seed, ["character"] = character, ["ascension"] = ascension, ["content"] = content };
+        bool revealMoves = OptBool(body, "reveal_moves") ?? revealMovesDefault;
+        return new JsonObject { ["seed"] = seed, ["character"] = character, ["ascension"] = ascension, ["content"] = content, ["reveal_moves"] = revealMoves };
     }
 
-    public static JsonObject NormalizeCombatConfig(JsonObject body)
+    public static JsonObject NormalizeCombatConfig(JsonObject body, bool revealMovesDefault = false)
     {
         ulong seed = body["seed"] switch
         {
@@ -335,6 +340,7 @@ public sealed class PlayService
         {
             throw new BadRequestException("hp and max_hp must be positive and hp <= max_hp");
         }
+        bool revealMoves = OptBool(body, "reveal_moves") ?? revealMovesDefault;
         return new JsonObject
         {
             ["seed"] = seed,
@@ -342,7 +348,8 @@ public sealed class PlayService
             ["encounter"] = encounter,
             ["ascension"] = ascension,
             ["hp"] = hp,
-            ["max_hp"] = maxHp
+            ["max_hp"] = maxHp,
+            ["reveal_moves"] = revealMoves
         };
     }
 
@@ -436,7 +443,7 @@ public sealed class PlayService
                 List<string> lines;
                 try
                 {
-                    lines = StepLog.Diff(before, StepLog.Capture(g, before.Combat), entry.Action);
+                    lines = StepLog.Diff(before, StepLog.Capture(g, before.Combat), entry.Action, g.RevealMoves);
                 }
                 catch (Exception ex)
                 {
@@ -592,6 +599,14 @@ public sealed class PlayService
             null => null,
             JsonValue v when v.GetValueKind() == JsonValueKind.String => v.GetValue<string>(),
             _ => throw new BadRequestException($"{key} must be a string")
+        };
+
+    private static bool? OptBool(JsonObject body, string key)
+        => body[key] switch
+        {
+            null => null,
+            JsonValue v when v.GetValueKind() is JsonValueKind.True or JsonValueKind.False => v.GetValue<bool>(),
+            _ => throw new BadRequestException($"{key} must be true, false or null")
         };
 
     private static int? OptInt(JsonObject body, string key)

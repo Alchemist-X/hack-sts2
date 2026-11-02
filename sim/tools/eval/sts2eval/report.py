@@ -12,7 +12,7 @@ from .prices import USAGE_KEYS
 from .runner import full_run_floors
 from .seedsets import CHARACTERS
 
-RESULTS = ("win", "loss", "capped", "crashed", "aborted", "error")
+RESULTS = ("win", "loss", "capped", "stuck", "crashed", "aborted", "error")
 
 
 def wilson(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -66,6 +66,8 @@ def aggregate(summaries: list[dict], ascension: int = 0) -> dict:
         "illegal_replies_total": sum(s.get("illegal_replies", 0) for s in summaries),
         "retries_total": sum(s.get("retries", 0) for s in summaries),
         "crashes": results.get("crashed", 0),
+        "stuck_games": results.get("stuck", 0),
+        "loop_hints": sum(s.get("loop_hints", 0) for s in summaries),
         "api_errors": sum(s.get("api_errors", 0) for s in summaries),
         "refusals": sum(s.get("refusals", 0) for s in summaries),
         "timeouts": sum(s.get("timeouts", 0) for s in summaries),
@@ -105,6 +107,7 @@ def build_report(out_dir: Path) -> dict:
         "server_version": cfg.get("server_version"),
         "repo_sha": cfg.get("repo_sha"),
         "prompt_hash": cfg.get("prompt_hash"),
+        "reveal_moves": cfg.get("reveal_moves"),
         "prices": cfg.get("prices"),
         "expected_games": expected,
         "aborted": run.get("abort_reason"),
@@ -125,6 +128,9 @@ def _game_row(s: dict) -> dict:
             cause = f"{death['room_type']}: {cause}"
     elif s.get("result") == "crashed":
         cause = (s.get("error") or "")[:120]
+    elif s.get("result") == "stuck":
+        stuck = s.get("stuck") or {}
+        cause = f"stuck: {stuck.get('phase') or '?'} floor {_f(stuck.get('floor', s.get('floor')))}"
     elif s.get("result") in ("capped", "aborted", "error"):
         cause = s.get("cap_reason") or s.get("abort_reason") or (s.get("error") or "")[:120]
     return {"seed": s.get("seed"), "character": s.get("character"), "result": s.get("result"),
@@ -170,6 +176,8 @@ def _headline_rows(h: dict) -> list[tuple[str, str]]:
         ("illegal actions per game (replies rejected, re-asks)",
          f"{_f(h['illegal_per_game'], 2)} ({h['illegal_replies_total']}, {h['retries_total']})"),
         ("crashes", str(h["crashes"])),
+        ("stuck games", str(h.get("stuck_games", 0))),
+        ("loop hints", str(h.get("loop_hints", 0))),
         ("api errors / refusals / timeouts / max_tokens stops",
          f"{h['api_errors']} / {h['refusals']} / {h['timeouts']} / {h['max_tokens_stops']}"),
         ("random fallbacks", str(h["fallbacks"])),
@@ -189,8 +197,10 @@ def render_md(report: dict) -> str:
     lines.append(f"- seed set `{report.get('seedset')}` (A{report.get('ascension')}), policy `{report.get('policy')}`"
                  + (f", model `{report['model']}`, effort `{report.get('effort') or 'default'}`, "
                     f"thinking `{report.get('thinking')}`" if report.get("model") else ""))
+    reveal = report.get("reveal_moves")
     lines.append(f"- server `{report.get('server_version')}`, repo `{report.get('repo_sha')}`, "
-                 f"prompt `{report.get('prompt_hash')}`")
+                 f"prompt `{report.get('prompt_hash')}`, enemy moves "
+                 + ("`revealed`" if reveal else "`hidden`" if reveal is False else "`?` (not recorded)"))
     wall = report.get("wall_seconds")
     lines.append(f"- total wall time: {_f(wall / 60.0, 2) + ' min' if wall is not None else '-'}"
                  + (f"; games summarised {h['games']}/{report['expected_games']}" if report.get("expected_games") else ""))

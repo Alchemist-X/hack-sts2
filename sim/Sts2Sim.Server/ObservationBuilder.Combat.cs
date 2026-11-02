@@ -6,20 +6,28 @@ namespace Sts2Sim.Server;
 
 public static partial class ObservationBuilder
 {
-    // Visible powers of a creature: {id, amount, text, detail}; detail = target / applier / power-specific state.
+    // Visible powers of a creature: {id, amount, text, detail[, amount_raw]}. amount = the number the game's power icon
+    // shows (Describe.DisplayAmount); text = the description, whose {Amount} is the kernel amount as in the game;
+    // detail = player-visible state only (Describe.PowerDetail); amount_raw only when the icon number is unknown.
     private static JsonArray PowerNodes(CombatState cs, CreatureState creature)
     {
         var powers = new JsonArray();
         foreach (var power in Describe.PowerModels(cs, creature))
         {
             string id = power.Id;
-            powers.Add(new JsonObject
+            int raw = power.Amount;
+            var node = new JsonObject
             {
                 ["id"] = id,
-                ["amount"] = power.Amount,
-                ["text"] = Rt(() => RulesText.PowerText(id, power.Amount)),
+                ["amount"] = Describe.DisplayAmount(power, out bool known),
+                ["text"] = Rt(() => RulesText.PowerText(id, raw)),
                 ["detail"] = Describe.PowerDetail(cs, power)
-            });
+            };
+            if (!known)
+            {
+                node["amount_raw"] = raw;
+            }
+            powers.Add(node);
         }
         return powers;
     }
@@ -32,7 +40,9 @@ public static partial class ObservationBuilder
             return Str(pw, "detail") is { } detail ? s + " [" + detail + "]" : s;
         }));
 
-    private static JsonObject CombatNode(CombatState cs)
+    // revealMoves: the game shows an enemy's intent (type, damage, hits, card count) but never which move it is, so the
+    // intent's move id and title stay null unless the game was created with "reveal_moves".
+    private static JsonObject CombatNode(CombatState cs, bool revealMoves)
     {
         var player = cs.Player;
         var hand = new JsonArray();
@@ -44,7 +54,7 @@ public static partial class ObservationBuilder
         foreach (var (index, m) in Describe.LiveEnemies(cs))
         {
             var intents = new JsonArray();
-            string? move = Describe.MoveId(m);
+            string? move = revealMoves ? Describe.MoveId(m) : null;
             string? moveName = move == null ? null : Rt(() => RulesText.EnemyMoveTitle(m.MonsterId, move));
             foreach (var intent in Describe.Intents(cs, m))
             {

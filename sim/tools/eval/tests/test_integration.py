@@ -33,9 +33,14 @@ def test_spawn_random_two_games(tmp_path):
         # the recorded tokens are exactly the server history
         steps = [json.loads(x) for x in lines if json.loads(x)["type"] == "step"]
         assert [r["token"] for r in steps] == s["history_tokens"]
+        # parity default: intents never name the enemy's move
+        assert s["reveal_moves"] is False
+        assert not any("intent: [" in (r["obs_text"] or "") for r in steps)
+        assert any("intent: " in (r["obs_text"] or "") for r in steps)
     assert (out / "report.md").exists() and (out / "report.json").exists()
     cfg = json.loads((out / "config.json").read_text())
     assert cfg["server_version"] and cfg["server_spawned"] is True
+    assert cfg["reveal_moves"] is False and cfg["limits"]["loop_repeat"] == 6 and cfg["limits"]["floor_step_cap"] == 80
     assert (out / "server.log").exists()
 
     # deterministic: the same seed set with the random policy replays the same token lists

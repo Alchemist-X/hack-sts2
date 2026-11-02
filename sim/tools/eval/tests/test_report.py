@@ -76,3 +76,40 @@ def test_report_files(tmp_path):
     assert "Prices used" in md and "11.67 min" in md
     assert build_report(tmp_path)["headline"] == rep["headline"]
     assert render_md(rep) == md
+
+
+def test_report_stuck_and_loop_rows(tmp_path):
+    games = [
+        summary(seed="S4", character="SILENT", result="stuck", floor=31, act=2, steps=580, loop_hints=1,
+                stuck={"phase": "CardReward", "floor": 31, "noncombat_steps": 80}, truncated=True, reward=0),
+        summary(seed="S5", character="SILENT", floor=24, act=2, steps=406, loop_hints=2,
+                death={"floor": 24, "act": 2, "room_type": "Monster", "phase": "Defeat", "enemies": ["MYTE"]}),
+        summary(seed="S6", character="DEFECT", result="capped", cap_reason="steps", floor=30, act=2, steps=1200),
+    ]
+    h = aggregate(games, 0)
+    assert h["results"]["stuck"] == 1 and h["results"]["capped"] == 1 and h["results"]["loss"] == 1
+    assert h["stuck_games"] == 1 and h["loop_hints"] == 3 and h["wins"] == 0
+    (tmp_path / "games").mkdir()
+    for g in games:
+        (tmp_path / "games" / f"{g['key']}.summary.json").write_text(json.dumps(g))
+    (tmp_path / "config.json").write_text(json.dumps({"run_id": "t-stuck", "policy": "claude", "reveal_moves": False,
+                                                      "seedset": {"name": "t", "ascension": 0, "games": [{}] * 3}}))
+    rep = write_report(tmp_path)
+    md = (tmp_path / "report.md").read_text()
+    assert "| results | loss 1, capped 1, stuck 1 |" in md
+    assert "| stuck games | 1 |" in md and "| loop hints | 3 |" in md
+    assert "| stuck: CardReward floor 31 |" in md
+    assert "| S6 | DEFECT | capped | 30 | 2 | 1200 | 0 | 0.0100 | 1.00 | steps |" in md  # capped is not stuck
+    assert "enemy moves `hidden`" in md
+    rows = {g["seed"]: g for g in rep["games"]}
+    assert rows["S4"]["cause"] == "stuck: CardReward floor 31" and rows["S6"]["cause"] == "steps"
+
+
+def test_report_old_runs_without_new_fields(tmp_path):
+    """Summaries written before the loop guard (no loop_hints / stuck keys) still aggregate."""
+    old = summary(seed="S7", character="REGENT")
+    h = aggregate([old], 0)
+    assert h["stuck_games"] == 0 and h["loop_hints"] == 0
+    (tmp_path / "games").mkdir()
+    (tmp_path / "games" / "REGENT-S7.summary.json").write_text(json.dumps(old))
+    assert "enemy moves `?` (not recorded)" in render_md(build_report(tmp_path))
