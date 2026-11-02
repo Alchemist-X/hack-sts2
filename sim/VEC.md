@@ -166,7 +166,14 @@ int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t*
 int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
 // additive (E2c), appended after the frozen set:
 int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // fresh templates created now → count, or -1
+// additive (determinized clones), appended:
+int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // pool entry id of a determinized clone, or -1
 ```
+
+- `sts2vec_clone_determinized`: appends a pool entry holding `RunSim.CloneDeterminized(seed)` of the slot's current
+  state (prompts included) and returns its id; `sts2vec_restore(h, other_slot, entry, buffers)` starts a slot from it.
+  The restored slot's observation equals the source slot's byte for byte; its hidden state is resampled (see
+  "Determinized clones" below). An empty slot is an error. Python: `env.clone_determinized(slot, seed)`.
 
 - `sts2vec_pool_warm`: creates the templates of up to `max_entries` fresh entries without one (`< 0`: all), in id
   order, while the template cache (`pool_cache`) has room, on the env's threads; returns the number created by this
@@ -551,10 +558,10 @@ Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full re
 
 | Module | Content |
 | --- | --- |
-| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 15 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
+| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 16 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`, `sts2vec_clone_determinized`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
 | `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
 | `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `warm(max_entries=None)` → templates created, `len`). |
-| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
+| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
 | `cli.py` | `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
 
 ```python
@@ -564,6 +571,7 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
     obs, reward, terminated, truncated, status, info = env.step(random_actions(rng, obs["cand_n"]))
     env.pool.add_fresh("SILENT", seed="S1"); env.pool.add_save(path); len(env.pool); env.pool.warm()
     e = env.snapshot(0); env.restore(3, e); env.state_hash([0, 3]); env.candidates(0)
+    d = env.clone_determinized(0, seed=17); env.restore(4, d)   # same view as slot 0, hidden state resampled
 ```
 
 - `obs` = every buffer except `reward/terminated/truncated/status/episode/last_episode` (those come back as the step
@@ -579,6 +587,79 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
 - NativeAOT: `scripts/vec_publish_aot.sh` publishes with `PublishAot`, `NativeLib=Shared`, `ServerGarbageCollection`,
   `TrimmerRootAssembly Sts2Sim.Core` (injected through `CustomAfterMicrosoftCommonTargets`; no csproj change),
   `LIBRARY_PATH=/opt/homebrew/lib`, into `bin/aot-artifacts` (separate obj) and copies the library to `bin/aot/`.
+
+## Determinized clones
+
+`RunSim.CloneDeterminized(ulong seed, DeterminizeOptions? options = null)` (and `CombatSim.CloneDeterminized`) return a
+deep clone whose **public state is identical** and whose **hidden state is resampled** from `seed`: one sample of the
+information set, for information-set search (ISMCTS, PIMC) later. Implementation: `Sts2Sim.Core/Random/Determinizer.cs`
+(`Determinizer.Apply` works on a `RunState` / `CombatState` in place). Through the vec layer:
+`sts2vec_clone_determinized(h, slot, seed)` → pool entry, then `sts2vec_restore`; Python `env.clone_determinized(slot, seed)`.
+
+Contract (tests in `sim/Sts2Sim.Tests/VecTests.Determinize.cs`, class `VecDeterminizeTests`; Python
+`test_full.py::test_clone_determinized_same_view_resampled_hidden_state`):
+
+- the player view is unchanged: `ObservationEncoder` bytes and status equal the original's on 900 sampled decision
+  points (717 combat, 136 map / shop / event / reward / rest screens, 47 pending prompts);
+- the hidden state changed: the clone's `StateHash` differs; a reflection walk over the whole object graph
+  (`RngGraphWalker`) finds every `Rng` object of the clone distinct from, and in a different state than, every `Rng` of
+  the original (4,506 RNG objects over 300 states; the act map's construction RNG, shared by `Clone()`, is excluded);
+- two seeds give different draw orders over the same multiset (299 / 300 states) and different future monster moves
+  under the same end-turn policy (11 / 150 combats; most monster AIs are fixed cycles), while the current intents stay;
+- deterministic: same state + same seed + same options ⇒ same `StateHash`; restoring one entry twice gives the same
+  state; `CombatSim.CloneDeterminized` behaves the same on standalone combats.
+
+**What is resampled.**
+
+| Hidden item | Sim location | Game source (decompile) | How |
+| --- | --- | --- | --- |
+| Draw-pile order (H1) | `PlayerState.DrawPile` of every combat player | `Entities.Cards/CardPile.cs:18` (`_cards`, a plain list; top = index 0) | uniform permutation of the pile (multiset kept), except `KeepDrawTop` / `KeepDrawBottom` cards at the ends |
+| 12 run streams (UpFront, Shuffle, UnknownMapPoint, CombatCardGeneration, CombatPotionGeneration, CombatCardSelection, CombatEnergyCosts, CombatTargets, MonsterAi, Niche, CombatOrbs, TreasureRoomRelics) | `RunState.Rng` (`RunRngSet`) | `Runs/RunRngSet.cs:17` | every distinct stream object restarted in place from a seed-derived value (aliases stay aliases; the call counter is kept) |
+| Hashed run seed | `RunRngSet.Seed` | `Runs/RunRngSet.cs:27` | replaced: it is the root of every RNG derived later (act maps `StandardActMap` / `SpoilsActMap`, `EventModel.Rng` at event start, monster private and encounter RNGs at spawn, `Rng.ForPlayerModel` users such as Fur Coat), so those are resampled too. `StringSeed` / `RunConfig.SeedText` stay as run identity (read only at `NewRun`) |
+| 3 player streams (Rewards, Shops, Transformations) + set seed | `PlayerState.PlayerRng` (`PlayerRngSet`) | `Random/PlayerRngSet.cs:12,21` | restarted in place |
+| Current event RNG | `EventRoom.CanonicalEvent.Rng`, `EventRoom.LocalMutableEvent.Rng` | `Models/EventModel.cs:399` | restarted in place |
+| Reward RNG overrides | `Reward.RngOverride` (rewards stack, `CombatRoom.ExtraRewards`), `CardReward.Options` / `RerollOptions.RngOverride` | `Rewards/Reward.cs:159` (`_rngOverride`) | restarted in place (an override that aliases a player stream is restarted once) |
+| Monster private RNGs | `PrivateRngExtraState.PrivateRng` of monsters, allies and escaped creatures | `Models/MonsterModel.cs:336` (`_rng`) | restarted in place |
+| Future monster moves | rolled from `MonsterAi` / private RNGs when the next intent is chosen | `Models/MonsterModel.cs:721` (`RollMove(..., RunRng.MonsterAi)`) | follow from the reseeded streams; the **current** `NextMove` (the shown intent, H8) is untouched |
+| Relic grab-bag order (H5) | `RunState.SharedRelicGrabBag`, `PlayerState.RelicGrabBag` | `Runs/RelicGrabBag.cs:101,147` (each rarity deque `UnstableShuffle`d once) | each rarity deque reshuffled uniformly (pulls and removals never reorder the rest, so the remaining order is uniform given what was seen) |
+| Unvisited event order (H3) | `ActInstance.Rooms.events[eventsVisited..]` of the current and later acts | `Models/ActModel.cs:257` (one `UnstableShuffle`) | tail reshuffled uniformly; an already pulled current event keeps its slot |
+
+The last two rows are switched off with `DeterminizeOptions { ResampleRunQueues = false }`.
+
+**What stays** (public, or pre-rolled content that is not a plain shuffle):
+
+- everything the player sees: hand, discard and exhaust order, the piles' multisets, intents, HP / block / powers,
+  orbs, potions, relics, gold, the map, shop stock, generated card choices, prompt options, the current act's boss;
+- pre-rolled hidden content made by constrained generators, kept as rolled (a known leak for run-level search,
+  irrelevant inside one combat): normal / elite encounter queues (`ActInstance.GenerateRooms`, tag-aware
+  `AddWithoutRepeatingTags`), later acts' boss / second boss / ancient and the shared-ancient split, the relic inside an
+  unopened chest (H6), the cards of an unopened card reward (H7), odds values (`RunOddsSet`, `PlayerOddsSet`);
+- the act map's own construction RNG (shared between clones by `Clone()`, used only while generating the map).
+
+**Draw-pile placements the player may remember.** Cards put on top (`CardPilePosition.Top`: Headbutt, Thinking Ahead,
+Cosmic Indifference, Glimmer, Photon Cut, Shining Strike, Rebound, Nostalgia, Perfect Fit after a shuffle; game:
+`Commands/CardPileCmd.cs:309-311`, `Models.Cards/Headbutt.cs:112`), Innate cards moved to the top at combat start
+(`Combat/CombatManager.cs:4266-4273`) and cards sent to the bottom are positions a human can remember. Neither the game
+nor the kernel tracks this knowledge: `CardPile` is a bare list with no placement metadata
+(`Entities.Cards/CardPile.cs`, `AddInternal` / `MoveToTopInternal` :248-314; sim `State/CardPile.cs`), the draw-pile
+screen sorts the cards by (rarity, id) (`Nodes.Screens/NCardPileScreen.cs:185-187`) and so does the draw-pile selection
+grid (`Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-428`). The observation encoder does not carry it
+either (H1). Decision: the default resamples the whole draw pile, i.e. it conditions on the observation, not on the
+player's memory of the action log; a caller that tracks placements itself passes
+`DeterminizeOptions { KeepDrawTop = k, KeepDrawBottom = m }` (C# only; the C ABI uses the default).
+
+**Pending prompts.** A clone taken at a pending prompt keeps the prompt, the picks so far and the answer tape. The
+pending action is re-executed from its pre-action basis on every answer (tape engine), so resampling the basis would
+change what the re-run reveals before the prompt. Instead the clone records a hook (answer index k, seed, options): the
+re-run replays the recorded prefix unchanged (every taped prompt still passes `ChoiceTape.SameShape`) and resamples the
+work state when the tape hands out answer k, i.e. right after the current prompt's options were shown. The tape
+therefore always matches; the clone's current (paused) state is resampled as well. Hooks are cloned, hashed (tag
+`Determinize`, written only when present, so ordinary hashes and the F2 pins are unchanged) and accumulate when a
+clone is determinized again. `VecDeterminizeTests` answers 47 prompts on clones, checks that each resolved clone differs
+from the resolved original (the hook fired) and that no tape divergence occurs.
+
+**Not save-faithful.** `RunExporter.ToSave` of a determinized clone writes the original `StringSeed` next to resampled
+streams; a determinized state is for search, not for export.
 
 ## Known gaps / notes for owners
 

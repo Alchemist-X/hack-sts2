@@ -184,6 +184,17 @@ class VecEnv:
         """Append a pool entry holding a clone of the slot's current state (works at pending prompts); returns its id."""
         return self._check(self._lib.sts2vec_snapshot(self._live_handle(), int(slot)), "snapshot")
 
+    def clone_determinized(self, slot: int, seed: int) -> int:
+        """Append a pool entry holding a *determinized* clone of the slot's current state and return its id.
+
+        The clone shows the same player view (identical observation bytes) while its hidden state is resampled from
+        ``seed`` (uint64): draw-pile order, every RNG stream (so future monster moves, card generation, rewards, ...),
+        relic grab-bag order and unvisited event order. Works at pending prompts. Same state and seed give the same
+        clone; ``restore(slot, entry)`` starts a slot from it (information-set search). See sim/VEC.md
+        "Determinized clones"."""
+        fn = self._lib.require("sts2vec_clone_determinized")
+        return self._check(fn(self._live_handle(), int(slot), int(seed) & 0xFFFF_FFFF_FFFF_FFFF), "clone_determinized")
+
     def restore(self, slot: int, entry: int, *, copy: bool = False) -> dict[str, np.ndarray]:
         """Restart one slot from one pool entry and write that slot's observation (E4 search)."""
         self._check(self._lib.sts2vec_restore(self._live_handle(), int(slot), int(entry), self.buffers.ptr), "restore")

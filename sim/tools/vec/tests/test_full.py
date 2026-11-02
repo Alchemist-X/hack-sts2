@@ -127,6 +127,34 @@ def test_snapshot_restore_mid_episode(full):
             assert np.array_equal(env.buffers[name][2], env.buffers[name][0]), name
 
 
+def test_clone_determinized_same_view_resampled_hidden_state(full):
+    # sts2vec_clone_determinized: the restored clone shows the source slot's observation byte for byte, its hidden
+    # state differs (hash), the same seed gives the same clone, another seed another one; works mid-episode
+    with VecEnv(4, threads=2, pool=SMALL_POOL) as env:
+        obs = env.reset()
+        rng = np.random.default_rng(13)
+        compared = 0
+        for t in range(60):
+            obs, *_ = env.step(random_actions(rng, obs["cand_n"]))
+            if t % 6 != 5:
+                continue
+            h0 = env.state_hash([0])[0]
+            a = env.clone_determinized(0, 2**64 - 1 - t)
+            b = env.clone_determinized(0, 2**64 - 1 - t)
+            c = env.clone_determinized(0, t)
+            env.restore(1, a)
+            env.restore(2, b)
+            env.restore(3, c)
+            ha, hb, hc = env.state_hash([1, 2, 3])
+            assert ha == hb and ha != h0 and hc != ha
+            for name in env.schema.observation_names:
+                for s in (1, 2, 3):
+                    assert np.array_equal(env.buffers[name][s], env.buffers[name][0]), (name, s)
+            compared += 1
+            obs = {"cand_n": env.buffers["cand_n"]}
+        assert compared == 10
+
+
 def test_illegal_index_leaves_live_state_unchanged(full):
     with VecEnv(4, threads=2, pool=SMALL_POOL) as env:
         obs = env.reset()

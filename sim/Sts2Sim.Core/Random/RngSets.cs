@@ -52,7 +52,7 @@ public sealed class RunRngSet : ICanonical
 
     public string StringSeed { get; }
 
-    public ulong Seed { get; }
+    public ulong Seed { get; private set; }
 
     public Rng Get(RunRngType type) => _rngs[(int)type];
 
@@ -85,6 +85,24 @@ public sealed class RunRngSet : ICanonical
     public void MockRng(RunRngType rngType, ulong seed)
     {
         _rngs[(int)rngType] = new Rng(seed);
+    }
+
+    /// <summary>
+    /// Determinization only: replaces the hashed run seed (the root of every lazily derived stream: act maps, event,
+    /// monster and encounter RNGs) and restarts every distinct stream object in place, so aliases stay aliases.
+    /// <paramref name="next"/> supplies the fresh 64-bit values; <paramref name="seen"/> collects the reseeded objects.
+    /// </summary>
+    internal void Determinize(Func<ulong> next, HashSet<Rng> seen)
+    {
+        Seed = next();
+        for (int i = 0; i < _rngs.Length; i++)
+        {
+            ulong value = next();
+            if (seen.Add(_rngs[i]))
+            {
+                _rngs[i].Reseed(value);
+            }
+        }
     }
 
     public RunRngSetSnapshot ToSnapshot()
@@ -231,9 +249,23 @@ public sealed class PlayerRngSet : ICanonical
 
     public static int StreamCount => StreamNames.Length;
 
-    public ulong Seed { get; }
+    public ulong Seed { get; private set; }
 
     public Rng Get(PlayerRngType type) => _rngs[(int)type];
+
+    /// <summary>Determinization only: new set seed and every stream restarted in place (see <see cref="RunRngSet"/>).</summary>
+    internal void Determinize(Func<ulong> next, HashSet<Rng> seen)
+    {
+        Seed = next();
+        for (int i = 0; i < _rngs.Length; i++)
+        {
+            ulong value = next();
+            if (seen.Add(_rngs[i]))
+            {
+                _rngs[i].Reseed(value);
+            }
+        }
+    }
 
     public Rng GetRng(PlayerRngType rngType) => _rngs[(int)rngType];
 

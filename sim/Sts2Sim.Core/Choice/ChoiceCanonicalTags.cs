@@ -9,4 +9,5 @@ public static class ChoiceCanonicalTags
     public const ushort Tape = 0x5A05;
     public const ushort Answer = 0x5A06;
     public const ushort Picks = 0x5A07;
+    public const ushort Determinize = 0x5A08;
 }

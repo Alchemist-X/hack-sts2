@@ -284,6 +284,18 @@ public sealed unsafe class VecEnv
         return Pool.AddSnapshot(sim.Clone());
     }
 
+    /// <summary>
+    /// Adds a pool entry holding <c>RunSim.CloneDeterminized(seed)</c> of the slot's current state (prompts included):
+    /// the same player view, hidden state (draw order, RNG streams, run queues) resampled from <paramref name="seed"/>.
+    /// Returns its id; <see cref="Restore"/> starts a slot from it.
+    /// </summary>
+    public int CloneDeterminized(int slot, ulong seed)
+    {
+        RequireSlot(slot);
+        var sim = Slots[slot].Sim ?? throw new InvalidOperationException($"slot {slot} holds no run");
+        return Pool.AddSnapshot(sim.CloneDeterminized(seed));
+    }
+
     /// <summary>RunSim.StateHash of the slot (0 when it holds no run). Debug/test only.</summary>
     public ulong StateHash(int slot)
     {

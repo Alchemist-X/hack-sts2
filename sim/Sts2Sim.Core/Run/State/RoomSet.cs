@@ -83,6 +83,25 @@ public sealed class RoomSet : ICanonical
     private static bool IsEventAllowed(RunState runState, string eventId)
         => EventRegistry.Models.Contains(eventId) ? EventRegistry.Create(eventId).IsAllowed(runState) : UnportedEventRules.IsAllowed(eventId, runState);
 
+    /// <summary>
+    /// Determinization only: a fresh uniform order for the events not reached yet. <c>GenerateRooms</c> builds the list
+    /// with one uniform shuffle and pulls walk it front to back, so the unvisited tail is uniform given the visited
+    /// prefix. The event at <c>eventsVisited</c> stays put when it was already pulled (the current event room).
+    /// </summary>
+    internal void ReshuffleUnvisitedEvents(Rng rng, IReadOnlySet<string> visitedEventIds)
+    {
+        int start = eventsVisited;
+        if (start < events.Count && visitedEventIds.Contains(events[start]))
+        {
+            start++;
+        }
+        for (int i = events.Count - 1; i > start; i--)
+        {
+            int j = start + rng.NextInt(i - start + 1);
+            (events[i], events[j]) = (events[j], events[i]);
+        }
+    }
+
     public RoomSet DeepClone()
     {
         var clone = new RoomSet

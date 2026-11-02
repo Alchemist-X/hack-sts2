@@ -7,6 +7,7 @@ public static class RunLoopCanonicalTags
     public const ushort PendingAction = 0x5A03;
     public const ushort Tape = 0x5A04;
     public const ushort Picks = 0x5A05;
+    public const ushort Determinize = 0x5A06;
 }
 
 public sealed class RunLoopState : ICanonical

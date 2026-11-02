@@ -186,6 +186,19 @@ public sealed class RelicGrabBag : ICanonical
         return false;
     }
 
+    /// <summary>
+    /// Determinization only: a fresh uniform order for every rarity deque. <c>Fill</c> shuffles each deque uniformly and
+    /// pulls and removals take items out without reordering the rest, so the remaining order is uniform given what the
+    /// player has seen. The multiplayer fallback deque keeps its order.
+    /// </summary>
+    internal void ReshuffleDeques(Rng rng)
+    {
+        for (int i = 0; i < _dequeOrder.Count; i++)
+        {
+            _deques[_dequeOrder[i]].UnstableShuffle(rng);
+        }
+    }
+
     public RelicGrabBag DeepClone()
     {
         var clone = new RelicGrabBag(RefreshAllowed);

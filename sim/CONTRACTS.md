@@ -1380,7 +1380,13 @@ int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t*
 int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
 // additive exports (appended after the freeze; the frozen signatures above are unchanged)
 int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // E2c: fresh templates created now → count, or -1
+int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // pool entry id of RunSim.CloneDeterminized(seed) of the slot, or -1
 ```
+
+`sts2vec_clone_determinized` appends a pool entry holding a determinized clone of the slot's current state (prompts
+included): identical player view, hidden state (draw-pile order, every RNG stream and the hashed run seed, relic
+grab-bag and unvisited event order) resampled from `seed`; same state and seed ⇒ same entry state. `sts2vec_restore`
+starts a slot from it. Details and citations: `sim/VEC.md` "Determinized clones".
 
 `sts2vec_pool_warm` creates the templates of up to `max_entries` fresh entries that have none yet (`max_entries < 0`: all),
 in entry-id order and only while the template cache (`config.pool_cache`) has room, on the env's worker threads; it

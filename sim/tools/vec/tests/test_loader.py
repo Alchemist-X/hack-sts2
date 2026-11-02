@@ -17,6 +17,7 @@ EXPECTED_EXPORTS = [
     "sts2vec_pool_add_fresh", "sts2vec_pool_add_save", "sts2vec_pool_count", "sts2vec_snapshot", "sts2vec_restore",
     "sts2vec_reset", "sts2vec_step", "sts2vec_state_hash", "sts2vec_last_error",
     "sts2vec_pool_warm",  # additive (E2c)
+    "sts2vec_clone_determinized",  # additive (determinized clones)
 ]
 
 
@@ -138,7 +139,7 @@ def test_managed_names():
     assert managed_name("sts2vec_state_hash") == "StateHash"
     assert [managed_name(e) for e in EXPECTED_EXPORTS] == [
         "Version", "Schema", "Create", "Destroy", "SetThreads", "PoolAddFresh", "PoolAddSave", "PoolCount", "Snapshot",
-        "Restore", "Reset", "Step", "StateHash", "LastError", "PoolWarm"]
+        "Restore", "Reset", "Step", "StateHash", "LastError", "PoolWarm", "CloneDeterminized"]
 
 
 def test_find_library_discovery(monkeypatch, tmp_path):
@@ -186,11 +187,12 @@ class _FakeFunction:
 def test_optional_exports_tolerate_an_older_native_build(monkeypatch, tmp_path):
     # a NativeAOT build published before the additive exports loads; the missing ones are None and raise when needed
     from types import SimpleNamespace
-    assert OPTIONAL_EXPORTS == {"sts2vec_pool_warm"} and OPTIONAL_EXPORTS <= set(EXPORTS)
+    assert OPTIONAL_EXPORTS == {"sts2vec_pool_warm", "sts2vec_clone_determinized"} and OPTIONAL_EXPORTS <= set(EXPORTS)
     old = {name: _FakeFunction() for name in EXPORTS if name not in OPTIONAL_EXPORTS}
     monkeypatch.setattr(loader_module.ctypes, "CDLL", lambda path: SimpleNamespace(**old))
     lib = loader_module._load_native(tmp_path / "Sts2Sim.Vec.dylib")
-    assert lib.missing_exports == ["sts2vec_pool_warm"] and lib.sts2vec_pool_warm is None
+    assert lib.missing_exports == ["sts2vec_pool_warm", "sts2vec_clone_determinized"] and lib.sts2vec_pool_warm is None
+    assert lib.sts2vec_clone_determinized is None
     assert lib.exports == [n for n in EXPECTED_EXPORTS if n not in OPTIONAL_EXPORTS]
     with pytest.raises(Sts2VecError, match="sts2vec_pool_warm: not exported .* rebuild"):
         lib.require("sts2vec_pool_warm")
