@@ -33,7 +33,7 @@ Useful flags:
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--seedset NAME\|PATH` | required | `a0-s10`, `a0-s20`, `a10-s20` (in `seedsets/`) or a JSON path |
+| `--seedset NAME\|ID\|PATH` | required | frozen sets (protocol v0.2): `std-a0-v1` = `a0-s20`, `std-a10-v1` = `a10-s20` (official, 20 games each), `smoke-a0-v1` = `a0-s10` (smoke); or a JSON path |
 | `--policy random\|claude` | `random` | |
 | `--model` | `claude-sonnet-5-5` | also `claude-haiku-5-5`, `claude-opus-5-5`, `claude-fable-5-1` |
 | `--effort low\|medium\|high\|xhigh\|max` | model default | sent as `output_config.effort` |
@@ -55,7 +55,13 @@ Useful flags:
 | `--api-key-file PATH` | | read once, never logged; otherwise the SDK reads `ANTHROPIC_API_KEY` |
 | `--prices PATH` | `sts2eval/prices.json` | price table |
 
-Re-aggregate a run directory: `uv run --project sim/tools/eval sts2eval report tmp/eval/<run_id>`.
+Re-aggregate a run directory: `uv run --project sim/tools/eval sts2eval report tmp/eval/<run_id>`. It always
+recomputes the protocol v0.2 progress; for runs written before v0.2 it rebuilds the per-act room counts from the
+transcripts (`act`/`floor` of each step and the act-map grid of Map-phase `obs_text`).
+
+Seed sets: `seedsets/*.json` carry `id`, `version`, `role`, `frozen` and `sha256` (sha256 of the compact sorted-key JSON
+of `{ascension, content, games[{character, seed}]}`); `seedsets.load` rejects a file whose content no longer matches its
+checksum. Frozen sets never change: publish a new id instead.
 
 Exit codes: 0 done, 2 bad arguments / server missing, 3 run aborted (budget, time, fatal API error,
 server down, 25 API errors in a row), 130 Ctrl-C (summaries so far are kept; `--resume` continues).
@@ -100,7 +106,7 @@ random run is reproducible; the Claude policy differs only in the client object.
 
 | File | Content |
 | --- | --- |
-| `config.json` | seed set, policy, model, effort, thinking (and the exact `thinking` field sent), max_tokens, prompt hash, `reveal_moves`, server URL and `/health` version, repo git sha, price table, limits (incl. `loop_repeat`, `floor_step_cap`), concurrency |
+| `config.json` | `protocol_version`, seed set (and `seedset_id`/`_version`/`_sha256`/`_frozen`), policy, model, effort, thinking (and the exact `thinking` field sent), max_tokens, prompt hash, `reveal_moves`, server URL and `/health` version, repo git sha, price table, limits (incl. `loop_repeat`, `floor_step_cap`), concurrency |
 | `run.json` | wall seconds, abort reason, API calls, spend |
 | `server.log`, `crashes.jsonl` | spawned server output and its crash repros (`--spawn` only) |
 | `games/<CHARACTER>-<SEED>.jsonl` | `start` record, one `step` record per accepted step, `end` record |
@@ -111,13 +117,16 @@ Step record: `step, phase, act, floor, turn, hp, max_hp, obs_text, legal, token`
 `fallback` (null / illegal / api_error / refusal / timeout), `retries`, `attempts[]` (raw reply,
 stop_reason, error, usage {input, cache_creation_input, cache_read_input, output}, latency_ms,
 cost_usd, request_id, exception, refusal_category), `log` (server log lines of the step), `loop_hint`
-(only on the step whose prompt carried the loop warning). The `start` record also has `reveal_moves`;
-the `end` record has `stuck` and `loop_hints`.
+(only on the step whose prompt carried the loop warning), `map_row` and `act_rooms` (Map-phase steps: the current
+room's row or null, and the act map's max row + 1). The `start` record also has `reveal_moves`; the `end` record has
+`act`, `phase`, `progress`, `stuck` and `loop_hints`.
 
 Summary: `result` (`win`, `loss`, `capped`, `stuck`, `crashed`, `aborted`, `error`), `cap_reason`,
 `abort_reason`, `error`, `stuck` (`{phase, floor, noncombat_steps}` of a stuck game, else null),
 `truncated` (capped or stuck), `reward` (1 for a win, else 0), `reveal_moves`, `floor`, `act`,
-`progress_pct`, `steps`, `turns`, `illegal`, `illegal_replies`, `retries`, `api_errors`, `refusals`,
+`progress_pct` (floor / 48 or 49, v0.1), `progress` (v0.2), `rooms_reached`, `rooms_cleared`, `act_rooms_current`,
+`act_rooms_source` (`map` / `default` / `win`), `act_start_floor` and `act_rooms` (per act), `final_phase`,
+`protocol_version`, `steps`, `turns`, `illegal`, `illegal_replies`, `retries`, `api_errors`, `refusals`,
 `timeouts`, `max_tokens_stops`, `fallbacks`, `api_calls`, `late_line_tokens`, `loop_hints`, `tokens`,
 `cost_usd`, `seconds`, `final_hp`, `max_hp`, `death` (floor, act, room type of the last travel, enemy
 ids of the last combat), `history_tokens` (the server's canonical token list: replay with
@@ -126,9 +135,17 @@ accepted steps), `server_version`.
 
 ## Metrics
 
+Headline (protocol v0.2, `docs/sts2-bench-protocol-v0.2-2026-11-01.md`): **progress** mean with a 95% interval and
+**win rate** with a Wilson interval.
+
+- **progress** (v0.2, `sts2eval/progress.py`): 1.0 for a win, else `((act - 1) + rooms_cleared / L) / 3`, where `L` is the
+  act's room count (its map's max row + 1: 17 / 16 / 15 at A0, 16 for act 3 at A10+ with the second boss, 18 for a
+  GOLDEN_COMPASS golden path), `rooms_reached = floor - floor at the act's first observation` (act 1: `floor`) and
+  `rooms_cleared = rooms_reached - 1` (the room the run ended in is not cleared). Each act weighs 1/3. The interval is
+  mean +- 1.96 sd / sqrt(n), clipped to [0, 1].
 - **win rate**: wins / games, with a Wilson 95% interval (n = 10 is wide: 0 wins -> [0%, 27.8%]).
 - **floor**: total floor reached (1-based, as in the observation). A full run is 48 floors at A0
-  and 49 at A10; **progress** = floor / 48 (49 at A10) in percent.
+  and 49 at A10; `floor / 48` (49 at A10) is kept as the secondary v0.1 progress column.
 - **act reached**: distribution of the act at the end of the game.
 - **steps**: accepted actions (tokens in the server history); **turns**: combat turns seen.
 - **illegal actions per game**: steps where the reply and its one re-ask were both not legal (a random

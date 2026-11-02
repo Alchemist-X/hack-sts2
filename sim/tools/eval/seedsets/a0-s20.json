@@ -1,7 +1,13 @@
 {
   "name": "a0-s20",
+  "id": "std-a0-v1",
+  "version": 1,
+  "role": "official",
+  "protocol": "0.2",
+  "frozen": "2026-11-01",
   "ascension": 0,
   "content": "ported_only",
+  "sha256": "22bb774255260efb9fbab6dea0df41d26de9d3da49364f37f3fab88bf0d81e01",
   "games": [
     {"seed": "E1A0IC01", "character": "IRONCLAD"},
     {"seed": "E1A0IC02", "character": "IRONCLAD"},

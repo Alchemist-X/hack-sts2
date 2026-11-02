@@ -69,7 +69,9 @@ def test_report_files(tmp_path):
     assert set(rep["per_character"]) == {"IRONCLAD", "SILENT"}
     assert rep["per_character"]["IRONCLAD"]["wins"] == 1
     md = (tmp_path / "report.md").read_text()
-    assert "| win rate (Wilson 95%) | 33.3% [" in md
+    assert "| **win rate** (Wilson 95%) | **33.3%** [" in md
+    assert "| **progress v0.2** (mean [95% CI], median) |" in md
+    assert "protocol v0.2 metric (recomputed; run written before v0.2)" in md
     assert "Elite: BYRDONIS" in md
     assert "NotImplementedException" in md
     assert "games summarised 3/4" in md
@@ -99,7 +101,8 @@ def test_report_stuck_and_loop_rows(tmp_path):
     assert "| results | loss 1, capped 1, stuck 1 |" in md
     assert "| stuck games | 1 |" in md and "| loop hints | 3 |" in md
     assert "| stuck: CardReward floor 31 |" in md
-    assert "| S6 | DEFECT | capped | 30 | 2 | 1200 | 0 | 0.0100 | 1.00 | steps |" in md  # capped is not stuck
+    # capped is not stuck; no transcript -> act 2 length from the standard table (16 rooms, act 1 = 17 floors)
+    assert "| S6 | DEFECT | capped | 0.583 | 12/16* | 30 | 2 | 1200 | 0 | 0.0100 | 1.00 | steps |" in md
     assert "enemy moves `hidden`" in md
     rows = {g["seed"]: g for g in rep["games"]}
     assert rows["S4"]["cause"] == "stuck: CardReward floor 31" and rows["S6"]["cause"] == "steps"

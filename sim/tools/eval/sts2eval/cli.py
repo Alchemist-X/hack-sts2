@@ -15,6 +15,7 @@ from . import __version__
 from . import prices as P
 from . import seedsets
 from .policies import EFFORTS, MODELS, ClaudePolicy, RandomPolicy, RateLimiter, thinking_param
+from .progress import PROTOCOL_VERSION
 from .prompt import SYSTEM_PROMPT, prompt_hash
 from .report import render_md, write_report
 from .runner import FLOOR_STEP_CAP, LOOP_REPEAT, RunLimits, RunState, run_all
@@ -26,7 +27,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="sts2eval", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="play every game of a seed set and write a report")
-    r.add_argument("--seedset", required=True, help="committed name (a0-s10, a0-s20, a10-s20) or a JSON path")
+    r.add_argument("--seedset", required=True,
+                   help="committed name or id (a0-s10 = smoke-a0-v1, a0-s20 = std-a0-v1, a10-s20 = std-a10-v1) "
+                        "or a JSON path")
     r.add_argument("--policy", choices=("random", "claude"), default="random")
     r.add_argument("--model", choices=MODELS, default="claude-sonnet-5-5")
     r.add_argument("--effort", choices=EFFORTS, default=None, help="output_config.effort (default: model default)")
@@ -53,7 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--api-key-file", default=None, help="file holding the API key (read once, never logged)")
     r.add_argument("--prices", default=None, help="price table JSON (default sts2eval/prices.json)")
     r.add_argument("--progress-interval", type=float, default=10.0)
-    rp = sub.add_parser("report", help="re-aggregate games/*.summary.json of a run directory")
+    rp = sub.add_parser("report", help="re-aggregate games/*.summary.json of a run directory (recomputes the "
+                                       "protocol v0.2 progress from the transcripts of older runs)")
     rp.add_argument("dir")
     return ap
 
@@ -87,8 +91,10 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
         except SimError as e:
             raise SystemExit(f"server not healthy at {url}: {e}") from None
         cfg = {
+            "protocol_version": PROTOCOL_VERSION,
             "run_id": out_dir.name,
             "sts2eval_version": __version__,
+            **seedsets.identity(seedset),
             "created": dt.datetime.now().isoformat(timespec="seconds"),
             "seedset": seedset,
             "policy": policy.name,
@@ -119,7 +125,7 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             with open(cfg_path, encoding="utf-8") as f:
                 prev = json.load(f)
             cfg["resumed_from"] = {k: prev.get(k) for k in ("created", "server_version", "repo_sha", "prompt_hash",
-                                                            "reveal_moves")}
+                                                            "reveal_moves", "protocol_version", "seedset_sha256")}
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=1)
         limits = RunLimits(step_cap=args.step_cap, game_minutes=args.game_minutes,

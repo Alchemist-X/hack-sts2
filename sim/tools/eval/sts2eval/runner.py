@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import prices as P
+from . import progress as PG
 from .policies import BudgetExceeded, FatalApiError, empty_meta
 from .prompt import loop_hint
 from .seedsets import game_key
@@ -27,7 +28,8 @@ FLOOR_STEP_CAP = 80
 
 
 def full_run_floors(ascension: int) -> int:
-    return 48 if ascension < 10 else 49
+    """Floors of a standard full run: 48 at A0, 49 at A10+ (second boss). Secondary metric only (v0.2)."""
+    return PG.full_run_floors(ascension)
 
 
 def game_seed(seed: str, character: str) -> int:
@@ -129,7 +131,10 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
          "reveal_moves": bool(reveal_moves),
          "game_id": None, "result": None, "cap_reason": None, "abort_reason": None, "error": None,
          "stuck": None, "truncated": False, "reward": 0,
-         "floor": None, "act": None, "progress_pct": None, "steps": 0, "turns": 0,
+         "floor": None, "act": None, "progress_pct": None, "progress": None, "rooms_reached": None,
+         "rooms_cleared": None, "act_rooms_current": None, "act_rooms_source": None,
+         "act_start_floor": None, "act_rooms": None, "protocol_version": PG.PROTOCOL_VERSION,
+         "final_phase": None, "steps": 0, "turns": 0,
          "illegal": 0, "illegal_replies": 0, "retries": 0, "api_errors": 0, "refusals": 0,
          "timeouts": 0, "max_tokens_stops": 0, "fallbacks": 0, "api_calls": 0, "late_line_tokens": 0,
          "loop_hints": 0,
@@ -140,6 +145,7 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
     log_lines: deque[str] = deque(maxlen=LOG_LINES)
     actions: deque[str] = deque(maxlen=LAST_ACTIONS)
     guard = LoopGuard(limits.loop_repeat, limits.floor_step_cap)
+    acts = PG.ActTracker()
     last_turn_key = None
     last_combat = None
     last_room = None
@@ -159,6 +165,8 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                    "character": game["character"], "ascension": asc, "content": seedset["content"],
                    "reveal_moves": bool(reveal_moves)})
             while True:
+                map_row, act_rooms = PG.map_info(obs.get("map"))
+                acts.observe(obs.get("act"), obs.get("floor"), act_rooms)
                 if obs.get("terminal"):
                     s["result"] = obs.get("result") or "loss"
                     break
@@ -262,6 +270,8 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                                      "latency_ms": m.get("latency_ms"), "cost_usd": m.get("cost_usd"),
                                      **{k: m[k] for k in ("exception", "status", "refusal_category", "request_id")
                                         if m.get(k) is not None}} for m in attempts]}
+                if act_rooms is not None:
+                    rec["map_row"], rec["act_rooms"] = map_row, act_rooms
                 if hint:
                     rec["loop_hint"] = hint
                 if obs.get("phase") == "Map" and token.startswith("travel"):
@@ -309,16 +319,21 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
             s["reward"] = 1 if s["result"] == "win" else 0
             if obs is not None:
                 s["floor"], s["act"] = obs.get("floor"), obs.get("act")
+                s["final_phase"] = obs.get("phase")
                 s["final_hp"], s["max_hp"] = _hp(obs)
+                acts.observe(obs.get("act"), obs.get("floor"), PG.map_info(obs.get("map"))[1])
                 if s["floor"] is not None:
                     s["progress_pct"] = round(100.0 * s["floor"] / total_floors, 1)
+            s.update(acts.as_dict())
+            s.update(PG.compute(s["result"], s["act"], s["floor"], asc, s["act_start_floor"], s["act_rooms"]))
             if s["result"] == "loss":
                 enemies = (last_combat or {}).get("enemies") or []
                 s["death"] = {"floor": s["floor"], "act": s["act"], "room_type": last_room,
                               "phase": obs.get("phase") if obs else None,
                               "enemies": [e.get("id") for e in enemies]}
             s["cost_usd"] = round(s["cost_usd"], 6)
-            write({"type": "end", "result": s["result"], "steps": s["steps"], "floor": s["floor"],
+            write({"type": "end", "result": s["result"], "steps": s["steps"], "act": s["act"], "floor": s["floor"],
+                   "phase": s["final_phase"], "progress": s["progress"],
                    "error": s["error"], "stuck": s["stuck"], "loop_hints": s["loop_hints"]})
     if s["game_id"]:
         try:
