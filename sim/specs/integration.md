@@ -1167,3 +1167,115 @@ Owner-run numbers carried into this record (details in each owner's docs):
 Open issues (environment): see `docs/HANDOVER.md` §1.6. Integration-specific: `scripts/gates.sh` was run on macOS only
 in this wave (Linux via `ci_linux.sh` ran on version-complete's commit, not on the merged tree); the merged tree's
 Docker image was not rebuilt; Vec has no stall cap (only `step_cap`).
+
+## E3 integrate (2026-11-02)
+
+Scope: the fidelity loop (REC recorder on the real game, MCP coverage farm, exporter save anchors, G3 anchor modes, port
+fixes from the farm triage). Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `939ceb5` (J integrate). The
+three owner branches are cut from `ebc055f`, before waves G and J.
+
+Merged, in order (all `--no-ff`): e3/recorder `da3b736`+`d6b8ce3` (merge `19b87eb`), e3/farm `6dfde01`+`4568426`+
+`0fdd411`+`d8a5c31` (merge `28f7655`; `6dfde01` is the cherry-pick of `da3b736`, same tree, so it merged as a no-op),
+e3/triage `160afdb`+`136449c` (merge `d7bd066`).
+
+Conflicts: none. One file changed on both sides and auto-merged: `Combat/Pipeline/PlayerView.cs` (J parity-audit:
+`IsVisibleToPlayer` reads `power.IsVisible`; triage: `TryMappedDisplayAmount` maps AUTOMATION_POWER, so the strict diff
+projection stops throwing a gap for it; `DisplayAmountToPlayer` keeps its own AUTOMATION case, now shadowed by the
+mapped one with the same value).
+
+Seams checked, no code change needed:
+- The triage port fixes are intact on the merged tree: `RelicCmd.Obtain` grab-bag removals and `FloorAddedToDeck`
+  (`ApproximatedRule` flag gone), starting relics on floor 1, combat-end hooks get the `CombatRoom`,
+  `RunImporter.ImportedPlayerCombatId` 0, `Tags` on six weak encounters, AUTOMATION display amount (E3TriageTests 8/8).
+- J fast path: none of the fixes adds a prompt site; `gen_prompt_sites.py --check` is OK with the committed table
+  (153 hazardous models, 4 room sources, 185 inventory records). The fast-path soak and hash-equality tests pass in the
+  full suite.
+- J determinizer: `RelicGrabBag.ReshuffleDeques` reshuffles what is left in the bags; after the triage fix an obtained
+  relic is no longer in them, as in the game. VecDeterminize tests pass.
+- F2 run pins: triage's refreshed `PinnedRunStreams` (`1:136:5F70FE94F60BE08F 2:114:064C282C22EA469C
+  3:160:CC4B958FA4D42499 4:400:BE4777CCA5361B81`) pass unchanged; wave J changes no run hash, so nothing was regenerated.
+
+Fixes (integration):
+- `sim/specs/kernel-map.json` regenerated (`scripts/kernel_map.py`): the triage files' new decompile citations
+  (RunImporter → Combat/CombatState.cs, RunLoop → Entities.Players/Player.cs, the six weak encounters →
+  Models/ActModel.cs, TurnFlow.CombatEnd → Combat/CombatManager.cs) and the spec lines of the E3 diff report. Same 564
+  kernel files, mapped 374 / no_port 190, 0 unmapped; files with a `cite` source 23 → 25. Without it the py-scripts gate
+  fails.
+- Docs: `docs/HANDOVER.md` (§1 fidelity row, §1.6, §2, §3 farm / export / G1-G3 commands, §4 NN rows re-measured, §5,
+  §7, §8, §9) and this record.
+
+Gates (macOS M4 Pro; load average 3.3 / 3.4 / 4.3 at the start), `scripts/gates.sh` full on `d7bd066` + the regenerated kernel map,
+556 s, logs `tmp/gates/e3-integrate/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 3 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 2 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 452 | full suite: 1139/1139 passed (J's 1131 + E3TriageTests 8), 0 failed, PENDING 0 (incl. F2 pins, F7 clone-then-step, ChoiceFastPath soak, VecDeterminize, ParityAudit, RelicPotion, E3Triage) |
+| selftest | PASS | 5 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 4 | 80 passed |
+| pytest-vec | PASS | 11 | 95 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 74 | 705 passed, 4 skipped (701 + the exporter's 4 new tests) |
+| py-scripts | PASS | 0 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, mapped 374, no_port 190, 0 unmapped) |
+
+Also: local NativeAOT library rebuilt (`scripts/vec_publish_aot.sh`, git-ignored output; the old one was built before
+the E3 Core fixes); `STS2VEC_AOT_LIB=… sts2vec check` OK and `sts2vec eval --policy heuristic --seedset std-a10-v1`
+gives the managed build's 0.110 through it.
+
+Fidelity on the merged tree. Same commands as `sim/specs/diff-report-e3-farm-2026-11-02.md` §1; inputs and reports in
+the git-ignored `tmp/farm/2026-11-02/integrate/`. Every report equals the triage owner's final report run for run
+(paths normalised): the merge changed no fidelity number.
+- Export (`export-bundles-v2 --root <farm>/sessions-all --sim-core ../sim/Sts2Sim.Core`, merged exporter and Core
+  registry): 39 runs, 787 segments (combat 177, room 306, map 304); eligible combat 117, room 249, map 304; 4,288
+  decisions, 2,806 eligible. Bundles and save copies are byte-identical to the triage export; only the paths in
+  `reasons.json` differ.
+- G1/G2 (`--v2 --baseline sim/specs/diff-baseline-e3-farm.json`): 787 segments, agree 126, hard 288, skipped 373, error 0,
+  sim exception 0; decisions 2,664/2,919 (combat 2,664/2,673); outcome 126/159; ratchet pass (787 segments, 2,664
+  agreed decisions checked, 0 violations, 0 newly agreeing), i.e. equal to the baseline. The 42 combat segments that do
+  not agree: `final_hp` 33 (recorder_gap T7, the recorder writes HP before end-of-combat heals), `select.screen_type` 8
+  (projection_gap), `turn.phase` 1. The 246 room divergences are schema only at decision 0 (`screen` 131, `player`
+  relics 115): V2Runner still has no G3Schema adapter, so the run-level G2 numbers are those of `g3 --anchors-every`.
+- G3 from the seed: 39 runs, 30 reach the recorded end; decisions 3,320/3,324 (99.88 %); first divergence none 30,
+  port_bug 7, truncated 2.
+- G3 `--anchors` (resume at the next save after a divergence): 785 segments replayed, 778 agree, 2 skipped; decisions
+  3,578/3,582; 7 divergences (harness label port_bug; triage classes below).
+- G3 `--anchors-every` (every anchored segment from the game's save: the G2 save-import check): 782 replayed, 774
+  agree, 5 skipped; decisions 3,601/3,603 (99.94 %); 31 runs reach the end. By start: seed 39/39 segments (93/93
+  decisions), room_entry save 303/300 (3,203/3,205), combat_exit save 139/135 (197/197; the 4 others out_of_scope,
+  `extra_rewards` on SFY7CMFJHB), chained 301/300 (108/108). Divergences port_bug 4, out_of_scope 4.
+- G3 `--save-check`: 437 chained segments with a save anchor; 258 equal except `unlock_state` (the sim runs
+  `UnlockProfile.All`) and `map_point_history` (known R1 gap), 1 of them fully equal; 179 not exportable (174 inside a
+  combat, 4 `extra_rewards`, 1 pending prompt); 0 other differences.
+- G0: in the gates table (4/4 bundles, 69/69).
+- Human corpus, against W4.1 (the W4.1 inputs: `sim-source-recreation-9392df/tmp/diff-v2-w41i` for G3, and for the
+  combat gate the W4.1 integrator's scratchpad dir `w41i/in` = v1 g0 + g0-ineligible bundles + `diff-v2-w41i`):
+  - G3: decisions 1,532/1,537 (W4.1) → 1,921/1,924 (99.84 %); runs at the recorded end 1 → 1 (K4FB4086NTRE). Floors
+    agreed per run (W4.1 → E3): G0G2 13 → 13, NBND 11 → 29, DSB3 22 → 35, P2UZ 13 → 13, Q3X6 2 → 2, GM28 27 → 27,
+    K4FB 17 → 17 (end), EC03 11 → 11, PLRU 11 → 11, G1YF 7 → 7 (truncated), old-prefix 0 → 0. No run drops. First
+    divergences: port_bug 7, content_not_ported 1 (DSB3 s99, FAKE_MERCHANT is still a stub), out_of_scope 1, truncated
+    1, none 1.
+  - Widened combat gate (`--v2`): 117 compared combat segments, 109 agree, decisions 1,599/1,607 (99.50 %), outcome
+    109/109: unchanged from W4.1, the same 8 rows (4 v0.107.1 exporter_ineligible, Q3X6 s5 discard count, GM28
+    s26/s54/s65 relic run-time state at combat start).
+- NN track re-measured on the merged tree (`sts2vec eval`, std-a0-v1 / std-a10-v1): random 0.087 / 0.045, first
+  0.194 / 0.103, heuristic 0.221 / 0.110. Protocol §8 lists 0.087 / 0.045, 0.193 / 0.102, 0.221 / 0.104, measured
+  before the E3 rule fixes; the rows were not changed.
+
+Open (fidelity), from the triage report §4, unchanged by the merge:
+- 7 open divergences under `--anchors`: VSQP6ESN1F f7 PUNCH_OFF_EVENT_ENCOUNTER (event → combat transition, port_bug;
+  also G0G2 on the human corpus); UF51XE6ZV1 f11 GAMBLING_CHIP start-of-turn hand select phase name (projection_gap);
+  UUR25UNBL5 f5 a dismissed card reward emitted as an event `choose` (exporter_bug); 3ZGJFKTD64 f9 STRATAGEM_POWER pile
+  select order (recorder_gap candidate); K4P3FWUZYN f13, 545XJP726S f8, SDR1TFEZ2U f15 only on the chained replay
+  (hidden draw-pile state, turn counter; each agrees from its save).
+- Exporter: R2 per-combat replays (`native/replays/*.mcr`, 162 files) are not indexed (the saves cover every combat
+  start); ancient_exit saves are indexed but not bound; 45 segments `content_not_ported:event`; 4 combat_exit saves with
+  `extra_rewards` are out of scope for the importer.
+- Coverage: the farm reached act 2 once (floor 22) and act 3 never; A10 runs stopped by floor 14. Acts 2 and 3 need a
+  stronger driver (a sim-trained policy or an LLM).
+- 8 real-game worker crashes in the farm (5 Defect; the two with a macOS crash report are unhandled managed exceptions,
+  their text lost to the old relaunch truncation of `game.log`; `run_farm.py` now copies `game.log` to
+  `<farm>/crashlogs/` before a restart). Not triaged.
+- G1 on the human combat gate is 99.50 %, under the 99.9 % target. Farm combat G1: decisions 2,664/2,673 (99.66 %;
+  the 9 are 8 `select.screen_type` projection gaps and 1 `turn.phase`), outcomes 126/159 (the 33 are `final_hp`,
+  recorder timing).
