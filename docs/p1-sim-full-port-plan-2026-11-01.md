@@ -131,3 +131,8 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   修了 2 个 run 层移植错误（地图历史怪物 id、NEOWS_BONES 诅咒掷骰顺序）。待修：事件抽取 T1、生成怪物未入历史 T2、
   商店金额、FOSSIL_STALKER 候选序、投影缺 HARDENED_SHELL/SLOW 规则、harness v2 读取拒绝 83 段、`[SavedProperty]`、CRYSTAL_SPHERE。
   同时启动 LLM 可玩性工具（`wf_5516f712-66a`：HTTP 对局服务器 + Python 客户端 + 代理手册），用 Sonnet 代理试玩（用户批准）。
+
+- 2026-11-01（续 6）：对局服务器 `Sts2Sim.Server` + 客户端 + 代理手册合并（`efb0102`；1,038/1,038 测试）。
+  随机自测 400 局 0 崩溃；Sonnet 代理试玩 Defect 一局 413 步到二幕 30 层（`docs/sim-port/playtest-2026-11-01.md`）。
+  W4.1 修复波与服务器 polish 在跑。**用户决定**：E3 的两件事（安装 REC 版 recorder、开 MCP 覆盖农场）
+  批准但暂不上线，等明确指令。下一阶段 E1 评测流水线 → E2 训练接口 → E4 搜索自举，见 `docs/handoff-2026-11-01.md`。
