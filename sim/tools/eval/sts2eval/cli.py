@@ -60,6 +60,10 @@ def make_run_id(seedset_name: str, policy: str, model: str | None, now: dt.datet
 def make_anthropic_client(api_key_file: str | None):
     import anthropic
     kw = {"max_retries": 3}
+    # Ask for gzip only: with brotlicffi 1.0.9.2 the SDK's brotli decoder is called with an
+    # 'output_buffer_limit' argument it does not accept, and every response then fails with
+    # APIConnectionError. gzip is decoded by the standard library. Override with STS2EVAL_ACCEPT_ENCODING.
+    kw["default_headers"] = {"Accept-Encoding": os.environ.get("STS2EVAL_ACCEPT_ENCODING", "gzip")}
     if api_key_file:
         with open(api_key_file, encoding="utf-8") as f:
             kw["api_key"] = f.read().strip()
