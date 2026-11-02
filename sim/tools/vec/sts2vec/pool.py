@@ -133,11 +133,11 @@ class PoolSpec:
 
 def make_config(num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                 seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = None,
-                pool_cache: int = 4096) -> dict:
+                pool_cache: int = 4096, fast_path: bool = True) -> dict:
     """The ``config_json`` object of ``sts2vec_create`` (§D5); snake_case keys. Values are validated natively (unknown
     content / num_envs < 1 … make ``sts2vec_create`` fail with the reason)."""
     cfg = {"num_envs": int(num_envs), "threads": int(threads), "step_cap": int(step_cap), "auto_reset": bool(auto_reset),
-           "seed_text": str(seed_text), "content": content, "pool_cache": int(pool_cache)}
+           "seed_text": str(seed_text), "content": content, "pool_cache": int(pool_cache), "fast_path": bool(fast_path)}
     if pool is not None:
         pool.validate()
         p = pool.to_json()

@@ -219,8 +219,8 @@ def test_context_manager_and_close():
 
 def test_auto_reset_off_and_options_accepted():
     with VecEnv(2, threads=1, auto_reset=False, step_cap=10, seed_text="X", content="all", pool_cache=0,
-                pool=SMALL_POOL) as env:
-        assert env.config["auto_reset"] is False and env.config["pool_cache"] == 0
+                pool=SMALL_POOL, fast_path=False) as env:
+        assert env.config["auto_reset"] is False and env.config["pool_cache"] == 0 and env.config["fast_path"] is False
         env.reset()
         env.step(np.full(2, -1, np.int32))
 

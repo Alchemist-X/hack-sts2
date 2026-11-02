@@ -13,6 +13,7 @@ python3 sim/tools/inventory/spotcheck.py --kind cards -n 10 [--seed N] [--class 
 python3 sim/tools/inventory/model_ids.py StrikeIronclad LeafSlimeM   # print ModelDb entries
 python3 -m unittest discover -s sim/tools/inventory -p 'test_*.py'
 python3 sim/tools/inventory/classify/run_all.py --sim-ref fe7240c  # derived manifests (classify/README.md)
+python3 sim/tools/inventory/gen_prompt_sites.py [--check] [--list]  # fast-path prompt-site table (sim source)
 ```
 
 The decompile root defaults to
@@ -30,6 +31,7 @@ no pool/act/encounter link, mocks, abstract classes.
 | `spotcheck.py` | prints random entries next to the source lines they cite, for eyeball review |
 | `test_inventory.py` | unit tests (slug vectors verified against .NET 9, masker, member splitter, logic-line counting, dynamic vars, RNG tokens, base-class resolution by namespace, cross-kind `model_id` uniqueness) plus tree-backed checks skipped when the tree is absent |
 | `classify/` | the classifier generators: `*.classified.json`, gap manifests, `requirements.json`, `batches.json`, `version-deltas.json`, the generated count blocks of `docs/sim-port/inventory-*.md` (`classify/README.md`) |
+| `gen_prompt_sites.py` | scans the **sim's** model defs (not the decompile) for calls that can reach a choice prompt, auto-play a card or grant Sly, closes over references to hazardous powers/monsters/relics/…, cross-checks the decompile prompt records in `sim/specs/inventory/*.classified.json`, and writes `sim/Sts2Sim.Core/Choice/PromptSites.g.cs` (the table behind `RunSim.MayPrompt`; `sim/VEC.md` "Fast path"). `--check` is a gate (`scripts/gates.sh` py-scripts); rerun after porting content |
 | `test_classify.py` | tests of the classifier helpers (version-delta evidence finder, triage table, batch ordering, prompt kinds) and of the published derived manifests (schema, catalogue joins, version-delta union and citations) |
 
 After a game update: regenerate, compare `source_digest` per manifest, then rerun `--check` and the

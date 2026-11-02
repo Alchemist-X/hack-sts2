@@ -1,6 +1,6 @@
 namespace Sts2Sim.Core.Run;
 
-public sealed class RunSim
+public sealed partial class RunSim
 {
     private readonly List<RunAction> _legalBuffer = new(32);
     private RunState _state;
@@ -104,6 +104,7 @@ public sealed class RunSim
 
     public void Step(RunAction action)
     {
+        ThrowIfPoisoned();
         var pending = _pending;
         if (pending != null)
         {
@@ -132,6 +133,7 @@ public sealed class RunSim
     public void Step(RunAction action, IChoiceAnswerer answerer)
     {
         ArgumentNullException.ThrowIfNull(answerer);
+        ThrowIfPoisoned();
         var pending = _pending;
         if (pending != null)
         {
@@ -142,7 +144,11 @@ public sealed class RunSim
         Execute(_state, _loop, action, answerer);
     }
 
-    public RunSim Clone() => new(_state.DeepClone(), _loop.Clone(), _pending?.Clone());
+    public RunSim Clone()
+    {
+        ThrowIfPoisoned();
+        return new(_state.DeepClone(), _loop.Clone(), _pending?.Clone());
+    }
 
     public ulong StateHash()
     {

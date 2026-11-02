@@ -19,6 +19,10 @@ public static class Program
         {
             return VecBench.Run(args);
         }
+        if (args.Length > 0 && args[0] == "fastpath")
+        {
+            return FastPathBench.Run(args);
+        }
         if (args.Length > 0 && args[0] == "nightly-soak")
         {
             return NightlySoak.Run(args);

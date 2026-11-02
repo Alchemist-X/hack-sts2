@@ -19,7 +19,7 @@ def test_poolspec_default_json():
 def test_make_config_keys():
     cfg = make_config(8, pool=PoolSpec(characters=["SILENT"], count=3, seed_prefix="X"))
     assert cfg == {"num_envs": 8, "threads": 8, "step_cap": 3000, "auto_reset": True, "seed_text": "VEC",
-                   "content": "ported_only", "pool_cache": 4096,
+                   "content": "ported_only", "pool_cache": 4096, "fast_path": True,
                    "pool": {"fresh": {"characters": ["SILENT"], "ascension": 0, "count": 3, "seed_prefix": "X",
                                       "act1": "random"}}}
     json.dumps(cfg)

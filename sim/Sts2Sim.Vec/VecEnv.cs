@@ -19,7 +19,8 @@ public sealed record VecConfig(
     string SeedText = "VEC",
     string Content = "ported_only",
     FreshPoolSpec? Pool = null,
-    int PoolCache = 4096)
+    int PoolCache = 4096,
+    bool FastPath = true)
 {
     public ContentFilter ContentFilter => ParseContent(Content);
 
@@ -51,6 +52,7 @@ public sealed record VecConfig(
                 case "seed_text": c = c with { SeedText = p.Value.GetString() ?? "" }; break;
                 case "content": c = c with { Content = p.Value.GetString() ?? "" }; break;
                 case "pool_cache": c = c with { PoolCache = p.Value.GetInt32() }; break;
+                case "fast_path": c = c with { FastPath = p.Value.GetBoolean() }; break;
                 case "pool": c = c with { Pool = p.Value.ValueKind == JsonValueKind.Null ? null : ParsePool(p.Value) }; break;
                 default: throw new ArgumentException($"unknown config key \"{p.Name}\"");
             }
@@ -145,6 +147,11 @@ public sealed class VecSlot
     /// <summary>auto_reset = false and the episode ended: the slot stays terminal (cand_n = 0) until reset.</summary>
     public bool Finished { get; internal set; }
 
+    /// <summary>Steps taken on the clone-free path (RunSim.StepFast) / through the cloning tape path, over the slot's lifetime.</summary>
+    public long FastSteps { get; internal set; }
+
+    public long SlowSteps { get; internal set; }
+
     /// <summary>Number of selectable candidates published in the last observation.</summary>
     public int CandN { get; internal set; }
 
@@ -210,6 +217,40 @@ public sealed unsafe class VecEnv
     /// Must be thread-safe (it runs on the worker threads). Null in production.
     /// </summary>
     public Func<int, RunAction, Exception?>? FaultInjector { get; set; }
+
+    /// <summary>
+    /// Test hook: when it returns true for (slot, action) the step runs clone-free without consulting
+    /// <c>RunSim.MayPrompt</c> (exercises the fail-closed path). Thread-safe; null in production.
+    /// </summary>
+    public Func<int, RunAction, bool>? ForceFastPath { get; set; }
+
+    /// <summary>Sum of <see cref="VecSlot.FastSteps"/> over the slots.</summary>
+    public long FastSteps
+    {
+        get
+        {
+            long n = 0;
+            foreach (var s in Slots)
+            {
+                n += s.FastSteps;
+            }
+            return n;
+        }
+    }
+
+    /// <summary>Sum of <see cref="VecSlot.SlowSteps"/> over the slots.</summary>
+    public long SlowSteps
+    {
+        get
+        {
+            long n = 0;
+            foreach (var s in Slots)
+            {
+                n += s.SlowSteps;
+            }
+            return n;
+        }
+    }
 
     public int Threads
     {
@@ -340,7 +381,23 @@ public sealed unsafe class VecEnv
                     {
                         throw injected;
                     }
-                    s.Sim.Step(act);
+                    if (ForceFastPath?.Invoke(i, act) == true)
+                    {
+                        s.FastSteps++;
+                        s.Sim.StepFastUnchecked(act);
+                    }
+                    else if (Config.FastPath && s.Sim.StepFast(act))
+                    {
+                        s.FastSteps++;
+                    }
+                    else
+                    {
+                        if (!Config.FastPath)
+                        {
+                            s.Sim.Step(act);
+                        }
+                        s.SlowSteps++;
+                    }
                     s.StepIndex++;
                     if (s.Sim.IsTerminal)
                     {
