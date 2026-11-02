@@ -24,6 +24,11 @@ public sealed class SlipperyBridge : EventModel
 
     private int CurrentHpLoss => InitialHpLoss + _numberOfHoldOns;
 
+    // Option-text vars (Models.Events/SlipperyBridge.cs:220 StringVar RandomCard, DynamicVar HpLoss = CurrentHpLoss).
+    public CardInstance? RandomCard => RandomCardToLose;
+
+    public int HpLoss => CurrentHpLoss;
+
     public override bool IsAllowed(RunState runState)
     {
         if (runState.TotalFloor > MinTotalFloor)

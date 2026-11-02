@@ -225,33 +225,60 @@ public static class Describe
         for (int i = 0; i < powers.Count; i++)
         {
             var power = powers[i];
-            bool visible;
-            try
+            if (IsShown(cs, power))
             {
-                visible = PlayerView.IsVisible(cs, power);
-            }
-            catch (Exception)
-            {
-                visible = true;
-            }
-            if (visible)
-            {
-                list.Add((power.Id, DisplayAmount(power, out _)));
+                list.Add((power.Id, DisplayAmount(cs, power, out _)));
             }
         }
         return list;
     }
 
-    // The number the game's power icon shows (PowerModel.DisplayAmount): the diff projection's rule
-    // (PlayerView.DisplayAmount: HARDENED_SHELL remaining cap, SLOW %, TENDER cards played this turn, else the
-    // amount). Powers the projection has no rule for yet (ProjectionGapException: SLOTH, WITHERING_PRESENCE, ...)
-    // fall back to the kernel Amount with known = false.
-    public static int DisplayAmount(PowerModel power, out bool known)
+    // Whether the game draws this power's icon (PowerModel.IsVisible: IsVisibleInternal, and the target is nobody,
+    // the player or an enemy), via PlayerView.IsVisibleToPlayer. Hidden powers (AMBERGRIS_POWER) are never shown.
+    // A failing check hides the power (fail closed: never leak).
+    public static bool IsShown(CombatState cs, PowerModel power)
     {
         try
         {
-            known = true;
-            return PlayerView.DisplayAmount(power);
+            return PlayerView.IsVisibleToPlayer(cs, power);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> HiddenPowerIds = new(StringComparer.Ordinal);
+
+    // True for a power id whose model is never visible (IsVisibleInternal false, e.g. AMBERGRIS_POWER): the step log
+    // leaves its history entries out.
+    public static bool IsHiddenPowerId(string id)
+        => HiddenPowerIds.GetOrAdd(id, static k =>
+        {
+            try
+            {
+                return !PowerRegistry.Create(k).IsVisible;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        });
+
+    // Powers whose game DisplayAmount override has no Core port (PlayerView.PowersWithDisplayAmountOverride minus the
+    // ones DisplayAmountToPlayer implements): the icon number falls back to the kernel Amount, flagged known = false.
+    private static readonly HashSet<string> UnportedDisplayAmount = new(StringComparer.Ordinal) { "CACOPHONY_POWER", "TAG_TEAM_POWER" };
+
+    // The number the game's power icon shows (PowerModel.DisplayAmount), via PlayerView.DisplayAmountToPlayer (the
+    // shared Server/Vec rule: HARDENED_SHELL remaining cap, SLOW %, TENDER / SLOTH cards played this turn, AUTOMATION,
+    // FERAL, ORBIT, PANACHE, PALE_BLUE_DOT, WITHERING_PRESENCE, MONOLOGUE counters, else the amount). known = false
+    // when no port of the override exists (the kernel Amount is shown).
+    public static int DisplayAmount(CombatState cs, PowerModel power, out bool known)
+    {
+        known = !UnportedDisplayAmount.Contains(power.Id);
+        try
+        {
+            return PlayerView.DisplayAmountToPlayer(cs, power);
         }
         catch (Exception)
         {
@@ -314,16 +341,7 @@ public static class Describe
         var powers = creature.Powers;
         for (int i = 0; i < powers.Count; i++)
         {
-            bool visible;
-            try
-            {
-                visible = PlayerView.IsVisible(cs, powers[i]);
-            }
-            catch (Exception)
-            {
-                visible = true;
-            }
-            if (visible)
+            if (IsShown(cs, powers[i]))
             {
                 list.Add(powers[i]);
             }

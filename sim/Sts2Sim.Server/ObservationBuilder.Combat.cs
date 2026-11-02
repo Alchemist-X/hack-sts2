@@ -19,7 +19,7 @@ public static partial class ObservationBuilder
             var node = new JsonObject
             {
                 ["id"] = id,
-                ["amount"] = Describe.DisplayAmount(power, out bool known),
+                ["amount"] = Describe.DisplayAmount(cs, power, out bool known),
                 ["text"] = Rt(() => RulesText.PowerText(id, raw)),
                 ["detail"] = Describe.PowerDetail(cs, power)
             };
@@ -114,6 +114,8 @@ public static partial class ObservationBuilder
             ["exhaust_count"] = player.ExhaustPile.Count,
             ["draw_pile"] = new JsonArray(draw.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
             ["discard_pile"] = new JsonArray(SimProjector.PileKeys(player.DiscardPile).Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
+            ["exhaust_pile"] = new JsonArray(SimProjector.PileKeys(player.ExhaustPile).Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
+            ["pile_view"] = PileViewNode(player),
             ["enemies"] = enemies,
             ["danger"] = DangerNode(cs)
         };

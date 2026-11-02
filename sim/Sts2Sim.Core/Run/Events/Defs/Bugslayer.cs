@@ -10,6 +10,11 @@ public sealed class Bugslayer : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/Bugslayer.cs:213 StringVar Card1 / Card2).
+    public static string Card1 => ExterminateId;
+
+    public static string Card2 => SquashId;
+
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs)
     {
         return new[]

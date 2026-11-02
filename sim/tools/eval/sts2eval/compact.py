@@ -23,7 +23,7 @@ import re
 
 from .prompt import SYSTEM_PROMPT
 
-RENDER_VERSION = "compact-v1"
+RENDER_VERSION = "compact-v2"  # v2: UI-parity additions (docs/parity-audit-2026-11-02.md)
 
 _READING_FULL = SYSTEM_PROMPT[SYSTEM_PROMPT.index("## Reading the observation"):SYSTEM_PROMPT.index("## Basic strategy")]
 
@@ -31,12 +31,14 @@ _READING_COMPACT = """\
 ## Reading the observation
 The system blocks after this one are the run context, always current: character, ascension,
 relics (counters are in the message), the deck (one line per distinct card: count, id, name, cost
-"e", type, keywords, enchantment, rules text), act and potion slots. The user message is the step:
-header (phase, act, floor, turn, HP / max HP, block, energy, gold), incoming damage, powers, relic
-counters, orbs, enemies with HP, block, intents and powers, allies, the hand (index, id, cost,
-type, target, numbers, keywords; name and rules text only when they differ from the card's deck
-line), the screen, the legal actions (tokens of one kind share a line, separated by " | ") and
-recent history. A power's rules text is printed once, under its first owner.
+"e", type, keywords, enchantment, rules text), the act's boss, act and potion slots. The user
+message is the step: header (phase, act, floor, turn, HP / max HP, block, energy, gold), incoming
+damage, powers, relic counters, orbs (passive/evoke numbers), enemies with HP, block, intents and
+powers, allies, the draw pile (sorted: its order is hidden), discard and exhaust piles (oldest
+first), the hand (index, id, cost, type, target, numbers, keywords; name and rules text only when
+they differ from the card's deck line), the screen, the legal actions (tokens of one kind share a
+line, separated by " | ") and recent history. A power's rules text is printed once, under its
+first owner.
 Intent "Attack 12" = 12 damage this enemy turn; "Attack 5x3" = three hits of 5. The shown damage
 already includes the enemy's modifiers; your block absorbs it first.
 
@@ -164,7 +166,7 @@ def _deck_summary(names: list[str]) -> str:
 
 _MAP_LETTER = {"Monster": "M", "Elite": "E", "RestSite": "R", "Shop": "$", "Treasure": "T", "Unknown": "?",
                "Boss": "B", "Ancient": "A"}
-MAP_LEGEND = ("-- act map (r<row>: <col><type>[*current|x visited]><next-row cols>; M monster E elite R rest "
+MAP_LEGEND = ("-- act map (r<row>: <col><type>[! quest][*current|x visited]><next-row cols>; M monster E elite R rest "
               "$ shop T treasure ? unknown A ancient B boss)")
 
 
@@ -190,6 +192,8 @@ def _map_grid(nodes: list) -> list[str]:
         s = f" r{row}:"
         for n in rows[row]:
             s += f" {n['col']}{_MAP_LETTER.get(n.get('type'), '_')}"
+            if n.get("quest"):
+                s += "!"
             if n.get("current"):
                 s += "*"
             elif n.get("visited"):
@@ -202,6 +206,41 @@ def _map_grid(nodes: list) -> list[str]:
 
 def _relic_label(r: dict) -> str:
     return r["id"] + (f"({r['counter']})" if r.get("counter") is not None else "")
+
+
+def boss_line(obs: dict) -> str | None:
+    """The act's boss(es) and Ancient, as the map's boss / ancient points and the top-bar icon show them
+    (server BossLine)."""
+    bosses = obs.get("bosses") or []
+    if not bosses:
+        return None
+    anc = obs.get("ancient")
+    return ("boss: " + ", then ".join(b["id"] + _name(b) for b in bosses)
+            + (f" | ancient: {anc['id']}{_name(anc)}" if isinstance(anc, dict) else ""))
+
+
+def orbs_line(orbs: list | None, slots) -> str:
+    """Server OrbsLine: "orbs (3 slots; passive/evoke): LIGHTNING_ORB 3/8" in combat, ids only outside."""
+    orbs = orbs or []
+    values = bool(orbs) and all(o.get("passive") is not None and o.get("evoke") is not None for o in orbs)
+    s = f"orbs ({slots} slots" + ("; passive/evoke): " if values else "): ")
+    if not orbs:
+        return s + "-"
+    return s + ", ".join(f"{o['id']} {o['passive']}/{o['evoke']}" if values else o["id"] for o in orbs)
+
+
+_PILE_TITLES = (("draw", "draw pile (sorted): "), ("discard", "discard pile (oldest first): "),
+                ("exhaust", "exhaust pile (oldest first): "))
+
+
+def pile_lines(view: dict | None) -> list[str]:
+    """Server AppendPiles: one line per non-empty combat pile from combat.pile_view."""
+    out = []
+    for key, title in _PILE_TITLES:
+        groups = (view or {}).get(key) or []
+        if groups:
+            out.append(title + ", ".join(g["card"] + (f" x{g['n']}" if g["n"] > 1 else "") for g in groups))
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -260,7 +299,8 @@ def render_context(obs: dict, ascension, deck_nodes: list[dict] | None) -> tuple
     dl, texts = deck_lines(names, deck_nodes)
     deck = [f"deck({p.get('deck_size', len(names))}):"] + dl
     pots = p.get("potions") or []
-    tail = [f"act {obs.get('act')} | potions ({len(pots)} slots):"]
+    bl = boss_line(obs)
+    tail = ([bl] if bl else []) + [f"act {obs.get('act')} | potions ({len(pots)} slots):"]
     for i, pot in enumerate(pots):
         tail.append(f" [{i}] " + (pot["id"] + _name(pot) + _text(pot) if pot else "-"))
     return tuple("\n".join(b) + "\n" for b in (head, deck, tail)), texts
@@ -374,6 +414,8 @@ def _screen(obs: dict, deck_texts: dict[str, set]) -> list[str]:
             t = _s(o, "text")
             dedupe = t is not None and _collapse(t) in deck_texts.get(name, ())
             out.append(f" ({o['index']}) {name}" + ("" if dedupe else _name(o) + _text(o)))
+            if _s(o, "upgrade_text"):
+                out.append(f"     upgraded: {_collapse(o['upgrade_text'])}")
     mp = obs.get("map")
     if isinstance(mp, dict):
         out.append("-- map: next rooms")
@@ -397,6 +439,7 @@ def _screen(obs: dict, deck_texts: dict[str, set]) -> list[str]:
             vars_ = c.get("vars") or {}
             if vars_:
                 s += " (" + ", ".join(f"{k}={_num(v)}" for k, v in vars_.items()) + ")"
+            s += _card_tags(c)
             kws = c.get("keywords") or []
             if kws:
                 s += " {" + ",".join(kws) + "}"
@@ -416,7 +459,7 @@ def _screen(obs: dict, deck_texts: dict[str, set]) -> list[str]:
     if isinstance(rest, dict):
         out.append("-- rest site")
         for o in rest.get("options") or []:
-            out.append(f" ({o['index']}) {o['id']}" + ("" if o.get("enabled") else " (disabled)"))
+            out.append(f" ({o['index']}) {o['id']}" + ("" if o.get("enabled") else " (disabled)") + _text(o))
     t = obs.get("treasure")
     if isinstance(t, dict):
         s = "-- treasure: chest " + ("open" if t.get("chest_opened") else "closed")
@@ -427,6 +470,8 @@ def _screen(obs: dict, deck_texts: dict[str, set]) -> list[str]:
     if isinstance(ev, dict):
         out.append(f"-- event {ev.get('id')}{_name(ev)} page {ev.get('page') or '-'}"
                    + (" (finished)" if ev.get("finished") else ""))
+        if _s(ev, "page_text"):
+            out.append(f"   {_collapse(ev['page_text'])}")
         for o in ev.get("options") or []:
             s = f" ({o['index']}) {o.get('key')}" + ("" if o.get("enabled") else " (disabled)")
             if o.get("relic") is not None:
@@ -471,8 +516,7 @@ def render_step(obs: dict, deck_texts: dict[str, set]) -> str:
     if counters:
         lines.append("relic counters: " + ", ".join(counters))
     if p.get("orb_slots"):
-        orbs = p.get("orbs") or []
-        lines.append(f"orbs ({p['orb_slots']} slots): " + (", ".join(o["id"] for o in orbs) if orbs else "-"))
+        lines.append(orbs_line(p.get("orbs"), p["orb_slots"]))
     if combat is not None:
         facing = p.get("facing")
         lines.append("-- enemies" + (f" (you face {facing})" if facing else ""))
@@ -499,6 +543,7 @@ def render_step(obs: dict, deck_texts: dict[str, set]) -> str:
                 s += " | " + _powers_summary(a["powers"])
             lines.append(s)
             lines += pt.lines(a.get("powers"), "    ")
+        lines += pile_lines(combat.get("pile_view"))
         lines.append(f"-- hand (draw {combat.get('draw_count')}, discard {combat.get('discard_count')}, "
                      f"exhaust {combat.get('exhaust_count')})")
         lines += [_hand_line(c, deck_texts) for c in combat.get("hand") or []]

@@ -20,6 +20,25 @@ public sealed class TinkerTime : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars of the rider page (Models.Events/TinkerTime.cs:121 CanonicalVars = MadScience's rider values).
+    public const int SappingWeak = MadScience.SappingWeakValue;
+
+    public const int SappingVulnerable = MadScience.SappingVulnerableValue;
+
+    public const int ViolenceHits = MadScience.ViolenceHitsValue;
+
+    public const int ChokingDamage = MadScience.ChokingDamageValue;
+
+    public const int EnergizedEnergy = MadScience.EnergizedEnergyValue;
+
+    public const int WisdomCards = MadScience.WisdomCardsValue;
+
+    public const int ExpertiseStrength = MadScience.ExpertiseStrengthValue;
+
+    public const int ExpertiseDexterity = MadScience.ExpertiseDexterityValue;
+
+    public const int CuriousReduction = MadScience.CuriousReductionValue;
+
     public CardType ChosenCardType { get; private set; }
 
     public IReadOnlyList<MadScience.RiderEffect> OfferedRiders => _riders;

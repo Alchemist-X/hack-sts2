@@ -24,7 +24,15 @@ public static partial class ObservationBuilder
         {
             var o = p.Options[i];
             var (name, text) = PromptOptionNameText(g, p, o);
-            options.Add(new JsonObject { ["index"] = i, ["id"] = o.ModelId, ["name"] = name, ["upgraded"] = o.UpgradeLevel > 0, ["text"] = text });
+            var option = new JsonObject { ["index"] = i, ["id"] = o.ModelId, ["name"] = name, ["upgraded"] = o.UpgradeLevel > 0, ["text"] = text };
+            if (p.Kind is ChoicePromptKind.HandUpgrade or ChoicePromptKind.DeckUpgrade && CardRegistry.TryGet(o.ModelId, out _))
+            {
+                // The upgrade screen previews the upgraded card (NDeckUpgradeSelectScreen _singlePreview / NUpgradePreview):
+                // its rules text at the next upgrade level (base vars of that level).
+                int next = o.UpgradeLevel + 1;
+                option["upgrade_text"] = Rt(() => RulesText.CardText(o.ModelId, next));
+            }
+            options.Add(option);
         }
         bool canConfirm;
         try

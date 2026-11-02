@@ -12,6 +12,9 @@ public sealed class Symbiote : EventModel
 
     public override string Id => EventId;
 
+    // Option-text var (Models.Events/Symbiote.cs:224 StringVar Enchantment).
+    public static string Enchantment => "CORRUPTED";
+
     public override bool IsAllowed(RunState rs) => rs.CurrentActIndex > 0;
 
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs)

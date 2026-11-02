@@ -206,8 +206,8 @@ public static class ServerParityTests
         Assert.True(log.Contains(prefix + "Stun"), "an effect-free move shows the intent the player saw: " + string.Join(" | ", log));
     }
 
-    // Power nodes: amount is the icon number (SimProjector.DisplayAmount), text keeps the kernel amount, amount_raw only
-    // where the projection has no display rule, and detail names no applier.
+    // Power nodes: amount is the icon number (PlayerView.DisplayAmountToPlayer, shared with Vec), text keeps the kernel
+    // amount, amount_raw only where no display rule is ported, and detail names no applier.
     public static void Test_Parity_PowerAmountsAndDetail()
     {
         var s = NewService();
@@ -236,12 +236,11 @@ public static class ServerParityTests
         Assert.Equal(0, EnemyPower(obs, SlowPower.PowerId)["amount"]!.GetValue<int>(), "SLOW shows its bonus percent");
         Assert.Equal(20, EnemyPower(obs, HardenedShellPower.PowerId)["amount"]!.GetValue<int>(), "HARDENED_SHELL shows the HP it can still lose");
         var sloth = PlayerPower(obs, SlothPower.PowerId);
-        Assert.Equal(3, sloth["amount"]!.GetValue<int>(), "SLOTH has no display rule yet: raw amount");
-        Assert.Equal(3, sloth["amount_raw"]!.GetValue<int>(), "and says so with amount_raw");
+        Assert.Equal(0, sloth["amount"]!.GetValue<int>(), "SLOTH's icon shows the cards played this turn (Models.Powers/SlothPower.cs:20)");
         Assert.Equal("0/3 cards played this turn", sloth["detail"]!.GetValue<string>());
         foreach (var p in obs["player"]!["powers"]!.AsArray().Concat(obs["combat"]!["enemies"]![0]!["powers"]!.AsArray()))
         {
-            Assert.Equal(p!["id"]!.GetValue<string>() == SlothPower.PowerId, p.AsObject().ContainsKey("amount_raw"), "amount_raw only on a power without a display rule: " + p.ToJsonString());
+            Assert.False(p!.AsObject().ContainsKey("amount_raw"), "every ported power has a display rule (amount_raw only for CACOPHONY / TAG_TEAM): " + p.ToJsonString());
         }
 
         var hand = obs["combat"]!["hand"]!.AsArray();

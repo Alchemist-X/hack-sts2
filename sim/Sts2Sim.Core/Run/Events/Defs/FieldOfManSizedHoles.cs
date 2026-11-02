@@ -14,6 +14,11 @@ public sealed class FieldOfManSizedHoles : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/FieldOfManSizedHoles.cs:225 StringVar ResistCurse / Enchantment).
+    public static string ResistCurse => NormalityId;
+
+    public static string Enchantment => PerfectFitId;
+
     public override bool IsAllowed(RunState runState)
     {
         var perfectFit = EnchantmentRegistry.Create(PerfectFitId);

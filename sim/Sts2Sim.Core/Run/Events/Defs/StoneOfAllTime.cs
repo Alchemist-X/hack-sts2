@@ -18,6 +18,9 @@ public sealed class StoneOfAllTime : EventModel
 
     public int DrinkAndLiftPotionSlot => _drinkAndLiftPotionSlot;
 
+    // Option-text var (Models.Events/StoneOfAllTime.cs:292 StringVar DrinkRandomPotion = the drawn potion's title).
+    public string? DrinkRandomPotion => _drinkAndLiftPotionSlot >= 0 && Owner is { } p && _drinkAndLiftPotionSlot < p.PotionSlots.Length ? p.PotionSlots[_drinkAndLiftPotionSlot]?.Id : null;
+
     public override bool IsAllowed(RunState runState)
     {
         if (runState.CurrentActIndex == 1)

@@ -12,6 +12,9 @@ public sealed class GraveOfTheForgotten : EventModel
 
     public override string Id => EventId;
 
+    // Option-text var (Models.Events/GraveOfTheForgotten.cs:201 StringVar Enchantment = SoulsPower's title).
+    public static string Enchantment => SoulsPowerId;
+
     public override bool IsAllowed(RunState runState)
     {
         var players = runState.Players;

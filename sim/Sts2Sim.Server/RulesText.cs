@@ -34,6 +34,7 @@ public static class RulesText
         public string? Version;
         public Dictionary<string, string>? Moves;
         public Dictionary<string, (string? Title, string? Description)>? Options;
+        public Dictionary<string, string>? Pages;
     }
 
     private sealed class Tables
@@ -328,6 +329,17 @@ public static class RulesText
                 e.Options[p.Name] = (S(p.Value, "title"), S(p.Value, "description"));
             }
         }
+        if (eng.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Object)
+        {
+            e.Pages = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in pages.EnumerateObject())
+            {
+                if (p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is { Length: > 0 } text)
+                {
+                    e.Pages[p.Name] = text;
+                }
+            }
+        }
         return e;
     }
 
@@ -526,6 +538,18 @@ public static class RulesText
     private static string? AnyTitle(string id)
         => CardTitle(id) ?? RelicTitle(id) ?? PotionTitle(id);
 
+    // An enchantment's title. knowledge/source has no enchantment table; the game's titles are the id in title
+    // case (PERFECT_FIT -> "Perfect Fit", SOWN -> "Sown"), so registered enchantment ids render that way.
+    public static string? EnchantmentTitle(string id)
+    {
+        if (string.IsNullOrEmpty(id) || !EnchantmentRegistry.Models.Contains(id))
+        {
+            return null;
+        }
+        return string.Join(' ', id.Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
+    }
+
     // Keyword as the sim spells it (exhaust, Exhaust, EXHAUST) or a power-like keyword (VULNERABLE).
     public static string? KeywordText(string keyword)
     {
@@ -581,13 +605,16 @@ public static class RulesText
     public static string? EventTitle(string eventId) => Find(_t.Events, eventId)?.Title;
 
     // "Title: description" of an event option (TextKey "<EVENT>.pages.<PAGE>.options.<KEY>"), placeholders '?'.
-    public static string? EventOptionText(string eventId, string optionKey) => EventOptionText(eventId, optionKey, null, null);
+    public static string? EventOptionText(string eventId, string optionKey) => EventOptionText(eventId, optionKey, null, null, null);
 
     // As above, with placeholders filled from the live event model's public members ({Gold}, {HpLoss}, costs)
     // and the option's relic ({Relic}).
-    public static string? EventOptionText(EventModel ev, EventOption option) => EventOptionText(ev.Id, option.TextKey, ev, option);
+    public static string? EventOptionText(EventModel ev, EventOption option) => EventOptionText(ev.Id, option.TextKey, ev, option, null);
 
-    private static string? EventOptionText(string eventId, string optionKey, EventModel? ev, EventOption? option)
+    // As above, with the run for vars the game computes from run state (DenseVegetation {Heal}: the rest-site heal).
+    public static string? EventOptionText(EventModel ev, EventOption option, RunState? rs) => EventOptionText(ev.Id, option.TextKey, ev, option, rs);
+
+    private static string? EventOptionText(string eventId, string optionKey, EventModel? ev, EventOption? option, RunState? rs = null)
     {
         if (string.IsNullOrEmpty(optionKey))
         {
@@ -598,7 +625,7 @@ public static class RulesText
         var e = Find(_t.Events, eventId);
         if (e?.Options != null && e.Options.TryGetValue(key, out var opt))
         {
-            IScope scope = ev != null ? new EventScope(ev, option) : NoScope.Instance;
+            IScope scope = ev != null ? new EventScope(ev, option, rs) : NoScope.Instance;
             string? title = opt.Title is { Length: > 0 } t ? Format(t, scope) : null;
             string? desc = opt.Description is { Length: > 0 } d ? Format(d, scope) : null;
             if (title == null && desc == null)
@@ -620,6 +647,30 @@ public static class RulesText
             return relicText is { Length: > 0 } ? relicTitle + ": " + relicText : relicTitle;
         }
         return null;
+    }
+
+    // The event page's body text the event screen shows above its options (NEventLayout description), from the
+    // event's current description key "<EVENT>.pages.<PAGE>.description", with placeholders filled as for options.
+    public static string? EventPageText(EventModel ev, RunState? rs = null)
+    {
+        string? key = ev.Description;
+        if (string.IsNullOrEmpty(key))
+        {
+            return null;
+        }
+        string prefix = ev.Id + ".pages.";
+        const string suffix = ".description";
+        if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        string page = key[prefix.Length..^suffix.Length];
+        if (Find(_t.Events, ev.Id)?.Pages is not { } pages || !pages.TryGetValue(page, out var template))
+        {
+            return null;
+        }
+        string text = Format(template, new EventScope(ev, null, rs));
+        return text.Length == 0 ? null : text;
     }
 
     // ---- catalog ----
@@ -916,11 +967,13 @@ public static class RulesText
     {
         private readonly EventModel _ev;
         private readonly EventOption? _option;
+        private readonly RunState? _rs;
 
-        public EventScope(EventModel ev, EventOption? option)
+        public EventScope(EventModel ev, EventOption? option, RunState? rs = null)
         {
             _ev = ev;
             _option = option;
+            _rs = rs;
         }
 
         public Val? Get(string name)
@@ -939,6 +992,13 @@ public static class RulesText
                 // with a unit suffix ({Heal} -> HealAmount, {MaxHp} -> MaxHpGain).
                 foreach (var candidate in new[] { name, name + "Amount", name + "Gain" })
                 {
+                    // A var the game computes from run state: "<Name>For(RunState)" (DenseVegetation.HealFor).
+                    if (_rs != null && type.GetMethod(candidate + "For", flags, new[] { typeof(RunState) }) is { } computed)
+                    {
+                        value = computed.Invoke(computed.IsStatic ? null : _ev, new object[] { _rs });
+                        found = true;
+                        break;
+                    }
                     if (type.GetProperty(candidate, flags) is { } prop && prop.GetIndexParameters().Length == 0 && prop.GetGetMethod() is { } getter)
                     {
                         value = prop.GetValue(getter.IsStatic ? null : _ev);
@@ -969,7 +1029,9 @@ public static class RulesText
                 double db => new Val((decimal)db, null, null),
                 float f => new Val((decimal)f, null, null),
                 bool b => new Val(null, null, b),
-                string s => new Val(null, AnyTitle(s) ?? s, null),
+                // "<Relic>Description" vars hold the relic's description (TeaMaster.BoneTeaDescription).
+                string s when name.EndsWith("Description", StringComparison.Ordinal) && RelicText(s) is { } relicText => new Val(null, relicText, null),
+                string s => new Val(null, AnyTitle(s) ?? EnchantmentTitle(s) ?? s, null),
                 CardInstance c => new Val(null, CardTitle(c.Id) ?? c.Id, null),
                 RelicModel r => new Val(null, RelicTitle(r.Id) ?? r.Id, null),
                 PotionModel p => new Val(null, PotionTitle(p.Id) ?? p.Id, null),

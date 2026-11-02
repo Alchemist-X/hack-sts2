@@ -18,6 +18,19 @@ public sealed class SelfHelpBook : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/SelfHelpBook.cs:347 StringVar Enchantment<N> / IntVar Enchantment<N>Amount).
+    public static string Enchantment1 => SharpId;
+
+    public static string Enchantment2 => NimbleId;
+
+    public static string Enchantment3 => SwiftId;
+
+    public const int Enchantment1Amount = SharpAmount;
+
+    public const int Enchantment2Amount = NimbleAmount;
+
+    public const int Enchantment3Amount = SwiftAmount;
+
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs)
     {
         var owner = EventKit3456.OwnerOf(this);

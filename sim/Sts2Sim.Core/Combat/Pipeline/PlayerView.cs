@@ -44,10 +44,11 @@ public static class PlayerView
         return IsVisibleByTarget(cs, power);
     }
 
-    // IsVisible without the gap: AMBERGRIS is hidden (Models.Powers/AmbergrisPower.cs:87 `IsVisibleInternal => false`).
+    // IsVisible without the gap (Models/PowerModel.cs:161): the model's IsVisibleInternal (AMBERGRIS is hidden,
+    // Models.Powers/AmbergrisPower.cs:87 `IsVisibleInternal => false`), then the target rule.
     public static bool IsVisibleToPlayer(CombatState cs, PowerModel power)
     {
-        if (power is AmbergrisPower)
+        if (!power.IsVisible)
         {
             return false;
         }

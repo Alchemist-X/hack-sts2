@@ -55,6 +55,24 @@ public sealed class RelicTrader : EventModel
 
     public IReadOnlyList<string> NewRelicIds => (IReadOnlyList<string>?)_newRelics ?? Array.Empty<string>();
 
+    // Option-text vars (Models.Events/RelicTrader.cs:421 <Top|Middle|Bottom>Relic<Owned|New> = the traded relics' titles),
+    // read by the play server. Read-only: null until CalculateVars has picked the relics.
+    public string? TopRelicOwned => OwnedAt(0);
+
+    public string? TopRelicNew => NewAt(0);
+
+    public string? MiddleRelicOwned => OwnedAt(1);
+
+    public string? MiddleRelicNew => NewAt(1);
+
+    public string? BottomRelicOwned => OwnedAt(2);
+
+    public string? BottomRelicNew => NewAt(2);
+
+    private string? OwnedAt(int i) => _ownedRelics is { } owned && owned.Count > i && Owner is { } p && owned[i] < p.Relics.Count ? p.Relics[owned[i]].Id : null;
+
+    private string? NewAt(int i) => _newRelics is { } fresh && fresh.Count > i ? fresh[i] : null;
+
     public override bool IsAllowed(RunState runState)
     {
         if (runState.CurrentActIndex == 0)

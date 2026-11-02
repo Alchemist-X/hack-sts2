@@ -14,6 +14,13 @@ public sealed class BattlewornDummy : EventModel
 
     public override string Id => EventId;
 
+    // Option-text vars (Models.Events/BattlewornDummy.cs:161 Setting<N>Hp = BattleFriendV<N>.MinInitialHp, single player).
+    public const int Setting1Hp = BattleFriendV1.InitialHp;
+
+    public const int Setting2Hp = BattleFriendV2.InitialHp;
+
+    public const int Setting3Hp = BattleFriendV3.InitialHp;
+
     public override bool IsShared => true;
 
     protected override IReadOnlyList<EventOption> GenerateInitialOptions(RunState rs) => new[]
