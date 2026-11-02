@@ -4,7 +4,9 @@ namespace Sts2Sim.Core.Run;
 
 public static class RunImporter
 {
-    public const int ImportedPlayerCombatId = 1;
+    // The game attaches the player first to a fresh CombatState (_nextCreatureId = 0), as the seed path does
+    // (Combat/CombatState.cs:703-706, :726-731); monster Rng seeds add the combat id (:721).
+    public const int ImportedPlayerCombatId = CombatLoop.PlayerCombatId;
 
     public static RunImportResult FromSave(SavedRun save, ImportOptions options)
     {

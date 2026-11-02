@@ -100,7 +100,10 @@ public static class RunLoop
         }
         for (int i = 0; i < start.StartingRelics.Count; i++)
         {
-            player.AddRelicInternal(RelicRegistry.Create(start.StartingRelics[i]));
+            // Entities.Players/Player.cs:1140-1152 PopulateStartingRelics: FloorAddedToDeck = 1.
+            var relic = RelicRegistry.Create(start.StartingRelics[i]);
+            relic.FloorAddedToDeck = 1;
+            player.AddRelicInternal(relic);
         }
         player.RelicGrabBag = new RelicGrabBag(refreshAllowed: false);
         for (int i = 0; i < acts.Count; i++)

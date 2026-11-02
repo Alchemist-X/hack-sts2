@@ -138,6 +138,10 @@ public static class PlayerView
             case TenderPower tender:
                 amount = tender.CardsPlayedThisTurn;
                 return true;
+            // Models.Powers/AutomationPower.cs:111 `GetInternalData<Data>().cardsLeft` (E3: checked on farm combats)
+            case AutomationPower automation:
+                amount = automation.DisplayAmount;
+                return true;
         }
         amount = 0;
         return false;

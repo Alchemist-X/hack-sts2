@@ -38,7 +38,7 @@ public static class SelfConsistencyTests
 
     private const string PinnedCombatStreams = "NIBBITS_WEAK/11:18:D954CBBD6B692983 NIBBITS_WEAK/12:22:ACFD58206F8E0BD8 INKLETS_NORMAL/13:18:89248C839411E7CD FROG_KNIGHT_NORMAL/14:19:DB175B3A2B7CA7D5";
 
-    private const string PinnedRunStreams = "1:136:6A45E2AEAB5007FC 2:114:E04B6771D3A9FB20 3:160:83A2572D6A5DD790 4:400:52982AD74C03D66B";
+    private const string PinnedRunStreams = "1:136:5F70FE94F60BE08F 2:114:064C282C22EA469C 3:160:CC4B958FA4D42499 4:400:BE4777CCA5361B81";
 
     public static void Test_SelfConsistency_F2_CombatHashStreamsArePinnedAndRepeatable()
     {

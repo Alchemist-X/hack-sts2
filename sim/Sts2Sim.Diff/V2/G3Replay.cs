@@ -19,6 +19,11 @@ public sealed class G3Prepared
     public int ReorderedHandSelects { get; set; }
 
     public int DroppedFinalHp { get; set; }
+
+    /// <summary>E3 anchor resume: segments after which the chain breaks (truncated at an unresolved decision).</summary>
+    public HashSet<string> ChainBreakAfter { get; } = new(StringComparer.Ordinal);
+
+    public List<string> TruncatedSegments { get; } = new();
 }
 
 public sealed class G3RunResult
@@ -48,13 +53,25 @@ public sealed class G3RunResult
     public string? Error { get; set; }
 
     public G3Loop.Counters Counters { get; } = new();
+
+    public bool ResumeAtAnchors { get; init; }
+
+    /// <summary>E3 --save-check: per chained segment with a save anchor, the RunExporter.Describe lines that differ.</summary>
+    public List<(string Segment, List<string> Diff)> SaveCheck { get; } = new();
 }
 
 public static class G3Replay
 {
-    public const string Usage = "usage: Sts2Sim.Diff g3 <bundle-dir-or-file> [--report out.json] [--versions v0.111.0|all] [-v|--verbose]";
+    public const string Usage = "usage: Sts2Sim.Diff g3 <bundle-dir-or-file> [--report out.json] [--versions v0.111.0|all] [--anchors|--anchors-every|--save-check] [-v|--verbose]";
 
-    public static G3Prepared Prepare(JsonObject source)
+    public static readonly IReadOnlySet<string> SaveAnchorKinds = new HashSet<string>(StringComparer.Ordinal) { "room_entry", "ancient_exit", "combat_exit" };
+
+    /// <summary>
+    /// <paramref name="keepSaveAnchors"/> (E3 <c>--anchors</c>): keep each segment's save anchor (R1 room_entry /
+    /// combat_exit copies) so that <see cref="G3Loop.Run"/> can resume there after a divergence, and truncate a segment at an
+    /// unresolved decision without dropping the rest of the run (the chain breaks after it).
+    /// </summary>
+    public static G3Prepared Prepare(JsonObject source, bool keepSaveAnchors = false)
     {
         var bundle = source.DeepClone().AsObject();
         string mode = bundle["game_mode"]?.GetValue<string>() ?? "standard";
@@ -73,6 +90,17 @@ public static class G3Replay
         }
         var prepared = new G3Prepared { Bundle = bundle, OriginalGameMode = mode, SegmentsInBundle = segments.Count };
         var kept = new JsonArray();
+        var saveAnchorIds = new HashSet<string>(StringComparer.Ordinal);
+        if (keepSaveAnchors && bundle["anchors"] is JsonArray allAnchors)
+        {
+            foreach (var a in allAnchors)
+            {
+                if (a?["kind"]?.GetValue<string>() is { } kind && SaveAnchorKinds.Contains(kind) && a["id"]?.GetValue<string>() is { } aid)
+                {
+                    saveAnchorIds.Add(aid);
+                }
+            }
+        }
         bool first = true;
         foreach (var node in segments)
         {
@@ -86,9 +114,14 @@ public static class G3Replay
                 continue;
             }
             var copy = s.DeepClone().AsObject();
+            string? saveAnchor = copy["start_anchor"]?.GetValue<string>();
             copy.Remove("start");
             copy.Remove("start_anchor");
             copy.Remove("end_anchor");
+            if (!first && saveAnchor != null && saveAnchorIds.Contains(saveAnchor))
+            {
+                copy["start_anchor"] = saveAnchor;
+            }
             if (first)
             {
                 copy["start"] = new JsonObject { ["from"] = AnchorLoader.FromSeed, ["content"] = "all", ["neow"] = true };
@@ -155,6 +188,15 @@ public static class G3Replay
                 }
                 copy.Remove("floor_summary");
                 copy.Remove("outcome");
+                if (keepSaveAnchors)
+                {
+                    prepared.TruncatedAt ??= $"{id}#{cut}";
+                    prepared.TruncationReason ??= "decision_unresolved: " + why;
+                    prepared.TruncatedSegments.Add($"{id}#{cut}");
+                    prepared.ChainBreakAfter.Add(id);
+                    kept.Add(copy);
+                    continue;
+                }
                 prepared.TruncatedAt = $"{id}#{cut}";
                 prepared.TruncationReason = "decision_unresolved: " + why;
                 kept.Add(copy);
@@ -163,7 +205,18 @@ public static class G3Replay
             kept.Add(copy);
         }
         bundle["segments"] = kept;
-        bundle["anchors"] = new JsonArray();
+        var keptAnchors = new JsonArray();
+        if (bundle["anchors"] is JsonArray sourceAnchors)
+        {
+            foreach (var a in sourceAnchors)
+            {
+                if (a?["id"]?.GetValue<string>() is { } aid && saveAnchorIds.Contains(aid))
+                {
+                    keptAnchors.Add(a.DeepClone());
+                }
+            }
+        }
+        bundle["anchors"] = keptAnchors;
         return prepared;
     }
 
@@ -292,7 +345,7 @@ public static class G3Replay
         return string.Join("|", s["act"]?.ToJsonString() ?? "-", s["floor"]?.ToJsonString() ?? "-", s["room_type"]?.ToJsonString() ?? "-", s["room_model_id"]?.ToJsonString() ?? "-");
     }
 
-    public static G3RunResult RunFile(string path)
+    public static G3RunResult RunFile(string path, bool resumeAtAnchors = false, bool everyAnchor = false, bool saveCheck = false)
     {
         var raw = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         var result = new G3RunResult
@@ -305,7 +358,8 @@ public static class G3Replay
             GameMode = raw["game_mode"]?.GetValue<string>() ?? "standard",
             RecordedResult = raw["outcome"]?["result"]?.GetValue<string>(),
             RecordedFloor = raw["outcome"]?["floor"]?.GetValue<int>(),
-            Prepared = Prepare(raw)
+            Prepared = Prepare(raw, resumeAtAnchors),
+            ResumeAtAnchors = resumeAtAnchors
         };
         RunBundle run;
         try
@@ -321,7 +375,7 @@ public static class G3Replay
         {
             result.SegmentById[s.Id] = s;
         }
-        result.Segments.AddRange(G3Loop.Run(run, result.Counters));
+        result.Segments.AddRange(G3Loop.Run(run, result.Counters, resumeAtAnchors, result.Prepared.ChainBreakAfter, everyAnchor, saveCheck ? result.SaveCheck : null));
         return result;
     }
 
@@ -331,10 +385,27 @@ public static class G3Replay
         string? reportPath = null;
         string versions = "v0.111.0";
         bool verbose = false;
+        bool anchors = false;
+        bool everyAnchor = false;
+        bool saveCheck = false;
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
-            if (arg is "--report" or "--versions")
+            if (arg == "--anchors")
+            {
+                anchors = true;
+            }
+            else if (arg == "--save-check")
+            {
+                anchors = true;
+                saveCheck = true;
+            }
+            else if (arg == "--anchors-every")
+            {
+                anchors = true;
+                everyAnchor = true;
+            }
+            else if (arg is "--report" or "--versions")
             {
                 if (i + 1 >= args.Length)
                 {
@@ -388,7 +459,7 @@ public static class G3Replay
             {
                 continue;
             }
-            var r = RunFile(f);
+            var r = RunFile(f, anchors, everyAnchor, saveCheck);
             runs.Add(r);
             Console.WriteLine(G3Report.Line(r));
             if (verbose && G3Report.FirstDivergence(r) is { } fd && fd.Divergence != null)

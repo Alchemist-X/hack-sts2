@@ -31,10 +31,13 @@ public static partial class CombatLoop
         var player = cs.Player;
         ReviveBeforeCombatEnd(cs, player);
         cs.PlayerHpAtCombatEnd = player.CurrentHp;
-        Hook.AfterCombatEnd(cs.Run, cs, null);
+        // The game passes (CombatRoom)runState.CurrentRoom to both hooks (Combat/CombatManager.cs:1652, :1708, :1781); a
+        // standalone CombatSim has no room (null). E3: FISHING_ROD / WAR_HAMMER / SWORD_OF_STONE read the room type.
+        var room = RoomStack.CurrentRoom(cs.Run) as CombatRoom;
+        Hook.AfterCombatEnd(cs.Run, cs, room);
         cs.History.Clear();
         PlayerAfterCombatEnd(player);
-        Hook.AfterCombatVictory(cs.Run, cs, null);
+        Hook.AfterCombatVictory(cs.Run, cs, room);
     }
 
     private static void ReviveBeforeCombatEnd(CombatState cs, PlayerState player)

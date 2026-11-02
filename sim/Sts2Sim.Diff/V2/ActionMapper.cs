@@ -475,6 +475,13 @@ public static class ActionMapper
                 diff = new FieldDiff("action.text_key", key, new JsonArray(options.Select(o => (JsonNode?)JsonValue.Create(o.TextKey)).ToArray()), DiffSeverity.Hard, "no sim event option has this key");
                 return false;
             }
+            // E3: options can share one key (THE_FUTURE_OF_POTIONS lists one POTION option per potion); the recorded index
+            // then names the option when it carries that key.
+            if (a.Int("index") is int recorded && recorded >= 0 && recorded < options.Count && recorded != index
+                && string.Equals(options[recorded].TextKey, key, StringComparison.Ordinal))
+            {
+                index = recorded;
+            }
         }
         else if (a.Int("index") is int i0)
         {

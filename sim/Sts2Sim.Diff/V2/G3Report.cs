@@ -46,6 +46,9 @@ public static class G3Report
         int reached = 0;
         int compared = 0;
         int agreedDecisions = 0;
+        bool resume = runs.Any(r => r.ResumeAtAnchors);
+        var resumeByClass = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        var resumeByStart = new SortedDictionary<string, int[]>(StringComparer.Ordinal);
         foreach (var r in runs)
         {
             var fd = FirstDivergence(r);
@@ -91,6 +94,7 @@ public static class G3Report
                 ["pick_order_fixes"] = r.Counters.PickOrderFixes,
                 ["dropped_duplicate_proceeds"] = r.Counters.DroppedDuplicateProceeds,
                 ["lagging_relic_lists"] = r.Counters.LaggingRelicLists,
+                ["lagging_event_proceeds"] = r.Counters.LaggingEventProceeds,
                 ["truncated_at"] = r.Prepared?.TruncatedAt,
                 ["truncation_reason"] = r.Prepared?.TruncationReason,
                 ["error"] = r.Error,
@@ -106,6 +110,53 @@ public static class G3Report
                 ["certified_areas"] = new JsonArray(areas.Select(a => (JsonNode)a).ToArray()),
                 ["first_divergence"] = fd != null ? Divergence(r, fd) : null
             };
+            if (resume)
+            {
+                // E3 --anchors: every replayed segment, its start (seed / chained / anchor:<kind>) and every divergence.
+                var all = new JsonArray();
+                foreach (var s in r.Segments.Where(x => x.Status is not BundleStatus.Agree and not BundleStatus.Skipped))
+                {
+                    all.Add(Divergence(r, s));
+                    string k = s.Class ?? s.Status.ToString();
+                    resumeByClass[k] = resumeByClass.GetValueOrDefault(k) + 1;
+                }
+                foreach (var s in r.Segments.Where(x => x.Status != BundleStatus.Skipped))
+                {
+                    string start = s.StartMode ?? "?";
+                    if (!resumeByStart.TryGetValue(start, out var row))
+                    {
+                        resumeByStart[start] = row = new int[4];
+                    }
+                    row[0]++;
+                    row[1] += s.Status == BundleStatus.Agree ? 1 : 0;
+                    row[2] += s.DecisionsCompared;
+                    row[3] += s.DecisionsAgreed;
+                }
+                o["segments_from_anchor"] = r.Segments.Count(s => s.StartMode?.StartsWith("anchor:", StringComparison.Ordinal) == true);
+                o["truncated_segments"] = new JsonArray((r.Prepared?.TruncatedSegments ?? new List<string>()).Select(x => (JsonNode)x).ToArray());
+                o["segment_results"] = new JsonArray(r.Segments.Select(s => (JsonNode)new JsonObject
+                {
+                    ["segment"] = s.SegmentId,
+                    ["status"] = s.Status.ToString(),
+                    ["start"] = s.StartMode,
+                    ["compared"] = s.DecisionsCompared,
+                    ["agreed"] = s.DecisionsAgreed
+                }).ToArray());
+                o["divergences"] = all;
+                if (r.SaveCheck.Count > 0)
+                {
+                    o["save_check"] = new JsonObject
+                    {
+                        ["checked"] = r.SaveCheck.Count,
+                        ["equal"] = r.SaveCheck.Count(x => x.Diff.Count == 0),
+                        ["differing"] = new JsonArray(r.SaveCheck.Where(x => x.Diff.Count > 0).Select(x => (JsonNode)new JsonObject
+                        {
+                            ["segment"] = x.Segment,
+                            ["lines"] = new JsonArray(x.Diff.Take(40).Select(l => (JsonNode)l).ToArray())
+                        }).ToArray())
+                    };
+                }
+            }
             runArray.Add(o);
         }
         var areaObj = new JsonObject();
@@ -119,6 +170,28 @@ public static class G3Report
             classObj[k] = v;
         }
         var floorsList = runs.Select(FloorsAgreed).OrderBy(x => x).ToList();
+        JsonObject? resumeObj = null;
+        if (resume)
+        {
+            var byStart = new JsonObject();
+            foreach (var (k, row) in resumeByStart)
+            {
+                byStart[k] = new JsonObject { ["segments"] = row[0], ["agreed"] = row[1], ["decisions_compared"] = row[2], ["decisions_agreed"] = row[3] };
+            }
+            var cls = new JsonObject();
+            foreach (var (k, v) in resumeByClass)
+            {
+                cls[k] = v;
+            }
+            resumeObj = new JsonObject
+            {
+                ["segments_replayed"] = runs.Sum(r => r.Segments.Count(s => s.Status != BundleStatus.Skipped)),
+                ["segments_agreed"] = runs.Sum(r => r.Segments.Count(s => s.Status == BundleStatus.Agree)),
+                ["segments_skipped"] = runs.Sum(r => r.Segments.Count(s => s.Status == BundleStatus.Skipped)),
+                ["by_start"] = byStart,
+                ["divergences_by_class"] = cls
+            };
+        }
         return new JsonObject
         {
             ["report"] = "g3-run-replay",
@@ -130,7 +203,8 @@ public static class G3Report
                 ["decisions_compared"] = compared,
                 ["decisions_agreed"] = agreedDecisions,
                 ["floors_agreed_sorted"] = new JsonArray(floorsList.Select(x => (JsonNode)x).ToArray()),
-                ["first_divergence_by_class"] = classObj
+                ["first_divergence_by_class"] = classObj,
+                ["anchor_resume"] = resumeObj
             },
             ["floors_agreed_by_run"] = distribution,
             ["certified_areas"] = areaObj,
