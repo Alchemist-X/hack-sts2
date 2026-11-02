@@ -3,12 +3,15 @@
 #
 # Launch:
 #   headless_launch.sh <i> [--base DIR] [--visible] [--wait-s N] [--no-wait] [--record]
+#                          [--recorder-root DIR]
 # Stop:
 #   headless_launch.sh <i|all> --stop [--base DIR]
 #
 # All workers execute one shared runtime.  HOME, MCP port, recorder root, log
 # and PID are process-local.  Default training mode disables the full recorder;
-# --record enables it for diagnostic/human-comparison runs. --visible removes
+# --record enables it for diagnostic/human-comparison runs; --recorder-root
+# (or STS2_HEADLESS_RECORDER_ROOT) moves its output out of <inst>/recordings,
+# e.g. into a farm tree. --visible removes
 # only Godot's --headless argument; all worker isolation remains in force. At
 # most one visible worker may run at a time.
 
@@ -28,6 +31,7 @@ WAIT_S=120
 MODE="launch"
 RECORDING="${STS2_HEADLESS_RECORDING:-0}"
 DISPLAY_MODE="headless"
+RECORDER_ROOT="${STS2_HEADLESS_RECORDER_ROOT:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -36,6 +40,7 @@ while [[ $# -gt 0 ]]; do
         --no-wait) WAIT_S=0; shift ;;
         --record)  RECORDING=1; shift ;;
         --visible) DISPLAY_MODE="visible"; shift ;;
+        --recorder-root) RECORDER_ROOT="${2:?--recorder-root needs a value}"; shift 2 ;;
         --stop)    MODE="stop"; shift ;;
         -h|--help) usage; exit 0 ;;
         *)         [[ -z "$INSTANCE" ]] || die "unexpected argument: $1"
@@ -127,11 +132,13 @@ if [[ "$DISPLAY_MODE" == "visible" ]]; then
     done < <(ps -axo command=)
 fi
 
+RECORDER_ROOT="${RECORDER_ROOT:-$INST_DIR/recordings}"
+mkdir -p "$RECORDER_ROOT"
 RECORDER_DISABLED=1
 if [[ "$RECORDING" == "1" ]]; then
     RECORDER_DISABLED=0
 fi
-log "worker $INSTANCE: mode=$DISPLAY_MODE, shared runtime, HOME=$INST_HOME, port=$PORT, recorder=$RECORDING"
+log "worker $INSTANCE: mode=$DISPLAY_MODE, shared runtime, HOME=$INST_HOME, port=$PORT, recorder=$RECORDING ($RECORDER_ROOT)"
 
 GAME_ARGS=(--force-steam=off "--sts2-worker=$INSTANCE")
 if [[ "$DISPLAY_MODE" == "headless" ]]; then
@@ -141,7 +148,7 @@ fi
 nohup env \
     HOME="$INST_HOME" \
     STS2_MCP_PORT="$PORT" \
-    STS2_RECORDER_OUTPUT_ROOT="$INST_DIR/recordings" \
+    STS2_RECORDER_OUTPUT_ROOT="$RECORDER_ROOT" \
     STS2_RECORDER_DISABLED="$RECORDER_DISABLED" \
     STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS="${STS2_RECORDER_SNAPSHOT_MIN_INTERVAL_MS:-800}" \
     "$BIN" "${GAME_ARGS[@]}" \
