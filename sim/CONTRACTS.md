@@ -1215,3 +1215,217 @@ the shared `PlayerState` (D3): no copy-in / copy-out.
   event owned by R5) — no exception, `Hash(x) == Hash(x.Clone())` at random points, legal-action closure.
 - R7/R8: the oracles of design §7.5 on the local saves and `.run` files (counts reported, not gated, until
   W3 content covers the runs).
+
+# Part D — E2 training interface contract (`Sts2Sim.Vec`) · 2026-11-01
+
+Process (user): speed over polish — brief → parallel owners (isolated worktrees, reset to the scaffold
+commit) → one integrator with automated gates → commit. No adversarial review. Engineering agents on Opus.
+Inputs: the kernel inventory and binding measurements of 2026-11-01 (scratchpad reports
+`e2-kernel-inventory.md`, `e2-prior-art-and-bindings.md`; numbers quoted below come from them).
+
+## D0. Decisions
+
+| # | Decision | Why |
+| --- | --- | --- |
+| D1 | **In-process C ABI.** `sim/Sts2Sim.Vec` is a `net9.0` class library (`AllowUnsafeBlocks`, `EnableDynamicLoading`) that references **only** `Sts2Sim.Core` and exports `[UnmanagedCallersOnly(EntryPoint = "sts2vec_…")]` functions with blittable arguments (handles, int32 counts, pointers into caller-owned buffers). Python loads it through hostfxr with a shipped `sts2vec.runtimeconfig.json` (`System.GC.Server = true`) and calls the exports with ctypes. NativeAOT (`NativeLib=Shared`, `TrimmerRootAssembly Sts2Sim.Core`) is a publish option with the same exports, not a gate. pythonnet is a debug/test tool only. | Measured: 0.05 µs per call, zero copies, GIL released during calls; 1,000 games × 512 floats stepped in 1.8 ms on 8 threads with Server GC (4.8× faster than Workstation GC). Pipes/shared memory cost 0.1–0.5 ms per 5 MB batch and stay as later options. |
+| D2 | **Batch-only, struct-of-arrays, caller-owned buffers.** Every call steps or resets *all* selected slots; observations are written in place into numpy arrays allocated by Python from the schema. No per-env Python work. | Python-driven per-step loops run at 19–30k steps/s against 141k native. |
+| D3 | **Entity tables, fixed capacities, ids + numeric features + counts.** No hashing of ids, no normalising ids into scalars. Vocabularies are built from the Core registries (sorted ordinal) and published in the schema with an `encoder_version` hash. | A10 review §4/§6 (entity encoding), hack-balatro's lesson. |
+| D4 | **Candidate list in `LegalActions()` order** with `(kind, A, B)` and pointer columns into the entity tables; the policy returns a candidate index. No flat action table. | 21 action kinds with variable option sets; prompt option lists are unbounded. |
+| D5 | **Reward = 1 at a Victory terminal, else 0; γ = 1 lives in the learner.** Floor, act, HP, gold, bosses go to `aux`, never into the reward. `terminated` on Victory/Defeat, `truncated` on the step cap. **Status codes are separate from outcomes**: content gaps and simulator errors are never losses, an illegal action never triggers a silent fallback. | Approved plan; fail-closed convention of this repo. |
+| D6 | **Starts come from a pool of snapshots.** Fresh runs (character, ascension, seed text) are created once per pool entry and cached as a `RunSim` template; resets `Clone()` the template (15 µs) instead of `NewRun` (16.5 ms, map pruning). Imported saves (`RunImporter.FromSave`, checked) and live snapshots (`Clone()` of a slot) are pool entries too. Per-slot deterministic start sequence, independent of thread scheduling. | `RunExporter.ToSave` of a live run is faithful only at act start, so curriculum snapshots are clones, not saves. |
+| D7 | **Tape engine for stepping** (`RunSim.Step(a)`, one deep clone per step, prompt-safe). The clone-free `Step(a, answerer)` path (2.6× at 10 threads) is a later ticket (needs a "no prompt possible" predicate or copy-on-write). `StateHash` (14–53 µs) is never called inside the step loop. | Prompts are decision points; the batched policy cannot answer them inline. |
+| D8 | **Player view is filtered in C#** (§D3.3) and verified by a leak test: reshuffling the draw pile of a cloned state must not change the encoded observation. The next move id (`move`/`move_name` in the Server observation) is a leak and is **not** encoded; only intents are. | Hidden-information inventory H1–H15. |
+| D9 | **Vec never touches Server/Diff behaviour.** The projection helpers Vec needs (`SimProjector.IsVisible`, `DisplayAmount`, `Intent`, `CostOf`, `CanPlay`, ≈80 lines) move into Core as `Sts2Sim.Core/Combat/Pipeline/PlayerView.cs`; Diff and Server call the Core versions (zero behaviour change; G0 and the Server tests prove it). | One source of truth for the player view; Vec must not depend on the Diff assembly. |
+
+## D1. Projects, files, ownership
+
+| Owner | Creates / edits | Must not touch |
+| --- | --- | --- |
+| scaffold (phase 0, in the wave worktree) | `sim/Sts2Sim.Vec/` project (csproj, `Schema.cs`, `Vocab.cs`, `VecEnv.cs` skeleton, `StartPool.cs` skeleton, `CandidateTable.cs` stub, `ObservationEncoder.cs` stub, `Exports.cs` with every entry point catching exceptions, `Status.cs`, `sts2vec.runtimeconfig.json`), solution entry, `sim/Sts2Sim.Tests/VecTests.cs` skeleton, `sim/tools/vec/` Python package skeleton (`pyproject.toml`, `sts2vec/{loader,schema,env,cli}.py`, tests skeleton), `sim/VEC.md` skeleton | kernel, Server, Diff |
+| V1 encoder | `Sts2Sim.Core/Combat/Pipeline/PlayerView.cs` (moved helpers) + the one-line re-pointing in `Sts2Sim.Diff/SimProjector.cs` and `Sts2Sim.Server/Describe.cs`; `Sts2Sim.Vec/ObservationEncoder.cs` (+ partials per table); `VecTests.cs` encoder/leak/parity tests; `sim/VEC.md` field reference | `VecEnv.cs`, `StartPool.cs`, `CandidateTable.cs`, `Exports.cs`, Python |
+| V2 env-core | `Sts2Sim.Vec/{VecEnv,StartPool,CandidateTable,Exports,Status}.cs` bodies; `Sts2Sim.Bench` `vec` subcommand; `VecTests.cs` env/candidate/pool/determinism/thread tests | `ObservationEncoder*.cs`, `PlayerView.cs`, Python |
+| V3 python | `sim/tools/vec/**` (loader, schema, env, pool, bench, check, tests, README); `scripts/vec_publish_aot.sh` (optional) | any C# |
+| integrator | merges V1 → V2 → V3, gates, `sim/BENCH.md` rows, `sim/VEC.md` final, `sim/specs/integration.md` section | — |
+
+Namespace `Sts2Sim.Vec`. The scaffold freezes `Schema.cs` (tables, capacities, dtypes, buffer order), `Status.cs`
+and the export signatures (§D5); owners add members freely but change a frozen signature only together with every
+caller, in their own branch, and say so in their report.
+
+## D2. Environment model
+
+- `VecEnv(config)` owns `N` **slots**. A slot holds a `RunSim` (or nothing before the first reset), `episode_id`
+  (int64, unique per env instance, increasing), `step_index`, `start_entry`, `rng_slot_seed`.
+- `reset(mask, start_ids)`: every slot with `mask[i] != 0` is (re)started from pool entry `start_ids[i]`, or from the
+  slot's deterministic start sequence when `start_ids[i] < 0`: `entry = order[(slot_seed + episode_count) mod pool_count]`
+  where `order` is the pool in insertion order and `slot_seed = XXH64(config.seed_text ‖ slot)`. Observations of the
+  reset slots are written; other slots are left untouched (their buffers are not rewritten).
+- `step(actions)`: for every slot with `actions[i] >= 0` apply `candidates[i][actions[i]]` (an index outside
+  `[0, cand_n[i])` → status `ILLEGAL_ACTION`, slot unchanged, nothing else happens to it); then write *every* slot's
+  observation, candidates and signals. Slots with `actions[i] < 0` are no-ops (status bit `NOOP`).
+- **Auto-reset in the same step** (config `auto_reset = true`, default): when a step ends an episode (terminal,
+  truncated, content gap or sim error), the step writes `reward`, `terminated`/`truncated`, `status` and the
+  `last_episode` block for the finished episode, then immediately resets the slot from its start sequence and writes
+  the **new** episode's first observation and candidates. `episode_id[i]` changes on that step. With
+  `auto_reset = false` a finished slot stays terminal (`cand_n = 0`) until `reset`.
+- Threads: `Parallel.For` over slots with `config.threads` (default 8) worker threads; one slot is only ever touched by
+  one thread per call; no shared mutable state (verified: 1,000 runs on 1/4/12 threads hash identically).
+- Episode end rules: `terminated = 1` when `RunSim.IsTerminal` (Victory → `reward = 1`, Defeat → `0`);
+  `truncated = 1` when `step_index >= config.step_cap` (default 3,000 decisions) — reward 0; `CONTENT_GAP`
+  (`NotImplementedException`/`NotSupportedException` from the sim) and `SIM_ERROR` (any other exception) end the
+  episode with `reward = 0`, `terminated = 0`, `truncated = 1` and the status bit set; the exception text is kept in
+  the slot's last error (`sts2vec_last_error(h, slot)`), the step never throws across the ABI.
+- Determinism: same pool, same `config.seed_text`, same action sequence per slot ⇒ byte-identical observations and
+  equal `StateHash` per slot, for any thread count and across processes.
+
+## D3. Observation schema (frozen in `Schema.cs`; published by `sts2vec_schema`)
+
+Dtypes: ids and counts `int32`, computed numbers `float32`, flags `uint8`. Every table has a fixed capacity; rows beyond
+the table's count are zero-filled; `*_n` holds the count. An id is an index into the schema's vocabulary list for
+that kind (`0` = none/padding, `1` = unknown, real ids from 2). Card identity is `(card_id, upgrade)` in two columns.
+Capacities (CAP_*): HAND 10 · DECK 96 · RELICS 32 · POTIONS 10 · PLAYER_POWERS 24 · ENEMIES 6 · ENEMY_INTENTS 3 ·
+ENEMY_POWERS 12 · ALLIES 2 · ALLY_POWERS 8 · ORBS 10 · MAP_ROWS 18 · MAP_COLS 7 · REWARDS 8 · CARD_REWARD 4 ·
+CARD_REWARD_ALTS 2 · SHOP 14 · REST 9 · EVENT_OPTIONS 8 · PROMPT_OPTIONS 128 · CANDIDATES 192 · HAND_VARS 4.
+When a table overflows its capacity the first CAP rows are written and the status bit `TABLE_OVERFLOW`
+(candidates: `CANDIDATE_OVERFLOW`) is set for the slot.
+
+### D3.1 Buffers (per env; Python allocates `(N, *shape)` for each, passes pointers in this order)
+
+| # | Name | dtype | shape | Content |
+| --- | --- | --- | --- | --- |
+| 0 | `global_i` | int32 | [GI] | phase (RunPhase), character, ascension, act_index, act_id, total_floor, act_floor, map_row, map_col, hp, max_hp, gold, energy, max_energy, stars, block, turn, round, potion_slots, deck_n, draw_n, discard_n, exhaust_n, orb_slots, relic_n, hand_n, enemy_n, ally_n, boss_id, second_boss_id, card_removals_used, removal_price, incoming_damage, incoming_hits, prompt_kind, prompt_min, prompt_max, prompt_picked, prompt_needs_confirm, prompt_can_cancel, prompt_can_skip, prompt_ordered, prompt_option_n, prompt_pile, prompt_site_hash, reward_n, card_reward_can_skip, card_reward_skip_consumes, treasure_opened, treasure_relic_id, treasure_claimed, event_id, event_finished, event_option_n, rest_option_n, shop_entry_n, decision_kind (= phase, or `Prompt` while a prompt is pending), is_combat (`State.Combat.IsInProgress`). The exact order is the schema's `global_i.fields` list; GI is its length. |
+| 1 | `global_f` | float32 | [GF] | hp_frac, gold_log1p, floor_frac (total_floor / 48 or 49), incoming_net_hp (hp − max(0, incoming − block)), and any other derived scalar the encoder adds (listed in the schema). |
+| 2 | `hand` | int32 | [10, HC] | per card: card_id, upgrade, cost_current (−1 = X, −2 = unplayable), cost_base, type, target, rarity, keyword_mask, enchant_id, enchant_amount, affliction_id, playable, playable_reason_id, hits, var_id[4], var_val[4] (first four dynamic vars in canonical order, base values) |
+| 3 | `hand_f` | float32 | [10, 2] | block_eff, damage_eff_self_or_all (effective block; effective damage for AllEnemies/RandomEnemy/None targets) via `CardPreview` |
+| 4 | `hand_dmg` | float32 | [10, 6] | effective damage vs enemy slot j (0 when not applicable / dead) via `CardPreview.Damage` |
+| 5 | `deck` | int32 | [96, 5] | card_id, upgrade, enchant_id, enchant_amount, affliction_id (pickup order; `deck_n` in global) |
+| 6 | `draw_counts`, 7 `discard_counts`, 8 `exhaust_counts` | int16 | [V_cards × 2] | multiset counts per (card_id, upgrade) — draw order hidden by construction; discard/exhaust order dropped (documented simplification) |
+| 9 | `relics` | int32 | [32, 5] | relic_id, counter (DisplayAmount or −1), status (0 Normal / 1 Active / 2 Disabled), used_up, stack |
+| 10 | `potions` | int32 | [10, 3] | potion_id (0 = empty), usable_now, target_type |
+| 11 | `powers_player` | int32 | [24, 3] | power_id, amount (DisplayAmount), is_debuff |
+| 12 | `orbs` | int32 | [10, 3] | orb_id, passive, evoke |
+| 13 | `enemies` | int32 | [6, 9] | present, uid, monster_id, hp, max_hp, block, flank, behind, intent_n (slot j = `Monsters[j]`, dead ones present = 0; this is the action target index) |
+| 14 | `enemy_intents` | int32 | [6, 3, 4] | type (IntentType), damage (after modifiers, as the UI shows), times, card_count |
+| 15 | `enemy_powers` | int32 | [6, 12, 2] | power_id, amount |
+| 16 | `allies` | int32 | [2, 5] | present, monster_id, hp, max_hp, block (pets only; `Allies[1..]`) |
+| 17 | `ally_powers` | int32 | [2, 8, 2] | power_id, amount |
+| 18 | `map_nodes` | int32 | [18, 7, 6] | point_type (MapPointType, 0 = no node), visited, current, legal_next, child_mask (bit c = edge to column c of the next row), quest |
+| 19 | `rewards` | int32 | [8, 4] | reward_type, amount (gold), item_id (potion/relic/special card), is_card_reward |
+| 20 | `card_reward` | int32 | [4, HC] | same columns as `hand` without playability; `card_reward_alts` int32 [2]: alt_id (Skip/REROLL/SACRIFICE) |
+| 21 | `shop` | int32 | [14, 7] | category, item_id, upgrade, price, stocked, on_sale, affordable |
+| 22 | `rest` | int32 | [9, 2] | option_id, enabled |
+| 23 | `event_options` | int32 | [8, 6] | key_hash (XXH32 of `"<eventId>:<TextKey>"`), ordinal, enabled, locked, proceed, relic_id |
+| 24 | `prompt_options` | int32 | [128, 5] | item_id (card/relic/potion id; bundles: hash of the id list), upgrade, picked, kind_of_item (card/relic/potion/bundle/index), ordinal |
+| 25 | `cand` | int32 | [192, 9] | kind (RunActionKind), A, B, hand_slot, target_slot, potion_slot, option_index, card_id (plays/picks), target_uid |
+| 26 | `cand_n` | int32 | [] | number of candidates (0 when terminal) |
+| 27 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
+| 28 | `terminated`, 29 `truncated` | uint8 | [] | episode-end flags for this step |
+| 30 | `status` | int32 | [] | bit flags: OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64 (slot was reset this call), POOL_EMPTY 128 |
+| 31 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
+| 32 | `aux` | float32 | [A] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat (listed in the schema) |
+| 33 | `last_episode` | int32 | [8] | written when an episode ends: win, floor, act, steps, final_hp, final_max_hp, end_kind (terminal/truncated/content_gap/sim_error), last_encounter_id |
+
+`HC` and the field orders are published in the schema; the Python side never hard-codes offsets.
+
+### D3.2 Schema JSON (`sts2vec_schema`)
+
+`{"encoder_version": "<xxh64 hex of this JSON without the version field>", "buffers": [{"name","dtype","shape","fields": [...]}],
+"vocab": {"cards": [...], "relics": [...], "potions": [...], "powers": [...], "monsters": [...], "encounters": [...],
+"events": [...], "orbs": [...], "enchantments": [...], "afflictions": [...], "acts": [...], "characters": [...],
+"enums": {"RunPhase": [...], "RunActionKind": [...], "IntentType": [...], "MapPointType": [...], "RewardType": [...],
+"ChoicePromptKind": [...], "CardType": [...], "TargetType": [...], "CardRarity": [...], "RestOption": [...],
+"CardRewardAlt": [...], "ShopCategory": [...]}}, "caps": {...}, "card_vars": [...131 names...], "playable_reasons": [...]}`.
+Vocabularies are the registries' `AllIds` (sorted ordinal) with `""` at 0 and `"?"` at 1; cards additionally list the
+`CardCatalog` ids that the registry lacks (unported) so the catalog is version-stable. `V_cards` = `vocab.cards.length`.
+
+### D3.3 Player-view rules (the encoder MUST follow; the leak test enforces H1)
+
+H1 draw pile as counts only; H2 no seed, RNG stream or counter anywhere; H3 no future rooms/events/encounters — the
+current act's boss ids are visible (the map shows them); H4/H5 no odds or grab bags; H6 treasure relic only when
+`ChestOpened`; H7 card-reward cards only in the `CardReward` phase (the rewards list says "card reward"); H8 **no move
+ids** — intents only (type, damage, times, card_count); H9 no monster/encounter extra state; H10 powers through
+`PlayerView.IsVisible` and `DisplayAmount`; H11 no event internals; H13 no instance ids except enemy `uid`
+(= `CombatId`, which the player can also track); prompt options are identified by `(item_id, upgrade, ordinal)`.
+Effective numbers come from `CardPreview` (pure, measured 0 hash changes) and the intent projection, never from
+re-implemented formulas.
+
+## D4. Start pool (`StartPool.cs`)
+
+- Entry kinds: `Fresh(character, ascension, seedText, act1, content)` (template created on first use with
+  `RunSim.NewRun`, cached; resets clone it), `Save(path)` (`RunImporter.FromSave` with `ImportOptions.Default`,
+  `Content = PortedOnly`; unsupported → error with the reasons), `Snapshot(RunSim clone)` (from `sts2vec_snapshot(slot)`).
+- `config.pool` may pre-populate fresh entries: `{"fresh": {"characters": [...], "ascension": 0, "count": 4096,
+  "seed_prefix": "TRAIN"}}` → seed texts `"<prefix>-<character>-<i>"`; entries are also added at run time with
+  `sts2vec_pool_add_fresh/save`. Template cache size is bounded by `config.pool_cache` (default 4,096 templates ≈ 0.4 GB);
+  beyond it, fresh entries are created on demand without caching.
+- `sts2vec_restore(slot, entry)` = reset one slot from one entry (E4 search). `sts2vec_snapshot(slot)` returns a new
+  entry id holding a `Clone()` of the slot's current state (works at prompts too: the clone carries the tape).
+
+## D5. C ABI (frozen by the scaffold; names exactly as below)
+
+```c
+int32_t sts2vec_version(uint8_t* buf, int32_t cap);                       // writes "sts2vec/<encoder_version>"; returns needed length
+int32_t sts2vec_schema(uint8_t* buf, int32_t cap);                        // JSON of §D3.2; returns needed length (call with cap 0 first)
+int64_t sts2vec_create(const uint8_t* config_json, int32_t len);          // > 0 handle, or -1 (see sts2vec_last_error(0, …))
+int32_t sts2vec_destroy(int64_t h);
+int32_t sts2vec_set_threads(int64_t h, int32_t threads);
+int32_t sts2vec_pool_add_fresh(int64_t h, const uint8_t* json, int32_t len);   // {"character","ascension","seed","act1","content"} → entry id or -1
+int32_t sts2vec_pool_add_save(int64_t h, const uint8_t* path_utf8, int32_t len); // entry id or -1 (reasons in last_error)
+int32_t sts2vec_pool_count(int64_t h);
+int32_t sts2vec_snapshot(int64_t h, int32_t slot);                        // entry id or -1
+int32_t sts2vec_restore(int64_t h, int32_t slot, int32_t entry, void** buffers);
+int32_t sts2vec_reset(int64_t h, const uint8_t* mask, const int32_t* start_ids, void** buffers);
+int32_t sts2vec_step(int64_t h, const int32_t* actions, void** buffers);
+int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t* out);   // test/debug only (14–53 µs each)
+int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
+```
+
+`buffers` is an array of `void*` in the order of `schema.buffers`, each pointing at a C-contiguous array of shape
+`(N, *shape)`. Return values: 0 ok, −1 error (text in last_error); per-slot problems are reported in `status`, never as
+a return code. Every export is wrapped in `try/catch`: an exception never crosses the ABI. `config_json`:
+`{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC", "content": "ported_only",
+"pool": {...}, "pool_cache": 4096}`.
+
+## D6. Python package (`sim/tools/vec`, package `sts2vec`, uv project, deps: numpy; dev: pytest)
+
+- Loader: locate `Sts2Sim.Vec.dll` + `sts2vec.runtimeconfig.json` (env `STS2VEC_DLL`, or the Release build dir
+  relative to the repo root), find `libhostfxr` (`DOTNET_ROOT`, `/opt/homebrew/opt/dotnet@9/libexec`, `dotnet --list-runtimes`),
+  `hostfxr_initialize_for_runtime_config` → `load_assembly_and_get_function_pointer` with
+  `UNMANAGEDCALLERSONLY_METHOD` for every export (the working prototype is in the session scratchpad
+  `e2-bindings/scripts/raw_bench.py` and `e2-bindings/probe/`), wrap with ctypes. Assert Server GC at create
+  (`sts2vec_create` fails with a clear message if `GCSettings.IsServerGC` is false). Optional `.dylib` path for the AOT build.
+- `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(...), dll=None)`:
+  `.schema` (parsed JSON, vocab helpers `vocab.cards[i]`, reverse maps), `.reset(mask=None, start_ids=None) -> obs`,
+  `.step(actions) -> (obs, reward, terminated, truncated, status, info)` where `obs` is a dict of the env-owned numpy
+  arrays (views, valid until the next call; `copy=True` to copy), `info = {"episode_id", "step_index", "start_entry",
+  "last_episode"}`; `.pool.add_fresh(...)`, `.pool.add_save(path)`, `.snapshot(slot)`, `.restore(slot, entry)`,
+  `.state_hash(slots)`, `.close()`, context manager. `.candidates(i)` returns the slot's candidate rows decoded to
+  `RunActionKind` names for debugging.
+- CLIs: `sts2vec bench [--envs 1024 --threads 8 --steps 500 --policy random]` (env-steps/s, ms per batch, MB obs per batch,
+  GC mode) and `sts2vec check` (determinism across two envs and two thread counts; leak test via the C# export when
+  present; schema/buffer consistency).
+
+## D7. Tests and gates
+
+C# (`sim/Sts2Sim.Tests/VecTests.cs`; all run in the normal suite):
+- T1 determinism: same pool + same actions on 1 and 8 threads, and two env instances ⇒ identical `StateHash` per slot and
+  byte-identical buffers (256 envs × 300 steps, random candidate policy seeded per slot).
+- T2 leak: for ≥ 500 sampled combat decision points, encode `S` and a clone with the draw pile reshuffled ⇒ identical bytes.
+- T3 schema: every buffer's size matches the schema; every table respects its capacity; overflow sets the status bit
+  (construct a prompt with > 128 options via a large deck removal and a combat with > 192 legal actions or skip with a note).
+- T4 candidates: for ≥ 10,000 decision points, `cand[i] ↔ LegalActions()[i]` (same order, same `(kind, A, B)`); stepping
+  by candidate index hashes equal to stepping the `RunAction`; every listed candidate is legal; illegal indices leave
+  the state unchanged and set `ILLEGAL_ACTION`.
+- T5 episodes: reward 1 only at Victory (use a cloned state with boosted HP to reach it), 0 at Defeat; truncation at
+  `step_cap`; auto-reset writes the new episode's first observation and bumps `episode_id`; `last_episode` is filled.
+- T6 starts: the fixture save starts at `Rewards` with 3 candidates and hashes equal to `RunImporter.FromSave`;
+  `snapshot`/`restore` round-trip hashes equal, also at a pending prompt.
+- T7 threads: 1,024 envs × 200 steps on 1 vs 12 threads ⇒ identical hashes.
+- T8 ABI: invalid handle/slot/entry → −1 + last_error, never a crash; a slot whose sim throws gets `SIM_ERROR` and is reset.
+- T9 PlayerView move: Server and Diff tests unchanged; G0 4/4 · 69/69.
+Python (`uv run --project sim/tools/vec pytest -q`): loader + Server GC assert; schema ↔ buffer consistency; random soak
+(1,024 envs × 300 steps, 0 `SIM_ERROR`/`CONTENT_GAP` with `ported_only`); determinism across two processes; `bench`
+smoke; `add_save` on the fixture.
+Gates (integrator): build 0 warnings; full suite green; Python tests green; G0 unchanged; Server tests unchanged; bench rows
+in `sim/BENCH.md`: C# `Sts2Sim.Bench vec` and Python `sts2vec bench` at N ∈ {64, 1024, 4096} × threads {1, 8}
+(target ≥ 50k env-steps/s at N = 1024 / 8 threads on this machine with a random policy, A0; report whatever is measured);
+`sim/VEC.md` complete; status log + `sim/specs/integration.md` section.
