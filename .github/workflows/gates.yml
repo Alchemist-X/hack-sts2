@@ -1,0 +1,56 @@
+# Linux gate run in the toolchain container: the same command as scripts/ci_linux.sh.
+#
+# NOT YET ENABLED (2026-11-02). Only a manual trigger is declared, so this workflow never runs on its own; it
+# has not been run on GitHub. To enable it: add the push / pull_request triggers below, run it once by hand
+# (Actions -> Gates -> Run workflow), check the uploaded gate logs, then make it a required check. G0 stays
+# skipped (its bundles are recorder data, never in the repository) and the kernel-map check skips itself without
+# the decompile tree; the quick test filters keep the run near 5 minutes (Huginn, 8 vCPU: 4.3 min of gates).
+# Docs: docs/gates.md, "Linux CI".
+name: Gates (Linux container)
+
+on:
+  workflow_dispatch:
+    inputs:
+      gates_args:
+        description: "scripts/gates.sh arguments"
+        required: false
+        default: "--quick --skip g0"
+  # push:
+  #   branches: [main]
+  # pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: gates.sh in docker/ci.Dockerfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the toolchain image (.NET 9 SDK + python3 + uv)
+        run: docker build -f docker/ci.Dockerfile -t sts2sim-ci docker/
+      - name: Run the gates
+        env:
+          GATES_ARGS: ${{ github.event.inputs.gates_args || '--quick --skip g0' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-tmp" "$RUNNER_TEMP/nuget" "$RUNNER_TEMP/uv"
+          # shellcheck disable=SC2086
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/work" -v "$RUNNER_TEMP/ci-tmp:/tmp" \
+            -v "$RUNNER_TEMP/nuget:/cache/nuget" -v "$RUNNER_TEMP/uv:/cache/uv" -w /work \
+            -e HOME=/work/.ci-home -e NUGET_PACKAGES=/cache/nuget -e UV_CACHE_DIR=/cache/uv \
+            -e GATES_COMMIT="${GITHUB_SHA::7}" -e GATES_OUT=/work/tmp/gates/ci \
+            sts2sim-ci bash scripts/gates.sh $GATES_ARGS
+      - name: Upload gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gates-logs
+          path: tmp/gates/ci
+          if-no-files-found: warn

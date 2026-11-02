@@ -19,7 +19,13 @@ python3 scripts/version_delta.py <旧树> <新树> --old-version A.B.C --new-ver
 # 清单执行器：默认 dry-run 只打印；--run 依次执行可自动的步骤，首个失败即停
 scripts/version_update.sh <旧树> <新树> --new-version X.Y.Z [--old-version A.B.C] \
     [--bundles <G0 bundle 目录>] [--bundles-v2 <G3 目录>] [--run]
-python3 -m unittest discover -s scripts -p 'test_*.py'      # version_delta + kernel_map
+python3 -m unittest discover -s scripts -p 'test_*.py'      # version_delta, kernel_map, version_stubs, hook_drift
+# 逐模型工作包（差分 manifest → packets/INDEX.md + 每模型一页；新模型带骨架，--check-skeletons 编译验证）
+python3 scripts/version_stubs.py <out>/manifest.json --out <out> [--check-skeletons] [--trimmed-index F --top N]
+# 录像钩子漂移：docs/hook-map.md + mod/src 的目标对一棵反编译树逐个核对（退出码 1 = 有漂移）
+python3 scripts/hook_drift.py --tree <新树> [--json F] [--md F]
+# 合成"新版本"树（无真实新版本时演练整条流程）
+python3 scripts/version_synthetic.py <源树> <目标目录> [--force]
 # 内核映射：反编译内核文件 → sim 文件（version_delta 读它）；新树上先重生成，--check 只校验不写
 python3 scripts/kernel_map.py [--tree <新树> --tree-version X.Y.Z] [--unmapped] [--check]
 ```
@@ -68,6 +74,68 @@ python3 scripts/kernel_map.py [--tree <新树> --tree-version X.Y.Z] [--unmapped
   `sim/specs/inventory/version-deltas.json`（`sources: version_delta`）。迁移到新版本时同样处理：报告里
   "有唯一改动但不在 W0 清单"的文件必须判定，否则 taint 过滤会把真改动的旧录像当成可比。
 
+## 一键执行器：差分 → 工作包 → 钩子漂移 → 构建 → 测试 → 闸门（2026-11-02）
+
+版本更新现在是一份基本自动跑完的清单：`scripts/version_update.sh` 默认 dry-run（只跑写入 `<out>` 的分析三步，
+其余步骤打印命令），`--execute` 依次执行全部可自动步骤，首个失败即停；结尾打印并写出 `<out>/CHECKLIST.md`
+（每步状态 + 剩余人工项）。
+
+| 步 | 内容 | 自动化 | 产物 |
+| --- | --- | --- | --- |
+| 1 | 反编译新版本 | 人工 | 新树 + 指纹 |
+| 2 | `version_delta.py`（内核映射未覆盖、反编译设置不一致会生成 action 项） | dry-run 也跑 | `manifest.json`、`report.md` |
+| 3 | `version_stubs.py`：每个变更/新增/删除内容模型一个工作包；`--check-skeletons` 把新模型骨架放进 sim Core 编译一遍（仅 execute） | dry-run 也跑 | `packets/INDEX.md`、`packets/<kind>/<ModelId>.md`、`index.json` |
+| 4 | `hook_drift.py`：`docs/hook-map.md` 最新附录的 Patched members 表、Events、FieldRefs 段，加 `mod/src` 里每个 `patch:`/`event:`/`fieldref:` 目标，逐个对新树查文件、类型、成员、返回类型、参数类型与参数名（Harmony 按名绑定） | dry-run 也跑；漂移不致命，生成 action 项 | `hook-drift.md/json` |
+| 5 | inventory 重生成 | 人工（会改 `sim/specs/inventory`） | |
+| 6 | `GameVersions.Default` / `[VersionExclusive]` | 人工 | |
+| 7 | 知识导出 | 提醒（`--export-knowledge` 且装有新版游戏才自动） | `knowledge/source/v<ver>` |
+| 8 | 构建 `--no-incremental`，0 警告 0 错误 | execute | `logs/build.log` |
+| 9 | 受影响测试（delta 的测试过滤 + content soak + run soak）；`--full-tests` 跑全量 | execute | `logs/tests.log` |
+| 10 | selftest 300 局 | execute | `logs/selftest.log` |
+| 11 | G0（`--bundles` 或环境变量 `STS2SIM_G0_BUNDLES`） | execute | `g0.json` |
+| 12 | G3（`--bundles-v2`） | execute | |
+| 13 | harness 搬迁（recorder/MCP 重建、规则证据、存档基线、benchmark minor bump） | 人工 | |
+
+工作包内容见 [`docs/version-stubs-demo-2026-11-02.md`](version-stubs-demo-2026-11-02.md)（v0.107.1 → v0.111.0：
+546 个包，新增 36 / 删除 3 / 唯一改动 279 / 纯批量 228，23 个骨架全部编译通过）。钩子检查在当前 v0.111.0 树上
+0 漂移（59 个 hook-map 目标 + 57 个 mod 目标全部 ok，0.3 s），在 v0.107.1 树上也是 0 漂移（26 个行号移动，仅提示）。
+
+### 合成版本对的实跑记录
+
+没有第二个真实新版本时，用 `scripts/version_synthetic.py` 从规则真值树造一棵"新版本"树：演示文档的五处规则改动
+（`Bash` 伤害 8 → 9、`LeafSlimeM` ClumpDamage 9 → 10、`Anchor` 格挡 10 → 12、`PowerCmd.Apply<T>` 单目标
+`amount == 0` 提前返回、`StandardActMap.maxElites` 15 → 16）+ 一处钩子签名改动（`RunManager.OnEnded(bool)` →
+`OnEnded(bool, bool)`）+ 一个新增模型（`SyntheticBash`，`Bash` 改类名）。每处改动必须在源树里恰好命中一次。
+
+```bash
+T=/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled
+S=<scratch>/version-update        # 本次：会话 scratchpad 下的 version-update/
+python3 scripts/version_synthetic.py "$T" "$S/tree-v0.111.1-synthetic" --force          # 7 处改动，约 2 s
+scripts/version_update.sh "$T" "$S/tree-v0.111.1-synthetic" --old-version 0.111.0 --new-version 0.111.1 \
+    --out "$S/dry-run"                                                                    # dry-run
+STS2SIM_G0_BUNDLES=/Users/Aincrad/dev-proj/hack-sts2/.claude/worktrees/sim-source-recreation-9392df/tmp/handoff/diff-bundles/bundles \
+scripts/version_update.sh "$T" "$S/tree-v0.111.1-synthetic" --old-version 0.111.0 --new-version 0.111.1 \
+    --out "$S/execute" --execute --check-skeletons                                        # execute
+```
+
+结果（2026-11-02，Mac M4 Pro，机器同时在跑 E3 农场，负载 10–50；代码即本提交）：
+
+| 步 | dry-run（3 s） | execute（476 s，退出码 0） |
+| --- | --- | --- |
+| 2 差分 | content 4、kernel 3（`PowerCmd`、`StandardActMap` 改动；`RunManager` 只动签名），内核映射 unmapped 0；计划：全量测试、content soak（卡/遭遇/遗物）、run soak、G0、G3 | 同左（2 s） |
+| 3 工作包 | 4 个：`CARD.SYNTHETIC_BASH` 新增（骨架）、`CARD.BASH` "DamageVar 8 -> 9"、`RELIC.ANCHOR` "BlockVar 10 -> 12"、`MONSTER.LEAF_SLIME_M` "DeadlyEnemies 9 -> 10"（A9+ 值） | 同左 + 骨架在 sim Core 内编译通过（0 诊断，3 s） |
+| 4 钩子 | DRIFT 1：`patch:RunManager.OnEnded` signature_changed（文档 `SerializableRun OnEnded(bool isVictory)`，树上 `OnEnded(bool isVictory, bool isAbandoned)`）；其余 115 个目标 ok | 同左 |
+| 8 构建 | 打印命令 | 0 警告 0 错误 |
+| 9 测试 | 打印过滤串（93 个测试类 + 3 个 content soak + run soak；`PowerCmd` 牵动大半测试） | 1057/1057 通过，PENDING 0（451 s，含 `SelfConsistencyTests` 的 F2/F7） |
+| 10 selftest | 打印命令 | 300/300 完成，0 崩溃，0 封顶，0 服务端错误 |
+| 11 G0 | 无 bundle 记为 skipped | 4/4 bundle，69/69 决策一致 |
+| 12 G3 | skipped（无 v2 bundle） | skipped |
+
+两次都以清单收尾，剩余人工项：反编译指纹；移植 4 个工作包；修 `OnEnded` 钩子（mod + hook-map 新附录 + 重建
+recorder）；inventory 重生成；`GameVersions.Default` → 0.111.1；导出 `knowledge/source/v0.111.1`；按计划跑全量
+测试（或 `--full-tests`）；录 1–2 局新版本对局补 G0/G3；harness 搬迁。合成树上 sim 没有移植改动，所以测试与 G0
+全绿只说明执行器本身走通，不说明 sim 已跟上 0.111.1——那正是工作包要做的事。
+
 ## 五步流水线
 
 1. **反编译新版本**（带引用程序集）→ `output/.../<ver>` 树 + manifest
@@ -111,6 +179,9 @@ python3 scripts/kernel_map.py [--tree <新树> --tree-version X.Y.Z] [--unmapped
 
 ## 状态
 
+- 2026-11-02（波次 J）：`version_stubs.py`（工作包 + 可编译骨架）、`hook_drift.py`（录像钩子漂移）、
+  `version_synthetic.py`（合成版本对）；`version_update.sh` 改为 dry-run 也跑分析三步、`--execute` 跑到 G0、结尾
+  输出清单；Linux 容器门 `scripts/ci_linux.sh`（`docs/gates.md` "Linux CI"）。单元测试 53 个。
 - 2026-11-02：内核映射 `sim/specs/kernel-map.json` + `scripts/kernel_map.py`（564 个内核文件全部判定：
   mapped 374、no_port 190）；`version_delta.py` 读映射并报告内核覆盖（变更内核文件有 sim 文件 45 → 95 / 134）；
   W0 清单补入 28 个漏判内容文件（27 `refactor_only`，`MusicBox` 为 `changed`）；单元测试 30 个
