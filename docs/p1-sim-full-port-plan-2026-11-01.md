@@ -183,3 +183,19 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   评测循环守卫，1082 测试 + 泄漏测试）、`8c65874` 把 Server 的显示数值改调 Core `PlayerView`。
   未闭合：`RunSim.Clone()` 打破已领取药水奖励与药水栏副本的别名（V2 发现，哈希差异，无玩法影响）；提示选项 >128 溢出未测；
   去克隆快路径未开始；Python bench 不预热池。
+
+- 2026-11-01（续 10，环境运维波 E2b）：一个 workflow（4 所有者 + 1 集成，5 个 Opus 代理，1.08M token，68 分钟）→ 集成 `c19fb4e`，无冲突。
+  `e2b/linux` `f842712`：`scripts/linux_validate.sh`（git archive → Huginn，用户级装 .NET 9 与 uv，远端 nohup 跑门并回传日志）；Huginn
+  （8 vCPU Xeon，Ubuntu 24.04）全量 1103/1103（19.5 分钟）、selftest 300/300、vec pytest 63、eval pytest 43、NativeAOT linux-x64 .so
+  通过（gcc 链接）；确定性计数与 Mac 完全一致；吞吐为 Mac 的 1/2.2–1/4.1（vec 1024×8 稳态 50.5k，AOT 61k，JIT 预热期 28k）；
+  加载器 hostfxr 发现改为跨平台。`e2b/docker` `e9bb9d2`：Dockerfile（多阶段，非 root，Server GC，healthcheck）、compose（N 副本 + vec
+  profile）、服务器 `--bind`；在东京 VM（arm64，2 vCPU）实测：冷构建 73 秒、镜像 578 MB、容器内 39/39 测试、selftest 200/200、
+  vec-check 通过、vec-bench 1024×4 15.7k；VM 已恢复原状。`e2b/protocol` `5c97a14`：`docs/sts2-bench-protocol-v0.2-2026-11-01.md`
+  （信息对等条款、官方种子集 std-a0-v1/std-a10-v1/smoke-a0-v1 带 sha256、按幕归一化的进度指标、运行身份、审计要求、榜单、变更记录），
+  评测器实现 v0.2 指标并可对旧运行重算：Sonnet A10（std-a10-v1）进度 0.310 [0.243, 0.377]，A0 smoke 0.594 [0.444, 0.744]，随机策略
+  0.065/0.051。`e2b/version-delta` `7871055`：`scripts/version_delta.py`（两棵反编译树 → 实质改动文件 → 映射到移植文件/规格引用/测试 →
+  分类与重跑计划，v0.107.1→v0.111.0 10 秒：实质改动 957，内容 546、内核 134、范围外 407）、`scripts/version_update.sh` 手册执行器、
+  `docs/version-delta-demo-2026-11-01.md`，19/19 单测。集成门：构建 0 警告，Server/Vec/Parity/EndToEnd/SelfConsistency 97/97，
+  selftest 100/100，G0 4/4 · 69/69，eval pytest 67，vec pytest 64，linux-x64 publish 通过。
+  未闭合：Docker 只验证了 arm64；Huginn 无容器运行时、根分区 91%、uv 缓存符号链接失效；版本差分的内核映射只覆盖 134 中的 45 个文件；
+  协议缺 Sonnet 在 std-a0-v1 的正式行和 NN 评测入口；E2 小票（Clone 药水别名、提示溢出测试、Python bench 预热、去克隆快路径）。
