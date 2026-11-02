@@ -107,7 +107,7 @@ potion never receives its own `BeforePotionUsed` / `AfterPotionUsed` (test `Used
 | Method | Game | Sim body |
 | --- | --- | --- |
 | `Obtain(rs, relicId, player)` | `Obtain<T>(player)` :394-400 (`:110`: `ModelDb.Relic<T>().ToMutable()`) | `RelicRegistry.Create(id)` then `Obtain` (cross-kind by id) |
-| `Obtain(rs, relic, player, index = -1)` | :402-425 (state machine :161-219, :177-193) | `AddRelicInternal(relic, index)` (B12 A10, `Entities.Players/Player.cs:883-903`); `FidelityFlag.ApproximatedRule` with `RelicCmd.ObtainRunLayerSite` (§10); `AfterObtained(rs)`; returns the relic |
+| `Obtain(rs, relic, player, index = -1)` | :402-425 (state machine :161-219, :177-193) | `AddRelicInternal(relic, index)` (B12 A10, `Entities.Players/Player.cs:883-903`); non-stackable: removed from the player's and the shared grab bag (:411-415, E3); `FloorAddedToDeck = TotalFloor` (:422, E3); `AfterObtained(rs)`; returns the relic |
 | `Remove(rs, relic)` | :427-438 (:255-257) | `relic.Owner.RemoveRelicInternal(relic)` (`Player.cs:905-922`), `AfterRemoved(rs)` |
 | `Replace(rs, original, replace)` | :440-451 (:342-362) | index of the original, `Remove`, `Obtain(…, index)` |
 | `Melt(rs, relic)` | :453-464 (:47-48) | `relic.Owner.MeltRelicInternal(relic)` (`Player.cs:924-947`: not wax, already melted, not owned → `InvalidOperationException`, then `IsMelted`, `Status = Disabled`), `AfterRemoved(rs)` |
@@ -274,7 +274,7 @@ re-ported powers the same way.
 
 | Site | Flag | Why |
 | --- | --- | --- |
-| `RelicCmd.Obtain` (`RelicCmd.ObtainRunLayerSite`) | `ApproximatedRule`, once per obtain | the grab-bag removals (:411-415) and `FloorAddedToDeck = TotalFloor` (:422) need run state that W1 does not have; no rule reads `FloorAddedToDeck` (only save and log code), and no relic is generated in a W1 combat |
+| `RelicCmd.Obtain` (`RelicCmd.ObtainRunLayerSite`) | none since E3 (2026-11-02) | the grab-bag removals (:411-415) and `FloorAddedToDeck = TotalFloor` (:422) are ported; the farm save check found relics pulled again from the bags (`sim/specs/diff-report-e3-farm-2026-11-02.md`) |
 
 No other knowing deviation: every other omitted step is UI, a map-point history write (null without a map point) or
 listed in §1-§7 as identical.
