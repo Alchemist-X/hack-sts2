@@ -1,0 +1,17 @@
+{
+  "name": "a0-s10",
+  "ascension": 0,
+  "content": "ported_only",
+  "games": [
+    {"seed": "E1A0IC01", "character": "IRONCLAD"},
+    {"seed": "E1A0IC02", "character": "IRONCLAD"},
+    {"seed": "E1A0SI01", "character": "SILENT"},
+    {"seed": "E1A0SI02", "character": "SILENT"},
+    {"seed": "E1A0DE01", "character": "DEFECT"},
+    {"seed": "E1A0DE02", "character": "DEFECT"},
+    {"seed": "E1A0RE01", "character": "REGENT"},
+    {"seed": "E1A0RE02", "character": "REGENT"},
+    {"seed": "E1A0NE01", "character": "NECROBINDER"},
+    {"seed": "E1A0NE02", "character": "NECROBINDER"}
+  ]
+}

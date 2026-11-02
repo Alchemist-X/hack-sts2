@@ -1,0 +1,27 @@
+{
+  "name": "a0-s20",
+  "ascension": 0,
+  "content": "ported_only",
+  "games": [
+    {"seed": "E1A0IC01", "character": "IRONCLAD"},
+    {"seed": "E1A0IC02", "character": "IRONCLAD"},
+    {"seed": "E1A0IC03", "character": "IRONCLAD"},
+    {"seed": "E1A0IC04", "character": "IRONCLAD"},
+    {"seed": "E1A0SI01", "character": "SILENT"},
+    {"seed": "E1A0SI02", "character": "SILENT"},
+    {"seed": "E1A0SI03", "character": "SILENT"},
+    {"seed": "E1A0SI04", "character": "SILENT"},
+    {"seed": "E1A0DE01", "character": "DEFECT"},
+    {"seed": "E1A0DE02", "character": "DEFECT"},
+    {"seed": "E1A0DE03", "character": "DEFECT"},
+    {"seed": "E1A0DE04", "character": "DEFECT"},
+    {"seed": "E1A0RE01", "character": "REGENT"},
+    {"seed": "E1A0RE02", "character": "REGENT"},
+    {"seed": "E1A0RE03", "character": "REGENT"},
+    {"seed": "E1A0RE04", "character": "REGENT"},
+    {"seed": "E1A0NE01", "character": "NECROBINDER"},
+    {"seed": "E1A0NE02", "character": "NECROBINDER"},
+    {"seed": "E1A0NE03", "character": "NECROBINDER"},
+    {"seed": "E1A0NE04", "character": "NECROBINDER"}
+  ]
+}
