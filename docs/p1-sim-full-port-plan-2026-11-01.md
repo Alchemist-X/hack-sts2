@@ -209,3 +209,17 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   0.065 / 0.051。本日 API 费用约 $110。分支 `claude/sts2-eval-pipeline-a3aee7` 领先 `293e7aa` 共 40 余提交，全部本地未推送。
   **下一步**（用户优先级：先把环境搭好）：E3 对账放量等指令；Docker amd64 验证与并行机器选型；Huginn 管理员事项；版本差分内核映射补全；
   协议的 NN 评测入口；观测压缩降本；E4 等周额度重置（11-07）。
+
+- 2026-11-02 06:20（续 12，环境搭建收官）：用户 02:50 明确"先把环境搭完，不做训练、不做更多评测"后，停掉 E4 搜索波，改派环境收尾波 J
+  （6 所有者，集成 `939ceb5`，全门绿 1131/1131）：快路径（静态提示位点表 153 个模型，72–83% 步数免拷贝，每步 CPU −5–9%）、确定化克隆
+  （`CloneDeterminized` / `sts2vec_clone_determinized`）、`sim/ENV_SPEC.md`（由 schema 生成并校验）+ 与策略无关的 `sts2vec eval`
+  （随机 0.087/0.045、first 0.194/0.103、启发式 0.221/0.110）、UI 对照审计 `docs/parity-audit-2026-11-02.md`（修 AMBERGRIS 泄漏、39 个事件
+  选项数值、牌堆/Boss/Ancient/升级预览补齐）、`scripts/sts2_cluster.sh up N --host raven` + `sts2eval --urls` + AOT 镜像 +
+  `docs/capacity-2026-11-02.md`（Huginn 26–28 随机局/秒/主机，容器内 AOT Vec 62k env-steps/s）、`version_stubs.py` / `hook_drift.py` /
+  `version_update.sh --execute`（合成版本升级全流程 476 秒）+ `ci_linux.sh`。E3 整波（`c3df586`）：REC recorder 安装验证、v0.111 MCP 构建修复、
+  4 实例农场 2 小时（39 会话、521 存档锚点、162 回放）、导出器锚点修复与 5 处移植修复（存档导入玩家 combat id、6 个 weak 遭遇 Tags、战斗结束钩子
+  room、`RelicCmd.Obtain` 抓袋移除、AUTOMATION 显示值），G3 整局 30/39 到终点（3,320/3,324）、锚点段 778/785、存档起点段 774/782
+  （3,601/3,603）、人类 G3 1,921/1,924（原 1,532/1,537）、战斗闸 117 段 1,599/1,607；7 处开放分歧与 8 次真游戏崩溃待分诊；MCP 已卸。
+  紧凑观测 A/B 通过（A0 0.591 vs 0.499、A10 0.302 vs 0.310，每步 −17/−18%），v0.3 默认紧凑；最终环境正式行：Sonnet 5.5 A0 **0.601**
+  [0.512, 0.691]、A10 **0.316** [0.227, 0.404]，0 胜。五条标准打分 8/8/9/8/8，保真 7；剩余缺口见 `docs/HANDOVER.md` §1.6。
+  Huginn：Docker 已装（containerd 根已迁到 `/data/raven/containerd`），uv 缓存修复，根盘 91%。本日 API 费用合计约 $230。

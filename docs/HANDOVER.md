@@ -124,7 +124,7 @@ dotnet run -c Release --project sim/Sts2Sim.Diff -- g3 <bundles> --report <r>.js
 
 - 种子集：`std-a0-v1`（A0，20 局）、`std-a10-v1`（A10，20 局）、`smoke-a0-v1`（冒烟 10 局），文件在 `sim/tools/eval/seedsets/`，带 sha256。
 - 头牌指标：按幕归一化的进度均值 [95% CI] 与 Wilson 胜率；副指标：层数、步数、非法/卡死/封顶、token、费用、耗时。
-- 当前榜单（Sonnet 5.5，effort low，招式隐藏）：A0 正式 0.499 [0.410, 0.588]、A10 正式 0.310 [0.243, 0.377]、随机 0.065 / 0.051；0 胜。
+- 当前榜单（v0.3 正式行，服务器 `c3df586`，紧凑观测、招式隐藏，Sonnet 5.5 effort low）：A0 0.601 [0.512, 0.691]、A10 0.316 [0.227, 0.404]，0 胜；sim NN 赛道：随机 0.087 / 0.045，启发式 0.221 / 0.110。历史行见协议 §8。
   这两行测于波次 J 对等审计之前的观测（服务器文本/紧凑 compact-v1）；之后的观测多了 Boss/Ancient、三堆牌等行（compact-v2），新跑的行需注明口径。
 - NN 赛道（`sts2vec eval`，同一计分）：random 0.087 / 0.045、first 0.193 / 0.102、heuristic 0.221 / 0.104（A0 / A10；协议 §8，测于 E3 规则修复之前）。
   E3 合入后重测：random 0.087 / 0.045、first 0.194 / 0.103、heuristic 0.221 / 0.110（协议行未改）。
