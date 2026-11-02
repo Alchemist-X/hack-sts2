@@ -10,6 +10,9 @@ dependencies = [
 [project.scripts]
 sts2vec = "sts2vec.cli:main"
 
+[project.entry-points.pytest11]
+sts2vec = "sts2vec._pytest_plugin"
+
 [dependency-groups]
 dev = [
     "pytest>=8",
@@ -24,3 +27,7 @@ packages = ["sts2vec"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "full: needs the V1 encoder and V2 env-core (skipped with reason 'needs V1/V2' against the scaffold stubs)",
+    "slow: long-running (soak / multi-process)",
+]
