@@ -9,13 +9,13 @@ are zero-filling stubs, so every observation table except `global_i.phase/decisi
 
 ```bash
 dotnet build sim/Sts2Sim.sln -c Release          # → sim/Sts2Sim.Vec/bin/Release/net9.0/Sts2Sim.Vec.dll
-uv run --project sim/tools/vec pytest -q sim/tools/vec
+uv run --project sim/tools/vec pytest -q
 uv run --project sim/tools/vec sts2vec check
 uv run --project sim/tools/vec sts2vec bench --envs 1024 --threads 8 --steps 500
+scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so (STS2VEC_AOT_LIB)
 ```
 
-(`pytest -q` without the path, run from the repo root, also collects `sim/tools/eval` tests; pass the path as the
-repo's other uv projects do, or run from `sim/tools/vec`.)
+(`pytest -q` from the repo root is scoped to `sim/tools/vec` by the package's pytest plugin; see Python API.)
 
 - `Sts2Sim.Vec` is a `net9.0` class library referencing only `Sts2Sim.Core` (`EnableDynamicLoading`,
   `ServerGarbageCollection`, `ConcurrentGarbageCollection=false`, `TieredPGO`, `InvariantGlobalization`).
@@ -136,17 +136,38 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 
 ## Python API (§D6)
 
+Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full reference: `sim/tools/vec/README.md`.
+
+| Module | Content |
+| --- | --- |
+| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, Homebrew `dotnet@9/libexec`, standard roots, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 14 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
+| `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
+| `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `len`). |
+| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
+| `cli.py` | `sts2vec bench` (env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
+
 ```python
-from sts2vec import VecEnv, PoolSpec
+from sts2vec import VecEnv, PoolSpec, STATUS, random_actions
 with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256)) as env:
     obs = env.reset()                                   # dict of env-owned (N, *shape) arrays (views)
-    obs, reward, terminated, truncated, status, info = env.step(actions)   # info: episode_id, step_index, start_entry, last_episode
+    obs, reward, terminated, truncated, status, info = env.step(random_actions(rng, obs["cand_n"]))
     env.pool.add_fresh("SILENT", seed="S1"); env.pool.add_save(path); len(env.pool)
     e = env.snapshot(0); env.restore(3, e); env.state_hash([0, 3]); env.candidates(0)
 ```
 
-`env.schema` is the parsed JSON (`schema["hand"].fields`, `schema.vocab.cards[i]`, `schema.vocab.cards.index_of(id)`,
-`schema.vocab.enums["RunActionKind"]`). Buffers: `env.buffers[name]`.
+- `obs` = every buffer except `reward/terminated/truncated/status/episode/last_episode` (those come back as the step
+  signals and `info`); arrays are views valid until the next call (`copy=True` copies).
+- Inputs are validated in Python before the call: `actions`/`mask`/`start_ids` must have shape `(N,)` (no broadcasting)
+  and integer dtype.
+- Tests (`uv run --project sim/tools/vec pytest -q`): the tests that need V1/V2 (`test_full.py`, the fixture-save
+  3-candidate test) skip with reason `needs V1/V2` while `cand_n`/`hp` are 0 after a reset and run automatically
+  afterwards; `STS2VEC_REQUIRE_FULL=1` makes them fail instead (integrator gate). The NativeAOT round-trip test exists
+  only when `sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.<dylib|so>` exists.
+- The package registers a pytest plugin (`sts2vec._pytest_plugin`, entry point `pytest11`): when pytest runs without
+  paths and without a config file (e.g. the repo root), collection is limited to `sim/tools/vec`.
+- NativeAOT: `scripts/vec_publish_aot.sh` publishes with `PublishAot`, `NativeLib=Shared`, `ServerGarbageCollection`,
+  `TrimmerRootAssembly Sts2Sim.Core` (injected through `CustomAfterMicrosoftCommonTargets`; no csproj change),
+  `LIBRARY_PATH=/opt/homebrew/lib`, into `bin/aot-artifacts` (separate obj) and copies the library to `bin/aot/`.
 
 ## Known gaps / notes for owners
 
