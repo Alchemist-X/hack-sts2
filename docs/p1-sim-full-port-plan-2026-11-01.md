@@ -167,3 +167,19 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   **已知问题**：观测的敌人意图带 `move`/`move_name`（下一招名字），真游戏只显示意图，属隐藏信息泄漏，须改为默认关闭后重跑基线；
   能力 `detail` 暴露施加者/目标；7/81 事件选项文案为 `?`；商店 base_price 为推算值；评测器缺循环守卫。E2 合同 Part D 已提交
   `6114e81`，E2 workflow（脚手架 → encoder/env-core/python → 集成）已启动。
+
+- 2026-11-01（续 9，E2 训练接口）：合同 `sim/CONTRACTS.md` Part D（`6114e81`）冻结后，一个 workflow 跑完（脚手架 1 + 所有者 3 + 集成 1，
+  5 个 Opus 代理，1.35M token，74 分钟）：脚手架 `af640b7`（`sim/Sts2Sim.Vec`：Schema/Vocab/Status/14 个 `sts2vec_*` C ABI 导出、
+  `sim/tools/vec` 的 hostfxr 加载器骨架）→ `e2/encoder` `d1bcb3a`（玩家视角实体表编码器，`SimProjector` 的可见性/显示数值/意图/费用/可玩
+  辅助函数迁入 Core `Combat/Pipeline/PlayerView.cs`，Diff 与 Server 改调 Core 版本；抽牌堆泄漏测试、与服务器观测的一致性测试）、
+  `e2/env-core` `c234ffd`（候选动作表、快照起点池、`VecEnv` 批量推进与同步自动重置、ABI 实现、`Sts2Sim.Bench vec`、确定性/线程/ABI 测试）、
+  `e2/python` `e74907b`（`sts2vec`：ctypes + hostfxr 加载、按 schema 分配 numpy 缓冲、`VecEnv`、`bench`/`check`/`digest` CLI、
+  `scripts/vec_publish_aot.sh`）→ 集成 `cc89132`（一处 VEC.md 冲突；集成修复：`FillEpisodeSummary` 统一、Fairy in a Bottle 战斗外复活
+  改走 run 层 Heal）。门：构建 0 警告，1,098/1,098 测试（新增 21 个 Vec 测试），PENDING 0，10⁴ soak 0 失败，G0 4/4 · 69/69，
+  Python 63/64 通过（含 NativeAOT dylib 往返），`sts2vec check` 1 线程 vs 8 线程哈希与观测字节一致，两进程 256 局×300 步摘要一致，
+  随机 soak 1024 局×2000 步 0 sim_error/0 content_gap/0 illegal。**吞吐**（C#，Server GC，随机策略，A0）：64 局 8 线程 89k、
+  1024 局 1/8 线程 27k/116k、4096 局 8 线程 144k env-steps/s；Python 1024 局 8 线程 73k（池未预热）；每局观测 26.7 KB；
+  战斗基准 142k 决策/秒、Clone 2.17 µs。随后 `511f574` 合并 `e1/parity-fixes`（`c64217d`：意图 move 默认隐藏、能力 detail 收口、
+  评测循环守卫，1082 测试 + 泄漏测试）、`8c65874` 把 Server 的显示数值改调 Core `PlayerView`。
+  未闭合：`RunSim.Clone()` 打破已领取药水奖励与药水栏副本的别名（V2 发现，哈希差异，无玩法影响）；提示选项 >128 溢出未测；
+  去克隆快路径未开始；Python bench 不预热池。
