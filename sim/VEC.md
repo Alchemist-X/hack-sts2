@@ -52,7 +52,47 @@ repo's other uv projects do, or run from `sim/tools/vec`.)
 - Pool: fresh entries create their template with `RunSim.NewRun` on first use and cache it (up to `pool_cache`
   templates); resets `Clone()` the template under a per-entry lock. Save entries use `RunImporter.FromSave` (checked)
   with the env's content filter. Snapshots hold `Clone()` of a slot. `config.pool.fresh` with `count = K` adds K
-  entries: character `characters[i % len]`, seed `"<seed_prefix>-<character>-<i>"`.
+  entries: character `characters[i % len]`, seed `"<seed_prefix>-<character>-<i>"` (interleaved, so any prefix of the
+  pool covers every character). Beyond `pool_cache` templates a fresh entry runs `NewRun` on every start (≈ 16 ms).
+- Save entries whose import stops at a prompt (a choice during the load) are re-imported from the parsed save on every
+  start instead of cloned, because `RunSim.Clone` shares the pending load room (`Pending.Load`) between clones. The
+  fixture save and every save point verified so far import without a pending prompt, so they clone normally.
+- Threads: `Parallel.For(0, N, MaxDegreeOfParallelism = threads)`; a slot is touched by one worker per call; the pool's
+  entry list is lock-protected and each entry's template creation + `Clone()` runs under its own lock. Verified: 256
+  envs × 300 steps on 1 vs 8 threads and two instances give byte-identical buffers after every step and equal
+  `StateHash` per slot; 1,024 envs × 200 steps on 1 vs 12 threads likewise.
+- Per-slot scratch: `VecSlot.Legal` (`List<RunAction>`, capacity 64) is refilled by `RunSim.LegalActions(list)` after
+  every change and is the action table `step` indexes; no per-step allocation in VecEnv beyond the sim's own.
+- Test hook: `VecEnv.FaultInjector = (slot, action) => Exception?` throws the returned exception in place of
+  `RunSim.Step` (classification and auto-reset apply). Null in production.
+
+### Candidate table (`cand`, `CandidateTable.Fill`)
+
+Row `r < cand_n` is `RunSim.LegalActions()[r]` (same order); rows `>= cand_n` are zero. `cand_n = min(legal, 192)`;
+more legal actions set `CANDIDATE_OVERFLOW` and only the first 192 are selectable (constructible: a PileSelect over a
+250-card draw pile). `CandidateTable.ToAction(row)` inverts a row to its `RunAction` (kind, A, B).
+
+| Column | Value (−1 = does not apply unless stated) |
+| --- | --- |
+| `kind`, `A`, `B` | the `RunAction` fields verbatim (`RunActionKind` value; A/B as in CONTRACTS.md §C1, −1 = none) |
+| `hand_slot` | A for `PlayCard` (index into `hand`) |
+| `target_slot` | B for `PlayCard` / `UsePotion` when B ≥ 0 (index into `enemies`); −1 for self/none (B = −1) and for pets (B ≤ −3 = `Allies[-2 - B]`: read B) |
+| `potion_slot` | A for `UsePotion` / `DiscardPotion` (index into `potions`) |
+| `option_index` | A for `Travel` (rank of the destination among legal points sorted by (col, row)), `ClaimReward`, `PickRewardCard`, `RewardAlternative`, `BuyEntry`, `ChooseRestOption`, `ChooseEventOption`, `PromptSelect` (index into `prompt_options`) |
+| `card_id` | cards vocab id (0 = none) of the played hand card, of the picked card-reward card, or of a prompt option that is a card (not for Bundle prompts; on grid prompts only ids that are not also relic/potion ids) |
+| `target_uid` | `CombatId` of the targeted monster (= `enemies.uid`), 0 = none |
+
+## Bench
+
+```bash
+DOTNET_gcServer=1 dotnet run -c Release --project sim/Sts2Sim.Bench -- vec [envs=1024] [threads=8] [steps=500] [ascension=0] [pool=1024]
+```
+
+In-process through the real exports (`delegate* unmanaged` → `[UnmanagedCallersOnly]`), NativeMemory buffers, seeded
+uniform-random candidate policy, all five characters. Pool templates are warmed before the timed window. Prints
+env-steps/s (slot steps with an action ≥ 0), ms per batch (avg/min/max), resets/s, episode ends, error counts, GC mode
+and collections, bytes per env. `DOTNET_gcServer=1` matches the shipped runtimeconfig (the Bench exe itself defaults to
+Workstation GC, ~3× slower here). Rows go to `sim/BENCH.md` ("Vec (E2)").
 
 ## C ABI (§D5, frozen)
 
@@ -77,6 +117,11 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 - Return 0 ok / −1 error. Every failing export stores `"<ExceptionType>: <message>"` globally (`h = 0`) and, when the
   handle is valid, on the env (`slot = -1`). Per-slot problems go to `status` and the slot's last error (full
   exception text). No exception crosses the ABI. Each env serialises its own calls with a lock.
+- Validation: an invalid handle, a slot outside `0..N-1` (`last_error` also accepts −1), a pool entry outside
+  `0..count-1`, a null or incomplete buffer table, a null actions pointer, `n < 0` or null pointers with `n > 0` in
+  `state_hash`, a start id `>= pool_count` (masked-in slots only), malformed or unknown-key JSON, an unknown character,
+  ascension outside 0..10 → −1 with the text, the env unchanged and usable.
+- `sts2vec_state_hash` writes 0 for a slot with no run; `sts2vec_snapshot` of an empty slot is an error.
 - `config_json`: `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC",
   "content": "ported_only" | "all", "pool": {"fresh": {"characters": [...], "ascension": 0, "count": 4096,
   "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096}`; `num_envs` required, unknown keys rejected.
@@ -121,8 +166,8 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 | 23 | `rest` | int32 | [9, 2] | option_id, enabled |
 | 24 | `event_options` | int32 | [8, 6] | key_hash, ordinal, enabled, locked, proceed, relic_id |
 | 25 | `prompt_options` | int32 | [128, 5] | item_id, upgrade, picked, kind_of_item (PromptItemKind), ordinal |
-| 26 | `cand` | int32 | [192, 9] | kind, A, B, hand_slot, target_slot, potion_slot, option_index, card_id, target_uid — **TODO(V2)** |
-| 27 | `cand_n` | int32 | [] | candidates (0 when terminal) — stub 0, **TODO(V2)** |
+| 26 | `cand` | int32 | [192, 9] | kind, A, B, hand_slot, target_slot, potion_slot, option_index, card_id, target_uid (see "Candidate table") |
+| 27 | `cand_n` | int32 | [] | candidates = min(len(LegalActions()), 192); 0 when terminal, finished or empty |
 | 28 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
 | 29 | `terminated` | uint8 | [] | episode ended at Victory/Defeat |
 | 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
@@ -445,8 +490,15 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
 
 ## Known gaps / notes for owners
 
-- `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1);
-  V2 should confirm it is never mutated before relying on save entries under parallel resets.
+- `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1).
+  Handled in `StartPool`: a save that imports to a pending prompt is re-imported per start. A *snapshot* of a slot that
+  started from such a save and is still at that load prompt would still share it (not observed).
+- **Clone fidelity (Core, not fixed here):** `RunSim.Clone()` does not preserve the aliasing between a claimed
+  `PotionReward.Potion` and the same potion in the belt (`PotionReward` clones its potion with `CloneFor`). After a
+  clone, discarding that potion while the rewards screen is still open flags only the belt copy
+  (`HasBeenRemovedFromState`), so `clone.Step(a)` and `original.Step(a)` hash differently. No gameplay effect found (the
+  reward copy is not a listener), but snapshot/restore and template clones are hash-equivalent to the original only up
+  to this flag. Tests compare clones with clones (or with a second materialisation of the start entry).
 - `hand` has no star-cost or affliction-amount column (not in §D3.1).
 - The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
   episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).

@@ -10,7 +10,7 @@ namespace Sts2Sim.Tests;
 /// Sts2Sim.Vec tests (CONTRACTS.md §D7). Scaffold: schema + ABI. V1 adds encoder/leak/parity tests (T2, T3),
 /// V2 adds env/candidate/pool/determinism/thread tests (T1, T4-T8).
 /// </summary>
-public static unsafe class VecTests
+public static unsafe partial class VecTests
 {
     /// <summary>§D3.1 buffer order (the void** order).</summary>
     private static readonly string[] BufferOrder =

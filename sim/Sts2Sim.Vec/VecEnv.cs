@@ -204,6 +204,13 @@ public sealed unsafe class VecEnv
     /// <summary>Env-level last error (slot -1).</summary>
     public string? LastError { get; set; }
 
+    /// <summary>
+    /// Test/debug hook: called with (slot, action) right before <c>RunSim.Step</c>; a returned exception is thrown in place of
+    /// the step, exactly as if the sim had thrown it (CONTENT_GAP / SIM_ERROR classification and auto-reset apply).
+    /// Must be thread-safe (it runs on the worker threads). Null in production.
+    /// </summary>
+    public Func<int, RunAction, Exception?>? FaultInjector { get; set; }
+
     public int Threads
     {
         get => _threads;
@@ -328,7 +335,12 @@ public sealed unsafe class VecEnv
             {
                 try
                 {
-                    s.Sim.Step(s.Legal[action]);
+                    var act = s.Legal[action];
+                    if (FaultInjector?.Invoke(i, act) is { } injected)
+                    {
+                        throw injected;
+                    }
+                    s.Sim.Step(act);
                     s.StepIndex++;
                     if (s.Sim.IsTerminal)
                     {
@@ -490,25 +502,8 @@ public sealed unsafe class VecEnv
         le[LastEpCol.EndKind] = (int)end;
         try
         {
-            if (s.Sim?.State is { } rs)
-            {
-                le[LastEpCol.Floor] = rs.TotalFloor;
-                le[LastEpCol.Act] = rs.CurrentActIndex;
-                if (rs.Players.Count > 0)
-                {
-                    le[LastEpCol.FinalHp] = rs.Players[0].CurrentHp;
-                    le[LastEpCol.FinalMaxHp] = rs.Players[0].MaxHp;
-                }
-                for (int h = rs.MapPointHistory.Count - 1; h >= 0; h--)
-                {
-                    var room = rs.MapPointHistory[h].Rooms.LastOrDefault(r => r.RoomType is RoomType.Monster or RoomType.Elite or RoomType.Boss);
-                    if (room != null)
-                    {
-                        le[LastEpCol.LastEncounterId] = Vocab.Encounter(room.ModelId);
-                        break;
-                    }
-                }
-            }
+            if (s.Sim is { } sim)
+                ObservationEncoder.FillEpisodeSummary(sim, le);
         }
         catch (Exception)
         {

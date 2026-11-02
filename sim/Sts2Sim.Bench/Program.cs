@@ -15,6 +15,10 @@ public static class Program
         {
             return RunSoakBench(args);
         }
+        if (args.Length > 0 && args[0] == "vec")
+        {
+            return VecBench.Run(args);
+        }
         if (args.Length > 0 && args[0] == "nightly-soak")
         {
             return NightlySoak.Run(args);

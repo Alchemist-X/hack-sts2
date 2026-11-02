@@ -108,3 +108,17 @@ Machine moderately loaded (load average 3.3 to 4.4). Back at the integrate-2 lev
 | Row | decisions/s | Clone() | StateHash() |
 |---|---|---|---|
 | E1 integrate | 143,509 | 2.179 us | 2.566 us |
+
+## Vec (E2): batched VecEnv through the C ABI
+
+`DOTNET_gcServer=1 dotnet run -c Release --project sim/Sts2Sim.Bench -- vec <envs> <threads> <steps> <ascension> [pool]`
+(in-process exports, NativeMemory buffers, uniform-random candidate policy, all five characters, pool templates warmed
+before the window; env-steps/s counts slot steps with an action ≥ 0). Target (CONTRACTS.md §D7): ≥ 50k env-steps/s at
+N = 1024, 8 threads, A0. The integrator appends rows (C# `vec` and Python `sts2vec bench`, N ∈ {64, 1024, 4096} ×
+threads {1, 8}).
+
+| Row | N | threads | GC | env-steps/s | ms/batch (avg / min / max) | resets/s | bytes/env | load avg |
+|---|---|---|---|---|---|---|---|---|
+| V2 env-core, stub encoder (2026-11-01, 500 steps, pool 1024) | 1024 | 8 | server | 164,521 | 6.22 / 5.25 / 20.5 | 2,341 | 26,710 | 10.3 |
+| V2 env-core, stub encoder (same session) | 1024 | 8 | workstation | 57,575 | 17.8 / 11.8 / 30.7 | 819 | 26,710 | 10.5 |
+| V2 env-core, stub encoder (same session, 200 steps) | 1024 | 1 | server | 25,387 | 40.3 / 35.6 / 56.5 | 348 | 26,710 | 10.6 |
