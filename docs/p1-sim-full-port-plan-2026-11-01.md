@@ -147,3 +147,23 @@ W0 理解与设计 ──► W1 内核扩展 ──► W1.5 差分闸 G1 ──�
   TEA 系遗物的战斗开局运行时状态、`.mcr` v0.107.1 模型表、sts2rec 一个计时型 flaky 测试。
   三局 Sonnet 试玩完成（Silent 通关），服务器 polish 未完成（清单在 `docs/handoff-2026-11-01.md` §8）。本会话到此结束，
   后续在新对话按交接文档做 E1 → E2。
+
+- 2026-11-01（续 8，E1 评测流水线，分支 `claude/sts2-eval-pipeline-a3aee7`，从 `293e7aa` 快进）：E1 一个 workflow 跑完
+  （脚手架 1 + 所有者 3 + 集成 1，共 5 个 Opus 代理，1.26M token，43 分钟）。脚手架 `353f07d` 把 `ObservationBuilder` 拆成按屏幕的
+  partial 文件并接好 `name`/`text` 钩子；所有者 `e1/rules-text` `03d20f4`（知识库文案加载与 SmartFormat 子集渲染、`/catalog?kind=`、
+  任意顺序多选 pick、事件选项费用、商店打折与 base_price、全地图网格、`scripts/export_sts2_localization.py` 从游戏 PCK 导出
+  `knowledge/source/v0.111.0/{powers,events,...}.jsonl`）、`e1/combat-view` `9056b0f`（敌人稳定 uid 与下标规则、按 uid 的步骤日志 v2 含
+  敌人回合叙事与击杀、`effective` 有效数值走内核 `CardPreview`、危险行与致命倒计时、SURROUNDED 面向、`GET /games/{id}/piles`）、
+  `e1/eval-runner` `94bb476`（`sim/tools/eval` uv 项目 `sts2eval`：直接调 Anthropic SDK 的异步并发对局器、固定种子集 a0-s10/a0-s20/a10-s20、
+  每步无状态提示 + 系统提示缓存、非法回复重问与回退、每局 JSONL 转录、价格表计费、`report.md/json`）。集成 `f8cfced`：构建 0 警告，
+  1,077/1,077 测试，PENDING 0，10⁴ 整局 soak 0 失败，内容 soak 0 失败，selftest 300 局 0 崩溃，G0 4/4 · 69/69，基准 143.5k 决策/秒、
+  Clone 2.18 µs，eval pytest 31 通过，随机策略 10 局端到端，sts2rec 701 通过。文案覆盖：625 卡、306 遗物、66 药水、296 能力、70 事件、
+  126 敌人、14 关键词。后续两处修正：`eab3838`（SDK 对 brotlicffi 1.0.9.2 的解压报错，改请求 gzip）、`fb9d38c`（模型常把 token 写在
+  推理之后，解析器改为取最后一行合法 token，重问率从 19% 归零）。
+  **Sonnet 5.5 基线**（a0-s10，A0，effort low，adaptive thinking，并发 10，服务器 `fb9d38c`）：10 局 0 胜（9 负 1 封顶），层数均值 29.7、
+  中位 27、最高 48（Ironclad 与 Defect 各一局倒在三幕 Boss），进度 61.9%；步数均值 527；非法动作 0.1/局；5,284 次调用，
+  输入 8.38M / 缓存读 10.83M / 输出 0.63M token，合计 $25.26（$2.53/局），每局 18.3 分钟。封顶的一局（Silent E1A0SI02）在 31 层奖励屏
+  循环 `reward 2`→`skip` 700 步（卡牌奖励 skip 不消耗奖励，代理始终不 `proceed`）。
+  **已知问题**：观测的敌人意图带 `move`/`move_name`（下一招名字），真游戏只显示意图，属隐藏信息泄漏，须改为默认关闭后重跑基线；
+  能力 `detail` 暴露施加者/目标；7/81 事件选项文案为 `?`；商店 base_price 为推算值；评测器缺循环守卫。E2 合同 Part D 已提交
+  `6114e81`，E2 workflow（脚手架 → encoder/env-core/python → 集成）已启动。
