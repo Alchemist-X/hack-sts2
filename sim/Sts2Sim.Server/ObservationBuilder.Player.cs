@@ -33,15 +33,8 @@ public static partial class ObservationBuilder
         {
             node["stars"] = p.Stars;
         }
-        var powers = new JsonArray();
-        if (cs != null)
-        {
-            foreach (var (id, amount) in Describe.Powers(cs, p))
-            {
-                powers.Add(new JsonObject { ["id"] = id, ["amount"] = amount, ["text"] = Rt(() => RulesText.PowerText(id)) });
-            }
-        }
-        node["powers"] = powers;
+        node["powers"] = cs != null ? PowerNodes(cs, p) : new JsonArray();
+        node["facing"] = cs != null ? Describe.Facing(p) : null;
         var relics = new JsonArray();
         foreach (var relic in p.Relics)
         {
