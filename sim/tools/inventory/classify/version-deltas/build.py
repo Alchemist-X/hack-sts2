@@ -5,6 +5,8 @@ Union of
       is not `same`;
   (b) the diff gate's mechanical diff in corpus-inventory.json version_diff_v0_107_1_vs_v0_111_0:
       content_files (rule-diverging estimate), version_exclusive_content (only in one tree) and engine_files;
+  (c) triage.py MANUAL_VD: content files with a unique edit that scripts/version_delta.py found and (a) and (b)
+      missed (classifier `same`, not gate-flagged), each read by hand;
 then one triage per entry: changed | refactor_only | unknown, with evidence lines in both trees.
 
 Triage order: a manual or IL record in triage.py; pools by a mechanical membership diff of their generator
@@ -30,7 +32,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "normalize"))
 import common  # noqa: E402
 import deps as D  # noqa: E402
 import evidence as EV  # noqa: E402
-from triage import MANUAL, STATUS_TRIAGE, V107, V111  # noqa: E402
+from triage import MANUAL, MANUAL_VD, STATUS_TRIAGE, V107, V111  # noqa: E402
 
 SCHEMA = "sts2sim.inventory.version-deltas/v1"
 GENERATED_BY = common.generator("version-deltas", "build.py", "triage.py", "evidence.py")
@@ -260,6 +262,8 @@ def main():
     index = V107Index()
     keys = set(k for k, c in classified.items() if ((c["entry"].get("version_delta_v107") or {}).get("status") or "same") != "same")
     keys |= set(gate_files) | set(exclusive)
+    vd_keys = set(tuple(k.split(":", 1)) for k in MANUAL_VD)
+    keys |= vd_keys
     kind_rank = dict((k, i) for i, k in enumerate(KIND_NS))
     entries = []
     for key in sorted(keys, key=lambda k: (kind_rank[k[0]], k[1])):
@@ -312,11 +316,12 @@ def main():
         if key in exclusive:
             rec["diff_gate"]["exclusive"] = exclusive[key]
         rec["sources"] = ("both" if (c and status not in (None, "same")) and (gx or key in exclusive)
-                          else "classifier" if (c and status not in (None, "same")) else "diff_gate")
+                          else "classifier" if (c and status not in (None, "same"))
+                          else "diff_gate" if (gx or key in exclusive) else "version_delta")
 
         lines111 = read_lines(v111_abs(rel111)) if rel111 else None
         lines107 = read_lines(v107_abs(rel107)) if rel107 else None
-        man = MANUAL.get(rec["key"])
+        man = MANUAL.get(rec["key"]) or MANUAL_VD.get(rec["key"])
         extra = OrderedDict()
         if man:
             triage, basis, note, ev = man
@@ -419,7 +424,7 @@ def main():
     counts["by_triage"] = OrderedDict((t, sum(1 for e in entries if e["triage"] == t)) for t in TRIAGE_LEGEND)
     counts["by_delta_type"] = OrderedDict((t, sum(1 for e in entries if e["delta_type"] == t)) for t in DELTA_TYPES)
     counts["by_basis"] = OrderedDict((b, sum(1 for e in entries if e["basis"] == b)) for b in BASIS)
-    counts["by_source"] = OrderedDict((s, sum(1 for e in entries if e["sources"] == s)) for s in ("both", "classifier", "diff_gate"))
+    counts["by_source"] = OrderedDict((s, sum(1 for e in entries if e["sources"] == s)) for s in ("both", "classifier", "diff_gate", "version_delta"))
     by_kind = OrderedDict()
     for kind in KIND_NS:
         row = OrderedDict((t, sum(1 for e in entries if e["kind"] == kind and e["triage"] == t)) for t in TRIAGE_LEGEND)
@@ -452,6 +457,8 @@ def main():
     doc["sources"] = OrderedDict([
         ("classifiers", "version_delta_v107 of the *.classified.json in this directory (every status but same)"),
         ("diff_gate", "corpus-inventory.json version_diff_v0_107_1_vs_v0_111_0: content_files, version_exclusive_content, engine_files"),
+        ("version_delta", "scripts/version_delta.py: content files with a unique edit that the classifiers read as same and the "
+                          "diff gate did not flag (triage.py MANUAL_VD, docs/version-delta-demo-2026-11-01.md)"),
     ])
     doc["triage_legend"] = TRIAGE_LEGEND
     doc["delta_types"] = DELTA_TYPES

@@ -32,7 +32,7 @@ Prompts: 1 records (0 own, 1 opened by an applied power, spawned monster or offe
 
 Requirements: 10 distinct catalogue keys of `requirements.json` (feature 6, model_virtual 4); most used: `kernel:encounter_slots` 20, `EncounterModel.Slots` 19, `kernel:summons` 9, `kernel:encounter_state` 5, `EncounterModel.LoadCustomState` 4, `EncounterModel.SaveCustomState` 4, `run:event_combat` 4, `EncounterModel.CalculateGoldProportion` 1.
 
-Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 1, new 3, rule-change 3, same 92; `version-deltas.json` triage of the 8 entries listed there: changed 6, refactor_only 2, unknown 0; flagged by the diff gate while the classifier said same: TwoTailedRatsNormal (refactor_only).
+Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 1, new 3, rule-change 3, same 92; `version-deltas.json` triage of the 9 entries listed there: changed 6, refactor_only 3, unknown 0; flagged by the diff gate while the classifier said same: TwoTailedRatsNormal (refactor_only); unique edits found by scripts/version_delta.py that both missed: DeprecatedEncounter (refactor_only).
 
 <!-- /normalised-counts -->
 

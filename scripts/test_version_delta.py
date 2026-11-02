@@ -159,6 +159,13 @@ class PipelineTests(unittest.TestCase):
         # kernel: rng change, out of scope node, moved event
         write(old, on + "Random/Rng.cs", "class Rng {\n    int Next() { return 1; }\n}\n")
         write(new, nn + "Random/Rng.cs", "class Rng {\n    int Next() { return 2; }\n}\n")
+        # kernel files the kernel map resolves: CombatManager (map -> CombatLoop), SaveManager (pattern: no_port),
+        # FooCmd (added, not in the map: unmapped)
+        write(old, on + "Combat/CombatManager.cs", "class CombatManager {\n    int draw = 5;\n}\n")
+        write(new, nn + "Combat/CombatManager.cs", "class CombatManager {\n    int draw = 6;\n}\n")
+        write(old, on + "Saves/SaveManager.cs", "class SaveManager { int v = 1; }\n")
+        write(new, nn + "Saves/SaveManager.cs", "class SaveManager { int v = 2; }\n")
+        write(new, nn + "Commands/FooCmd.cs", "class FooCmd {\n    void Foo() { }\n}\n")
         write(old, on + "Nodes/Vfx/NFoo.cs", "class NFoo { int a; }\n")
         write(new, nn + "Nodes.Vfx/NFoo.cs", "class NFoo { int b; }\n")
         write(old, on + "Models/Events/OldPlace/Wongo.cs", "class Wongo { int gold = 1; }\n")
@@ -168,6 +175,17 @@ class PipelineTests(unittest.TestCase):
         write(repo, "sim/specs/inventory/cards.json", json.dumps(inv))
         write(repo, "sim/Sts2Sim.Core/Cards/Defs/Bash.cs", "public sealed class Bash : CardDef {}\n")
         write(repo, "sim/Sts2Sim.Core/Random/Rng.cs", "// port of Random/Rng.cs:1\npublic sealed class Rng {}\n")
+        write(repo, "sim/Sts2Sim.Core/Combat/Loop/CombatLoop.cs", "public static class CombatLoop {}\n")
+        kmap = {"schema": "sts2sim.kernel-map/v1", "tree": "t", "tree_version": "1.1.0",
+                "stats": {"kernel_files": 3, "by_status": {"mapped": 2, "no_port": 1}},
+                "patterns": [{"glob": "Saves/*", "status": "no_port", "reason": "save I/O"}],
+                "curated": {},
+                "files": {"MegaCrit.Sts2.Core.Combat/CombatManager.cs": {
+                    "key": "Combat/CombatManager.cs", "area": "combat", "lines": 3, "status": "mapped",
+                    "sim": ["sim/Sts2Sim.Core/Combat/Loop/CombatLoop.cs", "sim/Sts2Sim.Core/Gone.cs"]},
+                    "MegaCrit.Sts2.Core.Random/Rng.cs": {"key": "Random/Rng.cs", "area": "rng", "lines": 3,
+                                                         "status": "mapped", "sim": ["sim/Sts2Sim.Core/Random/Rng.cs"]}}}
+        write(repo, "sim/specs/kernel-map.json", json.dumps(kmap))
         write(repo, "sim/specs/cards.md", """
             # Cards
             ## 1. Bash
@@ -210,6 +228,37 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(bash["tests"], ["CardTests.Test_Bash_Deals8"])
         self.assertEqual(self.by_key["Models.Cards/Abundance.cs"]["models"][0]["model_id"], "CARD.ABUNDANCE")
         self.assertEqual(self.by_key["Random/Rng.cs"]["sim_files"], ["sim/Sts2Sim.Core/Random/Rng.cs"])
+
+    def test_kernel_map(self):
+        cm = self.by_key["Combat/CombatManager.cs"]
+        self.assertEqual(cm["sim_files"], ["sim/Sts2Sim.Core/Combat/Loop/CombatLoop.cs"])  # missing sim file dropped
+        self.assertEqual(cm["kernel_map"], {"status": "mapped", "source": "map"})
+        self.assertTrue(cm["sim_files_from_map_only"])
+        sm = self.by_key["Saves/SaveManager.cs"]
+        self.assertEqual((sm["kernel_map"]["status"], sm["kernel_map"]["source"]), ("no_port", "pattern:Saves/*"))
+        self.assertEqual(sm["kernel_map"]["reason"], "save I/O")
+        self.assertEqual(self.by_key["Commands/FooCmd.cs"]["kernel_map"]["status"], "unmapped")
+        self.assertFalse(self.by_key["Random/Rng.cs"]["sim_files_from_map_only"])
+        kc = self.man["kernel_coverage"]
+        self.assertEqual(kc["changed_kernel_files"], 4)
+        self.assertEqual(kc["by_status"], {"mapped": 2, "no_port": 1, "unmapped": 1})
+        self.assertEqual(kc["unmapped"], [{"key": "Commands/FooCmd.cs", "delta": "added", "lines": 4}])
+        self.assertEqual([u["key"] for u in kc["no_port"]], ["Saves/SaveManager.cs"])
+        self.assertEqual(kc["with_sim_files"], 2)
+        self.assertEqual(kc["map_coverage"]["kernel_files"], 3)
+        self.assertTrue(any("Commands/FooCmd.cs" in n and "kernel-map.json" in n for n in self.man["rerun_plan"]["notes"]))
+        md = V.render_report(self.man)
+        self.assertIn("## Kernel map coverage", md)
+        self.assertIn("| `Commands/FooCmd.cs` | added | 4 |", md)
+
+    def test_kernel_map_entry_resolution(self):
+        km = {"path": "k", "files": {}, "curated": {"Runs/X.cs": {"sim": ["a.cs"], "reason": "r"}},
+              "patterns": [{"glob": "MegaCrit.Sts2.Core.Saves.Migrations*/*", "status": "no_port", "reason": "m"}]}
+        self.assertEqual(V.kernel_map_entry(km, "Runs/X.cs"),
+                         {"status": "mapped", "sim": ["a.cs"], "reason": "r", "source": "curated"})
+        self.assertEqual(V.kernel_map_entry(km, "Saves.Migrations.Foo/Y.cs")["status"], "no_port")  # rel-form glob
+        self.assertEqual(V.kernel_map_entry(km, "Runs/Z.cs")["status"], "unmapped")
+        self.assertIsNone(V.kernel_map_entry(None, "Runs/Z.cs"))
 
     def test_spec_citations(self):
         hits = {h["cite"]: h["hit"] for h in self.by_key["Models.Cards/Bash.cs"]["spec_cites"]}

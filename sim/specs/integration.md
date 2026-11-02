@@ -1030,3 +1030,21 @@ Open issues:
 - Protocol: no Sonnet row on the official std-a0-v1 set (~$43); Sonnet rows were produced on server c64217d (tree now includes 8c65874's display-path change) — declare equivalence or rerun before mixing rows; no NN eval entry point (`sts2vec eval --seedset`) and no replay-audit script yet; A10 act-3 second boss and GOLDEN_COMPASS scoring are unit-test only.
 - Version delta: 28 content files with unique edits are missing from W0 version-deltas.json (e.g. Swift, EvilEye) and need triage; test filters are broad (token-based mapping); kernel-to-sim mapping finds 45/134; G0/G3 steps in version_update.sh need --bundles/--bundles-v2.
 - Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended (amending would rewrite the merged owner commits).
+
+## Gates runner
+
+From 2026-11-02 the gates of each integration record are run by `scripts/gates.sh` (details and knobs:
+[`docs/gates.md`](../../docs/gates.md)). Default = full set; `--quick` = the filtered suite of the E2b record.
+
+| step | PASS when |
+| --- | --- |
+| `build-release`, `build-debug` | `dotnet build sim/Sts2Sim.sln -c <cfg> --no-incremental`: 0 warnings, 0 errors (English or Chinese MSBuild summary) |
+| `tests` | full suite (`--quick`: `Server Vec Parity EndToEnd SelfConsistency W1Gate`): all passed, `PENDING total: 0` |
+| `selftest` | `--selftest 100 --content ported_only`: all completed, 0 crashed, 0 server errors |
+| `g0` | `Sts2Sim.Diff <STS2SIM_G0_BUNDLES>`: `overall:` bundles 4 agree 4, decisions 69/69 |
+| `pytest-eval`, `pytest-vec`, `sts2rec` | pytest green (`STS2VEC_REQUIRE_FULL=1` for vec; sts2rec rerun once for the known wall-clock flake) |
+| `py-scripts` | `scripts/test_*.py` unittests; `scripts/kernel_map.py --check` when the decompile tree is present |
+| `bench-combat`, `bench-vec` | `--bench "<label>"` only: rows appended to `sim/BENCH.md` under the label |
+
+An integrator records the closing table of `tmp/gates/<timestamp>/SUMMARY.txt` in the wave's section instead of
+retyping the numbers.

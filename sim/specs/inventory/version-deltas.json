@@ -13,7 +13,8 @@
  },
  "sources": {
   "classifiers": "version_delta_v107 of the *.classified.json in this directory (every status but same)",
-  "diff_gate": "corpus-inventory.json version_diff_v0_107_1_vs_v0_111_0: content_files, version_exclusive_content, engine_files"
+  "diff_gate": "corpus-inventory.json version_diff_v0_107_1_vs_v0_111_0: content_files, version_exclusive_content, engine_files",
+  "version_delta": "scripts/version_delta.py: content files with a unique edit that the classifiers read as same and the diff gate did not flag (triage.py MANUAL_VD, docs/version-delta-demo-2026-11-01.md)"
  },
  "triage_legend": {
   "changed": "a single-player run can observe the difference (values, effects, prompts, pool members, odds), or a game model (not a test mock) exists in one tree only; models no single-player run can meet keep their classifier's verdict and carry single_player_reachable false",
@@ -36,20 +37,20 @@
  "evidence_note": "up to 3 lines per tree; manual / il evidence was read by hand, the rest is mechanical (evidence.py: token-diff, difflib, anchor, membership, class-declaration)",
  "taint_filter_rule": "a v0.107.1 trajectory is comparable with v0.111.0 only while it touches no content entry triaged changed or unknown with single_player_reachable true; engine entries are unknown until adjudicated",
  "counts": {
-  "content_entries": 518,
+  "content_entries": 546,
   "by_triage": {
-   "changed": 171,
-   "refactor_only": 347,
+   "changed": 172,
+   "refactor_only": 374,
    "unknown": 0
   },
   "by_delta_type": {
-   "modified": 475,
+   "modified": 503,
    "added": 40,
    "removed": 3
   },
   "by_basis": {
    "classifier": 440,
-   "manual": 20,
+   "manual": 48,
    "il": 4,
    "membership": 11,
    "presence": 43,
@@ -58,12 +59,13 @@
   "by_source": {
    "both": 233,
    "classifier": 249,
-   "diff_gate": 36
+   "diff_gate": 36,
+   "version_delta": 28
   },
   "by_kind": {
    "cards": {
     "changed": 95,
-    "refactor_only": 72,
+    "refactor_only": 78,
     "unknown": 0
    },
    "powers": {
@@ -72,8 +74,8 @@
     "unknown": 0
    },
    "relics": {
-    "changed": 23,
-    "refactor_only": 52,
+    "changed": 24,
+    "refactor_only": 55,
     "unknown": 0
    },
    "potions": {
@@ -83,12 +85,12 @@
    },
    "monsters": {
     "changed": 10,
-    "refactor_only": 29,
+    "refactor_only": 42,
     "unknown": 0
    },
    "encounters": {
     "changed": 6,
-    "refactor_only": 2,
+    "refactor_only": 3,
     "unknown": 0
    },
    "events": {
@@ -98,7 +100,7 @@
    },
    "enchantments": {
     "changed": 1,
-    "refactor_only": 1,
+    "refactor_only": 4,
     "unknown": 0
    },
    "afflictions": {
@@ -138,20 +140,20 @@
    },
    "potion_pools": {
     "changed": 1,
-    "refactor_only": 0,
+    "refactor_only": 1,
     "unknown": 0
    }
   },
   "single_player_reachable": {
-   "changed": 142,
-   "refactor_only": 302,
+   "changed": 143,
+   "refactor_only": 328,
    "unknown": 0
   },
   "not_single_player_reachable": {
    "IsAllowed needs more than one player": 1,
    "MultiplayerOnly card": 24,
    "applied only by MultiplayerOnly content": 16,
-   "test mock": 33
+   "test mock": 34
   },
   "gate_flagged_classifier_same": {
    "changed": 1,
@@ -192,7 +194,7 @@
    "class-declaration": 43,
    "difflib": 16,
    "il": 4,
-   "manual": 20,
+   "manual": 48,
    "membership": 11,
    "token-diff": 342,
    "token-diff+anchor": 115,
@@ -1435,6 +1437,42 @@
    "evidence_method": "token-diff+anchor"
   },
   {
+   "key": "cards:Deathbringer",
+   "kind": "cards",
+   "class": "Deathbringer",
+   "id": "DEATHBRINGER",
+   "model_id": "CARD.DEATHBRINGER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/Deathbringer.cs",
+    "v0.107.1": "Models/Cards/Deathbringer.cs"
+   },
+   "classifier": {
+    "file": "cards-necrobinder-regent.classified.json",
+    "status": "same",
+    "note": "semantic fingerprint identical (ctor, vars, keywords, tags, upgrade, property overrides, Cmd/Hook calls and order, logic identifiers and literals); only the decompile style differs (v0.107.1 async, v0.111.0 state machines)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "CombatState -> CombatState?: null-safety only (combat state is never null while a card is played)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/Deathbringer.cs:98",
+     "Models.Cards/Deathbringer.cs:109"
+    ],
+    "v0.107.1": [
+     "Models/Cards/Deathbringer.cs:34",
+     "Models/Cards/Deathbringer.cs:35"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "cards:DeathsDoor",
    "kind": "cards",
    "class": "DeathsDoor",
@@ -2014,6 +2052,40 @@
     ]
    },
    "evidence_method": "token-diff+anchor"
+  },
+  {
+   "key": "cards:EvilEye",
+   "kind": "cards",
+   "class": "EvilEye",
+   "id": "EVIL_EYE",
+   "model_id": "CARD.EVIL_EYE",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/EvilEye.cs",
+    "v0.107.1": "Models/Cards/EvilEye.cs"
+   },
+   "classifier": {
+    "file": "cards-ironclad-colorless.classified.json",
+    "status": "same",
+    "note": "predicate e.Card.Owner == Owner rewritten as e.Actor == Owner.Creature; CardExhaustedEntry.Actor is card.Owner.Creature (Combat.History.Entries/CardExhaustedEntry.cs), so equivalent"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "exhausted-this-turn test reads e.Actor == Owner.Creature instead of e.Card.Owner == Owner; CardExhaustedEntry's Actor is card.Owner.Creature (Combat.History.Entries/CardExhaustedEntry.cs:20), so the predicate is the same",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/EvilEye.cs:138"
+    ],
+    "v0.107.1": [
+     "Models/Cards/EvilEye.cs:25"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "cards:ExpectAFight",
@@ -3247,6 +3319,40 @@
    "evidence_method": "token-diff+class-anchor"
   },
   {
+   "key": "cards:HighFive",
+   "kind": "cards",
+   "class": "HighFive",
+   "id": "HIGH_FIVE",
+   "model_id": "CARD.HIGH_FIVE",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/HighFive.cs",
+    "v0.107.1": "Models/Cards/HighFive.cs"
+   },
+   "classifier": {
+    "file": "cards-necrobinder-regent.classified.json",
+    "status": "same",
+    "note": "semantic fingerprint identical (ctor, vars, keywords, tags, upgrade, property overrides, Cmd/Hook calls and order, logic identifiers and literals); only the decompile style differs (v0.107.1 async, v0.111.0 state machines)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "FromOsty gained the cardPlay argument (bulk B4); CombatState -> CombatState?: null-safety only (combat state is never null while a card is played)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/HighFive.cs:78"
+    ],
+    "v0.107.1": [
+     "Models/Cards/HighFive.cs:39"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "cards:HowlFromBeyond",
    "kind": "cards",
    "class": "HowlFromBeyond",
@@ -3864,6 +3970,40 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "cards:MeteorShower",
+   "kind": "cards",
+   "class": "MeteorShower",
+   "id": "METEOR_SHOWER",
+   "model_id": "CARD.METEOR_SHOWER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/MeteorShower.cs",
+    "v0.107.1": "Models/Cards/MeteorShower.cs"
+   },
+   "classifier": {
+    "file": "cards-necrobinder-regent.classified.json",
+    "status": "same",
+    "note": "semantic fingerprint identical (ctor, vars, keywords, tags, upgrade, property overrides, Cmd/Hook calls and order, logic identifiers and literals); only the decompile style differs (v0.107.1 async, v0.111.0 state machines)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "FromCard(this, cardPlay) (bulk B1); CombatState -> CombatState?: null-safety only (combat state is never null while a card is played)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/MeteorShower.cs:74"
+    ],
+    "v0.107.1": [
+     "Models/Cards/MeteorShower.cs:37"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "cards:Midnight",
@@ -6496,6 +6636,42 @@
    "evidence_method": "token-diff"
   },
   {
+   "key": "cards:Thrash",
+   "kind": "cards",
+   "class": "Thrash",
+   "id": "THRASH",
+   "model_id": "CARD.THRASH",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/Thrash.cs",
+    "v0.107.1": "Models/Cards/Thrash.cs"
+   },
+   "classifier": {
+    "file": "cards-ironclad-colorless.classified.json",
+    "status": "same",
+    "note": "identical after normalising decompile style (state machines vs async); engine calls gained cardPlay arguments"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "FromCard(this, cardPlay) (bulk B1); Hook.ModifyDamage gained a null cardPlay argument",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/Thrash.cs:72",
+     "Models.Cards/Thrash.cs:113"
+    ],
+    "v0.107.1": [
+     "Models/Cards/Thrash.cs:45",
+     "Models/Cards/Thrash.cs:70"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "cards:Thunder",
    "kind": "cards",
    "class": "Thunder",
@@ -6542,6 +6718,40 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "cards:Thunderclap",
+   "kind": "cards",
+   "class": "Thunderclap",
+   "id": "THUNDERCLAP",
+   "model_id": "CARD.THUNDERCLAP",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Cards/Thunderclap.cs",
+    "v0.107.1": "Models/Cards/Thunderclap.cs"
+   },
+   "classifier": {
+    "file": "cards-ironclad-colorless.classified.json",
+    "status": "same",
+    "note": "identical after normalising decompile style (state machines vs async); engine calls gained cardPlay arguments"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "FromCard(this, cardPlay) (bulk B1); CombatState -> CombatState?: null-safety only (combat state is never null while a card is played)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Cards/Thunderclap.cs:70"
+    ],
+    "v0.107.1": [
+     "Models/Cards/Thunderclap.cs:30"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "cards:TimesUp",
@@ -12305,6 +12515,40 @@
    "evidence_method": "token-diff+anchor"
   },
   {
+   "key": "relics:CharonsAshes",
+   "kind": "relics",
+   "class": "CharonsAshes",
+   "id": "CHARONS_ASHES",
+   "model_id": "RELIC.CHARONS_ASHES",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Relics/CharonsAshes.cs",
+    "v0.107.1": "Models/Relics/CharonsAshes.cs"
+   },
+   "classifier": {
+    "file": "relics.classified.json",
+    "status": "same",
+    "note": ""
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "CreatureCmd.Damage lost its trailing null argument (signature change)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Relics/CharonsAshes.cs:59"
+    ],
+    "v0.107.1": [
+     "Models/Relics/CharonsAshes.cs:23"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "relics:ChoicesParadox",
    "kind": "relics",
    "class": "ChoicesParadox",
@@ -12998,6 +13242,40 @@
    "evidence_method": "token-diff"
   },
   {
+   "key": "relics:GhostSeed",
+   "kind": "relics",
+   "class": "GhostSeed",
+   "id": "GHOST_SEED",
+   "model_id": "RELIC.GHOST_SEED",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Relics/GhostSeed.cs",
+    "v0.107.1": "Models/Relics/GhostSeed.cs"
+   },
+   "classifier": {
+    "file": "relics.classified.json",
+    "status": "same",
+    "note": ""
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "new card.Owner != Owner early return: every card has the relic's owner in single player",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Relics/GhostSeed.cs:26"
+    ],
+    "v0.107.1": [
+     "Models/Relics/GhostSeed.cs:20"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "relics:GlassEye",
    "kind": "relics",
    "class": "GlassEye",
@@ -13441,6 +13719,40 @@
    "evidence_method": "token-diff+anchor"
   },
   {
+   "key": "relics:LostWisp",
+   "kind": "relics",
+   "class": "LostWisp",
+   "id": "LOST_WISP",
+   "model_id": "RELIC.LOST_WISP",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Relics/LostWisp.cs",
+    "v0.107.1": "Models/Relics/LostWisp.cs"
+   },
+   "classifier": {
+    "file": "relics.classified.json",
+    "status": "same",
+    "note": ""
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "CreatureCmd.Damage lost its trailing null argument (signature change)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Relics/LostWisp.cs:60"
+    ],
+    "v0.107.1": [
+     "Models/Relics/LostWisp.cs:24"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "relics:MassiveScroll",
    "kind": "relics",
    "class": "MassiveScroll",
@@ -13559,6 +13871,42 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "relics:MusicBox",
+   "kind": "relics",
+   "class": "MusicBox",
+   "id": "MUSIC_BOX",
+   "model_id": "RELIC.MUSIC_BOX",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Relics/MusicBox.cs",
+    "v0.107.1": "Models/Relics/MusicBox.cs"
+   },
+   "classifier": {
+    "file": "relics.classified.json",
+    "status": "same",
+    "note": ""
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "changed",
+   "basis": "manual",
+   "note": "CardBeingPlayed is now also cleared at the owner's turn start and at combat end; in v0.107.1 only AfterCardPlayed cleared it, so an attack whose play did not reach AfterCardPlayed (combat ended mid-play) left it set and BeforeCardPlayed returned early in every later combat",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Relics/MusicBox.cs:172",
+     "Models.Relics/MusicBox.cs:179"
+    ],
+    "v0.107.1": [
+     "Models/Relics/MusicBox.cs:53",
+     "Models/Relics/MusicBox.cs:82"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "relics:MysticLighter",
@@ -16548,6 +16896,108 @@
    "evidence_method": "token-diff"
   },
   {
+   "key": "monsters:Crusher",
+   "kind": "monsters",
+   "class": "Crusher",
+   "id": "CRUSHER",
+   "model_id": "MONSTER.CRUSHER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/Crusher.cs",
+    "v0.107.1": "Models/Monsters/Crusher.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "the KaiserCrab background node became nullable (Background?.X): UI only, same moves, damage and powers",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/Crusher.cs:736"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/Crusher.cs:63"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
+   "key": "monsters:CubexConstruct",
+   "kind": "monsters",
+   "class": "CubexConstruct",
+   "id": "CUBEX_CONSTRUCT",
+   "model_id": "MONSTER.CUBEX_CONSTRUCT",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/CubexConstruct.cs",
+    "v0.107.1": "Models/Monsters/CubexConstruct.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "GenerateBestiaryMoveList override (bestiary UI)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/CubexConstruct.cs:766"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/CubexConstruct.cs:198"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
+   "key": "monsters:DecimillipedeSegment",
+   "kind": "monsters",
+   "class": "DecimillipedeSegment",
+   "id": "DECIMILLIPEDE_SEGMENT",
+   "model_id": "MONSTER.DECIMILLIPEDE_SEGMENT",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/DecimillipedeSegment.cs",
+    "v0.107.1": "Models/Monsters/DecimillipedeSegment.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "base.Creature.CombatState -> base.CombatState: the same object, no behaviour change",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/DecimillipedeSegment.cs:233"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/DecimillipedeSegment.cs:228"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "monsters:Entomancer",
    "kind": "monsters",
    "class": "Entomancer",
@@ -16634,6 +17084,74 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "monsters:Fabricator",
+   "kind": "monsters",
+   "class": "Fabricator",
+   "id": "FABRICATOR",
+   "model_id": "MONSTER.FABRICATOR",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/Fabricator.cs",
+    "v0.107.1": "Models/Monsters/Fabricator.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "base.Creature.CombatState -> base.CombatState: the same object, no behaviour change",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/Fabricator.cs:545"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/Fabricator.cs:51"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
+   "key": "monsters:FakeMerchantMonster",
+   "kind": "monsters",
+   "class": "FakeMerchantMonster",
+   "id": "FAKE_MERCHANT_MONSTER",
+   "model_id": "MONSTER.FAKE_MERCHANT_MONSTER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/FakeMerchantMonster.cs",
+    "v0.107.1": "Models/Monsters/FakeMerchantMonster.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "OnlyPlayAnimOnce() on the 8-hit attack: animation only",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/FakeMerchantMonster.cs:276"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/FakeMerchantMonster.cs:88"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "monsters:FatGremlin",
@@ -16760,6 +17278,76 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "monsters:GremlinMerc",
+   "kind": "monsters",
+   "class": "GremlinMerc",
+   "id": "GREMLIN_MERC",
+   "model_id": "MONSTER.GREMLIN_MERC",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/GremlinMerc.cs",
+    "v0.107.1": "Models/Monsters/GremlinMerc.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "base.Creature.CombatState -> base.CombatState: the same object, no behaviour change",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/GremlinMerc.cs:99"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/GremlinMerc.cs:50"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
+   "key": "monsters:Guardbot",
+   "kind": "monsters",
+   "class": "Guardbot",
+   "id": "GUARDBOT",
+   "model_id": "MONSTER.GUARDBOT",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/Guardbot.cs",
+    "v0.107.1": "Models/Monsters/Guardbot.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "AfterAddedToRoom now awaits base.AfterAddedToRoom(), which returns Task.CompletedTask (Models/MonsterModel.cs:604-607): same order; the rest is the TestMode-gated fall animation; base.Creature.CombatState -> base.CombatState: the same object, no behaviour change",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/Guardbot.cs:53",
+     "Models.Monsters/Guardbot.cs:220"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/Guardbot.cs:27",
+     "Models/Monsters/Guardbot.cs:29"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "monsters:HunterKiller",
@@ -16969,6 +17557,40 @@
    "evidence_method": "il"
   },
   {
+   "key": "monsters:LeafSlimeM",
+   "kind": "monsters",
+   "class": "LeafSlimeM",
+   "id": "LEAF_SLIME_M",
+   "model_id": "MONSTER.LEAF_SLIME_M",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/LeafSlimeM.cs",
+    "v0.107.1": "Models/Monsters/LeafSlimeM.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "the spit-target VFX position is computed from the creature node instead of VfxSpawnPosition: VFX only",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/LeafSlimeM.cs:144"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/LeafSlimeM.cs:54"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "monsters:LivingFog",
    "kind": "monsters",
    "class": "LivingFog",
@@ -17003,6 +17625,40 @@
     ]
    },
    "evidence_method": "token-diff+anchor"
+  },
+  {
+   "key": "monsters:LivingShield",
+   "kind": "monsters",
+   "class": "LivingShield",
+   "id": "LIVING_SHIELD",
+   "model_id": "MONSTER.LIVING_SHIELD",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/LivingShield.cs",
+    "v0.107.1": "Models/Monsters/LivingShield.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "base.Creature.CombatState -> base.CombatState: the same object, no behaviour change",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/LivingShield.cs:344"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/LivingShield.cs:73"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "monsters:LouseProgenitor",
@@ -17374,6 +18030,40 @@
    "evidence_method": "token-diff+class-anchor"
   },
   {
+   "key": "monsters:Rocket",
+   "kind": "monsters",
+   "class": "Rocket",
+   "id": "ROCKET",
+   "model_id": "MONSTER.ROCKET",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/Rocket.cs",
+    "v0.107.1": "Models/Monsters/Rocket.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "the KaiserCrab background node became nullable (Background?.X): UI only, same moves, damage and powers",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/Rocket.cs:633"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/Rocket.cs:43"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "monsters:SkulkingColony",
    "kind": "monsters",
    "class": "SkulkingColony",
@@ -17444,6 +18134,40 @@
     ]
    },
    "evidence_method": "token-diff+anchor"
+  },
+  {
+   "key": "monsters:SlitheringStrangler",
+   "kind": "monsters",
+   "class": "SlitheringStrangler",
+   "id": "SLITHERING_STRANGLER",
+   "model_id": "MONSTER.SLITHERING_STRANGLER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/SlitheringStrangler.cs",
+    "v0.107.1": "Models/Monsters/SlitheringStrangler.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "animator trigger target state: animation only",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/SlitheringStrangler.cs:372"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/SlitheringStrangler.cs:98"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "monsters:SlumberingBeetle",
@@ -17573,6 +18297,42 @@
     ]
    },
    "evidence_method": "token-diff"
+  },
+  {
+   "key": "monsters:Stabbot",
+   "kind": "monsters",
+   "class": "Stabbot",
+   "id": "STABBOT",
+   "model_id": "MONSTER.STABBOT",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/Stabbot.cs",
+    "v0.107.1": "Models/Monsters/Stabbot.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "AfterAddedToRoom now awaits base.AfterAddedToRoom(), which returns Task.CompletedTask (Models/MonsterModel.cs:604-607): same order; the rest is the TestMode-gated fall animation",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/Stabbot.cs:54",
+     "Models.Monsters/Stabbot.cs:197"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/Stabbot.cs:29",
+     "Models/Monsters/Stabbot.cs:31"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "monsters:TestSubject",
@@ -17900,6 +18660,40 @@
    "evidence_method": "token-diff"
   },
   {
+   "key": "monsters:TwigSlimeM",
+   "kind": "monsters",
+   "class": "TwigSlimeM",
+   "id": "TWIG_SLIME_M",
+   "model_id": "MONSTER.TWIG_SLIME_M",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Monsters/TwigSlimeM.cs",
+    "v0.107.1": "Models/Monsters/TwigSlimeM.cs"
+   },
+   "classifier": {
+    "file": "monsters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, rule enums, Cmd/model calls, move graph and per-move Cmd sequence equal (raw text differs only by decompiler settings)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "the spit-target VFX position is computed from the creature node instead of VfxSpawnPosition: VFX only",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Monsters/TwigSlimeM.cs:145"
+    ],
+    "v0.107.1": [
+     "Models/Monsters/TwigSlimeM.cs:59"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "monsters:TwoTailedRat",
    "kind": "monsters",
    "class": "TwoTailedRat",
@@ -18126,6 +18920,40 @@
     "v0.107.1": []
    },
    "evidence_method": "class-declaration"
+  },
+  {
+   "key": "encounters:DeprecatedEncounter",
+   "kind": "encounters",
+   "class": "DeprecatedEncounter",
+   "id": "DEPRECATED_ENCOUNTER",
+   "model_id": "ENCOUNTER.DEPRECATED_ENCOUNTER",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Encounters/DeprecatedEncounter.cs",
+    "v0.107.1": "Models/Encounters/DeprecatedEncounter.cs"
+   },
+   "classifier": {
+    "file": "encounters.classified.json",
+    "status": "same",
+    "note": "normalized numbers, enums and model calls equal"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "IsDebugEncounter override removed; the encounter has no monsters and no act lists it",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Encounters/DeprecatedEncounter.cs:7"
+    ],
+    "v0.107.1": [
+     "Models/Encounters/DeprecatedEncounter.cs:14"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "encounters:PhrogParasiteElite",
@@ -19265,6 +20093,40 @@
    "evidence_method": "manual"
   },
   {
+   "key": "enchantments:Corrupted",
+   "kind": "enchantments",
+   "class": "Corrupted",
+   "id": "CORRUPTED",
+   "model_id": "ENCHANTMENT.CORRUPTED",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Enchantments/Corrupted.cs",
+    "v0.107.1": "Models/Enchantments/Corrupted.cs"
+   },
+   "classifier": {
+    "file": "enchantments.classified.json",
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "CreatureCmd.Damage gained the cardPlay argument",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Enchantments/Corrupted.cs:49"
+    ],
+    "v0.107.1": [
+     "Models/Enchantments/Corrupted.cs:31"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
    "key": "enchantments:Inky",
    "kind": "enchantments",
    "class": "Inky",
@@ -19356,6 +20218,74 @@
     ]
    },
    "evidence_method": "token-diff+class-anchor"
+  },
+  {
+   "key": "enchantments:Sown",
+   "kind": "enchantments",
+   "class": "Sown",
+   "id": "SOWN",
+   "model_id": "ENCHANTMENT.SOWN",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Enchantments/Sown.cs",
+    "v0.107.1": "Models/Enchantments/Sown.cs"
+   },
+   "classifier": {
+    "file": "enchantments.classified.json",
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "Status = Disabled moved before GainEnergy: differs only if the energy gain re-entered this enchantment's OnPlay, which no single-player effect does",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Enchantments/Sown.cs:50"
+    ],
+    "v0.107.1": [
+     "Models/Enchantments/Sown.cs:18"
+    ]
+   },
+   "evidence_method": "manual"
+  },
+  {
+   "key": "enchantments:Swift",
+   "kind": "enchantments",
+   "class": "Swift",
+   "id": "SWIFT",
+   "model_id": "ENCHANTMENT.SWIFT",
+   "delta_type": "modified",
+   "single_player_reachable": true,
+   "files": {
+    "v0.111.0": "Models.Enchantments/Swift.cs",
+    "v0.107.1": "Models/Enchantments/Swift.cs"
+   },
+   "classifier": {
+    "file": "enchantments.classified.json",
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)"
+   },
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "Status = Disabled moved before the draw: differs only if the draw re-entered this enchantment's OnPlay (the card is being played, not in the draw pile)",
+   "evidence": {
+    "v0.111.0": [
+     "Models.Enchantments/Swift.cs:53"
+    ],
+    "v0.107.1": [
+     "Models/Enchantments/Swift.cs:20"
+    ]
+   },
+   "evidence_method": "manual"
   },
   {
    "key": "afflictions:MockNoUnplayableAffliction",
@@ -21196,6 +22126,37 @@
     "Ambergris"
    ],
    "members_removed": []
+  },
+  {
+   "key": "potion_pools:MockPotionPool",
+   "kind": "potion_pools",
+   "class": "MockPotionPool",
+   "id": "MOCK",
+   "model_id": "POTION_POOL.MOCK_POTION_POOL",
+   "delta_type": "modified",
+   "single_player_reachable": false,
+   "single_player_note": "test mock",
+   "files": {
+    "v0.111.0": "Models.PotionPools/MockPotionPool.cs",
+    "v0.107.1": "Models/PotionPools/MockPotionPool.cs"
+   },
+   "classifier": null,
+   "diff_gate": {
+    "flagged": false
+   },
+   "sources": "version_delta",
+   "triage": "refactor_only",
+   "basis": "manual",
+   "note": "IsMock => true on a test pool",
+   "evidence": {
+    "v0.111.0": [
+     "Models.PotionPools/MockPotionPool.cs:8"
+    ],
+    "v0.107.1": [
+     "Models/PotionPools/MockPotionPool.cs:9"
+    ]
+   },
+   "evidence_method": "manual"
   }
  ],
  "engine_entries": [

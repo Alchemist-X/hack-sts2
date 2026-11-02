@@ -48,7 +48,7 @@ Prompts: 23 records (17 own, 6 opened by an applied power, spawned monster or of
 
 Requirements: 71 distinct catalogue keys of `requirements.json` (cmd_facade 22, feature 31, hook_virtual 15, model_virtual 3); most used: `kernel:dynamic_vars` 16, `kernel:card_model_ops` 12, `kernel:card_generation` 10, `kernel:card_listeners` 10, `kernel:combat_history` 10, `run:unlock_profile` 10, `kernel:per_instance_state` 9, `DamageCmd.Attack(CalculatedDamageVar)` 8.
 
-Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 8, decompile-gap 1, new 7, rule-change 27, same 197; `version-deltas.json` triage of the 47 entries listed there: changed 33 (5 of them not single-player reachable), refactor_only 14, unknown 0; flagged by the diff gate while the classifier said same: DualWield (refactor_only), FiendFire (refactor_only), Omnislice (refactor_only), Whirlwind (refactor_only).
+Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 8, decompile-gap 1, new 7, rule-change 27, same 197; `version-deltas.json` triage of the 50 entries listed there: changed 33 (5 of them not single-player reachable), refactor_only 17, unknown 0; flagged by the diff gate while the classifier said same: DualWield (refactor_only), FiendFire (refactor_only), Omnislice (refactor_only), Whirlwind (refactor_only); unique edits found by scripts/version_delta.py that both missed: EvilEye (refactor_only), Thrash (refactor_only), Thunderclap (refactor_only).
 
 <!-- /normalised-counts -->
 

@@ -10,8 +10,22 @@ python3 scripts/version_delta.py \
   /Users/Aincrad/dev-proj/hack-sts2/artifacts/knowledge/decompiled-9cb4f1ad \
   --old-version 0.107.1 --new-version 0.111.0 --out tmp/version-delta/v107-9cb
 # version-delta 0.107.1 -> 0.111.0: content 546, kernel 134, out_of_scope 407; 10.0 s
-python3 -m unittest discover -s scripts -p 'test_version_delta.py'   # 19 tests
+python3 -m unittest discover -s scripts -p 'test_version_delta.py'   # 19 tests (21 since 2026-11-02)
 ```
+
+Re-run 2026-11-02 with the kernel map (`sim/specs/kernel-map.json`, see "Kernel map coverage" below):
+
+```bash
+python3 scripts/kernel_map.py --check        # 564 kernel files; mapped 374, no_port 190 (0 unmapped)
+python3 scripts/version_delta.py <same trees and versions> --out tmp/version-delta/v107-9cb
+# version-delta 0.107.1 -> 0.111.0: content 546, kernel 134, out_of_scope 407; 10.8 s
+# kernel map: 134 changed kernel files, 95 with sim files (49 via the map only); mapped 91, no_port 43,
+#   unmapped 0; map covers 564 kernel files (mapped 374, no_port 190)
+python3 -m unittest discover -s scripts -p 'test_*.py'   # 30 tests (version_delta 21, kernel_map 9)
+```
+
+Content numbers, bulk edits and the rerun plan are unchanged by the re-run; the kernel table below shows both
+runs.
 
 ## Inputs
 
@@ -66,33 +80,65 @@ all. The rest carry at least one unique edit and are the per-file port list.
 | relics | 48 | 10 | 38 | 47 | 48 | 29 |
 | **total** | 546 | 228 | 318 | 498 | 498 | 251 |
 
-| kernel area | changed | bulk only | unique | sim files | spec hits |
+| kernel area | changed | bulk only | unique | sim files (2026-11-01 -> with the map) | spec hits |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| combat | 9 | 0 | 9 | 1 | 214 |
-| commands | 11 | 0 | 11 | 9 | 203 |
-| dynamic_vars | 3 | 0 | 3 | 3 | 3 |
-| events_kernel | 5 | 0 | 5 | 1 | 1 |
-| factories | 1 | 0 | 1 | 1 | 6 |
-| game_actions | 14 | 0 | 14 | 2 | 19 |
-| helpers | 7 | 0 | 7 | 0 | 9 |
-| hooks | 1 | 0 | 1 | 1 | 12 |
-| map | 1 | 0 | 1 | 1 | 0 |
-| models_base | 13 | 0 | 13 | 9 | 114 |
-| monster_moves | 2 | 0 | 2 | 0 | 3 |
-| odds | 2 | 0 | 2 | 0 | 5 |
-| rewards | 2 | 0 | 2 | 2 | 10 |
-| rng | 3 | 0 | 3 | 2 | 21 |
-| rooms | 3 | 0 | 3 | 3 | 32 |
-| runs | 8 | 0 | 8 | 2 | 53 |
-| save | 33 | 0 | 33 | 1 | 7 |
-| state | 14 | 0 | 14 | 7 | 39 |
-| unlocks | 2 | 0 | 2 | 0 | 5 |
-| **total** | 134 | 0 | 134 | 45 | 756 |
+| combat | 9 | 0 | 9 | 1 -> 5 | 214 |
+| commands | 11 | 0 | 11 | 9 -> 9 | 203 |
+| dynamic_vars | 3 | 0 | 3 | 3 -> 3 | 3 |
+| events_kernel | 5 | 0 | 5 | 1 -> 5 | 1 |
+| factories | 1 | 0 | 1 | 1 -> 1 | 6 |
+| game_actions | 14 | 0 | 14 | 2 -> 9 | 19 |
+| helpers | 7 | 0 | 7 | 0 -> 2 | 9 |
+| hooks | 1 | 0 | 1 | 1 -> 1 | 12 |
+| map | 1 | 0 | 1 | 1 -> 1 | 0 |
+| models_base | 13 | 0 | 13 | 9 -> 13 | 114 |
+| monster_moves | 2 | 0 | 2 | 0 -> 2 | 3 |
+| odds | 2 | 0 | 2 | 0 -> 2 | 5 |
+| rewards | 2 | 0 | 2 | 2 -> 2 | 10 |
+| rng | 3 | 0 | 3 | 2 -> 3 | 21 |
+| rooms | 3 | 0 | 3 | 3 -> 3 | 32 |
+| runs | 8 | 0 | 8 | 2 -> 6 | 53 |
+| save | 33 | 0 | 33 | 1 -> 12 | 7 |
+| state | 14 | 0 | 14 | 7 -> 14 | 39 |
+| unlocks | 2 | 0 | 2 | 0 -> 2 | 5 |
+| **total** | 134 | 0 | 134 | 45 -> 95 | 756 |
+
+(The 2026-11-01 column is the published run; re-run on 2026-11-02 without the map the script found 46, one more
+`state` file, because the sim gained a type since.)
 
 Out of scope (counted, not mapped): nodes 232, multiplayer 46, test_mocks 45, entities.multiplayer 11, others
 under 10 each.
 
 Kernel files with the most spec rules to re-read (citations in changed members): `Combat/CombatManager.cs` (175), `Commands/CreatureCmd.cs` (75), `Commands/CardPileCmd.cs` (49), `Models/CardModel.cs` (36), `Commands/CardSelectCmd.cs` (33), `Combat/CombatState.cs` (31), `Runs/RunManager.cs` (31), `Rooms/CombatRoom.cs` (25), `Models/MonsterModel.cs` (22), `Commands/CardCmd.cs` (17), `Models/EventModel.cs` (16), `Commands.Builders/AttackCommand.cs` (13).
+
+## Kernel map coverage (2026-11-02)
+
+`sim/specs/kernel-map.json` maps every kernel file of the rule-truth tree (Linux v0.111.0, 564 files, 138,981
+lines) to the sim files that port it, built by `scripts/kernel_map.py`:
+
+| source | files | how |
+| --- | ---: | --- |
+| `type` | 201 | sim Core declares the file's type, or a fixed renaming (`Creature` -> `CreatureState`, `CardModel` -> `CardDef`) |
+| `spec` | 79 | >= 2 lines of `sim/specs/**/*.md` / `docs/sim-port/*.md` cite the file and name a sim symbol on the same line |
+| `cite` | 23 | a sim comment cites the file as `file:line` |
+| `pattern` | 116 | hand-curated namespace globs (`Saves.Migrations.SerializableRuns/*` -> the save reader, `Saves/*` -> no_port, ...) |
+| `curated` | 66 | hand-curated single files with a reason |
+
+Result: mapped 374 files (104,637 lines), `no_port` 190 (34,344 lines: save I/O and profile / settings
+persistence, multiplayer queues and network actions, UI / engine helpers, presentation commands, the unported
+CRYSTAL_SPHERE minigame, timeline stories), unmapped 0. The last six reviewed by hand (no caller in v0.111.0 or
+multiplayer-only): `RelicSelectCmd`, `DeterministicModelComparer`, `LinkedRewardSet`, `MapLocation`,
+`RunLocation`, `EnchantmentOption`. `scripts/kernel_map.py --check` fails when the map is stale, a curated record
+no longer resolves, or a kernel file of >= 50 lines is unmapped.
+
+On this delta: 134 changed kernel files; 95 now list sim files (45 before; 49 only through the map, e.g.
+`Combat/CombatManager.cs` -> `Combat/Loop/CombatLoop.cs` + the `TurnFlow` partials, `MonsterLifecycle`,
+`MonsterSpawner`, `RunLoop`; `Entities.Creatures/Creature.cs` -> `State/CreatureState.cs`; `Models/ModelDb.cs` ->
+`Registry/Registries.cs`); the other 39 are `no_port` and the report lists each with its reason (largest:
+`Saves/MegaCritSerializerContext.cs` 13,999 lines, `Saves/SaveManager.cs` 1,127, `Saves.Migrations/MigrationManager.cs`
+693, `Saves/CloudSaveStore.cs` 686, `GameActions.Multiplayer/ActionQueueSet.cs` 655). Unmapped changed kernel
+files: 0. The removed `Saves.Runs/SavedPropertiesTypeCache.cs` (v0.107.1 only, so absent from the map's tree)
+resolves through the `Saves.Runs/*` pattern.
 
 ## Bulk edits
 
@@ -147,11 +193,29 @@ replaced by curses, `Swift` (enchantment) disables itself before drawing, pools 
   W0-confirmed rule change.
 - 181 of the 347 `refactor_only` entries are flagged; 62 of those are bulk-only (B1 etc.), 119 carry a unique edit
   that W0 judged unobservable in single player (multiplayer branches, history logging, mocks).
-- 28 content files with a unique edit are absent from the W0 list (its classifiers read them as `same`). Most are
-  refactors (`LeafSlimeM` spit-target VFX position, `CombatState?` null-safety in `Thunderclap` / `HighFive`,
-  `GremlinMerc` `base.CombatState`); a few deserve a look, e.g. `Models.Enchantments/Swift.cs` (status set to
-  Disabled before the draw instead of after) and `Models.Cards/EvilEye.cs` (exhaust check by actor creature instead
-  of card owner). The report lists all of them with diffs.
+- 28 content files with a unique edit were absent from the W0 list (its classifiers read them as `same`, the diff
+  gate did not flag them). Triaged by hand on 2026-11-02 and added to the W0 list: `triage.py` `MANUAL_VD`, merged
+  by `version-deltas/build.py` with `sources: version_delta`; `version-deltas.json` now has 546 content entries
+  (changed 172, refactor_only 374). Verdicts:
+
+| file | verdict | reason |
+| --- | --- | --- |
+| `Relics/MusicBox` | **changed** | `CardBeingPlayed` is now also cleared at turn start and combat end; in v0.107.1 a play that never reached `AfterCardPlayed` (combat ended mid-play) left it set and disabled the relic for the rest of the run |
+| `Cards/EvilEye` | refactor_only | `e.Actor == Owner.Creature` replaces `e.Card.Owner == Owner`; the entry's actor is `card.Owner.Creature` (`CardExhaustedEntry.cs:20`), so the predicate is the same |
+| `Enchantments/Swift`, `Enchantments/Sown` | refactor_only | `Status = Disabled` moved before the draw / energy gain: differs only if that effect re-entered the same enchantment, which nothing in single player does |
+| `Cards/Deathbringer`, `HighFive`, `MeteorShower`, `Thunderclap` | refactor_only | `CombatState?.HittableEnemies` null-safety, plus bulk B1 / B4 |
+| `Cards/Thrash`, `Enchantments/Corrupted`, `Relics/CharonsAshes`, `Relics/LostWisp` | refactor_only | signature changes (`cardPlay` argument added, trailing `null` dropped) |
+| `Relics/GhostSeed` | refactor_only | new `card.Owner != Owner` early return: always the owner in single player |
+| `Monsters/DecimillipedeSegment`, `Fabricator`, `GremlinMerc`, `LivingShield` | refactor_only | `base.Creature.CombatState` -> `base.CombatState` (same object) |
+| `Monsters/Guardbot`, `Stabbot` | refactor_only | now awaits `base.AfterAddedToRoom()`, which returns `Task.CompletedTask` |
+| `Monsters/Crusher`, `Rocket` | refactor_only | KaiserCrab background node nullable (UI) |
+| `Monsters/LeafSlimeM`, `TwigSlimeM` | refactor_only | spit-target VFX position |
+| `Monsters/CubexConstruct`, `FakeMerchantMonster`, `SlitheringStrangler` | refactor_only | bestiary list, `OnlyPlayAnimOnce`, animator trigger |
+| `Encounters/DeprecatedEncounter` | refactor_only | `IsDebugEncounter` override removed; no monsters, in no act |
+| `PotionPools/MockPotionPool` | refactor_only | `IsMock => true` on a test pool |
+
+  Evidence lines for both trees are in `version-deltas.json` (checked by `build.py` and `test_classify.py`);
+  `docs/sim-port/inventory-*.md` name them per kind. Only `MusicBox` widens the v0.107.1 taint filter.
 
 ## Synthetic pair (line-precision check)
 
