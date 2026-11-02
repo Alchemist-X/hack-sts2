@@ -1,9 +1,8 @@
 # Sts2Sim.Vec — batched training interface
 
 Status: **scaffold** (wave E2). Shapes, names, buffer order, capacities and export signatures are final
-(CONTRACTS.md Part D); the encoder (`ObservationEncoder`, owner V1) and candidate table (`CandidateTable`, owner V2)
-are zero-filling stubs, so every observation table except `global_i.phase/decision_kind/is_combat` reads 0 and
-`cand_n` is 0. Fields marked **TODO(V1)** below are written by V1.
+(CONTRACTS.md Part D). The player-view encoder (`ObservationEncoder*.cs`, V1) fills every observation table (see the
+field reference below); the candidate table (`CandidateTable`, owner V2) is a stub until V2 lands, so `cand_n` is 0.
 
 ## Build and load
 
@@ -98,30 +97,30 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 
 | # | Buffer | dtype | shape | Fields / content |
 | --- | --- | --- | --- | --- |
-| 0 | `global_i` | int32 | [58] | phase, character, ascension, act_index, act_id, total_floor, act_floor, map_row, map_col, hp, max_hp, gold, energy, max_energy, stars, block, turn, round, potion_slots, deck_n, draw_n, discard_n, exhaust_n, orb_slots, relic_n, hand_n, enemy_n, ally_n, boss_id, second_boss_id, card_removals_used, removal_price, incoming_damage, incoming_hits, prompt_kind, prompt_min, prompt_max, prompt_picked, prompt_needs_confirm, prompt_can_cancel, prompt_can_skip, prompt_ordered, prompt_option_n, prompt_pile, prompt_site_hash, reward_n, card_reward_can_skip, card_reward_skip_consumes, treasure_opened, treasure_relic_id, treasure_claimed, event_id, event_finished, event_option_n, rest_option_n, shop_entry_n, decision_kind, is_combat. Stub writes phase, decision_kind, is_combat; **TODO(V1)** the rest |
-| 1 | `global_f` | float32 | [4] | hp_frac, gold_log1p, floor_frac, incoming_net_hp — **TODO(V1)** |
-| 2 | `hand` | int32 | [10, 22] | card_id, upgrade, cost_current (−1 X, −2 unplayable), cost_base, type, target, rarity, keyword_mask (bit = 1 << CardKeyword), enchant_id, enchant_amount, affliction_id, playable, playable_reason_id, hits, var_id_0..3, var_val_0..3 — **TODO(V1)** |
-| 3 | `hand_f` | float32 | [10, 2] | block_eff, damage_eff_self_or_all — **TODO(V1)** |
-| 4 | `hand_dmg` | float32 | [10, 6] | vs_enemy_0..5 — **TODO(V1)** |
-| 5 | `deck` | int32 | [96, 5] | card_id, upgrade, enchant_id, enchant_amount, affliction_id — **TODO(V1)** |
-| 6–8 | `draw_counts`, `discard_counts`, `exhaust_counts` | int16 | [V_cards × 2] | multiset counts — **TODO(V1)** |
-| 9 | `relics` | int32 | [32, 5] | relic_id, counter, status, used_up, stack — **TODO(V1)** |
-| 10 | `potions` | int32 | [10, 3] | potion_id, usable_now, target_type — **TODO(V1)** |
-| 11 | `powers_player` | int32 | [24, 3] | power_id, amount, is_debuff — **TODO(V1)** |
-| 12 | `orbs` | int32 | [10, 3] | orb_id, passive, evoke — **TODO(V1)** |
-| 13 | `enemies` | int32 | [6, 9] | present, uid, monster_id, hp, max_hp, block, flank, behind, intent_n — **TODO(V1)** |
-| 14 | `enemy_intents` | int32 | [6, 3, 4] | type, damage, times, card_count — **TODO(V1)** |
-| 15 | `enemy_powers` | int32 | [6, 12, 2] | power_id, amount — **TODO(V1)** |
-| 16 | `allies` | int32 | [2, 5] | present, monster_id, hp, max_hp, block — **TODO(V1)** |
-| 17 | `ally_powers` | int32 | [2, 8, 2] | power_id, amount — **TODO(V1)** |
-| 18 | `map_nodes` | int32 | [18, 7, 6] | point_type, visited, current, legal_next, child_mask, quest — **TODO(V1)** |
-| 19 | `rewards` | int32 | [8, 4] | reward_type, amount, item_id, is_card_reward — **TODO(V1)** |
-| 20 | `card_reward` | int32 | [4, 22] | hand columns (playable, playable_reason_id, hits = 0) — **TODO(V1)** |
-| 21 | `card_reward_alts` | int32 | [2] | alt_id (CardRewardAlt) — **TODO(V1)** |
-| 22 | `shop` | int32 | [14, 7] | category, item_id, upgrade, price, stocked, on_sale, affordable — **TODO(V1)** |
-| 23 | `rest` | int32 | [9, 2] | option_id, enabled — **TODO(V1)** |
-| 24 | `event_options` | int32 | [8, 6] | key_hash, ordinal, enabled, locked, proceed, relic_id — **TODO(V1)** |
-| 25 | `prompt_options` | int32 | [128, 5] | item_id, upgrade, picked, kind_of_item (PromptItemKind), ordinal — **TODO(V1)** |
+| 0 | `global_i` | int32 | [58] | phase, character, ascension, act_index, act_id, total_floor, act_floor, map_row, map_col, hp, max_hp, gold, energy, max_energy, stars, block, turn, round, potion_slots, deck_n, draw_n, discard_n, exhaust_n, orb_slots, relic_n, hand_n, enemy_n, ally_n, boss_id, second_boss_id, card_removals_used, removal_price, incoming_damage, incoming_hits, prompt_kind, prompt_min, prompt_max, prompt_picked, prompt_needs_confirm, prompt_can_cancel, prompt_can_skip, prompt_ordered, prompt_option_n, prompt_pile, prompt_site_hash, reward_n, card_reward_can_skip, card_reward_skip_consumes, treasure_opened, treasure_relic_id, treasure_claimed, event_id, event_finished, event_option_n, rest_option_n, shop_entry_n, decision_kind, is_combat. See the field reference |
+| 1 | `global_f` | float32 | [4] | hp_frac, gold_log1p, floor_frac, incoming_net_hp |
+| 2 | `hand` | int32 | [10, 22] | card_id, upgrade, cost_current (−1 X, −2 unplayable), cost_base, type, target, rarity, keyword_mask (bit = 1 << CardKeyword), enchant_id, enchant_amount, affliction_id, playable, playable_reason_id, hits, var_id_0..3, var_val_0..3 |
+| 3 | `hand_f` | float32 | [10, 2] | block_eff, damage_eff_self_or_all |
+| 4 | `hand_dmg` | float32 | [10, 6] | vs_enemy_0..5 |
+| 5 | `deck` | int32 | [96, 5] | card_id, upgrade, enchant_id, enchant_amount, affliction_id |
+| 6–8 | `draw_counts`, `discard_counts`, `exhaust_counts` | int16 | [V_cards × 2] | multiset counts |
+| 9 | `relics` | int32 | [32, 5] | relic_id, counter, status, used_up, stack |
+| 10 | `potions` | int32 | [10, 3] | potion_id, usable_now, target_type |
+| 11 | `powers_player` | int32 | [24, 3] | power_id, amount, is_debuff |
+| 12 | `orbs` | int32 | [10, 3] | orb_id, passive, evoke |
+| 13 | `enemies` | int32 | [6, 9] | present, uid, monster_id, hp, max_hp, block, flank, behind, intent_n |
+| 14 | `enemy_intents` | int32 | [6, 3, 4] | type, damage, times, card_count |
+| 15 | `enemy_powers` | int32 | [6, 12, 2] | power_id, amount |
+| 16 | `allies` | int32 | [2, 5] | present, monster_id, hp, max_hp, block |
+| 17 | `ally_powers` | int32 | [2, 8, 2] | power_id, amount |
+| 18 | `map_nodes` | int32 | [18, 7, 6] | point_type, visited, current, legal_next, child_mask, quest |
+| 19 | `rewards` | int32 | [8, 4] | reward_type, amount, item_id, is_card_reward |
+| 20 | `card_reward` | int32 | [4, 22] | hand columns (playable, playable_reason_id, hits = 0) |
+| 21 | `card_reward_alts` | int32 | [2] | alt_id (CardRewardAlt) |
+| 22 | `shop` | int32 | [14, 7] | category, item_id, upgrade, price, stocked, on_sale, affordable |
+| 23 | `rest` | int32 | [9, 2] | option_id, enabled |
+| 24 | `event_options` | int32 | [8, 6] | key_hash, ordinal, enabled, locked, proceed, relic_id |
+| 25 | `prompt_options` | int32 | [128, 5] | item_id, upgrade, picked, kind_of_item (PromptItemKind), ordinal |
 | 26 | `cand` | int32 | [192, 9] | kind, A, B, hand_slot, target_slot, potion_slot, option_index, card_id, target_uid — **TODO(V2)** |
 | 27 | `cand_n` | int32 | [] | candidates (0 when terminal) — stub 0, **TODO(V2)** |
 | 28 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
@@ -129,10 +128,306 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 | 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
 | 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128 |
 | 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
-| 33 | `aux` | float32 | [10] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat — **TODO(V1)** |
+| 33 | `aux` | float32 | [10] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat |
 | 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
 
 35 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20). ≈ 26.7 KB per env.
+
+## Field reference (observation encoder, `ObservationEncoder*.cs`)
+
+The encoder reads the run through public Core API only. It is pure: it writes no state, draws no RNG, and leaves the
+state hash unchanged (`Test_VecEncoder_IsPure` checks 1,000 sampled states, and also checks that encoding twice gives
+identical bytes). Apart from what Core calls allocate, it does not allocate: it uses per-thread scratch and no LINQ.
+Measured over 1,000 states it averages ≈ 36 µs and ≈ 440 B per call, and the bytes come from Core hooks. Each call
+clears every observation buffer first. A table that exceeds its capacity keeps its first CAP rows, sets
+`TABLE_OVERFLOW`, and still reports the true count in its `*_n` column. Fractional numbers are truncated to the
+integer the game UI shows.
+
+### Player-view rules (CONTRACTS.md §D3.3, hidden-information list H1–H15)
+
+| # | Rule | How the encoder applies it |
+| --- | --- | --- |
+| H1 | The draw pile order is hidden. | Draw, discard and exhaust piles are encoded only as count vectors. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. |
+| H2 | No seed, RNG stream or counter. | Nothing under `Rng`, `SeedText` or `Odds` is read. |
+| H3 | No future rooms. | Only the current act's `Boss` and `SecondBoss` appear (`boss_id`, `second_boss_id`); the game shows both on the map and the top bar. The map is the current act's map only. |
+| H4/H5 | No odds and no grab bags. | Neither is read. |
+| H6 | The treasure relic is hidden until the chest opens. | `treasure_relic_id` is 0 until `ChestOpened`. |
+| H7 | Card-reward cards are hidden on the rewards screen. | A card reward appears in `rewards` only as `is_card_reward = 1`. `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase. |
+| H8 | No move ids. | Intents come from `NextMove.Intents` through `PlayerView.Intent` (type, damage, times, card_count). The move's identity and the AI state are never read; `Test_VecEncoder_NoMoveIds` greps the encoder source and checks the rows. |
+| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra`, event fields and event RNG are not read. An event option is identified by `key_hash` and `ordinal` only. |
+| H10 | Powers are shown as the UI shows them. | Visibility uses `PlayerView.IsVisibleToPlayer` and amounts use `PlayerView.DisplayAmountToPlayer` (see below). |
+| H13 | No instance ids. | The only exception is the enemy `uid` (= `CombatId`, stable for the whole combat; the play server uses it as well). Prompt options are identified by (item_id, upgrade, ordinal). |
+| H12/H14/H15 | No profile, history or visited-event set. | None of these is read. |
+
+`PlayerView` (`sim/Sts2Sim.Core/Combat/Pipeline/PlayerView.cs`, decision D9) holds the helpers that were moved from
+`SimProjector`, with their semantics unchanged:
+
+- `IsVisible` and `DisplayAmount` are strict. They throw `PlayerViewGapException` for AMBERGRIS and for the
+  display-amount overrides that have no rule; the diff gate relies on this.
+- `Intent`, `CostOf`, `CanPlay` and `HitCount` are shared by the diff projection, the play server and the encoder.
+- `IsVisibleToPlayer` and `DisplayAmountToPlayer` never throw, and only the encoder uses them. AMBERGRIS is hidden, as
+  the game sets `IsVisibleInternal => false`. AUTOMATION, FERAL, MONOLOGUE, ORBIT, PALE_BLUE_DOT, PANACHE, SLOTH and
+  WITHERING_PRESENCE apply the game's DisplayAmount from the Core port's state; the decompile citations are inline in
+  the code. CACOPHONY and TAG_TEAM are not ported and fall back to `Amount`.
+
+### Columns
+
+Combat-only fields are 0 unless `RunState.Combat.IsInProgress`. Room tables are written from the loop phase
+(`RunSim.Loop.Phase`), so a pending prompt keeps its screen as context. For example, a merchant card-removal prompt
+still shows the shop.
+
+**global_i**
+
+| Column | Meaning |
+| --- | --- |
+| `phase` | `RunSim.Phase` (RunPhase). |
+| `decision_kind` | `Prompt` while `HasPendingChoice`, else `phase`. |
+| `is_combat` | 1 while a combat is in progress. |
+| `character` | Vocab id of the character. |
+| `ascension` | Ascension level. |
+| `act_index` | Act index, 0–2. |
+| `act_id` | Act vocab id. |
+| `total_floor` | `MapPointHistory.Count`. |
+| `act_floor` | Floor within the act. |
+| `map_row`, `map_col` | The current map coordinate; −1 before the first move. |
+| `hp`, `max_hp`, `gold`, `stars` | Read from the shared `PlayerState`. |
+| `energy` | Combat only. |
+| `max_energy` | `EnergyCmd.GetMaxEnergy` in combat, else `BaseMaxEnergy`. |
+| `block`, `turn`, `round` | Combat only (`PlayerState.TurnNumber`, `CombatState.RoundNumber`). |
+| `potion_slots` | Number of potion slots. |
+| `deck_n`, `relic_n` | Counts of the deck and the relics. |
+| `draw_n`, `discard_n`, `exhaust_n`, `hand_n` | Combat only. |
+| `orb_slots` | `OrbQueue.Capacity` in combat, else `BaseOrbSlotCount`. |
+| `enemy_n` | Number of live enemies. |
+| `ally_n` | Number of live pets. |
+| `boss_id`, `second_boss_id` | Encounter vocab ids of the current act's bosses. |
+| `card_removals_used` | Card removals bought so far. |
+| `removal_price` | Next removal price: base 75 / 100 at A6, plus 25 / 50 per removal used. In a shop it is the removal entry's `GetCost` (relic modifiers included), or −1 once sold. |
+| `incoming_damage`, `incoming_hits` | Sums over live enemies and their attack intents of damage × times, and of times. This is the play server's `danger`. |
+| `prompt_kind` | ChoicePromptKind. HandSelect = 0, so mask by `decision_kind`. |
+| `prompt_min`, `prompt_max` | Selection bounds. |
+| `prompt_picked` | Number of picks so far. |
+| `prompt_needs_confirm`, `prompt_can_cancel`, `prompt_can_skip`, `prompt_ordered` | Prompt flags. |
+| `prompt_option_n` | Number of options (the true count). |
+| `prompt_pile` | PileType; 0 when there is none. |
+| `prompt_site_hash` | Low 32 bits of XXH64(UTF-8 `SiteId`) (`ObservationEncoder.HashText`). |
+| `reward_n` | Number of unclaimed rewards. |
+| `card_reward_can_skip` | 1 when a `Skip` alternative exists (CardReward phase). |
+| `card_reward_skip_consumes` | 1 when skipping completes the reward. |
+| `treasure_opened` | 1 once the chest is open. |
+| `treasure_relic_id` | Relic vocab id, only once the chest is open (H6). |
+| `treasure_claimed` | 1 = taken, 2 = skipped. |
+| `event_id` | Event vocab id. |
+| `event_finished` | 1 when the event is finished. |
+| `event_option_n` | Number of options while the event is not finished, else 0. |
+| `rest_option_n` | `RestSiteRoom.Options.Count`. |
+| `shop_entry_n` | `MerchantInventory.AllEntries.Count`. |
+
+**global_f**
+
+| Column | Meaning |
+| --- | --- |
+| `hp_frac` | hp / max_hp. |
+| `gold_log1p` | ln(1 + gold). |
+| `floor_frac` | total_floor / 48, or / 49 at A10 (double boss). |
+| `incoming_net_hp` | hp − max(0, incoming_damage − block). |
+
+**hand / card_reward** (row i = `Hand[i]` / `CardReward.Cards[i]`)
+
+| Column | Meaning |
+| --- | --- |
+| `card_id`, `upgrade` | `UpgradeLevel`. |
+| `cost_current` | −1 for X cost; −2 when the cost is unplayable (`Base < 0`); otherwise `PlayerView.CostOf` (combat modifiers) in combat and `GetAmountToSpend()` out of combat. |
+| `cost_base` | `EnergyCost.Base`, with the same sentinels. |
+| `type`, `target`, `rarity` | Per-instance enum values. |
+| `keyword_mask` | `GetKeywordMaskWithSources(cs, All)`; bit = 1 << CardKeyword. |
+| `enchant_id`, `enchant_amount` | The card's enchantment. |
+| `affliction_id` | The card's affliction. |
+| `playable` | Hand only: `CanPlay` with reason None. |
+| `playable_reason_id` | Hand only: the raw UnplayableReason bitmask. |
+| `hits` | Hand only, for cards with a damage var: `PlayerView.HitCount` (Repeat var, else the def's `HitCount` constant, else 1; X cost 0). |
+| `var_id_k`, `var_val_k` | The first 4 dynamic vars in the card's declaration order (`card_vars` vocabulary), with their base `IntValue`. |
+
+**hand_f**
+
+| Column | Meaning |
+| --- | --- |
+| `block_eff` | `CardPreview.Block(cs, card, null)`. |
+| `damage_eff_self_or_all` | For cards with a damage var whose target is not AnyEnemy, the untargeted `CardPreview.Damage(cs, card, null)`. |
+
+**hand_dmg**
+
+| Column | Meaning |
+| --- | --- |
+| `vs_enemy_j` | `CardPreview.Damage(cs, card, Monsters[j])` for a live enemy in slot j and a card with a damage var; 0 otherwise. This equals the play server's `effective.damage[uid]`. |
+
+**deck** (row = pickup order; `deck_n` holds the true count)
+
+| Column | Meaning |
+| --- | --- |
+| `card_id`, `upgrade` | Card identity. |
+| `enchant_id`, `enchant_amount` | The card's enchantment. |
+| `affliction_id` | The card's affliction. |
+
+**draw_counts / discard_counts / exhaust_counts**
+
+Each is the count of the pile's cards at index `card_id * 2 + min(upgrade, 1)`, saturating at 32,767. These vectors
+are combat only.
+
+**relics** (pickup order)
+
+| Column | Meaning |
+| --- | --- |
+| `relic_id` | Relic vocab id. |
+| `counter` | `DisplayAmount` when `ShowCounter`, else −1. |
+| `status` | RelicStatus. |
+| `used_up` | `IsUsedUp`. |
+| `stack` | `StackCount`. |
+
+**potions** (row = slot; an empty slot is a zero row)
+
+| Column | Meaning |
+| --- | --- |
+| `potion_id` | Potion vocab id. |
+| `usable_now` | 1 exactly when a UsePotion action exists for the slot now: the combat rule of `LegalActionGenerator.FillPotions` at a combat decision point, or `CanUsePotionOutOfCombat` outside combat (Victory/Defeat excluded); 0 while a prompt is pending. |
+| `target_type` | TargetType. |
+
+**powers_player** (visible powers only, in list order)
+
+| Column | Meaning |
+| --- | --- |
+| `power_id` | Power vocab id. |
+| `amount` | `DisplayAmountToPlayer`. |
+| `is_debuff` | `TypeForCurrentAmount == Debuff`. |
+
+**orbs** (queue order)
+
+| Column | Meaning |
+| --- | --- |
+| `orb_id` | Orb vocab id. |
+| `passive` | `PassiveVal(cs)`. |
+| `evoke` | `EvokeVal(cs)`. |
+
+**enemies** (row j = `CombatState.Monsters[j]`, the PlayCard and UsePotion target index; a dead or non-enemy slot is a zero row)
+
+| Column | Meaning |
+| --- | --- |
+| `present` | 1 for a live enemy. |
+| `uid` | `CombatId`. |
+| `monster_id` | Monster vocab id. |
+| `hp`, `max_hp`, `block` | Current values. |
+| `flank` | 1 with BACK_ATTACK_LEFT, 2 with BACK_ATTACK_RIGHT. |
+| `behind` | 1 when this enemy's attacks hit the SURROUNDED player's back now. |
+| `intent_n` | Number of intent rows written. |
+
+**enemy_intents** [j][k] (the next move's intents k < 3)
+
+| Column | Meaning |
+| --- | --- |
+| `type` | IntentType. Attack = 0, so mask by `intent_n`. |
+| `damage` | Per-hit damage after modifiers (`AttackIntent.GetSingleDamage`). |
+| `times` | Hit count (`GetRepeats`). |
+| `card_count` | `StatusIntent.CardCount`. |
+
+**enemy_powers** [j][k] and **ally_powers** [a][k]
+
+| Column | Meaning |
+| --- | --- |
+| `power_id` | Power vocab id; visible powers only. |
+| `amount` | `DisplayAmountToPlayer`. |
+
+**allies** (row a−1 = `CombatState.Allies[a]`, the live pets; the UsePotion ally target is −2 − a)
+
+| Column | Meaning |
+| --- | --- |
+| `present` | 1 for a live pet. |
+| `monster_id` | Monster vocab id. |
+| `hp`, `max_hp`, `block` | Current values. |
+
+**map_nodes** [row][col] (the current act: grid points, start, boss, second boss)
+
+| Column | Meaning |
+| --- | --- |
+| `point_type` | MapPointType; 0 means no node. |
+| `visited` | The node is in `VisitedMapCoords`. |
+| `current` | The node is `CurrentMapCoord`. |
+| `legal_next` | `MapTravel.GetLegalMapPoints`; Map phase only and not at a prompt. Travel A is the rank of the point by (col, row). |
+| `child_mask` | Bit c = an edge to column c of the next row. |
+| `quest` | Number of quest marks at the node (FUR_COAT, SPOILS_MAP). |
+
+**rewards** (row i = `RewardsSet.Rewards[i]` = ClaimReward A; a claimed reward is a zero row with reward_type None; written in the Rewards and CardReward phases)
+
+| Column | Meaning |
+| --- | --- |
+| `reward_type` | RewardType. |
+| `amount` | Gold amount. |
+| `item_id` | Potion, relic or special-card vocab id (by reward type). |
+| `is_card_reward` | 1 for a card reward (its cards stay hidden, H7). |
+
+**card_reward_alts**
+
+Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative A).
+
+**shop** (row i = `AllEntries[i]` = BuyEntry A)
+
+| Column | Meaning |
+| --- | --- |
+| `category` | ShopCategory: card, colorless_card, relic, potion or card_removal. |
+| `item_id` | Card, relic or potion vocab id; 0 for removal. |
+| `upgrade` | The card's upgrade level. |
+| `price` | `GetCost(rs)`. |
+| `stocked` | 1 while the entry is in stock. |
+| `on_sale` | 1 for the sale card. |
+| `affordable` | stocked and price ≤ gold, which is BuyEntry's own rule. |
+
+**rest** (row i = `Options[i]` = ChooseRestOption A)
+
+| Column | Meaning |
+| --- | --- |
+| `option_id` | RestOption vocab id. |
+| `enabled` | 1 when the option can be chosen. |
+
+**event_options** (row i = `CurrentOptions[i]` = ChooseEventOption A, while not finished)
+
+| Column | Meaning |
+| --- | --- |
+| `key_hash` | Low 32 bits of XXH64(UTF-8 `"<eventId>:<TextKey>"`). |
+| `ordinal` | i. |
+| `enabled`, `locked`, `proceed` | Option flags. |
+| `relic_id` | Relic vocab id of the option's relic. |
+
+**prompt_options** (row i = `Options[i]` = PromptSelect A)
+
+| Column | Meaning |
+| --- | --- |
+| `item_id` | Card, relic or potion vocab id when the option's ModelId is one, else the `HashText` of the ModelId. |
+| `kind_of_item` | PromptItemKind: card, relic, potion, bundle (the Bundle prompt, whose item_id is the hash of the comma-joined card list) or index. |
+| `upgrade` | `UpgradeLevel`. |
+| `picked` | The 1-based position of i in `PendingPicks`; 0 = not picked. |
+| `ordinal` | i. Draw-pile prompts list their options as the game does: sorted by (rarity, id, pile index). |
+
+**aux** (float32, for logging and shaping; never part of the reward)
+
+| Column | Meaning |
+| --- | --- |
+| `total_floor`, `act_index`, `hp`, `max_hp`, `gold`, `deck_n`, `relic_n`, `is_combat` | The same values as in `global_i`. |
+| `bosses_killed`, `combats_won` | Monster, Elite and Boss rooms in the floor history. The current floor's last room is excluded while its combat runs, or after a Defeat when that room is a combat room. |
+
+**last_episode**
+
+`ObservationEncoder.FillEpisodeSummary(RunSim, Span<int>)` fills floor, act, final_hp, final_max_hp and
+last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv writes win, steps and end_kind.
+
+### Encoder tests (`sim/Sts2Sim.Tests/VecTests.Encoder.cs`, class `VecEncoderTests`)
+
+| Test | What it checks |
+| --- | --- |
+| `IsPure` | 1,000 states from 60 random boosted runs across all characters and A0/A10. Each must keep its hash after encoding, encode to identical bytes twice, and hold no `?` id in any id column. |
+| `LeakTest_DrawOrder` | 600 combat points whose draw pile was reshuffled in a clone. The encoded bytes must be identical. |
+| `ParityWithServer` | 300 states (252 in combat). hp, max_hp, gold, energy, max_energy, block, floor and act must match the play server's `ObservationBuilder` JSON. So must the hand's ids, upgrades, costs, playability and hits, and the enemies' slot, uid, id, hp, max_hp, block and intents (type, damage, times, card_count). Also compared: incoming danger and every effective damage against every live enemy (751 values). |
+| `NoMoveIds` | Greps the encoder source for move, AI and RNG identifiers, and checks that the intent rows match the intents' types. |
+| `TreasureAndCardRewardHidden` | 5 closed and then opened chests, and 74 card rewards that are hidden on the Rewards screen and shown in the CardReward phase. |
+| `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
 
 ## Python API (§D6)
 
@@ -153,3 +448,7 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
 - `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1);
   V2 should confirm it is never mutated before relying on save entries under parallel resets.
 - `hand` has no star-cost or affliction-amount column (not in §D3.1).
+- The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
+  episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).
+- `rewards` rows are indexed by `RewardsSet.Rewards` index (ClaimReward A), so a claimed reward leaves a zero row inside
+  the table; `reward_n` counts the unclaimed ones.

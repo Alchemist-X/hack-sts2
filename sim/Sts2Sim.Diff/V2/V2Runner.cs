@@ -308,7 +308,7 @@ public static class V2Runner
             {
                 simProjection = RunScreenProjector.Project(sim);
             }
-            catch (ProjectionGapException ex)
+            catch (PlayerViewGapException ex)
             {
                 result.Status = BundleStatus.Error;
                 result.Class = DivergenceClass.ProjectionGap;
@@ -460,7 +460,7 @@ public static class V2Runner
                 {
                     diffs = CombatDecisionDiffs(d, driver, result, out simJson);
                 }
-                catch (ProjectionGapException ex)
+                catch (PlayerViewGapException ex)
                 {
                     result.Status = BundleStatus.Error;
                     result.Class = DivergenceClass.ProjectionGap;
@@ -493,7 +493,7 @@ public static class V2Runner
                     {
                         SimProjector.Project(driver.State);
                     }
-                    catch (ProjectionGapException ex)
+                    catch (PlayerViewGapException ex)
                     {
                         result.Status = BundleStatus.Error;
                         result.Class = DivergenceClass.ProjectionGap;
