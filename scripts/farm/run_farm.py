@@ -188,10 +188,14 @@ class Policy:
         for ref in refs:
             kind = str(ref.get('type', '')).lower()
             w = 1.0
+            run = state.get('run') or {}
+            early = run.get('act') == 1 and (run.get('floor') or 0) < 8
             if 'elite' in kind:
-                w = 2.5 if hp_frac > 0.7 else (0.6 if hp_frac > 0.45 else 0.1)
+                # First farm minutes: starter decks died to every act-1 elite before
+                # floor 8, which ended runs before act 2.  Elites stay reachable later.
+                w = 0.1 if early else (1.0 if hp_frac > 0.8 else 0.15)
             elif 'rest' in kind:
-                w = 3.0 if hp_frac < 0.5 else 1.0
+                w = 3.0 if hp_frac < 0.5 else (1.5 if hp_frac < 0.7 else 0.8)
             elif 'shop' in kind:
                 w = 2.5 if gold >= 120 else 0.8
             elif 'unknown' in kind:
@@ -393,7 +397,7 @@ class Worker:
         character = CHARACTERS[self.char_i % len(CHARACTERS)]
         self.char_i += 1
         self.runs += 1
-        run_id = f'w{self.n}-r{self.runs:03d}-{character.lower()}'
+        run_id = f'w{self.n}-{self.args.segment}r{self.runs:03d}-{character.lower()}'
         run_dir = Path(self.args.farm_root) / 'runs' / run_id
         began = time.monotonic()
         self.to_main_menu()
@@ -499,6 +503,8 @@ class Worker:
                 avoid = []
                 errs = 0
                 time.sleep(2)
+        if rec['result'] is None and STOP.is_set():
+            rec['result'] = 'interrupted'
         rec['wall_s'] = round(time.monotonic() - began, 1)
         self.out.jsonl('runs.jsonl', rec)
         self.out.line(f'w{self.n} {run_id} END result={rec["result"]} act={rec["max_act"]} '
@@ -532,6 +538,8 @@ class Worker:
                 if not self.alive():
                     self.restart('not answering') if self.runs or self.restarts else self.launch()
                 rec = self.play_run()
+                if STOP.is_set():
+                    break
                 if rec['restart']:
                     self.restart(rec['result'])
                     continue
@@ -563,7 +571,9 @@ def main(argv=None):
     ap.add_argument('--hang-s', type=float, default=300)
     ap.add_argument('--rng-seed', type=int, default=None, help='default: wall-clock seconds')
     ap.add_argument('--stagger-s', type=float, default=20)
+    ap.add_argument('--char-shift', type=int, default=0, help='rotate the per-worker character start')
     args = ap.parse_args(argv)
+    args.segment = datetime.now().strftime('%H%M-')  # unique run ids across driver restarts
     if args.rng_seed is None:
         args.rng_seed = int(time.time())
     workers_n = [int(x) for x in args.workers.split(',')]
@@ -574,7 +584,7 @@ def main(argv=None):
     deadline = began + args.duration_min * 60
     hard = began + args.hard_stop_min * 60
     out.line(f'FARM START workers={workers_n} duration_min={args.duration_min} rng_seed={args.rng_seed}')
-    workers = [Worker(args, n, out, deadline, char_offset=k) for k, n in enumerate(workers_n)]
+    workers = [Worker(args, n, out, deadline, char_offset=k + args.char_shift) for k, n in enumerate(workers_n)]
 
     def on_signal(signum, _frame):
         STOP.set()
