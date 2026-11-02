@@ -3,90 +3,116 @@ using System.Globalization;
 
 namespace Sts2Sim.Server;
 
+// Parsed command line of Sts2Sim.Server (Program.ParseArgs).
+public sealed class ServerArgs
+{
+    public int Port { get; set; } = 8765;
+    public string Bind { get; set; } = HttpHost.DefaultBind;
+    public string? CrashLog { get; set; } = "tmp/play-crashes.jsonl";
+    public int? SelfTest { get; set; }
+    public string? Replay { get; set; }
+    public int? Line { get; set; }
+    public int Seed { get; set; } = 1;
+    public int Ascension { get; set; }
+    public int StepCap { get; set; } = 6_000;
+    public string Content { get; set; } = "ported_only";
+    public string Policy { get; set; } = "random";
+    public string? Knowledge { get; set; }
+    public bool RevealMoves { get; set; }
+    public bool Help { get; set; }
+    public List<string> Characters { get; } = new();
+}
+
 public static class Program
 {
     private const string Usage =
-        "usage: Sts2Sim.Server [--port 8765] [--crash-log tmp/play-crashes.jsonl | --no-crash-log] [--knowledge DIR] [--reveal-moves]\n" +
+        "usage: Sts2Sim.Server [--port 8765] [--bind 127.0.0.1] [--crash-log tmp/play-crashes.jsonl | --no-crash-log] [--knowledge DIR] [--reveal-moves]\n" +
         "       Sts2Sim.Server --selftest N [--seed 1] [--character IRONCLAD] [--ascension 0] [--content ported_only|all] [--step-cap 6000] [--policy random|biased]\n" +
         "       Sts2Sim.Server --replay tmp/play-crashes.jsonl [--line N]   (N is 1-based; default: last line)\n" +
+        "       --bind ADDR: listen address (default 127.0.0.1 = loopback only, also answers 'localhost');\n" +
+        "         0.0.0.0, ::, * or + = every interface (containers); otherwise one IPv4/IPv6 address or a host name\n" +
         "       --knowledge DIR: rules-text localisation (knowledge/, knowledge/source or one version dir);\n" +
         "         default: env STS2SIM_KNOWLEDGE, else the nearest knowledge/source above the cwd or the binary\n" +
         "       --reveal-moves: games default to \"reveal_moves\": true (intents and the enemy-turn log name the move);\n" +
-        "         default off, as in the game (a create body's \"reveal_moves\" overrides it per game)";
+        "         default off, as in the game (a create body's \"reveal_moves\" overrides it per game)\n" +
+        "       env STS2SIM_VERSION: version string reported by /health (default: git rev-parse --short HEAD, else 'unknown')";
+
+    // Throws ArgumentException / FormatException on a bad command line.
+    public static ServerArgs ParseArgs(string[] args)
+    {
+        var o = new ServerArgs();
+        for (int i = 0; i < args.Length; i++)
+        {
+            string a = args[i];
+            string Next() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{a} needs a value");
+            switch (a)
+            {
+                case "--port":
+                    o.Port = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    if (o.Port is < 1 or > 65535)
+                    {
+                        throw new ArgumentException($"--port {o.Port} is outside 1..65535");
+                    }
+                    break;
+                case "--bind":
+                    o.Bind = HttpHost.ValidateBind(Next());
+                    break;
+                case "--crash-log":
+                    o.CrashLog = Next();
+                    break;
+                case "--no-crash-log":
+                    o.CrashLog = null;
+                    break;
+                case "--selftest":
+                    o.SelfTest = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    break;
+                case "--seed":
+                    o.Seed = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    break;
+                case "--character":
+                    o.Characters.Add(Next().ToUpperInvariant());
+                    break;
+                case "--ascension":
+                    o.Ascension = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    break;
+                case "--content":
+                    o.Content = Next();
+                    break;
+                case "--policy":
+                    o.Policy = Next();
+                    break;
+                case "--step-cap":
+                    o.StepCap = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    break;
+                case "--replay":
+                    o.Replay = Next();
+                    break;
+                case "--knowledge":
+                    o.Knowledge = Next();
+                    break;
+                case "--reveal-moves":
+                    o.RevealMoves = true;
+                    break;
+                case "--line":
+                    o.Line = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    break;
+                case "-h":
+                case "--help":
+                    o.Help = true;
+                    break;
+                default:
+                    throw new ArgumentException($"unexpected argument '{a}'");
+            }
+        }
+        return o;
+    }
 
     public static int Main(string[] args)
     {
-        int port = 8765;
-        string? crashLog = "tmp/play-crashes.jsonl";
-        int? selftest = null;
-        string? replay = null;
-        int? line = null;
-        int seed = 1;
-        int ascension = 0;
-        int stepCap = 6_000;
-        string content = "ported_only";
-        string policy = "random";
-        string? knowledge = null;
-        bool revealMoves = false;
-        var characters = new List<string>();
+        ServerArgs o;
         try
         {
-            for (int i = 0; i < args.Length; i++)
-            {
-                string a = args[i];
-                string Next() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{a} needs a value");
-                switch (a)
-                {
-                    case "--port":
-                        port = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "--crash-log":
-                        crashLog = Next();
-                        break;
-                    case "--no-crash-log":
-                        crashLog = null;
-                        break;
-                    case "--selftest":
-                        selftest = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "--seed":
-                        seed = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "--character":
-                        characters.Add(Next().ToUpperInvariant());
-                        break;
-                    case "--ascension":
-                        ascension = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "--content":
-                        content = Next();
-                        break;
-                    case "--policy":
-                        policy = Next();
-                        break;
-                    case "--step-cap":
-                        stepCap = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "--replay":
-                        replay = Next();
-                        break;
-                    case "--knowledge":
-                        knowledge = Next();
-                        break;
-                    case "--reveal-moves":
-                        revealMoves = true;
-                        break;
-                    case "--line":
-                        line = int.Parse(Next(), CultureInfo.InvariantCulture);
-                        break;
-                    case "-h":
-                    case "--help":
-                        Console.WriteLine(Usage);
-                        return 0;
-                    default:
-                        throw new ArgumentException($"unexpected argument '{a}'");
-                }
-            }
+            o = ParseArgs(args);
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException)
         {
@@ -94,31 +120,41 @@ public static class Program
             Console.Error.WriteLine(Usage);
             return 2;
         }
-
-        RulesText.Load(knowledge);
-        var service = new PlayService(new PlayServiceOptions { Version = GitVersion(), CrashLogPath = crashLog, RevealMoves = revealMoves });
-        if (replay != null)
+        if (o.Help)
         {
-            return Replay.Cli(replay, line);
+            Console.WriteLine(Usage);
+            return 0;
         }
-        if (selftest is { } n)
+
+        RulesText.Load(o.Knowledge);
+        var service = new PlayService(new PlayServiceOptions { Version = GitVersion(), CrashLogPath = o.CrashLog, RevealMoves = o.RevealMoves });
+        if (o.Replay != null)
+        {
+            return Replay.Cli(o.Replay, o.Line);
+        }
+        if (o.SelfTest is { } n)
         {
             return SelfTest.Cli(service, new SelfTestOptions
             {
                 Runs = n,
-                FirstSeed = seed,
-                Characters = characters.Count > 0 ? characters : null,
-                Ascension = ascension,
-                Content = content,
-                StepCap = stepCap,
-                Policy = policy
+                FirstSeed = o.Seed,
+                Characters = o.Characters.Count > 0 ? o.Characters : null,
+                Ascension = o.Ascension,
+                Content = o.Content,
+                StepCap = o.StepCap,
+                Policy = o.Policy
             });
         }
-        return HttpHost.Serve(service, port);
+        return HttpHost.Serve(service, o.Port, o.Bind);
     }
 
     public static string GitVersion()
     {
+        string? env = Environment.GetEnvironmentVariable("STS2SIM_VERSION");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            return env.Trim();
+        }
         try
         {
             var psi = new ProcessStartInfo("git", "rev-parse --short HEAD")

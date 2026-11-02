@@ -12,10 +12,13 @@ dotnet build sim/Sts2Sim.sln -c Release
 dotnet run -c Release --project sim/Sts2Sim.Server -- --port 8765 --crash-log tmp/play-crashes.jsonl
 ```
 
-Flags: `--port N` (default 8765), `--crash-log PATH` (default `tmp/play-crashes.jsonl`, relative to the
-working directory), `--no-crash-log`, `--knowledge DIR` (rules text, see below; applies to serve,
-`--selftest` and `--replay`), `--reveal-moves` (games default to `"reveal_moves": true`, see
-[Hidden information](#hidden-information); default off, as in the game).
+Flags: `--port N` (default 8765), `--bind ADDR` (default `127.0.0.1`, loopback only; `0.0.0.0`, `::`, `*`
+or `+` listen on every interface, as the container image does, see `docs/docker.md`; otherwise one IP address
+or host name), `--crash-log PATH` (default `tmp/play-crashes.jsonl`, relative to the working directory),
+`--no-crash-log`, `--knowledge DIR` (rules text, see below; applies to serve, `--selftest` and `--replay`),
+`--reveal-moves` (games default to `"reveal_moves": true`, see [Hidden information](#hidden-information);
+default off, as in the game). Env `STS2SIM_VERSION` overrides the version `/health` reports (default: the
+short git sha; the image sets it at build time).
 
 At startup the server prints one stderr line saying what rules text it loaded, e.g.
 `rules text: loaded from .../knowledge/source (discovered; versions v0.107.1,v0.111.0): 625 cards, 306 relics, ...`
