@@ -101,11 +101,26 @@ def aggregate(summaries: list[dict], ascension: int = 0) -> dict:
         "late_line_tokens": sum(s.get("late_line_tokens", 0) for s in summaries),
         "api_calls": sum(s.get("api_calls", 0) for s in summaries),
         "tokens": tokens,
+        **_per_call(tokens, sum(s.get("api_calls", 0) for s in summaries),
+                    sum(s.get("cost_usd", 0.0) for s in summaries), sum(s.get("steps", 0) for s in summaries)),
         "cost_usd": round(sum(s.get("cost_usd", 0.0) for s in summaries), 6),
         "cost_per_game_usd": (sum(s.get("cost_usd", 0.0) for s in summaries) / n) if n else None,
         "minutes_per_game_mean": (_mean(secs) / 60.0) if secs else None,
         "replayable": sum(1 for s in summaries if s.get("replayable")),
     }
+
+
+def _per_call(tokens: dict, calls: int, cost: float, steps: int) -> dict:
+    """Mean tokens per API call, cost per step, and the cache hit rate = cache reads / all input tokens."""
+    inp = tokens.get("input_tokens", 0)
+    cw = tokens.get("cache_creation_input_tokens", 0)
+    cr = tokens.get("cache_read_input_tokens", 0)
+    total_in = inp + cw + cr
+    per = (lambda v: round(v / calls, 1)) if calls else (lambda v: None)
+    return {"uncached_input_per_call": per(inp), "cache_write_per_call": per(cw), "cache_read_per_call": per(cr),
+            "output_per_call": per(tokens.get("output_tokens", 0)),
+            "cache_hit_rate": round(cr / total_in, 4) if total_in else None,
+            "cost_per_step_usd": round(cost / steps, 6) if steps else None}
 
 
 def build_report(out_dir: Path) -> dict:
@@ -135,6 +150,8 @@ def build_report(out_dir: Path) -> dict:
         "server_version": cfg.get("server_version"),
         "repo_sha": cfg.get("repo_sha"),
         "prompt_hash": cfg.get("prompt_hash"),
+        # runs written before --obs-mode existed sent the server text (full)
+        "obs_mode": cfg.get("obs_mode", "full" if cfg else None),
         "reveal_moves": cfg.get("reveal_moves"),
         "prices": cfg.get("prices"),
         "expected_games": expected,
@@ -219,6 +236,11 @@ def _headline_rows(h: dict) -> list[tuple[str, str]]:
         ("api calls", str(h["api_calls"])),
         ("tokens input / cache write / cache read / output",
          f"{t['input_tokens']} / {t['cache_creation_input_tokens']} / {t['cache_read_input_tokens']} / {t['output_tokens']}"),
+        ("per api call: uncached input / cache write / cache read / output",
+         f"{_f(h.get('uncached_input_per_call'))} / {_f(h.get('cache_write_per_call'))} / "
+         f"{_f(h.get('cache_read_per_call'))} / {_f(h.get('output_per_call'))}"),
+        ("cache hit rate (cache read / all input)", _f(h.get("cache_hit_rate"), 1, True)),
+        ("cost USD per step", f"${h['cost_per_step_usd']:.5f}" if h.get("cost_per_step_usd") is not None else "-"),
         ("cost USD (per game)", f"${h['cost_usd']:.4f} (${(h['cost_per_game_usd'] or 0):.4f})"),
         ("minutes per game (mean)", _f(h["minutes_per_game_mean"], 2)),
         ("replayable histories", f"{h['replayable']}/{h['games']}"),
@@ -240,7 +262,7 @@ def render_md(report: dict) -> str:
                     f"thinking `{report.get('thinking')}`" if report.get("model") else ""))
     reveal = report.get("reveal_moves")
     lines.append(f"- server `{report.get('server_version')}`, repo `{report.get('repo_sha')}`, "
-                 f"prompt `{report.get('prompt_hash')}`, enemy moves "
+                 f"prompt `{report.get('prompt_hash')}`, obs `{report.get('obs_mode') or '?'}`, enemy moves "
                  + ("`revealed`" if reveal else "`hidden`" if reveal is False else "`?` (not recorded)"))
     wall = report.get("wall_seconds")
     lines.append(f"- total wall time: {_f(wall / 60.0, 2) + ' min' if wall is not None else '-'}"

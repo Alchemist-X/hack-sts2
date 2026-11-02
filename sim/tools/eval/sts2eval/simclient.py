@@ -66,6 +66,9 @@ class SimClient:
     async def step(self, gid: str, token: str) -> dict:
         return await self._req("POST", f"/games/{gid}/step", {"token": token})
 
+    async def piles(self, gid: str) -> dict:
+        return await self._req("GET", f"/games/{gid}/piles")
+
     async def history(self, gid: str) -> dict:
         return await self._req("GET", f"/games/{gid}/history")
 
