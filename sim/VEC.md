@@ -1,8 +1,12 @@
 # Sts2Sim.Vec — batched training interface
 
-Status: **scaffold** (wave E2). Shapes, names, buffer order, capacities and export signatures are final
-(CONTRACTS.md Part D). The player-view encoder (`ObservationEncoder*.cs`, V1) fills every observation table (see the
-field reference below); the candidate table (`CandidateTable`, owner V2) is a stub until V2 lands, so `cand_n` is 0.
+Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 integrate"). Shapes, names, buffer
+order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
+(`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
+`CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `dff07a6bc984b119`, 26,710
+bytes/env, 35 buffers. Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
 
@@ -93,6 +97,22 @@ uniform-random candidate policy, all five characters. Pool templates are warmed 
 env-steps/s (slot steps with an action ≥ 0), ms per batch (avg/min/max), resets/s, episode ends, error counts, GC mode
 and collections, bytes per env. `DOTNET_gcServer=1` matches the shipped runtimeconfig (the Bench exe itself defaults to
 Workstation GC, ~3× slower here). Rows go to `sim/BENCH.md` ("Vec (E2)").
+
+Python: `uv run --project sim/tools/vec sts2vec bench --envs N --threads T --steps 500 --pool P [--json]` (the same
+exports through ctypes; reports the whole loop and the native step alone, which differ by < 1 %). The Python bench does
+**not** pre-warm the pool: a fresh entry is created with `NewRun` (~16 ms) the first time any slot starts from it, so
+with `--pool` larger than the number of resets in the window the figure is dominated by template creation (N = 64,
+pool 1024: 4.4k vs 12k env-steps/s with pool 64). Measured at integration (load average 3–7, other agents running;
+numbers vary ±30 % between runs):
+
+| N | threads | C# `vec` (pool 1024, warmed) | Python (pool 1024, cold) | Python (pool 64) |
+| --- | --- | --- | --- | --- |
+| 64 | 1 | 18,551 | 4,389 | 12,118 |
+| 64 | 8 | 89,125 | 5,682 | 20,740 |
+| 1024 | 1 | 27,418 | 23,798 | 29,561 |
+| 1024 | 8 | 116,350 | 73,194 | 54,137 |
+| 4096 | 1 | 41,549 | 39,685 | 39,899 |
+| 4096 | 8 | 144,421 | 162,928 | 86,682 |
 
 ## C ABI (§D5, frozen)
 
@@ -511,6 +531,11 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
 
 ## Known gaps / notes for owners
 
+- No leak test through the C ABI (none in §D5); `sts2vec check` says so. The draw-order leak test is C#
+  (`VecEncoderTests.Test_VecEncoder_LeakTest_DrawOrder`, 600 reshuffled combat points).
+- The clone-free `Step(a, answerer)` stepping path (§D0 D7) is not implemented; every step deep-clones (tape engine).
+- Random-policy soaks reach no victories (0 wins in ~60k episodes); reward 1 at Victory is covered by
+  `VecTests.Test_VecEnv_RewardOnlyOnVictory` with a boosted-HP snapshot.
 - `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1).
   Handled in `StartPool`: a save that imports to a pending prompt is re-imported per start. A *snapshot* of a slot that
   started from such a save and is still at that load prompt would still share it (not observed).

@@ -961,3 +961,37 @@ Open issues:
 - `scripts/export_sts2_knowledge.py` takes zhs as PCK occurrence -1, which is Traditional Chinese on v0.111.0; do not rerun it on the current game without fixing that (`export_sts2_localization.py` is correct).
 - Observation text changed by design (uids, danger line, eff, move titles, act-map grid, prompt desc): byte-identical comparisons against pre-E1 servers no longer hold.
 - Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.
+
+## E2 integrate (2026-11-01)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `d2c8be6` (E1 docs on top of `6114e81`, CONTRACTS Part D). Scaffold `af640b7` (e2/scaffold, parent `6114e81`); all three owner branches descend from it; none skipped.
+
+Merged, in order (all `--no-ff`): e2/scaffold `af640b7` (merge `fded05c`, clean), e2/encoder (V1) `d1bcb3a` (merge `bcda241`, clean), e2/env-core (V2) `c234ffd` (merge `39cbb65`), e2/python (V3) `e74907b` (merge `e402777`, clean). Release build 0 warnings 0 errors after each merge.
+
+Conflicts: only `sim/VEC.md`, one hunk in the schema buffer table — V1 had removed the `TODO(V1)` markers from rows 0–25, V2 had documented rows 26–27 (`cand`, `cand_n`) against the scaffold's TODO rows. Kept V1's rows 0–25 and V2's rows 26–27. `VecTests.cs` (both owners: `static class` → `static partial class`; V1 actually used its own class `VecEncoderTests`) and `sim/BENCH.md` auto-merged.
+
+Fixes (integration):
+- `VecEnv.WriteLastEpisode` now calls V1's `ObservationEncoder.FillEpisodeSummary(sim, last_episode)` for floor / act / final_hp / final_max_hp / last_encounter_id instead of V2's inline LINQ copy (V2 had shipped no stub, only the inline loop; win / steps / end_kind stay with VecEnv). Done in the env-core merge commit `39cbb65`.
+- Core content gap reported by V3 (random soak, 1 CONTENT_GAP): `FairyInABottle.OnUse` called `RequireCombat` and threw `NotImplementedException` ("W2: a potion effect outside combat …") when death was prevented outside combat (event / run-layer HP loss). The decompile (`Models/Potions/FairyInABottle.cs` OnUse: `CreatureCmd.Heal(target, max(MaxHp × 0.3, 1))`) heals with no combat requirement, so the port now calls the run-layer `CreatureCmd.Heal(rs, target, …)` (dispatches to the combat overload when in combat; same as `BloodPotion`/`Ambergris`). V3's diagnosis that LegalActions offers it out of combat was wrong: `CanUsePotionOutOfCombat` requires `PotionUsage.AnyTime`; the trigger is the automatic death-prevention path. It was the only non-`CombatOnly` potion calling `RequireCombat`. RunSoak step count unchanged (687034), G0 unchanged.
+- Python `needs V1/V2` tests: no change needed — with the merged build all 8 run and pass (`STS2VEC_REQUIRE_FULL=1`).
+- `sim/VEC.md`: status paragraph rewritten (integrated), measured bench table and the Python bench's cold-pool caveat added, three known-gap bullets added (no ABI leak test, clone-free stepping not implemented, random soaks reach no victory). `sim/BENCH.md`: "E2 integrate" section.
+
+Gates:
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors (after each merge, `--no-incremental` after the last, and on the final tree); Debug 0 warnings 0 errors.
+- Tests (full suite, Release, final Core): 1098/1098 passed, 0 failed, PENDING 0 (427 s). Includes 15 VecTests + 6 VecEncoderTests. Server-named tests 31/31 (the 30 previous + `VecEncoderTests.Test_VecEncoder_ParityWithServer`). RunSoak 10⁴ runs × 5 characters, 687034 steps, 0 victories, 10000 defeats, 0 capped, 0 content/kernel-stub stops (identical to E1). Content soak: cards 1118 (0 capped), encounters 267 (2 capped), potions 128, relics 594, 0 failures; W1Gate F1 356 playouts pass.
+- G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e2-diff.json`): bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Server self test `--selftest 100 --content ported_only`: 100 completed (0 wins), 0 crashed, 0 capped, 0 server errors, mean 67.6 steps (4.2 s).
+- Python: `STS2VEC_REQUIRE_FULL=1 uv run --project sim/tools/vec pytest -q -rs` 63 passed, 0 skipped (64 passed with the NativeAOT dylib built by `scripts/vec_publish_aot.sh`, which adds the AOT round-trip test). `sts2vec check`: OK (64 envs × 200 steps, threads 1 vs 8: hashes equal, buffers byte-identical every step); also OK through the AOT dylib. Cross-process: `sts2vec digest --envs 256 --steps 300` in two processes, threads 1 and 8 → identical `state_hash_sha256` and `obs_sha256`. Eval runner `uv run --project sim/tools/eval pytest -q sim/tools/eval` 32 passed.
+- Random soak `sts2vec bench --envs 1024 --steps 2000`: seed 0 / pool 64 → 2,048,000 actions, 29,864 episodes, 0 SIM_ERROR, 0 CONTENT_GAP, 0 ILLEGAL_ACTION; seed 1 / pool 1024 → 29,449 episodes, 0 / 0 / 0.
+- Bench (rows in `sim/BENCH.md` "E2 integrate", load average 2.6–7.0): C# `vec` N 64/1024/4096 × threads 1/8 = 18.6k / 89.1k, 27.4k / 116.4k, 41.5k / 144.4k env-steps/s; Python `sts2vec bench` pool 1024 = 4.4k / 5.7k, 23.8k / 73.2k, 39.7k / 162.9k (pool 64: 12.1k / 20.7k, 29.6k / 54.1k, 39.9k / 86.7k). §D7 target ≥ 50k at N = 1024 / 8 threads met. Combat bench 142,439 decisions/s, Clone 2.172 us, StateHash 2.625 us.
+- sts2rec: `uv run pytest -q` 701 passed, 4 skipped.
+- `git status --short` before the commit: only tracked doc/source edits; no tmp/, bundles or saves.
+
+Open issues:
+- Core clone fidelity (V2 finding, kernel, not fixed): `RunSim.Clone()` breaks the aliasing between a claimed `PotionReward.Potion` and the belt copy (`BasicRewards.cs:93`, `Potion.CloneFor`); after a clone, `DiscardPotion` on the still-open Rewards screen flags only the belt copy, so clone-then-step and step-original hash differently. No gameplay effect found. Fix: alias to the cloned belt potion when `_wasTaken`.
+- A snapshot of a slot still at a save-import load prompt would share `Pending.Load` between clones (no such save seen; StartPool re-imports pending saves per start).
+- The Python bench does not pre-warm the pool (cold `NewRun` ~16 ms per first entry use); small-N Python rows with a large pool understate steady-state throughput. Consider a `--warm` option or an export that materialises templates.
+- No draw-order leak test through the C ABI (C# only); prompt-option overflow (> 128) is untested (deck overflow and > 192 candidates are tested).
+- The encoder fails closed (exceptions → SIM_ERROR/CONTENT_GAP); none seen in ~60k soak episodes.
+- Clone-free `Step(a, answerer)` stepping (D7 later ticket) not started; resets are ~0.5–2 k/s at N = 1024.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.

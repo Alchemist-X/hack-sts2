@@ -21,8 +21,9 @@ public sealed class FairyInABottle : PotionModel
     protected override void OnUse(RunState rs, CreatureState? target)
     {
         AssertValidForTargetedPotion(target);
-        var cs = RequireCombat(rs);
-        CreatureCmd.Heal(cs, target, Math.Max((decimal)target.MaxHp * HealMaxHpFraction, MinimumHeal));
+        // Models/Potions/FairyInABottle.cs OnUse: CreatureCmd.Heal(target, …) — also fires outside combat (death
+        // prevented by event/run-layer damage), so use the run-layer overload, which dispatches to the combat one.
+        CreatureCmd.Heal(rs, target, Math.Max((decimal)target.MaxHp * HealMaxHpFraction, MinimumHeal));
     }
 
     public override bool ShouldDie(RunState rs, CreatureState creature)

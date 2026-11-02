@@ -122,3 +122,52 @@ threads {1, 8}).
 | V2 env-core, stub encoder (2026-11-01, 500 steps, pool 1024) | 1024 | 8 | server | 164,521 | 6.22 / 5.25 / 20.5 | 2,341 | 26,710 | 10.3 |
 | V2 env-core, stub encoder (same session) | 1024 | 8 | workstation | 57,575 | 17.8 / 11.8 / 30.7 | 819 | 26,710 | 10.5 |
 | V2 env-core, stub encoder (same session, 200 steps) | 1024 | 1 | server | 25,387 | 40.3 / 35.6 / 56.5 | 348 | 26,710 | 10.6 |
+
+## E2 integrate (2026-11-01)
+
+Merged tree (scaffold + V1 encoder + V2 env-core + V3 python + integration fixes), real encoder and candidate table,
+`encoder_version` `dff07a6bc984b119`, 26,710 bytes/env, A0, uniform-random candidate policy, 500 batched steps, all
+five characters, Server GC. Machine loaded by other agents (load average 2.6 to 7.0); repeated runs vary by up to
+±30 %. §D7 target (≥ 50k env-steps/s at N = 1024, 8 threads): **met** (C# 116k, Python 73k / 54k).
+
+C# — `DOTNET_gcServer=1 dotnet run -c Release --no-build --project sim/Sts2Sim.Bench -- vec <N> <T> 500 0 1024`
+(pool of 1024 fresh entries, templates warmed before the window; 0 sim_error, 0 content_gap, 0 illegal, 0 truncated, 0 wins in every row):
+
+| N | threads | env-steps/s | ms/batch (avg / min / max) | resets/s | episodes ended | obs MB/batch | gen0/1/2 | load avg |
+|---|---|---|---|---|---|---|---|---|
+| 64 | 1 | 18,551 | 3.450 / 2.680 / 8.175 | 268 | 463 | 1.7 | 7/3/0 | 2.6 |
+| 64 | 8 | 89,125 | 0.718 / 0.483 / 4.483 | 1,290 | 463 | 1.7 | 5/3/0 | 2.7 |
+| 1024 | 1 | 27,418 | 37.348 / 20.193 / 69.930 | 390 | 7,286 | 27.4 | 16/7/1 | 3.6 |
+| 1024 | 8 | 116,350 | 8.801 / 7.896 / 40.474 | 1,656 | 7,286 | 27.4 | 17/8/2 | 3.1 |
+| 4096 | 1 | 41,549 | 98.582 / 77.192 / 263.095 | 593 | 29,235 | 109.4 | 31/13/5 | 5.1 |
+| 4096 | 8 | 144,421 | 28.362 / 11.614 / 71.979 | 2,062 | 29,235 | 109.4 | 44/17/8 | 3.0 |
+
+Python — `uv run --project sim/tools/vec sts2vec bench --envs <N> --threads <T> --steps 500 --pool <P> --seed 0`
+(hostfxr, ctypes; whole-loop figure, the native step alone is < 1 % faster; the Python bench does not pre-warm the pool,
+so with pool 1024 each first start of an entry pays `NewRun`, ~16 ms; status counts OK/RESET only — 0 SIM_ERROR,
+0 CONTENT_GAP, 0 ILLEGAL_ACTION):
+
+| N | threads | pool | env-steps/s | ms/batch | obs MB/batch | resets/s | first reset ms | load avg |
+|---|---|---|---|---|---|---|---|---|
+| 64 | 1 | 1024 | 4,389 | 14.58 | 1.7 | 61 | 1,549 | 4.3 |
+| 64 | 8 | 1024 | 5,682 | 11.26 | 1.7 | 79 | 521 | 4.1 |
+| 1024 | 1 | 1024 | 23,798 | 43.03 | 27.3 | 331 | 9,900 | 3.9 |
+| 1024 | 8 | 1024 | 73,194 | 13.99 | 27.3 | 1,017 | 1,859 | 3.1 |
+| 4096 | 1 | 1024 | 39,685 | 103.21 | 109.1 | 553 | 14,825 | 4.3 |
+| 4096 | 8 | 1024 | 162,928 | 25.14 | 109.1 | 2,272 | 2,548 | 4.1 |
+| 64 | 1 | 64 | 12,118 | 5.28 | 1.7 | 170 | 1,109 | 5.4 |
+| 64 | 8 | 64 | 20,740 | 3.09 | 1.7 | 290 | 441 | 5.4 |
+| 1024 | 1 | 64 | 29,561 | 34.64 | 27.3 | 417 | 1,430 | 5.5 |
+| 1024 | 8 | 64 | 54,137 | 18.91 | 27.3 | 764 | 551 | 5.6 |
+| 4096 | 1 | 64 | 39,899 | 102.66 | 109.1 | 565 | 1,486 | 7.0 |
+| 4096 | 8 | 64 | 86,682 | 47.25 | 109.1 | 1,227 | 557 | 4.7 |
+
+Random soak — `sts2vec bench --envs 1024 --steps 2000` (threads 8): seed 0 pool 64: 96,869 env-steps/s, 29,864
+episodes, 2,048,000 actions, status OK 2,018,136 / RESET 29,864, **0 SIM_ERROR, 0 CONTENT_GAP, 0 ILLEGAL_ACTION**;
+seed 1 pool 1024 prefix SOAK: 127,325 env-steps/s, 29,449 episodes, OK 2,018,551 / RESET 29,449, 0 errors. 0 wins in both.
+
+Combat bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, NIBBITS_WEAK, 5 s, load average 7.1):
+
+| Row | decisions/s | Clone() | StateHash() |
+|---|---|---|---|
+| E2 integrate | 142,439 | 2.172 us | 2.625 us |
