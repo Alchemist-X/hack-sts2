@@ -905,3 +905,59 @@ Open issues (G3 first divergences):
 - GM28 s74 DECIMILLIPEDE_ELITE `hand[0].cost` 0 vs 1 (not investigated).
 - EC03 s29 / PLRU s32 rest site: oracle `select` vs sim `rest_site` screen.
 - Carried: relic run-time state at combat start (TEA_OF_DISCOURTESY, VENERABLE_TEA_SET) → start from decoded `SerializableRun`; mcr `enchanted_card_in_deck`, `?` rooms decoded as `NONE`; v0.107.1 model-table checksum; `CombatRoom` end-of-combat monster-id approximation now redundant (harmless, dedupes).
+
+## E1 integrate (2026-11-01)
+
+Base `353f07d` (E1 scaffold: ObservationBuilder partials, RulesText stub). All three owner branches descend from it; none skipped.
+
+Merged, in order: e1/eval-runner `94bb476` (merge `3a598d4`, clean), e1/rules-text `03d20f4` (merge `d03fb4b`, clean), e1/combat-view `9056b0f` (merge `63ac15c`). Conflicts: only `sim/PLAY.md`, two hunks. (1) Observation field table: combat-view's `player` / `combat` / card (hand) / enemy / power `detail` / `combat.danger` rows kept, with rules-text's `map` row (`options` + `nodes`) replacing combat-view's older `map` row. (2) The prose after the table: combat-view's card paragraph merged with rules-text's sentence that keywords are listed in `keywords`, not repeated in `text`; combat-view's combat-text description and its `Creature uid and index`, `Effective numbers`, `Danger lines`, `Piles` and `Step log` sections kept, followed by rules-text's `Rules text` section. `ObservationBuilder.cs` (Text() vs AppendScreen()) and `PlayService.cs` (Catalog() vs Piles/Step) auto-merged; `Program.cs` and `HttpHost.cs` only changed on rules-text.
+
+Fixes (integration, in the combat-view merge commit `63ac15c`; the owners' open items for each other):
+- Power text now uses the live amount: `ObservationBuilder.Combat.cs` `PowerNodes` calls `RulesText.PowerText(id, power.Amount)` instead of `PowerText(id)` (the `N` placeholder). After combat-view's refactor all three scaffold call sites (Player :41, Combat :38, :61) route through `PowerNodes`, so it is one site.
+- Intent move titles: combat-view fills `intents[].move` with the move id (also used by the step log); rules-text documented `move` as the localised name. Kept `move` = id and added `intents[].move_name` = `RulesText.EnemyMoveTitle(monsterId, moveId)` (null when rules text is not loaded); text renders `[MOVE_ID (Title)]`, e.g. `intent: [WHIRL_MOVE (Whirl)] Attack 7`. PLAY.md rows updated (`combat` field list, enemy row, rules text fields row).
+
+Gates:
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors after each merge and on the final tree; Debug 0 warnings 0 errors.
+- Tests (full suite, Release): 1077/1077 passed, 0 failed, PENDING 0 (413 s). Server filter alone 30/30 (11 ServerTests + 9 ServerRulesTextTests + 10 ServerCombatViewTests).
+- Run soak: 10⁴ runs × 5 characters, 687034 steps, 0 victories, 10000 defeats, 0 capped, 0 content/kernel-stub stops. Step count identical to W4.1 (687034), consistent with no kernel behaviour change.
+- Content soak green: cards 1118 (0 capped), encounters 267 (2 capped), potions 128, relics 594, 0 failures. W1Gate F1 clone/hash: 356 playouts pass.
+- Server self test: `--selftest 300 --content ported_only` 300 completed, 0 crashed, 0 capped, 0 server errors, mean 68.9 steps (15.6 s); extra `--selftest 100 --policy biased` 100 completed, 0 crashed, 0 server errors, mean 147.2 steps. Startup line: `rules text: loaded from .../knowledge/source (discovered; versions v0.107.1,v0.111.0): 625 cards, 306 relics, 66 potions, 296 powers, 70 events, 126 enemies, 14 keywords`.
+- Diff v1 G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e1-diff.json`): bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Bench: 143,509 decisions/s, Clone 2.179 us, StateHash 2.566 us (row in `sim/BENCH.md`, load average 3.3 to 4.4).
+- Eval runner: `uv run --project sim/tools/eval pytest -q sim/tools/eval` 31 passed (includes 2 integration tests that spawn the real server); end-to-end smoke below, 10/10 games, report.md written.
+- sts2rec: `uv run pytest -q` 701 passed, 4 skipped (the known-flaky timing test passed first time).
+- `git status --short` before the commit: only `sim/BENCH.md` and this file; no tmp/, bundles or saves.
+
+Eval smoke (`uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy random --concurrency 10 --spawn --out tmp/eval/e1-smoke`, merged server `63ac15c`, rules text loaded from `knowledge/source` v0.107.1+v0.111.0):
+
+| metric | value |
+| --- | --- |
+| games | 10 |
+| results | loss 10 |
+| win rate (Wilson 95%) | 0.0% [0.0%, 27.8%] |
+| floor mean / median / max | 4.2 / 4.5 / 7 |
+| progress (floor / 48) | 8.8% |
+| act reached | act 1: 10 |
+| steps mean (total) | 52.2 (522) |
+| illegal actions per game | 0.00 |
+| crashes | 0 |
+| api errors / refusals / timeouts / max_tokens stops | 0 / 0 / 0 / 0 |
+| random fallbacks | 0 |
+| cost USD | $0.0000 |
+| minutes per game (mean) | 0.02 |
+| replayable histories | 10/10 |
+
+Identical to the eval-runner owner's pre-merge smoke (522 steps), as expected: the random policy's choices are seeded and the merged server changes only observations and prompt pick listing. Transcript check (`games/IRONCLAD-E1A0IC01.jsonl`): the observation text carries rules text (`STRIKE_IRONCLAD (Strike) 1e Attack->AnyEnemy (6 dmg) — Deal 6 damage.`, relic lines with text, `TOADPOLE (Toadpole)`), uids and move titles (`[1] u2 TOADPOLE (Toadpole) 25/25 | intent: [WHIRL_MOVE (Whirl)] Attack 7`), the danger line (`incoming: 7 dmg in 1 hit (u2 7x1), block 0, net -7 HP -> 73/80`) and the v2 step log (`enemy turn:` / ` u2 TOADPOLE: WHIRL_MOVE (Whirl) — attack 7 x1 -> player: 0 blocked, 7 dmg`, `u1 +THORNS_POWER 2`, `cards: drew 5`). Power lines read e.g. `STRENGTH_POWER — Increases attack damage by 1.` for amount 1.
+
+Open issues:
+- The Claude policy has not been run against the real API (no key in the integration session); only fake-client tests cover it. First real run: `ANTHROPIC_API_KEY=... uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy claude --model claude-sonnet-5-5 --effort low --concurrency 10 --spawn --max-cost-usd 30`. Cache reads on the ~1.3-1.4k-token system prompt are unconfirmed; `--max-tokens 1024` includes thinking, so watch `max_tokens stops` at higher effort.
+- Eval cause of death is the room type of the last travel plus the last combat's enemy ids; the observation has no encounter id field.
+- Event option texts with run-time-chosen values still show `?` (7 of 81 options seen in 40 random runs: SAPPHIRE_SEED PLANT enchantment, SLIPPERY_BRIDGE HpLoss and RandomCard, WOOD_CARVINGS card and enchantment names); fixing needs per-event read-only accessors in Core.
+- Shop `base_price` is reconstructed as 2 x the sale price (exact within 1 gold); an exact value needs a Core accessor.
+- Card `text` has base instance values and no keyword lines (keywords stay in `keywords`); in-combat numbers are in `effective`.
+- `effective.times` is best-effort (Repeat var, else a const HitCount by reflection, else 1; null for X cost); cards computing hits at play time report 1 or null.
+- The danger line uses intent projections only: no Intangible / Buffer / Tungsten-Rod-style hp-loss modifiers, no end-of-turn block (Metallicize, Plated Armor).
+- The last enemy's killing blow logs `hp X -> 0` without the damage note (the kernel writes no DamageReceived entry once the combat is ending); summons with no history entries during the move are named only by the `uN X spawned` line.
+- `scripts/export_sts2_knowledge.py` takes zhs as PCK occurrence -1, which is Traditional Chinese on v0.111.0; do not rerun it on the current game without fixing that (`export_sts2_localization.py` is correct).
+- Observation text changed by design (uids, danger line, eff, move titles, act-map grid, prompt desc): byte-identical comparisons against pre-E1 servers no longer hold.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.

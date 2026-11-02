@@ -100,3 +100,11 @@ Machine heavily loaded (the game client running, load average 4.5 to 7.5); the i
 |---|---|---|---|
 | W4.1 integrate (5 runs: median, range) | 28,384 (26,229–30,838) | 12.963 us (2.565–14.388) | 10.289 us (9.833–11.488, 3 runs) |
 | integrate-2 tree, same session (4 runs) | 27,110 (23,022–135,714) | 10.137 us (8.713–12.630) | 9.439–12.043 us (2 runs) |
+
+## E1 integrate (2026-11-01, NIBBITS_WEAK, 1 run, 5 s)
+
+Machine moderately loaded (load average 3.3 to 4.4). Back at the integrate-2 level; the W4.1 drop was machine load. E1 touched the kernel only with read-only queries (`CardPreview`, a `DampenPower` accessor), so no kernel speed change is expected.
+
+| Row | decisions/s | Clone() | StateHash() |
+|---|---|---|---|
+| E1 integrate | 143,509 | 2.179 us | 2.566 us |
