@@ -348,7 +348,7 @@ public static class BundleRunner
             {
                 simProjection = SimProjector.Project(sim.State);
             }
-            catch (ProjectionGapException ex)
+            catch (PlayerViewGapException ex)
             {
                 result.Status = BundleStatus.Error;
                 result.Reason = $"decision {i}: projection gap: {ex.Message}";

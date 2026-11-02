@@ -228,7 +228,7 @@ public static class Describe
             bool visible;
             try
             {
-                visible = SimProjector.IsVisible(cs, power);
+                visible = PlayerView.IsVisible(cs, power);
             }
             catch (Exception)
             {
@@ -299,7 +299,7 @@ public static class Describe
             bool visible;
             try
             {
-                visible = SimProjector.IsVisible(cs, powers[i]);
+                visible = PlayerView.IsVisible(cs, powers[i]);
             }
             catch (Exception)
             {
@@ -475,19 +475,7 @@ public static class Describe
 
     // Hits per play: the card's Repeat var, else its def's fixed HitCount constant, else 1 (X cost: null). Cards that
     // compute the hit count from other state at play time report 1.
-    public static int? HitCount(CardInstance card)
-    {
-        if (card.Vars.TryGet(DynamicVarSet.RepeatName) is { } repeat)
-        {
-            return repeat.IntValue;
-        }
-        var field = card.Def.GetType().GetField("HitCount", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-        if (field != null && field.IsLiteral && field.GetRawConstantValue() is int n)
-        {
-            return n;
-        }
-        return card.EnergyCost.CostsX ? null : 1;
-    }
+    public static int? HitCount(CardInstance card) => PlayerView.HitCount(card);
 
     // The card's own energy cost (Base, upgrades included) when the current cost differs from it, else null.
     public static int? BaseCost(CombatState? cs, CardInstance card)
