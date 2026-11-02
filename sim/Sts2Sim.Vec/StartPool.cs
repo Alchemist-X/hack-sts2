@@ -38,6 +38,14 @@ public sealed class StartEntry
 
     internal RunSim? Template { get; set; }
 
+    /// <summary>
+    /// Save entries whose import stops at a prompt (a choice during the load itself): RunSim.Clone shares the pending load
+    /// room (Pending.Load) between clones, so these entries re-import the save on every materialisation instead.
+    /// </summary>
+    internal SavedRun? ReimportSave { get; init; }
+
+    internal ImportOptions? ReimportOptions { get; init; }
+
     /// <summary>Serialises template creation and cloning of this entry across worker threads.</summary>
     internal object Gate { get; } = new();
 }
@@ -108,10 +116,20 @@ public sealed class StartPool
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         var save = RunSaveReader.ReadFile(path);
-        var result = RunImporter.FromSave(save, ImportOptions.Default with { Content = content });
+        var options = ImportOptions.Default with { Content = content };
+        var result = RunImporter.FromSave(save, options);
         if (!result.IsSupported || result.Sim == null)
         {
             throw new NotSupportedException($"save '{path}' is not supported: {string.Join("; ", result.UnsupportedReasons)}");
+        }
+        if (result.Sim.HasPendingChoice)
+        {
+            lock (_lock)
+            {
+                int id = _entries.Count;
+                _entries.Add(new StartEntry(id, StartKind.Save, null, path, result.Sim) { ReimportSave = save, ReimportOptions = options });
+                return id;
+            }
         }
         return Add(StartKind.Save, null, path, result.Sim);
     }
@@ -129,6 +147,11 @@ public sealed class StartPool
         var e = this[id];
         lock (e.Gate)
         {
+            if (e.ReimportSave != null)
+            {
+                var again = RunImporter.FromSave(e.ReimportSave, e.ReimportOptions!);
+                return again.Sim ?? throw new NotSupportedException($"save '{e.SavePath}' no longer imports: {string.Join("; ", again.UnsupportedReasons)}");
+            }
             if (e.Template == null)
             {
                 var fresh = e.Fresh ?? throw new InvalidOperationException($"pool entry {id} ({e.Kind}) has no template");
