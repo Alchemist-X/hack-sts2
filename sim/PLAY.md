@@ -83,17 +83,18 @@ Every field is always present; fields that do not apply to the current phase are
 | `phase` | run: `Map Combat Rewards CardReward Shop RestSite Treasure Event Prompt Victory Defeat`; combat games: `Combat Victory Defeat` |
 | `terminal`, `result` | `result` is `"win"` / `"loss"` once terminal, else null |
 | `act`, `floor`, `turn` | act 1-based and total floor (runs only); turn while a combat is in progress |
-| `player` | `character hp max_hp block energy max_energy gold [stars] powers[{id,amount}] relics[{id,counter?}] potions[{slot,id}\|null] [orbs[{id,passive,evoke}] orb_slots] deck_size deck[ids, "+" = upgraded]` |
-| `combat` | `hand[{index,id,upgraded,cost (int or "X"),star_cost?,type,target,rarity,keywords,vars{damage,block,...},playable,reason}] draw_count discard_count exhaust_count draw_pile (sorted) discard_pile enemies[{index,id,hp,max_hp,block,intents[{type,damage?,times?,card_count?}],powers}] allies?` |
+| `player` | `character hp max_hp block energy max_energy gold [stars] powers[{id,amount,text}] relics[{id,name,text,counter?}] potions[{slot,id,name,text}\|null] [orbs[{id,passive,evoke}] orb_slots] deck_size deck[ids, "+" = upgraded]` |
+| `combat` | `hand[{index,id,name,upgraded,cost (int or "X"),star_cost?,type,target,rarity,keywords,vars{damage,block,...},text,playable,reason}] draw_count discard_count exhaust_count draw_pile (sorted) discard_pile enemies[{index,id,name,hp,max_hp,block,intents[{type,move,damage?,times?,card_count?}],powers[{id,amount,text}]}] allies?[{index,id,name,hp,max_hp,block,powers}]` |
 | `map` | `{"options":[{index,type,col,row,leads_to[types]}]}` — the rooms you can travel to next and what each leads to |
 | `rewards` | `[{index,type,detail}]` — unclaimed rewards |
 | `card_reward` | `{"cards":[card as in hand, without playability],"alternatives":[{index,id}],"can_skip"}` |
-| `shop` | `{"entries":[{index,category,id,price,sold,on_sale?}],"removal_price"}` (`removal_price` null once used) |
+| `shop` | `{"entries":[{index,category,id,name,text,price,sold,on_sale?}],"removal_price"}` (`removal_price` null once used) |
 | `rest` | `{"options":[{index,id,enabled}]}` (HEAL, SMITH, ...) |
-| `treasure` | `{chest_opened,relic,relic_claimed,skipped,gold_gained}` |
-| `event` | `{id,page,finished,options[{index,key,enabled,relic?}]}` |
-| `prompt` | `{kind,site,min,max,picked[],options[{index,id,upgraded}],can_confirm,can_cancel}` — a selection screen inside an effect (Neow relic choices, Discovery, Smith upgrade, potion effects...). While a prompt is pending only `pick/confirm/cancel` are legal; the combat or run screen behind it is still shown |
+| `treasure` | `{chest_opened,relic,relic_name,relic_text,relic_claimed,skipped,gold_gained}` |
+| `event` | `{id,name,page,finished,options[{index,key,enabled,text,relic?}]}` |
+| `prompt` | `{kind,site,min,max,picked[],options[{index,id,name,upgraded,text}],can_confirm,can_cancel}` — a selection screen inside an effect (Neow relic choices, Discovery, Smith upgrade, potion effects...). While a prompt is pending only `pick/confirm/cancel` are legal; the combat or run screen behind it is still shown |
 | `legal_actions` | `[{token,desc}]` — every legal action exactly once |
+| rules text fields | `name` / `text` on cards, relics, potions, powers, enemies, shop entries, event options and prompt options, `relic_name` / `relic_text` on treasure, `move` on intents: **null until rules text is loaded** (scaffold stub `RulesText`). When non-null, `text` renders `ID (Name) ... — text` on the item's line; powers with text get an indented `ID — text` line under their owner |
 | `text` | compact rendering: header (phase, act, floor, turn, HP, block, energy, gold), powers, relics, potions, orbs, deck, enemies with intents, hand, the phase screen, then the legal tokens one per line with their desc |
 
 Card text is not ported: cards are described by id, type, cost, target, keywords and their

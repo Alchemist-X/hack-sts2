@@ -83,6 +83,7 @@ public static class Program
             return 2;
         }
 
+        RulesText.Load(null);
         var service = new PlayService(new PlayServiceOptions { Version = GitVersion(), CrashLogPath = crashLog });
         if (replay != null)
         {

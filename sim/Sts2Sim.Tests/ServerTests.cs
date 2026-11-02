@@ -279,4 +279,28 @@ public static class ServerTests
         Assert.True(result.Steps > 0);
         Assert.Equal(0, s.GameCount, "selftest deletes its games");
     }
+
+    public static void Test_Server_RulesTextFieldsPresent()
+    {
+        var s = NewService();
+        var obs = Post(s, "/combats", new JsonObject { ["seed"] = 1, ["encounter"] = "NIBBITS_WEAK" })["observation"]!.AsObject();
+        CheckObservation(obs);
+        var card = obs["combat"]!["hand"]!.AsArray()[0]!.AsObject();
+        Assert.True(card.ContainsKey("name") && card.ContainsKey("text"), "hand card has name/text");
+        var enemy = obs["combat"]!["enemies"]!.AsArray()[0]!.AsObject();
+        Assert.True(enemy.ContainsKey("name"), "enemy has name");
+        foreach (var intent in enemy["intents"]!.AsArray())
+        {
+            Assert.True(intent!.AsObject().ContainsKey("move"), "intent has move");
+        }
+        foreach (var relic in obs["player"]!["relics"]!.AsArray())
+        {
+            Assert.True(relic!.AsObject().ContainsKey("name") && relic.AsObject().ContainsKey("text"), "relic has name/text");
+        }
+        if (!RulesText.Loaded)
+        {
+            Assert.True(card["name"] == null && card["text"] == null, "null until rules text is loaded");
+            Assert.False(obs["text"]!.GetValue<string>().Contains('\u2014'), "no rules text rendered while unloaded");
+        }
+    }
 }

@@ -5,9 +5,54 @@ using Sts2Sim.Diff;
 namespace Sts2Sim.Server;
 
 // Builds the OBS object of sim/PLAY.md: structured fields for the current phase plus a compact text rendering.
-public static class ObservationBuilder
+public static partial class ObservationBuilder
 {
     private static string I(int v) => v.ToString(CultureInfo.InvariantCulture);
+
+    // Exception-tolerant RulesText lookup: a failing lookup renders as "unavailable" (null), never as a crash.
+    private static string? Rt(Func<string?> lookup)
+    {
+        try
+        {
+            return lookup();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? Str(JsonNode? node, string key)
+        => node is JsonObject o && o[key] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0 ? s : null;
+
+    private static string Collapse(string s) => string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    // " (Name)" after an id when the node carries a non-null name.
+    private static StringBuilder AppendName(StringBuilder sb, JsonNode? node, string key = "name")
+        => Str(node, key) is { } name ? sb.Append(" (").Append(Collapse(name)).Append(')') : sb;
+
+    // " — text" at the end of an item line when the node carries a non-null rules text.
+    private static StringBuilder AppendText(StringBuilder sb, JsonNode? node, string key = "text")
+        => Str(node, key) is { } text ? sb.Append(" \u2014 ").Append(Collapse(text)) : sb;
+
+    private static bool AnyNameOrText(JsonArray? items)
+        => items != null && items.Any(n => Str(n, "name") != null || Str(n, "text") != null);
+
+    // One indented line per power that has rules text: "<indent>ID — text".
+    private static void AppendPowerTexts(StringBuilder sb, JsonNode? powers, string indent)
+    {
+        if (powers is not JsonArray list)
+        {
+            return;
+        }
+        foreach (var pw in list)
+        {
+            if (Str(pw, "text") is { } text)
+            {
+                sb.Append(indent).Append(pw!["id"]).Append(" \u2014 ").Append(Collapse(text)).Append('\n');
+            }
+        }
+    }
 
     public static JsonObject Build(GameSession g, IReadOnlyList<LegalEntry> legal)
     {
@@ -73,434 +118,6 @@ public static class ObservationBuilder
         return obs;
     }
 
-    private static JsonObject PlayerNode(PlayerState p, CombatState? cs)
-    {
-        int maxEnergy = p.BaseMaxEnergy;
-        if (cs != null)
-        {
-            try
-            {
-                maxEnergy = EnergyCmd.GetMaxEnergy(cs, p);
-            }
-            catch (Exception)
-            {
-            }
-        }
-        var node = new JsonObject
-        {
-            ["character"] = p.CharacterId,
-            ["hp"] = p.CurrentHp,
-            ["max_hp"] = p.MaxHp,
-            ["block"] = p.Block,
-            ["energy"] = cs != null ? p.Energy : maxEnergy,
-            ["max_energy"] = maxEnergy,
-            ["gold"] = p.Gold
-        };
-        if (p.CharacterId == "REGENT" || p.Stars != 0)
-        {
-            node["stars"] = p.Stars;
-        }
-        var powers = new JsonArray();
-        if (cs != null)
-        {
-            foreach (var (id, amount) in Describe.Powers(cs, p))
-            {
-                powers.Add(new JsonObject { ["id"] = id, ["amount"] = amount });
-            }
-        }
-        node["powers"] = powers;
-        var relics = new JsonArray();
-        foreach (var relic in p.Relics)
-        {
-            var r = new JsonObject { ["id"] = relic.Id };
-            try
-            {
-                if (relic.ShowCounter)
-                {
-                    r["counter"] = relic.DisplayAmount;
-                }
-            }
-            catch (Exception)
-            {
-            }
-            relics.Add(r);
-        }
-        node["relics"] = relics;
-        var potions = new JsonArray();
-        for (int i = 0; i < p.PotionSlots.Length; i++)
-        {
-            var potion = p.PotionSlots[i];
-            potions.Add(potion == null ? null : new JsonObject { ["slot"] = i, ["id"] = potion.Id });
-        }
-        node["potions"] = potions;
-        if (p.OrbQueue.Capacity > 0 || p.OrbQueue.Orbs.Count > 0)
-        {
-            var orbs = new JsonArray();
-            foreach (var orb in p.OrbQueue.Orbs)
-            {
-                var o = new JsonObject { ["id"] = orb.Id };
-                if (cs != null)
-                {
-                    try
-                    {
-                        o["passive"] = (int)orb.PassiveVal(cs);
-                        o["evoke"] = (int)orb.EvokeVal(cs);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-                orbs.Add(o);
-            }
-            node["orbs"] = orbs;
-            node["orb_slots"] = p.OrbQueue.Capacity;
-        }
-        node["deck_size"] = p.Deck.Count;
-        var deck = new JsonArray();
-        foreach (var card in p.Deck)
-        {
-            deck.Add(Describe.CardName(card));
-        }
-        node["deck"] = deck;
-        return node;
-    }
-
-    private static JsonObject CardNode(CombatState? cs, CardInstance card, int index, bool withPlayability)
-    {
-        var node = new JsonObject
-        {
-            ["index"] = index,
-            ["id"] = card.Id,
-            ["upgraded"] = card.IsUpgraded,
-            ["cost"] = Describe.CostNode(cs, card)
-        };
-        if (Describe.StarCost(cs, card) is { } stars)
-        {
-            node["star_cost"] = stars;
-        }
-        node["type"] = card.Type.ToString();
-        node["target"] = card.TargetType.ToString();
-        node["rarity"] = card.Rarity.ToString();
-        var keywords = new JsonArray();
-        foreach (var k in Describe.Keywords(cs, card))
-        {
-            keywords.Add(k);
-        }
-        node["keywords"] = keywords;
-        var vars = new JsonObject();
-        foreach (var (name, value) in Describe.Vars(card))
-        {
-            vars[name] = value;
-        }
-        node["vars"] = vars;
-        if (withPlayability && cs != null)
-        {
-            bool ok = Describe.Playable(cs, card, out var reason);
-            node["playable"] = ok;
-            node["reason"] = reason;
-        }
-        return node;
-    }
-
-    private static JsonObject CombatNode(CombatState cs)
-    {
-        var player = cs.Player;
-        var hand = new JsonArray();
-        for (int i = 0; i < player.Hand.Count; i++)
-        {
-            hand.Add(CardNode(cs, player.Hand[i], i, true));
-        }
-        var enemies = new JsonArray();
-        foreach (var (index, m) in Describe.LiveEnemies(cs))
-        {
-            var intents = new JsonArray();
-            foreach (var intent in Describe.Intents(cs, m))
-            {
-                var it = new JsonObject { ["type"] = intent.Type };
-                if (intent.AttackValue is { } dmg)
-                {
-                    it["damage"] = dmg;
-                    it["times"] = intent.AttackTimes ?? 1;
-                }
-                if (intent.Extras.TryGetValue(SimProjector.StatusCardCountKey, out var count) && count != null)
-                {
-                    it["card_count"] = count.DeepClone();
-                }
-                intents.Add(it);
-            }
-            var powers = new JsonArray();
-            foreach (var (id, amount) in Describe.Powers(cs, m))
-            {
-                powers.Add(new JsonObject { ["id"] = id, ["amount"] = amount });
-            }
-            enemies.Add(new JsonObject
-            {
-                ["index"] = index,
-                ["id"] = m.MonsterId,
-                ["hp"] = m.CurrentHp,
-                ["max_hp"] = m.MaxHp,
-                ["block"] = m.Block,
-                ["intents"] = intents,
-                ["powers"] = powers
-            });
-        }
-        var allies = new JsonArray();
-        for (int a = 1; a < cs.Allies.Count; a++)
-        {
-            var ally = cs.Allies[a];
-            if (ally is MonsterState pet && pet.IsAlive)
-            {
-                var powers = new JsonArray();
-                foreach (var (id, amount) in Describe.Powers(cs, pet))
-                {
-                    powers.Add(new JsonObject { ["id"] = id, ["amount"] = amount });
-                }
-                allies.Add(new JsonObject { ["index"] = a, ["id"] = pet.MonsterId, ["hp"] = pet.CurrentHp, ["max_hp"] = pet.MaxHp, ["block"] = pet.Block, ["powers"] = powers });
-            }
-        }
-        var draw = SimProjector.PileKeys(player.DrawPile);
-        draw.Sort(StringComparer.Ordinal);
-        var node = new JsonObject
-        {
-            ["hand"] = hand,
-            ["draw_count"] = player.DrawPile.Count,
-            ["discard_count"] = player.DiscardPile.Count,
-            ["exhaust_count"] = player.ExhaustPile.Count,
-            ["draw_pile"] = new JsonArray(draw.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
-            ["discard_pile"] = new JsonArray(SimProjector.PileKeys(player.DiscardPile).Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
-            ["enemies"] = enemies
-        };
-        if (allies.Count > 0)
-        {
-            node["allies"] = allies;
-        }
-        return node;
-    }
-
-    private static JsonObject MapNode(RunState rs)
-    {
-        var points = new List<MapPoint>();
-        RunLegalActionGenerator.GetLegalMapPoints(rs, points);
-        var options = new JsonArray();
-        for (int i = 0; i < points.Count; i++)
-        {
-            var pt = points[i];
-            var leads = new JsonArray();
-            foreach (var child in pt.Children.OrderBy(c => c.coord.col))
-            {
-                leads.Add(child.PointType.ToString());
-            }
-            options.Add(new JsonObject
-            {
-                ["index"] = i,
-                ["type"] = pt.PointType.ToString(),
-                ["col"] = pt.coord.col,
-                ["row"] = pt.coord.row,
-                ["leads_to"] = leads
-            });
-        }
-        return new JsonObject { ["options"] = options };
-    }
-
-    private static JsonArray RewardsNode(RunState rs)
-    {
-        var list = new JsonArray();
-        var set = RunLegalActionGenerator.TopRewards(rs);
-        if (set == null)
-        {
-            return list;
-        }
-        for (int i = 0; i < set.Rewards.Count; i++)
-        {
-            var r = set.Rewards[i];
-            if (r.SuccessfullySelected)
-            {
-                continue;
-            }
-            list.Add(new JsonObject { ["index"] = i, ["type"] = r.RewardType.ToString(), ["detail"] = ActionTokens.RewardDetail(r) });
-        }
-        return list;
-    }
-
-    private static JsonObject? CardRewardNode(RunState rs, RunLoopState loop)
-    {
-        var reward = RunLegalActionGenerator.OpenCardReward(rs, loop);
-        if (reward == null)
-        {
-            return null;
-        }
-        var cards = new JsonArray();
-        for (int i = 0; i < reward.Cards.Count; i++)
-        {
-            cards.Add(CardNode(null, reward.Cards[i].Card, i, false));
-        }
-        var alts = new JsonArray();
-        bool canSkip = false;
-        for (int i = 0; i < reward.Alternatives.Count; i++)
-        {
-            var alt = reward.Alternatives[i];
-            canSkip |= alt.OptionId == CardRewardAlternative.SkipId;
-            alts.Add(new JsonObject { ["index"] = i, ["id"] = alt.OptionId });
-        }
-        return new JsonObject { ["cards"] = cards, ["alternatives"] = alts, ["can_skip"] = canSkip };
-    }
-
-    private static JsonObject? ShopNode(RunState rs)
-    {
-        if (RoomStack.CurrentRoom(rs) is not MerchantRoom { Inventory: { } inventory })
-        {
-            return null;
-        }
-        var entries = new JsonArray();
-        var all = inventory.AllEntries;
-        JsonNode? removalPrice = null;
-        for (int i = 0; i < all.Count; i++)
-        {
-            var entry = all[i];
-            int price;
-            bool stocked;
-            try
-            {
-                price = entry.GetCost(rs);
-                stocked = entry.IsStocked;
-            }
-            catch (Exception)
-            {
-                price = -1;
-                stocked = false;
-            }
-            if (entry is MerchantCardRemovalEntry)
-            {
-                removalPrice = stocked ? price : null;
-                continue;
-            }
-            var node = new JsonObject
-            {
-                ["index"] = i,
-                ["category"] = ActionTokens.ShopCategory(inventory, i, entry),
-                ["id"] = ActionTokens.ShopEntryId(entry),
-                ["price"] = price,
-                ["sold"] = !stocked
-            };
-            if (entry is MerchantCardEntry { IsOnSale: true })
-            {
-                node["on_sale"] = true;
-            }
-            entries.Add(node);
-        }
-        return new JsonObject { ["entries"] = entries, ["removal_price"] = removalPrice };
-    }
-
-    private static JsonObject? RestNode(RunState rs)
-    {
-        if (RoomStack.CurrentRoom(rs) is not RestSiteRoom room)
-        {
-            return null;
-        }
-        var options = new JsonArray();
-        for (int i = 0; i < room.Options.Count; i++)
-        {
-            bool enabled;
-            try
-            {
-                enabled = room.Options[i].IsEnabled;
-            }
-            catch (Exception)
-            {
-                enabled = false;
-            }
-            options.Add(new JsonObject { ["index"] = i, ["id"] = room.Options[i].OptionId, ["enabled"] = enabled });
-        }
-        return new JsonObject { ["options"] = options };
-    }
-
-    private static JsonObject? TreasureNode(RunState rs)
-    {
-        if (RoomStack.CurrentRoom(rs) is not TreasureRoom room)
-        {
-            return null;
-        }
-        return new JsonObject
-        {
-            ["chest_opened"] = room.ChestOpened,
-            ["relic"] = room.ChestOpened ? room.CurrentRelicId : null,
-            ["relic_claimed"] = room.RelicClaimed,
-            ["skipped"] = room.SingleplayerSkipped,
-            ["gold_gained"] = room.GoldGained
-        };
-    }
-
-    private static JsonObject? EventNode(RunState rs)
-    {
-        var ev = RunLegalActionGenerator.CurrentEvent(rs);
-        if (ev == null)
-        {
-            return null;
-        }
-        var options = new JsonArray();
-        if (!ev.IsFinished)
-        {
-            for (int i = 0; i < ev.CurrentOptions.Count; i++)
-            {
-                var opt = ev.CurrentOptions[i];
-                var node = new JsonObject { ["index"] = i, ["key"] = opt.TextKey, ["enabled"] = opt.IsEnabled };
-                if (opt.RelicId != null)
-                {
-                    node["relic"] = opt.RelicId;
-                }
-                options.Add(node);
-            }
-        }
-        return new JsonObject
-        {
-            ["id"] = ev.Id,
-            ["page"] = ev.Description,
-            ["finished"] = ev.IsFinished,
-            ["options"] = options
-        };
-    }
-
-    private static JsonObject? PromptNode(GameSession g)
-    {
-        var p = g.PendingChoice;
-        if (p == null)
-        {
-            return null;
-        }
-        var picks = g.PendingPicks;
-        var picked = new JsonArray();
-        foreach (var i in picks)
-        {
-            picked.Add(i);
-        }
-        var options = new JsonArray();
-        for (int i = 0; i < p.Options.Count; i++)
-        {
-            var o = p.Options[i];
-            options.Add(new JsonObject { ["index"] = i, ["id"] = o.ModelId, ["upgraded"] = o.UpgradeLevel > 0 });
-        }
-        bool canConfirm;
-        try
-        {
-            canConfirm = ChoiceRuntime.CanConfirm(p, picks.Count);
-        }
-        catch (Exception)
-        {
-            canConfirm = false;
-        }
-        return new JsonObject
-        {
-            ["kind"] = p.Kind.ToString(),
-            ["site"] = p.SiteId,
-            ["min"] = p.MinSelect,
-            ["max"] = p.MaxSelect,
-            ["picked"] = picked,
-            ["options"] = options,
-            ["can_confirm"] = canConfirm,
-            ["can_cancel"] = p.Cancelable
-        };
-    }
-
     private static string Text(GameSession g, JsonObject obs, IReadOnlyList<LegalEntry> legal)
     {
         var sb = new StringBuilder(2048);
@@ -538,18 +155,44 @@ public static class ObservationBuilder
             if (powers.Count > 0)
             {
                 sb.Append("powers: ").Append(Describe.PowersText(powers)).Append('\n');
+                AppendPowerTexts(sb, obs["player"]?["powers"], "  ");
             }
         }
-        if (p.Relics.Count > 0)
+        var relicNodes = obs["player"]?["relics"] as JsonArray;
+        if (p.Relics.Count > 0 && AnyNameOrText(relicNodes) && relicNodes!.Count == p.Relics.Count)
+        {
+            sb.Append("relics:\n");
+            for (int i = 0; i < p.Relics.Count; i++)
+            {
+                sb.Append(' ').Append(RelicText(p.Relics[i]));
+                AppendName(sb, relicNodes[i]);
+                AppendText(sb, relicNodes[i]).Append('\n');
+            }
+        }
+        else if (p.Relics.Count > 0)
         {
             sb.Append("relics: ").Append(string.Join(", ", p.Relics.Select(r => RelicText(r)))).Append('\n');
         }
-        sb.Append("potions:");
-        for (int i = 0; i < p.PotionSlots.Length; i++)
+        var potionNodes = obs["player"]?["potions"] as JsonArray;
+        if (AnyNameOrText(potionNodes) && potionNodes!.Count == p.PotionSlots.Length)
         {
-            sb.Append(" [").Append(I(i)).Append("] ").Append(p.PotionSlots[i]?.Id ?? "-");
+            sb.Append("potions:\n");
+            for (int i = 0; i < p.PotionSlots.Length; i++)
+            {
+                sb.Append(" [").Append(I(i)).Append("] ").Append(p.PotionSlots[i]?.Id ?? "-");
+                AppendName(sb, potionNodes[i]);
+                AppendText(sb, potionNodes[i]).Append('\n');
+            }
         }
-        sb.Append('\n');
+        else
+        {
+            sb.Append("potions:");
+            for (int i = 0; i < p.PotionSlots.Length; i++)
+            {
+                sb.Append(" [").Append(I(i)).Append("] ").Append(p.PotionSlots[i]?.Id ?? "-");
+            }
+            sb.Append('\n');
+        }
         if (p.OrbQueue.Capacity > 0)
         {
             sb.Append("orbs (").Append(I(p.OrbQueue.Capacity)).Append(" slots): ").Append(p.OrbQueue.Orbs.Count == 0 ? "-" : string.Join(", ", p.OrbQueue.Orbs.Select(o => o.Id))).Append('\n');
@@ -558,35 +201,59 @@ public static class ObservationBuilder
         if (cs != null)
         {
             sb.Append("-- enemies\n");
+            var combatNode = obs["combat"] as JsonObject;
+            var enemyNodes = combatNode?["enemies"] as JsonArray;
+            int e = 0;
             foreach (var (index, m) in Describe.LiveEnemies(cs))
             {
-                sb.Append(" [").Append(I(index)).Append("] ").Append(m.MonsterId).Append(' ').Append(I(m.CurrentHp)).Append('/').Append(I(m.MaxHp));
+                var enemyNode = enemyNodes != null && e < enemyNodes.Count ? enemyNodes[e] : null;
+                e++;
+                sb.Append(" [").Append(I(index)).Append("] ").Append(m.MonsterId);
+                AppendName(sb, enemyNode);
+                sb.Append(' ').Append(I(m.CurrentHp)).Append('/').Append(I(m.MaxHp));
                 if (m.Block > 0)
                 {
                     sb.Append(" block ").Append(I(m.Block));
                 }
                 var intents = Describe.Intents(cs, m);
-                sb.Append(" | intent: ").Append(intents.Count == 0 ? "-" : string.Join(" + ", intents.Select(Describe.IntentText)));
+                sb.Append(" | intent: ");
+                if (enemyNode?["intents"] is JsonArray { Count: > 0 } intentNodes && Str(intentNodes[0], "move") is { } move)
+                {
+                    sb.Append('[').Append(move).Append("] ");
+                }
+                sb.Append(intents.Count == 0 ? "-" : string.Join(" + ", intents.Select(Describe.IntentText)));
                 var powers = Describe.Powers(cs, m);
                 if (powers.Count > 0)
                 {
                     sb.Append(" | ").Append(Describe.PowersText(powers));
                 }
                 sb.Append('\n');
+                AppendPowerTexts(sb, enemyNode?["powers"], "    ");
             }
+            var allyNodes = combatNode?["allies"] as JsonArray;
+            int k = 0;
             for (int a = 1; a < cs.Allies.Count; a++)
             {
                 if (cs.Allies[a] is MonsterState pet && pet.IsAlive)
                 {
-                    sb.Append(" ally [").Append(I(a)).Append("] ").Append(pet.MonsterId).Append(' ').Append(I(pet.CurrentHp)).Append('/').Append(I(pet.MaxHp)).Append('\n');
+                    var allyNode = allyNodes != null && k < allyNodes.Count ? allyNodes[k] : null;
+                    k++;
+                    sb.Append(" ally [").Append(I(a)).Append("] ").Append(pet.MonsterId);
+                    AppendName(sb, allyNode);
+                    sb.Append(' ').Append(I(pet.CurrentHp)).Append('/').Append(I(pet.MaxHp)).Append('\n');
+                    AppendPowerTexts(sb, allyNode?["powers"], "    ");
                 }
             }
             var player = cs.Player;
             sb.Append("-- hand (draw ").Append(I(player.DrawPile.Count)).Append(", discard ").Append(I(player.DiscardPile.Count)).Append(", exhaust ").Append(I(player.ExhaustPile.Count)).Append(")\n");
+            var handNodes = combatNode?["hand"] as JsonArray;
             for (int i = 0; i < player.Hand.Count; i++)
             {
                 var card = player.Hand[i];
-                sb.Append(" [").Append(I(i)).Append("] ").Append(Describe.CardName(card)).Append(' ').Append(Describe.CostText(cs, card));
+                var cardNode = handNodes != null && i < handNodes.Count ? handNodes[i] : null;
+                sb.Append(" [").Append(I(i)).Append("] ").Append(Describe.CardName(card));
+                AppendName(sb, cardNode);
+                sb.Append(' ').Append(Describe.CostText(cs, card));
                 if (Describe.StarCost(cs, card) is { } stars)
                 {
                     sb.Append(' ').Append(I(stars)).Append('*');
@@ -606,7 +273,7 @@ public static class ObservationBuilder
                 {
                     sb.Append(" UNPLAYABLE:").Append(reason);
                 }
-                sb.Append('\n');
+                AppendText(sb, cardNode).Append('\n');
             }
         }
         AppendScreen(sb, obs);
@@ -638,7 +305,9 @@ public static class ObservationBuilder
                 .Append(", picked [").Append(string.Join(",", ((JsonArray)prompt["picked"]!).Select(n => n!.ToJsonString()))).Append("]\n");
             foreach (var o in (JsonArray)prompt["options"]!)
             {
-                sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["upgraded"]!.GetValue<bool>() ? "+" : string.Empty).Append('\n');
+                sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["upgraded"]!.GetValue<bool>() ? "+" : string.Empty);
+                AppendName(sb, o);
+                AppendText(sb, o).Append('\n');
             }
         }
         if (obs["map"] is JsonObject map)
@@ -663,8 +332,9 @@ public static class ObservationBuilder
             sb.Append("-- card reward (pick one").Append(cr["can_skip"]!.GetValue<bool>() ? " or skip" : string.Empty).Append(")\n");
             foreach (var c in (JsonArray)cr["cards"]!)
             {
-                sb.Append(" (").Append(c!["index"]!.ToJsonString()).Append(") ").Append(c["id"]).Append(c["upgraded"]!.GetValue<bool>() ? "+" : string.Empty)
-                    .Append(' ').Append(c["type"]).Append(' ').Append(c["rarity"]).Append(" cost ").Append(c["cost"]!.ToJsonString().Trim('"'));
+                sb.Append(" (").Append(c!["index"]!.ToJsonString()).Append(") ").Append(c["id"]).Append(c["upgraded"]!.GetValue<bool>() ? "+" : string.Empty);
+                AppendName(sb, c);
+                sb.Append(' ').Append(c["type"]).Append(' ').Append(c["rarity"]).Append(" cost ").Append(c["cost"]!.ToJsonString().Trim('"'));
                 var vars = (JsonObject)c["vars"]!;
                 if (vars.Count > 0)
                 {
@@ -675,7 +345,7 @@ public static class ObservationBuilder
                 {
                     sb.Append(" {").Append(string.Join(",", kws.Select(k => k!.GetValue<string>()))).Append('}');
                 }
-                sb.Append('\n');
+                AppendText(sb, c).Append('\n');
             }
         }
         if (obs["shop"] is JsonObject shop)
@@ -683,8 +353,10 @@ public static class ObservationBuilder
             sb.Append("-- shop (card removal: ").Append(shop["removal_price"] is { } rp ? rp.ToJsonString() + "g" : "n/a").Append(")\n");
             foreach (var e in (JsonArray)shop["entries"]!)
             {
-                sb.Append(" (").Append(e!["index"]!.ToJsonString()).Append(") ").Append(e["category"]).Append(' ').Append(e["id"]?.GetValue<string>() ?? "-")
-                    .Append(' ').Append(e["price"]!.ToJsonString()).Append('g').Append(e["sold"]!.GetValue<bool>() ? " SOLD" : string.Empty).Append('\n');
+                sb.Append(" (").Append(e!["index"]!.ToJsonString()).Append(") ").Append(e["category"]).Append(' ').Append(e["id"]?.GetValue<string>() ?? "-");
+                AppendName(sb, e);
+                sb.Append(' ').Append(e["price"]!.ToJsonString()).Append('g').Append(e["sold"]!.GetValue<bool>() ? " SOLD" : string.Empty);
+                AppendText(sb, e).Append('\n');
             }
         }
         if (obs["rest"] is JsonObject rest)
@@ -701,12 +373,16 @@ public static class ObservationBuilder
             if (t["relic"] is { } relic)
             {
                 sb.Append(", relic ").Append(relic.GetValue<string>());
+                AppendName(sb, t, "relic_name");
+                AppendText(sb, t, "relic_text");
             }
             sb.Append('\n');
         }
         if (obs["event"] is JsonObject ev)
         {
-            sb.Append("-- event ").Append(ev["id"]).Append(" page ").Append(ev["page"]?.GetValue<string>() ?? "-").Append(ev["finished"]!.GetValue<bool>() ? " (finished)" : string.Empty).Append('\n');
+            sb.Append("-- event ").Append(ev["id"]);
+            AppendName(sb, ev);
+            sb.Append(" page ").Append(ev["page"]?.GetValue<string>() ?? "-").Append(ev["finished"]!.GetValue<bool>() ? " (finished)" : string.Empty).Append('\n');
             foreach (var o in (JsonArray)ev["options"]!)
             {
                 sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["key"]).Append(o["enabled"]!.GetValue<bool>() ? string.Empty : " (disabled)");
@@ -714,7 +390,7 @@ public static class ObservationBuilder
                 {
                     sb.Append(" relic ").Append(r.GetValue<string>());
                 }
-                sb.Append('\n');
+                AppendText(sb, o).Append('\n');
             }
         }
     }
