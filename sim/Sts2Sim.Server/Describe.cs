@@ -243,7 +243,7 @@ public static class Describe
     }
 
     // The number the game's power icon shows (PowerModel.DisplayAmount): the diff projection's rule
-    // (SimProjector.DisplayAmount: HARDENED_SHELL remaining cap, SLOW %, TENDER cards played this turn, else the
+    // (PlayerView.DisplayAmount: HARDENED_SHELL remaining cap, SLOW %, TENDER cards played this turn, else the
     // amount). Powers the projection has no rule for yet (ProjectionGapException: SLOTH, WITHERING_PRESENCE, ...)
     // fall back to the kernel Amount with known = false.
     public static int DisplayAmount(PowerModel power, out bool known)
@@ -251,7 +251,7 @@ public static class Describe
         try
         {
             known = true;
-            return SimProjector.DisplayAmount(power);
+            return PlayerView.DisplayAmount(power);
         }
         catch (Exception)
         {
