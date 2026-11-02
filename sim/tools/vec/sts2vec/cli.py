@@ -6,6 +6,8 @@
   seeded random policy, byte-identical buffers every step and equal state hashes at the end).
 - ``sts2vec digest`` a JSON digest of a seeded random rollout (state hashes + observation bytes); two processes with the
   same arguments must print the same digest (cross-process determinism).
+- ``sts2vec eval``   play a protocol seed set with any policy (``random`` / ``heuristic`` / ``first`` /
+  ``module:callable`` / ``file.py:callable``) and write the protocol run directory (``sts2vec.evaluate``).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -230,6 +233,22 @@ def cmd_digest(args) -> int:
     return 0
 
 
+def cmd_eval(args) -> int:
+    from .evaluate import evaluate
+
+    stem = Path(args.policy.split(":")[0]).stem if ":" in args.policy else args.policy
+    out = args.out or f"tmp/eval/vec-{stem}-{Path(args.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
+    rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
+                   floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
+                   log=lambda m: print(m, flush=True))
+    h = rep["headline"]
+    print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
+                      "wins": h["wins"], "games": h["games"], "results": {k: v for k, v in h["results"].items() if v},
+                      "floor_mean": h["floor_mean"], "act_reached": h["act_reached"], "steps_mean": h["steps_mean"],
+                      "replayable": h["replayable"]}, indent=1))
+    return 0 if h["replayable"] == h["games"] else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="sts2vec", description="sts2vec: batched Sts2Sim environments")
     p.add_argument("--dll", default=None,
@@ -256,6 +275,18 @@ def main(argv: list[str] | None = None) -> int:
     _add_env_args(d, envs=32, steps=100, pool=16)
     d.add_argument("--threads", type=int, default=8)
     d.set_defaults(fn=cmd_digest)
+
+    e = sub.add_parser("eval", aliases=["evaluate"], help="play a protocol seed set with a policy; write config/run/games/report (protocol v0.2)")
+    e.add_argument("--policy", required=True,
+                   help="random | heuristic | first | package.module:callable | path/to/file.py:callable")
+    e.add_argument("--seedset", required=True, help="std-a0-v1 | std-a10-v1 | smoke-a0-v1 | a file stem | a JSON path")
+    e.add_argument("--out", default=None, help="run directory (default tmp/eval/vec-<policy>-<seedset>-<time>)")
+    e.add_argument("--threads", type=int, default=8)
+    e.add_argument("--seed", type=int, default=0, help="seed of the per-game policy RNGs (ctx.rngs)")
+    e.add_argument("--step-cap", type=int, default=1200, help="protocol step cap (result 'capped'; default 1200)")
+    e.add_argument("--floor-step-cap", type=int, default=80,
+                   help="non-combat decisions on one floor before 'stuck' (protocol default 80; 0 = off)")
+    e.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)
     return args.fn(args)

@@ -163,7 +163,19 @@ uv run --project sim/tools/train sts2train-smoke eval --seedset sim/tools/eval/s
 （`stuck`）同 §5；`act_start_floor` 与 `L` 来自 `aux` 新增的 `act_floor`、`act_rooms` 列（`total_floor − act_floor` 即该幕首次观测的
 floor），计分仍调 `sts2eval.progress.compute`，运行目录与 LLM runner 同构，`report.md` 由 `sts2eval.report` 写出。
 `server_version` 记 `sts2vec/<encoder_version>`，`prompt_hash` 记 `weights:<权重哈希>`；`history_actions` 是候选下标序列
-（同种子同入口经 sts2vec 重放）。实现：`sim/tools/train/sts2train/evaluate.py`。
+（同种子同入口经 sts2vec 重放）。
+
+**任意程序化策略（`sts2vec eval`，2026-11-02 起为 NN 赛道的正式入口）**：评测器已下沉到环境包，策略无关：
+
+```bash
+uv run --project sim/tools/vec sts2vec eval --policy random|heuristic|first|pkg.module:callable|file.py:callable \
+    --seedset std-a0-v1|std-a10-v1|<路径> [--out DIR] [--threads 8] [--seed 0]
+```
+
+策略接口 `act(obs, ctx) -> (N,) 候选下标`（`sim/ENV_SPEC.md`、`sim/tools/vec/README.md` "Write your own policy in 20 lines"）；
+限制、计分（`sts2vec/protocol.py`，与 `sts2eval.progress` 由测试锁定相等）、运行目录布局同上；重放审计除结果/幕/层外还比对终局
+`StateHash`。`prompt_hash` 记策略哈希（内置 `builtin:<名>`，文件策略为源文件 sha256，checkpoint 为 `weights:<哈希>`）。
+`sts2train-smoke eval` 现为它的薄封装（`sim/tools/train/sts2train/evaluate.py`）。
 
 ## 8. 排行榜（sim 赛道，v0.2 口径）
 
