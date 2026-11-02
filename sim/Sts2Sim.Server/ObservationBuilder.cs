@@ -151,11 +151,11 @@ public static partial class ObservationBuilder
         sb.Append('\n');
         if (cs != null)
         {
-            var powers = Describe.Powers(cs, p);
-            if (powers.Count > 0)
+            AppendDanger(sb, obs["combat"]?["danger"] as JsonObject, p.MaxHp);
+            if (obs["player"]?["powers"] is JsonArray { Count: > 0 } playerPowers)
             {
-                sb.Append("powers: ").Append(Describe.PowersText(powers)).Append('\n');
-                AppendPowerTexts(sb, obs["player"]?["powers"], "  ");
+                sb.Append("powers: ").Append(PowersSummary(playerPowers)).Append('\n');
+                AppendPowerTexts(sb, playerPowers, "  ");
             }
         }
         var relicNodes = obs["player"]?["relics"] as JsonArray;
@@ -200,7 +200,12 @@ public static partial class ObservationBuilder
         sb.Append("deck(").Append(I(p.Deck.Count)).Append("): ").Append(Describe.DeckSummary(p.Deck)).Append('\n');
         if (cs != null)
         {
-            sb.Append("-- enemies\n");
+            sb.Append("-- enemies");
+            if (obs["player"]?["facing"] is JsonValue facing)
+            {
+                sb.Append(" (you face ").Append(facing.GetValue<string>()).Append(')');
+            }
+            sb.Append('\n');
             var combatNode = obs["combat"] as JsonObject;
             var enemyNodes = combatNode?["enemies"] as JsonArray;
             int e = 0;
@@ -208,12 +213,20 @@ public static partial class ObservationBuilder
             {
                 var enemyNode = enemyNodes != null && e < enemyNodes.Count ? enemyNodes[e] : null;
                 e++;
-                sb.Append(" [").Append(I(index)).Append("] ").Append(m.MonsterId);
+                sb.Append(" [").Append(I(index)).Append("] ").Append(Describe.Uid(m)).Append(' ').Append(m.MonsterId);
                 AppendName(sb, enemyNode);
                 sb.Append(' ').Append(I(m.CurrentHp)).Append('/').Append(I(m.MaxHp));
                 if (m.Block > 0)
                 {
                     sb.Append(" block ").Append(I(m.Block));
+                }
+                if (Str(enemyNode, "flank") is { } flank)
+                {
+                    sb.Append(" | ").Append(flank).Append(" side");
+                    if (enemyNode!["behind"] is JsonValue behind && behind.GetValue<bool>())
+                    {
+                        sb.Append(" (BEHIND you: x1.5)");
+                    }
                 }
                 var intents = Describe.Intents(cs, m);
                 sb.Append(" | intent: ");
@@ -222,10 +235,9 @@ public static partial class ObservationBuilder
                     sb.Append('[').Append(move).Append("] ");
                 }
                 sb.Append(intents.Count == 0 ? "-" : string.Join(" + ", intents.Select(Describe.IntentText)));
-                var powers = Describe.Powers(cs, m);
-                if (powers.Count > 0)
+                if (enemyNode?["powers"] is JsonArray { Count: > 0 } enemyPowers)
                 {
-                    sb.Append(" | ").Append(Describe.PowersText(powers));
+                    sb.Append(" | ").Append(PowersSummary(enemyPowers));
                 }
                 sb.Append('\n');
                 AppendPowerTexts(sb, enemyNode?["powers"], "    ");
@@ -238,9 +250,18 @@ public static partial class ObservationBuilder
                 {
                     var allyNode = allyNodes != null && k < allyNodes.Count ? allyNodes[k] : null;
                     k++;
-                    sb.Append(" ally [").Append(I(a)).Append("] ").Append(pet.MonsterId);
+                    sb.Append(" ally [").Append(I(a)).Append("] ").Append(Describe.Uid(pet)).Append(' ').Append(pet.MonsterId);
                     AppendName(sb, allyNode);
-                    sb.Append(' ').Append(I(pet.CurrentHp)).Append('/').Append(I(pet.MaxHp)).Append('\n');
+                    sb.Append(' ').Append(I(pet.CurrentHp)).Append('/').Append(I(pet.MaxHp));
+                    if (pet.Block > 0)
+                    {
+                        sb.Append(" block ").Append(I(pet.Block));
+                    }
+                    if (allyNode?["powers"] is JsonArray { Count: > 0 } allyPowers)
+                    {
+                        sb.Append(" | ").Append(PowersSummary(allyPowers));
+                    }
+                    sb.Append('\n');
                     AppendPowerTexts(sb, allyNode?["powers"], "    ");
                 }
             }
@@ -254,6 +275,10 @@ public static partial class ObservationBuilder
                 sb.Append(" [").Append(I(i)).Append("] ").Append(Describe.CardName(card));
                 AppendName(sb, cardNode);
                 sb.Append(' ').Append(Describe.CostText(cs, card));
+                if (cardNode?["base_cost"] is JsonValue baseCost)
+                {
+                    sb.Append(" (base ").Append(baseCost.ToJsonString()).Append("e)");
+                }
                 if (Describe.StarCost(cs, card) is { } stars)
                 {
                     sb.Append(' ').Append(I(stars)).Append('*');
@@ -264,6 +289,8 @@ public static partial class ObservationBuilder
                 {
                     sb.Append(" (").Append(vars).Append(')');
                 }
+                sb.Append(EffectiveText(card, cardNode?["effective"]));
+                sb.Append(CardTags(cardNode));
                 var keywords = Describe.Keywords(cs, card);
                 if (keywords.Count > 0)
                 {

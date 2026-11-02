@@ -72,6 +72,8 @@ public sealed class PlayService
                     return GetGame(parts[1]);
                 case "GET" when parts.Length == 3 && parts[0] == "games" && parts[2] == "history":
                     return History(parts[1]);
+                case "GET" when parts.Length == 3 && parts[0] == "games" && parts[2] == "piles":
+                    return Piles(parts[1]);
                 case "POST" when parts.Length == 3 && parts[0] == "games" && parts[2] == "step":
                 {
                     var obj = ParseBody(body);
@@ -294,6 +296,30 @@ public sealed class PlayService
         }
     }
 
+    // GET /games/{id}/piles: full card nodes of every pile (draw pile sorted, so its order stays hidden).
+    public ServiceResponse Piles(string id)
+    {
+        if (!_games.TryGetValue(id, out var g))
+        {
+            return Error(404, $"no game '{id}'");
+        }
+        lock (g.Gate)
+        {
+            if (g.Crashed)
+            {
+                return CrashedGame(g);
+            }
+            try
+            {
+                return new(200, ObservationBuilder.PilesNode(g));
+            }
+            catch (Exception ex)
+            {
+                return Error(500, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+
     public ServiceResponse Step(string id, string token)
     {
         if (!_games.TryGetValue(id, out var g))
@@ -334,7 +360,17 @@ public sealed class PlayService
             {
                 var obs = Observe(g);
                 var log = new JsonArray { $"{entry.Token}: {entry.Desc}" };
-                foreach (var line in StepLog.Diff(before, StepLog.Capture(g)))
+                List<string> lines;
+                try
+                {
+                    lines = StepLog.Diff(before, StepLog.Capture(g, before.Combat), entry.Action);
+                }
+                catch (Exception ex)
+                {
+                    // The log is a view: a bug in it must not mark the game crashed.
+                    lines = new List<string> { $"(step log unavailable: {ex.GetType().Name}: {ex.Message})" };
+                }
+                foreach (var line in lines)
                 {
                     log.Add(line);
                 }

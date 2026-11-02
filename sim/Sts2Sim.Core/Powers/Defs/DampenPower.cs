@@ -16,6 +16,9 @@ public sealed class DampenPower : PowerModel
 
     public IReadOnlyList<int> CasterIds => _casterIds;
 
+    // Read-only view (observation): the cards this power downgraded and the upgrade level each is restored to.
+    public IReadOnlyList<(int CardId, int UpgradeLevel)> DowngradedCards => _downgradedCards;
+
     public void AddCaster(CreatureState creature)
     {
         if (!_casterIds.Contains(creature.CombatId))
