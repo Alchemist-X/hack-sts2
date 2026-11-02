@@ -1120,6 +1120,23 @@ is exactly `CombatSim.LegalActions()` mapped with `RunAction.FromCombat` (same o
 automatic step to the next decision. An illegal action throws and leaves the state unchanged.
 `RunSim.WriteCanonical` = phase byte + `RunState.WriteCanonical` (+ pending prompt tape, as `CombatSim`).
 
+Additive (2026-11-02, fast path; `Run/Loop/RunSim.FastPath.cs`, `Choice/PromptSites{,.g}.cs`, `Choice/FastPathAnswerer.cs`):
+
+```csharp
+bool MayPrompt(RunAction a);          // false only when `a` provably cannot reach ChoiceRuntime.Ask (conservative)
+string? FastPathBlocker(RunAction a); // null = clone-free safe, else the reason (RunSim.Block* constants)
+bool StepFast(RunAction a);           // MayPrompt ? Step(a) : Step(a, FastPathAnswerer.Instance); true = clone-free
+void StepFastUnchecked(RunAction a);  // clone-free without the predicate (tests: exercises the fail-closed path)
+bool IsPoisoned;                      // a clone-free step met a prompt: the run is mid-action; Step/Clone throw
+```
+
+The predicate reads the generated table `PromptSites` (`sim/tools/inventory/gen_prompt_sites.py`; `--check` keeps it
+current): every model whose code reaches a prompt directly, through a hazardous model it references (closure), by
+auto-playing cards, or by granting Sly; grouped by what makes the hazard live (card on play / anywhere, potion on use,
+relic on obtain / while owned, power, monster, enchantment, affliction, orb, modifier). Both paths give the same state
+and `StateHash` when no prompt occurs. A prompt on the clone-free path throws `FastPathPromptException` (an
+`InvalidOperationException`: Vec reports SIM_ERROR) naming the site; it is never answered.
+
 ## C2. Run-state fields
 
 Part A §6 (clone and canonical) applies to every field; every field below is already present with its
@@ -1233,7 +1250,7 @@ Inputs: the kernel inventory and binding measurements of 2026-11-01 (scratchpad 
 | D4 | **Candidate list in `LegalActions()` order** with `(kind, A, B)` and pointer columns into the entity tables; the policy returns a candidate index. No flat action table. | 21 action kinds with variable option sets; prompt option lists are unbounded. |
 | D5 | **Reward = 1 at a Victory terminal, else 0; γ = 1 lives in the learner.** Floor, act, HP, gold, bosses go to `aux`, never into the reward. `terminated` on Victory/Defeat, `truncated` on the step cap. **Status codes are separate from outcomes**: content gaps and simulator errors are never losses, an illegal action never triggers a silent fallback. | Approved plan; fail-closed convention of this repo. |
 | D6 | **Starts come from a pool of snapshots.** Fresh runs (character, ascension, seed text) are created once per pool entry and cached as a `RunSim` template; resets `Clone()` the template (15 µs) instead of `NewRun` (16.5 ms, map pruning). Imported saves (`RunImporter.FromSave`, checked) and live snapshots (`Clone()` of a slot) are pool entries too. Per-slot deterministic start sequence, independent of thread scheduling. | `RunExporter.ToSave` of a live run is faithful only at act start, so curriculum snapshots are clones, not saves. |
-| D7 | **Tape engine for stepping** (`RunSim.Step(a)`, one deep clone per step, prompt-safe). The clone-free `Step(a, answerer)` path (2.6× at 10 threads) is a later ticket (needs a "no prompt possible" predicate or copy-on-write). `StateHash` (14–53 µs) is never called inside the step loop. | Prompts are decision points; the batched policy cannot answer them inline. |
+| D7 | **Tape engine for stepping** (`RunSim.Step(a)`, one deep clone per step, prompt-safe), **with a clone-free fast path** (2026-11-02): `config.fast_path` (default true) steps with `RunSim.StepFast`, which skips the clone when the static prompt-site predicate `RunSim.MayPrompt` proves no prompt can occur (≈ 82 % of random-policy steps) and fails closed (SIM_ERROR) if one does. Outputs are byte-identical to `fast_path: false`. `StateHash` (14–53 µs) is never called inside the step loop. | Prompts are decision points; the batched policy cannot answer them inline. |
 | D8 | **Player view is filtered in C#** (§D3.3) and verified by a leak test: reshuffling the draw pile of a cloned state must not change the encoded observation. The next move id (`move`/`move_name` in the Server observation) is a leak and is **not** encoded; only intents are. | Hidden-information inventory H1–H15. |
 | D9 | **Vec never touches Server/Diff behaviour.** The projection helpers Vec needs (`SimProjector.IsVisible`, `DisplayAmount`, `Intent`, `CostOf`, `CanPlay`, ≈80 lines) move into Core as `Sts2Sim.Core/Combat/Pipeline/PlayerView.cs`; Diff and Server call the Core versions (zero behaviour change; G0 and the Server tests prove it). | One source of truth for the player view; Vec must not depend on the Diff assembly. |
 
@@ -1392,7 +1409,9 @@ are appended to the export list; a loader treats them as optional for library bu
 `(N, *shape)`. Return values: 0 ok, −1 error (text in last_error); per-slot problems are reported in `status`, never as
 a return code. Every export is wrapped in `try/catch`: an exception never crosses the ABI. `config_json`:
 `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC", "content": "ported_only",
-"pool": {...}, "pool_cache": 4096}`.
+"pool": {...}, "pool_cache": 4096, "fast_path": true}`. `fast_path` (additive, default true) steps a slot with
+`RunSim.StepFast` (clone-free when `RunSim.MayPrompt` is false); outputs are identical to `fast_path: false`, and a prompt
+on the clone-free path ends the episode as SIM_ERROR (`FastPathPromptException` in the slot's last error), never an answer.
 
 ## D6. Python package (`sim/tools/vec`, package `sts2vec`, uv project, deps: numpy; dev: pytest)
 

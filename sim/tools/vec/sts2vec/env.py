@@ -57,20 +57,22 @@ class VecEnv:
 
     Parameters mirror ``config_json`` (§D5): ``threads`` worker threads, ``step_cap`` decisions per episode before
     truncation, ``auto_reset`` (finished slots restart in the same step), ``seed_text`` (per-slot start sequences),
-    ``content`` ("ported_only" | "all"), ``pool`` (``PoolSpec``; None = empty pool), ``pool_cache`` (template cache size).
+    ``content`` ("ported_only" | "all"), ``pool`` (``PoolSpec``; None = empty pool), ``pool_cache`` (template cache size),
+    ``fast_path`` (clone-free stepping when the static prompt-site predicate proves no prompt can occur; same outputs).
     ``dll`` picks the library (default: ``STS2VEC_AOT_LIB`` / ``STS2VEC_DLL`` / the Release build; see ``sts2vec.loader``).
     """
 
     def __init__(self, num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                  seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = PoolSpec(),
-                 pool_cache: int = 4096, dll: str | os.PathLike | None = None):
+                 pool_cache: int = 4096, fast_path: bool = True, dll: str | os.PathLike | None = None):
         self._h = 0
         self._lib = load(dll)
         self.schema = schema_of(self._lib)
         self.num_envs = int(num_envs)
         self.pool_spec = pool
         self.config = make_config(self.num_envs, threads=threads, step_cap=step_cap, auto_reset=auto_reset,
-                                  seed_text=seed_text, content=content, pool=pool, pool_cache=pool_cache)
+                                  seed_text=seed_text, content=content, pool=pool, pool_cache=pool_cache,
+                                  fast_path=fast_path)
         cfg = json.dumps(self.config).encode("utf-8")
         h = self._lib.sts2vec_create(cfg, len(cfg))
         if h <= 0:

@@ -219,3 +219,37 @@ rows above, idle host; details in `docs/docker.md` (Validation, amd64). Tokyo ar
 
 Episode counts (7,286 at 500, 44,417 at 3000), Python status counts (OK 504,778, RESET 7,222) and the combat hash sink
 `40788C706BFA21E0` match the native and Mac rows: no container overhead and no cross-architecture drift.
+
+## Vec fast path: clone-free stepping (2026-11-02, branch `j/fast-path`)
+
+`RunSim.StepFast` skips the per-step deep clone when the static prompt-site predicate `RunSim.MayPrompt` proves the
+action cannot reach a choice prompt (`sim/VEC.md` "Fast path"); `config.fast_path` (default true) turns it on in Vec.
+Mac M4 Pro, **heavily loaded host** (load average 14–30: an E3 farm of game instances plus other agents' test runs), so
+the rows are medians of 3 interleaved on/off runs; treat ±15 % as noise. Uniform-random candidate policy, five
+characters, pool 1024 warmed, `DOTNET_gcServer=1`, 1024 envs x 8 threads x 500 batches.
+
+| Row | fast path steps | env-steps/s (median of 3; runs) | process CPU µs / env-step (median) | min ms/batch | GC gen0/1/2 in window |
+| --- | --- | --- | --- | --- | --- |
+| A0, `fast_path: false` | 0 % | 77,007 (64,756 / 77,007 / 81,982) | 88.3 | 9.49 | 16 / 8 / 1 |
+| A0, `fast_path: true` | 83.2 % | 83,209 (83,209 / 79,306 / 92,820) | 79.3 | 8.69 | 4 / 2 / 0 |
+| A10, `fast_path: false` | 0 % | 81,435 (80,399 / 81,435 / 86,919) | 86.3 | 8.91 | 15 / 7 / 1 |
+| A10, `fast_path: true` | 82.0 % | 87,292 (87,292 / 85,644 / 105,752) | 79.1 | 8.13 | 5 / 3 / 1 |
+
+End to end the gain is modest: +7–8 % env-steps/s, −9–10 % CPU per env-step, about 3x fewer gen0/gen1 collections.
+The clone is a small share of a Vec step at this size: a single-threaded RunSim step costs 13–15 µs with the clone and
+≈ 7.8 µs on the fast path (below), while a Vec env-step costs ≈ 80 µs of CPU, most of it outside `Step`
+(observation encoding, `LegalActions`, candidate table, resets). The 1.7–2.6x quoted earlier for `Step(a, answerer)` is
+the `Step` call alone, not the env. Buffers and `StateHash` are byte-identical with the fast path on and off
+(`VecTests.Test_Vec_FastPathMatchesCloningPath`; the bench's episode counts match too: 7,286 ended at A0, 11,345 at A10).
+
+`dotnet run -c Release --project sim/Sts2Sim.Bench -- fastpath [runs] [ascension]` (single thread; same uniform-random
+trajectories replayed through `Step` and `StepFast`; only the step call is timed; final-state hash XOR compared):
+
+| Row | runs / steps | fast fraction | µs/step, cloning `Step` | µs/step, `StepFast` (incl. `MayPrompt`) | `MayPrompt` alone | speedup |
+| --- | --- | --- | --- | --- | --- | --- |
+| A0 | 1,000 / 68,089 | 0.832 | 13.02, 12.68 | 7.80, 7.56 | 0.19 | 1.67x, 1.68x |
+| A10 | 1,000 / 43,992 | 0.824 | 14.68, 12.65 | 7.89, 7.83 | 0.20 | 1.86x, 1.62x |
+
+Soak fast fraction (`ChoiceFastPathTests`, 2,000 runs incl. play-biased and 999-HP deep runs that reach events, shops
+and bosses): 72.1 % of 577,867 steps; blockers in order: presence relic 31k, pending prompt 26k, event room 23k,
+presence card 22k, creature (power/monster) 19k, played prompt card 14k, travel 13k, room action 8k.

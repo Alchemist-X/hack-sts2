@@ -6,7 +6,7 @@ using Sts2Sim.Vec;
 namespace Sts2Sim.Bench;
 
 /// <summary>
-/// <c>dotnet run -c Release --project sim/Sts2Sim.Bench -- vec [envs=1024] [threads=8] [steps=500] [ascension=0] [pool=1024]</c>.
+/// <c>dotnet run -c Release --project sim/Sts2Sim.Bench -- vec [envs=1024] [threads=8] [steps=500] [ascension=0] [pool=1024] [fast_path=1]</c>.
 /// Drives a VecEnv in-process through the real C ABI entry points (delegate* unmanaged to the [UnmanagedCallersOnly]
 /// exports) with NativeMemory buffers and a seeded uniform-random candidate policy. Pool templates are warmed before the
 /// timed window (NewRun ≈ 16 ms each would otherwise dominate). Run with DOTNET_gcServer=1 to match the shipped
@@ -22,6 +22,7 @@ public static unsafe class VecBench
         int steps = Arg(3, 500);
         int ascension = Arg(4, 0);
         int poolCount = Arg(5, 1024);
+        bool fastPath = Arg(6, 1) != 0;
         const int warmupSteps = 20;
 
         delegate* unmanaged<byte*, int, long> create = &Exports.Create;
@@ -35,7 +36,7 @@ public static unsafe class VecBench
         {
             Exports.RequireServerGC = false;
         }
-        string config = $"{{\"num_envs\":{envs},\"threads\":{threads},\"pool\":{{\"fresh\":{{\"characters\":[\"IRONCLAD\",\"SILENT\",\"DEFECT\",\"REGENT\",\"NECROBINDER\"],\"ascension\":{ascension},\"count\":{poolCount},\"seed_prefix\":\"BENCH\"}}}}}}";
+        string config = $"{{\"num_envs\":{envs},\"threads\":{threads},\"pool\":{{\"fresh\":{{\"characters\":[\"IRONCLAD\",\"SILENT\",\"DEFECT\",\"REGENT\",\"NECROBINDER\"],\"ascension\":{ascension},\"count\":{poolCount},\"seed_prefix\":\"BENCH\"}}}},\"fast_path\":{(fastPath ? "true" : "false")}}}";
         long h;
         var cfg = Encoding.UTF8.GetBytes(config);
         fixed (byte* p = cfg)
@@ -52,7 +53,7 @@ public static unsafe class VecBench
         {
             bytesPerEnv += Schema.BytesPerEnv(k);
         }
-        Console.WriteLine($"vec: envs={envs} threads={threads} steps={steps} ascension={ascension} pool={poolCount} gc={(server ? "server" : "workstation")} " +
+        Console.WriteLine($"vec: envs={envs} threads={threads} steps={steps} ascension={ascension} pool={poolCount} fast_path={(fastPath ? 1 : 0)} gc={(server ? "server" : "workstation")} " +
             $"latency={GCSettings.LatencyMode} bytes/env={bytesPerEnv} encoder={Schema.EncoderVersion} cpus={Environment.ProcessorCount}");
 
         var env = Exports.EnvOf(h)!;
@@ -83,6 +84,9 @@ public static unsafe class VecBench
 
         long decisions = 0, resets = 0, wins = 0, ends = 0, truncs = 0, errors = 0, gaps = 0, illegal = 0;
         int gen0 = 0, gen1 = 0, gen2 = 0;
+        long fast0 = 0, slow0 = 0;
+        var proc = Process.GetCurrentProcess();
+        TimeSpan cpu0 = default;
         double minMs = double.MaxValue, maxMs = 0;
         var batch = new Stopwatch();
         var total = new Stopwatch();
@@ -108,6 +112,10 @@ public static unsafe class VecBench
                 gen0 = GC.CollectionCount(0);
                 gen1 = GC.CollectionCount(1);
                 gen2 = GC.CollectionCount(2);
+                fast0 = env.FastSteps;
+                slow0 = env.SlowSteps;
+                proc.Refresh();
+                cpu0 = proc.TotalProcessorTime;
                 total.Start();
             }
             batch.Restart();
@@ -145,10 +153,15 @@ public static unsafe class VecBench
             }
         }
         total.Stop();
+        proc.Refresh();
+        double cpuSecs = (proc.TotalProcessorTime - cpu0).TotalSeconds;
         double secs = total.Elapsed.TotalSeconds;
         Console.WriteLine($"vec: initial reset {resetMs:F1} ms; timed {steps} batches in {secs:F2} s");
         Console.WriteLine($"vec: env-steps/s={decisions / secs:F0} ms/batch avg={total.Elapsed.TotalMilliseconds / steps:F3} min={minMs:F3} max={maxMs:F3} " +
             $"resets/s={resets / secs:F0} episodes ended={ends} (wins {wins}) truncated={truncs} sim_error={errors} content_gap={gaps} illegal={illegal}");
+        long fastN = env.FastSteps - fast0, slowN = env.SlowSteps - slow0;
+        Console.WriteLine($"vec: process cpu {cpuSecs:F2} s in window = {cpuSecs * 1e6 / Math.Max(1, decisions):F1} cpu-µs/env-step (wall-clock-independent; includes GC and idle spin)");
+        Console.WriteLine($"vec: fast-path steps={fastN} cloning steps={slowN} fast fraction={(fastN + slowN == 0 ? 0 : (double)fastN / (fastN + slowN)):F3}");
         Console.WriteLine($"vec: gc collections during window gen0={GC.CollectionCount(0) - gen0} gen1={GC.CollectionCount(1) - gen1} gen2={GC.CollectionCount(2) - gen2}; " +
             $"obs MB/batch={bytesPerEnv * envs / 1e6:F1}");
         if (errors > 0)

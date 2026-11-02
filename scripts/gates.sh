@@ -19,6 +19,8 @@
 #   sts2rec        (cd sts2rec && uv run pytest -q); a failure is rerun once (known wall-clock flake in
 #                  test_text_env.py::test_vector_steps_workers_concurrently); PASS on rerun is reported as such
 #   py-scripts     python3 -m unittest discover -s scripts -p 'test_*.py' (version_delta, kernel_map; stdlib only), then
+#                  python3 sim/tools/inventory/gen_prompt_sites.py --check (the fast-path prompt-site table
+#                  sim/Sts2Sim.Core/Choice/PromptSites.g.cs is up to date with the sim's model defs), then
 #                  python3 scripts/kernel_map.py --check when the rule-truth decompile is present (map up to date,
 #                  no stale curated record, no unmapped kernel file of >= 50 lines); without the tree: tests only
 #   bench-combat   (--bench only) Sts2Sim.Bench: decisions/s, Clone(), StateHash()
@@ -279,6 +281,10 @@ step_py_scripts() {
   n=$(grab "$log" '^Ran ([0-9]+) tests? .*')
   [[ $RC == 0 ]] && grep -qE '^OK' "$log" && ok=1
   info="unittest ${n:-?} tests $([[ $ok == 1 ]] && echo OK || echo FAILED)"
+  local ps
+  python3 sim/tools/inventory/gen_prompt_sites.py --check > "$OUT/prompt-sites-check.log" 2>&1 < /dev/null; ps=$?
+  info="$info; prompt_sites --check $([[ $ps == 0 ]] && echo OK || echo FAILED)"
+  [[ $ps == 0 ]] || { ok=0; grep -E '^error:' "$OUT/prompt-sites-check.log" | head -6 | sed 's/^/    /'; }
   local tree="${STS2_DECOMPILE_ROOT:-/Users/Aincrad/dev-proj/hack-sts2/output/server-bootstrap/linux-decompiled}"
   if [[ -d "$tree" ]]; then
     python3 scripts/kernel_map.py --check --tree "$tree" > "$OUT/kernel-map-check.log" 2>&1 < /dev/null; km=$?
