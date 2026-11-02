@@ -146,7 +146,7 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
          "loop_hints": 0,
          "tokens": P.usage_dict(None), "cost_usd": 0.0, "seconds": None, "final_hp": None, "max_hp": None,
          "death": None, "history_tokens": None, "history_steps": None, "replayable": None,
-         "server_version": server_version, "obs_mode": obs_mode}
+         "server_version": server_version, "server_url": getattr(client, "url", None), "obs_mode": obs_mode}
     view = CompactView(asc) if obs_mode == "compact" else None
     t0 = time.monotonic()
     log_lines: deque[str] = deque(maxlen=LOG_LINES)
@@ -168,7 +168,7 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
             gid = created["id"]
             s["game_id"] = gid
             obs = created["observation"]
-            write({"type": "start", "key": key, "game_id": gid, "seed": game["seed"],
+            write({"type": "start", "key": key, "game_id": gid, "server_url": s["server_url"], "seed": game["seed"],
                    "character": game["character"], "ascension": asc, "content": seedset["content"],
                    "reveal_moves": bool(reveal_moves)})
             while True:
@@ -398,12 +398,25 @@ async def progress_loop(state: RunState, interval: float = 10.0, stream=sys.stde
               file=stream, flush=True)
 
 
-async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limits: RunLimits,
+def assign_servers(games: list[dict], n: int) -> list[int]:
+    """Round-robin server index per game, by the game's position in the seed set (stable under --resume)."""
+    return [i % max(1, n) for i in range(len(games))]
+
+
+async def run_all(client: SimClient | list[SimClient], policy, seedset: dict, out_dir: Path, limits: RunLimits,
                   state: RunState, concurrency: int = 10, resume: bool = False,
-                  server_version: str | None = None, progress_interval: float = 10.0,
+                  server_version: str | dict | None = None, progress_interval: float = 10.0,
                   reveal_moves: bool = False, obs_mode: str = "full") -> list[dict]:
+    """Play the seed set. `client` is one SimClient, or a list of them (one per server, `--urls`): game i of the
+    seed set then runs on server i mod len(clients) and its summary records that server's URL. A game always
+    stays on the server that created it (game ids are per server process). `server_version` may be a dict
+    {url: version} for several servers."""
+    clients = list(client) if isinstance(client, (list, tuple)) else [client]
+    if not clients:
+        raise ValueError("run_all needs at least one client")
     games = list(seedset["games"])
-    todo = [g for g in games if not (resume and completed(out_dir, g))]
+    where = assign_servers(games, len(clients))
+    todo = [(g, clients[where[i]]) for i, g in enumerate(games) if not (resume and completed(out_dir, g))]
     state.total = len(games)
     state.done = len(games) - len(todo)
     if limits.max_minutes:
@@ -411,13 +424,18 @@ async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limit
     sem = asyncio.Semaphore(max(1, concurrency))
     results: list[dict] = []
 
-    async def one(g):
+    def version_of(c) -> str | None:
+        if isinstance(server_version, dict):
+            return server_version.get(getattr(c, "url", None))
+        return server_version
+
+    async def one(g, c):
         async with sem:
             if state.abort_reason:
                 return None
             state.running += 1
             try:
-                r = await play_game(client, policy, g, seedset, out_dir, limits, state, server_version,
+                r = await play_game(c, policy, g, seedset, out_dir, limits, state, version_of(c),
                                     reveal_moves=reveal_moves, obs_mode=obs_mode)
                 results.append(r)
                 return r
@@ -427,7 +445,7 @@ async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limit
 
     prog = asyncio.create_task(progress_loop(state, progress_interval)) if progress_interval else None
     try:
-        await asyncio.gather(*(one(g) for g in todo))
+        await asyncio.gather(*(one(g, c) for g, c in todo))
     finally:
         if prog:
             prog.cancel()

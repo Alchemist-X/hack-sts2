@@ -15,7 +15,8 @@ sts2sim image entry points:
                           Sts2Sim.Server, e.g. --reveal-moves; crash log $STS2SIM_CRASH_LOG, default
                           /data/play-crashes-<hostname>.jsonl, one file per replica)
   selftest [N] [ARGS...]  N random full runs through the play-service path (default 200), exit 1 on any crash
-  vec-check [ARGS...]     sts2vec check   (schema/buffers + determinism threads 1 vs 8)
+  vec-check [ARGS...]     sts2vec check   (schema/buffers + determinism threads 1 vs 8); sts2vec uses the NativeAOT
+                          library when the image has it ($STS2VEC_AOT_LIB; set it empty for the hostfxr path)
   vec-bench [ARGS...]     sts2vec bench   (e.g. --envs 1024 --threads 4 --steps 500 [--json])
   sts2vec [ARGS...]       the sts2vec CLI (bench | check | digest)
   bench [ARGS...]         Sts2Sim.Bench (C# benches: no args = combat bench, 'vec 1024 8 500', 'run-soak ...')
@@ -26,6 +27,12 @@ sts2sim image entry points:
 Anything else is executed as a command.
 EOF
 }
+
+# NativeAOT by default for sts2vec when the image has the library (Dockerfile 'aot' stage) and the caller did not set
+# STS2VEC_AOT_LIB; an explicitly empty STS2VEC_AOT_LIB (-e STS2VEC_AOT_LIB=) keeps the hostfxr path (STS2VEC_DLL).
+if [ -z "${STS2VEC_AOT_LIB+set}" ] && [ -n "${STS2VEC_AOT_DEFAULT:-}" ] && [ -f "$STS2VEC_AOT_DEFAULT" ]; then
+  export STS2VEC_AOT_LIB="$STS2VEC_AOT_DEFAULT"
+fi
 
 mode="${1:-server}"
 if [ "$#" -gt 0 ]; then shift; fi

@@ -26,9 +26,14 @@ Stages:
    then `dotnet build sim/Sts2Sim.sln -c Release -warnaserror` (the repo's 0-warning gate holds inside the image
    too) and, with `RUN_TESTS=<filter>`, the custom test runner. It stages the Server, Vec and Bench
    `bin/Release/net9.0` trees with the repository layout.
-2. `runtime` (`mcr.microsoft.com/dotnet/runtime:9.0`, Debian 12): adds `python3` (3.11), `tini` and `uv`
+2. `aot` (from `build`, `VEC_AOT=1` by default): installs `clang` and `zlib1g-dev` and runs
+   `scripts/vec_publish_aot.sh`, which publishes `Sts2Sim.Vec` as a NativeAOT shared library for the build platform
+   (`linux-x64` on amd64, `linux-arm64` on arm64; 13 MB, about 80 s on Huginn). `--build-arg VEC_AOT=0` skips it
+   (the image then has only the hostfxr path).
+3. `runtime` (`mcr.microsoft.com/dotnet/runtime:9.0`, Debian 12): adds `python3` (3.11), `tini` and `uv`
    (0.11.7, copied from `ghcr.io/astral-sh/uv`), copies the staged binaries, `sim/PLAY.md`, `sim/VEC.md`,
-   `sim/CONTRACTS.md`, `sim/tools/{vec,eval,play}` and `knowledge/source`, and creates the `sts2vec` and
+   `sim/CONTRACTS.md`, `sim/tools/{vec,eval,play}`, `knowledge/source` and the AOT library
+   (`/app/sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.so`), and creates the `sts2vec` and
    `sts2eval` venvs from the committed `uv.lock` files (`uv sync --frozen --no-dev`).
 
 The image mirrors the checkout under `/app` (`/app/sim/Sts2Sim.Server/bin/Release/net9.0/...`), so every default
@@ -70,7 +75,9 @@ compose default) unless the network is private.
 | `STS2SIM_CRASH_LOG` | `/data/play-crashes-<hostname>.jsonl` | crash repros (`selftest`: `/data/selftest-crashes.jsonl`); one file per replica |
 | `STS2SIM_VERSION` | build arg | version in `/health`, crash repros and eval configs |
 | `STS2SIM_KNOWLEDGE` | `/app/knowledge/source` | rules text directory |
-| `STS2VEC_DLL` | `/app/sim/Sts2Sim.Vec/bin/Release/net9.0/Sts2Sim.Vec.dll` | managed library sts2vec hosts |
+| `STS2VEC_DLL` | `/app/sim/Sts2Sim.Vec/bin/Release/net9.0/Sts2Sim.Vec.dll` | managed library sts2vec hosts (hostfxr path) |
+| `STS2VEC_AOT_LIB` | set by the entrypoint to `$STS2VEC_AOT_DEFAULT` when unset and the file exists | NativeAOT library sts2vec loads first; `-e STS2VEC_AOT_LIB=` (empty) selects the hostfxr path |
+| `STS2VEC_AOT_DEFAULT` | `/app/sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.so` | where the `aot` stage put the library |
 | `DOTNET_gcServer` | `1` | Server GC for the server and benches (sts2vec gets it from `sts2vec.runtimeconfig.json` as well; it refuses Workstation GC) |
 | `DOTNET_GCHeapCount` | unset | cap Server GC heaps (one per visible core by default) when many replicas share a host |
 | `ANTHROPIC_API_KEY` | unset | for `eval run --policy claude`; or mount a key file and pass `--api-key-file` |
@@ -151,6 +158,12 @@ key never goes into the image: pass `-e ANTHROPIC_API_KEY` (taken from the calle
 file read-only (`-v ~/.config/sts2eval/anthropic_api_key:/run/secrets/anthropic_api_key:ro` and
 `--api-key-file /run/secrets/anthropic_api_key`).
 
+**Several servers, one runner: `--urls`.** `sts2eval run --urls http://127.0.0.1:8765,http://127.0.0.1:8766,...`
+spreads one seed set over several servers: game *i* runs on server *i* mod N for its whole life, and every game
+summary records its `server_url` (`config.json`: `server_urls`, `server_versions`). With `scripts/sts2_cluster.sh`
+(next section) the list is `--urls "$(scripts/sts2_cluster.sh urls)"`. For the LLM policy the bottleneck is the
+model, so one server is enough; `--urls` is for fast policies (random, small NNs) and for spreading load.
+
 **sts2vec - in-process, no server.** `sts2vec` hosts the simulator inside the Python process through hostfxr
 (`DOTNET_ROOT=/usr/share/dotnet`, the runtime image's root) and steps N envs per call; there is no network
 endpoint. Run training code inside the image (`docker run --rm -v "$PWD/train:/work" sts2sim python
@@ -158,6 +171,34 @@ endpoint. Run training code inside the image (`docker run --rm -v "$PWD/train:/w
 or build an image `FROM sts2sim` that adds the training dependencies. Parallelism: `VecEnv(num_envs, threads=T)` inside one container; scale
 out with one container per host or per NUMA node rather than many small ones (Server GC and the env's worker
 threads are sized for the cores the container sees; limit them with `--cpus` and `threads=`).
+
+## Many servers on one host: `scripts/sts2_cluster.sh`
+
+One command starts N play servers on a Docker host, locally or over ssh (`--host raven` runs every `docker` and
+`curl` call as `ssh raven ...`). Server *i* is container `<name>-<i>` (default name `sts2sim`), published on
+`127.0.0.1:<base-port + i>` of the docker host, labelled `sts2sim.cluster=<name>`.
+
+```bash
+scripts/sts2_cluster.sh up 8 --host raven --image sts2sim:latest --base-port 8765   # replaces a running cluster, waits for /health
+scripts/sts2_cluster.sh status --host raven      # container state, docker health, live /health per server (exit 1 if one is down)
+scripts/sts2_cluster.sh urls --host raven        # http://127.0.0.1:8765,...  (for sts2eval --urls)
+scripts/sts2_cluster.sh logs 3 --host raven --tail 50
+scripts/sts2_cluster.sh tunnel --host raven      # ssh -L for every port: use the remote servers from this machine
+scripts/sts2_cluster.sh down --host raven
+# optional limits per server: --cpus 1 --memory 512m --gc-heaps 1 (DOTNET_GCHeapCount); server args after '--'
+scripts/sts2_cluster.sh up 4 -- --reveal-moves
+```
+
+Runner on the same host as the servers (no tunnel; the image's runner on the host network):
+
+```bash
+docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/out:/data" sts2sim:latest \
+    eval run --seedset a0-s20 --policy random --concurrency 32 --urls "$(scripts/sts2_cluster.sh urls)" --out /data/run
+```
+
+Runner on a laptop: `scripts/sts2_cluster.sh tunnel --host raven &` and then `sts2eval run ... --urls "$(scripts/sts2_cluster.sh urls --host raven)"`
+(validated: 10 games, 5 per server, 0 crashes, 10/10 replayable). Measured capacity per server, per core and per
+container: `docs/capacity-2026-11-02.md`; `scripts/cluster_capacity.sh OUT_DIR` repeats the measurements on a host.
 
 ## Validation (2026-11-02, Tokyo GCP VM)
 
