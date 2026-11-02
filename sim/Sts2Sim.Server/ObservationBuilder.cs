@@ -301,8 +301,22 @@ public static partial class ObservationBuilder
     {
         if (obs["prompt"] is JsonObject prompt)
         {
-            sb.Append("-- prompt ").Append(prompt["kind"]).Append(" at ").Append(prompt["site"]).Append(": pick ").Append(prompt["min"]!.ToJsonString()).Append("..").Append(prompt["max"]!.ToJsonString())
+            sb.Append("-- prompt ").Append(prompt["kind"]).Append(" at ").Append(prompt["site"]);
+            if (Str(prompt, "source") is { } source && source != Str(prompt, "site"))
+            {
+                sb.Append(" from ").Append(source);
+            }
+            AppendName(sb, prompt, "source_name");
+            sb.Append(": pick ").Append(prompt["min"]!.ToJsonString()).Append("..").Append(prompt["max"]!.ToJsonString())
                 .Append(", picked [").Append(string.Join(",", ((JsonArray)prompt["picked"]!).Select(n => n!.ToJsonString()))).Append("]\n");
+            if (Str(prompt, "desc") is { } promptDesc)
+            {
+                sb.Append("   ").Append(promptDesc).Append('\n');
+            }
+            if (Str(prompt, "source_text") is { } sourceText)
+            {
+                sb.Append("   source: ").Append(Collapse(sourceText)).Append('\n');
+            }
             foreach (var o in (JsonArray)prompt["options"]!)
             {
                 sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["id"]).Append(o["upgraded"]!.GetValue<bool>() ? "+" : string.Empty);
@@ -318,6 +332,7 @@ public static partial class ObservationBuilder
                 sb.Append(" (").Append(o!["index"]!.ToJsonString()).Append(") ").Append(o["type"]).Append(" col ").Append(o["col"]!.ToJsonString()).Append(" row ").Append(o["row"]!.ToJsonString())
                     .Append(" -> ").Append(string.Join("/", ((JsonArray)o["leads_to"]!).Select(n => n!.GetValue<string>()))).Append('\n');
             }
+            AppendMapGrid(sb, map["nodes"] as JsonArray);
         }
         if (obs["rewards"] is JsonArray rewards)
         {
@@ -329,7 +344,11 @@ public static partial class ObservationBuilder
         }
         if (obs["card_reward"] is JsonObject cr)
         {
-            sb.Append("-- card reward (pick one").Append(cr["can_skip"]!.GetValue<bool>() ? " or skip" : string.Empty).Append(")\n");
+            bool canSkip = cr["can_skip"]!.GetValue<bool>();
+            string skipNote = !canSkip ? string.Empty
+                : cr["skip_consumes"] is JsonValue sc && sc.GetValue<bool>() ? " or skip (skipping completes the reward)"
+                : " or skip (skip keeps this reward on the rewards screen until you proceed)";
+            sb.Append("-- card reward (pick one").Append(skipNote).Append(")\n");
             foreach (var c in (JsonArray)cr["cards"]!)
             {
                 sb.Append(" (").Append(c!["index"]!.ToJsonString()).Append(") ").Append(c["id"]).Append(c["upgraded"]!.GetValue<bool>() ? "+" : string.Empty);
@@ -355,7 +374,12 @@ public static partial class ObservationBuilder
             {
                 sb.Append(" (").Append(e!["index"]!.ToJsonString()).Append(") ").Append(e["category"]).Append(' ').Append(e["id"]?.GetValue<string>() ?? "-");
                 AppendName(sb, e);
-                sb.Append(' ').Append(e["price"]!.ToJsonString()).Append('g').Append(e["sold"]!.GetValue<bool>() ? " SOLD" : string.Empty);
+                sb.Append(' ').Append(e["price"]!.ToJsonString()).Append('g');
+                if (e["on_sale"] is JsonValue sale && sale.GetValue<bool>())
+                {
+                    sb.Append(" (sale").Append(e["base_price"] is JsonValue bp ? ", base ~" + bp.ToJsonString() + "g" : string.Empty).Append(')');
+                }
+                sb.Append(e["sold"]!.GetValue<bool>() ? " SOLD" : string.Empty);
                 AppendText(sb, e).Append('\n');
             }
         }

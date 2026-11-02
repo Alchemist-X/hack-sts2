@@ -13,7 +13,13 @@ dotnet run -c Release --project sim/Sts2Sim.Server -- --port 8765 --crash-log tm
 ```
 
 Flags: `--port N` (default 8765), `--crash-log PATH` (default `tmp/play-crashes.jsonl`, relative to the
-working directory), `--no-crash-log`.
+working directory), `--no-crash-log`, `--knowledge DIR` (rules text, see below; applies to serve,
+`--selftest` and `--replay`).
+
+At startup the server prints one stderr line saying what rules text it loaded, e.g.
+`rules text: loaded from .../knowledge/source (discovered; versions v0.107.1,v0.111.0): 625 cards, 306 relics, ...`
+or `rules text: no knowledge/source/<version> directory found ...` (observations then carry `null`
+names/texts and render exactly as before).
 
 In-process random playtest (the same handlers, no sockets):
 
@@ -39,6 +45,7 @@ dotnet run -c Release --project sim/Sts2Sim.Server -- --replay tmp/play-crashes.
 | --- | --- | --- |
 | `GET /health` | — | `{"ok":true,"version":"<git sha>","games":n}` |
 | `GET /catalog` | — | `{"characters":[...],"encounters":[...],"cards":[...],"relics":[...],"potions":[...],"events":[...]}` |
+| `GET /catalog?kind=K[&ids=A,B][&grep=X]` | — | `{"kind":K,"loaded":bool,"items":[{"id","name","text"}]}` for K = `cards relics potions powers events enemies keywords`; enemies items also carry `moves[{id,title}]`; `ids` filters by id (powers also match without `_POWER`), `grep` is a case-insensitive substring of id, name or text; unknown K is HTTP 400. Card text is a fresh unupgraded copy; event items have `text` null |
 | `POST /runs` | `{"seed":"ABC123"\|123\|null,"character":"IRONCLAD","ascension":0,"content":"ported_only"\|"all"}` | `{"id":"r1","observation":OBS}` |
 | `POST /combats` | `{"seed":1,"deck":[ids]\|null,"encounter":"NIBBITS_WEAK","ascension":0,"hp":null,"max_hp":null}` | `{"id":"c1","observation":OBS}` |
 | `GET /games/{id}` | — | `{"observation":OBS}` |
@@ -85,23 +92,48 @@ Every field is always present; fields that do not apply to the current phase are
 | `act`, `floor`, `turn` | act 1-based and total floor (runs only); turn while a combat is in progress |
 | `player` | `character hp max_hp block energy max_energy gold [stars] powers[{id,amount,text}] relics[{id,name,text,counter?}] potions[{slot,id,name,text}\|null] [orbs[{id,passive,evoke}] orb_slots] deck_size deck[ids, "+" = upgraded]` |
 | `combat` | `hand[{index,id,name,upgraded,cost (int or "X"),star_cost?,type,target,rarity,keywords,vars{damage,block,...},text,playable,reason}] draw_count discard_count exhaust_count draw_pile (sorted) discard_pile enemies[{index,id,name,hp,max_hp,block,intents[{type,move,damage?,times?,card_count?}],powers[{id,amount,text}]}] allies?[{index,id,name,hp,max_hp,block,powers}]` |
-| `map` | `{"options":[{index,type,col,row,leads_to[types]}]}` — the rooms you can travel to next and what each leads to |
+| `map` | `{"options":[{index,type,col,row,leads_to[types]}],"nodes":[{row,col,type,edges[cols],visited,current}]}` — `options` are the rooms you can travel to next and what each leads to; `nodes` is the whole act map (start, every room, boss), sorted by row then column, `edges` = the columns of the next row it connects to |
 | `rewards` | `[{index,type,detail}]` — unclaimed rewards |
-| `card_reward` | `{"cards":[card as in hand, without playability],"alternatives":[{index,id}],"can_skip"}` |
-| `shop` | `{"entries":[{index,category,id,name,text,price,sold,on_sale?}],"removal_price"}` (`removal_price` null once used) |
+| `card_reward` | `{"cards":[card as in hand, without playability],"alternatives":[{index,id}],"can_skip","skip_consumes"}` — `skip_consumes` false (the normal case): `skip` closes the screen but the card reward stays on the rewards screen (re-open it with `reward <i>`; it is lost on `proceed`); true: skipping completes the reward; null when there is no skip |
+| `shop` | `{"entries":[{index,category,id,name,text,price,sold,on_sale,base_price}],"removal_price"}` (`removal_price` null once used). `on_sale` (bool, cards only) halves the price; `base_price` is the pre-sale price reconstructed as 2 x `price` (exact up to 1 gold), null when not on sale. Text: `... 26g (sale, base ~52g)` |
 | `rest` | `{"options":[{index,id,enabled}]}` (HEAL, SMITH, ...) |
 | `treasure` | `{chest_opened,relic,relic_name,relic_text,relic_claimed,skipped,gold_gained}` |
-| `event` | `{id,name,page,finished,options[{index,key,enabled,text,relic?}]}` |
-| `prompt` | `{kind,site,min,max,picked[],options[{index,id,name,upgraded,text}],can_confirm,can_cancel}` — a selection screen inside an effect (Neow relic choices, Discovery, Smith upgrade, potion effects...). While a prompt is pending only `pick/confirm/cancel` are legal; the combat or run screen behind it is still shown |
+| `event` | `{id,name,page,finished,options[{index,key,enabled,text,relic?}]}` — option `text` is `"Title: description"` from the game's event localisation with placeholders filled from the live event model (gold, HP loss, costs, the option's relic); unresolved values (an enchantment or card chosen at runtime) show `?`. Ancient relic options (Neow ...) have no option text of their own and show `Relic title: relic text`. The EventOption model carries no structured gold/HP cost, so there is no separate cost field: the cost is in the text |
+| `prompt` | `{kind,site,min,max,picked[],options[{index,id,name,upgraded,text}],can_confirm,can_cancel,source,source_name,source_text,pile,effect,needs_confirm,auto_completes_at,desc}` — a selection screen inside an effect (Neow relic choices, Discovery, Smith upgrade, potion effects...). While a prompt is pending only `pick/confirm/cancel` are legal; the combat or run screen behind it is still shown. `source` is the card/relic/potion/event that opened it (`source_text` its rules text, which says what happens to the picks), `pile` the source pile (`Hand`, `Draw`, `Discard`, `Deck`... or null), `effect` a one-line reading of the kind (`remove the picked cards from your Deck`, `Upgrade the picked cards in your Hand`, `select cards from your Discard pile`...). Settlement: `needs_confirm` true = picks are collected until `confirm`; otherwise the prompt resolves by itself on pick number `auto_completes_at` (= `max`; a single-pick prompt settles on its one `pick`), and when `can_confirm` is true `confirm` ends it early. `desc` says this in words and is rendered under the prompt header; each `pick` desc ends in `- settles the prompt` when that pick resolves it |
 | `legal_actions` | `[{token,desc}]` — every legal action exactly once |
-| rules text fields | `name` / `text` on cards, relics, potions, powers, enemies, shop entries, event options and prompt options, `relic_name` / `relic_text` on treasure, `move` on intents: **null until rules text is loaded** (scaffold stub `RulesText`). When non-null, `text` renders `ID (Name) ... — text` on the item's line; powers with text get an indented `ID — text` line under their owner |
+| rules text fields | `name` / `text` on cards, relics, potions, powers, enemies, shop entries, event options and prompt options, `relic_name` / `relic_text` on treasure, `move` on intents: filled from the game's localisation when rules text is loaded (see "Rules text"), null otherwise or for ids the localisation lacks. When non-null, `text` renders `ID (Name) ... — text` on the item's line; powers with text get an indented `ID — text` line under their owner |
 | `text` | compact rendering: header (phase, act, floor, turn, HP, block, energy, gold), powers, relics, potions, orbs, deck, enemies with intents, hand, the phase screen, then the legal tokens one per line with their desc |
 
-Card text is not ported: cards are described by id, type, cost, target, keywords and their
-dynamic-variable values (`vars`, base values before strength/vulnerable etc.; the powers that
-modify them are listed separately). Enemy indices are indices into the combat's monster list (dead
+Card `text` uses the card instance's own dynamic-variable values (`vars`: upgrades and enchantments
+included, but base values before strength/vulnerable etc.; the powers that modify them are listed
+separately), and keywords (Exhaust, Ethereal, Sly ...) are listed in `keywords`, not repeated in `text`. Enemy indices are indices into the combat's monster list (dead
 enemies are omitted, so indices can have gaps). Hand indices shift after every play: always use the
 latest observation.
+
+## Rules text
+
+Names and rules text come from the game's own localisation templates under
+`knowledge/source/<version>/*.jsonl` (`v0.107.1`: `scripts/export_sts2_knowledge.py`; `v0.111.0`:
+`scripts/export_sts2_localization.py`, localisation only, read from the installed game's PCK). Every
+version directory is loaded oldest first and a newer record replaces an older one per id, so kinds a
+newer export lacks fall back to the older one. Discovery: `--knowledge DIR` (a `knowledge/`,
+`knowledge/source/` or single version directory), else env `STS2SIM_KNOWLEDGE`, else the nearest
+`knowledge/source` above the working directory or the server binary. Loading never fails the server.
+
+Template placeholders are filled from the live model: a card instance's dynamic vars, a relic's or
+potion's vars, an event model's members. Conventions in the rendered text:
+
+- energy renders as `[E]` (`Gain 2[E]`, `costs 0[E]`), stars as `[Star]`; markup is stripped; one line.
+- a value that cannot be resolved renders as `?`; a conditional on something unknown out of
+  combat (`InCombat` "(Hits N times)" suffixes, multiplayer variants) takes its default branch.
+  A literal `?` in the game's own text means an Unknown (`?`) map room (Juzu Bracelet, Planisphere).
+- power `text` is the power's amount-aware description with the amount written as `N` (the amount
+  is on the summary line: `STRENGTH_POWER 2` / `STRENGTH_POWER — Increases attack damage by N.`).
+  Temporary powers (`SETUP_STRIKE_POWER` ...) use the game's generic temporary-strength/dexterity/focus
+  text and the origin card's title.
+
+Look-ups from a shell: `sim_play.py describe <id...>` (any kind) or
+`sim_play.py catalog --kind powers --grep vulnerable`.
 
 ## Token grammar (one token per step)
 
@@ -111,7 +143,7 @@ latest observation.
 | `end` | end the turn |
 | `potion <slot> [-> <enemy>\|-> ally <k>]` | use a potion (in or out of combat) |
 | `discard <slot>` | discard a potion |
-| `pick <option>`, `confirm`, `cancel` | answer a prompt (multi-pick prompts take several `pick`s, then `confirm`) |
+| `pick <option>`, `confirm`, `cancel` | answer a prompt: multi-pick prompts take several `pick`s in any order (every unpicked option is listed), then `confirm` when `needs_confirm`; otherwise the last allowed pick settles it (see `prompt.desc`) |
 | `travel <option>` | map: go to `map.options[option]` |
 | `reward <index>`, `proceed` | rewards screen: claim one; leave |
 | `card <index>`, `skip`, `reroll` | card reward: take a card; skip; reroll (when a relic allows it; other alternatives are `alt <i>`) |

@@ -66,7 +66,7 @@ public static class HttpHost
                 using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding ?? Encoding.UTF8);
                 body = reader.ReadToEnd();
             }
-            response = service.Handle(ctx.Request.HttpMethod, ctx.Request.Url?.AbsolutePath ?? "/", body);
+            response = service.Handle(ctx.Request.HttpMethod, ctx.Request.Url?.PathAndQuery ?? "/", body);
         }
         catch (Exception ex)
         {

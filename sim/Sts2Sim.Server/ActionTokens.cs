@@ -13,7 +13,7 @@ public static partial class ActionTokens
 
     public static List<LegalEntry> Enumerate(GameSession g)
     {
-        var actions = g.LegalActions();
+        var actions = WithAnyOrderPicks(g.PendingChoice, g.PendingPicks, g.LegalActions());
         var entries = new List<LegalEntry>(actions.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         bool prompt = g.PendingChoice != null;
@@ -42,6 +42,48 @@ public static partial class ActionTokens
             entries.Add(new LegalEntry(token, desc, a));
         }
         return entries;
+    }
+
+    // The kernel enumerates an unordered multi-pick prompt in canonical (ascending) order: after k picks it only
+    // lists options above the last pick, and only those that still leave enough higher options to reach the
+    // pick target. A 16-option "remove up to 5" prompt therefore listed picks 0..11 only. The kernel accepts any
+    // unpicked option (TryResolvePrompt) and sorts unordered answers, so the order is irrelevant to the result;
+    // the server lists every unpicked option so an agent can pick in whatever order it likes.
+    public static List<RunAction> WithAnyOrderPicks(ChoicePrompt? p, IReadOnlyList<int> picks, List<RunAction> actions)
+    {
+        if (p == null || p.Ordered)
+        {
+            return actions;
+        }
+        if (picks.Count >= p.MaxSelect)
+        {
+            return actions;
+        }
+        var result = new List<RunAction>(p.Options.Count + 2);
+        for (int i = 0; i < p.Options.Count; i++)
+        {
+            bool picked = false;
+            for (int k = 0; k < picks.Count; k++)
+            {
+                if (picks[k] == i)
+                {
+                    picked = true;
+                    break;
+                }
+            }
+            if (!picked)
+            {
+                result.Add(RunAction.Of(RunActionKind.PromptSelect, i));
+            }
+        }
+        foreach (var a in actions)
+        {
+            if (a.Kind != RunActionKind.PromptSelect)
+            {
+                result.Add(a);
+            }
+        }
+        return result;
     }
 
     public static string Normalize(string raw)
@@ -290,7 +332,8 @@ public static partial class ActionTokens
                 var p = g.PendingChoice;
                 if (p != null && a.A >= 0 && a.A < p.Options.Count)
                 {
-                    return $"select {Describe.OptionName(p.Options[a.A])} ({p.Kind})";
+                    bool settles = ChoiceRuntime.CompletesAutomatically(p, g.PendingPicks.Count + 1);
+                    return $"select {Describe.OptionName(p.Options[a.A])} ({p.Kind})" + (settles ? " - settles the prompt" : p.RequireConfirm ? " - then confirm" : string.Empty);
                 }
                 return "select option " + I(a.A);
             }

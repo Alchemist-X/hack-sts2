@@ -10,10 +10,13 @@ Usage (base URL from --url or SIM_PLAY_URL, default http://127.0.0.1:8765):
   sim_play.py history <id>
   sim_play.py transcript <id> <file.jsonl>
   sim_play.py random --runs N [--seed S] [--max-steps M] [--character C]
-  sim_play.py catalog [--kind characters|encounters|cards] [--grep TEXT]
+  sim_play.py catalog [--kind KIND] [--grep TEXT] [--ids A,B]
+        KIND: characters | encounters (id lists) or cards | relics | potions | powers | events |
+        enemies | keywords (one 'ID  Name  text' line each, from the server's rules text)
+  sim_play.py describe <id...>          look an id up across every rules-text kind
   sim_play.py health
 
-Exit codes: 0 ok, 1 random-policy found a crash/anomaly, 2 illegal token (HTTP 400),
+Exit codes: 0 ok, 1 random-policy found a crash/anomaly (describe: nothing matched), 2 illegal token (HTTP 400),
 3 simulator crash (HTTP 500), 4 server unreachable / other HTTP error.
 """
 
@@ -31,6 +34,8 @@ import urllib.request
 DEFAULT_URL = "http://127.0.0.1:8765"
 EXIT_OK, EXIT_ANOMALY, EXIT_ILLEGAL, EXIT_CRASH, EXIT_UNREACHABLE = 0, 1, 2, 3, 4
 TARGETED_VERBS = ("play", "potion")
+ID_KINDS = ("characters", "encounters")
+RULE_KINDS = ("cards", "relics", "potions", "powers", "events", "enemies", "keywords")
 
 
 # ---------------------------------------------------------------- helpers
@@ -122,8 +127,15 @@ class Client:
     def health(self):
         return self.request("GET", "/health")
 
-    def catalog(self):
-        return self.request("GET", "/catalog")
+    def catalog(self, kind=None, ids=None, grep=None):
+        if kind is None:
+            return self.request("GET", "/catalog")
+        query = {"kind": kind}
+        if ids:
+            query["ids"] = ",".join(ids)
+        if grep:
+            query["grep"] = grep
+        return self.request("GET", "/catalog?" + urllib.parse.urlencode(query))
 
     def new_run(self, seed=None, character="IRONCLAD", ascension=0, content="ported_only"):
         return self.request("POST", "/runs", {"seed": seed, "character": character,
@@ -196,16 +208,63 @@ def cmd_health(client, args):
     return EXIT_OK
 
 
+def _one_line(text):
+    return " ".join(str(text).split()) if text else ""
+
+
+def format_item(kind, item):
+    """'ID  Name  text' (enemies: '  moves: A (Title), ...')."""
+    line = f"{item.get('id')}  {item.get('name') or '-'}  {_one_line(item.get('text')) or '-'}"
+    moves = item.get("moves")
+    if kind == "enemies" and moves:
+        line += "  moves: " + ", ".join(f"{m.get('id')} ({m.get('title')})" for m in moves)
+    return line
+
+
 def cmd_catalog(client, args):
+    ids = [i for part in (args.ids or []) for i in part.split(",") if i] or None
+    if args.kind in RULE_KINDS:
+        cat = client.catalog(args.kind, ids=ids, grep=args.grep)
+        if args.json:
+            _print_json(cat)
+            return EXIT_OK
+        if "items" not in cat:  # an older server without typed catalogs: fall back to the id list
+            names = [i for i in cat.get(args.kind, []) if not args.grep or args.grep.lower() in str(i).lower()]
+            print(f"{args.kind} ({len(names)}):")
+            print("  " + " ".join(str(i) for i in names))
+            return EXIT_OK
+        items = cat["items"]
+        print(f"{args.kind} ({len(items)}):")
+        for item in items:
+            print("  " + format_item(args.kind, item))
+        return EXIT_OK
     cat = client.catalog()
     if args.json:
         _print_json(cat)
         return EXIT_OK
     kinds = [args.kind] if args.kind else ["characters", "encounters", "cards"]
     for k in kinds:
-        ids = [i for i in cat.get(k, []) if not args.grep or args.grep.lower() in str(i).lower()]
-        print(f"{k} ({len(ids)}):")
-        print("  " + " ".join(str(i) for i in ids))
+        names = [i for i in cat.get(k, []) if not args.grep or args.grep.lower() in str(i).lower()]
+        print(f"{k} ({len(names)}):")
+        print("  " + " ".join(str(i) for i in names))
+    return EXIT_OK
+
+
+def cmd_describe(client, args):
+    wanted = [i for part in args.ids for i in part.split(",") if i]
+    found = []
+    for kind in RULE_KINDS:
+        cat = client.catalog(kind, ids=wanted)
+        for item in cat.get("items", []):
+            found.append((kind, item))
+    if args.json:
+        _print_json([{"kind": k, **item} for k, item in found])
+    else:
+        for kind, item in found:
+            print(f"[{kind}] " + format_item(kind, item))
+    if not found:
+        print("nothing matched " + ", ".join(wanted), file=sys.stderr)
+        return EXIT_ANOMALY
     return EXIT_OK
 
 
@@ -449,9 +508,13 @@ def build_parser():
 
     sub.add_parser("health", parents=[common], help="server health")
 
-    c = sub.add_parser("catalog", parents=[common], help="list character/encounter/card ids")
-    c.add_argument("--kind", choices=["characters", "encounters", "cards"])
-    c.add_argument("--grep")
+    c = sub.add_parser("catalog", parents=[common], help="list ids, or names and rules text of a kind")
+    c.add_argument("--kind", choices=list(ID_KINDS + RULE_KINDS))
+    c.add_argument("--grep", help="case-insensitive substring of id, name or text")
+    c.add_argument("--ids", nargs="+", metavar="ID", help="only these ids (space or comma separated)")
+
+    d = sub.add_parser("describe", parents=[common], help="name and rules text of ids, across all kinds")
+    d.add_argument("ids", nargs="+", metavar="ID")
 
     n = sub.add_parser("new", parents=[common], help="start a run, or a standalone combat")
     n.add_argument("--seed")
@@ -492,7 +555,7 @@ def build_parser():
     return p
 
 
-COMMANDS = {"health": cmd_health, "catalog": cmd_catalog, "new": cmd_new, "show": cmd_show,
+COMMANDS = {"health": cmd_health, "catalog": cmd_catalog, "describe": cmd_describe, "new": cmd_new, "show": cmd_show,
             "step": cmd_step, "history": cmd_history, "transcript": cmd_transcript,
             "random": cmd_random}
 
