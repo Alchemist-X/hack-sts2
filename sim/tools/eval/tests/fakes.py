@@ -81,6 +81,10 @@ class FakeSim:
     async def history(self, gid):
         return {"id": gid, "tokens": list(self.tokens), "steps": len(self.tokens), "crashed": False}
 
+    async def piles(self, gid):
+        self.piles_calls = getattr(self, "piles_calls", 0) + 1
+        return {"game_id": gid, "in_combat": True, "deck": []}
+
     async def delete(self, gid):
         self.deleted = True
         return {"ok": True}

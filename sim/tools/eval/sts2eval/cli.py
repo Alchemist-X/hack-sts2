@@ -16,6 +16,7 @@ from . import prices as P
 from . import seedsets
 from .policies import EFFORTS, MODELS, ClaudePolicy, RandomPolicy, RateLimiter, thinking_param
 from .progress import PROTOCOL_VERSION
+from .compact import COMPACT_SYSTEM_PROMPT, RENDER_VERSION, compact_prompt_hash
 from .prompt import SYSTEM_PROMPT, prompt_hash
 from .report import render_md, write_report
 from .runner import FLOOR_STEP_CAP, LOOP_REPEAT, RunLimits, RunState, run_all
@@ -42,6 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="hint once when one observation has come up K times on a floor (0 = off)")
     r.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
                    help="non-combat steps per floor before the game ends 'stuck' (0 = off)")
+    r.add_argument("--obs-mode", choices=("full", "compact"), default="compact",
+                   help="compact (default): runner-rendered step text plus cached run-context system blocks "
+                        "(sts2eval/compact.py); full: the server's text observation, as in protocol v0.2")
     r.add_argument("--reveal-moves", action="store_true",
                    help="create games with reveal_moves (intents name the enemy move); default off = the game's view")
     r.add_argument("--game-minutes", type=float, default=60.0, help="wall-clock cap per game")
@@ -59,7 +63,27 @@ def build_parser() -> argparse.ArgumentParser:
     rp = sub.add_parser("report", help="re-aggregate games/*.summary.json of a run directory (recomputes the "
                                        "protocol v0.2 progress from the transcripts of older runs)")
     rp.add_argument("dir")
+    pa = sub.add_parser("parity", help="check that --obs-mode compact shows everything the server text shows "
+                                       "(replays recorded games or plays seeded random ones)")
+    pa.add_argument("--replay", default=None, help="run directory whose games/*.summary.json histories to replay")
+    pa.add_argument("--keys", default=None, help="comma-separated game keys to replay (default: the longest games)")
+    pa.add_argument("--games", type=int, default=3)
+    pa.add_argument("--samples", type=int, default=200, help="observations checked (seeded sample; 0 = all)")
+    pa.add_argument("--seed", type=int, default=0)
+    psrv = pa.add_mutually_exclusive_group()
+    psrv.add_argument("--url", default=None)
+    psrv.add_argument("--spawn", action="store_true")
     return ap
+
+
+def system_prompt(obs_mode: str) -> str:
+    """The static (first, cached) system block: SYSTEM_PROMPT in full mode, byte-identical to protocol v0.2."""
+    return COMPACT_SYSTEM_PROMPT if obs_mode == "compact" else SYSTEM_PROMPT
+
+
+def run_prompt_hash(obs_mode: str) -> str:
+    """config.json prompt_hash: unchanged for full mode; compact hashes its prompt and renderer version."""
+    return compact_prompt_hash() if obs_mode == "compact" else prompt_hash()
 
 
 def make_run_id(seedset_name: str, policy: str, model: str | None, now: dt.datetime | None = None) -> str:
@@ -103,8 +127,10 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             "thinking": args.thinking if policy.name == "claude" else None,
             "thinking_param": getattr(policy, "thinking", None),
             "max_tokens": args.max_tokens if policy.name == "claude" else None,
-            "prompt_hash": prompt_hash() if policy.name == "claude" else None,
-            "system_prompt_chars": len(SYSTEM_PROMPT),
+            "obs_mode": args.obs_mode,
+            "render_version": RENDER_VERSION if args.obs_mode == "compact" else None,
+            "prompt_hash": run_prompt_hash(args.obs_mode) if policy.name == "claude" else None,
+            "system_prompt_chars": len(system_prompt(args.obs_mode)),
             "reveal_moves": bool(args.reveal_moves),
             "server_url": url,
             "server_spawned": bool(args.spawn),
@@ -125,7 +151,8 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             with open(cfg_path, encoding="utf-8") as f:
                 prev = json.load(f)
             cfg["resumed_from"] = {k: prev.get(k) for k in ("created", "server_version", "repo_sha", "prompt_hash",
-                                                            "reveal_moves", "protocol_version", "seedset_sha256")}
+                                                            "reveal_moves", "protocol_version", "seedset_sha256",
+                                                            "obs_mode")}
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=1)
         limits = RunLimits(step_cap=args.step_cap, game_minutes=args.game_minutes,
@@ -136,7 +163,8 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
         try:
             await run_all(client, policy, seedset, out_dir, limits, state, concurrency=args.concurrency,
                           resume=args.resume, server_version=health.get("version"),
-                          progress_interval=args.progress_interval, reveal_moves=args.reveal_moves)
+                          progress_interval=args.progress_interval, reveal_moves=args.reveal_moves,
+                          obs_mode=args.obs_mode)
         except asyncio.CancelledError:
             state.abort("interrupted")
         run = {"wall_seconds": round(time.monotonic() - t0, 2), "abort_reason": state.abort_reason,
@@ -166,7 +194,8 @@ def cmd_run(args) -> int:
             return 2
         policy = ClaudePolicy(make_anthropic_client(args.api_key_file), model=args.model, effort=args.effort,
                               thinking=args.thinking, max_tokens=args.max_tokens, prices=prices,
-                              tracker=tracker, limiter=RateLimiter(args.rps_limit))
+                              tracker=tracker, limiter=RateLimiter(args.rps_limit),
+                              system_prompt=system_prompt(args.obs_mode))
     else:
         policy = RandomPolicy()
     model = policy.model if args.policy == "claude" else None
@@ -209,10 +238,45 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_parity(args) -> int:
+    from .parity import ParityStats, play_random, replay_run_dir
+
+    async def go(url: str) -> dict:
+        client = SimClient(url)
+        stats = ParityStats(args.samples, args.seed)
+        try:
+            if args.replay:
+                keys = args.keys.split(",") if args.keys else None
+                await replay_run_dir(client, Path(args.replay), stats, keys=keys, games=args.games)
+            else:
+                chars = ("IRONCLAD", "SILENT", "DEFECT", "NECROBINDER", "REGENT")
+                games = [(f"PARITY{i}", chars[i % len(chars)]) for i in range(args.games)]
+                await play_random(client, stats, games, seed=args.seed)
+        finally:
+            await client.aclose()
+        return stats.result()
+
+    server = None
+    try:
+        if args.spawn:
+            server = SpawnedServer(repo_root() / "tmp" / "eval" / "parity").start()
+            url = server.url
+        else:
+            url = args.url or os.environ.get("SIM_PLAY_URL") or "http://127.0.0.1:8765"
+        res = asyncio.run(go(url))
+    finally:
+        if server is not None:
+            server.stop()
+    print(json.dumps(res, indent=1, ensure_ascii=False))
+    return 0 if res["failures"] == 0 and res["unstable_contexts"] == 0 else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "run":
         return cmd_run(args)
+    if args.cmd == "parity":
+        return cmd_parity(args)
     return cmd_report(args)
 
 

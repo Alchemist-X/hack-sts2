@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import prices as P
 from . import progress as PG
+from .compact import CompactView, sha16
 from .policies import BudgetExceeded, FatalApiError, empty_meta
 from .prompt import loop_hint
 from .seedsets import game_key
@@ -114,8 +115,13 @@ def _legal(obs: dict) -> list[str]:
 
 async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_dir: Path,
                     limits: RunLimits, state: RunState, server_version: str | None = None,
-                    reveal_moves: bool = False) -> dict:
-    """Play one full run; write games/<KEY>.jsonl and games/<KEY>.summary.json; return the summary."""
+                    reveal_moves: bool = False, obs_mode: str = "full") -> dict:
+    """Play one full run; write games/<KEY>.jsonl and games/<KEY>.summary.json; return the summary.
+
+    obs_mode 'full' sends the server's `text`; 'compact' renders the step text and the cached run-context
+    blocks from the observation JSON (sts2eval.compact). The loop guard always hashes the server text."""
+    if obs_mode not in ("full", "compact"):
+        raise ValueError(f"obs_mode must be 'full' or 'compact', not {obs_mode!r}")
     key = game_key(game)
     games_dir = out_dir / "games"
     games_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +146,8 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
          "loop_hints": 0,
          "tokens": P.usage_dict(None), "cost_usd": 0.0, "seconds": None, "final_hp": None, "max_hp": None,
          "death": None, "history_tokens": None, "history_steps": None, "replayable": None,
-         "server_version": server_version}
+         "server_version": server_version, "obs_mode": obs_mode}
+    view = CompactView(asc) if obs_mode == "compact" else None
     t0 = time.monotonic()
     log_lines: deque[str] = deque(maxlen=LOG_LINES)
     actions: deque[str] = deque(maxlen=LAST_ACTIONS)
@@ -202,11 +209,18 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                     hist["loop_hint"] = hint
                     s["loop_hints"] += 1
                 attempts = []
+                prompt_text, ctx, ctx_first = obs["text"], None, None
+                if view is not None:
+                    if view.needs_piles(obs):
+                        view.set_piles(obs, await client.piles(gid))
+                    ctx, prompt_text, ctx_first = view.render(obs)
+                ctx_kw = {} if ctx is None else {"context": ctx}
 
-                async def ask(feedback=None, obs=obs, legal=legal, hist=hist, attempts=attempts):
+                async def ask(feedback=None, text=prompt_text, legal=legal, hist=hist, attempts=attempts,
+                              ctx_kw=ctx_kw):
                     try:
                         cand, meta = await asyncio.wait_for(
-                            gpolicy.choose(obs["text"], legal, hist, feedback), timeout=limits.step_timeout_s)
+                            gpolicy.choose(text, legal, hist, feedback, **ctx_kw), timeout=limits.step_timeout_s)
                     except asyncio.TimeoutError:
                         cand, meta = None, empty_meta(error="timeout")
                     attempts.append(meta)
@@ -270,6 +284,12 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                                      "latency_ms": m.get("latency_ms"), "cost_usd": m.get("cost_usd"),
                                      **{k: m[k] for k in ("exception", "status", "refusal_category", "request_id")
                                         if m.get(k) is not None}} for m in attempts]}
+                if ctx is not None:
+                    rec["prompt_text"] = prompt_text
+                    rec["context_sha"] = sha16("".join(ctx))
+                    if ctx_first is not None:
+                        rec["context_changed_from"] = ctx_first
+                        rec["context"] = list(ctx)
                 if act_rooms is not None:
                     rec["map_row"], rec["act_rooms"] = map_row, act_rooms
                 if hint:
@@ -324,6 +344,10 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                 acts.observe(obs.get("act"), obs.get("floor"), PG.map_info(obs.get("map"))[1])
                 if s["floor"] is not None:
                     s["progress_pct"] = round(100.0 * s["floor"] / total_floors, 1)
+            if view is not None:
+                s["context_rebuilds"] = view.rebuilds
+                s["context_block_rebuilds"] = list(view.block_rebuilds)
+                s["piles_fetches"] = view.piles_fetches
             s.update(acts.as_dict())
             s.update(PG.compute(s["result"], s["act"], s["floor"], asc, s["act_start_floor"], s["act_rooms"]))
             if s["result"] == "loss":
@@ -377,7 +401,7 @@ async def progress_loop(state: RunState, interval: float = 10.0, stream=sys.stde
 async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limits: RunLimits,
                   state: RunState, concurrency: int = 10, resume: bool = False,
                   server_version: str | None = None, progress_interval: float = 10.0,
-                  reveal_moves: bool = False) -> list[dict]:
+                  reveal_moves: bool = False, obs_mode: str = "full") -> list[dict]:
     games = list(seedset["games"])
     todo = [g for g in games if not (resume and completed(out_dir, g))]
     state.total = len(games)
@@ -394,7 +418,7 @@ async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limit
             state.running += 1
             try:
                 r = await play_game(client, policy, g, seedset, out_dir, limits, state, server_version,
-                                    reveal_moves=reveal_moves)
+                                    reveal_moves=reveal_moves, obs_mode=obs_mode)
                 results.append(r)
                 return r
             finally:

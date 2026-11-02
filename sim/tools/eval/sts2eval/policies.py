@@ -1,4 +1,7 @@
-"""Policies: async choose(obs_text, legal_tokens, recent_history, feedback=None) -> (candidate, meta).
+"""Policies: async choose(obs_text, legal_tokens, recent_history, feedback=None, context=None) -> (candidate, meta).
+
+`obs_text` is the step text (the server's `text` in --obs-mode full, the compact step block otherwise);
+`context` is None in full mode and the run-context blocks (sts2eval.compact) in compact mode.
 
 `candidate` is the raw token string the policy proposes (validated by the runner) or None when the call
 failed. `meta` always has: raw, stop_reason, usage, latency_ms, cost_usd, error (None | 'api_error' |
@@ -49,7 +52,7 @@ class RandomPolicy:
         return RandomPolicy(random.Random(seed))
 
     async def choose(self, obs_text: str, legal_tokens: list[str], recent_history: dict | None = None,
-                     feedback: str | None = None):
+                     feedback: str | None = None, context: tuple[str, ...] | None = None):
         token = self.rng.choice(legal_tokens)
         return token, empty_meta(raw=token)
 
@@ -116,8 +119,16 @@ class ClaudePolicy:
     def for_game(self, seed: int) -> "ClaudePolicy":
         return self  # stateless: one shared instance (shared client, tracker, limiter)
 
-    def request_kwargs(self, user_message: str) -> dict:
-        kw = {"model": self.model, "max_tokens": self.max_tokens, "system": self.system,
+    def system_blocks(self, context: tuple[str, ...] | None = None) -> list[dict]:
+        """The static system prompt, then (compact mode) one cached block per run-context block, in
+        order of volatility, so a change re-writes only that block and the ones after it (at most 4
+        cache breakpoints per request: static + 3)."""
+        if not context:
+            return self.system
+        return self.system + [{"type": "text", "text": b, "cache_control": {"type": "ephemeral"}} for b in context]
+
+    def request_kwargs(self, user_message: str, context: tuple[str, ...] | None = None) -> dict:
+        kw = {"model": self.model, "max_tokens": self.max_tokens, "system": self.system_blocks(context),
               "messages": [{"role": "user", "content": user_message}]}
         if self.effort is not None:
             kw["output_config"] = {"effort": self.effort}
@@ -126,11 +137,11 @@ class ClaudePolicy:
         return kw
 
     async def choose(self, obs_text: str, legal_tokens: list[str], recent_history: dict | None = None,
-                     feedback: str | None = None):
+                     feedback: str | None = None, context: tuple[str, ...] | None = None):
         if self.tracker.exhausted():
             raise BudgetExceeded(f"spent ${self.tracker.spent_usd:.4f} >= --max-cost-usd {self.tracker.max_cost_usd}")
         user = build_user_message(obs_text, legal_tokens, recent_history, feedback)
-        kw = self.request_kwargs(user)
+        kw = self.request_kwargs(user, context)
         await self.limiter.wait()
         t0 = time.monotonic()
         try:
