@@ -297,7 +297,8 @@ public static unsafe partial class VecTests
                 .Cast<System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute>().Single();
             Assert.Equal(name, attr.EntryPoint);
         }
-        Assert.Equal(15, Exports.ExportNames.Count);
-        Assert.Equal("sts2vec_pool_warm", Exports.ExportNames[^1], "exports added after the scaffold freeze are appended");
+        Assert.Equal(16, Exports.ExportNames.Count);
+        Assert.Equal("sts2vec_pool_warm", Exports.ExportNames[^2], "exports added after the scaffold freeze are appended");
+        Assert.Equal("sts2vec_clone_determinized", Exports.ExportNames[^1], "exports added after the scaffold freeze are appended");
     }
 }

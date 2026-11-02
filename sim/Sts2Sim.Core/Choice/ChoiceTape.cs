@@ -5,9 +5,12 @@ public sealed class ChoiceTapeAnswerer : IChoiceAnswerer
     private readonly IReadOnlyList<ChoiceAnswer> _answers;
     private readonly IReadOnlyList<ChoicePrompt> _prompts;
     private readonly IChoiceAnswerer? _fallback;
+    private readonly Action<int>? _beforeAnswer;
     private int _cursor;
 
-    public ChoiceTapeAnswerer(IReadOnlyList<ChoiceAnswer> answers, IReadOnlyList<ChoicePrompt> prompts, IChoiceAnswerer? fallback = null)
+    /// <param name="beforeAnswer">Called with the entry index k after prompt k passed the shape check and before taped
+    /// answer k is returned (determinized clones resample hidden state there; see <c>RunSim.CloneDeterminized</c>).</param>
+    public ChoiceTapeAnswerer(IReadOnlyList<ChoiceAnswer> answers, IReadOnlyList<ChoicePrompt> prompts, IChoiceAnswerer? fallback = null, Action<int>? beforeAnswer = null)
     {
         ArgumentNullException.ThrowIfNull(answers);
         ArgumentNullException.ThrowIfNull(prompts);
@@ -18,6 +21,7 @@ public sealed class ChoiceTapeAnswerer : IChoiceAnswerer
         _answers = answers;
         _prompts = prompts;
         _fallback = fallback;
+        _beforeAnswer = beforeAnswer;
     }
 
     public int Count => _answers.Count;
@@ -38,6 +42,7 @@ public sealed class ChoiceTapeAnswerer : IChoiceAnswerer
                 throw new InvalidOperationException($"Choice tape divergence at entry {k}: the re-run asked {ChoiceTape.Describe(prompt)}, the tape recorded {ChoiceTape.Describe(recorded)}.");
             }
             _cursor = k + 1;
+            _beforeAnswer?.Invoke(k);
             return _answers[k];
         }
         if (_fallback != null)

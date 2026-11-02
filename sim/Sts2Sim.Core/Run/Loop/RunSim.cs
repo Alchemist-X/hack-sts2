@@ -150,6 +150,25 @@ public sealed partial class RunSim
         return new(_state.DeepClone(), _loop.Clone(), _pending?.Clone());
     }
 
+    /// <summary>
+    /// A deep clone whose public state is identical and whose hidden state is resampled from <paramref name="seed"/>
+    /// (draw-pile order, every RNG stream, pre-rolled run queues; see <see cref="Determinizer"/>). Same state and seed ⇒
+    /// same clone (equal <see cref="StateHash"/>). At a pending prompt the prompt and its answer tape are kept: the
+    /// clone's re-runs replay the recorded prefix unchanged and resample when the tape hands out the answer to the
+    /// current prompt, so the tape always matches; the clone's current state is resampled as well.
+    /// </summary>
+    public RunSim CloneDeterminized(ulong seed, DeterminizeOptions? options = null)
+    {
+        var opts = options ?? DeterminizeOptions.Default;
+        var clone = Clone();
+        Determinizer.Apply(clone._state, clone._state.Combat, seed, opts);
+        if (clone._pending is { } pending)
+        {
+            pending.Hooks = DeterminizeHook.Append(pending.Hooks, new DeterminizeHook(pending.Answers.Count, seed, opts));
+        }
+        return clone;
+    }
+
     public ulong StateHash()
     {
         var w = _hashScratch ??= new CanonicalWriter();
@@ -198,6 +217,7 @@ public sealed partial class RunSim
         {
             w.WriteInt32(pending.Picks[i]);
         }
+        DeterminizeHook.Write(w, RunLoopCanonicalTags.Determinize, pending.Hooks);
     }
 
     private static RunSim Begin(RunState rs, bool isLoad, AbstractRoom? load)
@@ -322,7 +342,8 @@ public sealed partial class RunSim
         prompts.Add(pending.Prompt);
         var work = answerer == null ? pending.Basis.DeepClone() : pending.Basis;
         var workLoop = answerer == null ? pending.BasisLoop.Clone() : pending.BasisLoop;
-        var tape = new ChoiceTapeAnswerer(answers, prompts, answerer);
+        var hooks = pending.Hooks;
+        var tape = new ChoiceTapeAnswerer(answers, prompts, answerer, hooks == null ? null : k => DeterminizeHook.Fire(hooks, k, work, work.Combat));
         try
         {
             if (pending.Action is { } a)
@@ -337,7 +358,7 @@ public sealed partial class RunSim
         catch (ChoicePendingException ex) when (answerer == null)
         {
             RequireTapeConsumed(tape, pending);
-            _pending = new Pending(pending.Basis, pending.BasisLoop, pending.Action, answers, prompts, ex.Prompt, new List<int>()) { IsLoad = pending.IsLoad, Load = pending.Load };
+            _pending = new Pending(pending.Basis, pending.BasisLoop, pending.Action, answers, prompts, ex.Prompt, new List<int>()) { IsLoad = pending.IsLoad, Load = pending.Load, Hooks = hooks };
             _state = work;
             _loop = workLoop;
             return;
@@ -413,6 +434,9 @@ public sealed partial class RunSim
 
         public List<int> Picks { get; }
 
+        /// <summary>Determinizations the re-runs apply (CloneDeterminized at a prompt); null for an ordinary pending prompt.</summary>
+        public List<DeterminizeHook>? Hooks { get; set; }
+
         public Pending Clone()
         {
             var answers = new List<ChoiceAnswer>(Answers.Count);
@@ -425,7 +449,7 @@ public sealed partial class RunSim
             {
                 prompts.Add(ChoiceTape.Copy(Prompts[i]));
             }
-            return new Pending(Basis.DeepClone(), BasisLoop.Clone(), Action, answers, prompts, ChoiceTape.Copy(Prompt), new List<int>(Picks)) { IsLoad = IsLoad, Load = Load };
+            return new Pending(Basis.DeepClone(), BasisLoop.Clone(), Action, answers, prompts, ChoiceTape.Copy(Prompt), new List<int>(Picks)) { IsLoad = IsLoad, Load = Load, Hooks = Hooks == null ? null : new List<DeterminizeHook>(Hooks) };
         }
     }
 }

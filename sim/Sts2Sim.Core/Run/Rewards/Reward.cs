@@ -19,6 +19,9 @@ public abstract partial class Reward : ICanonical
 
     protected Rng? RngOverride { get; private set; }
 
+    /// <summary>The reward's own RNG override (null = the player's reward stream); read by determinization.</summary>
+    internal Rng? OverrideRng => RngOverride;
+
     public Reward SetRng(Rng rng)
     {
         RngOverride = rng;

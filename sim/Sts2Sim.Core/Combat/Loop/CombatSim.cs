@@ -135,6 +135,22 @@ public sealed class CombatSim
 
     public CombatSim Clone() => new(_state.DeepClone(), _pending?.Clone());
 
+    /// <summary>
+    /// A deep clone with identical public state and hidden state resampled from <paramref name="seed"/> (draw-pile
+    /// order, every RNG stream; see <see cref="Determinizer"/>); prompts behave as in <c>RunSim.CloneDeterminized</c>.
+    /// </summary>
+    public CombatSim CloneDeterminized(ulong seed, DeterminizeOptions? options = null)
+    {
+        var opts = options ?? DeterminizeOptions.Default;
+        var clone = Clone();
+        Determinizer.Apply(clone._state.Run, clone._state, seed, opts);
+        if (clone._pending is { } pending)
+        {
+            pending.Hooks = DeterminizeHook.Append(pending.Hooks, new DeterminizeHook(pending.Answers.Count, seed, opts));
+        }
+        return clone;
+    }
+
     public ulong StateHash() => StateHash(_hashScratch ??= new CanonicalWriter());
 
     public ulong StateHash(CanonicalWriter scratch)
@@ -159,6 +175,7 @@ public sealed class CombatSim
         else
         {
             ChoiceTape.WritePending(w, pending.Basis, pending.Action, pending.Answers, pending.Picks);
+            DeterminizeHook.Write(w, ChoiceCanonicalTags.Determinize, pending.Hooks);
         }
     }
 
@@ -227,7 +244,8 @@ public sealed class CombatSim
         prompts.AddRange(pending.Prompts);
         prompts.Add(pending.Prompt);
         var work = answerer == null ? pending.Basis.DeepClone() : pending.Basis;
-        var tape = new ChoiceTapeAnswerer(answers, prompts, answerer);
+        var hooks = pending.Hooks;
+        var tape = new ChoiceTapeAnswerer(answers, prompts, answerer, hooks == null ? null : k => DeterminizeHook.Fire(hooks, k, work.Run, work));
         try
         {
             Execute(work, pending.Action, tape);
@@ -235,7 +253,7 @@ public sealed class CombatSim
         catch (ChoicePendingException ex) when (answerer == null)
         {
             RequireTapeConsumed(tape, pending);
-            _pending = new Pending(pending.Basis, pending.Action, answers, prompts, ex.Prompt, new List<int>());
+            _pending = new Pending(pending.Basis, pending.Action, answers, prompts, ex.Prompt, new List<int>()) { Hooks = hooks };
             _state = work;
             return;
         }
@@ -334,6 +352,8 @@ public sealed class CombatSim
 
         public List<int> Picks { get; }
 
+        public List<DeterminizeHook>? Hooks { get; set; }
+
         public Pending Clone()
         {
             var answers = new List<ChoiceAnswer>(Answers.Count);
@@ -346,7 +366,7 @@ public sealed class CombatSim
             {
                 prompts.Add(ChoiceTape.Copy(Prompts[i]));
             }
-            return new Pending(Basis.DeepClone(), Action, answers, prompts, ChoiceTape.Copy(Prompt), new List<int>(Picks));
+            return new Pending(Basis.DeepClone(), Action, answers, prompts, ChoiceTape.Copy(Prompt), new List<int>(Picks)) { Hooks = Hooks == null ? null : new List<DeterminizeHook>(Hooks) };
         }
     }
 }

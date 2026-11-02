@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import sys
 import threading
-from ctypes import POINTER, Structure, c_char_p, c_int32, c_int64, c_size_t, c_void_p
+from ctypes import POINTER, Structure, c_char_p, c_int32, c_int64, c_size_t, c_uint64, c_void_p
 from pathlib import Path
 
 from .errors import LoaderError, Sts2VecError
@@ -63,11 +63,12 @@ EXPORTS: dict[str, tuple[type, list[type]]] = {
     "sts2vec_state_hash": (c_int32, [c_int64, c_void_p, c_int32, c_void_p]),
     "sts2vec_last_error": (c_int32, [c_int64, c_int32, c_void_p, c_int32]),
     "sts2vec_pool_warm": (c_int32, [c_int64, c_int32]),  # additive (E2c)
+    "sts2vec_clone_determinized": (c_int32, [c_int64, c_int32, c_uint64]),  # additive (determinized clones)
 }
 
 # Exports added after the scaffold froze the ABI. A library built before one of them still loads: its attribute is None,
 # ``Library.missing_exports`` names it, and the Python wrapper that needs it raises Sts2VecError ("rebuild the library").
-OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm"})
+OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm", "sts2vec_clone_determinized"})
 
 # hostfxr / hostpolicy status codes worth naming (src/native/corehost/error_codes.h)
 HOSTFXR_CODES = {

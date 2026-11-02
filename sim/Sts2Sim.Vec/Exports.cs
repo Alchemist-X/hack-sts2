@@ -210,6 +210,27 @@ public static unsafe class Exports
         }
     }
 
+    // int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed);   additive, listed last in ExportNames
+    // Appends a pool entry holding a determinized clone of the slot's current state (public state identical, hidden state
+    // resampled from seed; RunSim.CloneDeterminized) and returns its id, or -1. sts2vec_restore starts a slot from it.
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_clone_determinized")]
+    public static int CloneDeterminized(long h, int slot, ulong seed)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            lock (env)
+            {
+                return env.CloneDeterminized(slot, seed);
+            }
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
     // int32_t sts2vec_restore(int64_t h, int32_t slot, int32_t entry, void** buffers);
     [UnmanagedCallersOnly(EntryPoint = "sts2vec_restore")]
     public static int Restore(long h, int slot, int entry, void** buffers)
@@ -343,14 +364,14 @@ public static unsafe class Exports
 
     /// <summary>
     /// Names of every export, in §D5 order (the Python loader resolves exactly these). The frozen scaffold set comes first;
-    /// exports added later are appended (E2c: sts2vec_pool_warm).
+    /// exports added later are appended (E2c: sts2vec_pool_warm; then sts2vec_clone_determinized).
     /// </summary>
     public static readonly IReadOnlyList<string> ExportNames = new[]
     {
         "sts2vec_version", "sts2vec_schema", "sts2vec_create", "sts2vec_destroy", "sts2vec_set_threads",
         "sts2vec_pool_add_fresh", "sts2vec_pool_add_save", "sts2vec_pool_count", "sts2vec_snapshot", "sts2vec_restore",
         "sts2vec_reset", "sts2vec_step", "sts2vec_state_hash", "sts2vec_last_error",
-        "sts2vec_pool_warm",
+        "sts2vec_pool_warm", "sts2vec_clone_determinized",
     };
 
     /// <summary>The managed method behind an export: "sts2vec_pool_add_fresh" → "PoolAddFresh".</summary>

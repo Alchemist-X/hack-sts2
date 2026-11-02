@@ -57,6 +57,7 @@ with VecEnv(1024, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", co
 | `.reset(mask=None, start_ids=None, *, copy=False) -> obs` | restart masked slots (None = all) from `start_ids[i]` (None / `< 0` = the slot's start sequence) |
 | `.step(actions, *, copy=False) -> (obs, reward, terminated, truncated, status, info)` | `actions` int [N]; `reward` float32, `terminated`/`truncated` uint8, `status` int32 bit flags; `info = {episode_id, step_index, start_entry, last_episode}` |
 | `.restore(slot, entry, *, copy=False) -> obs` / `.snapshot(slot) -> entry` | one-slot restart from a pool entry / clone a live slot into the pool |
+| `.clone_determinized(slot, seed) -> entry` | determinized clone of a live slot into the pool: same observation, hidden state (draw order, RNG streams, relic-bag / event order) resampled from `seed`; restore it like any entry (sim/VEC.md "Determinized clones") |
 | `.state_hash(slots=None) -> uint64 [n]` | `RunSim.StateHash` (debug/test only; 0 = no run) |
 | `.pool.add_fresh(character, *, seed, ascension=0, act1="random", content=None)`, `.pool.add_save(path)`, `len(.pool)` | runtime pool entries (ids in insertion order) |
 | `.pool.warm(max_entries=None) -> int` | create fresh entries' start templates now (None = all, up to `pool_cache`), in id order on the env's threads; returns how many this call created. Starts do not change; only the cold `NewRun` moves out of reset/step |
@@ -78,7 +79,7 @@ With auto-reset a finished slot already shows its next episode; the finished one
 
 Lower level: `sts2vec.load()` returns the `Library` (one per process) with every export as a ctypes function
 (`lib.sts2vec_step(h, actions_ptr, buffers_ptr)`), `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`,
-`lib.gc_server`, `lib.runtime_properties`. Exports added after the ABI freeze (`sts2vec_pool_warm`) are optional: a
+`lib.gc_server`, `lib.runtime_properties`. Exports added after the ABI freeze (`sts2vec_pool_warm`, `sts2vec_clone_determinized`) are optional: a
 library built before them still loads with the attribute set to None (`lib.missing_exports`), and the wrapper that
 needs one raises `Sts2VecError` asking for a rebuild.
 
