@@ -54,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--max-minutes", type=float, default=None)
     srv = r.add_mutually_exclusive_group()
     srv.add_argument("--url", default=None, help="use a running server (default http://127.0.0.1:8765)")
+    srv.add_argument("--urls", default=None, type=parse_urls,
+                     help="comma-separated running servers (e.g. from scripts/sts2_cluster.sh urls): game i of the "
+                          "seed set runs on server i mod N, recorded per game as server_url")
     srv.add_argument("--spawn", action="store_true", help="launch the built Release server on a free port")
     r.add_argument("--out", default=None, help="output dir (default tmp/eval/<run_id>)")
     r.add_argument("--resume", action="store_true", help="skip games whose summary exists (and is not aborted)")
@@ -74,6 +77,19 @@ def build_parser() -> argparse.ArgumentParser:
     psrv.add_argument("--url", default=None)
     psrv.add_argument("--spawn", action="store_true")
     return ap
+
+
+def parse_urls(text: str) -> list[str]:
+    """'--urls a,b,c' -> ['a', 'b', 'c'] (trailing slashes dropped; duplicates and empty lists rejected)."""
+    urls = [u.strip().rstrip("/") for u in text.split(",") if u.strip()]
+    if not urls:
+        raise argparse.ArgumentTypeError("--urls needs at least one URL")
+    for u in urls:
+        if not u.startswith(("http://", "https://")):
+            raise argparse.ArgumentTypeError(f"not an http(s) URL: {u!r}")
+    if len(set(urls)) != len(urls):
+        raise argparse.ArgumentTypeError("--urls lists a server twice")
+    return urls
 
 
 def system_prompt(obs_mode: str) -> str:
@@ -107,13 +123,22 @@ def make_anthropic_client(api_key_file: str | None):
     return anthropic.AsyncAnthropic(**kw)
 
 
-async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dict, tracker: P.CostTracker) -> dict:
-    client = SimClient(url, max_connections=max(16, args.concurrency * 2))
+async def _run(args, policy, seedset: dict, out_dir: Path, urls: str | list[str], prices: dict,
+               tracker: P.CostTracker) -> dict:
+    urls = [urls] if isinstance(urls, str) else list(urls)
+    url = urls[0]
+    clients = [SimClient(u, max_connections=max(16, args.concurrency * 2)) for u in urls]
     try:
-        try:
-            health = await client.health()
-        except SimError as e:
-            raise SystemExit(f"server not healthy at {url}: {e}") from None
+        healths = {}
+        for c in clients:
+            try:
+                healths[c.url] = await c.health()
+            except SimError as e:
+                raise SystemExit(f"server not healthy at {c.url}: {e}") from None
+        health = healths[clients[0].url]
+        versions = {u: h.get("version") for u, h in healths.items()}
+        if len(set(versions.values())) > 1:
+            print(f"warning: servers report different versions: {versions}", file=sys.stderr)
         cfg = {
             "protocol_version": PROTOCOL_VERSION,
             "run_id": out_dir.name,
@@ -133,6 +158,8 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             "system_prompt_chars": len(system_prompt(args.obs_mode)),
             "reveal_moves": bool(args.reveal_moves),
             "server_url": url,
+            "server_urls": [c.url for c in clients],
+            "server_versions": versions,
             "server_spawned": bool(args.spawn),
             "server_version": health.get("version"),
             "repo_sha": git_sha(),
@@ -161,8 +188,9 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
         state = RunState(tracker=tracker)
         t0 = time.monotonic()
         try:
-            await run_all(client, policy, seedset, out_dir, limits, state, concurrency=args.concurrency,
-                          resume=args.resume, server_version=health.get("version"),
+            await run_all(clients if len(clients) > 1 else clients[0], policy, seedset, out_dir, limits, state,
+                          concurrency=args.concurrency, resume=args.resume,
+                          server_version=versions if len(clients) > 1 else health.get("version"),
                           progress_interval=args.progress_interval, reveal_moves=args.reveal_moves,
                           obs_mode=args.obs_mode)
         except asyncio.CancelledError:
@@ -174,7 +202,8 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             json.dump(run, f, indent=1)
         return write_report(out_dir)
     finally:
-        await client.aclose()
+        for c in clients:
+            await c.aclose()
 
 
 def cmd_run(args) -> int:
@@ -208,13 +237,16 @@ def cmd_run(args) -> int:
             except (FileNotFoundError, RuntimeError, TimeoutError) as e:
                 print(f"error: {e}", file=sys.stderr)
                 return 2
-            url = server.url
+            urls = [server.url]
+        elif args.urls:
+            urls = args.urls
         else:
-            url = args.url or os.environ.get("SIM_PLAY_URL") or "http://127.0.0.1:8765"
-        print(f"sts2eval: {len(seedset['games'])} games of {seedset['name']} -> {out_dir} (server {url})",
+            urls = [args.url or os.environ.get("SIM_PLAY_URL") or "http://127.0.0.1:8765"]
+        where = f"server {urls[0]}" if len(urls) == 1 else f"{len(urls)} servers, round-robin"
+        print(f"sts2eval: {len(seedset['games'])} games of {seedset['name']} -> {out_dir} ({where})",
               file=sys.stderr)
         try:
-            report = asyncio.run(_run(args, policy, seedset, out_dir, url, prices, tracker))
+            report = asyncio.run(_run(args, policy, seedset, out_dir, urls, prices, tracker))
         except KeyboardInterrupt:
             print("interrupted; summaries written so far are kept (re-run with --resume)", file=sys.stderr)
             if (out_dir / "games").exists():

@@ -3,9 +3,13 @@
 # Build:  docker build -t sts2sim --build-arg STS2SIM_VERSION=$(git rev-parse --short HEAD) .
 # Run:    docker run --rm -p 127.0.0.1:8765:8765 sts2sim            (server; usage in docs/docker.md)
 # Multi-arch: the base images are multi-arch (linux/amd64, linux/arm64); the simulator is architecture-neutral IL.
+# NativeAOT: the 'aot' stage publishes Sts2Sim.Vec as a native .so for the build platform (scripts/vec_publish_aot.sh);
+# sts2vec inside the container loads it by default (the entrypoint sets STS2VEC_AOT_LIB). --build-arg VEC_AOT=0 skips
+# it (hostfxr only); '-e STS2VEC_AOT_LIB=' at run time selects the hostfxr path of an AOT image.
 
 ARG DOTNET_TAG=9.0
 ARG UV_VERSION=0.11.7
+ARG VEC_AOT=1
 
 # ---------------------------------------------------------------------------------------------------------------
 # build: dotnet build of the whole solution (Release, warnings are errors: the repo's 0-warning gate)
@@ -37,6 +41,23 @@ RUN set -eux; \
     cp sim/Sts2Sim.sln sim/PLAY.md sim/VEC.md sim/CONTRACTS.md /out/sim/
 
 # ---------------------------------------------------------------------------------------------------------------
+# aot: NativeAOT shared library of Sts2Sim.Vec (same C exports as the hostfxr path, CONTRACTS.md Part D). Needs a C
+# toolchain for the native link (clang) and zlib headers. Runs in parallel with nothing after 'build'; its output is
+# /out-aot/Sts2Sim.Vec.so, or an empty directory with VEC_AOT=0.
+FROM build AS aot
+ARG VEC_AOT
+COPY scripts/vec_publish_aot.sh scripts/
+RUN set -eux; \
+    mkdir -p /out-aot; \
+    if [ "$VEC_AOT" = "1" ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends clang zlib1g-dev; \
+      rm -rf /var/lib/apt/lists/*; \
+      bash scripts/vec_publish_aot.sh; \
+      cp sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.so /out-aot/; \
+    fi
+
+# ---------------------------------------------------------------------------------------------------------------
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -55,6 +76,7 @@ ENV DOTNET_gcServer=1 \
     DOTNET_ROOT=/usr/share/dotnet \
     STS2SIM_KNOWLEDGE=/app/knowledge/source \
     STS2VEC_DLL=/app/sim/Sts2Sim.Vec/bin/Release/net9.0/Sts2Sim.Vec.dll \
+    STS2VEC_AOT_DEFAULT=/app/sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.so \
     STS2SIM_BIND=0.0.0.0 \
     STS2SIM_PORT=8765 \
     UV_PYTHON_DOWNLOADS=never \
@@ -67,6 +89,7 @@ ENV DOTNET_gcServer=1 \
 
 WORKDIR /app
 COPY --from=build /out/ /app/
+COPY --from=aot /out-aot/ /app/sim/Sts2Sim.Vec/bin/aot/
 COPY knowledge/source/ /app/knowledge/source/
 COPY sim/tools/vec/ /app/sim/tools/vec/
 COPY sim/tools/eval/ /app/sim/tools/eval/

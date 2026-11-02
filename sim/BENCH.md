@@ -253,3 +253,18 @@ trajectories replayed through `Step` and `StepFast`; only the step call is timed
 Soak fast fraction (`ChoiceFastPathTests`, 2,000 runs incl. play-biased and 999-HP deep runs that reach events, shops
 and bosses): 72.1 % of 577,867 steps; blockers in order: presence relic 31k, pending prompt 26k, event room 23k,
 presence card 22k, creature (power/monster) 19k, played prompt card 14k, travel 13k, room action 8k.
+
+### Docker host capacity (Huginn container, 2026-11-02, `docs/capacity-2026-11-02.md`)
+
+8 vCPU (4 cores x 2 threads); image `sts2sim:latest` with the NativeAOT `Sts2Sim.Vec.so`; rerun with
+`bash scripts/cluster_capacity.sh OUT all` on the docker host.
+
+| Row | Result |
+| --- | --- |
+| Play server, 1 server x 1 `sim_play.py random --runs 200` client | 7.43 games/s, 513 steps/s; server 105 % CPU (2.0 ms CPU per step, 0.14 core-s per game) |
+| Play server, 4 servers x 1 client / 8 x 1 / 1 x 8 / 8 x 2 | 21.6 / 26.2 / 26.5 / 28.1 games/s (host saturated at ~26-28 with clients on the host; 3.3-3.5 games/s per vCPU) |
+| Play server memory | 110-150 MiB per container under load, peak <= 193 MiB |
+| `sts2eval run --policy random --concurrency 32 --urls` (1 / 4 / 8 servers, 200 games) | 6.81 / 7.17 / 6.93 games/s (one runner process is CPU-bound at ~1 core); 4 runner processes x 4 servers 11.5 |
+| `sts2vec bench` AOT, 1024 envs x 4 / x 8 threads (500 steps) | 51,160 / **62,109** env-steps/s (12.8k per physical core); peak 0.46 GiB |
+| `sts2vec bench` AOT, 4096 envs x 4 / x 8 threads (300 steps) | 50,968 / **63,141** env-steps/s; peak 0.67 GiB |
+| `sts2vec bench` hostfxr (`-e STS2VEC_AOT_LIB=`), 1024 x 8 / 4096 x 8 | 21,827 / 26,655 env-steps/s (AOT is 2.8x / 2.4x) |

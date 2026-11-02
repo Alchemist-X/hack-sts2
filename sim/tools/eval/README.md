@@ -51,6 +51,7 @@ Useful flags:
 | `--max-cost-usd X` | off | stop the run once spend reaches X (`aborted: budget`) |
 | `--max-minutes M` | off | stop the run after M minutes (`aborted: time`) |
 | `--url URL` / `--spawn` | `http://127.0.0.1:8765` | use a running server, or launch the built dll on a free port (stopped at the end, also on Ctrl-C) |
+| `--urls U1,U2,...` | | several running servers (e.g. `$(scripts/sts2_cluster.sh urls)`): game *i* of the seed set runs on server *i* mod N (a game never moves; game ids are per server). Each summary and the transcript's `start` record carry `server_url`; `config.json` has `server_urls` and `server_versions`. Exclusive with `--url` / `--spawn` |
 | `--out DIR` | `tmp/eval/<run_id>` | `run_id = <seedset>-<policy>-<model>-<YYYYmmdd-HHMM>` |
 | `--resume` | off | skip games whose summary exists and is not `aborted` |
 | `--api-key-file PATH` | | read once, never logged; otherwise the SDK reads `ANTHROPIC_API_KEY` |

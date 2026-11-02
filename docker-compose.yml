@@ -12,7 +12,8 @@
 # keep talking to the replica that created its game: give every LLM runner ONE replica URL
 # (http://127.0.0.1:8765, :8766, ...) and run many games concurrently on it (the server is multi-threaded, one
 # lock per game; one sts2eval process with --concurrency N uses one server). Do not put a round-robin load
-# balancer in front of the replicas.
+# balancer in front of the replicas. One runner over several servers: sts2eval run --urls a,b,c (game i stays on
+# server i mod N). Fixed ports per server and remote hosts: scripts/sts2_cluster.sh (docs/docker.md).
 
 x-sim: &sim
   image: ${SIM_IMAGE:-sts2sim:local}

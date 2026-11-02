@@ -56,5 +56,7 @@ mod
 patches
 sts2rec
 scripts
+# ... except the NativeAOT publish script (Dockerfile 'aot' stage)
+!scripts/vec_publish_aot.sh
 Plan
 config
