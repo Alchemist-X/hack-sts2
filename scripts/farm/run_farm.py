@@ -320,6 +320,13 @@ class Worker:
         self.event('restart', reason=why)
         self.out.line(f'w{self.n} RESTART {why}')
         self.stop()
+        # headless_launch.sh truncates game.log on relaunch; it holds the .NET
+        # unhandled-exception text that godot.log lacks, so keep a copy.
+        game_log = self.pool / f'inst{self.n}' / 'game.log'
+        if game_log.exists():
+            keep = Path(self.args.farm_root) / 'crashlogs'
+            keep.mkdir(parents=True, exist_ok=True)
+            (keep / f'w{self.n}-{datetime.now().strftime("%H%M%S")}-game.log').write_bytes(game_log.read_bytes())
         time.sleep(3)
         self.launch()
 
