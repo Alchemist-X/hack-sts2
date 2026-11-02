@@ -1019,8 +1019,10 @@ def index_anchors(ctx: LineageContext) -> None:
             )
         saves = native / "saves"
         if saves.is_dir():
+            # The recorder names each copy after its ``run_saved`` event's own (top-level) seq and
+            # states the anchor kind in the event data (R1, docs/hook-map.md).
             saved_events = {
-                _int_or_none(e.data.get("seq")): e
+                e.seq: e
                 for e in part.events
                 if e.entry == "run_saved" and isinstance(e.data, Mapping)
             }
@@ -1028,7 +1030,9 @@ def index_anchors(ctx: LineageContext) -> None:
                 seq = int(save.stem) if save.stem.isdigit() else None
                 event = saved_events.get(seq)
                 data = event.data if event is not None else {}
-                kind = "combat_exit" if data.get("pre_finished") else "room_entry"
+                kind = data.get("anchor_kind")
+                if kind not in SAVE_ANCHOR_KINDS:
+                    kind = "combat_exit" if data.get("pre_finished") else "room_entry"
                 ctx.anchors.append(
                     {
                         "id": f"a{len(ctx.anchors)}",
@@ -1042,6 +1046,92 @@ def index_anchors(ctx: LineageContext) -> None:
                         "part_index": part_index,
                     }
                 )
+
+
+# Save-anchor kinds the recorder writes (R1): before a room is entered, after an ancient's
+# event, after a combat's room is finished.
+SAVE_ANCHOR_KINDS = ("room_entry", "ancient_exit", "combat_exit")
+
+# Eligibility reasons about rebuilding the start state from the trajectory; a save anchor
+# carries the real start (deck order, RNG counters, relic state), so they do not apply.
+START_RECONSTRUCTION_REASONS = (
+    ANCHOR_PENDING,
+    "anchor_missing",
+    "anchor_unreadable",
+    "recorder_gap:deck_order",
+    "deck_reconstruction_failed",
+    "deck_upgrade_mismatch",
+    "relic_not_whitelisted",
+    "relic_excluded",
+    "neow_",
+)
+
+
+def _is_start_reason(reason: str) -> bool:
+    for prefix in START_RECONSTRUCTION_REASONS:
+        if reason == prefix or reason.startswith(prefix + ":") or (prefix.endswith("_") and reason.startswith(prefix)):
+            return True
+    return False
+
+
+def bind_save_anchors(ctx: LineageContext) -> None:
+    """Design §3: a segment that starts where the game wrote a save starts from that save.
+
+    A ``room_entry`` save is written after map travel, before ``room_entered`` (the room is
+    built on load); it starts the combat segment, or the room segment, of the room entered
+    next in its part. A ``combat_exit`` save (pre-finished combat room) starts the
+    post-combat room segment of its window. ``ancient_exit`` saves are indexed only (the
+    sim resumes pre-finished combat rooms, not events)."""
+    rooms_by_part: dict[int, list[int]] = {}
+    for part_index, part in enumerate(ctx.parts):
+        rooms_by_part[part_index] = sorted(e.seq for e in part.events if e.entry == "room_entered")
+    entry_anchor: dict[tuple[int, int], dict[str, Any]] = {}
+    exit_anchors: dict[int, list[dict[str, Any]]] = {}
+    for anchor in ctx.anchors:
+        part_index, seq = anchor.get("part_index"), anchor.get("seq")
+        if part_index is None or seq is None:
+            continue
+        if anchor["kind"] == "room_entry":
+            following = [r for r in rooms_by_part.get(part_index, ()) if r > seq]
+            if following:
+                # The latest room_entry save before a room entry wins (a reload saves again).
+                key = (part_index, following[0])
+                if key not in entry_anchor or entry_anchor[key]["seq"] < seq:
+                    entry_anchor[key] = anchor
+        elif anchor["kind"] == "combat_exit":
+            exit_anchors.setdefault(part_index, []).append(anchor)
+    part_of = {ctx.part_name(i): i for i in range(len(ctx.parts))}
+    for segment in ctx.segments:
+        part_index = part_of.get(segment.get("part"))
+        window = segment.get("window") or {}
+        start_seq, end_seq = window.get("start_seq"), window.get("end_seq")
+        if part_index is None or start_seq is None:
+            continue
+        anchor = None
+        if segment["kind"] == "combat" or (segment["kind"] == "room" and segment.get("phase") is None):
+            anchor = entry_anchor.get((part_index, start_seq))
+        elif segment["kind"] == "room" and segment.get("phase") == "post_combat":
+            room_seq = segment.get("room_seq")
+            candidates = [
+                a for a in exit_anchors.get(part_index, ())
+                if (room_seq is None or a["seq"] > room_seq) and (end_seq is None or a["seq"] < end_seq)
+            ]
+            anchor = candidates[-1] if candidates else None
+        if anchor is None:
+            continue
+        segment["start_anchor"] = anchor["id"]
+        if segment["kind"] == "combat":
+            # The v1 fields stay for the record; "from": "anchor" makes the harness load the save.
+            segment["start"] = {"from": "anchor", "anchor": anchor["id"], **(segment.get("start") or {})}
+        elif isinstance(segment.get("start"), dict):
+            segment["start"]["from"] = "anchor"
+            segment["start"]["anchor"] = anchor["id"]
+        if anchor.get("act") is None:
+            anchor["act"] = segment.get("act")
+        if anchor.get("floor") is None:
+            anchor["floor"] = segment.get("floor")
+        reasons = segment["eligibility"]["reasons"]
+        segment["eligibility"]["reasons"] = [r for r in reasons if not _is_start_reason(r)]
 
 
 def _floor_summary(window: RoomWindow) -> dict[str, Any] | None:
@@ -1353,7 +1443,12 @@ def build_combat_segment(
 
 
 def _event_option_index(params: Mapping[str, Any], state: Mapping[str, Any] | None) -> tuple[str | None, int | None]:
-    key = params.get("title_key") or params.get("text_key")
+    # R5 records the option's own key as text_key; the title key can be a relic's (OROBAS: "SEA_GLASS.IRONCLAD.title").
+    option_key = params.get("text_key")
+    if isinstance(option_key, str) and ".pages." in option_key and ".options." in option_key:
+        key = option_key
+    else:
+        key = params.get("title_key") or params.get("text_key")
     text_key = str(key).removesuffix(".title") if key else None
     if not isinstance(state, Mapping) or not isinstance(state.get("event"), Mapping):
         return text_key, _int_or_none(params.get("index"))
@@ -1368,8 +1463,14 @@ def _event_option_index(params: Mapping[str, Any], state: Mapping[str, Any] | No
     return text_key, _int_or_none(params.get("index"))
 
 
-def _shop_slot(params: Mapping[str, Any], state: Mapping[str, Any] | None) -> tuple[int | None, str | None, bool]:
-    """(slot, item id, unique) of a purchase, matched on category, price and sale flag."""
+def _shop_slot(
+    params: Mapping[str, Any], state: Mapping[str, Any] | None, after: Mapping[str, Any] | None = None
+) -> tuple[int | None, str | None, bool]:
+    """(slot, item id, unique) of a purchase, matched on category, price and sale flag.
+
+    The recorder logs ``item_id: null`` for card purchases; when two stocked entries share
+    category, price and sale flag, the shop state after the purchase names the slot that
+    emptied (``after``)."""
     if not isinstance(state, Mapping) or not isinstance(state.get("shop"), Mapping):
         return None, None, False
     category = params.get("item")
@@ -1385,9 +1486,19 @@ def _shop_slot(params: Mapping[str, Any], state: Mapping[str, Any] | None) -> tu
     ]
     if not matches:
         return None, None, False
+    ids = {m.get("card_id") or m.get("relic_id") or m.get("potion_id") for m in matches}
+    if len(ids) > 1 and isinstance(after, Mapping) and isinstance(after.get("shop"), Mapping):
+        emptied = {
+            _int_or_none(item.get("index"))
+            for item in after["shop"].get("items") or ()
+            if isinstance(item, Mapping) and item.get("is_stocked", True) is False
+        }
+        narrowed = [m for m in matches if _int_or_none(m.get("index")) in emptied]
+        if len({m.get("card_id") or m.get("relic_id") or m.get("potion_id") for m in narrowed}) == 1:
+            matches = narrowed
+            ids = {narrowed[0].get("card_id") or narrowed[0].get("relic_id") or narrowed[0].get("potion_id")}
     item = matches[0]
     item_id = item.get("card_id") or item.get("relic_id") or item.get("potion_id")
-    ids = {m.get("card_id") or m.get("relic_id") or m.get("potion_id") for m in matches}
     return _int_or_none(item.get("index")), item_id, len(ids) == 1
 
 
@@ -1475,7 +1586,9 @@ def build_run_decisions(
             emit({"type": "event_option", "text_key": text_key, "index": index}, "event")
         elif kind == "event_proceed":
             emit({"type": "event_proceed", "text_key": params.get("text_key"), "index": _int_or_none(params.get("index"))}, "event")
-        elif kind == "player_choice" and params.get("choice_type") == "Index" and screen in ("rewards", "card_reward", "event") and (
+        # The last snapshot before a card pick can still be the combat room's (``monster``/``elite``/``boss``) when the
+        # rewards screen opened without a new snapshot (E3 farm: GREMLIN_MERC_NORMAL after the gold steal).
+        elif kind == "player_choice" and params.get("choice_type") == "Index" and screen in ("rewards", "card_reward", "event", "monster", "elite", "boss") and (
             nxt is not None and _kind(nxt) == "reward_taken" and _params(nxt).get("reward_type") in CARD_REWARD_TYPES
         ):
             reward = _params(nxt)
@@ -1485,6 +1598,11 @@ def build_run_decisions(
             if isinstance(state, Mapping) and isinstance(state.get("card_reward"), Mapping):
                 cards = _cards(state["card_reward"].get("cards")) or []
                 card_id = cards[index]["id"] if index is not None and index < len(cards) else None
+            offer = reward.get("offer") if isinstance(reward.get("offer"), Mapping) else None
+            offer_ids = [strip_prefix(str(c.get("id")), "CARD.") for c in (offer or {}).get("cards") or () if isinstance(c, Mapping)]
+            if card_id is None and offer_ids and index is not None and index < len(offer_ids):
+                # R4: the recorder lists the offered cards on reward_taken.
+                card_id = offer_ids[index]
             if card_id is None:
                 picked = [cid for c, cid in zip(offered_groups, card_choice_ids) if c.get("was_picked")]
                 card_id = picked[0] if len(picked) == 1 else None
@@ -1567,7 +1685,10 @@ def build_run_decisions(
             if relic_id:
                 reasons.extend(_content_reasons(ctx, "relics", [relic_id]))
         elif kind == "shop_purchase":
-            slot, item_id, unique = _shop_slot(params, state)
+            after = next(
+                (r.state for r in window.states if r.seq > action.seq and isinstance(r.state.get("shop"), Mapping)), None
+            )
+            slot, item_id, unique = _shop_slot(params, state, after)
             if slot is None:
                 reasons.append("shop_purchase_unresolved")
             elif not unique:
@@ -1630,7 +1751,8 @@ def _finish_run_segment(ctx: LineageContext, segment: dict[str, Any], window: Ro
             reasons.append(f"run_layer_not_ported:{area}")
     if segment["kind"] == "room" and (window.model_id or "").startswith("EVENT."):
         reasons += _content_reasons(ctx, "events", [strip_prefix(window.model_id, "EVENT.")])
-    reasons.append("anchor_missing")
+    # No anchor here: a save anchor is bound later (bind_save_anchors); otherwise the harness
+    # chains the segment from an agreeing predecessor or skips it as anchor_missing.
     if not decisions:
         reasons.append("no_decisions")
     segment["eligibility"]["reasons"] = list(dict.fromkeys(reasons))
@@ -1727,6 +1849,7 @@ def build_lineage_bundle(
                 ctx, window, kind="room", attempt=attempts[key], window_start=post_start or window.room.seq, window_end=window.end_seq,
                 phase=phase,
             )
+            room_segment["room_seq"] = window.room.seq
             ctx.segments.append(room_segment)
             first_state = next((s for s in window.states if s.seq >= (post_start or 0)), None)
             room_segment["start"] = {
@@ -1778,7 +1901,9 @@ def build_lineage_bundle(
                 tracker.apply_summary(stats)
 
     attach_mcr_anchors(ctx, combat_parts)
+    bind_save_anchors(ctx)
     for segment in ctx.segments:
+        segment.pop("room_seq", None)
         reasons = segment["eligibility"]["reasons"]
         reasons += [r for r in ctx.run_reasons if r not in reasons]
         segment["eligibility"]["eligible"] = not reasons
@@ -1880,6 +2005,29 @@ def summarize_v2(bundles: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def copy_save_anchors(bundle: Mapping[str, Any], lineage: Sequence[tuple[Path, Any]], out_dir: Path) -> int:
+    """Anchor refs are relative to the bundle directory (design §5): copy each save anchor
+    (byte copy, never the corpus original) to ``<out_dir>/<ref>``. Only ``.save`` files are
+    copied, so the harness's bundle discovery sees no extra JSON."""
+    parts = {path.name: path for path, _ in lineage}
+    copied = 0
+    for anchor in bundle.get("anchors") or ():
+        ref = anchor.get("ref")
+        if anchor.get("kind") not in SAVE_ANCHOR_KINDS or not isinstance(ref, str):
+            continue
+        part_name, _, rest = ref.partition("/")
+        source = parts.get(part_name)
+        if source is None or not rest:
+            continue
+        target = out_dir / ref
+        if target.is_file() and target.stat().st_size == anchor.get("bytes"):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((source / rest).read_bytes())
+        copied += 1
+    return copied
+
+
 def export_bundles_v2(
     corpus_root: Path,
     out_dir: Path,
@@ -1914,6 +2062,7 @@ def export_bundles_v2(
     index_runs: list[dict[str, Any]] = []
     for lineage in lineages:
         bundle = build_lineage_bundle(lineage, vocabulary=vocabulary, registry=registry, options=options)
+        copy_save_anchors(bundle, lineage, out_dir)
         target = out_dir / f"{bundle['source']['lineage']}.json"
         target.write_text(json.dumps(bundle, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         bundles.append(bundle)

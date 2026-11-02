@@ -23,6 +23,8 @@ from sts2rec.diff_export_v2 import (
     RUN_LAYER_SOURCES,
     ContentRegistry,
     DeckTracker,
+    _event_option_index,
+    _shop_slot,
     export_bundles_v2,
     prompt_open_state,
     reason_class_v2,
@@ -91,8 +93,17 @@ def move(s: Stream, at: int, col: int, row: int) -> None:
     s.action("move_to_map_coord", at, destination={"col": col, "row": row}, human=True)
 
 
-def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
+def v2_lineage(root: Path, *, with_mcr: bool = True, with_saves: bool = False, monster_screen_pick: bool = False) -> None:
+    """``with_saves``: R1 room_entry saves before floors 3 and 5 (E3); ``monster_screen_pick``: the card pick's
+    last snapshot is the combat room's and the reward_taken carries the R4 offer (E3 GREMLIN_MERC_NORMAL)."""
     s = Stream()
+    saves: list[int] = []
+
+    def room_entry_save(floor: int) -> None:
+        seq = s.seq + 1
+        s.event("run_saved", file=f"native/saves/{seq:06d}.save", anchor_kind="room_entry", act=0, floor=floor, pre_finished=False)
+        saves.append(seq)
+
     s.event("recorder_config")
     s.state({"state_type": "unknown", "player": player_block()})
     # Floor 1: Neow.
@@ -137,9 +148,13 @@ def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
     rewards = s.state({"state_type": "rewards", "rewards": {"items": [{"index": 0, "type": "gold", "gold_amount": 12}, {"index": 1, "type": "card"}]}, "player": player_block()})
     s.action("reward_taken", rewards, reward_type="gold_reward", set_index=0, amount=12, human=True)
     offers = [{"id": INFLAME, "index": 0, "is_upgraded": False}, {"id": ANGER, "index": 1, "is_upgraded": False}, {"id": CLASH, "index": 2, "is_upgraded": False}]
-    cr = s.state({"state_type": "card_reward", "card_reward": {"cards": offers, "can_skip": True}, "player": player_block()})
+    if monster_screen_pick:
+        cr = s.state({"state_type": "monster", "message": "Combat ended. Waiting for rewards...", "player": player_block()})
+    else:
+        cr = s.state({"state_type": "card_reward", "card_reward": {"cards": offers, "can_skip": True}, "player": player_block()})
     s.action("player_choice", cr, choice_type="Index", indexes=[1], index=1, picked=True)
-    s.action("reward_taken", cr, reward_type="card_reward", set_index=1, human=True)
+    offer = {"reward_type": "card_reward", "cards": [{"id": f"CARD.{c['id']}", "upgrade_level": 0} for c in offers]} if monster_screen_pick else None
+    s.action("reward_taken", cr, reward_type="card_reward", set_index=1, human=True, **({"offer": offer} if offer else {}))
     m2 = s.state(map_state(1, 1, [(1, 2, "RestSite")]))
     move(s, m2, 1, 2)
     s.event(
@@ -149,6 +164,8 @@ def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
         player_stats=[{"card_choices": [{"card": {"id": f"CARD.{c}"}, "was_picked": c == ANGER} for c in (INFLAME, ANGER, CLASH)], "cards_gained": [{"id": "CARD.ANGER"}]}],
     )
     # Floor 3: rest site, smith Bash (the deck choice is logged before the option).
+    if with_saves:
+        room_entry_save(2)
     s.event("room_entered", room_type="RestSite", room_model_id=None, act=0, floor=3)
     rest_state = s.state({"state_type": "rest_site", "rest_site": {"options": [{"index": 0, "id": "HEAL", "is_enabled": True}, {"index": 1, "id": "SMITH", "is_enabled": True}]}, "player": player_block()})
     s.action("player_choice", rest_state, choice_type="DeckCard", cards=["CARD.BASH"], picked=True)
@@ -176,6 +193,8 @@ def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
     move(s, m4, 1, 4)
     s.event("floor_summary", map_point_type="shop", rooms=[{"model_id": None}], player_stats=[{"cards_gained": [{"id": "CARD.CLASH"}]}])
     # Floor 5: a later combat; its deck comes from the tracker.
+    if with_saves:
+        room_entry_save(4)
     s.event("room_entered", room_type="Monster", room_model_id="ENCOUNTER.NIBBITS_WEAK", act=0, floor=5)
     hand5 = [hand_card(ANGER, 0), hand_card(CLASH, 1, cost="0"), hand_card(STRIKE, 2, upgraded=True), hand_card(DEFEND, 3, upgraded=True), hand_card(BASH, 4, upgraded=True, cost="2")]
     t5 = s.state(battle(hand=hand5, draw=[pile_card(STRIKE)] * 4 + [pile_card(DEFEND)] * 3))
@@ -183,6 +202,9 @@ def v2_lineage(root: Path, *, with_mcr: bool = True) -> None:
     s.action("ready_to_begin_enemy_turn", t5, action_type="ReadyToBeginEnemyTurnAction")
     s.state({"state_type": "monster", "message": "Combat ended. Waiting for rewards...", "player": player_block()})
     path = write_part(root, "1773200000-V2TESTSEED01", s, RUN, part=1, version="v0.111.0")
+    for seq in saves:
+        (path / "native" / "saves").mkdir(parents=True, exist_ok=True)
+        (path / "native" / "saves" / f"{seq:06d}.save").write_bytes(b"{}")
     if with_mcr:
         (path / "native").mkdir(exist_ok=True)
         (path / "native" / "replay.mcr").write_bytes(b"\x00MCR")
@@ -281,8 +303,9 @@ def test_run_level_decisions_in_logical_order(v2_corpus: Path, tmp_path: Path) -
     assert segments[7]["decisions"][0]["action"] == {"type": "shop_buy", "category": "card", "item_id": CLASH, "price": 50, "slot": 0}
     for segment in segments:
         if segment["kind"] != "combat":
-            assert "anchor_missing" in segment["eligibility"]["reasons"]
-            assert not segment["eligibility"]["eligible"]
+            # E3: no save anchor in this corpus; the harness chains run segments or skips them as anchor_missing.
+            assert "anchor_missing" not in segment["eligibility"]["reasons"]
+            assert segment["start_anchor"] is None
 
 
 def test_later_combat_deck_and_mcr_anchor(v2_corpus: Path, tmp_path: Path) -> None:
@@ -413,3 +436,58 @@ def test_scan_content_registry(tmp_path: Path) -> None:
     registry = scan_content_registry(core)
     assert registry.ported("relics", "AKABEKO") and not registry.ported("relics", "STUB")
     assert registry.run_layer == frozenset({"map"})
+
+
+# ---- E3 (2026-11-02): REC recorder anchors and farm findings ----------------------------
+
+
+def test_save_anchors_bind_to_the_room_they_precede(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    v2_lineage(root, with_mcr=False, with_saves=True)
+    out = tmp_path / "out"
+    export_bundles_v2(root, out, full_registry())
+    bundle = load(out)
+    saves = [a for a in bundle["anchors"] if a["kind"] == "room_entry"]
+    assert len(saves) == 2 and all(a["seq"] is not None for a in saves), "keyed by the record's own seq, kind from anchor_kind"
+    rest_room = next(s for s in bundle["segments"] if s["kind"] == "room" and s["room_type"] == "RestSite")
+    assert rest_room["start_anchor"] == saves[0]["id"] and rest_room["start"]["from"] == "anchor"
+    combat5 = bundle["segments"][9]
+    assert combat5["kind"] == "combat" and combat5["floor"] == 5
+    assert combat5["start_anchor"] == saves[1]["id"] == combat5["start"]["anchor"]
+    assert combat5["start"]["from"] == "anchor" and combat5["start"]["deck"], "v1 fields kept for the record"
+    assert not any(r.startswith(("anchor_", "recorder_gap:deck_order")) for r in combat5["eligibility"]["reasons"])
+    # Refs are relative to the bundle dir: the save is byte-copied next to the bundle, never moved.
+    for anchor in saves:
+        assert (out / anchor["ref"]).read_bytes() == b"{}"
+        assert (root / anchor["ref"]).is_file()
+
+
+def test_card_pick_after_a_combat_screen_uses_the_r4_offer(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    v2_lineage(root, monster_screen_pick=True)
+    out = tmp_path / "out"
+    export_bundles_v2(root, out, full_registry())
+    rewards = load(out)["segments"][3]
+    kinds = [d["action"]["type"] for d in rewards["decisions"]]
+    assert kinds == ["reward_take", "reward_take", "card_reward_pick"], kinds
+    assert rewards["decisions"][2]["action"] == {"type": "card_reward_pick", "index": 1, "card_id": ANGER}
+    assert "recorder_gap:card_reward_offer" not in rewards["eligibility"]["reasons"]
+
+
+def test_shop_purchase_with_twin_prices_takes_the_slot_that_emptied() -> None:
+    items = [
+        {"index": 0, "category": "card", "price": 76, "is_stocked": True, "on_sale": False, "card_id": "DISMANTLE"},
+        {"index": 4, "category": "card", "price": 76, "is_stocked": True, "on_sale": False, "card_id": "INFERNO"},
+    ]
+    params = {"cost": 76, "item": "card", "item_id": None, "on_sale": False}
+    before = {"shop": {"items": items}}
+    assert _shop_slot(params, before) == (0, "DISMANTLE", False)
+    after = {"shop": {"items": [items[0], {"index": 4, "category": "card", "price": 76, "is_stocked": False, "on_sale": False}]}}
+    assert _shop_slot(params, before, after) == (4, "INFERNO", True)
+
+
+def test_event_option_prefers_the_recorded_option_key() -> None:
+    params = {"title_key": "SEA_GLASS.IRONCLAD.title", "text_key": "OROBAS.pages.INITIAL.options.SEA_GLASS", "index": 0}
+    assert _event_option_index(params, None) == ("OROBAS.pages.INITIAL.options.SEA_GLASS", 0)
+    legacy = {"title_key": "NEOWS_TALISMAN.title"}
+    assert _event_option_index(legacy, None)[0] == "NEOWS_TALISMAN"

@@ -220,7 +220,10 @@ public static class G3Schema
             {
                 x["id"] = s;
             }
-            if (it?["category"]?.GetValue<string>() == "card" && it?["on_sale"] is { } sale)
+            // E3: a sold card slot has no card (the sim projects on_sale only with a CreationResult); compare the sale flag
+            // of stocked slots only, like the price.
+            if (it?["category"]?.GetValue<string>() == "card" && it?["on_sale"] is { } sale
+                && it?["stocked"] is JsonValue saleSt && saleSt.TryGetValue(out bool saleStocked) && saleStocked)
             {
                 x["on_sale"] = sale.DeepClone();
             }
@@ -309,15 +312,21 @@ public static class G3Loop
         public int PickOrderFixes;
         public int DroppedDuplicateProceeds;
         public int LaggingRelicLists;
+        public int LaggingEventProceeds;
     }
 
-    public static List<SegmentResult> Run(RunBundle run, Counters counters)
+    /// <param name="resumeAtAnchors">E3 <c>--anchors</c>: after a divergence, resume at the next segment with a save anchor.</param>
+    /// <param name="everyAnchor">E3 <c>--anchors-every</c> (G2 save-import check): start every anchored segment from its save,
+    /// even when the chain is live.</param>
+    public static List<SegmentResult> Run(RunBundle run, Counters counters, bool resumeAtAnchors = false, IReadOnlySet<string>? chainBreakAfter = null, bool everyAnchor = false, List<(string Segment, List<string> Diff)>? saveCheck = null)
     {
         var results = new List<SegmentResult>();
         RunSim? sim = null;
         bool broken = false;
-        foreach (var segment in run.Segments)
+        for (int segIndex = 0; segIndex < run.Segments.Count; segIndex++)
         {
+            var segment = run.Segments[segIndex];
+            var nextSegment = segIndex + 1 < run.Segments.Count ? run.Segments[segIndex + 1] : null;
             var result = new SegmentResult
             {
                 Path = run.FilePath,
@@ -329,16 +338,25 @@ public static class G3Loop
                 DecisionsTotal = segment.Decisions.Count
             };
             results.Add(result);
-            if (broken)
+            var anchor = resumeAtAnchors ? run.FindAnchor(segment.StartAnchor) : null;
+            if (broken && anchor == null)
             {
                 result.Status = BundleStatus.Skipped;
                 result.Class = DivergenceClass.AnchorMissing;
-                result.Reason = "segment_after_first_divergence";
+                result.Reason = resumeAtAnchors ? "segment_after_divergence_without_save_anchor" : "segment_after_first_divergence";
                 continue;
             }
             try
             {
-                if (sim == null)
+                if (anchor != null && (broken || everyAnchor))
+                {
+                    // E3 (design §3): resume the replay from the game's own save written at this point.
+                    broken = false;
+                    sim = null;
+                    result.StartMode = "anchor:" + anchor.Kind;
+                    sim = AnchorLoader.LoadSaveAnchor(run, anchor);
+                }
+                else if (sim == null)
                 {
                     result.StartMode = "seed";
                     sim = AnchorLoader.SeedStart(run, segment.Start ?? new JsonObject { ["from"] = AnchorLoader.FromSeed });
@@ -346,6 +364,10 @@ public static class G3Loop
                 else
                 {
                     result.StartMode = "chained";
+                    if (anchor != null && saveCheck != null)
+                    {
+                        saveCheck.Add((segment.Id, SaveCheck(run, anchor, sim)));
+                    }
                 }
                 if (segment.Kind == SegmentKinds.Combat)
                 {
@@ -353,7 +375,7 @@ public static class G3Loop
                 }
                 else
                 {
-                    RunRoom(sim, segment, result, counters);
+                    RunRoom(sim, segment, result, counters, nextSegment);
                 }
             }
             catch (StartFailure ex)
@@ -366,7 +388,7 @@ public static class G3Loop
             {
                 Crash(result, ex, -1, "G3 segment setup");
             }
-            if (result.Status != BundleStatus.Agree)
+            if (result.Status != BundleStatus.Agree || (chainBreakAfter?.Contains(segment.Id) ?? false))
             {
                 broken = true;
             }
@@ -391,7 +413,7 @@ public static class G3Loop
         V2Runner.ReplayCombat(segment, new RunCombatDriver(sim), result);
     }
 
-    private static void RunRoom(RunSim sim, BundleSegment segment, SegmentResult result, Counters counters)
+    private static void RunRoom(RunSim sim, BundleSegment segment, SegmentResult result, Counters counters, BundleSegment? nextSegment = null)
     {
         if (segment.Kind == SegmentKinds.Room && (segment.RoomType != null || segment.RoomModelId != null))
         {
@@ -502,6 +524,18 @@ public static class G3Loop
                     diffs = RunScreenComparer.Compare(oracle, simProjection);
                     hard = diffs.Where(x => x.Severity == DiffSeverity.Hard).ToList();
                 }
+                if (hard.Count > 0 && d.Action.Type == V2Action.EventProceed
+                    && LaggingEventProceed(oracle, simProjection, NextObservedPlayer(segment, i, nextSegment)) is { } settled)
+                {
+                    // recorder_gap (R8 snapshot timing): the proceed's pre_state was snapshotted while the chosen option
+                    // was still resolving (page still INITIAL, or HP lost but the gold not yet added: JUNGLE_MAZE_ADVENTURE,
+                    // DENSE_VEGETATION, THIS_OR_THAT on the E3 farm). Its player fields are checked against the next
+                    // observed state instead, which the floor summary confirms.
+                    counters.LaggingEventProceeds++;
+                    oracle = settled;
+                    diffs = RunScreenComparer.Compare(oracle, simProjection);
+                    hard = diffs.Where(x => x.Severity == DiffSeverity.Hard).ToList();
+                }
                 if (hard.Count > 0 && Probe(sim, d.Action) != null && TryHoist(sim, segment, i, done, counters))
                 {
                     disturbed[i] = true;
@@ -609,6 +643,77 @@ public static class G3Loop
     }
 
     private const int HoistWindow = 8;
+
+    // Save lines that differ between a chained sim and the same point loaded from the game's save, both described through
+    // RunExporter (E3 --save-check). Both sims have entered the room. Lines are "-game" / "+sim".
+    public static List<string> SaveCheck(RunBundle run, BundleAnchor anchor, RunSim chained)
+    {
+        try
+        {
+            var loaded = AnchorLoader.LoadSaveAnchor(run, anchor);
+            var game = RunExporter.Describe(RunExporter.ToSave(loaded));
+            var mine = RunExporter.Describe(RunExporter.ToSave(chained));
+            var gameSet = new HashSet<string>(game, StringComparer.Ordinal);
+            var mineSet = new HashSet<string>(mine, StringComparer.Ordinal);
+            return game.Where(l => !mineSet.Contains(l)).Select(l => "-" + l)
+                .Concat(mine.Where(l => !gameSet.Contains(l)).Select(l => "+" + l)).ToList();
+        }
+        catch (Exception ex)
+        {
+            return new List<string> { "!" + ex.GetType().Name + ": " + ex.Message };
+        }
+    }
+
+    private static readonly string[] SettledPlayerKeys = { "hp", "max_hp", "gold", "relics", "potions" };
+
+    /// <summary>The normalised player of the next decision with a pre_state (this segment, else the next one).</summary>
+    public static JsonObject? NextObservedPlayer(BundleSegment segment, int index, BundleSegment? nextSegment)
+    {
+        foreach (var (seg, from) in new[] { (segment, index + 1), (nextSegment, 0) })
+        {
+            if (seg == null)
+            {
+                continue;
+            }
+            for (int j = from; j < seg.Decisions.Count; j++)
+            {
+                if (seg.Decisions[j].PreState is JsonObject pre && pre["player"] is JsonObject)
+                {
+                    return G3Schema.NormalizeOracle(pre, seg.Decisions[j].Screen, out _)["player"] as JsonObject;
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// For an <c>event_proceed</c> whose pre_state lags the option it follows: the oracle with its event options dropped
+    /// when no option is a proceed option (the snapshot still shows the option page) and its hp / max_hp / gold / relics /
+    /// potions taken from the next observed state, or null when that settled oracle still disagrees on those fields.
+    /// </summary>
+    public static JsonObject? LaggingEventProceed(JsonObject oracle, JsonObject sim, JsonObject? nextPlayer)
+    {
+        if (nextPlayer == null || oracle["player"] is not JsonObject player)
+        {
+            return null;
+        }
+        var settled = oracle.DeepClone().AsObject();
+        if (settled["event"] is JsonObject ev && ev["options"] is JsonArray options && options.Count > 0
+            && !options.Any(o => o?["proceed"] is JsonValue pv && pv.TryGetValue(out bool pr) && pr))
+        {
+            ev.Remove("options");
+        }
+        var settledPlayer = (JsonObject)settled["player"]!;
+        foreach (string key in SettledPlayerKeys)
+        {
+            if (player.ContainsKey(key))
+            {
+                settledPlayer[key] = nextPlayer[key]?.DeepClone();
+            }
+        }
+        bool settledAgrees = !RunScreenComparer.Compare(settled, sim).Any(x => x.Severity == DiffSeverity.Hard);
+        return settledAgrees ? settled : null;
+    }
 
     private static List<string> PickedRelics(JsonObject? summary)
     {

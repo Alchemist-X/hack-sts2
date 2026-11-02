@@ -16,7 +16,14 @@ public static class RelicCmd
         ArgumentNullException.ThrowIfNull(relic);
         ArgumentNullException.ThrowIfNull(player);
         player.AddRelicInternal(relic, index);
-        rs.Fidelity.Record(FidelityFlag.ApproximatedRule, ObtainRunLayerSite);
+        // Commands/RelicCmd.cs:411-415: a non-stackable relic leaves the player's and the shared grab bags (E3: treasure,
+        // shop and event relics were pulled again by the sim); :422 FloorAddedToDeck = TotalFloor.
+        if (!relic.IsStackable)
+        {
+            player.RelicGrabBag?.Remove(relic.Id);
+            rs.SharedRelicGrabBag?.Remove(relic.Id);
+        }
+        relic.FloorAddedToDeck = rs.TotalFloor;
         relic.AfterObtained(rs);
         return relic;
     }

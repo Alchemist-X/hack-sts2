@@ -24,7 +24,9 @@ public static class AnchorLoader
     public const string ContentPortedOnly = "ported_only";
     public const string AnchorMcrInitial = "mcr_initial";
 
-    public static string? StartFrom(BundleSegment segment) => segment.Start?["from"] is JsonValue v && v.TryGetValue(out string? s) ? s : null;
+    public static string? StartFrom(BundleSegment segment) => segment.Start == null ? null : StartFrom(segment.Start);
+
+    public static string? StartFrom(JsonObject start) => start["from"] is JsonValue v && v.TryGetValue(out string? s) ? s : null;
 
     public static RunSim SeedStart(RunBundle run, JsonObject start)
     {

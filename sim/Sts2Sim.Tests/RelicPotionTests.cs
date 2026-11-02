@@ -999,7 +999,8 @@ public static class RelicPotionTests
         var c = new TestRelic("C", log: log);
         Assert.True(ReferenceEquals(a, RelicCmd.Obtain(rs, a, cs.Player)));
         Assert.True(ReferenceEquals(cs.Player, a.Owner));
-        Assert.True(rs.Fidelity.Entries.Contains(new FidelityEntry(FidelityFlag.ApproximatedRule, RelicCmd.ObtainRunLayerSite)), "the W2 run-layer steps are flagged");
+        Assert.False(rs.Fidelity.Entries.Contains(new FidelityEntry(FidelityFlag.ApproximatedRule, RelicCmd.ObtainRunLayerSite)), "E3: the grab-bag removals and FloorAddedToDeck are ported, no approximation flag");
+        Assert.Equal(rs.TotalFloor, a.FloorAddedToDeck);
         RelicCmd.Obtain(rs, b, cs.Player);
         RelicCmd.Obtain(rs, c, cs.Player, 0);
         Assert.SequenceEqual(new RelicModel[] { c, a, b }, cs.Player.Relics);

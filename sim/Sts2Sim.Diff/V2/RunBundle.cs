@@ -457,7 +457,9 @@ public static class RunBundleJson
         };
     }
 
-    public static bool IsV1ShapedStart(JsonObject start) => start.ContainsKey("deck") && start.ContainsKey("player");
+    // E3: a start with "from": "anchor" loads its save anchor; its v1 fields are kept by the exporter for the record only.
+    public static bool IsV1ShapedStart(JsonObject start)
+        => start.ContainsKey("deck") && start.ContainsKey("player") && AnchorLoader.StartFrom(start) != AnchorLoader.FromAnchor;
 
     private static BundleSegment ReadSegment(JsonReadHelper r, JsonElement s, string p)
     {
