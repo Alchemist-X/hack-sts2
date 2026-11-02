@@ -192,6 +192,52 @@ public static partial class ObservationEncoder
         aux[AuxCol.DeckN] = p.Deck.Count;
         aux[AuxCol.RelicN] = p.Relics.Count;
         aux[AuxCol.IsCombat] = inCombat ? 1f : 0f;
+        // Protocol v0.2 progress inputs (docs/sts2-bench-protocol-v0.2-2026-11-01.md §4.2): the act's start floor is
+        // total_floor - act_floor, and the act's room count L is the current act map's last row + 1.
+        aux[AuxCol.ActFloor] = rs.ActFloor;
+        if (rs.CurrentMapCoord is { } coord)
+        {
+            aux[AuxCol.MapRow] = coord.row;
+            aux[AuxCol.MapCol] = coord.col;
+        }
+        else
+        {
+            aux[AuxCol.MapRow] = -1;
+            aux[AuxCol.MapCol] = -1;
+        }
+        aux[AuxCol.ActRooms] = ActRooms(rs.Map);
+    }
+
+    /// <summary>Rooms in the act of <paramref name="map"/> (last row + 1: start row 0 through the last boss row); 0 without a map.</summary>
+    public static int ActRooms(ActMap? map)
+    {
+        if (map == null)
+        {
+            return 0;
+        }
+        int last = map.StartingMapPoint.coord.row;
+        if (map.BossMapPoint is { } boss)
+        {
+            last = Math.Max(last, boss.coord.row);
+        }
+        if (map.SecondBossMapPoint is { } second)
+        {
+            last = Math.Max(last, second.coord.row);
+        }
+        int rows = map.GetRowCount();
+        int cols = map.GetColumnCount();
+        for (int r = rows - 1; r > last; r--)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                if (map.GetPoint(c, r) != null)
+                {
+                    last = r;
+                    break;
+                }
+            }
+        }
+        return last + 1;
     }
 
     // Combat rooms in the floor history; the current floor's last room does not count while its combat is still

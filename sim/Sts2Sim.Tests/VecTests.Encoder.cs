@@ -533,4 +533,64 @@ public static class VecEncoderTests
         }
         Assert.Equal(cp.DrawPile.Count, drawTotal, "draw counts sum to the pile size");
     }
+    /// <summary>
+    /// The protocol-v0.2 progress columns appended to <c>aux</c> (act_floor, map_row, map_col, act_rooms): equal to the
+    /// header columns, act_rooms = the map table's last row + 1 (the play server's <c>map.nodes</c> max row + 1), and
+    /// total_floor - act_floor = the act's first observed total floor (the protocol's act start floor).
+    /// </summary>
+    public static void Test_VecEncoder_AuxProgressColumns()
+    {
+        using var nb = new NativeBuffers(1);
+        int states = 0, mapped = 0, actsSeen = 0, startMismatch = 0;
+        int lastAct = -1, lastTotal = int.MaxValue, actStart = 0;
+        var seenRooms = new SortedSet<int>();
+        Playouts(10, 1500, 83, heal: true, sim =>
+        {
+            EncodeInto(sim, nb, out _);
+            var gi = nb.All<int>(Buf.GlobalI);
+            var aux = nb.All<float>(Buf.Aux);
+            states++;
+            Assert.Equal(gi[GI.ActFloor], (int)aux[AuxCol.ActFloor], "aux.act_floor");
+            Assert.Equal(gi[GI.MapRow], (int)aux[AuxCol.MapRow], "aux.map_row");
+            Assert.Equal(gi[GI.MapCol], (int)aux[AuxCol.MapCol], "aux.map_col");
+            var nodes = nb.All<int>(Buf.MapNodes);
+            int maxRow = -1;
+            for (int r = 0; r < Caps.MapRows; r++)
+            {
+                for (int c = 0; c < Caps.MapCols; c++)
+                {
+                    if (nodes[(r * Caps.MapCols + c) * 6] != 0)
+                    {
+                        maxRow = r;
+                    }
+                }
+            }
+            int rooms = (int)aux[AuxCol.ActRooms];
+            if (sim.State.Map != null)
+            {
+                mapped++;
+                Assert.Equal(maxRow + 1, rooms, "aux.act_rooms = map_nodes last row + 1");
+                seenRooms.Add(rooms);
+            }
+            int act = gi[GI.ActIndex];
+            int total = gi[GI.TotalFloor];
+            if (act != lastAct || total < lastTotal)
+            {
+                // Protocol v0.2: act 1 starts at floor 0; a later act at the floor of its first observation.
+                actStart = act == 0 ? 0 : total;
+                actsSeen++;
+            }
+            lastAct = act;
+            lastTotal = total;
+            if (total - gi[GI.ActFloor] != actStart)
+            {
+                startMismatch++;
+            }
+            return true;
+        });
+        Console.WriteLine($"     aux progress columns: {states} states, {mapped} with a map, {actsSeen} act starts, act_rooms seen {{{string.Join(",", seenRooms)}}}, start mismatches {startMismatch}");
+        Assert.True(actsSeen >= 15, $"only {actsSeen} act starts");
+        Assert.Equal(0, startMismatch, "total_floor - act_floor = the protocol's act start floor");
+        Assert.True(seenRooms.IsSubsetOf(new[] { 15, 16, 17, 18 }), "act room counts are 15..18");
+    }
 }

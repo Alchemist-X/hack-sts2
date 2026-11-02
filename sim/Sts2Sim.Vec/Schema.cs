@@ -145,7 +145,8 @@ public static class Schema
     public static readonly string[] PromptOptionFields = { "item_id", "upgrade", "picked", "kind_of_item", "ordinal" };
     public static readonly string[] CandFields = { "kind", "A", "B", "hand_slot", "target_slot", "potion_slot", "option_index", "card_id", "target_uid" };
     public static readonly string[] EpisodeFields = { "episode_id", "step_index", "start_entry" };
-    public static readonly string[] AuxFields = { "total_floor", "act_index", "hp", "max_hp", "gold", "bosses_killed", "combats_won", "deck_n", "relic_n", "is_combat" };
+    public static readonly string[] AuxFields = { "total_floor", "act_index", "hp", "max_hp", "gold", "bosses_killed", "combats_won", "deck_n", "relic_n", "is_combat",
+        "act_floor", "map_row", "map_col", "act_rooms" };
     public static readonly string[] LastEpisodeFields = { "win", "floor", "act", "steps", "final_hp", "final_max_hp", "end_kind", "last_encounter_id" };
 
     public static int GI => GlobalIFields.Length;
@@ -420,7 +421,8 @@ public static class AuxCol
     private static int C(string n) => Schema.Col(Schema.AuxFields, n);
     public static readonly int TotalFloor = C("total_floor"), ActIndex = C("act_index"), Hp = C("hp"), MaxHp = C("max_hp"),
         Gold = C("gold"), BossesKilled = C("bosses_killed"), CombatsWon = C("combats_won"), DeckN = C("deck_n"),
-        RelicN = C("relic_n"), IsCombat = C("is_combat");
+        RelicN = C("relic_n"), IsCombat = C("is_combat"), ActFloor = C("act_floor"), MapRow = C("map_row"),
+        MapCol = C("map_col"), ActRooms = C("act_rooms");
 }
 
 /// <summary>last_episode columns (int32).</summary>
