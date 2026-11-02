@@ -1091,3 +1091,79 @@ Open issues:
 - gates.sh has not run on Linux (Huginn needs `--skip g0`; no `timeout` on stock macOS); `sim/BENCH.md` has no gates.sh `--bench` row yet. Kernel-map spec source is heuristic; curated verdicts need review at the next game version; `version_update.sh` only prints a reminder to regenerate the map. MusicBox "changed" verdict is code-reading only.
 - Docker: image `sts2sim:validate` (563 MB) left on Huginn; Huginn root fs 2.8 GB free; the Tokyo arm64 row claiming the compose eval profile passed at `ebc055f` is unexplained (it fails there without the fix).
 - Running `uv run --project sim/tools/eval pytest -q` without the path still collects vec/train tests and fails on imports; always pass `sim/tools/eval`.
+
+## J integrate (2026-11-02)
+
+Scope: environment only (no training loops, no new LLM evaluation runs, no MCTS). Base: session branch
+`claude/sts2-eval-pipeline-a3aee7` at `d69c9c3`; all six owner branches are single commits cut from `d69c9c3`.
+
+Merged, in order (all `--no-ff`): j/fast-path `7e5565b` (merge `586d6b4`), j/determinize `70a2904` (merge `71428cf`),
+j/parity-audit `69c53b6` (merge `1dff707`), j/env-spec-eval `1d077ba`+`7831e4f` (merge `69d44d1`), j/huginn-scale
+`10462a9` (merge `52188c6`), j/version-complete `2b7e21b` (merge `6df05f0`).
+
+Conflicts: two, both docs, both resolved by keeping both sides.
+- `sim/BENCH.md`: fast-path's "Vec fast path" section and huginn-scale's "Docker host capacity" rows appended at the same
+  place; kept both, fast path first.
+- `docs/HANDOVER.md` §1: huginn-scale rewrote row 1.4, version-complete rewrote row 1.5; kept huginn-scale's 1.4 and
+  version-complete's 1.5.
+The expected code hot spots auto-merged without conflict: VecEnv (fast-path step call vs determinize's
+`CloneDeterminized`), RunSim (fast-path made it `partial` and added poison checks; determinize added
+`CloneDeterminized` and `Pending.Hooks`), `scripts/gates.sh` (fast-path's py-scripts step vs version-complete's header
+and `GATES_COMMIT`). Interplay checked: `CloneDeterminized` goes through `Clone()`, so it throws on a poisoned run like
+`Clone()`; a pending prompt (with or without determinize hooks) is a fast-path blocker, so the hook re-run path never
+runs clone-free.
+
+Fixes (integration):
+- `sim/Sts2Sim.Core/Choice/PromptSites.g.cs` regenerated (`gen_prompt_sites.py`): parity-audit's read-only accessors on
+  17 event classes moved the cited line numbers of 17 event prompt sites. Same 153 hazardous models, same 4 room sources,
+  185 inventory records cross-checked; only `file:line` citations changed. Without this the py-scripts gate fails.
+- `sim/specs/kernel-map.json` regenerated (`kernel_map.py`; one line, determinize's new `Random/Determinizer.cs`
+  citation). Same 564 kernel files, mapped 374 / no_port 190.
+- Local NativeAOT library rebuilt (`scripts/vec_publish_aot.sh`; git-ignored output): the stale dylib rejected the new
+  `fast_path` config key and failed `test_native_aot_library_in_subprocess`. Not a code change; any checkout with an old
+  `sim/Sts2Sim.Vec/bin/aot/` must rebuild it.
+- Docs: `docs/HANDOVER.md` §1 rescored (five criteria 0-10 with evidence and the environment-level gaps) plus a new §1.6
+  "what the environment still lacks", §2 map, §3 commands (`sts2vec eval`, fast-path A/B bench, `version_update.sh`,
+  `hook_drift.py`, `gen_prompt_sites.py`, `sts2_cluster.sh`, `ci_linux.sh`), §4 leaderboard observation-version note
+  and NN-track rows, §7/§8 rewritten (the "fast path 2.6x" and "event options 7/81" tickets closed with measured
+  numbers). Protocol §8: note that rows 1-6 were measured on the pre-audit observation (compact-v1).
+- `sim/ENV_SPEC.md`: no regeneration needed (`gen_env_spec.py --check` up to date; encoder `fc2eb34c07bc8513`; neither
+  the fast path nor determinize changed the schema or added status bits).
+
+Gates (macOS M4 Pro; load average 7-11 during the run), `scripts/gates.sh` full on `6df05f0` + the two regenerated
+files, logs `tmp/gates/j-integrate/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 3 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 3 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 454 | full suite: 1131/1131 passed, 0 failed, PENDING 0 (incl. F2 pins, F7 clone-then-step soak, ChoiceFastPath soak, VecDeterminize, ParityAudit) |
+| selftest | PASS | 4 | 100/100 completed, 0 crashed, 0 capped, 0 server errors |
+| g0 | PASS | 0 | bundles 4/4 agree; decisions 69/69, 0 unobserved; outcome 4/4; soft diffs 0 |
+| pytest-eval | PASS | 5 | 80 passed |
+| pytest-vec | PASS | 11 | 95 passed (`STS2VEC_REQUIRE_FULL=1`, incl. AOT round-trip, env-spec, protocol parity, determinized clone) |
+| sts2rec | PASS | 75 | 701 passed, 4 skipped |
+| py-scripts | PASS | 0 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, 0 unmapped) |
+
+Also: `uv run --project sim/tools/train pytest -q` 8 passed; `gen_env_spec.py --check` up to date.
+
+Bench (`sim/BENCH.md` "J integrate"): Vec 1024 envs x 8 threads x 500, medians of 3 interleaved pairs under load 5-14:
+A0 104,858 (off) / 107,522 (on) env-steps/s, 73.6 / 69.6 CPU µs; A10 111,391 / 121,284, 69.6 / 63.5 CPU µs; fast
+fraction 0.832 / 0.820; gen0 collections 15-17 → 4-6; episode counts identical. Light-load single run: 126,522
+env-steps/s, 61.0 CPU µs.
+
+Owner-run numbers carried into this record (details in each owner's docs):
+- fast-path: soak 2,000 runs / 577,867 steps, 72.1 % clone-free, 0 prompts from unlisted sources, 0 prompts after
+  `MayPrompt == false`; 20,516 sampled clone-free steps hash-equal to the tape engine; RunSim step 1.6-1.9x.
+- determinize: 900 states same observation bytes / different hash; 4,506 RNG objects all reseeded; 47 prompt hooks
+  resolve differently with no tape divergence; CloneDeterminized ≈ Clone() + 2-8 µs.
+- parity-audit: 1 leak fixed (AMBERGRIS_POWER); 39 event option keys resolved (walk 61/64 events, 0 `?`); 1,500-state
+  server↔Vec checklist; +185 chars per server-text observation (12.5 %).
+- env-spec-eval: NN-track baselines random 0.087 / 0.045, first 0.193 / 0.102, heuristic 0.221 / 0.104 (A0 / A10).
+- huginn-scale: Huginn 26-28 random games/s per host, 110-150 MiB per server, AOT Vec 62-63k env-steps/s in container.
+- version-complete: synthetic version bump end to end 476 s exit 0; hook drift finds exactly the 1 planted change;
+  `ci_linux.sh` on Huginn PASS (326 s).
+
+Open issues (environment): see `docs/HANDOVER.md` §1.6. Integration-specific: `scripts/gates.sh` was run on macOS only
+in this wave (Linux via `ci_linux.sh` ran on version-complete's commit, not on the merged tree); the merged tree's
+Docker image was not rebuilt; Vec has no stall cap (only `step_cap`).

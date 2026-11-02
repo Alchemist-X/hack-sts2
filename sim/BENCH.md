@@ -268,3 +268,22 @@ presence card 22k, creature (power/monster) 19k, played prompt card 14k, travel 
 | `sts2vec bench` AOT, 1024 envs x 4 / x 8 threads (500 steps) | 51,160 / **62,109** env-steps/s (12.8k per physical core); peak 0.46 GiB |
 | `sts2vec bench` AOT, 4096 envs x 4 / x 8 threads (300 steps) | 50,968 / **63,141** env-steps/s; peak 0.67 GiB |
 | `sts2vec bench` hostfxr (`-e STS2VEC_AOT_LIB=`), 1024 x 8 / 4096 x 8 | 21,827 / 26,655 env-steps/s (AOT is 2.8x / 2.4x) |
+
+## J integrate (2026-11-02)
+
+Integrated tree (`6df05f0` + regenerated prompt-site table / kernel map), Mac M4 Pro, `DOTNET_gcServer=1`,
+`dotnet run -c Release --project sim/Sts2Sim.Bench -- vec 1024 8 500 <asc> 1024 <fast_path>`: uniform-random candidate
+policy, five characters, pool 1024 warmed. Three interleaved off/on pairs per ascension; the host load average rose from
+5 to 14 during the series (other agents and the E3 farm), so treat ±15 % as noise. A single unpaired A0 fast-path run at
+load ≈ 2 just before the series gave **126,522 env-steps/s, 61.0 CPU µs/env-step** (min 7.37 ms/batch).
+
+| Row | fast path steps | env-steps/s median (runs) | CPU µs / env-step median (runs) | min ms/batch (best) | GC gen0/1/2 | episodes ended |
+| --- | --- | --- | --- | --- | --- | --- |
+| A0, `fast_path` 0 | 0 % | 104,858 (104,858 / 94,918 / 109,913) | 73.6 (73.6 / 75.0 / 70.4) | 8.17 | 15-17 / 6-7 / 1 | 7,286 |
+| A0, `fast_path` 1 | 83.2 % | 107,522 (110,583 / 107,522 / 93,488) | 69.6 (68.7 / 69.6 / 73.8) | 7.57 | 4 / 2 / 0 | 7,286 |
+| A10, `fast_path` 0 | 0 % | 111,391 (103,125 / 111,391 / 112,107) | 69.6 (75.0 / 69.6 / 69.0) | 7.94 | 15-16 / 7-8 / 1 | 11,345 |
+| A10, `fast_path` 1 | 82.0 % | 121,284 (121,284 / 123,420 / 120,325) | 63.5 (63.5 / 62.2 / 63.7) | 7.52 | 4-6 / 2-4 / 0-1 | 11,345 |
+
+Reading: the fast path saves 5-9 % CPU per env-step and about 3-4x of the gen0/gen1 collections; wall-clock gain is
+within noise at A0 and +9 % at A10. Episode counts are identical on and off (outputs are byte-identical by test). The
+remaining ≈ 60-70 CPU µs per env-step is mostly observation encoding, `LegalActions` and the candidate table.

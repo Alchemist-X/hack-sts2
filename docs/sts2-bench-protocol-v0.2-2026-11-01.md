@@ -202,6 +202,9 @@ max_tokens 2048，prompt `e01daedf52519a6c`，服务器 `c64217d`。随机行：
 - 第 4 行来自服务器 `fb9d38c`：意图暴露了敌人下一招（`move`/`move_name`），没有循环守卫，1 局 `capped`（奖励屏循环 700 步），
   `reveal_moves` 未记录——不上榜，只说明修复前后 A0 冒烟进度没有显著差别（0.581 → 0.594，同种子）。
 - Sonnet 的 `std-a0-v1` 行（服务器 `1c61726`，20/20，墙钟 35.75 分钟，$36.13 合计）已于 2026-11-02 00:10 跑完：进度 0.499 [0.410, 0.588]，中位 0.458，0 胜，层数均值 25.9、最高 48，各角色进度 Regent 0.599 / Defect 0.535 / Necrobinder 0.465 / Silent 0.464 / Ironclad 0.433。
+- 观测口径：第 1–6 行测于 2026-11-02 UI 对等审计（`docs/parity-audit-2026-11-02.md`）之前的服务器观测（紧凑渲染 compact-v1）。
+  审计后的观测多了 Boss/Ancient、进阶、三堆牌、事件选项数值等行（紧凑 compact-v2，full 模式 prompt_hash 不变），之后新跑的 LLM 行需注明口径；
+  NN 赛道（第 7–12 行）不受影响（Vec encoder 未变，`fc2eb34c07bc8513`）。
 - 人类参考线（真实引擎，非 sim）：录制者本人 A10 胜率约 11%，社区 A10 均值约 17%（v0.1）。
 - 第 7–12 行（**sim NN track**，2026-11-02）：`sts2vec eval`（`sim/tools/vec`，env `sts2vec/fc2eb34c07bc8513`，repo `1d077ba`，
   limits 同 §5 的 step_cap 1200 / floor_step_cap 80，`--seed 0`，8 线程），每组 20 局重放审计 20/20（结果、幕、层与终局 `StateHash`），
