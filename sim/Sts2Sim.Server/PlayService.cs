@@ -63,7 +63,7 @@ public sealed class PlayService
                 case "GET" when clean == "/health":
                     return Health();
                 case "GET" when clean == "/catalog":
-                    return Catalog();
+                    return Catalog(path.Contains('?') ? path.Split('?', 2)[1] : null);
                 case "POST" when clean == "/runs":
                     return CreateRun(ParseBody(body));
                 case "POST" when clean == "/combats":
@@ -100,6 +100,79 @@ public sealed class PlayService
 
     public ServiceResponse Health()
         => new(200, new JsonObject { ["ok"] = true, ["version"] = Options.Version, ["games"] = _games.Count });
+
+    // GET /catalog?kind=cards|relics|potions|powers|events|enemies|keywords[&ids=A,B][&grep=substr]
+    // -> {"kind","items":[{id,name,text}]} (enemies: + moves[{id,title}]); without kind: the id lists below.
+    public ServiceResponse Catalog(string? query)
+    {
+        var args = CatalogQuery(query);
+        if (!args.TryGetValue("kind", out var kind) || kind.Length == 0)
+        {
+            return Catalog();
+        }
+        kind = kind.ToLowerInvariant();
+        var items = RulesText.Catalog(kind);
+        if (items == null)
+        {
+            return Error(400, $"unknown catalog kind '{kind}'; use one of {string.Join(", ", RulesText.Kinds)}");
+        }
+        HashSet<string>? ids = args.TryGetValue("ids", out var idList) && idList.Length > 0
+            ? new HashSet<string>(idList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase)
+            : null;
+        string? grep = args.TryGetValue("grep", out var g) && g.Length > 0 ? g : null;
+        var list = new JsonArray();
+        foreach (var item in items)
+        {
+            if (ids != null && !ids.Contains(item.Id) && !(kind == "powers" && ids.Contains(item.Id.EndsWith("_POWER", StringComparison.Ordinal) ? item.Id[..^6] : item.Id)))
+            {
+                continue;
+            }
+            if (grep != null
+                && item.Id.IndexOf(grep, StringComparison.OrdinalIgnoreCase) < 0
+                && (item.Name == null || item.Name.IndexOf(grep, StringComparison.OrdinalIgnoreCase) < 0)
+                && (item.Text == null || item.Text.IndexOf(grep, StringComparison.OrdinalIgnoreCase) < 0))
+            {
+                continue;
+            }
+            list.Add(CatalogItemNode(kind, item));
+        }
+        return new(200, new JsonObject { ["kind"] = kind, ["loaded"] = RulesText.Loaded, ["items"] = list });
+    }
+
+    public static JsonObject CatalogItemNode(string kind, RulesText.CatalogItem item)
+    {
+        var node = new JsonObject { ["id"] = item.Id, ["name"] = item.Name, ["text"] = item.Text };
+        if (kind == "enemies")
+        {
+            var moves = new JsonArray();
+            if (item.Moves != null)
+            {
+                foreach (var (id, title) in item.Moves.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    moves.Add(new JsonObject { ["id"] = id, ["title"] = title });
+                }
+            }
+            node["moves"] = moves;
+        }
+        return node;
+    }
+
+    private static Dictionary<string, string> CatalogQuery(string? query)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(query))
+        {
+            return result;
+        }
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = pair.IndexOf('=');
+            string key = Uri.UnescapeDataString((eq < 0 ? pair : pair[..eq]).Replace('+', ' '));
+            string value = eq < 0 ? string.Empty : Uri.UnescapeDataString(pair[(eq + 1)..].Replace('+', ' '));
+            result[key] = value;
+        }
+        return result;
+    }
 
     public ServiceResponse Catalog()
     {

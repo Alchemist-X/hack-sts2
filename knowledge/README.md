@@ -35,3 +35,19 @@ python3 scripts/query_sts2_knowledge.py BONE_SHARDS
 
 The final query returns both the card and the related verified Osty lifecycle
 contract. Strategic opinions are never generated from these source facts.
+
+## Localisation-only exports (`source/v0.111.0/` and later)
+
+`scripts/export_sts2_localization.py` reads the installed game's PCK directly (no running game, no
+wiki port, no decompile) and writes `cards`, `relics`, `potions`, `keywords`, `enemies` (title +
+move titles), `powers` (title, static description, amount-aware `smart_template`) and `events`
+(title, page descriptions, option title/description keyed `PAGE.options.KEY`) as eng + zhs
+templates into `source/<installed version>/`:
+
+```bash
+python3 scripts/export_sts2_localization.py   # --game-app PATH to override the Steam install
+```
+
+The eng/zhs copies of each table are identified by matching titles against the committed v0.107.1
+records (in v0.111.0 the last PCK copy is Traditional Chinese, not zhs). The simulator's play server
+(`sim/Sts2Sim.Server`, `RulesText`) loads every version directory, newer records replacing older ones.

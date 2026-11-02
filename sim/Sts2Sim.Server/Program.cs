@@ -6,9 +6,11 @@ namespace Sts2Sim.Server;
 public static class Program
 {
     private const string Usage =
-        "usage: Sts2Sim.Server [--port 8765] [--crash-log tmp/play-crashes.jsonl | --no-crash-log]\n" +
+        "usage: Sts2Sim.Server [--port 8765] [--crash-log tmp/play-crashes.jsonl | --no-crash-log] [--knowledge DIR]\n" +
         "       Sts2Sim.Server --selftest N [--seed 1] [--character IRONCLAD] [--ascension 0] [--content ported_only|all] [--step-cap 6000] [--policy random|biased]\n" +
-        "       Sts2Sim.Server --replay tmp/play-crashes.jsonl [--line N]   (N is 1-based; default: last line)";
+        "       Sts2Sim.Server --replay tmp/play-crashes.jsonl [--line N]   (N is 1-based; default: last line)\n" +
+        "       --knowledge DIR: rules-text localisation (knowledge/, knowledge/source or one version dir);\n" +
+        "         default: env STS2SIM_KNOWLEDGE, else the nearest knowledge/source above the cwd or the binary";
 
     public static int Main(string[] args)
     {
@@ -22,6 +24,7 @@ public static class Program
         int stepCap = 6_000;
         string content = "ported_only";
         string policy = "random";
+        string? knowledge = null;
         var characters = new List<string>();
         try
         {
@@ -64,6 +67,9 @@ public static class Program
                     case "--replay":
                         replay = Next();
                         break;
+                    case "--knowledge":
+                        knowledge = Next();
+                        break;
                     case "--line":
                         line = int.Parse(Next(), CultureInfo.InvariantCulture);
                         break;
@@ -83,7 +89,7 @@ public static class Program
             return 2;
         }
 
-        RulesText.Load(null);
+        RulesText.Load(knowledge);
         var service = new PlayService(new PlayServiceOptions { Version = GitVersion(), CrashLogPath = crashLog });
         if (replay != null)
         {

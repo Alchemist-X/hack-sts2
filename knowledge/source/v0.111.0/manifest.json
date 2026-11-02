@@ -1,0 +1,20 @@
+{
+  "counts": {
+    "cards": 624,
+    "enemies": 126,
+    "events": 70,
+    "keywords": 7,
+    "potions": 66,
+    "powers": 296,
+    "relics": 306
+  },
+  "game_commit": "41cef1ea",
+  "game_version": "0.111.0",
+  "generator": "scripts/export_sts2_localization.py",
+  "locales": [
+    "eng",
+    "zhs"
+  ],
+  "note": "Localisation templates only (no runtime text, no decompiled facts); see knowledge/source/v0.107.1 for the full knowledge export.",
+  "schema_version": 1
+}

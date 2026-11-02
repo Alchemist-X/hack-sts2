@@ -13,11 +13,41 @@ import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sim_play  # noqa: E402
 
 CRASH_SEED = 666
+
+# Typed catalog of the fake server: kind -> items, mirroring GET /catalog?kind=K[&ids=A,B][&grep=X].
+FAKE_RULES = {
+    "cards": [{"id": "STRIKE_IRONCLAD", "name": "Strike", "text": "Deal 6 damage."},
+              {"id": "BASH", "name": "Bash", "text": "Deal 8 damage.\nApply 2 Vulnerable."}],
+    "relics": [{"id": "BURNING_BLOOD", "name": "Burning Blood", "text": "At the end of combat, heal 6 HP."}],
+    "potions": [{"id": "BLOCK_POTION", "name": "Block Potion", "text": "Gain 12 Block."}],
+    "powers": [{"id": "STRENGTH_POWER", "name": "Strength", "text": "Increases attack damage by N."}],
+    "events": [{"id": "NEOW", "name": "Neow", "text": None}],
+    "enemies": [{"id": "NIBBIT", "name": "Nibbit", "text": None,
+                 "moves": [{"id": "BUTT", "title": "Butt"}, {"id": "HISS", "title": "Hiss"}]}],
+    "keywords": [{"id": "EXHAUST", "name": "Exhaust", "text": "Removed until the end of combat."}],
+}
+
+
+def fake_catalog(kind, ids=None, grep=None):
+    items = FAKE_RULES.get(kind)
+    if items is None:
+        return 400, {"ok": False, "error": f"unknown catalog kind '{kind}'"}
+    wanted = {i.upper() for i in ids} if ids else None
+    out = []
+    for item in items:
+        short = item["id"][:-6] if item["id"].endswith("_POWER") else item["id"]
+        if wanted is not None and item["id"] not in wanted and short not in wanted:
+            continue
+        if grep and not any(grep.lower() in str(item.get(k) or "").lower() for k in ("id", "name", "text")):
+            continue
+        out.append(item)
+    return 200, {"kind": kind, "loaded": True, "items": out}
 
 
 class FakeGame:
@@ -98,7 +128,12 @@ class FakeServer:
 
             def do_GET(self):
                 fake.requests.append(("GET", self.path, None))
-                parts = self.path.strip("/").split("/")
+                url = urlsplit(self.path)
+                query = parse_qs(url.query)
+                parts = url.path.strip("/").split("/")
+                if parts == ["catalog"] and "kind" in query:
+                    ids = [i for v in query.get("ids", []) for i in v.split(",") if i]
+                    return self._send(*fake_catalog(query["kind"][0], ids or None, (query.get("grep") or [None])[0]))
                 if parts == ["health"]:
                     return self._send(200, {"ok": True, "version": "fake", "games": len(fake.games)})
                 if parts == ["catalog"]:
@@ -333,6 +368,42 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("SILENT", out)
         self.assertNotIn("IRONCLAD", out)
+
+    def test_catalog_rules_kind_prints_id_name_text(self):
+        code, out, _ = self.cli("catalog", "--kind", "cards")
+        self.assertEqual(code, 0)
+        self.assertIn("cards (2):", out)
+        self.assertIn("  STRIKE_IRONCLAD  Strike  Deal 6 damage.", out)
+        self.assertIn("  BASH  Bash  Deal 8 damage. Apply 2 Vulnerable.", out, "text collapsed to one line")
+        path = [r[1] for r in self.fake.requests if r[0] == "GET"][-1]
+        self.assertTrue(path.startswith("/catalog?kind=cards"), path)
+
+    def test_catalog_rules_kind_grep_and_ids(self):
+        code, out, _ = self.cli("catalog", "--kind", "cards", "--grep", "vulnerable")
+        self.assertEqual(code, 0)
+        self.assertIn("BASH", out)
+        self.assertNotIn("STRIKE_IRONCLAD", out)
+        code, out, _ = self.cli("catalog", "--kind", "cards", "--ids", "STRIKE_IRONCLAD")
+        self.assertIn("STRIKE_IRONCLAD", out)
+        self.assertNotIn("BASH", out)
+
+    def test_catalog_enemy_moves(self):
+        code, out, _ = self.cli("catalog", "--kind", "enemies")
+        self.assertEqual(code, 0)
+        self.assertIn("NIBBIT  Nibbit  -  moves: BUTT (Butt), HISS (Hiss)", out)
+
+    def test_describe_across_kinds(self):
+        code, out, _ = self.cli("describe", "strength", "BURNING_BLOOD")
+        self.assertEqual(code, 0)
+        self.assertIn("[powers] STRENGTH_POWER  Strength  Increases attack damage by N.", out)
+        self.assertIn("[relics] BURNING_BLOOD  Burning Blood", out)
+        kinds = [parse_qs(urlsplit(r[1]).query)["kind"][0] for r in self.fake.requests if r[1].startswith("/catalog?")]
+        self.assertEqual(set(kinds), set(sim_play.RULE_KINDS))
+
+    def test_describe_nothing_matched(self):
+        code, _, err = self.cli("describe", "NO_SUCH_THING")
+        self.assertEqual(code, sim_play.EXIT_ANOMALY)
+        self.assertIn("nothing matched", err)
 
 
 if __name__ == "__main__":
