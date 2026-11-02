@@ -412,7 +412,8 @@ cross-cutting or test-only. Counts over the 1621 entries: `tier` 626 / 328 / 608
 
 The union of every classifier `version_delta_v107` flag (status other than `same`) and the diff gate's mechanical
 diff (`corpus-inventory.json` `version_diff_v0_107_1_vs_v0_111_0`: `content_files`, `version_exclusive_content`,
-`engine_files`), each entry triaged:
+`engine_files`), plus the content files with a unique edit that `scripts/version_delta.py` found and both
+missed (`triage.py` `MANUAL_VD`, read by hand), each entry triaged:
 
 | Triage | Meaning |
 | --- | --- |
@@ -423,14 +424,15 @@ diff (`corpus-inventory.json` `version_diff_v0_107_1_vs_v0_111_0`: `content_file
 Entry fields: `key` (`<kind>:<Class>`), `kind`, `class`, `id`, `model_id`, `delta_type` (`modified`, `added`,
 `removed`), `single_player_reachable` (false for test mocks, `MultiplayerOnly` cards, powers only such content
 applies, relics whose `IsAllowed` needs more than one player; `single_player_note` says which), `files` (path in each tree), `classifier` (file, status, note), `diff_gate` (`flagged` plus its value,
-enum and call differences), `sources` (`both`, `classifier`, `diff_gate`), `triage`, `basis` (`classifier`,
+enum and call differences), `sources` (`both`, `classifier`, `diff_gate`, `version_delta`), `triage`, `basis` (`classifier`,
 `manual`, `il`, `membership`, `presence`), `note`, `evidence` (`<path>:<line>` citations in both trees, up to 3
 per tree; v0.111.0 paths drop `MegaCrit.Sts2.Core.` as everywhere here, v0.107.1 paths are relative to
 `artifacts/knowledge/decompiled-v0.107.1/MegaCrit/sts2/Core`), `evidence_method`; pools add `members_added`,
 `members_removed`, `members_multiplayer_only`; removed models add `referenced_by_v0.107.1`.
 
-Counts: 518 content entries, `changed` 171, `refactor_only` 347, `unknown` 0 (475 modified, 40 added, 3 removed;
-233 flagged by both sources, 249 by a classifier only, 36 by the diff gate only). The 21 files the diff gate flags
+Counts: 546 content entries, `changed` 172, `refactor_only` 374, `unknown` 0 (503 modified, 40 added, 3 removed;
+233 flagged by both sources, 249 by a classifier only, 36 by the diff gate only, 28 found only by
+`scripts/version_delta.py`: 27 `refactor_only`, `MusicBox` `changed`; docs/version-delta-demo-2026-11-01.md). The 21 files the diff gate flags
 while their classifier says `same` (w0-critique C20) are adjudicated in `triage.py`: `Orobas` is `changed`
 (relic option pools moved `SandCastle`), the other 20 are `refactor_only` (`DualWield` is a diff-gate false
 positive). Of the 11 pools the gate flags, 5 change single-player membership; the other 6 add only

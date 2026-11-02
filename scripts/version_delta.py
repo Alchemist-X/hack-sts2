@@ -20,7 +20,9 @@ other model kinds), kernel (Commands, Hooks, Combat/Entities state, Random, Map,
 or out_of_scope (Nodes, UI, VFX, audio, multiplayer transport, platform, dev tooling), then mapped to:
   * sim model ids (sim/specs/inventory/<kind>.json `file` -> `model_id`; fallback: class name -> slug),
   * sim/Sts2Sim.Core files (Defs/<Class>.cs, a sim file whose stem equals the decompiled class, sim files that cite
-    the decompiled path in a comment),
+    the decompiled path in a comment; kernel files also through sim/specs/kernel-map.json, built by
+    scripts/kernel_map.py: its sim files are added, its status mapped / no_port / unmapped is kept per file, and the
+    manifest's kernel_coverage and the report's "Kernel map coverage" list the unmapped and no_port changed files),
   * spec sections: every `file:line[-line]` citation in sim/specs/**/*.md and docs/sim-port/*.md that resolves to the
     changed file, with the nearest markdown heading and a hit kind: `line` (the cited range overlaps a changed
     line, when the cite tree is one of the compared trees), `member` (the cited lines lie in a member that changed;
@@ -35,6 +37,7 @@ Outputs <out>/report.md and <out>/manifest.json (schema sts2sim.version-delta/v1
 import argparse
 import collections
 import difflib
+import fnmatch
 import json
 import os
 import re
@@ -533,6 +536,82 @@ def index_tests(repo):
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# Kernel map (sim/specs/kernel-map.json, built by scripts/kernel_map.py)
+
+KERNEL_MAP = os.path.join("sim", "specs", "kernel-map.json")
+
+
+def load_kernel_map(repo):
+    """The curated kernel file -> sim files map, keyed by canonical key; None when the repo has none."""
+    path = os.path.join(repo, KERNEL_MAP)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    files = {}
+    for rel, e in data.get("files", {}).items():
+        files[e.get("key") or canonical_key(rel)] = e
+    curated = {canonical_key(k): v for k, v in data.get("curated", {}).items()}
+    return {"path": KERNEL_MAP, "files": files, "curated": curated, "patterns": data.get("patterns", []),
+            "stats": data.get("stats", {}), "tree": data.get("tree"), "tree_version": data.get("tree_version")}
+
+
+def kernel_map_entry(km, key):
+    """{status, sim, reason, source} for a kernel key: the generated entry, else a curated record, else the first
+    matching pattern (files added after the map was built), else unmapped."""
+    if km is None:
+        return None
+    e = km["files"].get(key)
+    if e is not None:
+        return {"status": e.get("status", "unmapped"), "sim": list(e.get("sim", [])), "reason": e.get("reason"),
+                "source": "map"}
+    rec, source = km["curated"].get(key), "curated"
+    if rec is None:
+        rel = "MegaCrit.Sts2.Core." + key if "/" in key else key
+        for p in km["patterns"]:
+            if fnmatch.fnmatchcase(key, p["glob"]) or fnmatch.fnmatchcase(rel, p["glob"]):
+                rec, source = p, "pattern:" + p["glob"]
+                break
+    if rec is None:
+        return {"status": "unmapped", "sim": [], "reason": None, "source": "none"}
+    status = rec.get("status") or ("mapped" if rec.get("sim") else "unmapped")
+    return {"status": status, "sim": list(rec.get("sim", [])), "reason": rec.get("reason"), "source": source}
+
+
+def _file_lines(f):
+    path = f.get("new_path") or f.get("old_path")
+    if not path or not os.path.exists(path):
+        return 0
+    return read_text(path).count("\n") + 1
+
+
+def kernel_coverage(files, km):
+    """Coverage of the changed kernel files by the kernel map, plus the map's own coverage of its tree."""
+    live = [f for f in files if f["scope"] == "kernel" and f["delta"] != "cosmetic"]
+    out = collections.OrderedDict([("map", km["path"] if km else None),
+                                   ("map_tree", "%s (v%s)" % (km["tree"], km["tree_version"]) if km else None),
+                                   ("changed_kernel_files", len(live))])
+    if km is None:
+        out["note"] = "no %s in this repo: kernel files map by type name and citations only" % KERNEL_MAP
+        out["with_sim_files"] = sum(1 for f in live if f["sim_files"])
+        return out
+    by = collections.Counter(f["kernel_map"]["status"] for f in live)
+    out["by_status"] = dict(sorted(by.items()))
+    out["with_sim_files"] = sum(1 for f in live if f["sim_files"])
+    out["via_map_only"] = sum(1 for f in live if f.get("sim_files_from_map_only"))
+    out["unmapped"] = [{"key": f["key"], "delta": f["delta"], "lines": _file_lines(f)}
+                       for f in sorted(live, key=lambda f: (-_file_lines(f), f["key"]))
+                       if f["kernel_map"]["status"] == "unmapped"]
+    out["no_port"] = [{"key": f["key"], "delta": f["delta"], "lines": _file_lines(f),
+                       "reason": f["kernel_map"].get("reason")}
+                      for f in sorted(live, key=lambda f: f["key"]) if f["kernel_map"]["status"] == "no_port"]
+    st = km.get("stats") or {}
+    out["map_coverage"] = collections.OrderedDict([("kernel_files", st.get("kernel_files")),
+                                                   ("by_status", st.get("by_status"))])
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # Core pipeline
 
 
@@ -677,6 +756,7 @@ def enrich(files, repo, cite_tree=None, old_tree=None, new_tree=None):
     sim_stem, sim_defs, sim_cited = index_sim(repo)
     cites = index_specs(repo)
     test_idx, all_tests = index_tests(repo)
+    km = load_kernel_map(repo)
     cites_by_key = collections.defaultdict(list)
     cites_by_name = collections.defaultdict(list)
     for c in cites:
@@ -708,6 +788,15 @@ def enrich(files, repo, cite_tree=None, old_tree=None, new_tree=None):
         if scope == "content" and not sims and kind in CONTENT_SIM_HINT:
             hint = CONTENT_SIM_HINT[kind]
             sims.update(p for p in hint if os.path.exists(os.path.join(repo, p)))
+        if scope in ("kernel", "other") and km is not None:
+            km_e = kernel_map_entry(km, f["key"])
+            if km_e["status"] == "unmapped" and f.get("old_key") and f["old_key"] != f["key"]:
+                alt = kernel_map_entry(km, f["old_key"])
+                km_e = alt if alt["status"] != "unmapped" else km_e
+            before = bool(sims)
+            sims.update(p for p in km_e["sim"] if os.path.exists(os.path.join(repo, p)))
+            f["kernel_map"] = {k: km_e[k] for k in ("status", "source", "reason") if km_e.get(k) is not None}
+            f["sim_files_from_map_only"] = bool(sims) and not before
         f["sim_files"] = sorted(sims)
         f["sim_dir_hint"] = hint if isinstance(hint, str) or hint is None else None
         # changed members (decompiler-style independent: state machines map back to their source method)
@@ -733,7 +822,8 @@ def enrich(files, repo, cite_tree=None, old_tree=None, new_tree=None):
                 tests.update(test_idx.get(t, ()))
         f["tests"] = sorted(tests)
     return {"spec_citations": len(cites), "test_methods": len(all_tests), "cite_tree": cite_tree,
-            "cite_tree_is": cite_ctx["same"] or ("separate" if cite_tree else None)}
+            "cite_tree_is": cite_ctx["same"] or ("separate" if cite_tree else None),
+            "kernel_map": km["path"] if km else None, "_km": km}
 
 
 def _same(a, b):
@@ -905,6 +995,12 @@ def rerun_plan(files, old_version, new_version):
     if kernel:
         reasons.append("kernel files changed (%s): run the FULL test suite (`dotnet run -c Release --project "
                        "sim/Sts2Sim.Tests`), not only the filters" % ", ".join(sorted(kernel_areas)))
+    unmapped = [f["key"] for f in kernel if (f.get("kernel_map") or {}).get("status") == "unmapped"]
+    if unmapped:
+        reasons.append("%d changed kernel file(s) have no entry in %s (%s): map them (`python3 scripts/kernel_map.py`; "
+                       "add a `curated` record when no type, citation or spec names the sim side) before porting"
+                       % (len(unmapped), KERNEL_MAP, ", ".join("`%s`" % k for k in unmapped[:8])
+                          + (" +%d" % (len(unmapped) - 8) if len(unmapped) > 8 else "")))
     seeds = sorted(kernel_areas.keys() & SEED_SAVE_AREAS)
     if seeds:
         reasons.append("seed / save areas changed (%s): check `Saves.Migrations` for a seeding or schema bump "
@@ -1017,6 +1113,7 @@ def render_report(man, max_rows=400, with_diffs=True):
     oos = man["summary"]["out_of_scope_areas"]
     w("Out of scope (not diffed further): " + (", ".join("%s %d" % kv for kv in sorted(oos.items())) or "none") + ".")
     w("")
+    render_kernel_coverage(w, man.get("kernel_coverage") or {})
     plan = man["rerun_plan"]
     w("## Rerun plan")
     w("")
@@ -1074,13 +1171,15 @@ def render_report(man, max_rows=400, with_diffs=True):
     w("")
     w("## Changed kernel and unclassified files")
     w("")
-    w("| file | scope / area | delta | +/- | bulk | sim files | tests | spec cites (hit/other) |")
-    w("| --- | --- | --- | --- | --- | --- | ---: | --- |")
+    w("| file | scope / area | delta | +/- | bulk | kernel map | sim files | tests | spec cites (hit/other) |")
+    w("| --- | --- | --- | --- | --- | --- | --- | ---: | --- |")
     for f in [f for f in in_scope if f["scope"] != "content"][:max_rows]:
         sims = "<br>".join("`%s`" % s for s in f["sim_files"]) or ("hint `%s`" % f["sim_dir_hint"] if f[
             "sim_dir_hint"] else "**none**")
-        w("| `%s` | %s / %s | %s | %s | %s | %s | %d | %s |" % (f["key"], f["scope"], f["kind"], f["delta"], _pm(f),
-                                                               _bulk(f), sims, len(f["tests"]), _cites(f)))
+        kmr = f.get("kernel_map") or {}
+        kms = kmr.get("status", "-") if kmr.get("status") != "unmapped" else "**unmapped**"
+        w("| `%s` | %s / %s | %s | %s | %s | %s | %s | %d | %s |" % (
+            f["key"], f["scope"], f["kind"], f["delta"], _pm(f), _bulk(f), kms, sims, len(f["tests"]), _cites(f)))
     w("")
     hits = [(f, h) for f in in_scope for h in f["spec_cites"] if is_hit(h)]
     hits.sort(key=lambda fh: (bool(fh[0].get("bulk_only")), fh[0]["scope"] != "kernel", fh[0]["key"]))
@@ -1115,6 +1214,45 @@ def render_report(man, max_rows=400, with_diffs=True):
             w("```")
             w("")
     return "\n".join(L) + "\n"
+
+
+def render_kernel_coverage(w, kc):
+    if not kc:
+        return
+    w("## Kernel map coverage")
+    w("")
+    if not kc.get("map"):
+        w("No `%s` in this repo: kernel files map by type name and `file:line` citations only (%d of %d changed "
+          "kernel files have a sim file)." % (KERNEL_MAP, kc.get("with_sim_files", 0), kc["changed_kernel_files"]))
+        w("")
+        return
+    by = kc.get("by_status", {})
+    w("`%s` (built from `%s` by `scripts/kernel_map.py`). Changed kernel files: %d; with sim files %d (%d through "
+      "the map only); map status: mapped %d, no_port %d, unmapped %d." % (
+          kc["map"], kc["map_tree"], kc["changed_kernel_files"], kc["with_sim_files"], kc["via_map_only"],
+          by.get("mapped", 0), by.get("no_port", 0), by.get("unmapped", 0)))
+    mc = kc.get("map_coverage") or {}
+    if mc.get("kernel_files"):
+        mb = mc.get("by_status") or {}
+        w("The map itself covers %d kernel files of its tree: mapped %d, no_port %d, unmapped %d." % (
+            mc["kernel_files"], mb.get("mapped", 0), mb.get("no_port", 0), mb.get("unmapped", 0)))
+    w("")
+    if kc.get("unmapped"):
+        w("Unmapped changed kernel files (add them to the map before porting):")
+        w("")
+        w("| file | delta | lines |")
+        w("| --- | --- | ---: |")
+        for u in kc["unmapped"]:
+            w("| `%s` | %s | %d |" % (u["key"], u["delta"], u["lines"]))
+        w("")
+    if kc.get("no_port"):
+        w("Changed kernel files the map marks `no_port` (%d; read the reason before skipping one):" % len(kc["no_port"]))
+        w("")
+        w("| file | delta | lines | reason |")
+        w("| --- | --- | ---: | --- |")
+        for u in kc["no_port"]:
+            w("| `%s` | %s | %d | %s |" % (u["key"], u["delta"], u["lines"], _md_escape(u.get("reason") or "-")))
+        w("")
 
 
 def _bulk(f):
@@ -1185,6 +1323,7 @@ def run(old_tree, new_tree, out=None, old_version=None, new_version=None, max_di
     if cite_tree == "auto":
         cite_tree = DEFAULT_CITE_TREE if os.path.isdir(DEFAULT_CITE_TREE) else new_tree
     idx_counts = enrich(files, repo, cite_tree or None, old_tree, new_tree)
+    km = idx_counts.pop("_km")
     old_version = old_version or guess_version(old_tree)
     new_version = new_version or guess_version(new_tree)
     order = {"content": 0, "kernel": 1, "other": 2, "out_of_scope": 3}
@@ -1198,6 +1337,7 @@ def run(old_tree, new_tree, out=None, old_version=None, new_version=None, max_di
         ("decompiler_style", style),
         ("bulk_edits", bulk),
         ("summary", summarise(files, stats)),
+        ("kernel_coverage", kernel_coverage(files, km)),
         ("rerun_plan", rerun_plan(files, old_version, new_version)),
         ("files", files),
     ])
@@ -1246,6 +1386,20 @@ def main(argv=None):
     print("plan: full_suite=%s g0=%s g3=%s soak=%s filters=%d registry=%s knowledge=%s" % (
         p["full_suite"], p["g0_combat_diff"], p["g3_seed_replay"], ",".join(p["content_soak"]) or "-",
         len(p["test_filters"]), p["registry_version_filter"]["must_move"], p["knowledge_export"]["must_move"]))
+    kc = man["kernel_coverage"]
+    if kc.get("map"):
+        by = kc["by_status"]
+        mc = kc["map_coverage"]
+        print("kernel map: %d changed kernel files, %d with sim files (%d via the map only); mapped %d, no_port %d, "
+              "unmapped %d%s; map covers %s kernel files (%s)" % (
+                  kc["changed_kernel_files"], kc["with_sim_files"], kc["via_map_only"], by.get("mapped", 0),
+                  by.get("no_port", 0), by.get("unmapped", 0),
+                  (": " + ", ".join("%s (%d lines)" % (u["key"], u["lines"]) for u in kc["unmapped"][:10]))
+                  if kc["unmapped"] else "", mc.get("kernel_files"),
+                  ", ".join("%s %d" % kv for kv in sorted((mc.get("by_status") or {}).items()))))
+    else:
+        print("kernel map: none (%d of %d changed kernel files have a sim file)" % (
+            kc.get("with_sim_files", 0), kc["changed_kernel_files"]))
     print("report: %s" % os.path.join(man["out"], "report.md"))
     print("manifest: %s" % os.path.join(man["out"], "manifest.json"))
     return 0

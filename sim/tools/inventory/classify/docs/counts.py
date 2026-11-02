@@ -128,15 +128,20 @@ def block(fname, env, req, vd, standalone=False):
     st = collections.Counter((e.get("version_delta_v107") or {}).get("status") for e in ents)
     rows = vd_rows(vd, fname, kind)
     tri = collections.Counter(e["triage"] for e in rows)
-    dis = [e["key"] for e in rows if (e.get("classifier") or {}).get("status") == "same"]
+    dis = [e["key"] for e in rows if (e.get("classifier") or {}).get("status") == "same" and e.get("sources") != "version_delta"]
+    vdk = [e["key"] for e in rows if e.get("sources") == "version_delta"]
     unreach = sum(1 for e in rows if e["triage"] == "changed" and not e.get("single_player_reachable", True))
+    def tri_of(k):
+        return next(e["triage"] for e in rows if e["key"] == k)
+    tail = ("; flagged by the diff gate while the classifier said same: " + ", ".join(
+        "%s (%s)" % (k.split(":", 1)[1], tri_of(k)) for k in dis)) if dis else ""
+    tail += ("; unique edits found by scripts/version_delta.py that both missed: " + ", ".join(
+        "%s (%s)" % (k.split(":", 1)[1], tri_of(k)) for k in vdk)) if vdk else ""
     out.append("Version delta v0.107.1 -> v0.111.0: classifier status %s; `version-deltas.json` triage of the %d entries "
                "listed there: changed %d%s, refactor_only %d, unknown %d%s." % (
                    ", ".join("%s %d" % (k, n) for k, n in sorted(st.items(), key=lambda x: str(x[0]))), len(rows),
                    tri["changed"], (" (%d of them not single-player reachable)" % unreach) if unreach else "",
-                   tri["refactor_only"], tri["unknown"],
-                   ("; flagged by the diff gate while the classifier said same: " + ", ".join(
-                       "%s (%s)" % (k.split(":", 1)[1], next(e["triage"] for e in rows if e["key"] == k)) for k in dis)) if dis else ""))
+                   tri["refactor_only"], tri["unknown"], tail))
     out.append("")
     out.append(END)
     return "\n".join(out)

@@ -70,6 +70,8 @@ note "next to the old one, never overwritten; record version, game commit and st
 note "version_delta.py flags a settings mismatch (decompiler_style.mismatch) - re-decompile if it fires."
 
 step 2 "Two-tree delta -> port list (automated)"
+note "first: python3 scripts/kernel_map.py --tree <new tree> --tree-version $NEW_VER --unmapped (kernel -> sim map;"
+note "curate every unmapped kernel file in sim/specs/kernel-map.json, then commit the map)."
 cmd 1 python3 scripts/version_delta.py "$OLD_TREE" "$NEW_TREE" --old-version "${OLD_VER:-}" --new-version "$NEW_VER" --out "$OUT"
 if [ -f "$MANIFEST" ]; then
     note "summary: $(plan '", ".join("%s %d" % (k, sum(v.values())) for k, v in sorted(m["summary"]["by_scope"].items()))')"

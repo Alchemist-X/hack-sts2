@@ -19,8 +19,24 @@ python3 scripts/version_delta.py <旧树> <新树> --old-version A.B.C --new-ver
 # 清单执行器：默认 dry-run 只打印；--run 依次执行可自动的步骤，首个失败即停
 scripts/version_update.sh <旧树> <新树> --new-version X.Y.Z [--old-version A.B.C] \
     [--bundles <G0 bundle 目录>] [--bundles-v2 <G3 目录>] [--run]
-python3 -m unittest discover -s scripts -p 'test_version_delta.py'
+python3 -m unittest discover -s scripts -p 'test_*.py'      # version_delta + kernel_map
+# 内核映射：反编译内核文件 → sim 文件（version_delta 读它）；新树上先重生成，--check 只校验不写
+python3 scripts/kernel_map.py [--tree <新树> --tree-version X.Y.Z] [--unmapped] [--check]
 ```
+
+- **内核映射 `sim/specs/kernel-map.json`**（`scripts/kernel_map.py` 生成，2026-11-02）：内核没有内容那样的
+  `Defs/<Class>.cs` 一一对应，靠这张表回答"这个内核文件变了，要动哪些 sim 文件"。键是相对树根的反编译路径
+  （`MegaCrit.Sts2.Core.Commands/PowerCmd.cs`），`key` 是规格引用形式。三类派生来源逐文件记在 `via`：
+  `type`（sim Core 声明同名类型，或固定改名 `<T>State`、`<X>Model → <X>Def`；内容 Defs 不算）、`cite`（sim
+  源码注释里的 `文件:行`）、`spec`（规格 / sim-port 文档里同一行既引用反编译文件又点名 sim 符号，至少 2 行；
+  若该符号同时是游戏类型，只算它自己的文件）。其余靠手工：`curated`（单文件记录，`replace` 可覆盖派生结果）
+  与 `patterns`（按命名空间 glob，如 `Saves/*` → `no_port`）；脚本重生成时保留这两块。状态：`mapped`
+  （列出 sim 文件）/ `no_port`（有意不移植，必须写 reason）/ `unmapped`（待评审）。v0.111.0 Linux 树：564 个
+  内核文件，mapped 374、no_port 190、unmapped 0（派生：type 201、spec 79、cite 23；手工：pattern 116、
+  curated 66 个文件）。`version_delta.py` 对 kernel 文件把映射里的 sim 文件并入 `sim_files`，报告新增
+  "Kernel map coverage" 一节（变更内核文件的 mapped / no_port / unmapped 计数、unmapped 文件及行数、
+  no_port 文件及理由），unmapped 进入重跑计划的 notes。树里新增、表里没有的内核文件按 `patterns` 兜底，否则
+  记 `unmapped`。
 
 - `version_delta.py`（纯 stdlib）：两种目录布局（嵌套 `MegaCrit/sts2/Core/Models/Cards/X.cs` 与扁平
   `MegaCrit.Sts2.Core.Models.Cards/X.cs`）统一成规格引用的键 `Models.Cards/X.cs`；去注释、空白、换行、
@@ -45,13 +61,19 @@ python3 -m unittest discover -s scripts -p 'test_version_delta.py'
   变化 ⇒ `GameVersions.Default` 与 `knowledge/source/v<ver>` 必须迁移，增删模型列为 `VersionExclusive`
   候选。
 - 演示：[v0.107.1 → v0.111.0 报告摘要](version-delta-demo-2026-11-01.md)（content 546 / kernel 134，
-  其中 228 个内容文件只含 bulk 改动；W0 人工清单的 171 个 `changed` 全部命中）。
+  其中 228 个内容文件只含 bulk 改动；W0 人工清单的 171 个 `changed` 全部命中；变更内核文件有 sim 文件的
+  由 45 升到 95 / 134，其余 39 个是 `no_port`）。
+- **W0 清单补漏**：`version_delta.py` 找到、W0 两个来源都漏掉的"唯一改动"内容文件，逐个人工判定后写入
+  `sim/tools/inventory/classify/version-deltas/triage.py` 的 `MANUAL_VD`，`build.py` 把它们并入
+  `sim/specs/inventory/version-deltas.json`（`sources: version_delta`）。迁移到新版本时同样处理：报告里
+  "有唯一改动但不在 W0 清单"的文件必须判定，否则 taint 过滤会把真改动的旧录像当成可比。
 
 ## 五步流水线
 
 1. **反编译新版本**（带引用程序集）→ `output/.../<ver>` 树 + manifest
    指纹（版本、commit、sts2.dll SHA-256）。旧树保留，永不覆盖。
-2. **双树 diff → 任务清单**（最大提速器；`scripts/version_delta.py`）：对"已移植文件集合"做新旧树
+2. **双树 diff → 任务清单**（最大提速器；先 `scripts/kernel_map.py --tree <新树>` 重生成内核映射并处理
+   unmapped，再 `scripts/version_delta.py`）：对"已移植文件集合"做新旧树
    diff——sim/specs/*.md 里每条规则都带反编译 `文件:行` 引用，已移植文件
    清单可机器提取。命中的文件 = 本次移植任务列表；未命中 = 免检。种子
    算法/存档 schema 类变更会在 `Saves.Migrations` 命中（v18→v19 即先例）。
@@ -89,6 +111,10 @@ python3 -m unittest discover -s scripts -p 'test_version_delta.py'
 
 ## 状态
 
+- 2026-11-02：内核映射 `sim/specs/kernel-map.json` + `scripts/kernel_map.py`（564 个内核文件全部判定：
+  mapped 374、no_port 190）；`version_delta.py` 读映射并报告内核覆盖（变更内核文件有 sim 文件 45 → 95 / 134）；
+  W0 清单补入 28 个漏判内容文件（27 `refactor_only`，`MusicBox` 为 `changed`）；单元测试 30 个
+  （`test_version_delta.py` 21、`test_kernel_map.py` 9）；闸门脚本 `scripts/gates.sh`（`docs/gates.md`）。
 - 2026-11-01：`scripts/version_delta.py` + `scripts/version_update.sh` 落地（19 个单元测试）；
   v0.107.1 → v0.111.0 演示见 `docs/version-delta-demo-2026-11-01.md`。
 - 2026-10-30：手册首版。第 5 步（评测 runner v0.107.1→v0.111 搬迁）首跑

@@ -38,7 +38,7 @@ Prompts: 30 records (30 own, 0 opened by an applied power, spawned monster or of
 
 Requirements: 125 distinct catalogue keys of `requirements.json` (cmd_facade 42, feature 36, hook_virtual 46, model_virtual 1); most used: `kernel:relic_runtime` 295, `RelicCmd.Obtain` 89, `RelicModel.AfterObtained` 84, `kernel:side_turn_participants` 55, `AfterCombatEnd` 40, `kernel:card_generation` 36, `run:room_flow` 35, `AfterRoomEntered` 33.
 
-Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 52, new 2, rule-change 21, same 224; `version-deltas.json` triage of the 75 entries listed there: changed 23, refactor_only 52, unknown 0.
+Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 52, new 2, rule-change 21, same 224; `version-deltas.json` triage of the 79 entries listed there: changed 24, refactor_only 55, unknown 0; unique edits found by scripts/version_delta.py that both missed: CharonsAshes (refactor_only), GhostSeed (refactor_only), LostWisp (refactor_only), MusicBox (changed).
 
 <!-- /normalised-counts -->
 

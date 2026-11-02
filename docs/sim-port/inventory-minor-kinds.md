@@ -22,7 +22,7 @@ Prompts: 0 records (0 own, 0 opened by an applied power, spawned monster or offe
 
 Requirements: 11 distinct catalogue keys of `requirements.json` (cmd_facade 3, feature 7, hook_virtual 1); most used: `kernel:enchantments` 22, `kernel:card_listeners` 7, `kernel:card_model_ops` 3, `kernel:per_instance_state` 2, `AfterAutoPrePlayPhaseEntered` 1, `CardCmd.AutoPlay` 1, `CardCmd.RemoveKeyword` 1, `CreatureCmd.GainBlock(BlockVar)` 1.
 
-Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 1, rule-change 1, same 22; `version-deltas.json` triage of the 2 entries listed there: changed 1, refactor_only 1, unknown 0.
+Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 1, rule-change 1, same 22; `version-deltas.json` triage of the 5 entries listed there: changed 1, refactor_only 4, unknown 0; unique edits found by scripts/version_delta.py that both missed: Corrupted (refactor_only), Sown (refactor_only), Swift (refactor_only).
 
 | id | scope | tier | with deps | batch | mechanics | requirements | v0.107.1 |
 | --- | --- | --- | --- | --- | --- | --- | --- |

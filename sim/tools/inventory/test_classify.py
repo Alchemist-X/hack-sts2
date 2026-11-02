@@ -121,12 +121,18 @@ class TriageTableTests(unittest.TestCase):
     def test_covers_the_c20_disagreements(self):
         self.assertTrue(C20_KEYS <= set(self.t.MANUAL))
 
+    def test_version_delta_gaps_are_separate_and_named(self):
+        self.assertFalse(set(self.t.MANUAL) & set(self.t.MANUAL_VD))
+        self.assertEqual(len(self.t.MANUAL_VD), 28)
+        self.assertEqual(self.t.MANUAL_VD["relics:MusicBox"][0], "changed")
+        self.assertEqual(self.t.MANUAL_VD["cards:EvilEye"][0], "refactor_only")
+
     def test_adjudications_named_by_the_critique(self):
         self.assertEqual(self.t.MANUAL["events:Orobas"][0], "changed")
         self.assertEqual(self.t.MANUAL["cards:DualWield"][0], "refactor_only")
 
     def test_records_are_well_formed(self):
-        for key, (triage, basis, note, ev) in self.t.MANUAL.items():
+        for key, (triage, basis, note, ev) in list(self.t.MANUAL.items()) + list(self.t.MANUAL_VD.items()):
             self.assertIn(triage, TRIAGES, key)
             self.assertIn(basis, ("manual", "il"), key)
             self.assertTrue(note, key)
@@ -271,7 +277,9 @@ class PublishedVersionDeltaTests(unittest.TestCase):
         for side in gate["version_exclusive_content"].values():
             for area, names in side.items():
                 flagged |= set("%s:%s" % (area, n) for n in names)
-        self.assertEqual(flagged, set(self.by_key))
+        vd_only = set(e["key"] for e in self.vd["entries"] if e["sources"] == "version_delta")
+        self.assertFalse(flagged & vd_only)
+        self.assertEqual(flagged | vd_only, set(self.by_key))
         self.assertEqual(len(self.vd["engine_entries"]), len(gate["engine_files"]))
 
 

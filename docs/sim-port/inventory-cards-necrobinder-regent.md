@@ -40,7 +40,7 @@ Prompts: 19 records (17 own, 2 opened by an applied power, spawned monster or of
 
 Requirements: 37 distinct catalogue keys of `requirements.json` (cmd_facade 17, feature 14, hook_virtual 5, model_virtual 1); most used: `kernel:stars` 24, `AfterStarsSpent` 23, `kernel:osty` 22, `kernel:dynamic_vars` 16, `AttackCommand.FromOsty` 12, `kernel:combat_history` 12, `ForgeCmd.Forge` 10, `PlayerCmd.GainStars` 10.
 
-Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 27, new 6, rule-change 22, same 127; `version-deltas.json` triage of the 56 entries listed there: changed 28 (7 of them not single-player reachable), refactor_only 28, unknown 0; flagged by the diff gate while the classifier said same: HeirloomHammer (refactor_only).
+Version delta v0.107.1 -> v0.111.0: classifier status cosmetic 27, new 6, rule-change 22, same 127; `version-deltas.json` triage of the 59 entries listed there: changed 28 (7 of them not single-player reachable), refactor_only 31, unknown 0; flagged by the diff gate while the classifier said same: HeirloomHammer (refactor_only); unique edits found by scripts/version_delta.py that both missed: Deathbringer (refactor_only), HighFive (refactor_only), MeteorShower (refactor_only).
 
 <!-- /normalised-counts -->
 
