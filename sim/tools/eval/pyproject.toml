@@ -1,6 +1,6 @@
 [project]
 name = "sts2eval"
-version = "0.1.0"
+version = "0.2.0"
 description = "Concurrent evaluation runner for the Sts2Sim HTTP play server"
 requires-python = ">=3.11"
 dependencies = [

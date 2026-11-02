@@ -1,7 +1,13 @@
 {
   "name": "a0-s10",
+  "id": "smoke-a0-v1",
+  "version": 1,
+  "role": "smoke",
+  "protocol": "0.2",
+  "frozen": "2026-11-01",
   "ascension": 0,
   "content": "ported_only",
+  "sha256": "ef6f0ac92552406ad00cf9a9cb8c15d290a5e255cf1870ff6b458422ad570ebb",
   "games": [
     {"seed": "E1A0IC01", "character": "IRONCLAD"},
     {"seed": "E1A0IC02", "character": "IRONCLAD"},
