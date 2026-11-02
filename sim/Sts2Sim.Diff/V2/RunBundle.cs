@@ -388,13 +388,15 @@ public static class RunBundleJson
         foreach (var segment in segments)
         {
             string? mismatch = null;
-            if (segment.FormatError == null && segment.UnavailableFields.Count == 0 && McrJoin.TryJoin(bundle, segment, out mismatch) is { } joined)
+            // A join supplies the deck the exporter could not (start.deck unavailable); unavailable actions still skip the segment.
+            if (segment.FormatError == null && segment.UnavailableFields.All(f => f == "start.deck") && McrJoin.TryJoin(bundle, segment, out mismatch) is { } joined)
             {
                 try
                 {
                     // The join's reasons replace the segment's (anchor_* closed); an otherwise clean joined start is eligible.
                     segment.CombatStart = BuildCombatStart(bundle, segment, $"$.segments[{segments.IndexOf(segment)}].start", joined.Start, joined.Reasons, markedIneligible: false);
                     segment.McrJoinedPart = joined.Part;
+                    segment.UnavailableFields.Remove("start.deck");
                     continue;
                 }
                 catch (BundleFormatException ex)

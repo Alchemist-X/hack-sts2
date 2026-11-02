@@ -91,3 +91,12 @@ Caveat: these numbers come from a single small encounter with a 10-card deck. Co
 | Row | decisions/s | Clone() | StateHash() |
 |---|---|---|---|
 | W3.5/W4 integrate 2 | 141,555 | 2.449 us | 2.682 us |
+
+## W4.1 integrate (2026-11-01, NIBBITS_WEAK, 1 run, 5 s)
+
+Machine heavily loaded (the game client running, load average 4.5 to 7.5); the integrate-2 tree (`efb0102`, exported with `git archive`) was benched interleaved in the same session and runs at the same speed, so the drop from the integrate-2 row is the machine, not the code.
+
+| Row | decisions/s | Clone() | StateHash() |
+|---|---|---|---|
+| W4.1 integrate (5 runs: median, range) | 28,384 (26,229–30,838) | 12.963 us (2.565–14.388) | 10.289 us (9.833–11.488, 3 runs) |
+| integrate-2 tree, same session (4 runs) | 27,110 (23,022–135,714) | 10.137 us (8.713–12.630) | 9.439–12.043 us (2 runs) |

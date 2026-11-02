@@ -881,3 +881,27 @@ Open issues:
 - EVENT.CRYSTAL_SPHERE not registered (content_not_ported).
 - Carried from integrate 1: no `[SavedProperty]` on content defs; `CreatePreFinishedRoom` skips `LoadCustomState`; mcr v0.107.1 model-table checksum / hand-index resolution.
 - v0.111.0 v2 reader rejects 83 segments (`deck: null` / `action: null`), per replay-combats report.
+
+## W4.1 integrate (2026-11-01)
+
+Base `4809101` (integrate 2); merged onto HEAD `efb0102` (docs + w5/client + w5/server). Both branches descend from the base; none skipped.
+
+Merged, in order: w41/combat-fixes `96f122f` (merge `5e34a7b`), w41/run-fixes `14fa45f` (merge `9175c70`). Conflicts: `Sts2Sim.Diff/V2/RunBundle.cs` (combat-fixes' `McrJoin` fields and join loop vs run-fixes' `UnavailableFields`; both kept) and `sim/specs/diff-harness-v2.md` (both W4.1 lines kept).
+
+Fix (integration): the merged reader marked `start.deck: null` as unavailable, which skipped exactly the `recorder_gap:deck_order` segments the mcr join exists to fill (`Test_W41_McrJoinTakesTheDecodedStart` failed). `McrJoin` now runs when `start.deck` is the only unavailable field and clears it on a successful join; unavailable actions still skip the segment (diff-harness-v2.md W4.1 integrate line; assertion added to that test).
+
+Gates: build 0 warnings 0 errors; tests 1057/1057, PENDING 0; run soak 10⁴ runs × 5 characters, 687034 steps, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267 (2 capped), potions 128, relics 594, 0 failures); F2 run pins pass (combat-fixes refreshed seeds 1 and 4); diff v1 G0 4/4 bundles, 69/69 decisions; sts2rec 700 passed, 4 skipped, 1 failed — `test_text_env.py::test_vector_steps_workers_concurrently`, a wall-clock assertion (`elapsed < 0.09` for two 50 ms steps), fails intermittently under the machine load of this session (game client running) and passes on rerun; no merged branch touches it. Bench row in `sim/BENCH.md` (machine loaded; equal to the integrate-2 tree benched interleaved).
+
+Replays (inputs regenerated: `export-bundles-v2 tmp/diff-v2-w41i`, `replay-convert` → `tmp/diff-v2-w41i/mcr` 723 replays; v1 bundles from the combat-fixes scratchpad export):
+- Widened combat gate (`Sts2Sim.Diff <g0 + g0-ineligible + v2> --v2`, 2531 segments, 1294 combat). Before (integrate 2) → after: compared combat segments 8 → 117, agree 8 → 109, decisions 131/131 → 1599/1607 (99.5 %), outcome 109/109. By version: v0.107.1 compared 4 → 84, agree 4 → 80, decisions 69/69 → 1084/1088; v0.110.1 0 → 6, 0 → 6, 0/0 → 85/85; v0.111.0 4 → 27, 4 → 23, 62/62 → 430/434 (v0.111.0 segments read 1214 → 1225 with the reader fix). 8 divergences: 4 v0.107.1 `exporter_ineligible` rows, Q3X6PF8S37GA s5 (recorder_gap, discard count), GM28D28DX794 s26/s54/s65 decision 0 (relic run-time state at combat start).
+- G3 (`Sts2Sim.Diff g3 tmp/diff-v2-w41i`): decisions 748/753 → 1532/1537 (combat-fixes alone 1318/1324, run-fixes alone 896/900); runs reaching the recorded end 0 → 1 (K4FB4086NTRE). Floors agreed per run (integrate 2 → W4.1): G0G2JMFEYHRS 1 → 13, NBNDT3S61AUM 7 → 11, DSB363J2LQWZ 4 → 22, P2UZ19X1GGNQ 5 → 13, Q3X6PF8S37GA 2 → 2, GM28D28DX794 13 → 27, K4FB4086NTRE 7 → 17 (end), EC039PTFQWV5 10 → 11, PLRUV49CRFQW 10 → 11, G1YFC196B2H2 3 → 7 (truncated at s16#21 `decision_unresolved`), old-prefix lineage 0 → 0. No run drops; ratchet holds. First divergences by class: port_bug 7, projection_gap 1, out_of_scope 1, truncated 1, none 1.
+
+Open issues (G3 first divergences):
+- G0G2 s34 f14 PUNCH_OFF_EVENT_ENCOUNTER: the oracle starts a combat from the event, the sim stays in `Event` (event → combat transition).
+- NBND s27 f12 `player.relics[5].counter` 1 vs 0 after TERROR_EEL_ELITE (not investigated).
+- DSB3 s64 f23 shop `entries[4].on_sale` not projected (projection_gap).
+- P2UZ s31 f14 PUNCH_CONSTRUCT_NORMAL opening hand `hand[5]` PIERCING_WAIL vs LEADING_STRIKE (deck order / draw).
+- Q3X6 s5 NIBBITS_WEAK discard count (recorder_gap, sim right; classed port_bug by G3).
+- GM28 s74 DECIMILLIPEDE_ELITE `hand[0].cost` 0 vs 1 (not investigated).
+- EC03 s29 / PLRU s32 rest site: oracle `select` vs sim `rest_site` screen.
+- Carried: relic run-time state at combat start (TEA_OF_DISCOURTESY, VENERABLE_TEA_SET) → start from decoded `SerializableRun`; mcr `enchanted_card_in_deck`, `?` rooms decoded as `NONE`; v0.107.1 model-table checksum; `CombatRoom` end-of-combat monster-id approximation now redundant (harmless, dedupes).

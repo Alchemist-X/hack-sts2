@@ -312,6 +312,8 @@ public static class W41CombatFixesTests
             File.WriteAllText(path, Run(60).ToJsonString());
             var joined = RunBundleJson.Parse(File.ReadAllText(path), path).Segments[0];
             Assert.Equal("W41-part2", joined.McrJoinedPart);
+            // W4.1 integrate: the join supplies the start.deck the reader marked unavailable, so the runner does not skip it.
+            Assert.Equal(0, joined.UnavailableFields.Count, string.Join(", ", joined.UnavailableFields));
             Assert.NotNull(joined.CombatStart);
             Assert.Equal(0, joined.CombatStart!.IneligibleReasons.Count, string.Join("; ", joined.CombatStart.IneligibleReasons));
             Assert.Equal(3, joined.CombatStart.RngOffsets.Single(kv => kv.Key == "Shuffle").Value);
