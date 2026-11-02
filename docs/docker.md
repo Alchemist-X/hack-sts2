@@ -10,7 +10,7 @@ One image (`Dockerfile` at the repo root) carries everything needed to evaluate 
 - the rules text (`knowledge/source`, the game's localisation used for card/relic/power descriptions).
 
 The simulator is architecture-neutral IL and the base images are multi-arch, so the same Dockerfile builds on
-linux/amd64 and linux/arm64 (validated on arm64, below).
+linux/amd64 and linux/arm64 (validated on both: arm64 on the Tokyo VM and amd64 on Huginn, below).
 
 ## Build
 
@@ -82,7 +82,9 @@ and exits 0 (measured 0.27 s).
 Outputs land under `/data` (the working directory). It is not declared as a `VOLUME`, so one-shot runs leave no
 anonymous volumes; mount a volume to keep crash logs or eval reports: `-v sts2sim-data:/data`, or a host
 directory with a matching user: `-v "$PWD/tmp/docker:/data" --user "$(id -u):$(id -g)"` (create the directory
-first).
+first). `sts2eval` writes its default report directory to `<repo root>/tmp/eval/<run_id>`; in the image
+`/app/tmp` is a symlink to `/data/tmp` (the `eval` entry point creates `/data/tmp` on a fresh mount), so reports
+printed as `/app/tmp/eval/<run_id>/report.md` live in `/data/tmp/eval/<run_id>`.
 
 ## Running
 
@@ -197,3 +199,48 @@ project `-p sts2simval`, host ports 18765-18766 on loopback) -> cleanup: `docker
 untagged images that earlier `--load`s of the same tag left behind, `docker buildx rm <tmp>` (drops its build
 cache), `docker rmi moby/buildkit:buildx-stable-1`, the anonymous volume of the pre-fix image's server run, the
 scratch directory. Afterwards the VM's image, volume and build-cache totals matched the values before the run.
+
+## Validation, amd64 (Huginn, 2026-11-02)
+
+Host: Huginn (`ssh raven`), **linux/amd64**, Intel Xeon Platinum KVM guest, 4 cores x 2 threads = **8 vCPU**,
+30 GiB RAM, Ubuntu 24.04.4, kernel 6.8, Docker 29.9.2 (default `docker` builder, BuildKit v0.34.0, containerd image
+store on overlayfs, cgroup v2, data-root `/data/raven/docker`), compose v5.6.1, buildx v0.38.1. Image built from
+`git archive` of `ebc055f` unpacked under `/data/raven/hack-sts2/tmp/sts2sim-docker/ebc055f/` (Huginn's root fs has
+about 3 GB free, so nothing went to `$HOME`); container .NET runtime 9.0.22, Python 3.11.2. Compare: the arm64 rows
+above (2 vCPU) and the native Huginn rows in `docs/linux-validation-2026-11-01.md` (same machine, no container).
+
+| Measurement | Result (amd64 container) | Native Huginn / Tokyo arm64 container |
+| --- | --- | --- |
+| cold build (`RUN_TESTS=Server`, empty cache, base-image pulls) | **79.3 s** total: sdk image pull 33.0 s, runtime pull 12.2 s, apt 15.6 s, restore 1.9 s, `dotnet build` 19.2 s (0 warnings, 0 errors), Server tests 39/39 7.2 s, uv sync 2.9 s, export 6.7 s | native build 20.4 s / Tokyo cold 73 s |
+| warm rebuild after a C# source change | 32.0 s (`dotnet build` 19.6 s, 0 warnings) | Tokyo 41.9 s |
+| rebuild with only `STS2SIM_VERSION` changed | 3.0 s | Tokyo 3.3 s |
+| image size | **563 MB** (`docker images` disk usage), 147 MB content | Tokyo 578 MB / 143 MB |
+| `selftest 200` | 200/200 completed, 0 crashed, 0 capped, 0 server errors, mean 69.7 steps, 18.6 s (19.0 s with container start); compose `selftest` profile 18.5 s | native `--selftest 300` 23.8 s / Tokyo 13.3 s |
+| server start to first `/health` 200 | 0.41 s | Tokyo 0.26 s |
+| `sim_play.py random --runs 20` from the host via `127.0.0.1:18765` | 20 games, 1,379 steps, 0 crashes, 4.19 s | Tokyo 4.2 s, 1,379 steps |
+| same from a second container (`--network container:<server>`) | 20 games, 1,379 steps, 0 crashes, 3.18 s | Tokyo 3.1 s |
+| healthcheck / memory / stop | `healthy`; 93.5 MiB after 40 games; `docker stop` 0.25 s, exit 0 | Tokyo 140 MiB, 0.27 s |
+| `vec-check` | OK: threads 1 vs 8 byte-identical (64 envs x 200 steps), 6.8 s | native OK / Tokyo 6.4 s |
+| `vec-bench --envs 1024 --threads 8 --steps 500` (Python, hostfxr, pool 64) | **19,140** and 21,065 env-steps/s (53.5 / 48.6 ms/batch), 270-297 resets/s, OK 504,778 / RESET 7,222 | native 21,556 / Tokyo (1024 x 4) 15,664 |
+| `bench vec 1024 8 500` (C# through the C ABI, pool 1024) | **27,956** and 28,278 env-steps/s (36.6 / 36.2 ms/batch), pool warm 11.6-11.9 s, 7,286 episodes, 0 errors | native 28,072 / Tokyo (1024 x 4) 19,178 |
+| `bench vec 1024 8 3000` (steady state) | **50,900** env-steps/s (20.1 ms/batch), 44,417 episodes | native 50,452 |
+| `bench` (combat, NIBBITS_WEAK, 5 s) | 41,203 decisions/s, Clone 8.551 us, StateHash 4.481 us, sink `40788C706BFA21E0` | native 41,400 / 8.595 / 4.532 us, same sink |
+| compose: 2 replicas on 18765-18766 | both up in 0.76 s, both `healthy`; 10 random games on each, 687 steps, 2.70 s each | Tokyo 2.1 s |
+| compose `vec` profile (`VEC_THREADS=8`, 1024 envs, 500 steps) | 18,116 env-steps/s | - |
+| compose `eval` profile: `run --seedset a0-s10 --policy random --concurrency 10 --spawn` | first run **failed** (`PermissionError: '/app/tmp'`, see below); after the fix 10 games, 0 crashes, 10/10 replayable, 2.64 s; also with a fresh host bind mount (`--user`) 2.39 s and with no volume 2.24 s | Tokyo 2.0 s |
+
+The container costs nothing measurable against the native Huginn run: every throughput row is within run-to-run noise
+of the native row, and the episode counts, status counts, `total_steps` of the seeded random games and the combat hash
+sink are identical across x86_64 and arm64 and between container and host. The same caveat as native applies: the
+500-step vec windows are mostly tiered-JIT warm-up on 4 cores (500 steps: 28k, 3000 steps: 51k).
+
+**Fix made.** `sts2eval`'s default output directory is `<repo root>/tmp/eval/<run_id>`, which in the image is
+`/app/tmp`; `/app` is root-owned and the image runs as uid 1654, so `eval run ... --spawn` without `--out` failed
+with `PermissionError`. This is not architecture-specific. The Dockerfile now links `/app/tmp -> /data/tmp`
+(created and owned by `app`), and the `eval` entry point runs `mkdir -p /data/tmp` so a fresh bind mount on `/data`
+works too. Nothing else needed changing for amd64.
+
+Cleanup: compose project `sts2simval` brought down with `-v` (its volume and network removed), scratch containers
+removed, `docker builder prune -f` (2.08 GB -> 607 MB) then `docker builder prune -af` (0 B), the tarball and
+unpacked tree deleted. Left on Huginn: the image `sts2sim:validate` (563 MB, built from `ebc055f` plus this fix,
+`/health` version `ebc055f+fix`) and the four build logs in `/data/raven/hack-sts2/tmp/sts2sim-docker/ebc055f/`.
