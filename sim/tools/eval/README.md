@@ -42,6 +42,9 @@ Useful flags:
 | `--concurrency N` | 10 | games in flight (one shared `AsyncAnthropic`, `max_retries=3`) |
 | `--rps-limit R` | off | at most R API request starts per second |
 | `--step-cap N` | 1200 | accepted steps per game, then `capped` |
+| `--loop-repeat K` | 6 | when one observation has come up K times on a floor, the next prompt gets a one-time loop warning (once per floor; 0 = off) |
+| `--floor-step-cap N` | 80 | non-combat steps per floor (rewards, shop, event, map, rest, prompts outside combat); the next one ends the game as `stuck` before any API call (0 = off) |
+| `--reveal-moves` | off | create games with `"reveal_moves": true` (intents and the enemy-turn log name the enemy's move; sim/PLAY.md "Hidden information"). Off is the game's view; the runner always sends the flag, so the server's own default does not matter |
 | `--game-minutes M` | 60 | wall clock per game, then `capped` |
 | `--step-timeout S` | 300 | seconds per decision incl. SDK retries; a timeout counts as an API error |
 | `--max-cost-usd X` | off | stop the run once spend reaches X (`aborted: budget`) |
@@ -80,6 +83,15 @@ the repo root collects every test in the repository.
    HTTP 401/402/403/404 abort the run (every later call would fail the same way).
 5. `stop_reason: max_tokens`: counted; the token is used if the first line was finished before the
    cut-off, otherwise it is treated as unparseable (step 3).
+6. Loop guard (`runner.LoopGuard`), before each decision: per floor it counts every
+   `(phase, sha256(obs_text))` and the non-combat steps. The first time one observation comes up
+   `--loop-repeat` times on a floor, that step's prompt gets an `== Loop warning` section, once per
+   floor: `The last K observations were identical: you are not making progress.` plus, on the
+   Rewards / CardReward screens, `Skipping a card reward keeps the offer; use "proceed" to leave the
+   rewards screen.` (elsewhere: choose an action that changes the state). A floor that would take more
+   than `--floor-step-cap` non-combat steps ends the game as `stuck` (truncated, reward 0). The system
+   prompt also states the rule: `skip` keeps the card reward on the rewards screen, `proceed` leaves,
+   reward -> skip -> reward chains change nothing (the Sonnet A0 baseline looped 700 steps on it).
 
 The random policy uses the same loop with a per-game seeded rng (sha256 of `CHARACTER:SEED`), so a
 random run is reproducible; the Claude policy differs only in the client object.
@@ -88,7 +100,7 @@ random run is reproducible; the Claude policy differs only in the client object.
 
 | File | Content |
 | --- | --- |
-| `config.json` | seed set, policy, model, effort, thinking (and the exact `thinking` field sent), max_tokens, prompt hash, server URL and `/health` version, repo git sha, price table, limits, concurrency |
+| `config.json` | seed set, policy, model, effort, thinking (and the exact `thinking` field sent), max_tokens, prompt hash, `reveal_moves`, server URL and `/health` version, repo git sha, price table, limits (incl. `loop_repeat`, `floor_step_cap`), concurrency |
 | `run.json` | wall seconds, abort reason, API calls, spend |
 | `server.log`, `crashes.jsonl` | spawned server output and its crash repros (`--spawn` only) |
 | `games/<CHARACTER>-<SEED>.jsonl` | `start` record, one `step` record per accepted step, `end` record |
@@ -98,15 +110,19 @@ random run is reproducible; the Claude policy differs only in the client object.
 Step record: `step, phase, act, floor, turn, hp, max_hp, obs_text, legal, token` (the token sent),
 `fallback` (null / illegal / api_error / refusal / timeout), `retries`, `attempts[]` (raw reply,
 stop_reason, error, usage {input, cache_creation_input, cache_read_input, output}, latency_ms,
-cost_usd, request_id, exception, refusal_category), `log` (server log lines of the step).
+cost_usd, request_id, exception, refusal_category), `log` (server log lines of the step), `loop_hint`
+(only on the step whose prompt carried the loop warning). The `start` record also has `reveal_moves`;
+the `end` record has `stuck` and `loop_hints`.
 
-Summary: `result` (`win`, `loss`, `capped`, `crashed`, `aborted`, `error`), `cap_reason`,
-`abort_reason`, `error`, `floor`, `act`, `progress_pct`, `steps`, `turns`, `illegal`,
-`illegal_replies`, `retries`, `api_errors`, `refusals`, `timeouts`, `max_tokens_stops`, `fallbacks`,
-`api_calls`, `tokens`, `cost_usd`, `seconds`, `final_hp`, `max_hp`, `death` (floor, act, room type of
-the last travel, enemy ids of the last combat), `history_tokens` (the server's canonical token list:
-replay with `POST /runs` + the same seed and these tokens), `history_steps`, `replayable`
-(token list length = accepted steps), `server_version`.
+Summary: `result` (`win`, `loss`, `capped`, `stuck`, `crashed`, `aborted`, `error`), `cap_reason`,
+`abort_reason`, `error`, `stuck` (`{phase, floor, noncombat_steps}` of a stuck game, else null),
+`truncated` (capped or stuck), `reward` (1 for a win, else 0), `reveal_moves`, `floor`, `act`,
+`progress_pct`, `steps`, `turns`, `illegal`, `illegal_replies`, `retries`, `api_errors`, `refusals`,
+`timeouts`, `max_tokens_stops`, `fallbacks`, `api_calls`, `late_line_tokens`, `loop_hints`, `tokens`,
+`cost_usd`, `seconds`, `final_hp`, `max_hp`, `death` (floor, act, room type of the last travel, enemy
+ids of the last combat), `history_tokens` (the server's canonical token list: replay with
+`POST /runs` + the same seed and these tokens), `history_steps`, `replayable` (token list length =
+accepted steps), `server_version`.
 
 ## Metrics
 
@@ -118,6 +134,9 @@ replay with `POST /runs` + the same seed and these tokens), `history_steps`, `re
 - **illegal actions per game**: steps where the reply and its one re-ask were both not legal (a random
   token was played). `illegal_replies` counts every rejected reply, `retries` every re-ask.
 - **crashes**: games whose server step returned HTTP 500 (repro in `crashes.jsonl`).
+- **stuck games**: games ended by `--floor-step-cap` (a loop outside combat), counted apart from
+  `capped`; the per-game cause reads `stuck: <phase> floor N`. **loop hints**: loop warnings given
+  (at most one per floor and game).
 - **api errors / refusals / timeouts / max_tokens stops / random fallbacks**: as defined above.
 - **tokens**: sums of the SDK `usage` fields over every call (re-asks included). `output` includes
   thinking tokens.

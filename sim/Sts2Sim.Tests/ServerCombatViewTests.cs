@@ -352,7 +352,7 @@ public static class ServerCombatViewTests
         {
             Assert.True(enemy.ContainsKey(key), $"enemy node has '{key}'");
         }
-        Assert.True(enemy["intents"]![0]!["move"] is JsonValue, "intent move id is filled");
+        Assert.True(enemy["intents"]![0]!.AsObject().ContainsKey("move") && enemy["intents"]![0]!["move"] == null, "intent move id is present and null by default (reveal_moves off)");
         var card = obs["combat"]!["hand"]![0]!.AsObject();
         foreach (var key in new[] { "base_cost", "effective", "enchantments", "affliction", "dampened" })
         {
@@ -362,6 +362,6 @@ public static class ServerCombatViewTests
         Assert.True(obs["combat"]!.AsObject().ContainsKey("danger"));
         string text = obs["text"]!.GetValue<string>();
         Assert.True(Regex.IsMatch(text, @"\n \[0\] u\d+ NIBBIT "), "enemy line shows the uid");
-        Assert.True(Regex.IsMatch(text, @"intent: \[[A-Z_]+\] "), "enemy line shows the move id");
+        Assert.True(Regex.IsMatch(text, @"intent: Attack \d+"), "enemy line shows the intent without the move id: " + text);
     }
 }

@@ -236,10 +236,28 @@ public static class Describe
             }
             if (visible)
             {
-                list.Add((power.Id, power.Amount));
+                list.Add((power.Id, DisplayAmount(power, out _)));
             }
         }
         return list;
+    }
+
+    // The number the game's power icon shows (PowerModel.DisplayAmount): the diff projection's rule
+    // (SimProjector.DisplayAmount: HARDENED_SHELL remaining cap, SLOW %, TENDER cards played this turn, else the
+    // amount). Powers the projection has no rule for yet (ProjectionGapException: SLOTH, WITHERING_PRESENCE, ...)
+    // fall back to the kernel Amount with known = false.
+    public static int DisplayAmount(PowerModel power, out bool known)
+    {
+        try
+        {
+            known = true;
+            return SimProjector.DisplayAmount(power);
+        }
+        catch (Exception)
+        {
+            known = false;
+            return power.Amount;
+        }
     }
 
     public static string PowersText(IEnumerable<(string Id, int Amount)> powers)
@@ -342,7 +360,11 @@ public static class Describe
         return c != null ? Label(c) : "u" + I(id);
     }
 
-    // Extra state a power carries beyond its amount: whom it targets / came from, and power-specific counters.
+    // What the player can see of a power beyond its icon number, or null. Only facts the game shows: the facing,
+    // the cards a power binds or downgrades (marked on the cards themselves), the creature a power targets, the
+    // icon counter of SLOTH / TENDER / WITHERING_PRESENCE, SLOW's bonus and THE_BOMB's damage (in their
+    // descriptions), POISON triggers (from visible ACCELERANT). Never the applier or kernel bookkeeping
+    // (ApplierId, AmountOnTurnStart, SkipNextDurationTick).
     public static string? PowerDetail(CombatState cs, PowerModel power)
     {
         try
@@ -359,8 +381,12 @@ public static class Describe
                     parts.Add($"{I(d.DowngradedCards.Count)} cards downgraded until " + string.Join(", ", d.CasterIds.Select(id => CreatureLabelById(cs, id))) + " dies");
                     break;
                 case ChainsOfBindingPower c:
-                    parts.Add($"{I(BoundCards(power.Owner).Count)} BOUND cards; a BOUND card was played this turn: " + (c.BoundCardPlayed ? "yes" : "no"));
+                {
+                    var bound = BoundCards(power.Owner);
+                    parts.Add($"{I(bound.Count)} BOUND cards" + (bound.Count > 0 ? " (" + string.Join(", ", bound.Select(CardName)) + ")" : string.Empty)
+                        + "; a BOUND card was played this turn: " + (c.BoundCardPlayed ? "yes" : "no"));
                     break;
+                }
                 case SlothPower sl:
                     parts.Add($"{I(sl.CardsPlayedThisTurn)}/{I(sl.Amount)} cards played this turn");
                     break;
@@ -387,10 +413,6 @@ public static class Describe
             if (power.TargetId != PowerModel.NoCreature)
             {
                 parts.Add("target " + CreatureLabelById(cs, power.TargetId));
-            }
-            if (power.ApplierId != PowerModel.NoCreature && power.HasOwner && power.ApplierId != power.Owner.CombatId && power is not DampenPower)
-            {
-                parts.Add("from " + CreatureLabelById(cs, power.ApplierId));
             }
             return parts.Count == 0 ? null : string.Join("; ", parts);
         }

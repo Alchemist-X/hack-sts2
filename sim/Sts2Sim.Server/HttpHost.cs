@@ -20,7 +20,7 @@ public static class HttpHost
             Console.Error.WriteLine($"cannot listen on 127.0.0.1:{port}: {ex.Message}");
             return 1;
         }
-        Console.WriteLine($"Sts2Sim.Server {service.Options.Version} listening on http://127.0.0.1:{port}/ (crash log: {service.Options.CrashLogPath ?? "off"})");
+        Console.WriteLine($"Sts2Sim.Server {service.Options.Version} listening on http://127.0.0.1:{port}/ (crash log: {service.Options.CrashLogPath ?? "off"}; reveal moves by default: {(service.Options.RevealMoves ? "on" : "off")})");
         using var stop = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) =>
         {

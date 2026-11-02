@@ -29,6 +29,10 @@ public sealed class GameSession
 
     public JsonObject Config { get; }
 
+    // The "reveal_moves" create option (sim/PLAY.md): intents and the enemy-turn log name the move. Configs written
+    // before the option existed (old crash repros) have no key and read as off.
+    public bool RevealMoves => Config["reveal_moves"] is JsonValue v && v.GetValueKind() == JsonValueKind.True;
+
     public RunSim? Run { get; private set; }
 
     public CombatSim? Combat { get; private set; }

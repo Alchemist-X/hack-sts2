@@ -8,7 +8,8 @@ namespace Sts2Sim.Server;
 // moves, draws, exhausts). Read-only: nothing here touches the simulation.
 public static class StepLog
 {
-    public sealed record Creature(int CombatId, string Id, bool Enemy, int Hp, int MaxHp, int Block, bool Alive, SortedDictionary<string, int> Powers, CreatureState Ref);
+    // NextMove: the move the creature intends (its intent as shown before the step), null without an AI.
+    public sealed record Creature(int CombatId, string Id, bool Enemy, int Hp, int MaxHp, int Block, bool Alive, SortedDictionary<string, int> Powers, CreatureState Ref, MoveStateDef? NextMove = null);
 
     public sealed record Snapshot(
         string Phase,
@@ -80,7 +81,7 @@ public static class StepLog
     }
 
     private static Creature Snap(CombatState cs, MonsterState m, bool enemy)
-        => new(m.CombatId, m.MonsterId, enemy, m.CurrentHp, m.MaxHp, m.Block, m.IsAlive, PowerMap(cs, m), m);
+        => new(m.CombatId, m.MonsterId, enemy, m.CurrentHp, m.MaxHp, m.Block, m.IsAlive, PowerMap(cs, m), m, m.HasAi ? m.Ai.NextMove : null);
 
     private static SortedDictionary<string, int> PowerMap(CombatState cs, CreatureState c)
     {
@@ -111,7 +112,9 @@ public static class StepLog
         return (cs, a.HistoryCount, false);
     }
 
-    public static List<string> Diff(Snapshot a, Snapshot b, RunAction? action = null)
+    // revealMoves: name each enemy move in the enemy-turn narration (the game's "reveal_moves" option); off, a move is
+    // told by its effects only, as the game shows it.
+    public static List<string> Diff(Snapshot a, Snapshot b, RunAction? action = null, bool revealMoves = false)
     {
         var lines = new List<string>();
         if (a.Phase != b.Phase)
@@ -160,7 +163,18 @@ public static class StepLog
             lines.Add("combat start: " + string.Join(", ", b.Creatures.Values.Where(c => c.Enemy && c.Alive).OrderBy(c => c.CombatId).Select(c => $"u{I(c.CombatId)} {c.Id} {I(c.Hp)}/{I(c.MaxHp)}")));
         }
         var existed = new HashSet<int>(a.Creatures.Keys) { a.PlayerCombatId, b.PlayerCombatId };
-        Narrate(lines, entries, action, Label, newCombat ? null : existed);
+        // The intent types of a performed move: the move as intended before the step (also moves made at run time,
+        // REVIVE_MOVE, STUNNED), else the monster's move table.
+        string? IntentOf(int id, string moveId)
+        {
+            if (a.Creatures.TryGetValue(id, out var was) && was.NextMove is { } intended && intended.Id == moveId)
+            {
+                return IntentTypes(intended);
+            }
+            var creature = b.Creatures.TryGetValue(id, out var now) ? now.Ref : was?.Ref ?? cs?.GetCreatureById(id);
+            return MoveIntentText(creature, moveId);
+        }
+        Narrate(lines, entries, action, Label, newCombat ? null : existed, revealMoves, IntentOf);
         if (a.Turn != b.Turn && b.Turn != null)
         {
             lines.Add($"turn {I(b.Turn.Value)}");
@@ -343,8 +357,9 @@ public static class StepLog
     }
 
     // existed: creature ids present before the step (null: a fresh combat); a move whose effects touch a creature not
-    // in it is reported as having summoned that creature.
-    private static void Narrate(List<string> lines, List<IHistoryEntry> entries, RunAction? action, Func<int, string> label, HashSet<int>? existed)
+    // in it is reported as having summoned that creature. revealMoves: lead each move line with the move id (and title).
+    private static void Narrate(List<string> lines, List<IHistoryEntry> entries, RunAction? action, Func<int, string> label, HashSet<int>? existed,
+        bool revealMoves, Func<int, string, string?> intentOf)
     {
         var reported = new HashSet<int>();
         if (entries.Count == 0)
@@ -465,6 +480,12 @@ public static class StepLog
             {
                 parts.Add("added " + Counted(generated));
             }
+            if (!revealMoves)
+            {
+                // The game never names the move: its effects, or the intent the player saw for an effect-free move.
+                lines.Add($" {label(mover)}: " + (parts.Count > 0 ? string.Join("; ", parts) : intentOf(mover, move.MoveId) ?? "no visible effect"));
+                continue;
+            }
             string moveName = move.MoveId;
             try
             {
@@ -479,6 +500,30 @@ public static class StepLog
             lines.Add($" {label(mover)}: {moveName}" + (parts.Count > 0 ? " — " + string.Join("; ", parts) : string.Empty));
         }
         StandaloneDamage(lines, entries.GetRange(segStart, entries.Count - segStart), label);
+    }
+
+    // "Sleep", "Stun", "Buff + Defend": a move's intent types, what the player saw before it, for a move line without
+    // visible effects when the move id stays hidden.
+    private static string? IntentTypes(MoveStateDef move)
+        => move.Intents.Count > 0 ? string.Join(" + ", move.Intents.Select(i => i.IntentType.ToString())) : null;
+
+    private static string? MoveIntentText(CreatureState? creature, string moveId)
+    {
+        try
+        {
+            if (creature is MonsterState { HasAi: true } m && m.Ai.Machine.TryGet(moveId, out var state) && state is MoveStateDef def)
+            {
+                return IntentTypes(def);
+            }
+            if (moveId == MoveStateDef.StunnedMoveId)
+            {
+                return nameof(IntentType.Stun);
+            }
+        }
+        catch (Exception)
+        {
+        }
+        return null;
     }
 
     private static string DamageText(DamageReceivedEntry d, Func<int, string> label)

@@ -8,12 +8,13 @@ import json
 import random
 import sys
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import prices as P
 from .policies import BudgetExceeded, FatalApiError, empty_meta
+from .prompt import loop_hint
 from .seedsets import game_key
 from .simclient import SimClient, SimCrash, SimError, SimIllegal
 from .tokens import any_line_token, illegal_message, resolve
@@ -21,6 +22,8 @@ from .tokens import any_line_token, illegal_message, resolve
 LOG_LINES = 12
 LAST_ACTIONS = 6
 CONSECUTIVE_API_ERROR_ABORT = 25
+LOOP_REPEAT = 6
+FLOOR_STEP_CAP = 80
 
 
 def full_run_floors(ascension: int) -> int:
@@ -38,6 +41,42 @@ class RunLimits:
     game_minutes: float = 60.0
     step_timeout_s: float = 300.0
     max_minutes: float | None = None
+    loop_repeat: int = LOOP_REPEAT        # same observation K times on a floor -> one loop hint (0 = off)
+    floor_step_cap: int = FLOOR_STEP_CAP  # non-combat steps per floor, then the game ends 'stuck' (0 = off)
+
+
+class LoopGuard:
+    """Per-game loop guard over the observations a policy is asked about.
+
+    Keeps, for the current floor, how often each (phase, sha256(obs_text)) was seen and how many
+    non-combat steps the floor took. `observe` returns (hint, stuck): `hint` is the one-time loop hint
+    for this prompt, given once per floor when one observation has come up `repeat` times; `stuck` is
+    True when this observation would be the floor's (floor_step_cap + 1)-th non-combat step.
+    """
+
+    def __init__(self, repeat: int = LOOP_REPEAT, floor_step_cap: int = FLOOR_STEP_CAP):
+        self.repeat = repeat
+        self.floor_step_cap = floor_step_cap
+        self.floor = None
+        self.seen: Counter = Counter()
+        self.hinted = False
+        self.noncombat_steps = 0
+        self.hints = 0
+
+    def observe(self, phase: str | None, floor: int | None, obs_text: str) -> tuple[str | None, bool]:
+        if floor != self.floor:
+            self.floor, self.seen, self.hinted, self.noncombat_steps = floor, Counter(), False, 0
+        if phase != "Combat":
+            if self.floor_step_cap and self.noncombat_steps >= self.floor_step_cap:
+                return None, True
+            self.noncombat_steps += 1
+        key = (phase, hashlib.sha256(obs_text.encode("utf-8")).hexdigest()[:16])
+        self.seen[key] += 1
+        if self.repeat and not self.hinted and self.seen[key] >= self.repeat:
+            self.hinted = True
+            self.hints += 1
+            return loop_hint(self.repeat, phase), False
+        return None, False
 
 
 @dataclass
@@ -72,7 +111,8 @@ def _legal(obs: dict) -> list[str]:
 
 
 async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_dir: Path,
-                    limits: RunLimits, state: RunState, server_version: str | None = None) -> dict:
+                    limits: RunLimits, state: RunState, server_version: str | None = None,
+                    reveal_moves: bool = False) -> dict:
     """Play one full run; write games/<KEY>.jsonl and games/<KEY>.summary.json; return the summary."""
     key = game_key(game)
     games_dir = out_dir / "games"
@@ -86,16 +126,20 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
 
     s = {"key": key, "seed": game["seed"], "character": game["character"], "ascension": asc,
          "content": seedset["content"], "policy": policy.name, "model": getattr(policy, "model", None),
+         "reveal_moves": bool(reveal_moves),
          "game_id": None, "result": None, "cap_reason": None, "abort_reason": None, "error": None,
+         "stuck": None, "truncated": False, "reward": 0,
          "floor": None, "act": None, "progress_pct": None, "steps": 0, "turns": 0,
          "illegal": 0, "illegal_replies": 0, "retries": 0, "api_errors": 0, "refusals": 0,
          "timeouts": 0, "max_tokens_stops": 0, "fallbacks": 0, "api_calls": 0, "late_line_tokens": 0,
+         "loop_hints": 0,
          "tokens": P.usage_dict(None), "cost_usd": 0.0, "seconds": None, "final_hp": None, "max_hp": None,
          "death": None, "history_tokens": None, "history_steps": None, "replayable": None,
          "server_version": server_version}
     t0 = time.monotonic()
     log_lines: deque[str] = deque(maxlen=LOG_LINES)
     actions: deque[str] = deque(maxlen=LAST_ACTIONS)
+    guard = LoopGuard(limits.loop_repeat, limits.floor_step_cap)
     last_turn_key = None
     last_combat = None
     last_room = None
@@ -106,12 +150,14 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
             tf.flush()
 
         try:
-            created = await client.new_run(game["seed"], game["character"], asc, seedset["content"])
+            created = await client.new_run(game["seed"], game["character"], asc, seedset["content"],
+                                           reveal_moves=bool(reveal_moves))
             gid = created["id"]
             s["game_id"] = gid
             obs = created["observation"]
             write({"type": "start", "key": key, "game_id": gid, "seed": game["seed"],
-                   "character": game["character"], "ascension": asc, "content": seedset["content"]})
+                   "character": game["character"], "ascension": asc, "content": seedset["content"],
+                   "reveal_moves": bool(reveal_moves)})
             while True:
                 if obs.get("terminal"):
                     s["result"] = obs.get("result") or "loss"
@@ -126,6 +172,13 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                 if time.monotonic() - t0 >= limits.game_minutes * 60:
                     s["result"], s["cap_reason"] = "capped", "wall"
                     break
+                hint, stuck = guard.observe(obs.get("phase"), obs.get("floor"), obs.get("text") or "")
+                if stuck:
+                    # a floor that takes this many non-combat steps is a loop: stop before paying for more
+                    s["result"] = "stuck"
+                    s["stuck"] = {"phase": obs.get("phase"), "floor": obs.get("floor"),
+                                  "noncombat_steps": guard.noncombat_steps}
+                    break
                 legal = _legal(obs)
                 if not legal:
                     s["result"], s["error"] = "error", "non-terminal observation with no legal actions"
@@ -137,6 +190,9 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                         s["turns"] += 1
                         last_turn_key = tk
                 hist = {"log": list(log_lines), "actions": list(actions)}
+                if hint:
+                    hist["loop_hint"] = hint
+                    s["loop_hints"] += 1
                 attempts = []
 
                 async def ask(feedback=None, obs=obs, legal=legal, hist=hist, attempts=attempts):
@@ -206,6 +262,8 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                                      "latency_ms": m.get("latency_ms"), "cost_usd": m.get("cost_usd"),
                                      **{k: m[k] for k in ("exception", "status", "refusal_category", "request_id")
                                         if m.get(k) is not None}} for m in attempts]}
+                if hint:
+                    rec["loop_hint"] = hint
                 if obs.get("phase") == "Map" and token.startswith("travel"):
                     try:
                         idx = int(token.split()[1])
@@ -245,6 +303,10 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
             raise
         finally:
             s["seconds"] = round(time.monotonic() - t0, 2)
+            # Gym-style episode end (sim/CONTRACTS.md D5): reward 1 only at a won terminal; a cap or a stuck
+            # floor truncates the episode.
+            s["truncated"] = s["result"] in ("capped", "stuck")
+            s["reward"] = 1 if s["result"] == "win" else 0
             if obs is not None:
                 s["floor"], s["act"] = obs.get("floor"), obs.get("act")
                 s["final_hp"], s["max_hp"] = _hp(obs)
@@ -257,7 +319,7 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                               "enemies": [e.get("id") for e in enemies]}
             s["cost_usd"] = round(s["cost_usd"], 6)
             write({"type": "end", "result": s["result"], "steps": s["steps"], "floor": s["floor"],
-                   "error": s["error"]})
+                   "error": s["error"], "stuck": s["stuck"], "loop_hints": s["loop_hints"]})
     if s["game_id"]:
         try:
             h = await client.history(s["game_id"])
@@ -299,7 +361,8 @@ async def progress_loop(state: RunState, interval: float = 10.0, stream=sys.stde
 
 async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limits: RunLimits,
                   state: RunState, concurrency: int = 10, resume: bool = False,
-                  server_version: str | None = None, progress_interval: float = 10.0) -> list[dict]:
+                  server_version: str | None = None, progress_interval: float = 10.0,
+                  reveal_moves: bool = False) -> list[dict]:
     games = list(seedset["games"])
     todo = [g for g in games if not (resume and completed(out_dir, g))]
     state.total = len(games)
@@ -315,7 +378,8 @@ async def run_all(client: SimClient, policy, seedset: dict, out_dir: Path, limit
                 return None
             state.running += 1
             try:
-                r = await play_game(client, policy, g, seedset, out_dir, limits, state, server_version)
+                r = await play_game(client, policy, g, seedset, out_dir, limits, state, server_version,
+                                    reveal_moves=reveal_moves)
                 results.append(r)
                 return r
             finally:

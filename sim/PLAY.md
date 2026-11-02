@@ -14,7 +14,8 @@ dotnet run -c Release --project sim/Sts2Sim.Server -- --port 8765 --crash-log tm
 
 Flags: `--port N` (default 8765), `--crash-log PATH` (default `tmp/play-crashes.jsonl`, relative to the
 working directory), `--no-crash-log`, `--knowledge DIR` (rules text, see below; applies to serve,
-`--selftest` and `--replay`).
+`--selftest` and `--replay`), `--reveal-moves` (games default to `"reveal_moves": true`, see
+[Hidden information](#hidden-information); default off, as in the game).
 
 At startup the server prints one stderr line saying what rules text it loaded, e.g.
 `rules text: loaded from .../knowledge/source (discovered; versions v0.107.1,v0.111.0): 625 cards, 306 relics, ...`
@@ -46,8 +47,8 @@ dotnet run -c Release --project sim/Sts2Sim.Server -- --replay tmp/play-crashes.
 | `GET /health` | — | `{"ok":true,"version":"<git sha>","games":n}` |
 | `GET /catalog` | — | `{"characters":[...],"encounters":[...],"cards":[...],"relics":[...],"potions":[...],"events":[...]}` |
 | `GET /catalog?kind=K[&ids=A,B][&grep=X]` | — | `{"kind":K,"loaded":bool,"items":[{"id","name","text"}]}` for K = `cards relics potions powers events enemies keywords`; enemies items also carry `moves[{id,title}]`; `ids` filters by id (powers also match without `_POWER`), `grep` is a case-insensitive substring of id, name or text; unknown K is HTTP 400. Card text is a fresh unupgraded copy; event items have `text` null |
-| `POST /runs` | `{"seed":"ABC123"\|123\|null,"character":"IRONCLAD","ascension":0,"content":"ported_only"\|"all"}` | `{"id":"r1","observation":OBS}` |
-| `POST /combats` | `{"seed":1,"deck":[ids]\|null,"encounter":"NIBBITS_WEAK","ascension":0,"hp":null,"max_hp":null}` | `{"id":"c1","observation":OBS}` |
+| `POST /runs` | `{"seed":"ABC123"\|123\|null,"character":"IRONCLAD","ascension":0,"content":"ported_only"\|"all","reveal_moves":false}` | `{"id":"r1","observation":OBS}` |
+| `POST /combats` | `{"seed":1,"deck":[ids]\|null,"encounter":"NIBBITS_WEAK","ascension":0,"hp":null,"max_hp":null,"reveal_moves":false}` | `{"id":"c1","observation":OBS}` |
 | `GET /games/{id}` | — | `{"observation":OBS}` |
 | `POST /games/{id}/step` | `{"token":"play 0 -> 1"}` | `{"observation":OBS,"log":[...],"ok":true}` (log: see [Step log](#step-log)) |
 | `GET /games/{id}/piles` | — | `{"game_id","in_combat","draw":[card]\|null,"discard":[card]\|null,"exhaust":[card]\|null,"hand":[card]\|null,"deck":[card]}` (see [Piles](#piles)) |
@@ -58,6 +59,9 @@ Defaults: a run uses a random 10-character seed when `seed` is null, `IRONCLAD`,
 `ported_only` content (pulls restricted to ported encounters, events, cards, relics and potions, so
 random play does not stop on unported content). A combat's `deck` defaults to the Ironclad starting
 deck; a string combat seed is hashed like a run seed, a number is used as the numeric seed.
+`reveal_moves` (bool, default the server's `--reveal-moves`, i.e. false) names enemy moves in intents and
+in the enemy-turn log ([Hidden information](#hidden-information)); it is stored in the game's `config`
+(`/history`, crash repros).
 
 Errors:
 - `400 {"ok":false,"error":"...","legal_actions":[...]}`: an illegal or unknown token. The game is
@@ -91,11 +95,12 @@ Every field is always present; fields that do not apply to the current phase are
 | `phase` | run: `Map Combat Rewards CardReward Shop RestSite Treasure Event Prompt Victory Defeat`; combat games: `Combat Victory Defeat` |
 | `terminal`, `result` | `result` is `"win"` / `"loss"` once terminal, else null |
 | `act`, `floor`, `turn` | act 1-based and total floor (runs only); turn while a combat is in progress |
-| `player` | `character hp max_hp block energy max_energy gold [stars] powers[{id,amount,text,detail}] facing relics[{id,name,text,counter?}] potions[{slot,id,name,text}\|null] [orbs[{id,passive,evoke}] orb_slots] deck_size deck[ids, "+" = upgraded]` — `facing` is `"left"`/`"right"` in a SURROUNDED fight, else null |
-| `combat` | `hand[card] draw_count discard_count exhaust_count draw_pile (sorted) discard_pile enemies[{index,uid,id,name,hp,max_hp,block,flank,behind,intents[{type,move,move_name,damage?,times?,card_count?}],powers[{id,amount,text,detail}]}] allies?[{index,uid,id,name,hp,max_hp,block,powers}] danger` |
+| `player` | `character hp max_hp block energy max_energy gold [stars] powers[power] facing relics[{id,name,text,counter?}] potions[{slot,id,name,text}\|null] [orbs[{id,passive,evoke}] orb_slots] deck_size deck[ids, "+" = upgraded]` — `facing` is `"left"`/`"right"` in a SURROUNDED fight, else null |
+| `combat` | `hand[card] draw_count discard_count exhaust_count draw_pile (sorted) discard_pile enemies[{index,uid,id,name,hp,max_hp,block,flank,behind,intents[{type,move,move_name,damage?,times?,card_count?}],powers[power]}] allies?[{index,uid,id,name,hp,max_hp,block,powers}] danger` |
 | card (hand) | `{index,id,name,upgraded,cost (int or "X"),base_cost,star_cost?,type,target,rarity,keywords,vars{damage,block,...},effective,text,enchantments[{id,amount}],affliction{id,amount}\|null,dampened,playable,reason}`; card reward, prompt-free card lists and `/piles` use the same node without `playable`/`reason` and with `effective` null |
-| enemy | `uid` stable creature id ([uid and index](#creature-uid-and-index)); `move` the id of the move the intent belongs to, `move_name` its localised title (rules text) or null, text `[MOVE_ID (Title)]`; `flank` `"left"`/`"right"` (BACK_ATTACK_LEFT/RIGHT) or null; `behind` true when that enemy's attacks hit your back (x1.5) now, null outside SURROUNDED fights |
-| power `detail` | extra state beyond the amount, or null: `target uN X` / `from uN X` (the creature a power targets or came from), SURROUNDED facing, DAMPEN `N cards downgraded until uN X dies`, CHAINS_OF_BINDING bound-card count and whether a BOUND card was played this turn, SLOTH / TENDER cards played this turn, SLOW current bonus, WITHERING_PRESENCE cards left, THE_BOMB damage, POISON triggers |
+| enemy | `uid` stable creature id ([uid and index](#creature-uid-and-index)); intents show what the game shows (type, damage, hits, card count): `move` / `move_name` are null unless the game was created with `reveal_moves`, then `move` is the id of the move the intent belongs to, `move_name` its localised title (rules text) or null, text `[MOVE_ID (Title)]` before the intent; `flank` `"left"`/`"right"` (BACK_ATTACK_LEFT/RIGHT) or null; `behind` true when that enemy's attacks hit your back (x1.5) now, null outside SURROUNDED fights |
+| power | `{id,amount,text,detail[,amount_raw]}`. `amount` is the number on the game's power icon (`PowerModel.DisplayAmount`, through the diff projection's rule `SimProjector.DisplayAmount`): HARDENED_SHELL the HP it can still lose this turn, SLOW the bonus in % (10 per card), TENDER the cards played this turn, every other power its amount. Powers whose icon number the projection has no rule for yet (`SimProjector.PowersWithDisplayAmountOverride` throws `ProjectionGapException`; now AUTOMATION, CACOPHONY, FERAL, MONOLOGUE, ORBIT, PALE_BLUE_DOT, PANACHE, SLOTH, TAG_TEAM, WITHERING_PRESENCE) fall back to the kernel amount and carry `amount_raw` (= that amount); no other power has the key. `text` is the description with the kernel amount, as the game fills `{Amount}` |
+| power `detail` | what the player can see beyond the icon number, or null: SURROUNDED facing; DAMPEN `N cards downgraded until uN X dies` (the cards are marked `dampened`); CHAINS_OF_BINDING `N BOUND cards (ids); a BOUND card was played this turn: yes/no`; `target uN X` (the creature a power targets); the icon counters SLOTH `k/N cards played this turn`, TENDER `k cards played this turn`, WITHERING_PRESENCE `k cards until WITHER`; SLOW `+X% attack damage taken now` and THE_BOMB `N dmg to all enemies` (their descriptions); POISON `triggers Nx` (from visible ACCELERANT). Never who applied a power or kernel bookkeeping (applier ids, turn-start amounts, duration-tick flags) |
 | `combat.danger` | `{incoming,hits,by_enemy[{uid,id,damage,times}],block,net_hp_loss,hp_after,timers[{source,id,text}]}` ([Danger](#danger-lines)) |
 | `map` | `{"options":[{index,type,col,row,leads_to[types]}],"nodes":[{row,col,type,edges[cols],visited,current}]}` — `options` are the rooms you can travel to next and what each leads to; `nodes` is the whole act map (start, every room, boss), sorted by row then column, `edges` = the columns of the next row it connects to |
 | `rewards` | `[{index,type,detail}]` — unclaimed rewards |
@@ -106,7 +111,7 @@ Every field is always present; fields that do not apply to the current phase are
 | `event` | `{id,name,page,finished,options[{index,key,enabled,text,relic?}]}` — option `text` is `"Title: description"` from the game's event localisation with placeholders filled from the live event model (gold, HP loss, costs, the option's relic); unresolved values (an enchantment or card chosen at runtime) show `?`. Ancient relic options (Neow ...) have no option text of their own and show `Relic title: relic text`. The EventOption model carries no structured gold/HP cost, so there is no separate cost field: the cost is in the text |
 | `prompt` | `{kind,site,min,max,picked[],options[{index,id,name,upgraded,text}],can_confirm,can_cancel,source,source_name,source_text,pile,effect,needs_confirm,auto_completes_at,desc}` — a selection screen inside an effect (Neow relic choices, Discovery, Smith upgrade, potion effects...). While a prompt is pending only `pick/confirm/cancel` are legal; the combat or run screen behind it is still shown. `source` is the card/relic/potion/event that opened it (`source_text` its rules text, which says what happens to the picks), `pile` the source pile (`Hand`, `Draw`, `Discard`, `Deck`... or null), `effect` a one-line reading of the kind (`remove the picked cards from your Deck`, `Upgrade the picked cards in your Hand`, `select cards from your Discard pile`...). Settlement: `needs_confirm` true = picks are collected until `confirm`; otherwise the prompt resolves by itself on pick number `auto_completes_at` (= `max`; a single-pick prompt settles on its one `pick`), and when `can_confirm` is true `confirm` ends it early. `desc` says this in words and is rendered under the prompt header; each `pick` desc ends in `- settles the prompt` when that pick resolves it |
 | `legal_actions` | `[{token,desc}]` — every legal action exactly once |
-| rules text fields | `name` / `text` on cards, relics, potions, powers, enemies, shop entries, event options and prompt options, `relic_name` / `relic_text` on treasure, `move_name` on intents: filled from the game's localisation when rules text is loaded (see "Rules text"), null otherwise or for ids the localisation lacks. When non-null, `text` renders `ID (Name) ... — text` on the item's line; powers with text get an indented `ID — text` line under their owner |
+| rules text fields | `name` / `text` on cards, relics, potions, powers, enemies, shop entries, event options and prompt options, `relic_name` / `relic_text` on treasure, `move_name` on intents (with `reveal_moves` only): filled from the game's localisation when rules text is loaded (see "Rules text"), null otherwise or for ids the localisation lacks. When non-null, `text` renders `ID (Name) ... — text` on the item's line; powers with text get an indented `ID — text` line under their owner |
 | `text` | compact rendering: header (phase, act, floor, turn, HP, block, energy, gold), powers, relics, potions, orbs, deck, enemies with intents, hand, the phase screen, then the legal tokens one per line with their desc |
 
 Cards are described by id, type, cost, target, keywords and their dynamic-variable values (`vars`:
@@ -117,9 +122,25 @@ Hand indices shift after every play: always use the latest observation.
 Combat text, line by line: header; `incoming:` danger line and one `! ...` line per timer; `powers:`
 (`ID amount [detail]`); relics; potions; orbs; deck; `-- enemies` (`(you face right)` in SURROUNDED
 fights), one line per live enemy `[index] uid ID (Name) hp/max [block b] [| left side (BEHIND you:
-x1.5)] | intent: [MOVE_ID] Attack 6 + Buff | POWER amount [detail], ...`, allies as `ally [k] uid ID
-hp/max | powers`; `-- hand`, one line per card `[i] ID (Name) cost [(base Ne)] Type->Target (vars)
-[(eff ...)] {keywords} [AFFLICTION] [ench ID n] [dampened] [UNPLAYABLE:reason] — text`.
+x1.5)] | intent: Attack 6 + Buff | POWER amount [detail], ...` (with `reveal_moves`:
+`intent: [MOVE_ID (Title)] Attack 6 + Buff`), allies as `ally [k] uid ID hp/max | powers`; `-- hand`,
+one line per card `[i] ID (Name) cost [(base Ne)] Type->Target (vars) [(eff ...)] {keywords}
+[AFFLICTION] [ench ID n] [dampened] [UNPLAYABLE:reason] — text`. Power amounts in the text are the icon
+numbers of the `power` row above.
+
+### Hidden information
+
+The observation shows what a player of the real game can see, no more:
+
+- an enemy's intent is its type, damage per hit, hits and status-card count; the game never names the
+  move, so `intents[].move` / `move_name` are null and the enemy-turn log tells a move by its effects.
+  `"reveal_moves": true` in the create body (or `--reveal-moves` for the server default) adds the move
+  id and title back, for debugging and ablations only; evaluations run with it off;
+- the draw pile is listed sorted (`draw_pile`, `/piles`), never in draw order;
+- powers show the icon number and player-visible details, never who applied them or kernel counters.
+
+`GET /catalog?kind=enemies` still lists each monster's moves (a static reference, like a wiki); it
+does not say which move comes next.
 
 ### Creature uid and index
 
@@ -189,11 +210,11 @@ master `deck` and, in combat, `hand`, `discard` and `exhaust` in pile order and 
 | `also played: X -> u2 NIBBIT (auto), Y` | cards played besides the step's own card (replays, auto-plays) |
 | `potion 0 DISTILLED_CHAOS: played STRIKE_IRONCLAD -> u2 NIBBIT (auto), DEFEND_IRONCLAD (auto)` | cards a potion played |
 | `played: X (auto)` | cards auto-played during an end-turn step |
-| `enemy turn:` then ` u2 NIBBIT: BUTT_MOVE — attack 12 x1 -> player: 7 blocked, 5 dmg; +WEAK_POWER 1 -> player; +6 block; summoned u5 SPIKE_SLIME; added SLIMED x2` | one line per monster move, in order (move id, with the move's name when rules text is loaded): its hits by target, powers it applied (`-> self` / target), block, creatures it summoned, status cards created; damage on others during the move (thorns) is appended as `u2 NIBBIT took 3 dmg from player` |
+| `enemy turn:` then ` u2 NIBBIT: attack 12 x1 -> player: 7 blocked, 5 dmg; +WEAK_POWER 1 -> player; +6 block; summoned u5 SPIKE_SLIME; added SLIMED x2` | one line per monster move, in order: its hits by target, powers it applied (`-> self` / target), block, creatures it summoned, status cards created; damage on others during the move (thorns) is appended as `u2 NIBBIT took 3 dmg from player`. A move without any of these shows the intent types the player saw (` u3 CORPSE_SLUG: Stun`, `Sleep`, `Heal`), or `no visible effect`. With `reveal_moves` the line leads with the move id and, when rules text is loaded, its name: ` u2 NIBBIT: BUTT_MOVE (Butt) — attack 12 x1 -> player: ...` |
 | ` player took 5 dmg (TOXIC)` | end-turn-step damage outside a move (end-of-turn cards and powers, poison ticks) |
 | `turn N` | a new player turn |
 | `hp 80/80 -> 73/80 (7 dmg, 5 blocked)`, `block`, `energy`, `stars`, `gold` | player changes; the note sums the step's damage entries (`(healed N)` for a gain) |
-| `player +VULNERABLE_POWER 2`, `player -STRENGTH_POWER`, `player STRENGTH_POWER 2 -> 4` | player power changes |
+| `player +VULNERABLE_POWER 2`, `player -STRENGTH_POWER`, `player STRENGTH_POWER 2 -> 4` | player power changes, in icon numbers (`player TENDER_POWER 0 -> 1`) |
 | `u2 NIBBIT hp 44 -> 38 (6 dmg, 0 blocked)`, `u2 NIBBIT block 0 -> 6`, `u2 NIBBIT died`, `u2 X revived`, `u3 X escaped`, `u5 SPIKE_SLIME spawned (14/14 hp)`, `u2 +VULNERABLE_POWER 2` | per creature, by uid (never by index, so a kill produces no ghost heals or spawns) |
 | `cards: drew 5; discarded X; exhausted SLIMED; generated DAZED x2` | card flow from the history |
 | `deck + X`, `relic - Y`, `potion + Z` | deck, relic and potion changes |
@@ -256,7 +277,7 @@ $ curl -s -X POST localhost:8765/combats -d '{"seed":1,"encounter":"NIBBITS_WEAK
 == c1 Combat | turn 1 | IRONCLAD HP 80/80 block 0 energy 3/3 gold 0
 incoming: 12 dmg in 1 hit (u1 12x1), block 0, net -12 HP -> 68/80
 -- enemies
- [0] u1 NIBBIT 44/44 | intent: [BUTT_MOVE] Attack 12
+ [0] u1 NIBBIT 44/44 | intent: Attack 12
 -- hand (draw 5, discard 0, exhaust 0)
  [0] DEFEND_IRONCLAD 1e Skill->Self (5 block)
  [2] STRIKE_IRONCLAD 1e Attack->AnyEnemy (6 dmg)
@@ -269,13 +290,18 @@ $ curl -s -X POST localhost:8765/games/c1/step -d '{"token":"play 2 -> 0"}'   # 
 $ curl -s -X POST localhost:8765/games/c1/step -d '{"token":"play 0"}'        # log:
 ["play 0: play DEFEND_IRONCLAD [1e] (5 block)", "block 0 -> 5", "energy 2 -> 1"]
 $ curl -s -X POST localhost:8765/games/c1/step -d '{"token":"end"}'           # log:
-["end: end the turn", "enemy turn:", " u1 NIBBIT: BUTT_MOVE — attack 12 x1 -> player: 5 blocked, 7 dmg",
+["end: end the turn", "enemy turn:", " u1 NIBBIT: attack 12 x1 -> player: 5 blocked, 7 dmg",
  "turn 2", "hp 80/80 -> 73/80 (7 dmg, 5 blocked)", "block 5 -> 0", "energy 1 -> 3", "cards: drew 5"]
 $ curl -s -X POST localhost:8765/games/c1/step -d '{"token":"play 9"}'        # HTTP 400:
 {"ok":false,"error":"'play 9' is not a legal token here ...","legal_actions":[{"token":"play 0 -> 0",...}]}
 $ curl -s localhost:8765/games/c1/history
-{"id":"c1","kind":"combat","seed":1,"config":{...},"tokens":["play 2 -> 0","play 0","end"],"steps":3,"crashed":false}
+{"id":"c1","kind":"combat","seed":1,"config":{...,"reveal_moves":false},"tokens":["play 2 -> 0","play 0","end"],"steps":3,"crashed":false}
 ```
+
+With `{"seed":1,"encounter":"NIBBITS_WEAK","reveal_moves":true}` the enemy line reads
+`[0] u1 NIBBIT 44/44 | intent: [BUTT_MOVE] Attack 12` and the enemy-turn line
+` u1 NIBBIT: BUTT_MOVE — attack 12 x1 -> player: 5 blocked, 7 dmg` (`BUTT_MOVE (Butt)` once rules text
+is loaded).
 
 A full run starts the same way with `POST /runs` (phase `Event`, Neow: `event 0..2`), then
 `travel`, combats, `reward`/`card`/`proceed`, shops, rest sites, until `terminal` is true.
@@ -306,7 +332,10 @@ while not obs["terminal"]:
 this server, many games in parallel, with a seeded random policy or a Claude model through the
 Anthropic SDK; every step is transcribed and the run ends with `report.md` (win rate with a Wilson
 interval, floors, steps, illegal actions, crashes, tokens, cost, wall time). It only uses the
-endpoints above. Install, flags, output layout and metric definitions: `sim/tools/eval/README.md`.
+endpoints above and sends `"reveal_moves"` explicitly (default false; `--reveal-moves` to ablate), so an
+evaluation sees the game's view whatever the server default. A per-game loop guard hints once when the
+same observation repeats on a floor and ends a game as `stuck` when a floor takes too many non-combat
+steps. Install, flags, output layout and metric definitions: `sim/tools/eval/README.md`.
 
 ```bash
 uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy random --concurrency 10 --spawn

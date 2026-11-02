@@ -33,9 +33,12 @@ after every play and dead enemies disappear, so never reuse an index from an ear
 - Map: `travel <option>` goes to map option <option>; each option shows its room type and what it
   leads to next (Monster, Elite, RestSite, Shop, Treasure, Unknown = event or fight, Boss).
 - Rewards: `reward <index>` claims one reward (gold, potion, relic, card choice); `proceed` leaves
-  (unclaimed rewards are lost).
+  the rewards screen (unclaimed rewards are lost).
 - CardReward: `card <index>` takes a card, `skip` takes none, `reroll` / `alt <i>` when a relic
-  offers alternatives.
+  offers alternatives. Rule (unless the screen says skipping completes the reward): `skip` only
+  closes the card choice and keeps that card reward on the rewards screen; opening it again with
+  `reward <index>` shows the same cards. To leave without the card, `skip` and then `proceed` on
+  the rewards screen. A chain like reward -> skip -> reward -> skip is pointless: it changes nothing.
 - Shop: `buy <index>`, `remove` (pay for a card removal; a prompt follows), `leave`.
 - RestSite: `rest <option>` (HEAL heals, SMITH upgrades a card, others from relics), `leave` when done.
 - Treasure: `open` the chest, `take 0` the relic, or `skip`.
@@ -88,10 +91,22 @@ already includes the enemy's modifiers; your block absorbs it first.
 ## Common mistakes to avoid
 Wrong or stale index; a target on an untargeted card or none on an AnyEnemy card; ending the turn
 with energy and useful cards left; blocking when nothing attacks; attacking into lethal damage;
-ignoring a pending prompt; hoarding potions until death; leaving rewards unclaimed by accident.
+ignoring a pending prompt; hoarding potions until death; leaving rewards unclaimed by accident;
+re-opening a card reward you already skipped instead of `proceed`.
 """
 
 INSTRUCTION = "Reply with exactly one token from the legal actions list on the first line."
+
+REWARD_PHASES = ("Rewards", "CardReward")
+
+
+def loop_hint(repeat: int, phase: str | None) -> str:
+    """The one-time line the runner adds to the next prompt once an observation has come up `repeat`
+    times on one floor (runner.LoopGuard)."""
+    head = f"The last {repeat} observations were identical: you are not making progress."
+    if phase in REWARD_PHASES:
+        return head + ' Skipping a card reward keeps the offer; use "proceed" to leave the rewards screen.'
+    return head + " Choose an action that changes the state; re-opening a screen or cancelling a selection does not."
 
 
 def prompt_hash(system: str = SYSTEM_PROMPT) -> str:
@@ -118,6 +133,8 @@ def build_user_message(obs_text: str, legal: list[str], recent_history: dict | N
             parts.append("-- your last actions (oldest first)\n" + "\n".join(f" {a}" for a in actions))
         if log:
             parts.append("-- last log lines\n" + "\n".join(f" {line}" for line in log))
+    if hist.get("loop_hint"):
+        parts.append("== Loop warning\n" + str(hist["loop_hint"]).rstrip())
     if feedback:
         parts.append("== Your previous reply was rejected\n" + feedback.rstrip()
                      + "\nLegal tokens: " + " | ".join(legal))

@@ -17,7 +17,7 @@ from . import seedsets
 from .policies import EFFORTS, MODELS, ClaudePolicy, RandomPolicy, RateLimiter, thinking_param
 from .prompt import SYSTEM_PROMPT, prompt_hash
 from .report import render_md, write_report
-from .runner import RunLimits, RunState, run_all
+from .runner import FLOOR_STEP_CAP, LOOP_REPEAT, RunLimits, RunState, run_all
 from .server import SpawnedServer, git_sha, repo_root
 from .simclient import SimClient, SimError
 
@@ -35,6 +35,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--concurrency", type=int, default=10)
     r.add_argument("--rps-limit", type=float, default=None, help="max API request starts per second")
     r.add_argument("--step-cap", type=int, default=1200)
+    r.add_argument("--loop-repeat", type=int, default=LOOP_REPEAT,
+                   help="hint once when one observation has come up K times on a floor (0 = off)")
+    r.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
+                   help="non-combat steps per floor before the game ends 'stuck' (0 = off)")
+    r.add_argument("--reveal-moves", action="store_true",
+                   help="create games with reveal_moves (intents name the enemy move); default off = the game's view")
     r.add_argument("--game-minutes", type=float, default=60.0, help="wall-clock cap per game")
     r.add_argument("--step-timeout", type=float, default=300.0, help="seconds per policy decision (incl. SDK retries)")
     r.add_argument("--max-cost-usd", type=float, default=None)
@@ -93,6 +99,7 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             "max_tokens": args.max_tokens if policy.name == "claude" else None,
             "prompt_hash": prompt_hash() if policy.name == "claude" else None,
             "system_prompt_chars": len(SYSTEM_PROMPT),
+            "reveal_moves": bool(args.reveal_moves),
             "server_url": url,
             "server_spawned": bool(args.spawn),
             "server_version": health.get("version"),
@@ -100,7 +107,8 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
             "prices": prices,
             "limits": {"step_cap": args.step_cap, "game_minutes": args.game_minutes,
                        "step_timeout_s": args.step_timeout, "max_minutes": args.max_minutes,
-                       "max_cost_usd": args.max_cost_usd},
+                       "max_cost_usd": args.max_cost_usd, "loop_repeat": args.loop_repeat,
+                       "floor_step_cap": args.floor_step_cap},
             "concurrency": args.concurrency,
             "rps_limit": args.rps_limit,
             "resume": args.resume,
@@ -110,17 +118,19 @@ async def _run(args, policy, seedset: dict, out_dir: Path, url: str, prices: dic
         if args.resume and cfg_path.exists():
             with open(cfg_path, encoding="utf-8") as f:
                 prev = json.load(f)
-            cfg["resumed_from"] = {k: prev.get(k) for k in ("created", "server_version", "repo_sha", "prompt_hash")}
+            cfg["resumed_from"] = {k: prev.get(k) for k in ("created", "server_version", "repo_sha", "prompt_hash",
+                                                            "reveal_moves")}
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=1)
         limits = RunLimits(step_cap=args.step_cap, game_minutes=args.game_minutes,
-                           step_timeout_s=args.step_timeout, max_minutes=args.max_minutes)
+                           step_timeout_s=args.step_timeout, max_minutes=args.max_minutes,
+                           loop_repeat=args.loop_repeat, floor_step_cap=args.floor_step_cap)
         state = RunState(tracker=tracker)
         t0 = time.monotonic()
         try:
             await run_all(client, policy, seedset, out_dir, limits, state, concurrency=args.concurrency,
                           resume=args.resume, server_version=health.get("version"),
-                          progress_interval=args.progress_interval)
+                          progress_interval=args.progress_interval, reveal_moves=args.reveal_moves)
         except asyncio.CancelledError:
             state.abort("interrupted")
         run = {"wall_seconds": round(time.monotonic() - t0, 2), "abort_reason": state.abort_reason,
