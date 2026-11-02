@@ -171,3 +171,31 @@ Combat bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, NIBBITS_WEAK,
 | Row | decisions/s | Clone() | StateHash() |
 |---|---|---|---|
 | E2 integrate | 142,439 | 2.172 us | 2.625 us |
+
+## Linux x86_64 (Huginn)
+
+2026-11-01, commit `7527635` (full test suite: `a20ed62`, same `sim/` code), `scripts/linux_validate.sh`; details in
+`docs/linux-validation-2026-11-01.md`. Machine: Intel Xeon Platinum KVM guest, 4 cores x 2 threads = 8 vCPU, 30 GB,
+Ubuntu 24.04.4, .NET SDK 9.0.320 / runtime 9.0.22 (user-level `$HOME/.dotnet`), Release, Server GC for vec rows, idle
+host (load average 0.00 before the run). Mac column: Apple M4 Pro, same commit, same session (load average 2 to 7).
+All vec rows: A0, pool 1024 fresh entries (Python: default pool 64), 0 sim_error / content_gap / illegal / truncated,
+0 wins; episode counts identical on both platforms (cross-platform determinism; combat hash sink `40788C706BFA21E0`
+on both).
+
+| Row | Huginn x86_64 | Mac M4 Pro | Mac / Huginn |
+|---|---|---|---|
+| Combat playouts, NIBBITS_WEAK, 5 s (decisions/s) | 41,400 | 147,223 | 3.6x |
+| Clone() | 8.595 us | 2.325 us | 3.7x |
+| StateHash() | 4.532 us | 2.554 us | 1.8x |
+| C# vec 1024 x 8, 500 steps (env-steps/s; ms/batch) | 28,072; 36.5 | 114,818; 8.9 | 4.1x |
+| C# vec 1024 x 8, 3000 steps (steady state) | 50,452; 20.3 | 179,715; 5.7 | 3.6x |
+| C# vec 1024 x 1, 500 steps | 10,431; 98.2 | 26,436; 38.7 | 2.5x |
+| C# vec 4096 x 8, 500 steps | 44,965; 91.1 | 125,397; 32.7 | 2.8x |
+| C# vec 64 x 8, 500 steps | 21,796; 2.9 | 65,356; 1.0 | 3.0x |
+| Python `sts2vec bench --envs 1024 --threads 8 --steps 500` (hostfxr JIT) | 21,556; 47.5 | 47,739; 21.5 | 2.2x |
+| Same, NativeAOT `Sts2Sim.Vec.so` (`STS2VEC_AOT_LIB`) | 61,425; 16.7 | — | — |
+| Full test suite (1103 tests, single-threaded runner) | 1171 s | 420 s | 2.8x |
+
+§D7 (≥ 50k env-steps/s at 1024 x 8): met on Huginn at steady state (50.5k over 3000 batches) and with NativeAOT
+(61k at 500); the 500-batch JIT row (28k) is mostly tiered-JIT warm-up on 4 cores (`DOTNET_TieredCompilation=0`:
+51.8k at 500; probe in the doc §3.3).
