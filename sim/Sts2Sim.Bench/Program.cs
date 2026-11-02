@@ -11,6 +11,22 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "run-soak")
+        {
+            return RunSoakBench(args);
+        }
+        if (args.Length > 0 && args[0] == "vec")
+        {
+            return VecBench.Run(args);
+        }
+        if (args.Length > 0 && args[0] == "fastpath")
+        {
+            return FastPathBench.Run(args);
+        }
+        if (args.Length > 0 && args[0] == "nightly-soak")
+        {
+            return NightlySoak.Run(args);
+        }
         string encounter = args.Length > 0 ? args[0] : NibbitsWeak.EncounterIdEntry;
         double seconds = args.Length > 1 && double.TryParse(args[1], out var s) ? s : 5.0;
         var deck = StartingDecks.Ironclad;
@@ -107,5 +123,116 @@ public static class Program
         sw.Stop();
         if (!quiet)
             Console.WriteLine($"playouts: {decisions} decisions, {episodes} episodes ({completed} completed, {capped} capped, {wins} wins) in {sw.Elapsed.TotalSeconds:F2}s => {decisions / sw.Elapsed.TotalSeconds:F0} decisions/s, {episodes / sw.Elapsed.TotalSeconds:F0} episodes/s, {(double)decisions / episodes:F1} decisions/episode");
+    }
+    private static int RunSoakBench(string[] args)
+    {
+        int runs = args.Length > 1 && int.TryParse(args[1], out var r) ? r : 100_000;
+        int firstSeed = args.Length > 2 && int.TryParse(args[2], out var f) ? f : 1;
+        var sw = Stopwatch.StartNew();
+        Sts2Sim.Core.Run.RunSoakResult result;
+        try
+        {
+            result = Sts2Sim.Core.Run.RunSoak.Run(new Sts2Sim.Core.Run.RunSoakOptions { Runs = runs, FirstSeed = firstSeed });
+        }
+        catch (NotImplementedException ex)
+        {
+            Console.WriteLine($"run-soak: blocked on a W2 stub: {ex.Message}");
+            return 2;
+        }
+        sw.Stop();
+        Console.WriteLine($"run-soak: {result.Runs} runs ({result.Victories} victories, {result.Defeats} defeats, {result.Capped} capped), {result.Steps} steps in {sw.Elapsed.TotalSeconds:F1}s, {result.FailureCount} failures");
+        foreach (var failure in result.Failures)
+        {
+            Console.WriteLine("  " + failure);
+        }
+        return result.FailureCount == 0 ? 0 : 1;
+    }
+}
+
+public static class NightlySoak
+{
+    private static readonly int[] Ascensions = { 0, 5, 10 };
+
+    public static int Run(string[] args)
+    {
+        int runsPerCell = args.Length > 1 && int.TryParse(args[1], out var r) ? r : 200;
+        int firstSeed = args.Length > 2 && int.TryParse(args[2], out var f) ? f : 1;
+        int stepCap = args.Length > 3 && int.TryParse(args[3], out var c) ? c : 6000;
+        var characters = Sts2Sim.Core.Registry.CharacterRegistry.AllIds.Count > 0
+            ? Sts2Sim.Core.Registry.CharacterRegistry.AllIds.OrderBy(id => id, StringComparer.Ordinal).ToList()
+            : new List<string> { StartingDecks.IroncladCharacterId };
+        var signatures = new Dictionary<string, (int Count, string Example, bool Gap)>(StringComparer.Ordinal);
+        var sw = Stopwatch.StartNew();
+        var buffer = new List<RunAction>(64);
+        long totalSteps = 0;
+        foreach (var character in characters)
+        {
+            foreach (var ascension in Ascensions)
+            {
+                int victories = 0, defeats = 0, capped = 0, failed = 0;
+                for (int i = 0; i < runsPerCell; i++)
+                {
+                    int seed = firstSeed + i;
+                    var config = new Sts2Sim.Core.Run.RunConfig("NIGHTLY" + seed.ToString("D8", System.Globalization.CultureInfo.InvariantCulture), character, ascension)
+                    {
+                        Content = Sts2Sim.Core.Run.ContentFilter.PortedOnly
+                    };
+                    var random = new System.Random(seed * 31 + ascension);
+                    var phase = RunPhase.Map;
+                    int n = 0;
+                    try
+                    {
+                        var sim = Sts2Sim.Core.Run.RunSim.NewRun(config);
+                        while (!sim.IsTerminal && n < stepCap)
+                        {
+                            phase = sim.Phase;
+                            sim.LegalActions(buffer);
+                            if (buffer.Count == 0)
+                            {
+                                throw new InvalidOperationException($"no legal action in phase {phase}");
+                            }
+                            if (n % 101 == 0 && sim.Clone().StateHash() != sim.StateHash())
+                            {
+                                throw new InvalidOperationException($"Hash(x) != Hash(x.Clone()) in phase {phase}");
+                            }
+                            sim.Step(buffer[random.Next(buffer.Count)]);
+                            n++;
+                        }
+                        if (!sim.IsTerminal)
+                        {
+                            capped++;
+                        }
+                        else if (sim.Phase == RunPhase.Victory)
+                        {
+                            victories++;
+                        }
+                        else
+                        {
+                            defeats++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        string signature = $"{ex.GetType().Name}: {System.Text.RegularExpressions.Regex.Replace(ex.Message, @"\d+", "#")}";
+                        string example = $"{character}/A{ascension}/{config.SeedText}/{phase}/{n}";
+                        signatures[signature] = signatures.TryGetValue(signature, out var known)
+                            ? (known.Count + 1, known.Example, known.Gap)
+                            : (1, example, ex is NotImplementedException or NotSupportedException);
+                    }
+                    totalSteps += n;
+                }
+                Console.WriteLine($"nightly-soak {character} A{ascension}: {runsPerCell} runs ({victories} victories, {defeats} defeats, {capped} capped, {failed} failed)");
+            }
+        }
+        sw.Stop();
+        int bugs = signatures.Values.Where(v => !v.Gap).Sum(v => v.Count);
+        int gaps = signatures.Values.Where(v => v.Gap).Sum(v => v.Count);
+        Console.WriteLine($"nightly-soak: {characters.Count} characters x {Ascensions.Length} ascensions x {runsPerCell} runs, {totalSteps} steps in {sw.Elapsed.TotalSeconds:F1}s; {signatures.Count} distinct exception signatures ({bugs} runs failed, {gaps} runs stopped at unported content)");
+        foreach (var (signature, info) in signatures.OrderByDescending(p => p.Value.Count).ThenBy(p => p.Key, StringComparer.Ordinal))
+        {
+            Console.WriteLine($"  {(info.Gap ? "gap" : "bug")} x{info.Count} {signature}  (first: {info.Example})");
+        }
+        return bugs == 0 ? 0 : 1;
     }
 }

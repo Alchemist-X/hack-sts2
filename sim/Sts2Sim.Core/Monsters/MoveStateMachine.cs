@@ -314,6 +314,7 @@ public sealed class MonsterAiRuntime : ICanonical
             : new HashSet<string>(source.PerformedAtLeastOnce, StringComparer.Ordinal);
         NextMove = source.NextMove;
         IsPerformingMove = source.IsPerformingMove;
+        IsMachineReset = source.IsMachineReset;
     }
 
     public MonsterMoveStateMachineDef Machine { get; }
@@ -336,6 +337,18 @@ public sealed class MonsterAiRuntime : ICanonical
 
     public bool IsPerformingMove { get; set; }
 
+    public bool IsMachineReset { get; private set; }
+
+    internal void ResetMachine() => IsMachineReset = true;
+
+    internal void RequireMachine()
+    {
+        if (IsMachineReset)
+        {
+            throw new InvalidOperationException("The move state machine was reset when its monster left the room (MonsterModel.ResetStateMachine, Models/MonsterModel.cs:693-696); the game dereferences the null machine here.");
+        }
+    }
+
     public bool IntendsToAttack => NextMove != null && NextMove.IntendsToAttack;
 
     public bool HasPerformedAtLeastOnce(MoveStateDef state) => PerformedAtLeastOnce.Contains(state.Id);
@@ -344,6 +357,7 @@ public sealed class MonsterAiRuntime : ICanonical
 
     public MoveStateDef RollMove(CombatState cs, MonsterState owner, Rng rng)
     {
+        RequireMachine();
         FindNextMoveState(cs, owner, rng, logMove: true);
         if (!_current.IsMove)
         {
@@ -354,11 +368,23 @@ public sealed class MonsterAiRuntime : ICanonical
         return move;
     }
 
-    public void ForceCurrentState(string stateId) => SetCurrentState(Machine.Get(stateId));
+    public void ForceCurrentState(string stateId)
+    {
+        RequireMachine();
+        SetCurrentState(Machine.Get(stateId));
+    }
 
-    public void ForceCurrentState(AiStateDef state) => SetCurrentState(state);
+    public void ForceCurrentState(AiStateDef state)
+    {
+        RequireMachine();
+        SetCurrentState(state);
+    }
 
-    public void OnMovePerformed(MoveStateDef move) => PerformedFirstMove = true;
+    public void OnMovePerformed(MoveStateDef move)
+    {
+        RequireMachine();
+        PerformedFirstMove = true;
+    }
 
     public void SetMoveImmediate(MoveStateDef state, bool forceTransition = false)
     {
@@ -431,7 +457,7 @@ public sealed class MonsterAiRuntime : ICanonical
 
     public void WriteCanonical(CanonicalWriter w)
     {
-        w.WriteTag(MonsterCanonicalTags.AiRuntime);
+        w.WriteTag(IsMachineReset ? MonsterCanonicalTags.AiRuntimeReset : MonsterCanonicalTags.AiRuntime);
         w.WriteString(Machine.InitialState.Id);
         w.WriteCount(Machine.States.Count);
         WriteStateRef(w, _current);

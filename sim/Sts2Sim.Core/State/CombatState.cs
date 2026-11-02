@@ -4,50 +4,104 @@ public sealed class CombatState : ICanonical
 {
     private const int DefaultMonsterCapacity = 6;
 
+    private const int DefaultAllyCapacity = 2;
+
+    private readonly List<CreatureState> _allies;
+
     public CombatState(PlayerState player, string encounterId, int ascension, RunRngSet rng)
+        : this(RunState.CreateStandalone(player, rng, ascension), player, encounterId)
     {
+    }
+
+    public CombatState(RunState run, PlayerState player, string encounterId)
+    {
+        ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(player);
+        Run = run;
         Player = player;
         EncounterId = encounterId;
-        Ascension = ascension;
-        Rng = rng;
         Monsters = new List<MonsterState>(DefaultMonsterCapacity);
+        _allies = new List<CreatureState>(DefaultAllyCapacity) { player };
+        History = new CombatHistory();
+        PlayersTakingExtraTurn = new List<int>();
+        PlayersReadyToEndTurn = new List<int>();
+        EscapedCreatures = new List<CreatureState>();
+        SpawnedEnemyIds = new List<string>();
         RoundNumber = 1;
         CurrentSide = CombatSide.Player;
         NextCreatureId = player.CombatId + 1;
+        run.Combat ??= this;
     }
 
-    private CombatState(CombatState source, PlayerState player, RunRngSet rng, List<MonsterState> monsters)
+    private CombatState(CombatState source, RunState run, PlayerState player, List<MonsterState> monsters, List<CreatureState> allies)
     {
+        Run = run;
         Player = player;
         EncounterId = source.EncounterId;
-        Ascension = source.Ascension;
-        Rng = rng;
         Monsters = monsters;
+        _allies = allies;
+        History = source.History.DeepClone();
+        PlayersTakingExtraTurn = new List<int>(source.PlayersTakingExtraTurn);
+        PlayersReadyToEndTurn = new List<int>(source.PlayersReadyToEndTurn);
+        var escaped = source.EscapedCreatures;
+        EscapedCreatures = new List<CreatureState>(escaped.Count);
+        for (int i = 0; i < escaped.Count; i++)
+        {
+            EscapedCreatures.Add(escaped[i].DeepCloneCreature());
+        }
+        SpawnedEnemyIds = new List<string>(source.SpawnedEnemyIds);
+        EncounterExtra = source.EncounterExtra?.DeepClone();
+        CardOrPotionEffectDepth = source.CardOrPotionEffectDepth;
         RoundNumber = source.RoundNumber;
         CurrentSide = source.CurrentSide;
         Outcome = source.Outcome;
+        PlayerHpAtCombatEnd = source.PlayerHpAtCombatEnd;
         IsInProgress = source.IsInProgress;
         IsStarting = source.IsStarting;
         NextCreatureId = source.NextCreatureId;
-        NextCardInstanceId = source.NextCardInstanceId;
+        NextCardPlayId = source.NextCardPlayId;
     }
+
+    public RunState Run { get; }
 
     public PlayerState Player { get; }
 
     public List<MonsterState> Monsters { get; }
 
+    public IReadOnlyList<CreatureState> Allies => _allies;
+
     public string EncounterId { get; }
 
-    public int Ascension { get; }
+    public int Ascension => Run.Ascension;
 
-    public RunRngSet Rng { get; }
+    public RunRngSet Rng => Run.Rng;
+
+    public ChoiceRuntime Choice => Run.Choice;
+
+    public CombatHistory History { get; }
+
+    public int CardOrPotionEffectDepth { get; set; }
+
+    public List<int> PlayersTakingExtraTurn { get; }
+
+    public List<int> PlayersReadyToEndTurn { get; }
+
+    public List<CreatureState> EscapedCreatures { get; }
+
+    public List<string> SpawnedEnemyIds { get; }
+
+    public EncounterExtraState? EncounterExtra { get; set; }
 
     public int RoundNumber { get; set; }
 
     public CombatSide CurrentSide { get; set; }
 
     public CombatOutcome Outcome { get; set; }
+
+    // Harness observation (not canonical state): the player HP when the combat was decided, before AfterCombatEnd /
+    // AfterCombatVictory hooks (BURNING_BLOOD heals 6 in AfterCombatVictory, Models.Relics/BurningBlood.cs:52). The recorder's
+    // last in-combat snapshot (bundle `final_hp`, sim/specs/diff-bundle.md) is taken before those hooks.
+    public int? PlayerHpAtCombatEnd { get; set; }
 
     public bool IsInProgress { get; set; }
 
@@ -57,11 +111,19 @@ public sealed class CombatState : ICanonical
 
     public int NextCreatureId { get; set; }
 
-    public int NextCardInstanceId { get; set; }
+    public int NextCardInstanceId
+    {
+        get => Run.NextCardInstanceId;
+        set => Run.NextCardInstanceId = value;
+    }
+
+    public int NextCardPlayId { get; set; }
 
     public int AllocateCreatureId() => NextCreatureId++;
 
-    public int AllocateCardInstanceId() => NextCardInstanceId++;
+    public int AllocateCardInstanceId() => Run.AllocateCardInstanceId();
+
+    public int AllocateCardPlayId() => NextCardPlayId++;
 
     public bool HasAscension(AscensionLevel level) => Ascension >= (int)level;
 
@@ -74,11 +136,17 @@ public sealed class CombatState : ICanonical
     public float GetValueIfAscension(AscensionLevel level, float ascensionValue, float fallbackValue)
         => HasAscension(level) ? ascensionValue : fallbackValue;
 
+    public IReadOnlyList<CreatureState> CreaturesOnCurrentSide => GetCreaturesOnSide(CurrentSide);
+
     public CreatureState? GetCreatureById(int combatId)
     {
-        if (Player.CombatId == combatId)
+        var allies = _allies;
+        for (int i = 0; i < allies.Count; i++)
         {
-            return Player;
+            if (allies[i].CombatId == combatId)
+            {
+                return allies[i];
+            }
         }
         var monsters = Monsters;
         for (int i = 0; i < monsters.Count; i++)
@@ -93,13 +161,50 @@ public sealed class CombatState : ICanonical
 
     public void GetCreatures(List<CreatureState> buffer)
     {
+        ArgumentNullException.ThrowIfNull(buffer);
         buffer.Clear();
-        buffer.Add(Player);
+        var allies = _allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            buffer.Add(allies[i]);
+        }
         var monsters = Monsters;
         for (int i = 0; i < monsters.Count; i++)
         {
             buffer.Add(monsters[i]);
         }
+    }
+
+    public IReadOnlyList<CreatureState> GetCreaturesOnSide(CombatSide side)
+    {
+        if (side != CombatSide.Enemy)
+        {
+            return _allies;
+        }
+        return Monsters;
+    }
+
+    public void GetCreaturesOnSide(CombatSide side, List<CreatureState> buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        buffer.Clear();
+        var creatures = GetCreaturesOnSide(side);
+        for (int i = 0; i < creatures.Count; i++)
+        {
+            buffer.Add(creatures[i]);
+        }
+    }
+
+    public IReadOnlyList<CreatureState> GetOpponentsOf(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        return GetCreaturesOnSide(CombatStatus.OppositeSide(creature.Side));
+    }
+
+    public IReadOnlyList<CreatureState> GetTeammatesOf(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        return GetCreaturesOnSide(creature.Side);
     }
 
     public void GetHittableEnemies(List<MonsterState> buffer)
@@ -116,53 +221,233 @@ public sealed class CombatState : ICanonical
         }
     }
 
-    public void AddMonster(MonsterState monster)
+    public bool ContainsCreature(CreatureState creature)
     {
-        ArgumentNullException.ThrowIfNull(monster);
-        if (IndexOfMonster(monster) >= 0)
+        ArgumentNullException.ThrowIfNull(creature);
+        return IndexOfAlly(creature) >= 0 || IndexOfMonster(creature) >= 0;
+    }
+
+    public void AddCreature(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        if (ContainsCreature(creature))
         {
             throw new InvalidOperationException("Creature is already in this combat, but AddCreature was called on it again.");
         }
+        if (creature.Side == CombatSide.Player)
+        {
+            _allies.Add(creature);
+            return;
+        }
+        if (creature is not MonsterState monster)
+        {
+            throw new ArgumentException($"Only a monster can join the enemy side; creature {creature.CombatId} is a player.", nameof(creature));
+        }
         Monsters.Add(monster);
+    }
+
+    public void RemoveCreature(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        int enemyIndex = IndexOfMonster(creature);
+        if (enemyIndex >= 0)
+        {
+            Monsters.RemoveAt(enemyIndex);
+            return;
+        }
+        int allyIndex = IndexOfAlly(creature);
+        if (allyIndex < 0)
+        {
+            throw new InvalidOperationException($"Removed creature '{Describe(creature)}' (combat id {creature.CombatId}) was not found.");
+        }
+        if (ReferenceEquals(creature, Player))
+        {
+            throw new InvalidOperationException($"The combat's player (combat id {creature.CombatId}) stays in Allies[0]; the sim never removes it.");
+        }
+        _allies.RemoveAt(allyIndex);
+    }
+
+    public void AddMonster(MonsterState monster)
+    {
+        ArgumentNullException.ThrowIfNull(monster);
+        AddCreature(monster);
     }
 
     public void RemoveMonster(MonsterState monster)
     {
         ArgumentNullException.ThrowIfNull(monster);
-        int index = IndexOfMonster(monster);
-        if (index < 0)
+        RemoveCreature(monster);
+    }
+
+    public void AddAlly(MonsterState pet)
+    {
+        ArgumentNullException.ThrowIfNull(pet);
+        if (pet.Side != CombatSide.Player)
         {
-            throw new InvalidOperationException($"Removed creature '{monster.MonsterId}' (combat id {monster.CombatId}) was not found.");
+            throw new ArgumentException($"AddAlly needs a player-side creature; {pet.MonsterId} (combat id {pet.CombatId}) is on side {pet.Side}.", nameof(pet));
         }
-        Monsters.RemoveAt(index);
+        AddCreature(pet);
+    }
+
+    public void RemoveAlly(MonsterState pet)
+    {
+        ArgumentNullException.ThrowIfNull(pet);
+        RemoveCreature(pet);
+    }
+
+    public void SetEnemyIndex(MonsterState creature, int index)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        if (!EncounterRegistry.TryGet(EncounterId, out var encounter))
+        {
+            throw new InvalidOperationException($"Encounter {EncounterId} is not registered, so its slots are unknown.");
+        }
+        if (encounter.Slots.Count > 0)
+        {
+            throw new InvalidOperationException("Cannot modify turn order of a combat with pre-set slots");
+        }
+        int at = IndexOfMonster(creature);
+        if (at < 0)
+        {
+            throw new ArgumentException("Creature must be a valid enemy to change its turn order.", nameof(creature));
+        }
+        Monsters.RemoveAt(at);
+        Monsters.Insert(Math.Min(index, Monsters.Count - 1), creature);
+    }
+
+    public void CreatureEscaped(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        EscapedCreatures.Add(creature);
+        RemoveCreature(creature);
+    }
+
+    public void OnCreatureSpawned(MonsterState monster)
+    {
+        ArgumentNullException.ThrowIfNull(monster);
+        if (monster.Side != CombatSide.Enemy)
+        {
+            return;
+        }
+        string id = monster.Def.Id;
+        if (!SpawnedEnemyIds.Contains(id))
+        {
+            SpawnedEnemyIds.Add(id);
+        }
+    }
+
+    public bool IsPlayerReadyToEndTurn(PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return PlayersReadyToEndTurn.Contains(player.CombatId);
+    }
+
+    public bool AllPlayersReadyToEndTurn()
+    {
+        int players = 0;
+        var allies = _allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (allies[i] is PlayerState)
+            {
+                players++;
+            }
+        }
+        return PlayersReadyToEndTurn.Count == players;
+    }
+
+    public T? GetEncounterExtra<T>() where T : EncounterExtraState => EncounterExtra as T;
+
+    public void InvokeDiedEvent(CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        if (creature is not MonsterState pet || pet.PetOwnerId == PowerModel.NoCreature)
+        {
+            return;
+        }
+        if (GetCreatureById(pet.PetOwnerId) is PlayerState owner && owner.PetIds.Contains(pet.CombatId))
+        {
+            owner.OnPetDied(this, pet);
+        }
+    }
+
+    public CardInstance CreateCard(CardDef def, PlayerState owner)
+    {
+        ArgumentNullException.ThrowIfNull(def);
+        ArgumentNullException.ThrowIfNull(owner);
+        var card = new CardInstance(def, AllocateCardInstanceId());
+        card.AttachTo(owner);
+        def.AfterCreated(card);
+        return card;
+    }
+
+    public CardInstance CreateCard(string cardId, PlayerState owner)
+    {
+        ArgumentNullException.ThrowIfNull(cardId);
+        return CreateCard(CardRegistry.Get(cardId), owner);
+    }
+
+    public CardInstance CloneCard(CardInstance mutableCard)
+    {
+        ArgumentNullException.ThrowIfNull(mutableCard);
+        var clone = mutableCard.CloneForCombat(AllocateCardInstanceId());
+        clone.DeckVersionId = CardInstance.NoDeckVersion;
+        return clone;
     }
 
     public CombatState DeepClone()
     {
-        var player = Player.DeepClone();
-        var rng = Rng is null ? null! : Rng.DeepClone();
+        var run = Run.CloneWithoutCombat();
+        var clone = CloneInto(run, Run);
+        if (ReferenceEquals(Run.Combat, this))
+        {
+            run.Combat = clone;
+        }
+        return clone;
+    }
+
+    internal CombatState CloneInto(RunState run, RunState sourceRun)
+    {
+        int playerIndex = sourceRun.Players.IndexOf(Player);
+        var player = playerIndex >= 0 ? run.Players[playerIndex] : Player.DeepClone();
         var source = Monsters;
         var monsters = new List<MonsterState>(Math.Max(source.Count, DefaultMonsterCapacity));
         for (int i = 0; i < source.Count; i++)
         {
             monsters.Add(source[i].DeepClone());
         }
-        return new CombatState(this, player, rng, monsters);
+        var sourceAllies = _allies;
+        var allies = new List<CreatureState>(Math.Max(sourceAllies.Count, DefaultAllyCapacity));
+        for (int i = 0; i < sourceAllies.Count; i++)
+        {
+            var ally = sourceAllies[i];
+            allies.Add(ReferenceEquals(ally, Player) ? player : ally.DeepCloneCreature());
+        }
+        return new CombatState(this, run, player, monsters, allies);
     }
 
     public void WriteCanonical(CanonicalWriter w)
     {
+        Run.WriteRunFields(w);
+        WriteCombatFields(w);
+    }
+
+    internal void WriteCombatFields(CanonicalWriter w)
+    {
         w.WriteTag(StateCanonicalTags.CombatState);
         w.WriteString(EncounterId);
-        w.WriteInt32(Ascension);
         w.WriteInt32(RoundNumber);
         w.WriteInt32((int)CurrentSide);
         w.WriteByte((byte)Outcome);
         w.WriteBool(IsInProgress);
         w.WriteBool(IsStarting);
         w.WriteInt32(NextCreatureId);
-        w.WriteInt32(NextCardInstanceId);
-        Player.WriteCanonical(w);
+        int playerIndex = Run.Players.IndexOf(Player);
+        w.WriteInt32(playerIndex);
+        if (playerIndex < 0)
+        {
+            Player.WriteCanonical(w);
+        }
         var monsters = Monsters;
         w.WriteTag(StateCanonicalTags.MonsterList);
         w.WriteCount(monsters.Count);
@@ -170,21 +455,78 @@ public sealed class CombatState : ICanonical
         {
             monsters[i].WriteCanonical(w);
         }
-        var rng = Rng;
-        w.WriteBool(rng is not null);
-        rng?.WriteCanonical(w);
+        var allies = _allies;
+        w.WriteTag(StateCanonicalTags.AllyList);
+        w.WriteCount(allies.Count);
+        for (int i = 0; i < allies.Count; i++)
+        {
+            var ally = allies[i];
+            bool isPlayer = ReferenceEquals(ally, Player);
+            w.WriteBool(isPlayer);
+            if (!isPlayer)
+            {
+                ally.WriteCanonical(w);
+            }
+        }
+        w.WriteTag(StateCanonicalTags.CombatKernel);
+        w.WriteInt32(CardOrPotionEffectDepth);
+        w.WriteInt32(NextCardPlayId);
+        var extraTurns = PlayersTakingExtraTurn;
+        w.WriteCount(extraTurns.Count);
+        for (int i = 0; i < extraTurns.Count; i++)
+        {
+            w.WriteInt32(extraTurns[i]);
+        }
+        History.WriteCanonical(w);
+        w.WriteTag(StateCanonicalTags.CombatEncounter);
+        var ready = PlayersReadyToEndTurn;
+        w.WriteCount(ready.Count);
+        for (int i = 0; i < ready.Count; i++)
+        {
+            w.WriteInt32(ready[i]);
+        }
+        var escapedCreatures = EscapedCreatures;
+        w.WriteCount(escapedCreatures.Count);
+        for (int i = 0; i < escapedCreatures.Count; i++)
+        {
+            escapedCreatures[i].WriteCanonical(w);
+        }
+        var spawned = SpawnedEnemyIds;
+        w.WriteCount(spawned.Count);
+        for (int i = 0; i < spawned.Count; i++)
+        {
+            w.WriteString(spawned[i]);
+        }
+        var extra = EncounterExtra;
+        w.WriteBool(extra != null);
+        extra?.WriteCanonical(w);
     }
 
-    private int IndexOfMonster(MonsterState monster)
+    private int IndexOfMonster(CreatureState creature)
     {
         var monsters = Monsters;
         for (int i = 0; i < monsters.Count; i++)
         {
-            if (ReferenceEquals(monsters[i], monster))
+            if (ReferenceEquals(monsters[i], creature))
             {
                 return i;
             }
         }
         return -1;
     }
+
+    private int IndexOfAlly(CreatureState creature)
+    {
+        var allies = _allies;
+        for (int i = 0; i < allies.Count; i++)
+        {
+            if (ReferenceEquals(allies[i], creature))
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static string Describe(CreatureState creature) => creature is MonsterState monster ? monster.MonsterId : "player";
 }

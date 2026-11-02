@@ -1,6 +1,8 @@
 namespace Sts2Sim.Diff;
 
-public sealed class ProjectionGapException : Exception
+// A projection rule with no port yet. The shared player-view helpers (Core PlayerView, D9) throw the base type;
+// the runners catch PlayerViewGapException, which covers both.
+public sealed class ProjectionGapException : PlayerViewGapException
 {
     public ProjectionGapException(string message)
         : base(message)
@@ -12,17 +14,9 @@ public static class SimProjector
 {
     public const string StatusCardCountKey = "card_count";
 
-    public static readonly IReadOnlySet<string> PowersWithDisplayAmountOverride = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "AUTOMATION_POWER", "CACOPHONY_POWER", "FERAL_POWER", "HARDENED_SHELL_POWER", "MONOLOGUE_POWER",
-        "ORBIT_POWER", "PALE_BLUE_DOT_POWER", "PANACHE_POWER", "SLOTH_POWER", "SLOW_POWER", "TAG_TEAM_POWER",
-        "TENDER_POWER", "WITHERING_PRESENCE_POWER"
-    };
+    public static IReadOnlySet<string> PowersWithDisplayAmountOverride => PlayerView.PowersWithDisplayAmountOverride;
 
-    public static readonly IReadOnlySet<string> PowersWithVisibilityOverride = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "AMBERGRIS_POWER"
-    };
+    public static IReadOnlySet<string> PowersWithVisibilityOverride => PlayerView.PowersWithVisibilityOverride;
 
     public static Projection Project(CombatState cs)
     {
@@ -109,10 +103,12 @@ public static class SimProjector
     }
 
     public static CardCost CostOf(CombatState cs, CardInstance card)
-        => card.EnergyCost.CostsX ? CardCost.X : CardCost.Of(card.EnergyCost.GetAmountToSpend(cs, card));
+    {
+        var cost = PlayerView.CostOf(cs, card);
+        return cost.IsX ? CardCost.X : CardCost.Of(cost.Value);
+    }
 
-    public static bool CanPlay(CombatState cs, CardInstance card)
-        => card.CanPlay(cs, out var reason) && reason == UnplayableReason.None;
+    public static bool CanPlay(CombatState cs, CardInstance card) => PlayerView.CanPlay(cs, card);
 
     public static string CardKey(CardInstance card) => ProjectionJson.CardKey(card.Id, card.IsUpgraded);
 
@@ -146,49 +142,30 @@ public static class SimProjector
         return list;
     }
 
-    public static bool IsVisible(CombatState cs, PowerModel power)
-    {
-        if (PowersWithVisibilityOverride.Contains(power.Id))
-        {
-            throw new ProjectionGapException($"{power.Id} overrides PowerModel.IsVisibleInternal in the game; the diff projection has no rule for it yet");
-        }
-        int targetId = power.TargetId;
-        if (targetId == PowerModel.NoCreature || targetId == cs.Player.CombatId)
-        {
-            return true;
-        }
-        var target = cs.GetCreatureById(targetId);
-        return target == null || target.IsEnemy;
-    }
+    public static bool IsVisible(CombatState cs, PowerModel power) => PlayerView.IsVisible(cs, power);
 
-    public static int DisplayAmount(PowerModel power)
-    {
-        if (PowersWithDisplayAmountOverride.Contains(power.Id))
-        {
-            throw new ProjectionGapException($"{power.Id} overrides PowerModel.DisplayAmount in the game; the diff projection has no rule for it yet");
-        }
-        return power.Amount;
-    }
+    public static int DisplayAmount(PowerModel power) => PlayerView.DisplayAmount(power);
 
     public static IntentProjection Intent(CombatState cs, MonsterState owner, AbstractIntent intent, IReadOnlyList<CreatureState> targets)
     {
-        string type = intent.IntentType.ToString();
+        var view = PlayerView.Intent(cs, owner, intent, targets);
+        string type = view.Type.ToString();
         switch (intent)
         {
-            case AttackIntent attack:
+            case AttackIntent:
                 return new IntentProjection
                 {
                     Type = type,
-                    AttackValue = attack.GetSingleDamage(cs, targets, owner),
-                    AttackTimes = attack.GetRepeats(cs, owner)
+                    AttackValue = view.Damage,
+                    AttackTimes = view.Times
                 };
-            case StatusIntent status:
+            case StatusIntent:
                 return new IntentProjection
                 {
                     Type = type,
                     Extras = new SortedDictionary<string, JsonNode?>(StringComparer.Ordinal)
                     {
-                        [StatusCardCountKey] = JsonValue.Create(status.CardCount)
+                        [StatusCardCountKey] = JsonValue.Create(view.CardCount!.Value)
                     }
                 };
             default:

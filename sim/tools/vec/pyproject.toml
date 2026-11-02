@@ -1,0 +1,33 @@
+[project]
+name = "sts2vec"
+version = "0.1.0"
+description = "Batched numpy interface to the Sts2Sim rules simulator (in-process C ABI of Sts2Sim.Vec via hostfxr)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+]
+
+[project.scripts]
+sts2vec = "sts2vec.cli:main"
+
+[project.entry-points.pytest11]
+sts2vec = "sts2vec._pytest_plugin"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sts2vec"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "full: needs the V1 encoder and V2 env-core (skipped with reason 'needs V1/V2' against the scaffold stubs)",
+    "slow: long-running (soak / multi-process)",
+]

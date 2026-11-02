@@ -1,20 +1,134 @@
 namespace Sts2Sim.Core.Combat.Pipeline;
 
-public static class CreatureCmd
+public static partial class CreatureCmd
 {
+
+    public const string HandlePlayerDeathFidelitySite = "CreatureCmd.HandlePlayerDeath: CardPileCmd.RemoveFromCombat(cards) batch (Commands/CardPileCmd.cs:2205-2460) replaced by per-card removal";
+
+    public static MonsterState Add<T>(CombatState cs, string? slotName = null) where T : MonsterDef, new()
+    {
+        var probe = new T();
+        var def = MonsterRegistry.TryGet(probe.Id, out var registered) ? registered : probe;
+        return Add(cs, def, CombatSide.Enemy, slotName);
+    }
+
+    public static MonsterState Add(CombatState cs, MonsterDef monster, CombatSide side = CombatSide.Enemy, string? slotName = null)
+    {
+        ArgumentNullException.ThrowIfNull(monster);
+        var creature = MonsterSpawner.SpawnForAdd(cs, monster, side, slotName);
+        if (!CombatStatus.IsAttached(cs, creature))
+        {
+            Add(cs, creature);
+        }
+        return creature;
+    }
+
+    public static void Add(CombatState cs, CreatureState creature)
+    {
+        ArgumentNullException.ThrowIfNull(creature);
+        if (!cs.IsInProgress)
+        {
+            throw new InvalidOperationException("Attempted to add a creature outside of combat.");
+        }
+        if (creature is not MonsterState monster)
+        {
+            throw new ArgumentException("Players join a sim combat through the CombatState constructor (Combat/CombatState.cs:703-707 AddPlayer); CreatureCmd.Add adds monsters and pets.", nameof(creature));
+        }
+        if (CombatStatus.IsAttached(cs, monster))
+        {
+            throw new InvalidOperationException("Creature is already in this combat, but AddCreature was called on it again.");
+        }
+        if (monster.Side == CombatSide.Player)
+        {
+            cs.AddAlly(monster);
+        }
+        else
+        {
+            cs.AddMonster(monster);
+        }
+        if (!CombatStatus.IsAttached(cs, monster))
+        {
+            throw new InvalidOperationException("CombatState must already contain creature.");
+        }
+        MonsterLifecycle.SetUpForCombat(cs, monster);
+        if (monster.SlotName != null)
+        {
+            MonsterSpawner.SortEnemiesBySlotName(cs, EncounterOf(cs));
+        }
+        MonsterLifecycle.AfterCreatureAdded(cs, monster);
+        if (cs.CurrentSide != CombatSide.Enemy)
+        {
+            MonsterLifecycle.PrepareForNextTurn(cs, monster, rollNewMove: false);
+        }
+        AppendToRoomHistory(cs, monster);
+        Hook.AfterCreatureAddedToCombat(cs, monster);
+    }
+
+    // Commands/CreatureCmd.cs:302-307: an enemy added mid-combat is appended (once per id) to the MonsterIds of the
+    // current map point's last room entry, so spawned-then-removed minions stay in the floor summary. The room entry
+    // is a record shared with clones, hence copy-on-write.
+    internal static void AppendToRoomHistory(CombatState cs, MonsterState monster)
+    {
+        if (monster.Side != CombatSide.Enemy)
+        {
+            return;
+        }
+        var history = cs.Run.CurrentMapPointHistoryEntry;
+        if (history == null || history.Rooms.Count == 0)
+        {
+            return;
+        }
+        var last = history.Rooms[^1];
+        string id = monster.Def.Id;
+        if (last.MonsterIds.Contains(id))
+        {
+            return;
+        }
+        var ids = new List<string>(last.MonsterIds.Count + 1);
+        ids.AddRange(last.MonsterIds);
+        ids.Add(id);
+        history.Rooms[^1] = last with { MonsterIds = ids };
+    }
+
+    private static EncounterDef? EncounterOf(CombatState cs)
+        => EncounterRegistry.TryGet(cs.EncounterId, out var encounter) ? encounter : null;
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, DamageVar damageVar, CardInstance cardSource, CardPlay? cardPlay)
+        => Damage(cs, target, damageVar.BaseValue, damageVar.Props, cardSource, cardPlay);
+
     public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, decimal amount, ValueProp props, CardInstance? cardSource, CardPlay? cardPlay)
     {
         var dealer = cardSource == null ? null : CombatStatus.CardOwnerCreature(cs, cardSource);
         return Damage(cs, new[] { target }, amount, props, dealer, cardSource, cardPlay);
     }
 
-    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
-    {
-        return Damage(cs, new[] { target }, amount, props, dealer, cardSource, cardPlay);
-    }
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, IReadOnlyList<CreatureState> targets, DamageVar damageVar, CreatureState dealer)
+        => Damage(cs, targets, damageVar.BaseValue, damageVar.Props, dealer);
 
-    public static IReadOnlyList<DamageResult> Damage(CombatState cs, IReadOnlyList<CreatureState> targets, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, IReadOnlyList<CreatureState> targets, decimal amount, ValueProp props, CreatureState dealer)
+        => Damage(cs, targets, amount, props, dealer, null, null);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, DamageVar damageVar, CreatureState dealer)
+        => Damage(cs, target, damageVar.BaseValue, damageVar.Props, dealer);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState dealer)
+        => Damage(cs, new[] { target }, amount, props, dealer, null, null);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, DamageVar damageVar, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+        => Damage(cs, new[] { target }, damageVar.BaseValue, damageVar.Props, dealer, cardSource, cardPlay);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+        => Damage(cs, new[] { target }, amount, props, dealer, cardSource, cardPlay);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, IReadOnlyList<CreatureState>? targets, DamageVar damageVar, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+        => Damage(cs, targets, damageVar.BaseValue, damageVar.Props, dealer, cardSource, cardPlay);
+
+    public static IReadOnlyList<DamageResult> Damage(CombatState cs, IReadOnlyList<CreatureState>? targets, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
     {
+        if (targets == null)
+        {
+            return Array.Empty<DamageResult>();
+        }
         if (dealer != null && dealer.IsDead)
         {
             var empty = new List<DamageResult>(targets.Count);
@@ -34,6 +148,8 @@ public static class CreatureCmd
         {
             targetList[i] = targets[i];
         }
+        var rs = cs.Run;
+        var combatState = CombatStatus.CombatOf(cs, targetList[0]);
         for (int t = 0; t < targetList.Length; t++)
         {
             var originalTarget = targetList[t];
@@ -42,22 +158,23 @@ public static class CreatureCmd
                 continue;
             }
             List<AbstractModel>? modifiers = null;
-            decimal modifiedAmount = Hook.ModifyDamage(cs, originalTarget, dealer, amount, props, cardSource, cardPlay, ModifyDamageHookType.All, ref modifiers);
-            Hook.AfterModifyingDamageAmount(cs, cardSource, modifiers);
-            Hook.BeforeDamageReceived(cs, originalTarget, modifiedAmount, props, dealer, cardSource);
-            var blocker = originalTarget;
+            decimal modifiedAmount = Hook.ModifyDamage(rs, combatState, originalTarget, dealer, amount, props, cardSource, cardPlay, ModifyDamageHookType.All, ref modifiers);
+            Hook.AfterModifyingDamageAmount(rs, combatState, cardSource, modifiers);
+            Hook.BeforeDamageReceived(rs, combatState, originalTarget, modifiedAmount, props, dealer, cardSource);
+            var blocker = CombatStatus.PetOwnerOf(cs, originalTarget) ?? originalTarget;
             decimal blockedDamage = CreatureInternals.DamageBlockInternal(blocker, modifiedAmount, props);
             modifiers = null;
-            decimal unblockedDamage = Hook.ModifyHpLost(cs, originalTarget, Math.Max(modifiedAmount - blockedDamage, 0m), props, dealer, cardSource, HpLossHookPhase.BeforeOsty, ref modifiers);
-            Hook.AfterModifyingHpLostBeforeOsty(cs, modifiers);
-            var unblockedDamageTarget = Hook.ModifyUnblockedDamageTarget(cs, originalTarget, unblockedDamage, props, dealer);
+            decimal unblockedDamage = Hook.ModifyHpLost(rs, combatState, originalTarget, Math.Max(modifiedAmount - blockedDamage, 0m), props, dealer, cardSource, HpLossHookPhase.BeforeOsty, ref modifiers);
+            Hook.AfterModifyingHpLostBeforeOsty(rs, combatState, modifiers);
+            var unblockedDamageTarget = combatState == null ? originalTarget : Hook.ModifyUnblockedDamageTarget(combatState, originalTarget, unblockedDamage, props, dealer);
             modifiers = null;
-            unblockedDamage = Hook.ModifyHpLost(cs, unblockedDamageTarget, unblockedDamage, props, dealer, cardSource, HpLossHookPhase.AfterOsty, ref modifiers);
-            Hook.AfterModifyingHpLostAfterOsty(cs, modifiers);
+            unblockedDamage = Hook.ModifyHpLost(rs, combatState, unblockedDamageTarget, unblockedDamage, props, dealer, cardSource, HpLossHookPhase.AfterOsty, ref modifiers);
+            Hook.AfterModifyingHpLostAfterOsty(rs, combatState, modifiers);
             var unblockedDamageResult = CreatureInternals.LoseHpInternal(unblockedDamageTarget, unblockedDamage, props);
+            int firstResult = results.Count;
+            results.Add(unblockedDamageResult);
             bool wasBlockBroken = originalTarget.Block <= 0 && blockedDamage > 0m;
             bool wasFullyBlocked = (props & ValueProp.Unblockable) == 0 && (blockedDamage > 0m || originalTarget.Block > 0) && (int)unblockedDamage == 0;
-            results.Add(unblockedDamageResult);
             if (ReferenceEquals(originalTarget, unblockedDamageTarget))
             {
                 unblockedDamageResult.BlockedDamage = (int)blockedDamage;
@@ -67,8 +184,8 @@ public static class CreatureCmd
             else
             {
                 modifiers = null;
-                decimal originalTargetDamage = Hook.ModifyHpLost(cs, originalTarget, unblockedDamageResult.OverkillDamage, props, dealer, cardSource, HpLossHookPhase.AfterOsty, ref modifiers);
-                Hook.AfterModifyingHpLostAfterOsty(cs, modifiers);
+                decimal originalTargetDamage = Hook.ModifyHpLost(rs, combatState, originalTarget, unblockedDamageResult.OverkillDamage, props, dealer, cardSource, HpLossHookPhase.AfterOsty, ref modifiers);
+                Hook.AfterModifyingHpLostAfterOsty(rs, combatState, modifiers);
                 var damageResult = originalTargetDamage > 0m
                     ? CreatureInternals.LoseHpInternal(originalTarget, originalTargetDamage, props)
                     : new DamageResult(originalTarget, props);
@@ -76,6 +193,14 @@ public static class CreatureCmd
                 damageResult.WasBlockBroken = wasBlockBroken;
                 damageResult.WasFullyBlocked = wasFullyBlocked;
                 results.Add(damageResult);
+            }
+            for (int r = firstResult; r < results.Count; r++)
+            {
+                if (cs.IsInProgress && !CombatStatus.IsEnding(cs))
+                {
+                    var historyCombat = combatState ?? throw new InvalidOperationException("CreatureCmd.Damage: the first target is not in the combat, so the game records CombatHistory.DamageReceived against a null combat state (Commands/CreatureCmd.cs:3679, :3735-3738).");
+                    historyCombat.History.AppendDamageReceived(historyCombat, results[r].Receiver, dealer, results[r], cardSource);
+                }
             }
         }
         List<CreatureState>? killedCreatures = null;
@@ -89,12 +214,15 @@ public static class CreatureCmd
             }
             if (result.UnblockedDamage > 0)
             {
-                Hook.AfterCurrentHpChanged(cs, originalTarget, -result.UnblockedDamage);
+                Hook.AfterCurrentHpChanged(rs, combatState, originalTarget, -result.UnblockedDamage);
             }
-            Hook.AfterDamageGiven(cs, dealer, result, props, originalTarget, cardSource);
+            if (combatState != null)
+            {
+                Hook.AfterDamageGiven(combatState, dealer, result, props, originalTarget, cardSource);
+            }
             if (!result.WasTargetKilled || !originalTarget.IsDead)
             {
-                Hook.AfterDamageReceived(cs, originalTarget, result, props, dealer, cardSource);
+                Hook.AfterDamageReceived(rs, combatState, originalTarget, result, props, dealer, cardSource);
             }
             else
             {
@@ -107,6 +235,9 @@ public static class CreatureCmd
         }
         return results;
     }
+
+    public static decimal GainBlock(CombatState cs, CreatureState creature, BlockVar blockVar, CardPlay? cardPlay)
+        => GainBlock(cs, creature, blockVar.BaseValue, blockVar.Props, cardPlay);
 
     public static decimal GainBlock(CombatState cs, CreatureState creature, decimal amount, ValueProp props, CardPlay? cardPlay)
     {
@@ -128,6 +259,7 @@ public static class CreatureCmd
         if (modifiedAmount > 0m)
         {
             CreatureInternals.GainBlockInternal(creature, modifiedAmount);
+            cs.History.AppendBlockGained(cs, creature, (int)modifiedAmount, props, cardPlay);
         }
         Hook.AfterBlockGained(cs, creature, modifiedAmount, props, cardSource);
         return modifiedAmount;
@@ -180,7 +312,7 @@ public static class CreatureCmd
         CreatureInternals.HealInternal(creature, amount);
         if (amount > 0m && CombatStatus.IsAttached(cs, creature))
         {
-            Hook.AfterCurrentHpChanged(cs, creature, amount);
+            Hook.AfterCurrentHpChanged(cs.Run, cs, creature, amount);
         }
     }
 
@@ -190,7 +322,7 @@ public static class CreatureCmd
         CreatureInternals.SetCurrentHpInternal(creature, amount);
         if (amount != oldHp)
         {
-            Hook.AfterCurrentHpChanged(cs, creature, amount - oldHp);
+            Hook.AfterCurrentHpChanged(cs.Run, CombatStatus.CombatOf(cs, creature), creature, amount - oldHp);
         }
         if (creature.IsDead)
         {
@@ -235,6 +367,144 @@ public static class CreatureCmd
         SetMaxHp(cs, creature, Math.Max(1.0m, newMaxHp));
     }
 
+    public static void Heal(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat != null)
+        {
+            Heal(rs.Combat, creature, amount);
+            return;
+        }
+        CreatureInternals.HealInternal(creature, amount);
+    }
+
+    public static void GainMaxHp(RunState rs, CreatureState creature, decimal amount)
+    {
+        if (rs.Combat != null)
+        {
+            GainMaxHp(rs.Combat, creature, amount);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use LoseMaxHp for max HP loss.");
+        }
+        int oldMaxHp = creature.MaxHp;
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(0m, creature.MaxHp + amount));
+        Heal(rs, creature, creature.MaxHp - oldMaxHp);
+    }
+
+    public static void LoseMaxHp(RunState rs, CreatureState creature, decimal amount, bool isFromCard)
+    {
+        if (rs.Combat != null)
+        {
+            LoseMaxHp(rs.Combat, creature, amount, isFromCard);
+            return;
+        }
+        if (amount < 0m)
+        {
+            throw new ArgumentException("amount must be non-negative. Use GainMaxHp for max HP gain.");
+        }
+        decimal newMaxHp = creature.MaxHp - amount;
+        if (newMaxHp < creature.CurrentHp)
+        {
+            Damage(rs, creature, creature.CurrentHp - newMaxHp, isFromCard ? (ValueProp.Unblockable | ValueProp.Unpowered | ValueProp.Move) : (ValueProp.Unblockable | ValueProp.Unpowered));
+        }
+        CreatureInternals.SetMaxHpInternal(creature, Math.Max(1.0m, newMaxHp));
+    }
+
+    public static DamageResult Damage(RunState rs, CreatureState target, decimal amount, ValueProp props)
+    {
+        if (rs.Combat != null)
+        {
+            var inCombat = Damage(rs.Combat, target, amount, props, null, null, null);
+            return inCombat.Count > 0 ? inCombat[0] : new DamageResult(target, props);
+        }
+        if (target.IsDead)
+        {
+            return new DamageResult(target, props);
+        }
+        List<AbstractModel>? modifiers = null;
+        decimal modifiedAmount = Hook.ModifyDamage(rs, null, target, null, amount, props, null, null, ModifyDamageHookType.All, ref modifiers);
+        Hook.AfterModifyingDamageAmount(rs, null, null, modifiers);
+        Hook.BeforeDamageReceived(rs, null, target, modifiedAmount, props, null, null);
+        decimal blockedDamage = CreatureInternals.DamageBlockInternal(target, modifiedAmount, props);
+        modifiers = null;
+        decimal unblockedDamage = Hook.ModifyHpLost(rs, null, target, Math.Max(modifiedAmount - blockedDamage, 0m), props, null, null, HpLossHookPhase.BeforeOsty, ref modifiers);
+        Hook.AfterModifyingHpLostBeforeOsty(rs, null, modifiers);
+        modifiers = null;
+        unblockedDamage = Hook.ModifyHpLost(rs, null, target, unblockedDamage, props, null, null, HpLossHookPhase.AfterOsty, ref modifiers);
+        Hook.AfterModifyingHpLostAfterOsty(rs, null, modifiers);
+        var result = CreatureInternals.LoseHpInternal(target, unblockedDamage, props);
+        result.BlockedDamage = (int)blockedDamage;
+        if (result.UnblockedDamage > 0)
+        {
+            Hook.AfterCurrentHpChanged(rs, null, target, -result.UnblockedDamage);
+        }
+        if (!result.WasTargetKilled || !target.IsDead)
+        {
+            Hook.AfterDamageReceived(rs, null, target, result, props, null, null);
+        }
+        else
+        {
+            Kill(rs, target);
+        }
+        return result;
+    }
+
+    public static void Kill(RunState rs, CreatureState creature, bool force = false)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(creature);
+        if (rs.Combat != null)
+        {
+            Kill(rs.Combat, creature, force);
+            return;
+        }
+        KillOutOfCombat(rs, creature, force, 0);
+    }
+
+    private static void KillOutOfCombat(RunState rs, CreatureState creature, bool force, int recursion)
+    {
+        if (creature is not PlayerState player)
+        {
+            return;
+        }
+        if (rs.Players.Count > 1 && !force)
+        {
+            Heal(rs, creature, 1m);
+            return;
+        }
+        int currentHp = creature.CurrentHp;
+        if (currentHp > 0)
+        {
+            CreatureInternals.LoseHpInternal(creature, currentHp, ValueProp.Unblockable | ValueProp.Unpowered);
+            Hook.AfterCurrentHpChanged(rs, null, creature, -currentHp);
+        }
+        Hook.BeforeDeath(rs, null, creature);
+        AbstractModel? preventer = null;
+        if (force || creature.MaxHp <= 0 || Hook.ShouldDie(rs, null, creature, out preventer))
+        {
+            Hook.AfterDeath(rs, null, creature, false);
+            if (creature.Powers.Count > 0)
+            {
+                throw new InvalidOperationException("CreatureCmd.Kill out of combat: a player carries powers outside a combat (Entities.Creatures/Creature.cs RemoveAllPowersAfterDeath).");
+            }
+            player.OrbQueue.Clear();
+            player.DeactivateHooks();
+            return;
+        }
+        if (recursion >= 10)
+        {
+            throw new InvalidOperationException("Combat is ending, but something is continually preventing the last creature from being killed!");
+        }
+        Hook.AfterDeath(rs, null, creature, true);
+        Hook.AfterPreventingDeath(rs, null, preventer!, creature);
+        if (creature.IsDead)
+        {
+            KillOutOfCombat(rs, creature, force, recursion + 1);
+        }
+    }
+
     public static void SetMaxAndCurrentHp(CombatState cs, CreatureState creature, decimal amount)
     {
         SetMaxHp(cs, creature, amount);
@@ -263,38 +533,61 @@ public static class CreatureCmd
         {
             KillWithoutCheckingWinCondition(cs, snapshot[i], force, 0);
         }
-        if (anyPlayer && cs.Player.IsDead)
+        if (anyPlayer && CombatStatus.AllPlayersDead(cs))
         {
             CombatStatus.LoseCombat(cs);
+        }
+        else if (cs.IsInProgress)
+        {
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                var creature = snapshot[i];
+                if (creature is PlayerState deadPlayer && creature.IsDead && CombatStatus.IsAttached(cs, creature) && cs.CurrentSide == CombatSide.Player)
+                {
+                    PlayerCmd.EndTurn(cs, deadPlayer, canBackOut: false);
+                }
+            }
         }
     }
 
     private static void KillWithoutCheckingWinCondition(CombatState cs, CreatureState creature, bool force, int recursion)
     {
-        if (!creature.IsPlayer && !CombatStatus.IsAttached(cs, creature))
+        var combatState = CombatStatus.CombatOf(cs, creature);
+        if (combatState == null && !creature.IsPlayer)
         {
             return;
         }
+        if (!cs.IsInProgress && creature.IsPlayer && CombatStatus.PlayerCount(cs) > 1 && !force)
+        {
+            Heal(cs, creature, 1m);
+            return;
+        }
+        var rs = cs.Run;
         int currentHp = creature.CurrentHp;
         if (currentHp > 0)
         {
             CreatureInternals.LoseHpInternal(creature, currentHp, ValueProp.Unblockable | ValueProp.Unpowered);
-            Hook.AfterCurrentHpChanged(cs, creature, -currentHp);
+            Hook.AfterCurrentHpChanged(rs, combatState, creature, -currentHp);
         }
-        Hook.BeforeDeath(cs, creature);
+        Hook.BeforeDeath(rs, combatState, creature);
         AbstractModel? preventer = null;
-        if (force || creature.MaxHp <= 0 || Hook.ShouldDie(cs, creature, out preventer))
+        if (force || creature.MaxHp <= 0 || Hook.ShouldDie(rs, combatState, creature, out preventer))
         {
-            bool shouldRemoveFromCombat = Hook.ShouldCreatureBeRemovedFromCombatAfterDeath(cs, creature);
-            Hook.AfterDeath(cs, creature, false);
+            InvokeDiedEvent(cs, creature);
+            bool shouldRemoveFromCombat = combatState != null && Hook.ShouldCreatureBeRemovedFromCombatAfterDeath(combatState, creature);
+            Hook.AfterDeath(rs, combatState, creature, false);
             var teammates = new List<CreatureState>(4);
-            CombatStatus.GetTeammatesOf(cs, creature, teammates);
-            teammates.RemoveAll(static t => !t.IsAlive);
+            if (combatState != null)
+            {
+                CombatStatus.GetTeammatesOf(combatState, creature, teammates);
+                teammates.RemoveAll(static t => !t.IsAlive);
+            }
             if (shouldRemoveFromCombat && creature.Side == CombatSide.Enemy && creature is MonsterState monster && cs.Monsters.Contains(monster))
             {
+                MonsterLifecycle.RemoveCreature(cs, monster);
                 if (!(monster.HasAi && monster.Ai.IsPerformingMove))
                 {
-                    cs.Monsters.Remove(monster);
+                    cs.RemoveMonster(monster);
                 }
             }
             bool isPrimaryEnemy = CombatStatus.IsPrimaryEnemy(creature);
@@ -313,7 +606,16 @@ public static class CreatureCmd
             }
             else if (creature is PlayerState player)
             {
+                player.OrbQueue.Clear();
+                if (CombatStatus.IsOstyAlive(cs, player))
+                {
+                    Kill(cs, CombatStatus.GetOsty(cs, player)!, force);
+                }
                 player.DeactivateHooks();
+                if (combatState != null)
+                {
+                    HandlePlayerDeath(cs, player);
+                }
             }
             return;
         }
@@ -321,12 +623,54 @@ public static class CreatureCmd
         {
             throw new InvalidOperationException("Combat is ending, but something is continually preventing the last creature from being killed!");
         }
-        Hook.AfterDeath(cs, creature, true);
-        Hook.AfterPreventingDeath(cs, preventer!, creature);
+        Hook.AfterDeath(rs, combatState, creature, true);
+        Hook.AfterPreventingDeath(rs, combatState, preventer!, creature);
         if (creature.IsDead)
         {
             KillWithoutCheckingWinCondition(cs, creature, force, recursion + 1);
         }
+    }
+
+    private static void InvokeDiedEvent(CombatState cs, CreatureState creature)
+    {
+        var owner = CombatStatus.PetOwnerOf(cs, creature);
+        if (owner == null)
+        {
+            return;
+        }
+        int index = owner.PetIds.IndexOf(creature.CombatId);
+        if (index < 0)
+        {
+            return;
+        }
+        if (Hook.ShouldCreatureBeRemovedFromCombatAfterDeath(cs, creature))
+        {
+            owner.PetIds.RemoveAt(index);
+        }
+    }
+
+    private static void HandlePlayerDeath(CombatState cs, PlayerState player)
+    {
+        if (!cs.IsInProgress || CombatStatus.AllCombatPlayersDead(cs))
+        {
+            return;
+        }
+        cs.Run.Fidelity.Record(FidelityFlag.ApproximatedRule, HandlePlayerDeathFidelitySite);
+        if (cs.CardOrPotionEffectDepth <= 0)
+        {
+            var cards = new List<CardInstance>();
+            cards.AddRange(player.Hand.Cards);
+            cards.AddRange(player.DrawPile.Cards);
+            cards.AddRange(player.DiscardPile.Cards);
+            cards.AddRange(player.ExhaustPile.Cards);
+            cards.AddRange(player.PlayPile.Cards);
+            for (int i = 0; i < cards.Count; i++)
+            {
+                CardPileCmd.RemoveFromCombat(cs, cards[i]);
+            }
+        }
+        EnergyCmd.SetEnergy(cs, 0m, player);
+        StarsCmd.SetStars(cs, player, 0m);
     }
 
     private static bool AllSecondaryEnemies(List<CreatureState> creatures)
@@ -339,6 +683,26 @@ public static class CreatureCmd
             }
         }
         return true;
+    }
+
+    public static void Escape(CombatState cs, CreatureState creature)
+    {
+        if (creature.IsDead)
+        {
+            return;
+        }
+        if (!CombatStatus.IsAttached(cs, creature))
+        {
+            return;
+        }
+        if (creature is not MonsterState escaping)
+        {
+            throw new InvalidOperationException("CreatureCmd.Escape: the sim cannot remove a player from its combat (Combat/CombatState.cs:739-768 removes it from _allies and unattaches it).");
+        }
+        var removed = new List<PowerModel>(creature.Powers.Count);
+        CreatureInternals.RemoveAllPowersInternal(creature, removed);
+        MonsterLifecycle.RemoveCreature(cs, escaping);
+        cs.CreatureEscaped(escaping);
     }
 
     public static void Stun(CombatState cs, MonsterState creature, string? nextMoveId = null)

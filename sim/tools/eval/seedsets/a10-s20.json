@@ -1,0 +1,33 @@
+{
+  "name": "a10-s20",
+  "id": "std-a10-v1",
+  "version": 1,
+  "role": "official",
+  "protocol": "0.2",
+  "frozen": "2026-11-01",
+  "ascension": 10,
+  "content": "ported_only",
+  "sha256": "f072b6dd171cc16da26a053b01a0ec87b7a28028542ca44cfd6108e68bcbee16",
+  "games": [
+    {"seed": "E1A10IC01", "character": "IRONCLAD"},
+    {"seed": "E1A10IC02", "character": "IRONCLAD"},
+    {"seed": "E1A10IC03", "character": "IRONCLAD"},
+    {"seed": "E1A10IC04", "character": "IRONCLAD"},
+    {"seed": "E1A10SI01", "character": "SILENT"},
+    {"seed": "E1A10SI02", "character": "SILENT"},
+    {"seed": "E1A10SI03", "character": "SILENT"},
+    {"seed": "E1A10SI04", "character": "SILENT"},
+    {"seed": "E1A10DE01", "character": "DEFECT"},
+    {"seed": "E1A10DE02", "character": "DEFECT"},
+    {"seed": "E1A10DE03", "character": "DEFECT"},
+    {"seed": "E1A10DE04", "character": "DEFECT"},
+    {"seed": "E1A10RE01", "character": "REGENT"},
+    {"seed": "E1A10RE02", "character": "REGENT"},
+    {"seed": "E1A10RE03", "character": "REGENT"},
+    {"seed": "E1A10RE04", "character": "REGENT"},
+    {"seed": "E1A10NE01", "character": "NECROBINDER"},
+    {"seed": "E1A10NE02", "character": "NECROBINDER"},
+    {"seed": "E1A10NE03", "character": "NECROBINDER"},
+    {"seed": "E1A10NE04", "character": "NECROBINDER"}
+  ]
+}

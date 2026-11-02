@@ -1,0 +1,62 @@
+# Build context for the sts2sim image (Dockerfile). The Dockerfile copies only sim/, knowledge/source/ and
+# docker/; everything else is excluded so a dirty checkout does not ship data into the context.
+.git
+.github
+.claude
+.vs
+.vscode
+.idea
+**/.DS_Store
+
+# build outputs (the image builds from source)
+**/bin
+**/obj
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+dist
+
+# generated output, scratch, evaluation reports
+tmp
+output
+**/tmp
+backups
+level2-runs
+headless-instances
+a10-eval-instances
+.mcp-stashed
+
+# trajectories, recorder sessions, saves, datasets, checkpoints (never in an image)
+sessions
+datasets
+artifacts
+checkpoints
+**/*.jsonl
+!knowledge/**/*.jsonl
+**/*.mcr
+**/*.save
+**/*.run
+**/*.backup
+**/*.tar.gz
+**/*.tgz
+# committed, tiny test fixtures (RUN_TESTS) are the exception
+!sim/Sts2Sim.Tests/Fixtures/*
+
+# secrets
+**/.env
+**/.env.*
+**/*api_key*
+**/*.pem
+
+# not needed by the image
+mod
+patches
+sts2rec
+scripts
+# ... except the NativeAOT publish script (Dockerfile 'aot' stage)
+!scripts/vec_publish_aot.sh
+Plan
+config

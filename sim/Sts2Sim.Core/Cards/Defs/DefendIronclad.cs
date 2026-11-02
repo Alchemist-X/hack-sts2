@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Sts2Sim.Core.Cards;
 
 public sealed class DefendIronclad : CardDef
@@ -8,7 +10,7 @@ public sealed class DefendIronclad : CardDef
     public const decimal BlockUpgrade = 3m;
     public const decimal UpgradedBlock = BaseBlock + BlockUpgrade;
 
-    private static readonly CardTag[] Tags = { CardTag.Defend };
+    private static readonly ReadOnlyCollection<CardTag> Tags = Array.AsReadOnly(new[] { CardTag.Defend });
 
     public DefendIronclad()
         : base(CardId, Cost, CardType.Skill, CardRarity.Basic, TargetType.Self)

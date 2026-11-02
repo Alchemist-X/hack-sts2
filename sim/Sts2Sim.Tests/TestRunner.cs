@@ -65,6 +65,7 @@ public static class TestRunner
                 Console.WriteLine($"  {name}: {message}");
             }
         }
+        Console.WriteLine($"PENDING total: {W1Pending.Count}");
         if (tests.Count == 0)
         {
             Console.WriteLine("No tests matched.");

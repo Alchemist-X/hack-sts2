@@ -27,13 +27,47 @@ public static class PowerCmd
         return power as T;
     }
 
-    public static void Apply<T>(CombatState cs, IReadOnlyList<CreatureState> targets, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
+    public static IReadOnlyList<T> Apply<T>(CombatState cs, IReadOnlyList<CreatureState>? targets, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
         where T : PowerModel, new()
     {
+        var powers = new List<T>(targets?.Count ?? 0);
+        if (targets == null)
+        {
+            return powers;
+        }
         for (int i = 0; i < targets.Count; i++)
         {
-            Apply<T>(cs, targets[i], amount, applier, cardSource, silent);
+            var power = Apply<T>(cs, targets[i], amount, applier, cardSource, silent);
+            if (power != null)
+            {
+                powers.Add(power);
+            }
         }
+        return powers;
+    }
+
+    public static PowerModel? Apply(CombatState cs, string powerId, CreatureState target, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
+    {
+        if (CombatStatus.IsEnding(cs))
+        {
+            return null;
+        }
+        if (!CombatStatus.CanReceivePowers(cs, target))
+        {
+            return null;
+        }
+        var canonical = PowerRegistry.Create(powerId);
+        var power = FindExistingInstanceForStacking(canonical, target, applier);
+        if (power == null)
+        {
+            power = canonical;
+            Apply(cs, power, target, amount, applier, cardSource, silent);
+        }
+        else if (ModifyAmount(cs, power, amount, applier, cardSource, silent) == 0)
+        {
+            power = null;
+        }
+        return power;
     }
 
     public static void Apply(CombatState cs, PowerModel power, CreatureState target, decimal amount, CreatureState? applier, CardInstance? cardSource, bool silent = false)
@@ -60,12 +94,20 @@ public static class PowerCmd
         }
         List<AbstractModel>? receivedModifiers = null;
         modifiedAmount = Hook.ModifyPowerAmountReceived(cs, power, target, modifiedAmount, applier, ref receivedModifiers);
+        if (CombatStatus.PlayerCount(cs) > 1 && (CombatStatus.IsPrimaryEnemy(target) || CombatStatus.IsSecondaryEnemy(target)) && power.ShouldScaleInMultiplayer)
+        {
+            modifiedAmount = power.GetScaledAmountForMultiplayer(cs, applier, modifiedAmount, target, cardSource);
+        }
         power.BeforeApplied(cs, target, modifiedAmount, applier, cardSource);
         if (!CombatStatus.CanReceivePowers(cs, target))
         {
             return;
         }
         power.ApplyInternal(target, modifiedAmount);
+        if (modifiedAmount != 0m)
+        {
+            cs.History.AppendPowerReceived(cs, power, modifiedAmount, applier);
+        }
         if (target.Side == CombatSide.Player && power.Type == PowerType.Debuff)
         {
             power.SkipNextDurationTick = true;
@@ -131,6 +173,7 @@ public static class PowerCmd
         }
         List<AbstractModel>? receivedModifiers = null;
         modifiedOffset = Hook.ModifyPowerAmountReceived(cs, power, owner, modifiedOffset, applier, ref receivedModifiers);
+        cs.History.AppendPowerReceived(cs, power, modifiedOffset, applier);
         int newAmount = power.Amount + (int)modifiedOffset;
         power.SetAmount(newAmount);
         if (hasGivenModifiers)
@@ -151,6 +194,7 @@ public static class PowerCmd
 
     public static void Decrement(CombatState cs, PowerModel power)
     {
+        using var throwing = cs.Choice.PushContext(ChoiceContextKind.Throwing);
         ModifyAmount(cs, power, -1m, null, null);
     }
 

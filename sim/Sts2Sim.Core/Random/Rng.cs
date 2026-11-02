@@ -294,6 +294,9 @@ public sealed class Rng : ICanonical
 
     public RngSnapshot ToSnapshot() => _random.ToSnapshot(_counter);
 
+    /// <summary>Determinization only: restarts the generator from <paramref name="seed"/>, keeping the call counter.</summary>
+    internal void Reseed(ulong seed) => _random.Reinitialise(seed);
+
     public Rng DeepClone() => new(ToSnapshot());
 
     public void WriteCanonical(CanonicalWriter w) =>

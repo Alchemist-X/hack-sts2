@@ -124,10 +124,23 @@ public sealed class CardPile : ICanonical
     public CardPile DeepClone()
     {
         var source = _cards;
+        for (int i = 0; i < source.Count; i++)
+        {
+            if (source[i].HasOwner)
+            {
+                throw new InvalidOperationException($"Card pile {Type} holds {Describe(source[i])}, which has an owner; clone owned cards with CloneFor(newOwner).");
+            }
+        }
+        return CloneFor(null);
+    }
+
+    public CardPile CloneFor(PlayerState? newOwner)
+    {
+        var source = _cards;
         var cards = new List<CardInstance>(Math.Max(source.Count, MinCloneCapacity));
         for (int i = 0; i < source.Count; i++)
         {
-            cards.Add(source[i].DeepClone());
+            cards.Add(source[i].CloneFor(newOwner));
         }
         return new CardPile(Type, cards);
     }

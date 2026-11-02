@@ -1,0 +1,314 @@
+"""Aggregate games/*.summary.json into report.json and report.md (STS2-Bench protocol v0.2 metric)."""
+
+from __future__ import annotations
+
+import json
+import math
+import statistics
+from collections import Counter
+from pathlib import Path
+
+from . import progress as PG
+from .prices import USAGE_KEYS
+from .runner import full_run_floors
+from .seedsets import CHARACTERS, identity
+
+RESULTS = ("win", "loss", "capped", "stuck", "crashed", "aborted", "error")
+
+
+def wilson(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    if n == 0:
+        return (0.0, 0.0)
+    p = wins / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def mean_ci95(xs: list[float], z: float = 1.96) -> tuple[float, float]:
+    """Normal-approximation 95% interval of a mean (sample sd), clipped to [0, 1]; (mean, mean) for n < 2."""
+    if not xs:
+        return (0.0, 0.0)
+    m = statistics.fmean(xs)
+    if len(xs) < 2:
+        return (m, m)
+    half = z * statistics.stdev(xs) / math.sqrt(len(xs))
+    return (max(0.0, m - half), min(1.0, m + half))
+
+
+def load_summaries(out_dir: Path) -> list[dict]:
+    """Per-game summaries with the protocol v0.2 progress fields (re)computed: from the summary's own per-act
+    fields when a v0.2 runner wrote them, else from the transcript next to it (runs written before v0.2)."""
+    out = []
+    for p in sorted((Path(out_dir) / "games").glob("*.summary.json")):
+        with open(p, encoding="utf-8") as f:
+            s = json.load(f)
+        transcript = p.with_name(p.name[: -len(".summary.json")] + ".jsonl")
+        s.update(PG.summary_progress(s, transcript))
+        out.append(s)
+    return out
+
+
+def _mean(xs):
+    return statistics.fmean(xs) if xs else None
+
+
+def aggregate(summaries: list[dict], ascension: int = 0) -> dict:
+    n = len(summaries)
+    results = Counter(s.get("result") for s in summaries)
+    wins = results.get("win", 0)
+    lo, hi = wilson(wins, n)
+    floors = [s["floor"] for s in summaries if s.get("floor") is not None]
+    total_floors = full_run_floors(ascension)
+    prog = [s["progress"] for s in summaries if s.get("progress") is not None]
+    plo, phi = mean_ci95(prog)
+    tokens = {k: sum((s.get("tokens") or {}).get(k, 0) for s in summaries) for k in USAGE_KEYS}
+    secs = [s["seconds"] for s in summaries if s.get("seconds") is not None]
+    return {
+        "games": n,
+        "results": {r: results.get(r, 0) for r in RESULTS},
+        "wins": wins,
+        "win_rate": wins / n if n else None,
+        "win_rate_ci95": [lo, hi],
+        "progress_mean": _mean(prog),
+        "progress_ci95": [plo, phi] if prog else [None, None],
+        "progress_median": statistics.median(prog) if prog else None,
+        "progress_games": len(prog),
+        "act_rooms_default": sum(1 for s in summaries if s.get("act_rooms_source") == "default"),
+        "floor_mean": _mean(floors),
+        "floor_median": statistics.median(floors) if floors else None,
+        "floor_max": max(floors) if floors else None,
+        "progress_mean_pct": (100.0 * _mean(floors) / total_floors) if floors else None,
+        "full_run_floors": total_floors,
+        "act_reached": dict(sorted(Counter(s.get("act") for s in summaries if s.get("act") is not None).items())),
+        "steps_mean": _mean([s.get("steps", 0) for s in summaries]),
+        "steps_total": sum(s.get("steps", 0) for s in summaries),
+        "turns_mean": _mean([s.get("turns", 0) for s in summaries]),
+        "illegal_total": sum(s.get("illegal", 0) for s in summaries),
+        "illegal_per_game": (sum(s.get("illegal", 0) for s in summaries) / n) if n else None,
+        "illegal_replies_total": sum(s.get("illegal_replies", 0) for s in summaries),
+        "retries_total": sum(s.get("retries", 0) for s in summaries),
+        "crashes": results.get("crashed", 0),
+        "stuck_games": results.get("stuck", 0),
+        "capped_games": results.get("capped", 0),
+        "loop_hints": sum(s.get("loop_hints", 0) for s in summaries),
+        "api_errors": sum(s.get("api_errors", 0) for s in summaries),
+        "refusals": sum(s.get("refusals", 0) for s in summaries),
+        "timeouts": sum(s.get("timeouts", 0) for s in summaries),
+        "max_tokens_stops": sum(s.get("max_tokens_stops", 0) for s in summaries),
+        "fallbacks": sum(s.get("fallbacks", 0) for s in summaries),
+        "late_line_tokens": sum(s.get("late_line_tokens", 0) for s in summaries),
+        "api_calls": sum(s.get("api_calls", 0) for s in summaries),
+        "tokens": tokens,
+        **_per_call(tokens, sum(s.get("api_calls", 0) for s in summaries),
+                    sum(s.get("cost_usd", 0.0) for s in summaries), sum(s.get("steps", 0) for s in summaries)),
+        "cost_usd": round(sum(s.get("cost_usd", 0.0) for s in summaries), 6),
+        "cost_per_game_usd": (sum(s.get("cost_usd", 0.0) for s in summaries) / n) if n else None,
+        "minutes_per_game_mean": (_mean(secs) / 60.0) if secs else None,
+        "replayable": sum(1 for s in summaries if s.get("replayable")),
+    }
+
+
+def _per_call(tokens: dict, calls: int, cost: float, steps: int) -> dict:
+    """Mean tokens per API call, cost per step, and the cache hit rate = cache reads / all input tokens."""
+    inp = tokens.get("input_tokens", 0)
+    cw = tokens.get("cache_creation_input_tokens", 0)
+    cr = tokens.get("cache_read_input_tokens", 0)
+    total_in = inp + cw + cr
+    per = (lambda v: round(v / calls, 1)) if calls else (lambda v: None)
+    return {"uncached_input_per_call": per(inp), "cache_write_per_call": per(cw), "cache_read_per_call": per(cr),
+            "output_per_call": per(tokens.get("output_tokens", 0)),
+            "cache_hit_rate": round(cr / total_in, 4) if total_in else None,
+            "cost_per_step_usd": round(cost / steps, 6) if steps else None}
+
+
+def build_report(out_dir: Path) -> dict:
+    out_dir = Path(out_dir)
+    cfg = _read_json(out_dir / "config.json") or {}
+    run = _read_json(out_dir / "run.json") or {}
+    summaries = load_summaries(out_dir)
+    asc = (cfg.get("seedset") or {}).get("ascension", summaries[0]["ascension"] if summaries else 0)
+    expected = len((cfg.get("seedset") or {}).get("games") or []) or None
+    per_char = {}
+    for ch in CHARACTERS:
+        sub = [s for s in summaries if s.get("character") == ch]
+        if sub:
+            per_char[ch] = aggregate(sub, asc)
+    report = {
+        "protocol_version": PG.PROTOCOL_VERSION,
+        "run_protocol_version": cfg.get("protocol_version"),
+        "run_id": cfg.get("run_id"),
+        "out_dir": str(out_dir),
+        "seedset": (cfg.get("seedset") or {}).get("name"),
+        **identity(cfg.get("seedset")),
+        "ascension": asc,
+        "policy": cfg.get("policy"),
+        "model": cfg.get("model"),
+        "effort": cfg.get("effort"),
+        "thinking": cfg.get("thinking"),
+        "server_version": cfg.get("server_version"),
+        "repo_sha": cfg.get("repo_sha"),
+        "prompt_hash": cfg.get("prompt_hash"),
+        # runs written before --obs-mode existed sent the server text (full)
+        "obs_mode": cfg.get("obs_mode", "full" if cfg else None),
+        "reveal_moves": cfg.get("reveal_moves"),
+        "prices": cfg.get("prices"),
+        "expected_games": expected,
+        "aborted": run.get("abort_reason"),
+        "wall_seconds": run.get("wall_seconds"),
+        "headline": aggregate(summaries, asc),
+        "per_character": per_char,
+        "games": [_game_row(s) for s in summaries],
+    }
+    return report
+
+
+def _game_row(s: dict) -> dict:
+    death = s.get("death") or {}
+    cause = None
+    if s.get("result") == "loss":
+        cause = "/".join(death.get("enemies") or []) or (death.get("phase") or "?")
+        if death.get("room_type"):
+            cause = f"{death['room_type']}: {cause}"
+    elif s.get("result") == "crashed":
+        cause = (s.get("error") or "")[:120]
+    elif s.get("result") == "stuck":
+        stuck = s.get("stuck") or {}
+        cause = f"stuck: {stuck.get('phase') or '?'} floor {_f(stuck.get('floor', s.get('floor')))}"
+    elif s.get("result") in ("capped", "aborted", "error"):
+        cause = s.get("cap_reason") or s.get("abort_reason") or (s.get("error") or "")[:120]
+    return {"seed": s.get("seed"), "character": s.get("character"), "result": s.get("result"),
+            "floor": s.get("floor"), "act": s.get("act"), "progress": s.get("progress"),
+            "rooms_cleared": s.get("rooms_cleared"), "act_rooms": s.get("act_rooms_current"),
+            "act_rooms_source": s.get("act_rooms_source"), "steps": s.get("steps"), "turns": s.get("turns"),
+            "illegal": s.get("illegal"), "api_errors": s.get("api_errors"), "cost_usd": s.get("cost_usd"),
+            "minutes": round((s.get("seconds") or 0) / 60.0, 2), "cause": cause,
+            "replayable": s.get("replayable")}
+
+
+def _read_json(p: Path):
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _f(x, nd=1, pct=False):
+    if x is None:
+        return "-"
+    if pct:
+        return f"{100 * x:.{nd}f}%"
+    if isinstance(x, float):
+        return f"{x:.{nd}f}"
+    return str(x)
+
+
+def _headline_rows(h: dict) -> list[tuple[str, str]]:
+    t = h["tokens"]
+    lo, hi = h["win_rate_ci95"]
+    plo, phi = h.get("progress_ci95") or (None, None)
+    acts = ", ".join(f"act {a}: {c}" for a, c in h["act_reached"].items()) or "-"
+    res = ", ".join(f"{k} {v}" for k, v in h["results"].items() if v) or "-"
+    return [
+        ("games", str(h["games"])),
+        ("**progress v0.2** (mean [95% CI], median)",
+         f"**{_f(h.get('progress_mean'), 3)}** [{_f(plo, 3)}, {_f(phi, 3)}], {_f(h.get('progress_median'), 3)}"),
+        ("**win rate** (Wilson 95%)", f"**{_f(h['win_rate'], 1, True)}** [{_f(lo, 1, True)}, {_f(hi, 1, True)}]"),
+        ("results", res),
+        ("wins", str(h["wins"])),
+        ("floor mean / median / max", f"{_f(h['floor_mean'])} / {_f(h['floor_median'])} / {_f(h['floor_max'])}"),
+        (f"floor / {h['full_run_floors']} (v0.1 progress, secondary)", f"{_f(h['progress_mean_pct'])}%"
+         if h["progress_mean_pct"] is not None else "-"),
+        ("act reached", acts),
+        ("steps mean (total)", f"{_f(h['steps_mean'])} ({h['steps_total']})"),
+        ("illegal actions per game (replies rejected, re-asks)",
+         f"{_f(h['illegal_per_game'], 2)} ({h['illegal_replies_total']}, {h['retries_total']})"),
+        ("crashes", str(h["crashes"])),
+        ("stuck games", str(h.get("stuck_games", 0))),
+        ("capped games", str(h.get("capped_games", 0))),
+        ("loop hints", str(h.get("loop_hints", 0))),
+        ("api errors / refusals / timeouts / max_tokens stops",
+         f"{h['api_errors']} / {h['refusals']} / {h['timeouts']} / {h['max_tokens_stops']}"),
+        ("random fallbacks", str(h["fallbacks"])),
+        ("tokens taken from a later reply line", str(h.get("late_line_tokens", 0))),
+        ("api calls", str(h["api_calls"])),
+        ("tokens input / cache write / cache read / output",
+         f"{t['input_tokens']} / {t['cache_creation_input_tokens']} / {t['cache_read_input_tokens']} / {t['output_tokens']}"),
+        ("per api call: uncached input / cache write / cache read / output",
+         f"{_f(h.get('uncached_input_per_call'))} / {_f(h.get('cache_write_per_call'))} / "
+         f"{_f(h.get('cache_read_per_call'))} / {_f(h.get('output_per_call'))}"),
+        ("cache hit rate (cache read / all input)", _f(h.get("cache_hit_rate"), 1, True)),
+        ("cost USD per step", f"${h['cost_per_step_usd']:.5f}" if h.get("cost_per_step_usd") is not None else "-"),
+        ("cost USD (per game)", f"${h['cost_usd']:.4f} (${(h['cost_per_game_usd'] or 0):.4f})"),
+        ("minutes per game (mean)", _f(h["minutes_per_game_mean"], 2)),
+        ("replayable histories", f"{h['replayable']}/{h['games']}"),
+    ]
+
+
+def render_md(report: dict) -> str:
+    h = report["headline"]
+    lines = [f"# Eval report: {report.get('run_id') or report['out_dir']}", ""]
+    sha = report.get("seedset_sha256")
+    lines.append(f"- protocol v{report.get('protocol_version')} metric"
+                 + (f" (run written by a v{report['run_protocol_version']} runner)"
+                    if report.get("run_protocol_version") else " (recomputed; run written before v0.2)")
+                 + f"; seed set id `{report.get('seedset_id')}` v{report.get('seedset_version') or '?'}, "
+                 + (f"sha256 `{sha[:16]}`" if sha else "sha256 `?`")
+                 + (", frozen" if report.get("seedset_frozen") else ", not a frozen set"))
+    lines.append(f"- seed set `{report.get('seedset')}` (A{report.get('ascension')}), policy `{report.get('policy')}`"
+                 + (f", model `{report['model']}`, effort `{report.get('effort') or 'default'}`, "
+                    f"thinking `{report.get('thinking')}`" if report.get("model") else ""))
+    reveal = report.get("reveal_moves")
+    lines.append(f"- server `{report.get('server_version')}`, repo `{report.get('repo_sha')}`, "
+                 f"prompt `{report.get('prompt_hash')}`, obs `{report.get('obs_mode') or '?'}`, enemy moves "
+                 + ("`revealed`" if reveal else "`hidden`" if reveal is False else "`?` (not recorded)"))
+    wall = report.get("wall_seconds")
+    lines.append(f"- total wall time: {_f(wall / 60.0, 2) + ' min' if wall is not None else '-'}"
+                 + (f"; games summarised {h['games']}/{report['expected_games']}" if report.get("expected_games") else ""))
+    if report.get("aborted"):
+        lines.append(f"- **aborted: {report['aborted']}**")
+    lines += ["", "## Headline", "", "| metric | value |", "| --- | --- |"]
+    lines += [f"| {k} | {v} |" for k, v in _headline_rows(h)]
+    lines += ["", "## Per character", "",
+              "| character | games | progress | wins | win rate [95%] | floor mean | max | act reached | steps mean "
+              "| illegal/game | cost USD | min/game |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for ch, a in report["per_character"].items():
+        lo, hi = a["win_rate_ci95"]
+        acts = ", ".join(f"{k}:{v}" for k, v in a["act_reached"].items())
+        lines.append(f"| {ch} | {a['games']} | {_f(a.get('progress_mean'), 3)} | {a['wins']} "
+                     f"| {_f(a['win_rate'], 0, True)} [{_f(lo, 0, True)}, {_f(hi, 0, True)}] "
+                     f"| {_f(a['floor_mean'])} | {_f(a['floor_max'])} | {acts} | {_f(a['steps_mean'])} "
+                     f"| {_f(a['illegal_per_game'], 2)} | {a['cost_usd']:.4f} | {_f(a['minutes_per_game_mean'], 2)} |")
+    lines += ["", "## Games", "",
+              "| seed | character | result | progress | rooms cleared | floor | act | steps | illegal | cost USD "
+              "| minutes | cause |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for g in sorted(report["games"], key=lambda g: (g["character"] or "", g["seed"] or "")):
+        cause = (g.get("cause") or "").replace("|", "/")
+        rooms = (f"{g['rooms_cleared']}/{g['act_rooms']}" + ("*" if g.get("act_rooms_source") == "default" else "")
+                 if g.get("act_rooms") else "-")
+        lines.append(f"| {g['seed']} | {g['character']} | {g['result']} | {_f(g.get('progress'), 3)} | {rooms} "
+                     f"| {_f(g['floor'])} | {_f(g['act'])} "
+                     f"| {g['steps']} | {g['illegal']} | {(g['cost_usd'] or 0):.4f} | {g['minutes']:.2f} | {cause} |")
+    lines += ["", "Progress v0.2 = ((act - 1) + rooms cleared in the act / rooms in the act) / 3, 1.0 for a win; "
+                  "rooms cleared = rooms entered in the act - 1 (the room the run ended in does not count). "
+                  "`*` = act length from the standard table (no act map seen in the transcript)."]
+    prices = report.get("prices") or {}
+    if report.get("model") and prices.get("models", {}).get(report["model"]):
+        mp = prices["models"][report["model"]]
+        lines += ["", f"Prices used (USD/MTok, {report['model']}): input {mp['input']}, output {mp['output']}, "
+                      f"cache write {mp['cache_write']}, cache read {mp['cache_read']}."]
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_report(out_dir: Path) -> dict:
+    out_dir = Path(out_dir)
+    report = build_report(out_dir)
+    with open(out_dir / "report.json", "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=1)
+    (out_dir / "report.md").write_text(render_md(report), encoding="utf-8")
+    return report

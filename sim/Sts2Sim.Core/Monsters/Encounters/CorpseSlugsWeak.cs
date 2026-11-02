@@ -12,6 +12,11 @@ public sealed class CorpseSlugsWeak : EncounterDef
 
     public override bool IsWeak => true;
 
+    // Models.Encounters/CorpseSlugsWeak.cs `Tags => [EncounterTag.Slugs]` (E3: ActModel.AddWithoutRepeatingTags, Models/ActModel.cs:357-369)
+    private static readonly IReadOnlyList<EncounterTag> TagList = Array.AsReadOnly(new[] { EncounterTag.Slugs });
+
+    public override IReadOnlyList<EncounterTag> Tags => TagList;
+
     public override IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs) => throw EncounterRngRequired();
 
     public override IReadOnlyList<MonsterSpawn> GenerateMonsters(CombatState cs, Rng rng)

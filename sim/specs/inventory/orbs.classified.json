@@ -1,0 +1,636 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "orbs",
+ "content_kind": "orbs",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_orbs.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "kernel:orbs"
+ ],
+ "raw_manifest": "sim/specs/inventory/orbs.json",
+ "raw_source_digest": "09765264378933e7edce1ca7ee8764d17351f46ae1c38551f6d19c3d4a93fbb7",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "orb core: OrbQueue, the five orbs, Channel/Evoke/Passive, ModifyOrbValue (Focus), hook-counted passive triggers"
+ },
+ "count": 7,
+ "entries": [
+  {
+   "id": "DARK_ORB",
+   "model_id": "ORB.DARK_ORB",
+   "class": "DarkOrb",
+   "file": "Models.Orbs/DarkOrb.cs",
+   "class_line": 18,
+   "base_class": "OrbModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "passive_val_raw": "ModifyOrbValue(6m)",
+   "evoke_val_raw": "_evokeVal",
+   "modeldb_orbs_index": 2,
+   "constants": {},
+   "mechanics": [
+    "PassiveVal = ModifyOrbValue(6); EvokeVal = the accumulated _evokeVal (starts at 6, not hook-modified)",
+    "BeforeTurnEndOrbTrigger: turn triggers call OrbModel.TriggerPassive (Hook.ModifyOrbPassiveTriggerCount, then AfterModifyingOrbPassiveTriggerCount, then Passive per count; Models/OrbModel.cs:481)",
+    "Passive: _evokeVal += PassiveVal (no target allowed)",
+    "Evoke: CreatureCmd.Damage(lowest-HP hittable enemy, EvokeVal, Unpowered) (MinBy CurrentHp: first in list order on ties); nothing when no hittable enemy"
+   ],
+   "hooks": [
+    {
+     "member": "PassiveVal",
+     "cite": "Models.Orbs/DarkOrb.cs:170"
+    },
+    {
+     "member": "EvokeVal",
+     "cite": "Models.Orbs/DarkOrb.cs:172"
+    },
+    {
+     "member": "BeforeTurnEndOrbTrigger",
+     "cite": "Models.Orbs/DarkOrb.cs:175"
+    },
+    {
+     "member": "Passive",
+     "cite": "Models.Orbs/DarkOrb.cs:188"
+    },
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs/DarkOrb.cs:202"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "ModifyOrbPassiveTriggerCounts",
+    "ModifyOrbValue",
+    "kernel:orbs",
+    "kernel:per_instance_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "Trigger() -> TriggerPassive/ActivatePassive/ActivateEvoke; the passive-count loop moved from OrbQueue (v0.107.1 Entities/Orbs/OrbQueue.cs:90) into OrbModel.TriggerPassive",
+    "v107_file": "Models/Orbs/DarkOrb.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [],
+      "only_v111": [
+       "Count != 0"
+      ]
+     },
+     "idents": {
+      "only_v107": [
+       "Trigger"
+      ],
+      "only_v111": [
+       "ActivateEvoke",
+       "ActivatePassive",
+       "TriggerPassive"
+      ]
+     }
+    }
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "FROST_ORB",
+   "model_id": "ORB.FROST_ORB",
+   "class": "FrostOrb",
+   "file": "Models.Orbs/FrostOrb.cs",
+   "class_line": 19,
+   "base_class": "OrbModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "passive_val_raw": "ModifyOrbValue(2m)",
+   "evoke_val_raw": "ModifyOrbValue(5m)",
+   "modeldb_orbs_index": 1,
+   "constants": {},
+   "mechanics": [
+    "PassiveVal = ModifyOrbValue(2); EvokeVal = ModifyOrbValue(5)",
+    "BeforeTurnEndOrbTrigger: turn triggers call OrbModel.TriggerPassive (Hook.ModifyOrbPassiveTriggerCount, then AfterModifyingOrbPassiveTriggerCount, then Passive per count; Models/OrbModel.cs:481)",
+    "Passive: CreatureCmd.GainBlock(owner, PassiveVal, Unpowered); with HibernatePower also every other player",
+    "Evoke: CreatureCmd.GainBlock(owner, EvokeVal, Unpowered); with HibernatePower also every other player"
+   ],
+   "hooks": [
+    {
+     "member": "PassiveVal",
+     "cite": "Models.Orbs/FrostOrb.cs:349"
+    },
+    {
+     "member": "EvokeVal",
+     "cite": "Models.Orbs/FrostOrb.cs:351"
+    },
+    {
+     "member": "BeforeTurnEndOrbTrigger",
+     "cite": "Models.Orbs/FrostOrb.cs:354"
+    },
+    {
+     "member": "Passive",
+     "cite": "Models.Orbs/FrostOrb.cs:368"
+    },
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs/FrostOrb.cs:382"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "ModifyOrbPassiveTriggerCounts",
+    "ModifyOrbValue",
+    "kernel:orbs"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {
+     "powers": [
+      "HIBERNATE_POWER"
+     ]
+    },
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "HibernatePower makes Frost passive/evoke block also apply to the other players: multiplayer only (Hibernate is MultiplayerOnly, Models.Cards/Hibernate.cs:123); trigger refactor as DarkOrb",
+    "v107_file": "Models/Orbs/FrostOrb.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [],
+      "only_v111": [
+       "current != Owner",
+       "current == Owner",
+       "num < 0"
+      ]
+     },
+     "idents": {
+      "only_v107": [
+       "Trigger"
+      ],
+      "only_v111": [
+       "ActivateEvoke",
+       "ActivatePassive",
+       "CombatState",
+       "HasPower",
+       "HibernatePower",
+       "TriggerPassive"
+      ]
+     }
+    }
+   },
+   "tier": 2,
+   "tier_with_deps": 3,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "the HibernatePower branch only adds block to other players: no effect in single player",
+   "open_questions": []
+  },
+  {
+   "id": "GLASS_ORB",
+   "model_id": "ORB.GLASS_ORB",
+   "class": "GlassOrb",
+   "file": "Models.Orbs/GlassOrb.cs",
+   "class_line": 16,
+   "base_class": "OrbModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "passive_val_raw": "ModifyOrbValue(_passiveVal)",
+   "evoke_val_raw": "PassiveVal * 2m",
+   "modeldb_orbs_index": null,
+   "constants": {},
+   "mechanics": [
+    "PassiveVal = ModifyOrbValue(_passiveVal) with _passiveVal starting at 4; EvokeVal = PassiveVal x 2",
+    "BeforeTurnEndOrbTrigger: turn triggers call OrbModel.TriggerPassive (Hook.ModifyOrbPassiveTriggerCount, then AfterModifyingOrbPassiveTriggerCount, then Passive per count; Models/OrbModel.cs:481)",
+    "Passive: when PassiveVal > 0, damage every hittable enemy by PassiveVal (Unpowered) after decrementing _passiveVal by 1 (floored at 0)",
+    "Evoke: when EvokeVal > 0, CreatureCmd.Damage(all hittable enemies, EvokeVal, Unpowered)"
+   ],
+   "hooks": [
+    {
+     "member": "PassiveVal",
+     "cite": "Models.Orbs/GlassOrb.cs:240"
+    },
+    {
+     "member": "EvokeVal",
+     "cite": "Models.Orbs/GlassOrb.cs:242"
+    },
+    {
+     "member": "BeforeTurnEndOrbTrigger",
+     "cite": "Models.Orbs/GlassOrb.cs:245"
+    },
+    {
+     "member": "Passive",
+     "cite": "Models.Orbs/GlassOrb.cs:259"
+    },
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs/GlassOrb.cs:273"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "ModifyOrbPassiveTriggerCounts",
+    "ModifyOrbValue",
+    "kernel:orbs",
+    "kernel:per_instance_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "trigger refactor as DarkOrb",
+    "v107_file": "Models/Orbs/GlassOrb.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "Trigger"
+      ],
+      "only_v111": [
+       "ActivateEvoke",
+       "ActivatePassive",
+       "TriggerPassive"
+      ]
+     }
+    }
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "not in ModelDb.Orbs (so never rolled by GetRandomOrb); channelled explicitly (OrbCmd.Channel<GlassOrb>)",
+   "open_questions": []
+  },
+  {
+   "id": "LIGHTNING_ORB",
+   "model_id": "ORB.LIGHTNING_ORB",
+   "class": "LightningOrb",
+   "file": "Models.Orbs/LightningOrb.cs",
+   "class_line": 17,
+   "base_class": "OrbModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "passive_val_raw": "ModifyOrbValue(3m)",
+   "evoke_val_raw": "ModifyOrbValue(8m)",
+   "modeldb_orbs_index": 0,
+   "constants": {},
+   "mechanics": [
+    "PassiveVal = ModifyOrbValue(3); EvokeVal = ModifyOrbValue(8)",
+    "BeforeTurnEndOrbTrigger: turn triggers call OrbModel.TriggerPassive (Hook.ModifyOrbPassiveTriggerCount, then AfterModifyingOrbPassiveTriggerCount, then Passive per count; Models/OrbModel.cs:481)",
+    "Passive/Evoke: CreatureCmd.Damage(target or a random hittable opponent, value, Unpowered); nothing when no hittable opponent"
+   ],
+   "hooks": [
+    {
+     "member": "PassiveVal",
+     "cite": "Models.Orbs/LightningOrb.cs:336"
+    },
+    {
+     "member": "EvokeVal",
+     "cite": "Models.Orbs/LightningOrb.cs:338"
+    },
+    {
+     "member": "BeforeTurnEndOrbTrigger",
+     "cite": "Models.Orbs/LightningOrb.cs:341"
+    },
+    {
+     "member": "Passive",
+     "cite": "Models.Orbs/LightningOrb.cs:355"
+    },
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs/LightningOrb.cs:370"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "ModifyOrbPassiveTriggerCounts",
+    "ModifyOrbValue",
+    "kernel:orbs"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "RunRngType.CombatTargets: NextItem over the hittable opponents when no explicit target (passive and evoke)"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "trigger refactor as DarkOrb",
+    "v107_file": "Models/Orbs/LightningOrb.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [],
+      "only_v111": [
+       "Count != 0",
+       "num < 0",
+       "target != null"
+      ]
+     },
+     "idents": {
+      "only_v107": [
+       "Trigger"
+      ],
+      "only_v111": [
+       "ActivateEvoke",
+       "ActivatePassive",
+       "TriggerPassive"
+      ]
+     }
+    }
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_COMBAT_CLEANUP_ORB",
+   "model_id": "ORB.MOCK_COMBAT_CLEANUP_ORB",
+   "class": "MockCombatCleanupOrb",
+   "file": "Models.Orbs.Mock/MockCombatCleanupOrb.cs",
+   "class_line": 10,
+   "base_class": "OrbModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "passive_val_raw": "0m",
+   "evoke_val_raw": "0m",
+   "modeldb_orbs_index": null,
+   "constants": {},
+   "mechanics": [
+    "Evoke removes the owner's creature from the combat state"
+   ],
+   "hooks": [
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs.Mock/MockCombatCleanupOrb.cs:20"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "IsMock => true added (test mock)",
+    "v107_file": "Models/Orbs/Mock/MockCombatCleanupOrb.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      }
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MOCK_TURN_END_SUSPEND_ORB",
+   "model_id": "ORB.MOCK_TURN_END_SUSPEND_ORB",
+   "class": "MockTurnEndSuspendOrb",
+   "file": "Models.Orbs.Mock/MockTurnEndSuspendOrb.cs",
+   "class_line": 13,
+   "base_class": "OrbModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "passive_val_raw": "0m",
+   "evoke_val_raw": "0m",
+   "modeldb_orbs_index": null,
+   "constants": {},
+   "mechanics": [
+    "BeforeTurnEndOrbTrigger awaits a static TaskCompletionSource (test seam)"
+   ],
+   "hooks": [
+    {
+     "member": "BeforeTurnEndOrbTrigger",
+     "cite": "Models.Orbs.Mock/MockTurnEndSuspendOrb.cs:111"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "new",
+    "note": "test mock added after v0.107.1",
+    "v107_file": null
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "PLASMA_ORB",
+   "model_id": "ORB.PLASMA_ORB",
+   "class": "PlasmaOrb",
+   "file": "Models.Orbs/PlasmaOrb.cs",
+   "class_line": 14,
+   "base_class": "OrbModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "passive_val_raw": "1m",
+   "evoke_val_raw": "2m",
+   "modeldb_orbs_index": 3,
+   "constants": {},
+   "mechanics": [
+    "PassiveVal = 1; EvokeVal = 2 (not hook-modified)",
+    "AfterTurnStartOrbTrigger: turn triggers call OrbModel.TriggerPassive (Hook.ModifyOrbPassiveTriggerCount, then AfterModifyingOrbPassiveTriggerCount, then Passive per count; Models/OrbModel.cs:481)",
+    "Passive: PlayerCmd.GainEnergy(1); Evoke: PlayerCmd.GainEnergy(2)"
+   ],
+   "hooks": [
+    {
+     "member": "PassiveVal",
+     "cite": "Models.Orbs/PlasmaOrb.cs:220"
+    },
+    {
+     "member": "EvokeVal",
+     "cite": "Models.Orbs/PlasmaOrb.cs:222"
+    },
+    {
+     "member": "AfterTurnStartOrbTrigger",
+     "cite": "Models.Orbs/PlasmaOrb.cs:225"
+    },
+    {
+     "member": "Passive",
+     "cite": "Models.Orbs/PlasmaOrb.cs:239"
+    },
+    {
+     "member": "Evoke",
+     "cite": "Models.Orbs/PlasmaOrb.cs:253"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterModifyingOrbPassiveTriggerCount",
+    "ModifyOrbPassiveTriggerCounts",
+    "kernel:orbs"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "trigger refactor as DarkOrb",
+    "v107_file": "Models/Orbs/PlasmaOrb.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "Trigger"
+      ],
+      "only_v111": [
+       "ActivateEvoke",
+       "ActivatePassive",
+       "TriggerPassive"
+      ]
+     }
+    }
+   },
+   "tier": 2,
+   "tier_with_deps": 2,
+   "tier_classifier": 2,
+   "tier_from_requirements": 2,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  }
+ ]
+}

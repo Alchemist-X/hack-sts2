@@ -14,11 +14,11 @@ public sealed class ThornsPower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public override void BeforeDamageReceived(CombatState cs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
+    public override void BeforeDamageReceived(RunState rs, CreatureState target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource)
     {
         if (ReferenceEquals(target, Owner) && dealer != null && (props.IsPoweredAttack() || IsOmnislice(cardSource)))
         {
-            CreatureCmd.Damage(cs, dealer, Amount, RetaliationProps, Owner, null, null);
+            CreatureCmd.Damage(rs.Combat!, dealer, Amount, RetaliationProps, Owner, null, null);
         }
     }
 

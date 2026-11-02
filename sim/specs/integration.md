@@ -227,3 +227,1055 @@ Cruelty lookup (pipeline §8–§9); monsters — `BeforeRemovedFromRoom`/`Reset
 `Player.AfterCombatEnd` after victory, side-turn `participants`, `ModifyKeywordsInCombat`,
 undispatched hooks and history, slot sorting, the additional stripped wait sites, interactive
 turn-end-card timing (loop §3.6, §7, §9).
+
+## 7. W1 integrate, round 1 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11). Branch `claude/sim-source-recreation-9392df`,
+base `94424e5` (phase-0 scaffold `46d1918` plus its fixes). .NET SDK 9.0.117, runtime 9.0.16,
+Apple M4 Pro (Arm64, 12 cores); other agents were running (load average about 3).
+
+### 7.1 Commits and merges
+
+| Step | Result |
+| --- | --- |
+| In-place INV track | `687077a` "specs: inventory normalisation (INV track)", 154 files: `sim/tools/inventory/**` (classifier pipeline `classify/`, `test_classify.py`, `extract_models.py`, `test_inventory.py`), `sim/specs/inventory/**` (new `acts`, `afflictions`, `characters`, `enchantments`, `modifiers`, `orbs` `.classified.json`, `batches.json`, `requirements.json`, `version-deltas.json`; refreshed classified manifests, `kernel-gaps.json`, `subsystems.json`, `summary.json`), `docs/sim-port/inventory-*.md` (new `inventory-minor-kinds.md`). |
+| In-place REC track | `4094c1e` "recorder: passive anchor additions R0-R5/R7/R11 (REC track, not installed)", 18 files: `mod/**` and `docs/hook-map.md`. Nothing was installed into the game's `mods/` directory. |
+| Merge list | Nine entries, every one `819d7c6873f0703198892190f24a244407301e25` (the `origin/main` tip, "Merge pull request #28", the P0 merge and an ancestor of the base). Each `git merge --no-ff --no-edit` printed "Already up to date." and made no commit. No W1 track was integrated (§7.5, row 1). |
+| Conflicts | None (no merge applied a change). |
+| Trailers | `Co-Authored-By: Claude Opus 5.5`, the attribution this execution session must use, in place of the brief's `Claude Fable 5.1`. The two track commits were first written with the brief's trailer (`f1fb42b`, `18c6908`) and re-created with identical trees. |
+
+### 7.2 Build and tests
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` (incremental and `--no-incremental`) | 0 warnings, 0 errors; no edit needed. |
+| `dotnet run --project sim/Sts2Sim.Tests` | 367 passed, 0 failed, 367 total: the Part A suite. No W1 suite (`ChoiceTests`, `HookTests`, `StateKernelTests`, `CardKernelTests`, `TurnFlowTests`, `RelicPotionTests`, `CharacterMechanicsTests`, `MonsterKernelTests`) is in the tree. |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | Bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0. |
+| Recorder core tests, a check of `4094c1e` (`dotnet test mod/tests/Sts2Recorder.Core.Tests.csproj`) | 78 passed, 0 failed. `mod/Sts2Recorder.csproj` compiles with 0 warnings, 0 errors (output in `mod/bin`, nothing installed). |
+| Inventory tool tests, a check of `687077a` (`python3 -m unittest discover -s sim/tools/inventory -p 'test_*.py'`) | 42 passed. |
+
+Failures fixed: none. Test changes: none. Cross-area edits: none; the integration commit changes
+only this file.
+
+### 7.3 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 664 642 | 2.645 µs | 1.266 µs |
+| 2 | 666 603 | 2.627 µs | 1.263 µs |
+| 3 | 676 647 | 2.872 µs | 1.260 µs |
+| Median | 666 603 | 2.645 µs | 1.263 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (about 2 200×); `Clone()` ≤ 1 ms passes (about 380×).
+Against the recorded P0 figures (705 048 decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`,
+2026-10-30): throughput 0.945×, clone 1.045×, hash 1.45×.
+
+### 7.4 Where the regression comes from
+
+Only two commits since P0 change sim code: the phase-0 scaffold `46d1918` and its fixes `94424e5`.
+To separate code from machine load, the P0 tree (`83c7ee9`, whose `sim/` code equals `819d7c6`) was
+exported with `git archive`, built in Release and benched interleaved with this tree in the same
+session:
+
+| Tree | decisions/s (3 runs → median) | `Clone()` median (range) | `StateHash()` median (range) |
+| --- | --- | --- | --- |
+| P0 `83c7ee9` | 633 752 / 610 856 / 563 744 → 610 856 | 2.641 µs (1.845–2.778) | 1.148 µs (1.003–1.261) |
+| W1 round 1 `4094c1e` | 582 754 / 594 387 / 610 221 → 594 387 | 2.911 µs (2.788–2.948) | 1.265 µs (1.228–1.338) |
+| W1 / P0 | 0.973× | 1.10× | 1.10× |
+
+Allocation per call on the bench's mid-fight state (10 000 calls,
+`GC.GetAllocatedBytesForCurrentThread`), and canonical length of that state:
+
+| Measure | P0 | W1 round 1 | Change |
+| --- | --- | --- | --- |
+| `Clone()` | 5 384 B | 6 640 B | +1 256 B (+23 %) |
+| `CombatSim.Create` | 7 520 B | 8 776 B | +1 256 B (+17 %) |
+| `StateHash()` | 0 B | 0 B | 0 |
+| Canonical bytes | 2 042 B | 2 368 B | +326 B (+16 %) |
+
+The scaffold wired the Part B state additions into clone and canonical:
+
+- D4 (every `CombatState` has a `Run`): `CombatState.DeepClone` first builds a `RunState` through
+  `RunState.CloneWithoutCombat` (a player list, a modifier list, `ChoiceRuntime.DeepClone`,
+  `FidelityLog.DeepClone`), then `CloneInto`; `WriteCanonical` writes the run fields (ascension,
+  `UnlockProfile`, player list, RNG, modifiers, choice runtime, fidelity log) before the combat
+  fields.
+- B2 combat fields: an ally list, `CombatHistory` (deep-cloned and hashed),
+  `PlayersTakingExtraTurn`, `CardOrPotionEffectDepth`.
+- D3 player fields on `PlayerState`: gold, relic list, potion-slot array, base orb slots,
+  `CanUseOrRemovePotions`, deck list, `OrbQueue`, pet ids; on `MonsterState`: `PetOwnerId`,
+  `Listener`. Each list or array is a new allocation per clone even when empty, and each writes a
+  tag and a count.
+
+The step path gained only constant-cost changes: the ported dispatchers take the `RunState` and
+check `ReferenceEquals(rs.Combat, cs)` (`Hook.RequireAttachedCombat`), and the side-turn hooks pass
+the existing monster or ally list as `participants` (no allocation); every new dispatcher, model
+kind and `Choice` member is a stub that no P0 content reaches. Decisions/s therefore moves through
+those checks and the larger `Create` (+1 256 B per episode of about 20 decisions): −2.7 % at the
+same load, inside the run-to-run spread (the P0 tree alone measured 564k–634k in this session).
+`Clone()` and `StateHash()` rise about 10 % at the same load, from the +23 % allocation and +16 %
+canonical bytes on top of fixed per-object costs. The rest of the gap to the recorded P0 figures is
+machine load: the unchanged P0 tree measured 0.87× of its recorded throughput in this session.
+
+### 7.5 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | The merge list carried the `origin/main` tip nine times instead of the nine W1 track commits (B11 has nine owner rows besides scaffold and integrate: choice, hooks, state, pipeline, cards-kernel, loop, relics-potions, character-mechanics, monsters-kernel). No commit descending from the base `94424e5` exists in the object store apart from this round's own commits (every ref, reflog and unreachable commit searched), so the tracks either never committed or ran from `origin/main`, which lacks the Part B scaffold. | Re-collect the track SHAs (each based on `94424e5`) and run round 2. |
+| 2 | Gates F1 (clone/hash equality at random points with pilot relics, potions and prompt cards), F4 (legal-action closure with prompts), F5 (invariants after every step) and the B2 chain (`GremlinHorn` or `DarkEmbracePower` + `HellraiserPower` + `SeekerStrike`) cannot be evaluated: their content and suites are absent, and 137 `throw new NotImplementedException` scaffold sites remain in 15 files of `Sts2Sim.Core` (73 in `Combat/Pipeline/Hook.cs`, 22 in `State/CombatHistory.cs`). | Round 2. |
+| 3 | Only build, the Part A suite, the diff gate and the bench hold, so the W1 wave is not complete. | Round 2. |
+| 4 | The bench covers the scaffold only (§7.4); the track content (relics, potions, orbs, history appends, hook dispatch) will change it. | Re-run after round 2. |
+| 5 | The REC track (`4094c1e`) is compiled and tested but not installed; the game keeps the previously installed `Sts2Recorder`. | `scripts/install_mod.sh` when the recorder change is to go live. |
+
+## 8. W1 integrate, round 2 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11). Branch `claude/sim-source-recreation-9392df`,
+start `ef7c7b9` (round 1). .NET SDK 9.0.117, runtime 9.0.16, Apple M4 Pro (Arm64, 12 cores); other
+agents were running (load average 2.4 to 4.5).
+
+### 8.1 Commits and merges
+
+| Step | Result |
+| --- | --- |
+| In-place tracks | `git status --short` was empty: the INV and REC work was committed in round 1 (`687077a`, `4094c1e`), so no track commit was made. |
+| Merge list | Nine entries, again every one `819d7c6873f0703198892190f24a244407301e25` (the `origin/main` tip, "Merge pull request #28", an ancestor of `94424e5`). Each `git merge --no-ff --no-edit` printed "Already up to date." and made no commit; `HEAD` stayed at `ef7c7b9`. |
+| Search for the track work | No ref, reflog entry or unreachable commit (`git fsck --unreachable --no-reflogs`) descends from `94424e5` apart from round 1's own commits and their first versions with the brief's trailer (`f1fb42b`, `18c6908`). No other worktree holds a W1 branch. No W1 track was integrated (§8.6, row 1). |
+| Conflicts | None. |
+| Trailer | `Co-Authored-By: Claude Opus 5.5`, the attribution this execution session must use, as in round 1 (§7.1), in place of the brief's `Claude Fable 5.1`. |
+
+### 8.2 Build, tests, diff gate
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` (Debug and Release, `--no-incremental`) | 0 warnings, 0 errors. No edit was needed. |
+| `dotnet run --project sim/Sts2Sim.Tests` | 371 passed, 2 failed, 373 total: the Part A 367 plus the 6 new gate tests (§8.3). The two failures are the gates whose content is absent: `Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline` and `Test_W1Gate_PilotContentIsRegistered`. Release (`-c Release`): the same 371 / 2. |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | Bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0. |
+
+Failures fixed: none (no merged code). Test changes: the new `sim/Sts2Sim.Tests/W1GateTests.cs`; no
+existing test changed. Cross-area edits: none. Changed files: `W1GateTests.cs` (new), `sim/BENCH.md`
+(W1 rows), this file.
+
+The two failing gate tests fail until the W1 tracks land; they must not be weakened or skipped. Each
+message lists the missing ids.
+
+### 8.3 W1 gate suite (`sim/Sts2Sim.Tests/W1GateTests.cs`)
+
+No owner suite covers F1, F4, F5 or the B2 chain (none of the eight W1 suites is in the tree), so the
+integrate step added them. Content: registered content only, selected by id string, plus test doubles
+declared in the file (never discovered by the registries). Every playout starts from
+`CombatSim.Create(seed, deck, encounter, ascension)` on every registered encounter (8), at A0 for odd
+seeds and A10 for even seeds; the deck is the Ironclad starter plus every registered B5 prompt-card
+pilot (`ARMAMENTS`, `ACROBATICS`, `HEADBUTT`, `SEANCE`, `DISCOVERY`, `SEEKER_STRIKE`). At the first
+decision the player is equipped: gold 50 + seed mod 200, every registered relic (a seeded sample of 12
+when more exist) plus the test double `GateCounterRelic` (a counter and a list in its extra canonical
+state), and the potion slots filled (all slots for even seeds, all but the last for odd seeds) with
+registered potions, or with the test double `GateChargePotion` (`CombatOnly`, `Self`, a charge
+counter, inert `OnUse`) when none is registered. The policy is SplitMix64, seeded per encounter, seed
+and gate (FNV-1a of the encounter id).
+
+| Test | Result | Counts | Checks |
+| --- | --- | --- | --- |
+| `Test_W1Gate_F1_CloneHashEqualityOnRandomPlayouts` | pass | 32 playouts (8 encounters × seeds 1–4, 0 capped), 647 steps, 176 clone checks, 319 clone steps, 408 lockstep steps, 192 hash-coverage probes | At a random third of the decision points and at the terminal state: `Hash(Clone(x)) == Hash(x)`, equal `CombatSim.WriteCanonical` bytes, equal outcome and legal actions, `Hash(Clone(Clone(x)))`; the clone then takes 1–4 random legal steps and its gold, relic counter and log and potion charges are changed, after which the source's hash and bytes, the clone of the clone and a sibling clone are unchanged; the sibling then follows the source in lockstep for 3 steps with equal hashes. Per playout, six probes on clones (gold, relic counter, relic log, relic list, potion charges, potion slot) must each change the clone's hash and leave the source's. |
+| `Test_W1Gate_F4_LegalActionClosure` | pass | 24 playouts (seeds 11–13), 531 decision states, 0 prompt states, 2 629 listed actions stepped on clones, 42 062 candidates checked with `IsLegal`, 2 124 illegal actions stepped | A terminal state lists nothing; a non-terminal state lists at least one action, without duplicates; every listed action is `IsLegal` and steps on a clone without an exception; the candidate set (plays `(-1..hand) × (-2..monsters)`, `EndTurn` with and without stray indices, `UsePotion(-1..slots, -3-allies..monsters)`, `DiscardPotion(-1..slots)`, `Pick(-1..12)`, `Confirm`, `Cancel`, an unknown kind) has no legal unlisted action except a `Pick` (B1 lists only ascending picks for unordered prompts); four sampled illegal actions per state throw `InvalidOperationException` (Part A §4.2) and leave the hash and bytes unchanged. |
+| `Test_W1Gate_F5_InvariantsHoldAfterEveryStep` | pass | 32 playouts (seeds 21–24), 658 steps, 690 invariant checks | After `Create` and after every step: `Allies[0]` is the player; per creature (player, monsters, allies) HP in `[0, MaxHp]`, block ≥ 0, a unique id below `NextCreatureId`, every power owned by that creature object and held once; energy, stars, gold ≥ 0; potions ≤ slots and owned by the player; relics owned by the player; card conservation: no card object in two places among the five piles and the deck, unique instance ids in the piles and in the deck, every pile id below `NextCardInstanceId`, a pile card owned by the player when it has an owner, and a card that left every pile never returns; `NextCreatureId`, `NextCardInstanceId` and the counter of every one of the 12 run RNG streams never decrease. |
+| `Test_W1Gate_F5_LedgerRejectsBrokenStates` | pass | 10 violations | The F5 ledger rejects, for the expected reason, a card in two piles, a card that returns after leaving, a deck card also in a pile, HP above max, negative energy, negative gold, a duplicate creature id, a power held by a creature it is not attached to, a rewound RNG counter and a relic of another player. |
+| `Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline` | **fail** | 0 playouts | Content absent: `DARK_EMBRACE_POWER` (power) or `GREMLIN_HORN` (relic), `HELLRAISER_POWER` (power), `SEEKER_STRIKE` (card). |
+| `Test_W1Gate_PilotContentIsRegistered` | **fail** | 23 missing | B5 pilots absent: relics (0 registered, 6 needed; `GAMBLING_CHIP`, `PAPER_PHROG`, `PAPER_KRANE`), potions (0, 4 needed; `FAIRY_IN_A_BOTTLE`, `ATTACK_POTION`, `ASHWATER`), the six prompt cards, the five pilot powers, an enchantment, an affliction, five orbs, `OSTY`. |
+
+What F1, F4 and F5 do not cover yet: with 0 relics, 0 potions, 0 orbs and 0 prompt cards registered,
+the slots hold only the inert doubles (they reach clone and canonical but no hook: the P0 listener
+snapshot visits powers only, `Combat/Pipeline/ListenerSnapshot.cs`), `LegalActions` lists no potion or
+prompt action (the B1 `LegalActionGenerator` and `CombatSim` work of the choice track is absent), and
+no prompt is ever exposed. The pilot clauses of F1 and F4 are therefore unevaluated; they apply
+automatically once the pilots are registered, because the suite selects content by id.
+
+B2 chain scenario (runs once the content is registered): deck 6 `SEEKER_STRIKE` + 4 `ASCENDERS_BANE`,
+`NIBBITS_WEAK`, seeds 31–38; at the first decision `PowerCmd.Apply` gives the player
+`DARK_EMBRACE_POWER` 1 (when registered) and `HELLRAISER_POWER` 1, and `GREMLIN_HORN` is added to the
+relics when registered; random legal play (prompt answers included) for up to 1 000 steps per seed
+must not throw, and at least one seed must record `FidelityFlag.DeferredListenerPromptInline` on
+`State.Run.Fidelity`. Path: at the player's turn end the ethereal Ascender's Bane is exhausted
+(`causedByEthereal`, sim `CombatLoop.DoTurnEnd`) and DarkEmbrace counts it
+(`Models.Powers/DarkEmbracePower.cs:64-78`); `AfterSideTurnEnd` draws `Amount × etherealCount`
+(`:141-157`) inside the per-listener `HookPlayerChoiceContext` (`Hooks/Hook.cs:6170`); Hellraiser
+auto-plays every drawn Strike-tagged card (`Models.Powers/HellraiserPower.cs:69`, `:93`); Seeker Strike
+(Strike tag `Models.Cards/SeekerStrike.cs:178`) opens `FromCombatPile` on the draw pile (`:140-141`),
+a prompt inside a per-listener context (D2). GremlinHorn's path is `AfterDeath` (`Hooks/Hook.cs:2364`)
+→ `CardPileCmd.Draw` (`Models.Relics/GremlinHorn.cs:91`, `:130`).
+
+Seams to revisit when the tracks land:
+
+| # | Seam | Why |
+| --- | --- | --- |
+| 1 | `EquipPlayer` adds relics with `AttachTo` + `Relics.Add` and fills `PotionSlots` directly | No `RelicCmd` / `PotionCmd` exists yet; if the hooks track caches the listener array behind a mutation version counter (B3), equip through `RelicCmd.Obtain` / `PotionCmd.TryToProcure` (or bump the counter) so the relics are visited. Relics are equipped after `Create`, so their turn-1 hooks (`GamblingChip`) are not exercised by F1. |
+| 2 | B2 applies the powers with `PowerCmd.Apply` at the first decision, outside a `Step` | Under the B1 tape engine this state becomes `S0` of the next step; keep the call if the pipeline facade stays. |
+| 3 | F4 does not offer `Confirm` / `Cancel` / `DiscardPotion` with stray indices as candidates | B1 does not say whether the unused indices are validated. |
+| 4 | F5's "a card that left every pile never returns" | Holds for every v0.111.0 path read so far (`SwipePower` returns the stolen card's deck version through the run layer, `Models.Powers/SwipePower.cs:131-139`, not the combat copy); a port that needs otherwise must cite the decompile and relax the rule in this file. |
+
+### 8.4 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 664 117 | 2.652 µs | 1.107 µs |
+| 2 | 671 595 | 2.739 µs | 1.133 µs |
+| 3 | 667 858 | 2.623 µs | 1.192 µs |
+| Median | 667 858 | 2.652 µs | 1.133 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (about 2 200×); `Clone()` ≤ 1 ms passes (about 380×).
+Against the recorded P0 figures (705 048 decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`):
+throughput 0.947×, clone 1.048×, hash 1.30×.
+
+Same-session control, as in §7.4: the P0 tree (`819d7c6`, `git archive` of `sim/Sts2Sim.Core` and
+`sim/Sts2Sim.Bench`) and this tree, Release, interleaved P0, W1, P0, W1, P0, W1:
+
+| Tree | decisions/s (3 runs → median) | `Clone()` median (range) | `StateHash()` median (range) |
+| --- | --- | --- | --- |
+| P0 `819d7c6` | 673 354 / 662 310 / 670 718 → 670 718 | 1.841 µs (1.791–1.889) | 1.006 µs (0.992–1.010) |
+| W1 round 2 | 674 732 / 680 741 / 677 960 → 677 960 | 2.634 µs (2.627–2.711) | 1.156 µs (1.098–1.184) |
+| W1 / P0 | 1.01× | 1.43× | 1.15× |
+
+Where the regression comes from: `sim/Sts2Sim.Core`, `sim/Sts2Sim.Bench` and `sim/Sts2Sim.Diff` are
+byte-identical to round 1 (`git diff 94424e5 HEAD` is empty for them), so the per-call allocation and
+canonical-length figures of §7.4 still hold (`Clone()` 6 640 B against P0's 5 384 B, canonical
+2 368 B against 2 042 B). The extra clone cost comes from the phase-0 state additions only: 18 more
+objects per clone (`RunState.CloneWithoutCombat`: the `RunState`, the player list and its array, the
+modifier list, `ChoiceRuntime` and its selector list, `FidelityLog` and its entry list; the player
+copy: relic list, potion-slot array, deck list, `OrbQueue` and its orb list, pet-id list; the ally list
+and its array; `CombatHistory`, whose 17 list fields make it about 160 B; `PlayersTakingExtraTurn`),
+plus about 40 B more in each card copy for the B2 `CardInstance` fields (owner, enchantment,
+affliction, listener, `HasBeenRemovedFromState`, `DeckVersionId`), which together make the +1 256 B.
+Clone time tracks the object count more than the bytes, so it rises more than the +23 % in bytes:
+1.43× in this session and 1.10× in round 1's session; the P0 tree's own clone time moved between 1.79
+and 2.78 µs across the two sessions while this tree stayed between 2.6 and 2.9 µs. The hash covers 326 more bytes (+16 %), 1.15×
+at equal load. Throughput is flat (1.01×) because a decision does not clone: the step path gained only
+constant-cost checks (§7.4) and the larger `Create` is amortised over about 20 decisions per episode.
+The gap to the recorded P0 throughput is machine load: the unchanged P0 tree measured 0.95× of its
+recorded throughput in this session. No track content (relic and potion listeners, history appends,
+hook masks) is measured yet; re-bench after the tracks merge.
+
+### 8.5 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | The merge list again carried the `origin/main` tip nine times instead of the nine W1 track commits (choice, hooks, state, pipeline, cards-kernel, loop, relics-potions, character-mechanics, monsters-kernel). No commit descending from `94424e5` other than the integrate commits exists in the object store, so the tracks either never committed or reported their base. | Re-collect nine track SHAs that descend from `94424e5` (check `git merge-base --is-ancestor 94424e5 <sha>` before dispatching) and run round 3. |
+| 2 | W1 gates not met: B2 chain and pilot coverage fail (content absent); F1, F4 and F5 pass on P0 content and inert doubles only, with their pilot and prompt clauses unevaluated (§8.3). | Round 3, after the tracks merge. |
+| 3 | 137 `throw new NotImplementedException` scaffold sites remain in 15 files of `Sts2Sim.Core` (73 in `Combat/Pipeline/Hook.cs`, 22 in `State/CombatHistory.cs`, 8 in `Orbs/OrbQueue.cs`, 7 in `Choice/CardSelectCmd.cs`, 4 in `Cards/Enchantments/EnchantmentModel.cs`, 3 each in `State/CombatState.cs`, `Potions/PotionModel.cs`, `Combat/Loop/PotionActions.cs`, `Choice/ChoiceRuntime.cs`, `Cards/Afflictions/AfflictionModel.cs`, 2 each in `Relics/RelicModel.cs`, `Random/RngSets.cs`, `Modifiers/ModifierModel.cs`, 1 each in `Orbs/OrbModel.cs`, `Cards/CardInstance.cs`). | The tracks. |
+| 4 | The bench covers the scaffold only (§8.4). | Re-run after round 3. |
+| 5 | The REC track (`4094c1e`) is still compiled and tested but not installed. | `scripts/install_mod.sh` when the recorder change is to go live. |
+| 6 | Gate-suite seams §8.3 rows 1–4. | Round-3 integrator. |
+
+## 9. W1 integrate, round 3 (2026-11-01)
+
+Owner: the W1 integrate step (CONTRACTS Part B §B11, §B12). Branch `claude/sim-source-recreation-9392df`, start
+`263810d` (phase-0b amendments). `git status --short` was empty at the start. .NET SDK 9.0.117, runtime 9.0.16, Apple
+M4 Pro (Arm64, 12 cores); other agents were running (load average 3.4 to 9).
+
+### 9.1 Merges
+
+All nine track commits descend from `263810d` (`git merge-base --is-ancestor`), so none was skipped. Each was merged
+with `git merge --no-ff --no-edit` in the dependency order of the brief.
+
+| Track | Commit (commits above the base) | Merge commit | Textual conflicts |
+| --- | --- | --- | --- |
+| hooks | `152006c` (1) | `401d6d1` | none |
+| state | `0ba84d7` (1) | `f906788` | none |
+| cards-kernel | `cbf3459` (1) | `f34f151` | none |
+| choice | `bb52894` (1) | `d180da4` | none |
+| pipeline | `9e4bc7b` (3) | `7fc82f6` | none |
+| monsters-kernel | `6b7ecd6` (1) | `75150c3` | none |
+| character-mechanics | `76378e2` (1) | `b16a682` | none |
+| relics-potions | `1667af4` (2) | `5e44bec` | none |
+| loop | `7545932` (1) | `674ee65` | none |
+
+Every track touched only its B11 files (checked with `git diff --stat 263810d <sha>`), so git reported no conflict.
+One build-level conflict surfaced instead: the type `CardPileAddResult` was defined by cards-kernel
+(`Cards/CardPileAddResult.cs`) and by the loop (`Combat/Loop/CardPileCmd.cs:3`), see §9.2. The merge commits carry
+git's default messages; every fix of this section is in the commit `sim: W1 integrate round 3`, so the merge commits
+after cards-kernel, relics-potions and loop do not build on their own.
+
+### 9.2 Build after each merge (`dotnet build sim/Sts2Sim.sln`)
+
+| After | Result | Smallest fix |
+| --- | --- | --- |
+| hooks, state, choice, pipeline, monsters-kernel, character-mechanics | 0 warnings, 0 errors | none |
+| cards-kernel | 2 × CS8602, `Combat/Pipeline/ListenerSnapshot.cs:400`, `:405` (hooks) | cards-kernel made `AfflictionModel.Card` and `EnchantmentModel.Card` nullable (B12 A23: null where the game's getter is); the two liveness checks pattern-match `Card is { } card`, the same test as `HasCard && Card…` (`Combat/CombatState.cs:1051-1053`) |
+| relics-potions | 2 × CS0200 in tests: `HookTests.cs:842` sets `PotionModel.HasBeenRemovedFromState`, `StateKernelTests.cs:1044` sets `RelicModel.StackCount` | relics-potions made both setters private as in the game; `HookTests` calls `q1.RemoveBeforeUse()` (the same two writes, `Models/PotionModel.cs:595-599`), the state probe calls `IncrementStackCount()` on its test relic, which now overrides `IsStackable` |
+| loop | 6 × CS0104, `CardPileAddResult` ambiguous between `Sts2Sim.Core.Cards` and `Sts2Sim.Core.Combat.Loop` | one type, cards-kernel's (`Entities.Cards/CardPileAddResult.cs:6-17`: `oldPile` is a nullable `CardPile`); the loop's copy is deleted, `CardPileCmd.AddCore` stores `null` for "no old pile" and passes `OldPile ?? PileType.None` to `AfterCardChangedPiles` as the game does (`Commands/CardPileCmd.cs:282-314`, `:440-444`) |
+
+Final: `dotnet build sim/Sts2Sim.sln` 0 warnings, 0 errors (Debug incremental and `--no-incremental`, Release).
+
+### 9.3 Tests (`dotnet run --project sim/Sts2Sim.Tests`)
+
+First run after the nine merges: 691 passed, 30 failed, 721 total, `PENDING total: 5`. Final: **721 passed, 0 failed,
+721 total, `PENDING total: 0`** in Debug and in Release (`-c Release`). The base had 374 tests (the Part A 367, the six
+gate tests, `W1Pending`'s self-test); the tracks added 347 (Choice 31, Hook 34, StateKernel 43, CardKernel 45,
+TurnFlow 22, RelicPotion 47, CharacterMechanics 60, MonsterKernel 28, Pipeline +37). No test was skipped, and no
+gate test was weakened.
+
+| Failure (count) | Cause | Fix | Citation |
+| --- | --- | --- | --- |
+| 4 PENDING (two Hellraiser tests, AttackPotion, GamblingChip); `W1Gate_B2Chain` and `W1Gate_F1` failed on the same stubs | the forwarding seams of pipeline and relics-potions still threw; their targets exist now | `Powers/CardCmdForwarders.cs` → `CardCmd.AutoPlay`, `CardCmd.Discard`, `CardCmd.TransformToRandom`; `Relics/PendingKernelCalls.cs` → `CardCmd.Upgrade`, `CardCmd.DiscardAndDraw`, `CardFactory.GetDistinctForCombat(cs, player, CardPools.ForCharacter(player.CharacterId).GetUnlockedCards(cs.Run.Unlocks, CardPools.MultiplayerConstraintFor(cs.Run)).Where(c => c.Type == type), count, rng)` | `Models.Potions/AttackPotion.cs:71`, `Models.Relics/Whetstone.cs`, `GamblingChip.cs` |
+| PENDING `MonsterKernel_KillDuringItsOwnMoveRunsBeforeRemovedFromRoom` | `CreatureCmd.Kill` never ran `CombatManager.RemoveCreature` | `MonsterLifecycle.RemoveCreature(cs, monster)` (`BeforeRemovedFromRoom`, `ResetStateMachine`) for every enemy that `Kill` removes, before the `IsPerformingMove`-gated list removal, and in `Escape` before the list removal | `Commands/CreatureCmd.cs:2812-2822`, `:3936`; `Combat/CombatManager.cs:7171-7180` |
+| 10 StateKernel tests: `PushSelector` throws | choice requires an `IChoiceSelector` with a stable id, and a selector with canonical state must be an `IStatefulChoiceSelector` so clones never share it (B12 A14) | the test double `KernelSelector` implements `IStatefulChoiceSelector` (`SelectorId`, `DeepClone`); its label stays in its canonical form | B12 A14 |
+| 4 StateKernel tests: "the clone shares mutable objects: StatelessListener" | hooks added `AbstractModel._overriddenHooks`, a per-type `HookMask` cache (copied by `MemberwiseClone`, not hashed); the reflective inspector counts any non-readonly field as state | the inspector skips that field (declared on `AbstractModel`, type `HookMask`) | hooks.md §9.1 |
+| 6 RelicPotion tests, `W1Gate_F4`, `W1Gate_F5`: `InvalidCastException` `DynamicVar` → `CardsVar` / `EnergyVar` | four relics built `new DynamicVar(CardsName, …)` because the typed vars did not exist at the base; cards-kernel's `DynamicVarSet.Cards` and `.Energy` cast like the game's | the relics use `CardsVar` / `EnergyVar` as the game does | `Models.Relics/Nunchaku.cs:183-184`, `HappyFlower.cs:188`, `Whetstone.cs:20`, `CentennialPuzzle.cs:111` |
+| `RelicPotion_RelicsAndPotionSlotsAreCombatListenersInGameOrder` | the test expected the powers of an inactive player to stay listed | test expects only the monster's power: the list stops after the inactive player's powers and those powers are not live at yield | `Combat/CombatState.cs:870-873`, `:1061` |
+| `RelicPotion_FairyInABottlePreventsTheOwnersDeathThroughCreatureCmd` | the test read `Monsters[0]` after killing it; pipeline's `Kill` removes dead enemies | the test keeps the monster reference | `Commands/CreatureCmd.cs:2812-2822` |
+| `RelicPotion_AttackPotionOffersThreeAttacksAndMakesThePickFree` | the test hard-coded three offered attacks; of the generatable Ironclad attacks only `HEADBUTT` is ported, and `GetDistinctForCombat` draws over the ported options and records `ApproximatedRule` | the test expects `min(3, ported)` options, clips its pick, asserts the flag whenever options were dropped, and asserts the `CombatCardGeneration` draw only with two or more options (a one-element `UnstableShuffle` draws nothing) | cards-kernel.md §7.4; relics-potions.md §11 item 14 |
+| `CharacterMechanics_SummonCreatesOstyThroughAddPetAndDieForYou`, `TurnFlow_AddPetRegistersThePetOnItsOwner`: "already in this combat" | the loop's `PlayerCmd.AddPet(cs, owner, def)` called `MonsterSpawner.SpawnPet`, which already adds the pet, then `AddPet(cs, pet, owner)`, which adds it again | `MonsterSpawner.CreateCreature(cs, def, owner.Side, null)`, then `AddPet(cs, pet, owner)` = `AddPetInternal` + `CreatureCmd.Add`, the game's sequence | `Commands/PlayerCmd.cs:946-967`, `:123-124` |
+| `Hooks_AfflictionListenerFollowsItsCard`, `Hooks_ModifyBlockAppliesTheEnchantmentPrePassFirst` | the tests made an unbound affliction or enchantment by assigning the card slot; cards-kernel's slot setters now bind the model | the tests unbind with `ClearInternal()` right after the assignment, the state they meant | `Models/AfflictionModel.cs:252-256`, `Models/EnchantmentModel.cs:350-354` |
+| `Cards_UpgradedDeckReplaysDeterministicallyThroughReshuffles` | asserted after every step, the victory included, that the combat piles hold every card; A18 clears them at victory | at a victory the test asserts empty piles and a full deck; every other step is unchanged | `Entities.Players/Player.cs:1249-1254`; loop.md §12.16 |
+| `Choice_TurnSetupFirstPauseStepsRunOnceBeforeTheAnswer` | the probe's TurnSetup frame now sits above the Inline frame that `ActionExecutor.PlayCard` pushes for the play action (B1) | the steps run at depth 1 (the runtime truncates the stack to the frames below the TurnSetup frame, choice.md §3.3) and the depth after the answer is 2 | B1 context table |
+| `Choice_TurnSetupStepsThatEndTheCombatUnwindToTheTerminalState` | asserted five hand cards at the victory; A18 clears the piles | the test asserts empty piles; the unwind itself stays covered by the absent prompt, the equal fast-path hash and the direct `ChoiceUnwindException` | B12 A18 |
+| `EndToEnd_CanonicalHashesArePinnedAcrossProcesses` | opening pin | `0x79C886C6235C2D9B` → `0x07F5FF6679103FF9`; the final pin `0x77FA4D8665BA0CC3` is unchanged (below) | |
+| `RelicPotion_StackCountAndRemovalFlagsChangeOnlyThroughThePortedMutators` (after the relic CR of §9.8) | it pinned the interim `internal set` | asserts the game's `private set` | `Models/RelicModel.cs:420-427` |
+
+Pin attribution. Seed-1 hashes of the base plus one track each (scratch copies, Release):
+
+| Tree | Opening | Final |
+| --- | --- | --- |
+| base `263810d`; + hooks, state, cards-kernel, choice, character-mechanics or relics-potions | `0xCA1423508C1168E3` | `0xD7B055DC9B9E326E` |
+| + pipeline | unchanged | `0xB899C4BCA7235886` (history entries, pipeline.md §11) |
+| + monsters-kernel | `0x870EF2BE2AE3F04D` (the monster listener's presence byte) | `0xF07E158ED5F0B079` (`MonsterPerformedMove`) |
+| + loop | `0x79C886C6235C2D9B` (deck A13, history B6) | `0x77FA4D8665BA0CC3` (A18) |
+| merged | `0x07F5FF6679103FF9` | `0x77FA4D8665BA0CC3` |
+
+The merged opening is the loop's form plus the monsters' listener bytes. The merged final equals the loop's because at
+the victory A18 has cleared the history and the combat piles and the dead monsters have left the list, so neither the
+pipeline's entries nor the listener bytes reach that state. Both values were reproduced in three processes (Debug
+twice, Release once). The trajectory is unchanged: the EndToEnd reference-model tests and the victory snapshot pass,
+and the diff gate agrees on every decision.
+
+### 9.4 Gate-suite seams of §8.3 and the A17 overloads
+
+| Row | Round 3 |
+| --- | --- |
+| 1 | `EquipPlayer` equips through `RelicCmd.Obtain(rs, relic, player)` and `PotionCmd.TryToProcure(rs, potion, player, slot)` (success asserted); the B2 chain's `GREMLIN_HORN` branch uses `RelicCmd.Obtain` as well. `AfterObtained` now runs (Whetstone upgrades two deck attacks on `Niche`) and so do `ShouldProcurePotion` / `AfterPotionProcured`. Relics are still equipped after `Create`, so their turn-1 hooks (GamblingChip) stay unexercised by F1 |
+| 2 | unchanged: the B2 chain applies its powers with `PowerCmd.Apply` at the first decision, outside a `Step` |
+| 3 | F4 candidates add `DiscardPotion(slot)` with a stray `TargetIndex`, `Pick(0)` with a stray `TargetIndex`, and `Confirm` / `Cancel` with each stray index, the cases choice.md §6.2-§6.3 validates; a legal unlisted candidate must now be a `Pick` with `TargetIndex == NoIndex` (B1 lists only ascending picks at unordered prompts). All the new candidates are rejected |
+| 4 | unchanged: no v0.111.0 path read so far returns a card that left every pile |
+
+The scaffold's live-list overloads `Hook.BeforeSideTurnStart / AfterSideTurnStart / BeforeSideTurnEnd /
+AfterSideTurnEnd(cs, side)` are kept. Core has no caller left (the loop passes the `MonsterLifecycle` snapshots, A17),
+but `PipelineTests.cs` (13 calls) and `WurmBeetleTests.cs` (7 calls) still use them, and A17 deletes only overloads
+without a caller. Moving those 20 calls to the three-argument overloads (`cs.Allies` / `cs.Monsters`, today's
+behaviour exactly) lets the next integrator delete them.
+
+### 9.5 W1 gates (CONTRACTS §B11)
+
+| Gate | Result | Numbers |
+| --- | --- | --- |
+| Build | pass | 0 warnings, 0 errors (Debug, `--no-incremental`, Release) |
+| Suite | pass | 721 passed, 0 failed; `PENDING total: 0`; Release the same |
+| Diff harness (`Sts2Sim.Diff -c Release`, P0 bundle set, v0.107.1) | pass | bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0 |
+| F1 clone/hash equality | pass | 32 playouts (8 encounters × 4 seeds, 0 capped), 708 steps, 183 clone checks, 337 clone steps, 431 lockstep steps, 160 hash-coverage probes, 116 prompt answers, 63 potion actions; per playout 7 pilot relics + the counter double, 64 pilot potions in all |
+| F4 legal-action closure | pass | 24 playouts, 663 decision states, 142 prompt states, 3 854 listed actions stepped on clones, 60 562 candidates checked, 2 652 illegal actions stepped (all threw, hash and bytes unchanged), 48 potion actions |
+| F5 invariants | pass | 32 playouts, 780 steps, 812 invariant checks, 155 prompt answers, 64 potion actions; the ledger still rejects its 10 broken states |
+| B2 chain | pass | 8 playouts on `NIBBITS_WEAK` (`DARK_EMBRACE_POWER` + `HELLRAISER_POWER`, deck 6 `SEEKER_STRIKE` + 4 `ASCENDERS_BANE`), 44 steps, 19 prompt answers, 5 playouts recorded `DeferredListenerPromptInline` |
+| Pilot coverage | pass | relics 7, potions 6, the six prompt cards, the pilot powers, orbs 5, enchantment `GLAM`, affliction `HEXED`, monster `OSTY` |
+| Bench | pass | §9.7 |
+
+The pilot clauses that rounds 1–2 could not evaluate (§8.3) now run: F1 and F5 step real relic and potion listeners,
+F4 sees 142 exposed prompts and 48 potion actions, and the B2 chain reaches the per-listener prompt inline.
+
+### 9.6 Cross-area edits (outside the integration files)
+
+| File (owner) | Edit | Reason |
+| --- | --- | --- |
+| `Combat/Pipeline/ListenerSnapshot.cs` (hooks) | affliction and enchantment liveness use `Card is { } card` | CS8602 after cards-kernel's nullable `Card` (A23); same rule (`Combat/CombatState.cs:1051-1053`) |
+| `Combat/Loop/CardPileCmd.cs` (loop) | the duplicate `CardPileAddResult` is deleted; `AddCore` stores `null` for no old pile | one result type, cards-kernel's (§9.2) |
+| `Combat/Loop/PlayerCmd.cs` (loop) | `AddPet(cs, owner, def)` creates the creature with `MonsterSpawner.CreateCreature` instead of `SpawnPet` | the pet was added twice (§9.3) |
+| `Combat/Pipeline/CreatureCmd.cs` (pipeline) | `MonsterLifecycle.RemoveCreature` in `Kill` and `Escape` | wiring requested by pipeline and monsters-kernel (§9.3) |
+| `Powers/CardCmdForwarders.cs` (pipeline) | three forwarders call `CardCmd` | the seam's targets exist |
+| `Relics/PendingKernelCalls.cs` (relics-potions) | three seams call `CardCmd.Upgrade`, `CardCmd.DiscardAndDraw`, `CardFactory.GetDistinctForCombat` | the seam's targets exist |
+| `Relics/Defs/{Nunchaku,HappyFlower,Whetstone,CentennialPuzzle}.cs` (relics-potions) | `CardsVar` / `EnergyVar` | cards-kernel's typed accessors cast (§9.3) |
+| `Relics/RelicModel.cs` (relics-potions) | `HasBeenRemovedFromState` setter `internal` → `private` | relics-potions CR, once state calls `RemoveInternal` |
+| `State/CreatureState.cs` (state) | `RemoveRelicInternal` calls `relic.RemoveInternal()` | relics-potions CR; `Entities.Players/Player.cs:913` |
+| `Cards/Defs/SovereignBlade.cs` (cards-kernel) | also implements `ISovereignBladeDef` (its `AddDamage(card, amount)` already matches) | `ForgeCmd` looked for `ISovereignBladeDef`, the blade implemented only `IForgeBladeDef`, so every forge of the real blade took the flagged fallback and skipped `CurrentDamage` (`Models.Cards/SovereignBlade.cs:359-364`) |
+| `Tests/HookTests.cs` (hooks) | `RemoveBeforeUse`; two `ClearInternal` calls; `BindAffliction` calls `CardInstance.AfflictInternal` instead of reflection | §9.2, §9.3; hooks CR 1 |
+| `Tests/StateKernelTests.cs` (state) | relic stack probe; `KernelSelector` as `IStatefulChoiceSelector`; the inspector skips the `HookMask` cache | §9.2, §9.3 |
+| `Tests/RelicPotionTests.cs` (relics-potions) | inactive-player listener list; FairyInABottle monster reference; AttackPotion offer count; setter visibility | §9.3 |
+| `Tests/CardUpgradeTests.cs` (cards, P0) | the victory step asserts empty piles and a full deck | A18 |
+| `Tests/ChoiceTests.cs` (choice) | TurnSetup depths; A18 piles | §9.3 |
+| `Tests/EndToEndTests.cs` (loop) | opening pin | §9.3 |
+| `Tests/CharacterMechanicsTests.cs` (character-mechanics) | one added assertion: a forge of the registered `SOVEREIGN_BLADE` records no fallback flag | checks the `SovereignBlade` wiring |
+
+`Tests/W1GateTests.cs` (the seams of §9.4) and this file are the integrate step's own.
+
+### 9.7 Bench (`dotnet run -c Release --project sim/Sts2Sim.Bench`, `NIBBITS_WEAK`, 1 thread)
+
+The machine alternated between two speed states for every tree (the same binary measured about 150k and about 60–80k
+decisions/s in consecutive runs; the P0 tree 667k and 213k), so only same-session ratios rank anything.
+
+Runs of this tree (5 s windows):
+
+| Run | decisions/s | `Clone()` | `StateHash()` |
+| --- | --- | --- | --- |
+| 1 | 147 982 | 2.201 µs | 2.479 µs |
+| 2 | 135 696 | 2.138 µs | 2.498 µs |
+| 3 | 143 311 | 2.273 µs | 2.578 µs |
+| 4 | 75 419 | 2.162 µs | 6.955 µs |
+| 5 | 68 788 | 5.476 µs | 4.057 µs |
+| Median | 135 696 | 2.201 µs | 2.578 µs |
+
+Part B gates: ≥ 300 decisions/s/core passes (the slowest run of the session, 55 446, is about 185×); `Clone()` ≤ 1 ms
+passes (the slowest clone of the session, 10.9 µs, is about 90×). Against the recorded P0 figures (705 048
+decisions/s, 2.53 µs clone, 0.87 µs hash; `sim/BENCH.md`): throughput 0.19×, clone 0.87×, hash 2.96× (median runs).
+
+Same session, equal load. Three ways, all with the P0 tree (`819d7c6`) and the base (`263810d`) exported with
+`git archive` and built in Release:
+
+| Comparison | decisions/s merged / P0 | merged / base | `Clone()` merged / P0 | `StateHash()` merged / P0 |
+| --- | --- | --- | --- | --- |
+| interleaved, 11 runs per tree, medians (P0 314 391, base 328 960, merged 66 592 decisions/s) | 0.21× | 0.20× | 1.79× (5.848 / 3.275 µs) | 1.93× (4.016 / 2.076 µs) |
+| side by side (the three processes at once), 4 rounds, median of the per-round ratios | 0.25× (0.18–0.25) | 0.24× (0.19–0.25) | 1.34× (0.98–2.17) | 2.10× (1.54–2.64) |
+
+Deterministic measures (a scratch harness with the bench's seeds and policy, `GC.GetAllocatedBytesForCurrentThread`,
+2 000 episodes; every tree plays the same 40 299 decisions with an equal trajectory digest, so the W1 port changes no
+outcome for P0 content):
+
+| Measure | P0 | base | merged | choice alone | loop alone |
+| --- | --- | --- | --- | --- | --- |
+| allocated bytes per decision, `Step(a)` | 935 | 1 008 | 17 165 (3 373 on the fast path) | 7 732 | 2 232 |
+| allocated bytes per `Clone()` | 5 384 | 6 648 | 12 752 | 6 656 | 10 896 |
+| canonical bytes, the bench's mid-fight state | 2 042 | 2 373 | 3 792 | 2 373 | 5 102 |
+
+Fast path: in one process, alternating 1.5 s windows (6 each), `Step(a)` gave a median of 147 554 decisions/s and
+`Step(a, answerer)` 194 041 (1.32×; best runs 149 892 and 238 153, 1.59×).
+
+Where the regression comes from. Each track was benched alone on the base in the same 11 interleaved runs (median
+decisions/s, ratio to the base): hooks 192 028 (0.58), choice 169 040 (0.51), loop 216 265 (0.66), cards-kernel
+252 359 (0.77), pipeline 291 933 (0.89), relics-potions 294 774 (0.90), monsters-kernel 304 858 (0.93),
+character-mechanics 314 149 (0.95), state 316 480 (0.96). All the cost is contract-required work:
+
+1. B1 tape engine (choice, choice.md §5.1): `Step(a)` takes a full `DeepClone` of the state before every action as the
+   pre-step backup. On the merged state that copy allocates 12.8 KB, most of the 17.2 KB per decision, and it is 25–37 %
+   of the merged decision: the fast path, which skips it, is 1.32–1.59× faster.
+2. B3 listener walk (hooks, hooks.md §9.1): every dispatch now visits every slot the game visits (relics, potion
+   slots, orbs, each card of the five piles with its affliction and enchantment slots, monster listeners, modifiers),
+   where P0 visited powers only (56 passes per decision, counted on P0 content).
+3. B6 turn flow (loop, loop.md §12.19): the auto phases and per-turn dispatchers, `AfterCardChangedPiles` after every
+   pile move, the history appends, and the run deck in clone and canonical form (A13; with its history entries the
+   loop alone adds 4.2 KB per clone).
+4. B7 keywords (cards-kernel, cards-kernel.md §15): every in-combat keyword query runs `Hook.ModifyKeywordsInCombat`,
+   about seven times per decision.
+5. History entries (pipeline, monsters-kernel; D11) and the relic and potion slots (relics-potions).
+
+The parts compound: the per-step clone copies the deck and the history the other tracks add, and each keyword query
+pays the full listener walk. In time units the per-track deltas add up to 8.8 µs over the base's 3.0 µs per decision
+(about 0.26×), and the merged tree measures 15.0 µs (0.20×) in the same runs. The clone grows less than its
+allocation (2.37× the P0 bytes, 1.3–1.8× the P0 time at equal load): the history clones as 19 plain list copies with
+no per-entry work (state.md W1.6.6). The canonical form is 1.86× the P0 bytes and the hash takes about 2× the time;
+the form stays below the loop track's own 5 102 bytes because the merged history writes a per-type digest chain
+instead of its entries (state.md W1.6.7).
+
+Next steps (none needed for the W1 gates; listed in §9.9): H3, a listener array cached behind structural version
+counters (A20); C9, skipping the keyword snapshot when no live listener overrides it; P8, sharing history between
+clones; `ListenerSnapshot.InlineCapacity` retuned with W1 content; rollouts on the fast path.
+
+### 9.8 Contract change requests of the nine owners, with dispositions
+
+Dispositions: **resolved** (done in this round, or already satisfied by the merged code; the evidence is named),
+**needs contract change** (the code is consistent; the text of CONTRACTS, a design note or a later wave must record or
+decide it), **open** (a real follow-up for the named owner, listed again in §9.9), **rejected** (with the reason).
+
+| # | From → to | Request (short) | Disposition |
+| --- | --- | --- | --- |
+| H1 | hooks → cards-kernel | port `AfflictInternal` / `EnchantInternal` onto `CardInstance`; switch `HookTests.BindAffliction` from reflection | resolved: both exist (`Cards/CardInstance.cs:576-593`); `BindAffliction` now calls `AfflictInternal` |
+| H2 | hooks → design note owner | `design-combat-kernel.md` §2.2: only `AfterSideTurnEnd` joins after each pass; `BeforeFlush`, `BeforeSideTurnEnd` once after all passes; `AfterDeath`, `AfterDiedToDoom`, `BeforeSideTurnStart` never | needs contract change (doc fix; the code follows `Hooks/Hook.cs` and hooks.md §4.5) |
+| H3 | hooks → state, cards, relics, orbs, monsters | optional structural version counters for an O(1)-validated cached listener array | open (performance, §9.7; A20 allows the cache only with full invalidation) |
+| H4 | hooks → integrate | the A17 deletion breaks `PipelineTests` (13 calls) and `WurmBeetleTests` (7 calls) | resolved: the overloads are kept until those callers move (§9.4) |
+| S1 | state → pipeline | A19: `CombatStatus` attachment and side queries count `cs.Allies`; `Kill` drops a dead pet from `PetIds` right after the `ShouldDie` gate | resolved: `CombatStatus.IsAttached` / `GetCreaturesOnSide` already walk `cs.Allies` then `cs.Monsters`; `KillWithoutCheckingWinCondition` calls its `InvokeDiedEvent` right after `ShouldDie` (`Commands/CreatureCmd.cs:2770`), with the `PlayerCombatState.OnPetDied` rule (`Entities.Players/PlayerCombatState.cs:433-445`); delegating to `cs.ContainsCreature` is cleanup (§9.9) |
+| S2 | state → loop | `ResetCombatState` at setup; `CombatStateAfterCombatEnd` at A18; `AddPet` = `AddPetInternal` + `CreatureCmd.Add`; `CardPlay` fields stable between the two history appends | resolved: `CombatLoop.ResetCombatState` and `PlayerAfterCombatEnd` have the same effects as the state members (piles, energy, stars, pets, orb queue to `BaseOrbSlotCount`; powers, piles, pets, block); `AddPet` fixed here; `CardPlay` is written only in its object initializer (`CardCmd.Play.cs` `PlayLoop`) |
+| S3 | state → cards-kernel | `CardInstance.WriteCanonical` should write a stateful listener's form; `CardInstance.DeepClone` keeps the owner | resolved: `WriteCanonical` writes presence, type name and any `ICanonical` listener state (`Cards/CardInstance.cs:776-786`); `CardPile.DeepClone` refuses owned cards and the state clones through `CloneFor(newOwner)` |
+| S4 | state → choice | `ChoiceRuntime.DeepClone` shared selector objects | resolved: `IStatefulChoiceSelector.DeepClone` (B12 A14); the state test double now uses it |
+| S5 | state → CONTRACTS | per-history side stores, the new snapshot fields, `HistoryCardPlay` equality by `PlayId`, the history canonical form | needs contract change (B2 / A22 text) |
+| S6 | state → W2 | `RunState.Combat` rejects a combat of another run | needs contract change (W2 note) |
+| C1 | cards-kernel → CONTRACTS | `CanAfflict(cs, card)`, `PickRandomTargets(cs, rng, cards, count)` (the game reads the combat keywords, `Models/AfflictionModel.cs:206`) | needs contract change (no other caller) |
+| C2 | cards-kernel → loop | `ACROBATICS` should reach `CardCmd.Discard` | resolved: `CardPileCmd.Discard` forwards to `CardCmd.Discard` (`Combat/Loop/CardPileCmd.cs:346`) |
+| C3 | cards-kernel → loop | deck via `AttachTo`, copies via `CloneForCombat`, `cs.CreateCard`, combat keywords at the play and turn-end sites, Retain/Sly at the flush, card → enchantment → affliction `OnPlay`, `ShouldStartAtBottomOfDrawPile` on turn 1, X capture in `AutoPlay`, pins | resolved: `CombatLoop.BuildDeck` / `PopulateCombatState`, `CardPileCmd.HasKeywordInCombat` / `IsSlyThisTurn` / `ShouldRetainThisTurn` (the same rule as `CardInstance.HasKeywordInCombat`), `PlayLoop` order, `TurnFlow.cs:147`, `AutoPlay` inlines `CaptureXValuesForAutoPlay`'s two writes, pins §9.3; the duplicate keyword helpers are cleanup (§9.9) |
+| C4 | cards-kernel → state | `RunState.CardMultiplayerConstraint` (`Runs/IRunState.cs:74-84`) | needs contract change (W2; `CardPools.MultiplayerConstraintFor(rs)` serves) |
+| C5 | cards-kernel → loop | `CardPileCmd.Add` returns `Cards.CardPileAddResult` | resolved (§9.2) |
+| C6 | cards-kernel → character-mechanics | `ForgeCmd` should reach the blade through `IForgeBladeDef` | resolved the other way round: `SovereignBlade` also implements `ForgeCmd`'s `ISovereignBladeDef` (one method serves both); `CreatedThroughForge` stays unwritten, a VFX-only flag (character-mechanics.md §7) |
+| C7 | cards-kernel → hooks | per pile card visit card listener, affliction, enchantment with their liveness | resolved: `ListenerSnapshot.AppendPile` / `IsLive` (the holder stands in for an ownerless card); the card-listener dispatch tests pass with 0 PENDING |
+| C8 | cards-kernel → state | `CombatHistory`'s private `HasKeywordInCombat` can call `card.HasKeywordInCombat` | open (cleanup, state; `State/CombatHistory.cs:1120`) |
+| C9 | cards-kernel → hooks | skip the `ModifyKeywordsInCombat` snapshot when no live listener overrides it | open (performance, §9.7) |
+| C10 | cards-kernel → CONTRACTS | B7 counts: 24 subclasses + `DynamicVar` + `DynamicVarSet`; 13 of 19 `EnchantmentModel` virtuals ported, 6 UI-only stripped | needs contract change |
+| Ch1 | choice → CONTRACTS | `ChoiceSource source` required on the `CardSelectCmd` entry points | needs contract change |
+| Ch2 | choice → CONTRACTS | record the pending-tuple encoding and that `State` keeps its identity (the pre-step `DeepClone` is the backup) | needs contract change |
+| Ch3 | choice → state / W3 | end-turn readiness set for `VoidForm` / `WhisperingEarring`, cleared by `UndoEndTurnIfNecessary` | needs contract change (W3 content; same field as L5) |
+| Ch4 | choice → CONTRACTS | B1 unordered-prompt legality lists only completable picks | needs contract change |
+| Ch5 | choice → CONTRACTS | `UsePotion` `TargetIndex -2` never legal; the player is `NoIndex` | needs contract change |
+| Ch6 | choice → CONTRACTS | `PushSelector` could take `IChoiceSelector` | needs contract change |
+| P1 | pipeline → integrate | point `CardCmdForwarders` at the real `CardCmd` members | resolved |
+| P2 | pipeline → monsters-kernel | `MonsterSpawner.SpawnForAdd` / `AddToCombat` duplicate `CreatureCmd.Add(cs, creature)` | open (dedupe; both bodies follow `Commands/CreatureCmd.cs:219-330` step for step, so no rule differs) |
+| P3 | pipeline → monsters-kernel / integrate | wire `MonsterLifecycle.RemoveCreature` into `Kill` and `Escape`; `MonsterLifecycle.InvokeDiedEvent` / `OnPetDied` duplicate the pipeline's Died bookkeeping | resolved for the wiring (§9.3); the duplicate is open (dedupe; the pipeline's copy is the live one) |
+| P4 | pipeline → character-mechanics | `PlayerPets.GetOsty` duplicates `CombatStatus.GetOsty` | open (dedupe; same rule) |
+| P5 | pipeline → state | `CreatureState.HpDisplay` for Hellraiser's `IsInfinite` | needs contract change (exact until `HardenedShellPower` / `WaterfallGiant` are ported) |
+| P6 | pipeline → state | escaped-creature list (`Combat/CombatState.cs:618`, `:733-737`) | needs contract change (W2 reward gold) |
+| P7 | pipeline → state | `GetCreatureById` should search pets | resolved: it walks `cs.Allies` before `cs.Monsters` (`State/CombatState.cs:115-134`) |
+| P8 | pipeline → state | `CombatHistory.DeepClone` copies every entry list on each clone | open (performance, §9.7) |
+| P9 | pipeline → loop | recompute the EndToEnd final pin | resolved: with A18 the final pin stays the loop's `0x77FA4D8665BA0CC3`; the opening pin moved (§9.3) |
+| P10 | pipeline → loop | a batch `CardPileCmd.RemoveFromCombat(cards)` would drop `HandlePlayerDeathFidelitySite` | open: the loop's batch overload exists now (`Combat/Loop/CardPileCmd.cs:190`); pipeline can switch `HandlePlayerDeath` (multiplayer-only path) |
+| P11 | pipeline → hooks | the snapshot must include the powers of pets in `cs.Allies` | resolved: `AppendCombatPart` walks `cs.Allies` |
+| P12 | pipeline → CONTRACTS | calculated damage is a `Func<CombatState, CreatureState?, decimal>` delegate | needs contract change |
+| P13 | pipeline → CONTRACTS | `PowerCmd.Apply<T>(cs, targets, …)` returns `IReadOnlyList<T>` | needs contract change |
+| P14 | pipeline → itself | delete `ShrinkPower.IsTurnParticipant` once `WurmBeetleTests` uses `CombatStatus.ContainsById` | open (cleanup) |
+| M1 | monsters-kernel → hooks | the monster listener right after its creature's powers, allies first; live while in `cs.Monsters` or `cs.Allies` | resolved: `AppendCreature`; the dispatch-order test passes |
+| M2 | monsters-kernel → pipeline | `Kill`: Died event, `RemoveCreature`, allies attached, owner death kills an alive Osty; `Escape`: `RemoveCreature`; `CreatureCmd.Add` routes to the spawner | resolved: `RemoveCreature` wired here; Died bookkeeping, allies and the Osty kill are the pipeline's equivalent bodies (`CombatStatus.GetOsty`); `CreatureCmd.Add(cs, def)` calls `SpawnForAdd`; the `Add(cs, creature)` duplicate is P2 |
+| M3 | monsters-kernel → loop | `PlayerCmd.AddPet` must not add twice; `SwitchSides` calls `OnSideSwitch` for pets | resolved: `AddPet` fixed here (the game's `CreateCreature` + `AddPet(pet, player)` rather than `SpawnPet`); `SwitchSides` walks `SnapshotMonsterCreatures`, pets included |
+| M4 | monsters-kernel → state | implement `AddAlly` / `RemoveAlly` | resolved (the four pending tests run) |
+| M5 | monsters-kernel | rebuttal: no `MonsterState.ResetAi()` | accepted (no change) |
+| CM1 | character-mechanics → loop | orb queue, stars and pets reset at setup | resolved: `CombatLoop.ResetCombatState` (`OrbQueue.Clear` + `AddCapacity(BaseOrbSlotCount)`, stars 0, pets cleared) |
+| CM2 | character-mechanics → loop | `OrbQueue.BeforeTurnEnd` first in `DoTurnEnd`; `AfterTurnStart` after the player side's `AfterSideTurnStart` | resolved: `TurnFlow.TurnEnd.cs:62`, `TurnFlow.cs:299` (a TurnSetup first-pause step) |
+| CM3 | character-mechanics → loop | spend stars through `StarsCmd.SpendStars` | resolved: `ActionExecutor.SpendStars` |
+| CM4 | character-mechanics → loop | `AddPet` through `PlayerPets.AddPetInternal` | open (dedupe: four copies of the rule, in `PlayerCmd`, `MonsterSpawner`, `PlayerPets` and `PlayerState`) |
+| CM5 | character-mechanics → pipeline | pet Died bookkeeping; a dying player clears its orbs, then kills an alive Osty | resolved (pipeline's equivalent bodies, `Combat/Pipeline/CreatureCmd.cs` `KillWithoutCheckingWinCondition`) |
+| CM6 | character-mechanics → cards-kernel | `SOVEREIGN_BLADE` implements `ISovereignBladeDef.AddDamage` | resolved (C6) |
+| CM7 | character-mechanics → hooks | orbs after potions in queue order with their liveness; the 12 area dispatchers guarded; `null` modifiers when empty | resolved: `AppendCreature`, `ListenerSnapshot.Guarded` in all of them, lazy modifier lists |
+| CM8 | character-mechanics → CONTRACTS | star commands live in `StarsCmd`; A16 cites `Models/CardModel.cs:1432-1436`; no capacity cap in the queue | needs contract change |
+| RP1 | relics-potions → state | `RemoveRelicInternal` → `relic.RemoveInternal()`; then a private setter | resolved here (§9.6) |
+| RP2 | relics-potions → hooks | relics then potion slots between powers and orbs; the five potion dispatchers | resolved (the seven pending tests run) |
+| RP3 | relics-potions → integrate | route `PendingKernelCalls` | resolved |
+| RP4 | relics-potions → loop / choice | win check after potion actions; listing through `PotionActions.CanUse` / `CanDiscard`; no potions at a prompt; `PotionModel` should call the loop's effect helpers | resolved except the last point: `CombatLoop.ExecuteResolvedAction` checks the win after both potion kinds, `LegalActionGenerator` lists `UsePotion` through `CanUse` and gates `DiscardPotion` with the same rules, prompts allow answers only; `PotionModel`'s private effect pair is open (it lacks the dead-player card removal of `Combat/CombatManager.cs:1430-1480`, reachable only with another player alive) |
+| RP5 | relics-potions → pipeline | look PaperPhrog / PaperKrane up by id (`GetRelic<T>`) | rejected for W1: B12 A5 prescribes the interface scan, which picks the same relic while only these two relics implement the interfaces |
+| RP6 | relics-potions → W2 | `TotalFloor`, grab bags, map history, out-of-combat potions | needs contract change (W2) |
+| L1 | loop → cards-kernel | `CardCmd` is `public static partial` in `Sts2Sim.Core.Combat.Pipeline` | resolved (compiles) |
+| L2 | loop → cards-kernel | `Slimed` through `cs.CreateCard`; the `CardUpgradeTests` terminal assert | resolved: `Slimed.AddToCombatAndPreview` uses `cs.CreateCard`; the test fixed here (§9.3) |
+| L3 | loop → choice | `TryResolve` resolves `UsePotion` / `DiscardPotion` | resolved (F4: 48 potion actions) |
+| L4 | loop → choice | `PushContext(kind, onFirstPause)` semantics | resolved (the TurnSetup tests pass under the real loop) |
+| L5 | loop → state | cloned and hashed ready-to-end-turn request for `PlayerCmd.EndTurn` | needs contract change (W3 content, with Ch3) |
+| L6 | loop → state | `CombatState.AddAlly` | resolved |
+| L7 | loop → hooks | relics and potions in the combat snapshot | resolved |
+| L8 | loop → pipeline | `OnPetDied` in the death path | resolved (S1) |
+| L9 | loop → pipeline | `EnergyCmd.SpendEnergy` appends `EnergySpent` | resolved (`Combat/Pipeline/EnergyCmd.cs`, one entry per spend) |
+| L10 | loop → character-mechanics | `OrbQueue` stubs | resolved |
+| L11 | loop → CONTRACTS | A13 says deck ids `1..n`; the allocator starts at 0 | needs contract change (text: "the first n ids") |
+
+### 9.9 Residual issues
+
+| # | Issue | Next step |
+| --- | --- | --- |
+| 1 | Throughput regression (§9.7): about 0.2× of P0 on the decision API at equal load. Every contributor is contract-required (B1 tape engine, B3 listener walk, B6 turn flow and history, B7 keywords), and the W1 gate holds by orders of magnitude, but rollouts that need P0-like speed must use the fast path `Step(a, answerer)` until the walk is cheaper | a performance pass before W2 rollouts: H3 (cached listener array under A20), C9 (keyword fast path), P8 (history clone sharing), `ListenerSnapshot.InlineCapacity` retuned with W1 content |
+| 2 | Duplicate implementations of one rule (no behaviour difference found): `MonsterSpawner.AddToCombat` vs `CreatureCmd.Add(cs, creature)` (P2); pet Died bookkeeping in pipeline, `MonsterLifecycle`, `PlayerPets` and `CombatState` / `PlayerState` (P3); `AddPetInternal` ×4 (CM4); `GetOsty` ×3 (P4); `HasKeywordInCombat` in `CardPileCmd` and `CardInstance` (C3); `ResetCombatState` in the loop and `PlayerState` (S2); the X capture inlined in `AutoPlay`; `PotionModel`'s private effect pair (RP4, multiplayer-only difference) | one owner each: keep the live copy, make the others call it |
+| 3 | `AttackPotion` offers one attack: `HEADBUTT` is the only ported generatable Ironclad attack, and the draw over ported options is flagged `ApproximatedRule` (cards-kernel.md §7.4) | W3 content; the test switches back to three offers automatically |
+| 4 | The four `(cs, side)` side-turn overloads stay in `Hook.cs` for 20 calls in `PipelineTests` / `WurmBeetleTests` (§9.4) | pipeline (and the P0 monsters owner) move the calls; the next integrator deletes the overloads |
+| 5 | Twelve `throw new NotImplementedException` sites remain in Core (137 at round 2), plus the nine placeholder members of `UnportedCardDef`; none is on a W1 path: W2 run layer (`ModifierModel` ×2, deck-card transform, `MimicRestSiteHeal`, transforms outside combat, `IsBeforeAct3TreasureChest(rs)`, out-of-combat potions), `PlayerCmd.EndTurn` (needs L5), the unported-card guards (`CardInstance`, `CardFactory.CreateRandomCardForTransform`), and the game's own `RngSet` seed guards (×2) | W2 / W3 |
+| 6 | Contract text: the 20 "needs contract change" rows of §9.8 | the Part B owner folds them into CONTRACTS |
+| 7 | Cleanups: C8, P10, P14 | owners named in §9.8 |
+| 8 | The REC track (`4094c1e`) is still compiled and tested but not installed | `scripts/install_mod.sh` when the recorder change goes live |
+
+## W2/W3 integrate A (2026-11-01)
+
+Base `72edde8` (W2 scaffold). All 32 W3 branches were cut from `14c25e8` (the scaffold's parent), so none descends from the base; none touches a file the scaffold changed, so they were merged (3-way) rather than skipped.
+
+Merged, in order: powers-1-1, powers-1-2, powers-2-1, powers-2-2, powers-3457, powers-6, cards-1-1, cards-1-2, cards-1-3, cards-1-4, cards-2-1, cards-2-2, cards-2-3, cards-3-1, cards-3-2, cards-3-3, cards-4-1, cards-5-1, cards-6-10, cards-7-1, cards-8-1, cards-9-1, cards-9-2, relics-1-1, relics-1-2, relics-2-4-6, relics-3-1, relics-3-2, relics-5-1, potions-1, potions-2, orbs-ench-affl.
+
+Conflicts: only `sim/Sts2Sim.Tests/CardKernelTests.cs` (the two Ironclad-pool tests, edited the same way by eight owners); HEAD side kept each time. Duplicate kernel members (`PowerModel.IsVisible`/`IsVisibleInternal`, `CardInstance.IsClone`) merged to a single copy.
+
+Fixes:
+- `AmbergrisPower.IsVisibleInternal`: `public` hid the base member (CS0114); now `protected override` (Models.Powers/AmbergrisPower.cs:87).
+- `Nightmare.OnPlay`: wired `PowerCmd.Apply<NightmarePower>(...)!.SetSelectedCard(cs, selected)` (Models.Cards/Nightmare.cs:173-175), replacing the W3-gap throw.
+- `RollingBoulderPower` ported (unowned; Models.Powers/RollingBoulderPower.cs): AfterPlayerTurnStart deals Amount unpowered to hittable enemies, then Amount += 5.
+- `VoidForm` card marked `[SimExclude]` (calls `PlayerCmd.EndTurn`, a kernel stub, see L5); removed from the cards-9-2 ported-id list.
+
+Gates: build 0 warnings 0 errors; tests 830/830, PENDING 0; content soak green (cards 1084, encounters 24, potions 128, relics 340); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded defs: `VOID_FORM` (NotImplementedException from `PlayerCmd.EndTurn`).
+
+## W2/W3 integrate B (2026-11-01)
+
+Base `0a01a90` (integrate A). All 14 branches descend from the base; none skipped.
+
+Merged, in order: w2/run-state, w2/map, w2/odds-rewards, w2/events, w2/rooms, w2/loop, w2/save, w3/monsters-1, w3/monsters-2, w3/monsters-3, w3/monsters-4, w3/powers-9, w3/encounters-1, w3/encounters-2.
+
+Conflicts and resolutions:
+- `MonsterCanonicalTags.cs`: all owners' tags kept; collisions renumbered inside 0x4Dxx: monsters-3 `ToughEggExtra..WrigglerExtra` → 0x4DE1-0x4DE4, monsters-4 `AxebotExtra..TestSubjectExtra` → 0x4DD0-0x4DD9 (monsters-1 keeps 0x4DA0/0x4DA1, monsters-2 keeps 0x4DC0-0x4DC3).
+- 31 monster-coupled powers ported by both a monsters owner and powers-9 (add/add): the monsters owner's copy kept (already exercised by its monster tests; both sides were full ports). `CrabRagePower` (monsters-1 vs monsters-2): monsters-1 copy kept. `ReattachPower`: monsters-4 copy (cs overload) kept.
+- `EncounterDef` (`MonsterDef.cs`): one copy of `RoomType`; `Tags` typed `IReadOnlyList<EncounterTag>` (encounters-1) replacing run-state's string tags; gold reward members from encounters-1; `AllPossibleMonsters` from encounters-2. Duplicate `enum EncounterTag` in `MonsterDef.cs` deleted (kept in `Enums/RunEnums.cs`).
+- `EncounterMonsterConfig`: both APIs kept; `Set(string, object)` / `SetExtra` delegate to encounters-2's `Set(MonsterState, string, object)`.
+
+Fixes:
+- `PowerModel.ShouldOwnerDeathTriggerFatal(cs)` now the called overload (`Feed`, `HandOfGreed`, `BookRepairKnife`), so `ReattachPower` is honoured.
+- `InfestedPower.AfterDeath` ported (Models.Powers/InfestedPower.cs:64-93): 4 × `SpawnForAdd(WRIGGLER, slot wriggler{i+1}, StartStunned = true)`, replacing the W3-gap throw.
+- `RunLoop.SelectActs` throws `NotImplementedException` when no `ActModel` def is registered (acts are unported W3 content), so run-layer tests report PENDING instead of an index error.
+- Tests: `RunStateTests` encounter double retyped to `EncounterTag`; `RoomsTests` helper sets player odds / relic grab bags / run odds; `RewardsTests` picks a rewarding Monster encounter; `EventsTests` combat test needs an act; merchant test routes an unported relic id to PENDING; `Content_encounters_2Tests` skips the excluded ids.
+
+Gates: build 0 warnings 0 errors; tests 922/922, PENDING 6; content soak green (encounters 252 cases, 0 failures); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending (later owners): act defs (`Models.Acts/*`: Events.EventCombatGoesThroughRoomStack, Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns, Test_Map_CreateForUsesTheActMapStream, Test_SaveImport_FullStateThroughRunLayerOwners); relic `MEAL_TICKET` (Test_Rooms_MerchantInventoryLayout).
+
+Excluded defs (`[SimExclude]`, monster not ported → `KeyNotFoundException`): `BATTLEWORN_DUMMY_EVENT_V1_ENCOUNTER` / `_V2_` / `_V3_` (BATTLE_FRIEND_V1..V3), `GREMLIN_MERC_NORMAL` (GREMLIN_MERC), `THIEVING_HOPPER_WEAK` (THIEVING_HOPPER).
+
+## W2/W3 integrate C (2026-11-01)
+
+Base `8eda7fb` (integrate B). All 12 branches descend from the base; none skipped.
+
+Merged, in order: w2/oracles, w3/events-12-1, w3/events-3456-1, w3/events-3456-2, w3/relics-7-1, w3/relics-7-2, w3/relics-8-1, w3/relics-8-2, w3/relics-9-1, w3/relics-10-1, w3/cards-11-monsters-6-8, w3/characters-acts.
+
+Conflicts and resolutions:
+- `CreatureCmd.cs` (relics-7-1 vs relics-7-2): relics-7-1's RunState overloads kept (`LoseMaxHp` goes through the hooked `Damage(RunState, ...)`).
+- `CardCmd.cs`: both kept — relics-7-1 `Transform(RunState, IEnumerable<CardTransformation>, Rng?)` + `CreateRunTransformReplacement`, relics-7-2 `TransformInDeck(RunState, IReadOnlyList<(Original, Replacement)>)`.
+- `CreatureCmd.Run.cs` (events-3456-2) deleted: `Damage/Heal/GainMaxHp(RunState, ...)` duplicated relics-7-1. Its out-of-combat `Heal` fired `AfterCurrentHpChanged`; the game fires it only when `creature.CombatState != null` (Commands/CreatureCmd.cs Heal), so the relics-7-1 copy is the correct one.
+
+Fixes:
+- Tests: `Content_relics_9_1Tests.WithObtainPrompts` populates the player / shared relic grab bags when null (CALLING_BELL, LARGE_CAPSULE, SMALL_CAPSULE, TOY_BOX threw in the relic soak and W1 F5).
+- Oracles: `RunOracleState.NewRunState` gives the oracle player the character's starting deck from `CharacterRegistry` (event `IsAllowed` such as THE_LEGENDS_WERE_TRUE needs a non-empty deck).
+- `ActModel.DeclaredEncounterIds` (overridden by the four acts) exposes the unfiltered encounter list; `RunStartOracle.Generate` and `MapOracle.CheckGenerated` report Unsupported when an act or saved room set names an unported encounter (GREMLIN_MERC_NORMAL), instead of a divergence / KeyNotFoundException.
+
+Gates: build 0 warnings 0 errors; tests 965/965, PENDING 3; content soak green (cards 1108, encounters 252, potions 128, relics 586, 0 failures); diff 4/4 bundles, 69/69 decisions; bench row in `sim/BENCH.md`.
+
+Pending (later owners): W2 R1 `EventRoom.EnterInternal` (Test_RunSim_NewRunStartsAtNeowAndClonesHashEqual, Test_RunSoak_RandomRuns); W3 encounter GREMLIN_MERC_NORMAL (Test_SaveImport_FullStateThroughRunLayerOwners).
+
+Excluded defs (owner-declared `[SimExclude]`, unchanged here): cards `FORBIDDEN_GRIMOIRE`, `MAD_SCIENCE`, `ROYALTIES`; relics `ASTROLABE`, `CLAWS`, `NEW_LEAF`, `PRECARIOUS_SHEARS`.
+
+## W3.5/W4 integrate 1 (2026-11-01)
+
+Base `de79cbc` (W2/W3 status log after integrate C). All 7 branches descend from the base; none skipped.
+
+Merged, in order: w4/run-glue `def0bde`, w4/kernel-gaps `d499e14`, w4/content-leftovers `db987fd`, w4/exporter-v2 `6fa744b`, w4/mcr-decoder `160de98`, w4/harness-v2 `a20513c`, w4/ftests `bbfc184`.
+
+Conflicts and resolutions:
+- `GremlinMercNormal.cs` (kernel-gaps vs content-leftovers): kernel-gaps' implementation kept (`Extra.GoldWasStolen`, `MarkGoldStolen`, `CalculateGoldProportion` override); content-leftovers' NotImplemented stubs dropped.
+- `MonsterCanonicalTags.cs`: both kept (`GremlinMercNormalEncounterExtra` 0x4DFA, `BattlewornDummyEventEncounterExtra` 0x4DFB, `ThievingHopperExtra` 0x4DF0; no collision).
+- `Sts2Sim.Diff/Program.cs` (mcr-decoder vs harness-v2): both routes kept (`replay*` → `ReplayCli`, then `--v2/--baseline/--update-baseline` → `V2Cli`, then v1).
+- `RunActionExecutor.ClaimReward`, `RunImporter.LoadRelicGrabBag/LoadSavedMap` (run-glue vs ftests): run-glue side kept (same intent; run-glue also has `CreatePreFinishedRoom`).
+
+Fixes:
+- `GREMLIN_MERC_NORMAL` un-excluded; `CombatRoom.OnCombatEnded` calls `Encounter.CalculateGoldProportion(cs)` (was 1f) and keeps a clone of `cs.EncounterExtra`; `BattlewornDummy.RanOutOfTime` reads it (Models.Events/BattlewornDummy.cs:62-67).
+- Starting deck `FloorAddedToDeck = 1` (Player.cs:1108); save import/export of `floor_added_to_deck`; F3 ignore entry removed.
+- AMBERGRIS / BLOOD_POTION / FRUIT_JUICE out of combat through the RunState `CreatureCmd` overloads (the 169 soak content gaps).
+- Harness v2 `AnchorLoader`: "saved properties … are not mapped" classified `content_not_ported` (was `out_of_scope`); the fixture save now first fails on unmapped SPOILS_MAP / GIRYA saved properties instead of unported content.
+- Tests: W1Pending routes removed and made real — `Test_SelfConsistency_F4F5_NewRunWithNeowAndEvents` (run-glue), `Test_Content_leftovers_SurpriseHandsStolenGoldToFatGremlinHeist` (now a real GREMLIN_MERC_NORMAL combat, asserts `GoldWasStolen`), `Test_Content_leftovers_BattlewornDummyOffersThreeSettings` (player rng/bags set up, asserts the V3 relic reward), `Test_SaveImport_FullStateThroughRunLayerOwners.GremlinMerc` (unedited fixture imports). `Content_encounters_2Tests` no longer skips excluded ids. New `Test_Content_leftovers_BattlewornDummyRanOutOfTimeReadsTheFinishedCombat`. F2 pins refreshed (Release = Debug verified): combat streams change only by the kernel-gaps canonical format; run seed 1 walk is now 136 steps (was 120; the walk no longer stops at a content gap).
+
+Gates: build 0 warnings 0 errors; tests 1021/1021, PENDING 0; run soak 10⁴ runs × 5 characters, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267, potions 128, relics 594, 0 failures); diff v1 4/4 bundles, 69/69 decisions; sts2rec 701 passed, 4 skipped; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded content defs: none (only the `UnportedCardDef` / `SimStubEvent` placeholders carry `[SimExclude]`).
+
+Headline numbers (not a gate), mcr-decoder bundles `tmp/diff-v2/mcr` (723 replays: v0.107.1 611, v0.110.1 41, v0.111.0 71; 0 eligible — model_table_unverified 652, unsupported_action 747, outcome_not_terminal 649, no_checksum_states 606, hand_index_unresolved 606, enchanted_card_in_deck 371, encounter_unresolved 61, non_standard_run 26): v1 harness `--include-ineligible` 6 hard divergences (all v0.107.1, `action.card_id` at decision 0-3, consistent with hand_index_unresolved), 717 skipped, 0 errors; v2 harness 723 segments skipped (content_not_ported 717, exporter_ineligible 6). No exporter-v2 bundles were present under `tmp/diff-v2`.
+
+Open issues:
+- No content def carries `[SavedProperty]` yet (e.g. GIRYA.TimesLifted, SPOILS_MAP.SpoilsActIndex are `[SavedProperty]` in the game), so saves holding such cards/relics are rejected by `RunImporter.CheckSupported`.
+- `RunImporter.CreatePreFinishedRoom` does not call `EncounterModel.LoadCustomState`; a pre-finished BATTLEWORN_DUMMY room loses `RanOutOfTime` on import.
+- mcr converter: v0.107.1 model table checksum mismatch (owner note) and hand-index resolution; harness-v2 run-level pairs are logical rather than recorded order (exporter-v2 note).
+
+## W3.5/W4 integrate 2 (2026-11-01)
+
+Base `c145de0` (W3.5/W4 integrate 1). Both branches descend from the base; none skipped.
+
+Merged, in order: w4/replay-combats `36909de`, w4/replay-runs `3c893f7`. No conflicts.
+
+Fixes: none needed (both merges built and gated clean).
+
+Gates: build 0 warnings 0 errors; tests 1028/1028, PENDING 0 (the W1Pending routes named for this stage — ftests → run-glue, content-leftovers → kernel-gaps, save import → GREMLIN_MERC — were already made real in integrate 1; the remaining W1-era `W1Pending.Run` wrappers all execute their bodies); run soak 10⁴ runs × 5 characters (PortedOnly), 688135 steps, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267 (2 capped), potions 128, relics 594, 0 failures); `Test_SelfConsistency_F2_RunHashStreamsArePinnedAndRepeatable` passed in the full run (replay-combats owner reported one earlier flake, not reproduced); diff v1 4/4 bundles, 69/69 decisions; sts2rec 701 passed, 4 skipped; bench row in `sim/BENCH.md`.
+
+Pending: none. Excluded content defs: none (only `UnportedCardDef` / `SimStubEvent` placeholders carry `[SimExclude]`).
+
+Headline numbers (not a gate), `tmp/diff-v2` (exporter-v2 run bundles for 19 lineages + mcr 611 v0.107.1 replays):
+- harness v2 `--v2`: 2387 segments, 2 agree, 0 hard divergence, 2385 skipped, 0 errors; decisions 31/31, outcome 2/2. v0.107.1 combat 611 (content_not_ported 605, exporter_ineligible 6); v0.110.1 562 (out_of_scope 521, content_not_ported 41); v0.111.0 1214 (combat 350: agree 2, content_not_ported 264, exporter_ineligible 84; map 415 + room 449 exporter_ineligible).
+- G3 seed replay (`Sts2Sim.Diff g3`): 11 runs, 0 reach the recorded end, decisions 748/753, floors agreed sorted `0, 1, 2, 3, 4, 5, 7, 7, 10, 10, 13`; first divergence by class: port_bug 7, projection_gap 2, content_not_ported 1 (CRYSTAL_SPHERE event unregistered), out_of_scope 1 (old-prefix lineage).
+
+Open issues:
+- G3 first divergences (port_bug): FOSSIL_STALKER select candidates order, GREMLIN_MERC_NORMAL / LIVING_FOG_NORMAL floor_summary monster count (spawned minions), shop entry gold (54 vs 129), NIBBITS_WEAK discard count, TERROR_EEL_ELITE VIGOR_POWER on enemy, ROOM_FULL_OF_CHEESE relic count; see `sim/specs/diff-report-w4-run.md`.
+- Diff projection lacks `DisplayAmount` rules for HARDENED_SHELL_POWER and SLOW_POWER (projection_gap).
+- EVENT.CRYSTAL_SPHERE not registered (content_not_ported).
+- Carried from integrate 1: no `[SavedProperty]` on content defs; `CreatePreFinishedRoom` skips `LoadCustomState`; mcr v0.107.1 model-table checksum / hand-index resolution.
+- v0.111.0 v2 reader rejects 83 segments (`deck: null` / `action: null`), per replay-combats report.
+
+## W4.1 integrate (2026-11-01)
+
+Base `4809101` (integrate 2); merged onto HEAD `efb0102` (docs + w5/client + w5/server). Both branches descend from the base; none skipped.
+
+Merged, in order: w41/combat-fixes `96f122f` (merge `5e34a7b`), w41/run-fixes `14fa45f` (merge `9175c70`). Conflicts: `Sts2Sim.Diff/V2/RunBundle.cs` (combat-fixes' `McrJoin` fields and join loop vs run-fixes' `UnavailableFields`; both kept) and `sim/specs/diff-harness-v2.md` (both W4.1 lines kept).
+
+Fix (integration): the merged reader marked `start.deck: null` as unavailable, which skipped exactly the `recorder_gap:deck_order` segments the mcr join exists to fill (`Test_W41_McrJoinTakesTheDecodedStart` failed). `McrJoin` now runs when `start.deck` is the only unavailable field and clears it on a successful join; unavailable actions still skip the segment (diff-harness-v2.md W4.1 integrate line; assertion added to that test).
+
+Gates: build 0 warnings 0 errors; tests 1057/1057, PENDING 0; run soak 10⁴ runs × 5 characters, 687034 steps, 0 failures, 0 content-gap stops; content soak green (cards 1118, encounters 267 (2 capped), potions 128, relics 594, 0 failures); F2 run pins pass (combat-fixes refreshed seeds 1 and 4); diff v1 G0 4/4 bundles, 69/69 decisions; sts2rec 700 passed, 4 skipped, 1 failed — `test_text_env.py::test_vector_steps_workers_concurrently`, a wall-clock assertion (`elapsed < 0.09` for two 50 ms steps), fails intermittently under the machine load of this session (game client running) and passes on rerun; no merged branch touches it. Bench row in `sim/BENCH.md` (machine loaded; equal to the integrate-2 tree benched interleaved).
+
+Replays (inputs regenerated: `export-bundles-v2 tmp/diff-v2-w41i`, `replay-convert` → `tmp/diff-v2-w41i/mcr` 723 replays; v1 bundles from the combat-fixes scratchpad export):
+- Widened combat gate (`Sts2Sim.Diff <g0 + g0-ineligible + v2> --v2`, 2531 segments, 1294 combat). Before (integrate 2) → after: compared combat segments 8 → 117, agree 8 → 109, decisions 131/131 → 1599/1607 (99.5 %), outcome 109/109. By version: v0.107.1 compared 4 → 84, agree 4 → 80, decisions 69/69 → 1084/1088; v0.110.1 0 → 6, 0 → 6, 0/0 → 85/85; v0.111.0 4 → 27, 4 → 23, 62/62 → 430/434 (v0.111.0 segments read 1214 → 1225 with the reader fix). 8 divergences: 4 v0.107.1 `exporter_ineligible` rows, Q3X6PF8S37GA s5 (recorder_gap, discard count), GM28D28DX794 s26/s54/s65 decision 0 (relic run-time state at combat start).
+- G3 (`Sts2Sim.Diff g3 tmp/diff-v2-w41i`): decisions 748/753 → 1532/1537 (combat-fixes alone 1318/1324, run-fixes alone 896/900); runs reaching the recorded end 0 → 1 (K4FB4086NTRE). Floors agreed per run (integrate 2 → W4.1): G0G2JMFEYHRS 1 → 13, NBNDT3S61AUM 7 → 11, DSB363J2LQWZ 4 → 22, P2UZ19X1GGNQ 5 → 13, Q3X6PF8S37GA 2 → 2, GM28D28DX794 13 → 27, K4FB4086NTRE 7 → 17 (end), EC039PTFQWV5 10 → 11, PLRUV49CRFQW 10 → 11, G1YFC196B2H2 3 → 7 (truncated at s16#21 `decision_unresolved`), old-prefix lineage 0 → 0. No run drops; ratchet holds. First divergences by class: port_bug 7, projection_gap 1, out_of_scope 1, truncated 1, none 1.
+
+Open issues (G3 first divergences):
+- G0G2 s34 f14 PUNCH_OFF_EVENT_ENCOUNTER: the oracle starts a combat from the event, the sim stays in `Event` (event → combat transition).
+- NBND s27 f12 `player.relics[5].counter` 1 vs 0 after TERROR_EEL_ELITE (not investigated).
+- DSB3 s64 f23 shop `entries[4].on_sale` not projected (projection_gap).
+- P2UZ s31 f14 PUNCH_CONSTRUCT_NORMAL opening hand `hand[5]` PIERCING_WAIL vs LEADING_STRIKE (deck order / draw).
+- Q3X6 s5 NIBBITS_WEAK discard count (recorder_gap, sim right; classed port_bug by G3).
+- GM28 s74 DECIMILLIPEDE_ELITE `hand[0].cost` 0 vs 1 (not investigated).
+- EC03 s29 / PLRU s32 rest site: oracle `select` vs sim `rest_site` screen.
+- Carried: relic run-time state at combat start (TEA_OF_DISCOURTESY, VENERABLE_TEA_SET) → start from decoded `SerializableRun`; mcr `enchanted_card_in_deck`, `?` rooms decoded as `NONE`; v0.107.1 model-table checksum; `CombatRoom` end-of-combat monster-id approximation now redundant (harmless, dedupes).
+
+## E1 integrate (2026-11-01)
+
+Base `353f07d` (E1 scaffold: ObservationBuilder partials, RulesText stub). All three owner branches descend from it; none skipped.
+
+Merged, in order: e1/eval-runner `94bb476` (merge `3a598d4`, clean), e1/rules-text `03d20f4` (merge `d03fb4b`, clean), e1/combat-view `9056b0f` (merge `63ac15c`). Conflicts: only `sim/PLAY.md`, two hunks. (1) Observation field table: combat-view's `player` / `combat` / card (hand) / enemy / power `detail` / `combat.danger` rows kept, with rules-text's `map` row (`options` + `nodes`) replacing combat-view's older `map` row. (2) The prose after the table: combat-view's card paragraph merged with rules-text's sentence that keywords are listed in `keywords`, not repeated in `text`; combat-view's combat-text description and its `Creature uid and index`, `Effective numbers`, `Danger lines`, `Piles` and `Step log` sections kept, followed by rules-text's `Rules text` section. `ObservationBuilder.cs` (Text() vs AppendScreen()) and `PlayService.cs` (Catalog() vs Piles/Step) auto-merged; `Program.cs` and `HttpHost.cs` only changed on rules-text.
+
+Fixes (integration, in the combat-view merge commit `63ac15c`; the owners' open items for each other):
+- Power text now uses the live amount: `ObservationBuilder.Combat.cs` `PowerNodes` calls `RulesText.PowerText(id, power.Amount)` instead of `PowerText(id)` (the `N` placeholder). After combat-view's refactor all three scaffold call sites (Player :41, Combat :38, :61) route through `PowerNodes`, so it is one site.
+- Intent move titles: combat-view fills `intents[].move` with the move id (also used by the step log); rules-text documented `move` as the localised name. Kept `move` = id and added `intents[].move_name` = `RulesText.EnemyMoveTitle(monsterId, moveId)` (null when rules text is not loaded); text renders `[MOVE_ID (Title)]`, e.g. `intent: [WHIRL_MOVE (Whirl)] Attack 7`. PLAY.md rows updated (`combat` field list, enemy row, rules text fields row).
+
+Gates:
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors after each merge and on the final tree; Debug 0 warnings 0 errors.
+- Tests (full suite, Release): 1077/1077 passed, 0 failed, PENDING 0 (413 s). Server filter alone 30/30 (11 ServerTests + 9 ServerRulesTextTests + 10 ServerCombatViewTests).
+- Run soak: 10⁴ runs × 5 characters, 687034 steps, 0 victories, 10000 defeats, 0 capped, 0 content/kernel-stub stops. Step count identical to W4.1 (687034), consistent with no kernel behaviour change.
+- Content soak green: cards 1118 (0 capped), encounters 267 (2 capped), potions 128, relics 594, 0 failures. W1Gate F1 clone/hash: 356 playouts pass.
+- Server self test: `--selftest 300 --content ported_only` 300 completed, 0 crashed, 0 capped, 0 server errors, mean 68.9 steps (15.6 s); extra `--selftest 100 --policy biased` 100 completed, 0 crashed, 0 server errors, mean 147.2 steps. Startup line: `rules text: loaded from .../knowledge/source (discovered; versions v0.107.1,v0.111.0): 625 cards, 306 relics, 66 potions, 296 powers, 70 events, 126 enemies, 14 keywords`.
+- Diff v1 G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e1-diff.json`): bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Bench: 143,509 decisions/s, Clone 2.179 us, StateHash 2.566 us (row in `sim/BENCH.md`, load average 3.3 to 4.4).
+- Eval runner: `uv run --project sim/tools/eval pytest -q sim/tools/eval` 31 passed (includes 2 integration tests that spawn the real server); end-to-end smoke below, 10/10 games, report.md written.
+- sts2rec: `uv run pytest -q` 701 passed, 4 skipped (the known-flaky timing test passed first time).
+- `git status --short` before the commit: only `sim/BENCH.md` and this file; no tmp/, bundles or saves.
+
+Eval smoke (`uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy random --concurrency 10 --spawn --out tmp/eval/e1-smoke`, merged server `63ac15c`, rules text loaded from `knowledge/source` v0.107.1+v0.111.0):
+
+| metric | value |
+| --- | --- |
+| games | 10 |
+| results | loss 10 |
+| win rate (Wilson 95%) | 0.0% [0.0%, 27.8%] |
+| floor mean / median / max | 4.2 / 4.5 / 7 |
+| progress (floor / 48) | 8.8% |
+| act reached | act 1: 10 |
+| steps mean (total) | 52.2 (522) |
+| illegal actions per game | 0.00 |
+| crashes | 0 |
+| api errors / refusals / timeouts / max_tokens stops | 0 / 0 / 0 / 0 |
+| random fallbacks | 0 |
+| cost USD | $0.0000 |
+| minutes per game (mean) | 0.02 |
+| replayable histories | 10/10 |
+
+Identical to the eval-runner owner's pre-merge smoke (522 steps), as expected: the random policy's choices are seeded and the merged server changes only observations and prompt pick listing. Transcript check (`games/IRONCLAD-E1A0IC01.jsonl`): the observation text carries rules text (`STRIKE_IRONCLAD (Strike) 1e Attack->AnyEnemy (6 dmg) — Deal 6 damage.`, relic lines with text, `TOADPOLE (Toadpole)`), uids and move titles (`[1] u2 TOADPOLE (Toadpole) 25/25 | intent: [WHIRL_MOVE (Whirl)] Attack 7`), the danger line (`incoming: 7 dmg in 1 hit (u2 7x1), block 0, net -7 HP -> 73/80`) and the v2 step log (`enemy turn:` / ` u2 TOADPOLE: WHIRL_MOVE (Whirl) — attack 7 x1 -> player: 0 blocked, 7 dmg`, `u1 +THORNS_POWER 2`, `cards: drew 5`). Power lines read e.g. `STRENGTH_POWER — Increases attack damage by 1.` for amount 1.
+
+Open issues:
+- The Claude policy has not been run against the real API (no key in the integration session); only fake-client tests cover it. First real run: `ANTHROPIC_API_KEY=... uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy claude --model claude-sonnet-5-5 --effort low --concurrency 10 --spawn --max-cost-usd 30`. Cache reads on the ~1.3-1.4k-token system prompt are unconfirmed; `--max-tokens 1024` includes thinking, so watch `max_tokens stops` at higher effort.
+- Eval cause of death is the room type of the last travel plus the last combat's enemy ids; the observation has no encounter id field.
+- Event option texts with run-time-chosen values still show `?` (7 of 81 options seen in 40 random runs: SAPPHIRE_SEED PLANT enchantment, SLIPPERY_BRIDGE HpLoss and RandomCard, WOOD_CARVINGS card and enchantment names); fixing needs per-event read-only accessors in Core.
+- Shop `base_price` is reconstructed as 2 x the sale price (exact within 1 gold); an exact value needs a Core accessor.
+- Card `text` has base instance values and no keyword lines (keywords stay in `keywords`); in-combat numbers are in `effective`.
+- `effective.times` is best-effort (Repeat var, else a const HitCount by reflection, else 1; null for X cost); cards computing hits at play time report 1 or null.
+- The danger line uses intent projections only: no Intangible / Buffer / Tungsten-Rod-style hp-loss modifiers, no end-of-turn block (Metallicize, Plated Armor).
+- The last enemy's killing blow logs `hp X -> 0` without the damage note (the kernel writes no DamageReceived entry once the combat is ending); summons with no history entries during the move are named only by the `uN X spawned` line.
+- `scripts/export_sts2_knowledge.py` takes zhs as PCK occurrence -1, which is Traditional Chinese on v0.111.0; do not rerun it on the current game without fixing that (`export_sts2_localization.py` is correct).
+- Observation text changed by design (uids, danger line, eff, move titles, act-map grid, prompt desc): byte-identical comparisons against pre-E1 servers no longer hold.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.
+
+## E2 integrate (2026-11-01)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `d2c8be6` (E1 docs on top of `6114e81`, CONTRACTS Part D). Scaffold `af640b7` (e2/scaffold, parent `6114e81`); all three owner branches descend from it; none skipped.
+
+Merged, in order (all `--no-ff`): e2/scaffold `af640b7` (merge `fded05c`, clean), e2/encoder (V1) `d1bcb3a` (merge `bcda241`, clean), e2/env-core (V2) `c234ffd` (merge `39cbb65`), e2/python (V3) `e74907b` (merge `e402777`, clean). Release build 0 warnings 0 errors after each merge.
+
+Conflicts: only `sim/VEC.md`, one hunk in the schema buffer table — V1 had removed the `TODO(V1)` markers from rows 0–25, V2 had documented rows 26–27 (`cand`, `cand_n`) against the scaffold's TODO rows. Kept V1's rows 0–25 and V2's rows 26–27. `VecTests.cs` (both owners: `static class` → `static partial class`; V1 actually used its own class `VecEncoderTests`) and `sim/BENCH.md` auto-merged.
+
+Fixes (integration):
+- `VecEnv.WriteLastEpisode` now calls V1's `ObservationEncoder.FillEpisodeSummary(sim, last_episode)` for floor / act / final_hp / final_max_hp / last_encounter_id instead of V2's inline LINQ copy (V2 had shipped no stub, only the inline loop; win / steps / end_kind stay with VecEnv). Done in the env-core merge commit `39cbb65`.
+- Core content gap reported by V3 (random soak, 1 CONTENT_GAP): `FairyInABottle.OnUse` called `RequireCombat` and threw `NotImplementedException` ("W2: a potion effect outside combat …") when death was prevented outside combat (event / run-layer HP loss). The decompile (`Models/Potions/FairyInABottle.cs` OnUse: `CreatureCmd.Heal(target, max(MaxHp × 0.3, 1))`) heals with no combat requirement, so the port now calls the run-layer `CreatureCmd.Heal(rs, target, …)` (dispatches to the combat overload when in combat; same as `BloodPotion`/`Ambergris`). V3's diagnosis that LegalActions offers it out of combat was wrong: `CanUsePotionOutOfCombat` requires `PotionUsage.AnyTime`; the trigger is the automatic death-prevention path. It was the only non-`CombatOnly` potion calling `RequireCombat`. RunSoak step count unchanged (687034), G0 unchanged.
+- Python `needs V1/V2` tests: no change needed — with the merged build all 8 run and pass (`STS2VEC_REQUIRE_FULL=1`).
+- `sim/VEC.md`: status paragraph rewritten (integrated), measured bench table and the Python bench's cold-pool caveat added, three known-gap bullets added (no ABI leak test, clone-free stepping not implemented, random soaks reach no victory). `sim/BENCH.md`: "E2 integrate" section.
+
+Gates:
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors (after each merge, `--no-incremental` after the last, and on the final tree); Debug 0 warnings 0 errors.
+- Tests (full suite, Release, final Core): 1098/1098 passed, 0 failed, PENDING 0 (427 s). Includes 15 VecTests + 6 VecEncoderTests. Server-named tests 31/31 (the 30 previous + `VecEncoderTests.Test_VecEncoder_ParityWithServer`). RunSoak 10⁴ runs × 5 characters, 687034 steps, 0 victories, 10000 defeats, 0 capped, 0 content/kernel-stub stops (identical to E1). Content soak: cards 1118 (0 capped), encounters 267 (2 capped), potions 128, relics 594, 0 failures; W1Gate F1 356 playouts pass.
+- G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e2-diff.json`): bundles 4 (agree 4, hard divergence 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Server self test `--selftest 100 --content ported_only`: 100 completed (0 wins), 0 crashed, 0 capped, 0 server errors, mean 67.6 steps (4.2 s).
+- Python: `STS2VEC_REQUIRE_FULL=1 uv run --project sim/tools/vec pytest -q -rs` 63 passed, 0 skipped (64 passed with the NativeAOT dylib built by `scripts/vec_publish_aot.sh`, which adds the AOT round-trip test). `sts2vec check`: OK (64 envs × 200 steps, threads 1 vs 8: hashes equal, buffers byte-identical every step); also OK through the AOT dylib. Cross-process: `sts2vec digest --envs 256 --steps 300` in two processes, threads 1 and 8 → identical `state_hash_sha256` and `obs_sha256`. Eval runner `uv run --project sim/tools/eval pytest -q sim/tools/eval` 32 passed.
+- Random soak `sts2vec bench --envs 1024 --steps 2000`: seed 0 / pool 64 → 2,048,000 actions, 29,864 episodes, 0 SIM_ERROR, 0 CONTENT_GAP, 0 ILLEGAL_ACTION; seed 1 / pool 1024 → 29,449 episodes, 0 / 0 / 0.
+- Bench (rows in `sim/BENCH.md` "E2 integrate", load average 2.6–7.0): C# `vec` N 64/1024/4096 × threads 1/8 = 18.6k / 89.1k, 27.4k / 116.4k, 41.5k / 144.4k env-steps/s; Python `sts2vec bench` pool 1024 = 4.4k / 5.7k, 23.8k / 73.2k, 39.7k / 162.9k (pool 64: 12.1k / 20.7k, 29.6k / 54.1k, 39.9k / 86.7k). §D7 target ≥ 50k at N = 1024 / 8 threads met. Combat bench 142,439 decisions/s, Clone 2.172 us, StateHash 2.625 us.
+- sts2rec: `uv run pytest -q` 701 passed, 4 skipped.
+- `git status --short` before the commit: only tracked doc/source edits; no tmp/, bundles or saves.
+
+Open issues:
+- Core clone fidelity (V2 finding, kernel, not fixed): `RunSim.Clone()` breaks the aliasing between a claimed `PotionReward.Potion` and the belt copy (`BasicRewards.cs:93`, `Potion.CloneFor`); after a clone, `DiscardPotion` on the still-open Rewards screen flags only the belt copy, so clone-then-step and step-original hash differently. No gameplay effect found. Fix: alias to the cloned belt potion when `_wasTaken`.
+- A snapshot of a slot still at a save-import load prompt would share `Pending.Load` between clones (no such save seen; StartPool re-imports pending saves per start).
+- The Python bench does not pre-warm the pool (cold `NewRun` ~16 ms per first entry use); small-N Python rows with a large pool understate steady-state throughput. Consider a `--warm` option or an export that materialises templates.
+- No draw-order leak test through the C ABI (C# only); prompt-option overflow (> 128) is untested (deck overflow and > 192 candidates are tested).
+- The encoder fails closed (exceptions → SIM_ERROR/CONTENT_GAP); none seen in ~60k soak episodes.
+- Clone-free `Step(a, answerer)` stepping (D7 later ticket) not started; resets are ~0.5–2 k/s at N = 1024.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended.
+
+## E2b integrate (2026-11-01)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `b3ac9d6` (E2 docs). All four owner branches are single commits on `b3ac9d6`; none skipped.
+
+Merged, in order (all `--no-ff`): e2b/linux `f842712` (merge `5e76601`), e2b/docker `e9bb9d2` (merge `4f401fe`), e2b/protocol `5c97a14` (merge `b715fc8`), e2b/version-delta `7871055` (merge `40e4c37`).
+
+Conflicts: none. The four branches touch disjoint files (linux: loader.py, BENCH.md, VEC.md, vec README, vec_publish_aot.sh, new linux_validate.sh and docs; docker: Dockerfile, compose, docker/, Server Program.cs/HttpHost.cs, ServerBindTests.cs, PLAY.md flags paragraph; protocol: sim/tools/eval, protocol v0.1/v0.2 docs, handoff §11; version-delta: new scripts/ files and the migration playbook), so every merge was clean.
+
+Fixes (integration): none needed. Two owner open items checked and closed:
+- linux: "VEC.md claims a NativeAOT round-trip pytest that does not exist" — it exists (`sim/tools/vec/tests/test_loader.py::test_native_aot_library_in_subprocess`, defined only when `sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.{dylib,so}` exists, platform-aware). With the dylib present here the vec suite is 64 tests; on Huginn the AOT .so was published after pytest ran, hence 63.
+- linux: "gate commands run `uv run --project sim/tools/eval pytest -q` without the path" — `git grep` finds no such command in the tree; all committed instances carry `sim/tools/eval`.
+
+Gates (macOS, M4 Pro):
+- Build: `dotnet build sim/Sts2Sim.sln -c Release` 0 warnings 0 errors; Debug 0 warnings 0 errors.
+- Tests: `dotnet run -c Release --project sim/Sts2Sim.Tests -- Server Vec Parity EndToEnd SelfConsistency` 97 passed, 0 failed, PENDING 0 (27.2 s; includes the 3 new ServerBindTests).
+- Server self test `--selftest 100 --content ported_only`: 100 completed (0 wins), 0 crashed, 0 capped, 0 server errors, mean 67.6 steps (4.2 s) — identical to E2.
+- G0 (`Sts2Sim.Diff <sim-source-recreation-9392df>/tmp/handoff/diff-bundles/bundles --report /tmp/e2b-diff.json`): bundles 4 (agree 4, hard 0, skipped 0, error 0, sim exception 0); decisions 69/69 (100.00 %), 0 unobserved; outcome 4/4; soft diffs 0.
+- Python: `uv run --project sim/tools/eval pytest -q sim/tools/eval` 67 passed; `STS2VEC_REQUIRE_FULL=1 uv run --project sim/tools/vec pytest -q` 64 passed (incl. the AOT round-trip); `uv lock --check` clean for both projects (the Dockerfile's `uv sync --frozen` depends on it).
+- `sts2eval report` (v0.2 metric) recomputed in place on `tmp/eval/baseline-sonnet-a0-s10-v2` (smoke-a0-v1): progress 0.594 [0.444, 0.744], median 0.583, win 0/10 Wilson [0, 27.8 %], floor/48 63.1 %; and `tmp/eval/baseline-sonnet-a10-s20` (std-a10-v1): progress 0.310 [0.243, 0.377], median 0.314, win 0/20 Wilson [0, 16.1 %], floor/49 34.0 %. Both match the protocol owner's numbers; v0.1 reports kept beside them as `report.v01.{md,json}` (git-ignored).
+- Version delta: `python3 -m unittest discover -s scripts -p test_version_delta.py` 19/19 OK; demo `scripts/version_delta.py decompiled-v0.107.1 decompiled-9cb4f1ad` 10.1 s: identical 2449, cosmetic 8, modified 957, moved 3, added 120, removed 7; content 546 / kernel 134 / out of scope 407; rerun plan full_suite, G0, G3, 101 filters, registry + knowledge moves (identical to the owner run). Report in `tmp/version-delta/v107-9cb/` (git-ignored).
+- Docker proxy (no docker on this Mac): `dotnet publish -c Release -r linux-x64 --self-contained false sim/Sts2Sim.Server -o tmp/e2b/publish-linux-x64` succeeded, 0 warnings, ELF x86-64 apphost, 3.9 MB; `bash -n` on docker/entrypoint.sh and the new scripts clean.
+
+Owner-run numbers carried into this record:
+- Linux x86_64 (Huginn, 8 vCPU Xeon KVM, Ubuntu 24.04, .NET 9.0.22 user-level): build 0 warnings; full suite 1103/1103 (1171 s); filtered 100/100; selftest 300/300; vec pytest 63, eval pytest 43; AOT linux-x64 .so (gcc) PASS. Deterministic counts identical to the Mac (combat hash sink 40788C706BFA21E0, vec episodes 7,286 / 44,417 / 29,235 / 463). Throughput: combat 41.4k decisions/s (Mac 147k); C# vec 1024x8 28.1k env-steps/s at 500 steps (JIT warm-up), 50.5k at 3000 steps (§D7 met at steady state); Python sts2vec 1024x8 pool 64 hostfxr 21.6k, NativeAOT 61.4k. DOTNET_TieredCompilation=0 reaches 51.8k immediately. Details: docs/linux-validation-2026-11-01.md, sim/BENCH.md "Linux x86_64 (Huginn)".
+- Docker (Tokyo VM, linux/arm64, 2 vCPU): cold build 73 s, image 578 MB, in-image build 0 warnings and RUN_TESTS=Server 39/39; selftest 200/200; /health 257 ms after start; SIGTERM stop 268 ms exit 0; vec-check OK; vec-bench 1024x4 15.7k env-steps/s (C# 19.2k); compose 2 replicas healthy; eval profile (random, 10 games) 10/10 replayable. VM returned to its starting state. Details: docs/docker.md.
+- Protocol v0.2: docs/sts2-bench-protocol-v0.2-2026-11-01.md; frozen seed sets std-a0-v1 / std-a10-v1 / smoke-a0-v1 (sha256 in the seed files); random policy progress 0.065 (A0) / 0.051 (A10).
+
+Open issues:
+- Docker image validated on linux/arm64 only; the amd64 build and x86 container throughput are unmeasured (Huginn has no docker). The server has no auth; compose binds 127.0.0.1 by default. A runner must talk to one replica, never a balancer (game ids are per process).
+- Huginn: `~/.cache/uv` is a dangling root-owned symlink (admin fix needed; linux_validate.sh uses a run-local UV_CACHE_DIR); root fs at 91 %; ~/.dotnet (579 MB) kept for reruns. Full suite at 19.5 min is near the 20 min timeout — a sharded/parallel runner would help Linux CI.
+- Short Linux jobs are JIT-warm-up bound; consider documenting or setting TieredCompilation/TieredPGO after a cross-platform measurement (no runtime config changed).
+- Protocol: no Sonnet row on the official std-a0-v1 set (~$43); Sonnet rows were produced on server c64217d (tree now includes 8c65874's display-path change) — declare equivalence or rerun before mixing rows; no NN eval entry point (`sts2vec eval --seedset`) and no replay-audit script yet; A10 act-3 second boss and GOLDEN_COMPASS scoring are unit-test only.
+- Version delta: 28 content files with unique edits are missing from W0 version-deltas.json (e.g. Swift, EvilEye) and need triage; test filters are broad (token-based mapping); kernel-to-sim mapping finds 45/134; G0/G3 steps in version_update.sh need --bundles/--bundles-v2.
+- Owner commits carry `Co-Authored-By: Claude Opus 5.5` (session attribution rule) rather than the brief's Fable line; not amended (amending would rewrite the merged owner commits).
+
+## Gates runner
+
+From 2026-11-02 the gates of each integration record are run by `scripts/gates.sh` (details and knobs:
+[`docs/gates.md`](../../docs/gates.md)). Default = full set; `--quick` = the filtered suite of the E2b record.
+
+| step | PASS when |
+| --- | --- |
+| `build-release`, `build-debug` | `dotnet build sim/Sts2Sim.sln -c <cfg> --no-incremental`: 0 warnings, 0 errors (English or Chinese MSBuild summary) |
+| `tests` | full suite (`--quick`: `Server Vec Parity EndToEnd SelfConsistency W1Gate`): all passed, `PENDING total: 0` |
+| `selftest` | `--selftest 100 --content ported_only`: all completed, 0 crashed, 0 server errors |
+| `g0` | `Sts2Sim.Diff <STS2SIM_G0_BUNDLES>`: `overall:` bundles 4 agree 4, decisions 69/69 |
+| `pytest-eval`, `pytest-vec`, `sts2rec` | pytest green (`STS2VEC_REQUIRE_FULL=1` for vec; sts2rec rerun once for the known wall-clock flake) |
+| `py-scripts` | `scripts/test_*.py` unittests; `scripts/kernel_map.py --check` when the decompile tree is present |
+| `bench-combat`, `bench-vec` | `--bench "<label>"` only: rows appended to `sim/BENCH.md` under the label |
+
+An integrator records the closing table of `tmp/gates/<timestamp>/SUMMARY.txt` in the wave's section instead of
+retyping the numbers.
+
+## G integrate (2026-11-02)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `9e95fd6` (docs/HANDOVER.md on top of `ebc055f`). All four owner branches are cut from `ebc055f`; none skipped.
+
+Merged, in order (all `--no-ff`): g/gates-mapping `eb8e9cc` (merge `0171035`), g/compact-obs `575b248`+`b973d18` (merge `eb5d77a`), g/train-smoke `b438455` (merge `5ba20d9`), g/docker-amd64 `daa2a9e` (merge `d4e59ec`).
+
+Conflicts: none. The expected hot spots auto-merged: the protocol doc (compact-obs appended §11, train-smoke edited §7), `sim/BENCH.md` and `docs/docker.md` (only docker-amd64 appended), `sim/tools/eval/README.md` (only compact-obs). `kernel_map.py --check` after all merges: still OK (no other branch added Core types or spec lines).
+
+Fixes (integration, docs only):
+- Protocol §7: the LLM policy interface now reads `choose(..., feedback, context=None)` (compact-obs added the kwarg; new policy classes must accept it).
+- Protocol §10: the "dedicated NN eval entry point" open item struck (train-smoke's `sts2train-smoke eval`).
+- `docs/HANDOVER.md` §7/§9: wave G marked landed with its headline numbers; kernel-map ticket closed; doc index gains `docs/gates.md`, `docs/train-smoke-2026-11-02.md`, `sim/specs/kernel-map.json`.
+
+Gates (macOS M4 Pro, load average 6.4–8.7 from the concurrent E3 wave), `scripts/gates.sh` full on `d4e59ec`, 571 s, `tmp/gates/20261102T074217Z/SUMMARY.txt`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 8 | Release: 0 warnings, 0 errors |
+| build-debug | PASS | 6 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 457 | full suite: 1115/1115 passed, 0 failed, PENDING 0, 456 s in runner |
+| selftest | PASS | 6 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.6 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 4 | 76 passed (67 + compact-obs's 9) |
+| pytest-vec | PASS | 15 | 67 passed (`STS2VEC_REQUIRE_FULL=1`, incl. AOT round-trip) |
+| sts2rec | PASS | 73 | 701 passed, 4 skipped |
+| py-scripts | PASS | 0 | unittest 30 OK; kernel_map --check OK: 564 kernel files, mapped 374, no_port 190 (lines 104,637 / 34,344) |
+| bench-combat, bench-vec | SKIP | 0 | no `--bench` |
+
+Also: `uv run --project sim/tools/train pytest -q` 8 passed (13.9 s); `uv lock --check` clean for sim/tools/train and sim/tools/eval. Version-delta demo (`scripts/version_delta.py decompiled-v0.107.1 decompiled-9cb4f1ad`, 13.0 s): content 546, kernel 134, out_of_scope 407; rerun plan full_suite/G0/G3, 4 soak tests, 101 filters, registry + knowledge; kernel map: 95/134 changed kernel files with sim files (49 via the map only), mapped 91, no_port 43, unmapped 0 — identical to the owner run.
+
+Owner-run numbers carried into this record:
+- compact-obs: `--obs-mode compact` (renderer compact-v1, prompt_hash `01628730282753a2`; full mode byte-identical to v0.2, `e01daedf52519a6c`) is the CLI default; library default stays full. Probe smoke-a0-v1 ×3 games, Sonnet 5.5 effort low, 360 steps per mode: per call uncached input 1,253.7 → 790.2 (−37.0 %), cache read 2,186.6 → 2,783.6, cache write 18.4 → 64.7, output 91.3 → 83.9; cache hit 63.2 % → 76.5 %; cost/step $0.00390 → $0.00314 (−19.5 %), same-state −16.5 %; 0 illegal / fallbacks / API errors; spend $2.535. Parity: 7,290/7,290 baseline observations and 1,122/1,122 random-game observations, 0 failures, 0 unstable contexts. Run context = 3 cached system blocks (432 vs 580 µ$/step for one block).
+- gates-mapping: owner full gates 570 s PASS (1114/1114); kernel map 564 files (type 201, spec 79, cite 23, pattern 116, curated 66; 26 patterns, 143 curated records); version-delta kernel coverage 45 → 95/134; W0 version-deltas 518 → 546 entries (MusicBox judged changed, 27 refactor_only). Scratch bench: combat 135,441 decisions/s, Clone 2.477 µs, StateHash 2.727 µs; vec 1024×8×500 78,141 env-steps/s.
+- train-smoke: vec aux 10 → 14 columns (act_floor, map_row, map_col, act_rooms), encoder_version `dff07a6bc984b119` → `fc2eb34c07bc8513`, 26,710 → 26,726 bytes/env. 948,750-parameter PPO policy, 52 min shaped A0 on MPS: 20.3M env-steps, 83,190 episodes, 6,505 env-steps/s with learner (134,475 in env.step only; update 73 % of wall), 0 sim errors. std-a0-v1 NN eval: progress 0.277 [0.225, 0.329] (random-init 0.170, uniform random 0.065, Sonnet 5.5 0.499), 0/20 wins, 14 loss / 6 stuck (merchant removal loop), replay 20/20.
+- docker-amd64 (Huginn x86_64, Docker 29.9.2): cold build 79.3 s, image 563 MB; in-image build 0 warnings, Server tests 39/39; selftest 200/200 18.6 s; /health 0.41 s; 20 random games 1,379 steps 4.19 s; vec-check OK; Python vec-bench 1024×8 19.1k/21.1k env-steps/s; C# vec 1024×8×500 28.0k/28.3k, ×3000 50.9k; combat 41,203 decisions/s, hash sink 40788C706BFA21E0 (= native). Fix: `/app/tmp → /data/tmp` symlink so `eval --spawn` without `--out` works as uid 1654.
+
+Open issues:
+- Compact obs reached −19.5 % cost/step, not the 30–40 % target (output tokens ~27 % of cost and Recent history unchanged). The 3-block run context (vs the brief's single block) is accepted here on the offline measurement. No full-vs-compact A/B on std-a0-v1 yet, so compact rows are listed separately (§11); sts2eval `__version__` still 0.2.0.
+- Train smoke: the shaped objective learns a non-progress merchant loop (needs a stall cap / step cost / loop masking in the training env); the learner dominates wall time; sts2vec `add_fresh(act1='random')` vs server `POST /runs` start equivalence unchecked; the NN row is not leaderboard-eligible (smoke objective, `-dirty` repo sha).
+- gates.sh has not run on Linux (Huginn needs `--skip g0`; no `timeout` on stock macOS); `sim/BENCH.md` has no gates.sh `--bench` row yet. Kernel-map spec source is heuristic; curated verdicts need review at the next game version; `version_update.sh` only prints a reminder to regenerate the map. MusicBox "changed" verdict is code-reading only.
+- Docker: image `sts2sim:validate` (563 MB) left on Huginn; Huginn root fs 2.8 GB free; the Tokyo arm64 row claiming the compose eval profile passed at `ebc055f` is unexplained (it fails there without the fix).
+- Running `uv run --project sim/tools/eval pytest -q` without the path still collects vec/train tests and fails on imports; always pass `sim/tools/eval`.
+
+## J integrate (2026-11-02)
+
+Scope: environment only (no training loops, no new LLM evaluation runs, no MCTS). Base: session branch
+`claude/sts2-eval-pipeline-a3aee7` at `d69c9c3`; all six owner branches are single commits cut from `d69c9c3`.
+
+Merged, in order (all `--no-ff`): j/fast-path `7e5565b` (merge `586d6b4`), j/determinize `70a2904` (merge `71428cf`),
+j/parity-audit `69c53b6` (merge `1dff707`), j/env-spec-eval `1d077ba`+`7831e4f` (merge `69d44d1`), j/huginn-scale
+`10462a9` (merge `52188c6`), j/version-complete `2b7e21b` (merge `6df05f0`).
+
+Conflicts: two, both docs, both resolved by keeping both sides.
+- `sim/BENCH.md`: fast-path's "Vec fast path" section and huginn-scale's "Docker host capacity" rows appended at the same
+  place; kept both, fast path first.
+- `docs/HANDOVER.md` §1: huginn-scale rewrote row 1.4, version-complete rewrote row 1.5; kept huginn-scale's 1.4 and
+  version-complete's 1.5.
+The expected code hot spots auto-merged without conflict: VecEnv (fast-path step call vs determinize's
+`CloneDeterminized`), RunSim (fast-path made it `partial` and added poison checks; determinize added
+`CloneDeterminized` and `Pending.Hooks`), `scripts/gates.sh` (fast-path's py-scripts step vs version-complete's header
+and `GATES_COMMIT`). Interplay checked: `CloneDeterminized` goes through `Clone()`, so it throws on a poisoned run like
+`Clone()`; a pending prompt (with or without determinize hooks) is a fast-path blocker, so the hook re-run path never
+runs clone-free.
+
+Fixes (integration):
+- `sim/Sts2Sim.Core/Choice/PromptSites.g.cs` regenerated (`gen_prompt_sites.py`): parity-audit's read-only accessors on
+  17 event classes moved the cited line numbers of 17 event prompt sites. Same 153 hazardous models, same 4 room sources,
+  185 inventory records cross-checked; only `file:line` citations changed. Without this the py-scripts gate fails.
+- `sim/specs/kernel-map.json` regenerated (`kernel_map.py`; one line, determinize's new `Random/Determinizer.cs`
+  citation). Same 564 kernel files, mapped 374 / no_port 190.
+- Local NativeAOT library rebuilt (`scripts/vec_publish_aot.sh`; git-ignored output): the stale dylib rejected the new
+  `fast_path` config key and failed `test_native_aot_library_in_subprocess`. Not a code change; any checkout with an old
+  `sim/Sts2Sim.Vec/bin/aot/` must rebuild it.
+- Docs: `docs/HANDOVER.md` §1 rescored (five criteria 0-10 with evidence and the environment-level gaps) plus a new §1.6
+  "what the environment still lacks", §2 map, §3 commands (`sts2vec eval`, fast-path A/B bench, `version_update.sh`,
+  `hook_drift.py`, `gen_prompt_sites.py`, `sts2_cluster.sh`, `ci_linux.sh`), §4 leaderboard observation-version note
+  and NN-track rows, §7/§8 rewritten (the "fast path 2.6x" and "event options 7/81" tickets closed with measured
+  numbers). Protocol §8: note that rows 1-6 were measured on the pre-audit observation (compact-v1).
+- `sim/ENV_SPEC.md`: no regeneration needed (`gen_env_spec.py --check` up to date; encoder `fc2eb34c07bc8513`; neither
+  the fast path nor determinize changed the schema or added status bits).
+
+Gates (macOS M4 Pro; load average 7-11 during the run), `scripts/gates.sh` full on `6df05f0` + the two regenerated
+files, logs `tmp/gates/j-integrate/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 3 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 3 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 454 | full suite: 1131/1131 passed, 0 failed, PENDING 0 (incl. F2 pins, F7 clone-then-step soak, ChoiceFastPath soak, VecDeterminize, ParityAudit) |
+| selftest | PASS | 4 | 100/100 completed, 0 crashed, 0 capped, 0 server errors |
+| g0 | PASS | 0 | bundles 4/4 agree; decisions 69/69, 0 unobserved; outcome 4/4; soft diffs 0 |
+| pytest-eval | PASS | 5 | 80 passed |
+| pytest-vec | PASS | 11 | 95 passed (`STS2VEC_REQUIRE_FULL=1`, incl. AOT round-trip, env-spec, protocol parity, determinized clone) |
+| sts2rec | PASS | 75 | 701 passed, 4 skipped |
+| py-scripts | PASS | 0 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, 0 unmapped) |
+
+Also: `uv run --project sim/tools/train pytest -q` 8 passed; `gen_env_spec.py --check` up to date.
+
+Bench (`sim/BENCH.md` "J integrate"): Vec 1024 envs x 8 threads x 500, medians of 3 interleaved pairs under load 5-14:
+A0 104,858 (off) / 107,522 (on) env-steps/s, 73.6 / 69.6 CPU µs; A10 111,391 / 121,284, 69.6 / 63.5 CPU µs; fast
+fraction 0.832 / 0.820; gen0 collections 15-17 → 4-6; episode counts identical. Light-load single run: 126,522
+env-steps/s, 61.0 CPU µs.
+
+Owner-run numbers carried into this record (details in each owner's docs):
+- fast-path: soak 2,000 runs / 577,867 steps, 72.1 % clone-free, 0 prompts from unlisted sources, 0 prompts after
+  `MayPrompt == false`; 20,516 sampled clone-free steps hash-equal to the tape engine; RunSim step 1.6-1.9x.
+- determinize: 900 states same observation bytes / different hash; 4,506 RNG objects all reseeded; 47 prompt hooks
+  resolve differently with no tape divergence; CloneDeterminized ≈ Clone() + 2-8 µs.
+- parity-audit: 1 leak fixed (AMBERGRIS_POWER); 39 event option keys resolved (walk 61/64 events, 0 `?`); 1,500-state
+  server↔Vec checklist; +185 chars per server-text observation (12.5 %).
+- env-spec-eval: NN-track baselines random 0.087 / 0.045, first 0.193 / 0.102, heuristic 0.221 / 0.104 (A0 / A10).
+- huginn-scale: Huginn 26-28 random games/s per host, 110-150 MiB per server, AOT Vec 62-63k env-steps/s in container.
+- version-complete: synthetic version bump end to end 476 s exit 0; hook drift finds exactly the 1 planted change;
+  `ci_linux.sh` on Huginn PASS (326 s).
+
+Open issues (environment): see `docs/HANDOVER.md` §1.6. Integration-specific: `scripts/gates.sh` was run on macOS only
+in this wave (Linux via `ci_linux.sh` ran on version-complete's commit, not on the merged tree); the merged tree's
+Docker image was not rebuilt; Vec has no stall cap (only `step_cap`).
+
+## E3 integrate (2026-11-02)
+
+Scope: the fidelity loop (REC recorder on the real game, MCP coverage farm, exporter save anchors, G3 anchor modes, port
+fixes from the farm triage). Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `939ceb5` (J integrate). The
+three owner branches are cut from `ebc055f`, before waves G and J.
+
+Merged, in order (all `--no-ff`): e3/recorder `da3b736`+`d6b8ce3` (merge `19b87eb`), e3/farm `6dfde01`+`4568426`+
+`0fdd411`+`d8a5c31` (merge `28f7655`; `6dfde01` is the cherry-pick of `da3b736`, same tree, so it merged as a no-op),
+e3/triage `160afdb`+`136449c` (merge `d7bd066`).
+
+Conflicts: none. One file changed on both sides and auto-merged: `Combat/Pipeline/PlayerView.cs` (J parity-audit:
+`IsVisibleToPlayer` reads `power.IsVisible`; triage: `TryMappedDisplayAmount` maps AUTOMATION_POWER, so the strict diff
+projection stops throwing a gap for it; `DisplayAmountToPlayer` keeps its own AUTOMATION case, now shadowed by the
+mapped one with the same value).
+
+Seams checked, no code change needed:
+- The triage port fixes are intact on the merged tree: `RelicCmd.Obtain` grab-bag removals and `FloorAddedToDeck`
+  (`ApproximatedRule` flag gone), starting relics on floor 1, combat-end hooks get the `CombatRoom`,
+  `RunImporter.ImportedPlayerCombatId` 0, `Tags` on six weak encounters, AUTOMATION display amount (E3TriageTests 8/8).
+- J fast path: none of the fixes adds a prompt site; `gen_prompt_sites.py --check` is OK with the committed table
+  (153 hazardous models, 4 room sources, 185 inventory records). The fast-path soak and hash-equality tests pass in the
+  full suite.
+- J determinizer: `RelicGrabBag.ReshuffleDeques` reshuffles what is left in the bags; after the triage fix an obtained
+  relic is no longer in them, as in the game. VecDeterminize tests pass.
+- F2 run pins: triage's refreshed `PinnedRunStreams` (`1:136:5F70FE94F60BE08F 2:114:064C282C22EA469C
+  3:160:CC4B958FA4D42499 4:400:BE4777CCA5361B81`) pass unchanged; wave J changes no run hash, so nothing was regenerated.
+
+Fixes (integration):
+- `sim/specs/kernel-map.json` regenerated (`scripts/kernel_map.py`): the triage files' new decompile citations
+  (RunImporter → Combat/CombatState.cs, RunLoop → Entities.Players/Player.cs, the six weak encounters →
+  Models/ActModel.cs, TurnFlow.CombatEnd → Combat/CombatManager.cs) and the spec lines of the E3 diff report. Same 564
+  kernel files, mapped 374 / no_port 190, 0 unmapped; files with a `cite` source 23 → 25. Without it the py-scripts gate
+  fails.
+- Docs: `docs/HANDOVER.md` (§1 fidelity row, §1.6, §2, §3 farm / export / G1-G3 commands, §4 NN rows re-measured, §5,
+  §7, §8, §9) and this record.
+
+Gates (macOS M4 Pro; load average 3.3 / 3.4 / 4.3 at the start), `scripts/gates.sh` full on `d7bd066` + the regenerated kernel map,
+556 s, logs `tmp/gates/e3-integrate/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 3 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 2 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 452 | full suite: 1139/1139 passed (J's 1131 + E3TriageTests 8), 0 failed, PENDING 0 (incl. F2 pins, F7 clone-then-step, ChoiceFastPath soak, VecDeterminize, ParityAudit, RelicPotion, E3Triage) |
+| selftest | PASS | 5 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 4 | 80 passed |
+| pytest-vec | PASS | 11 | 95 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 74 | 705 passed, 4 skipped (701 + the exporter's 4 new tests) |
+| py-scripts | PASS | 0 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, mapped 374, no_port 190, 0 unmapped) |
+
+Also: local NativeAOT library rebuilt (`scripts/vec_publish_aot.sh`, git-ignored output; the old one was built before
+the E3 Core fixes); `STS2VEC_AOT_LIB=… sts2vec check` OK and `sts2vec eval --policy heuristic --seedset std-a10-v1`
+gives the managed build's 0.110 through it.
+
+Fidelity on the merged tree. Same commands as `sim/specs/diff-report-e3-farm-2026-11-02.md` §1; inputs and reports in
+the git-ignored `tmp/farm/2026-11-02/integrate/`. Every report equals the triage owner's final report run for run
+(paths normalised): the merge changed no fidelity number.
+- Export (`export-bundles-v2 --root <farm>/sessions-all --sim-core ../sim/Sts2Sim.Core`, merged exporter and Core
+  registry): 39 runs, 787 segments (combat 177, room 306, map 304); eligible combat 117, room 249, map 304; 4,288
+  decisions, 2,806 eligible. Bundles and save copies are byte-identical to the triage export; only the paths in
+  `reasons.json` differ.
+- G1/G2 (`--v2 --baseline sim/specs/diff-baseline-e3-farm.json`): 787 segments, agree 126, hard 288, skipped 373, error 0,
+  sim exception 0; decisions 2,664/2,919 (combat 2,664/2,673); outcome 126/159; ratchet pass (787 segments, 2,664
+  agreed decisions checked, 0 violations, 0 newly agreeing), i.e. equal to the baseline. The 42 combat segments that do
+  not agree: `final_hp` 33 (recorder_gap T7, the recorder writes HP before end-of-combat heals), `select.screen_type` 8
+  (projection_gap), `turn.phase` 1. The 246 room divergences are schema only at decision 0 (`screen` 131, `player`
+  relics 115): V2Runner still has no G3Schema adapter, so the run-level G2 numbers are those of `g3 --anchors-every`.
+- G3 from the seed: 39 runs, 30 reach the recorded end; decisions 3,320/3,324 (99.88 %); first divergence none 30,
+  port_bug 7, truncated 2.
+- G3 `--anchors` (resume at the next save after a divergence): 785 segments replayed, 778 agree, 2 skipped; decisions
+  3,578/3,582; 7 divergences (harness label port_bug; triage classes below).
+- G3 `--anchors-every` (every anchored segment from the game's save: the G2 save-import check): 782 replayed, 774
+  agree, 5 skipped; decisions 3,601/3,603 (99.94 %); 31 runs reach the end. By start: seed 39/39 segments (93/93
+  decisions), room_entry save 303/300 (3,203/3,205), combat_exit save 139/135 (197/197; the 4 others out_of_scope,
+  `extra_rewards` on SFY7CMFJHB), chained 301/300 (108/108). Divergences port_bug 4, out_of_scope 4.
+- G3 `--save-check`: 437 chained segments with a save anchor; 258 equal except `unlock_state` (the sim runs
+  `UnlockProfile.All`) and `map_point_history` (known R1 gap), 1 of them fully equal; 179 not exportable (174 inside a
+  combat, 4 `extra_rewards`, 1 pending prompt); 0 other differences.
+- G0: in the gates table (4/4 bundles, 69/69).
+- Human corpus, against W4.1 (the W4.1 inputs: `sim-source-recreation-9392df/tmp/diff-v2-w41i` for G3, and for the
+  combat gate the W4.1 integrator's scratchpad dir `w41i/in` = v1 g0 + g0-ineligible bundles + `diff-v2-w41i`):
+  - G3: decisions 1,532/1,537 (W4.1) → 1,921/1,924 (99.84 %); runs at the recorded end 1 → 1 (K4FB4086NTRE). Floors
+    agreed per run (W4.1 → E3): G0G2 13 → 13, NBND 11 → 29, DSB3 22 → 35, P2UZ 13 → 13, Q3X6 2 → 2, GM28 27 → 27,
+    K4FB 17 → 17 (end), EC03 11 → 11, PLRU 11 → 11, G1YF 7 → 7 (truncated), old-prefix 0 → 0. No run drops. First
+    divergences: port_bug 7, content_not_ported 1 (DSB3 s99, FAKE_MERCHANT is still a stub), out_of_scope 1, truncated
+    1, none 1.
+  - Widened combat gate (`--v2`): 117 compared combat segments, 109 agree, decisions 1,599/1,607 (99.50 %), outcome
+    109/109: unchanged from W4.1, the same 8 rows (4 v0.107.1 exporter_ineligible, Q3X6 s5 discard count, GM28
+    s26/s54/s65 relic run-time state at combat start).
+- NN track re-measured on the merged tree (`sts2vec eval`, std-a0-v1 / std-a10-v1): random 0.087 / 0.045, first
+  0.194 / 0.103, heuristic 0.221 / 0.110. Protocol §8 lists 0.087 / 0.045, 0.193 / 0.102, 0.221 / 0.104, measured
+  before the E3 rule fixes; the rows were not changed.
+
+Open (fidelity), from the triage report §4, unchanged by the merge:
+- 7 open divergences under `--anchors`: VSQP6ESN1F f7 PUNCH_OFF_EVENT_ENCOUNTER (event → combat transition, port_bug;
+  also G0G2 on the human corpus); UF51XE6ZV1 f11 GAMBLING_CHIP start-of-turn hand select phase name (projection_gap);
+  UUR25UNBL5 f5 a dismissed card reward emitted as an event `choose` (exporter_bug); 3ZGJFKTD64 f9 STRATAGEM_POWER pile
+  select order (recorder_gap candidate); K4P3FWUZYN f13, 545XJP726S f8, SDR1TFEZ2U f15 only on the chained replay
+  (hidden draw-pile state, turn counter; each agrees from its save).
+- Exporter: R2 per-combat replays (`native/replays/*.mcr`, 162 files) are not indexed (the saves cover every combat
+  start); ancient_exit saves are indexed but not bound; 45 segments `content_not_ported:event`; 4 combat_exit saves with
+  `extra_rewards` are out of scope for the importer.
+- Coverage: the farm reached act 2 once (floor 22) and act 3 never; A10 runs stopped by floor 14. Acts 2 and 3 need a
+  stronger driver (a sim-trained policy or an LLM).
+- 8 real-game worker crashes in the farm (5 Defect; the two with a macOS crash report are unhandled managed exceptions,
+  their text lost to the old relaunch truncation of `game.log`; `run_farm.py` now copies `game.log` to
+  `<farm>/crashlogs/` before a restart). Not triaged.
+- G1 on the human combat gate is 99.50 %, under the 99.9 % target. Farm combat G1: decisions 2,664/2,673 (99.66 %;
+  the 9 are 8 `select.screen_type` projection gaps and 1 `turn.phase`), outcomes 126/159 (the 33 are `final_hp`,
+  recorder timing).

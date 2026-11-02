@@ -1,8 +1,17 @@
 global using Sts2Sim.Core.Cards;
+global using Sts2Sim.Core.Cards.Afflictions;
+global using Sts2Sim.Core.Cards.Enchantments;
+global using Sts2Sim.Core.Choice;
 global using Sts2Sim.Core.Combat.Loop;
 global using Sts2Sim.Core.Combat.Pipeline;
+global using Sts2Sim.Core.Modifiers;
 global using Sts2Sim.Core.Monsters;
+global using Sts2Sim.Core.Orbs;
+global using Sts2Sim.Core.Potions;
 global using Sts2Sim.Core.Powers;
 global using Sts2Sim.Core.Random;
 global using Sts2Sim.Core.Registry;
+global using Sts2Sim.Core.Relics;
+global using Sts2Sim.Core.Run;
 global using Sts2Sim.Core.State;
+global using Sts2Sim.Core.Unlocks;

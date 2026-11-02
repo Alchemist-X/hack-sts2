@@ -1,0 +1,1250 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "modifiers",
+ "content_kind": "modifiers",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_modifiers.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "kernel:run_modifiers"
+ ],
+ "raw_manifest": "sim/specs/inventory/modifiers.json",
+ "raw_source_digest": "ab09d479e3a67c59d5c8e5ef47f41c8e050c023b3912cd731fa41b2cd9ff9192",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "custom and daily run modifiers: outside the standard single-player scope; after the run layer"
+ },
+ "count": 17,
+ "entries": [
+  {
+   "id": "ALL_STAR",
+   "model_id": "MODIFIER.ALL_STAR",
+   "class": "AllStar",
+   "file": "Models.Modifiers/AllStar.cs",
+   "class_line": 18,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "GenerateNeowOption: adds a Neow option (modifier Neow chain) that adds 5 random colorless cards to the deck",
+    "each: CardFactory.CreateForReward(1, uniform odds over ColorlessCardPool, NoRarityModification | NoCardPoolModifications) -> CardPileCmd.Add(Deck)"
+   ],
+   "hooks": [
+    {
+     "member": "GenerateNeowOption",
+     "cite": "Models.Modifiers/AllStar.cs:132"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_generation",
+    "kernel:run_modifiers",
+    "run:deck",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "the Neow event Rng (eventModel.Rng) for the card rolls"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "loop rewritten as an async state machine; CreateForReward returns CardCreationResult wrappers",
+    "v107_file": "Models/Modifiers/AllStar.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "i < 5"
+      ],
+      "only_v111": []
+     },
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "CardCreationResult"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "BIG_GAME_HUNTER",
+   "model_id": "MODIFIER.BIG_GAME_HUNTER",
+   "class": "BigGameHunter",
+   "file": "Models.Modifiers/BigGameHunter.cs",
+   "class_line": 12,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "ModifyGeneratedMap: regenerates the act map (StandardActMap or SpoilsActMap) with 2.5x elites (rounded) that ignore placement rules, on a fresh Rng(seed, act_<n>_map)",
+    "ModifyCardRewardCreationOptions: elite encounter card rewards become uniform odds over Rare cards (falls back to the character pool when empty)"
+   ],
+   "hooks": [
+    {
+     "member": "ModifyGeneratedMap",
+     "cite": "Models.Modifiers/BigGameHunter.cs:14"
+    },
+    {
+     "member": "ModifyCardRewardCreationOptions",
+     "cite": "Models.Modifiers/BigGameHunter.cs:37"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "ModifyCardRewardCreationOptions",
+    "ModifyGeneratedMap",
+    "kernel:run_modifiers",
+    "run:map_generation",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "card-pool option API rewritten (WithCustomPool -> WithCardPools/WithFilter/WithRarityOdds); same rare-only uniform elite rewards",
+    "v107_file": "Models/Modifiers/BigGameHunter.cs",
+    "fingerprint_diff": {
+     "dotted": {
+      "only_v107": [
+       "Flags.HasFlag",
+       "RunState.CardMultiplayerConstraint"
+      ],
+      "only_v111": []
+     },
+     "idents": {
+      "only_v107": [
+       "CardMultiplayerConstraint",
+       "GetUnlockedCards",
+       "RunState",
+       "UnlockState",
+       "WithCustomPool"
+      ],
+      "only_v111": [
+       "Add",
+       "CardPoolModel",
+       "WithCardPools",
+       "WithFilter",
+       "WithRarityOdds"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "CHARACTER_CARDS",
+   "model_id": "MODIFIER.CHARACTER_CARDS",
+   "class": "CharacterCards",
+   "file": "Models.Modifiers/CharacterCards.cs",
+   "class_line": 11,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "[SavedProperty] CharacterModel: the extra character",
+    "ModifyMerchantCardPool: adds that character's unlocked cards to the merchant pool when the offer is the player's own pool",
+    "ModifyCardRewardCreationOptions: card rewards also draw from that character's pool"
+   ],
+   "hooks": [
+    {
+     "member": "ModifyMerchantCardPool",
+     "cite": "Models.Modifiers/CharacterCards.cs:36"
+    },
+    {
+     "member": "ModifyCardRewardCreationOptions",
+     "cite": "Models.Modifiers/CharacterCards.cs:47"
+    },
+    {
+     "member": "IsEquivalent",
+     "cite": "Models.Modifiers/CharacterCards.cs:60"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "ModifyCardRewardCreationOptions",
+    "ModifyMerchantCardPool",
+    "kernel:run_modifiers",
+    "run:merchant",
+    "run:rewards",
+    "run:save_import",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "card-pool option API rewritten (WithCustomPool -> WithCardPools with Union)",
+    "v107_file": "Models/Modifiers/CharacterCards.cs",
+    "fingerprint_diff": {
+     "dotted": {
+      "only_v107": [
+       "CardPool.GetUnlockedCards",
+       "Flags.HasFlag"
+      ],
+      "only_v111": [
+       "CharacterCardPool.GetUnlockedCards"
+      ]
+     },
+     "idents": {
+      "only_v107": [
+       "GetPossibleCards",
+       "WithCustomPool"
+      ],
+      "only_v111": [
+       "CardPools",
+       "CharacterCardPool",
+       "Union",
+       "WithCardPools"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "CURSED_RUN",
+   "model_id": "MODIFIER.CURSED_RUN",
+   "class": "CursedRun",
+   "file": "Models.Modifiers/CursedRun.cs",
+   "class_line": 17,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "AfterActEntered: every player gains a random curse (RunRng.Niche over CurseCardPool unlocked cards with CanBeGeneratedByModifiers) into the deck"
+   ],
+   "hooks": [
+    {
+     "member": "AfterActEntered",
+     "cite": "Models.Modifiers/CursedRun.cs:115"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterActEntered",
+    "kernel:card_generation",
+    "kernel:run_modifiers",
+    "run:deck"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "RunRngType.Niche: NextItem over the eligible curses, once per player per act"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "per-player loop rewritten as an async state machine",
+    "v107_file": "Models/Modifiers/CursedRun.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [],
+      "only_v111": [
+       "num < 0"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "DEADLY_EVENTS",
+   "model_id": "MODIFIER.DEADLY_EVENTS",
+   "class": "DeadlyEvents",
+   "file": "Models.Modifiers/DeadlyEvents.cs",
+   "class_line": 11,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "AfterRunCreated: removes JuzuBracelet from every relic grab bag; unknown-room elite odds 0.1 (base odds too)",
+    "AfterRunLoaded: re-applies the elite base odds",
+    "ModifyOddsIncreaseForUnrolledRoomType: treasure odds increase doubled"
+   ],
+   "hooks": [
+    {
+     "member": "AfterRunCreated",
+     "cite": "Models.Modifiers/DeadlyEvents.cs:13"
+    },
+    {
+     "member": "AfterRunLoaded",
+     "cite": "Models.Modifiers/DeadlyEvents.cs:33"
+    },
+    {
+     "member": "ModifyOddsIncreaseForUnrolledRoomType",
+     "cite": "Models.Modifiers/DeadlyEvents.cs:38"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "ModifierModel.AfterRunCreated",
+    "ModifierModel.AfterRunLoaded",
+    "ModifyOddsIncreaseForUnrolledRoomType",
+    "kernel:run_modifiers",
+    "run:odds",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/DeadlyEvents.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "DEPRECATED_MODIFIER",
+   "model_id": "MODIFIER.DEPRECATED_MODIFIER",
+   "class": "DeprecatedModifier",
+   "file": "Models.Modifiers/DeprecatedModifier.cs",
+   "class_line": 3,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": true,
+   "scope": "deprecated",
+   "modifier_list": null,
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "empty placeholder"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/DeprecatedModifier.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "DRAFT",
+   "model_id": "MODIFIER.DRAFT",
+   "class": "Draft",
+   "file": "Models.Modifiers/Draft.cs",
+   "class_line": 15,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": true,
+   "clears_player_deck": true,
+   "mechanics": [
+    "ClearsPlayerDeck = true",
+    "GenerateNeowOption: adds a Neow option (modifier Neow chain): 10 CardRewards of 3 cards (character pool, regular encounter odds, NoUpgradeRoll), CanSkip = false, then PandorasBox leaves every grab bag"
+   ],
+   "hooks": [
+    {
+     "member": "GenerateNeowOption",
+     "cite": "Models.Modifiers/Draft.cs:116"
+    },
+    {
+     "member": "ClearsPlayerDeck",
+     "cite": "Models.Modifiers/Draft.cs:114"
+    }
+   ],
+   "prompts": [
+    {
+     "kind": "CardReward",
+     "entry": "CardReward.SelectUnsynchronized",
+     "site": "DRAFT:GenerateNeowOption",
+     "opened_by": "modifiers:DRAFT",
+     "via": null,
+     "pile": "generated",
+     "min": 1,
+     "max": 1,
+     "require_confirm": false,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Modifiers/Draft.cs:62",
+     "notes": "10 rewards in a row, 3 cards each, no skip"
+    }
+   ],
+   "phases": [],
+   "kernel_requirements": [
+    "choice:CardReward",
+    "kernel:run_modifiers",
+    "run:neow_and_ancients",
+    "run:relic_grab_bags",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "loop rewritten as an async state machine",
+    "v107_file": "Models/Modifiers/Draft.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "i < 10"
+      ],
+      "only_v111": [
+       "num < 0"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "FLIGHT",
+   "model_id": "MODIFIER.FLIGHT",
+   "class": "Flight",
+   "file": "Models.Modifiers/Flight.cs",
+   "class_line": 3,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "ShouldAllowFreeTravel: true (map travel ignores connections)"
+   ],
+   "hooks": [
+    {
+     "member": "ShouldAllowFreeTravel",
+     "cite": "Models.Modifiers/Flight.cs:5"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "ShouldAllowFreeTravel",
+    "kernel:run_modifiers",
+    "run:map_generation"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/Flight.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "HOARDER",
+   "model_id": "MODIFIER.HOARDER",
+   "class": "Hoarder",
+   "file": "Models.Modifiers/Hoarder.cs",
+   "class_line": 13,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "AfterCardChangedPiles: a card entering the deck from nowhere (old pile None, not a clone) adds 2 clones to the bottom of the deck (RunState.CloneCard), skipping the clones themselves",
+    "ShouldAllowMerchantCardRemoval: false"
+   ],
+   "hooks": [
+    {
+     "member": "AfterCardChangedPiles",
+     "cite": "Models.Modifiers/Hoarder.cs:110"
+    },
+    {
+     "member": "ShouldAllowMerchantCardRemoval",
+     "cite": "Models.Modifiers/Hoarder.cs:125"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterCardChangedPiles",
+    "ShouldAllowMerchantCardRemoval",
+    "kernel:per_instance_state",
+    "kernel:run_modifiers",
+    "run:deck",
+    "run:merchant"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "loop and inverted guard rewritten by the state machine (oldPileType != None -> == None branch)",
+    "v107_file": "Models/Modifiers/Hoarder.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "i < 2",
+       "oldPileType != None"
+      ],
+      "only_v111": [
+       "oldPileType == None"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "INSANITY",
+   "model_id": "MODIFIER.INSANITY",
+   "class": "Insanity",
+   "file": "Models.Modifiers/Insanity.cs",
+   "class_line": 20,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": true,
+   "clears_player_deck": true,
+   "mechanics": [
+    "ClearsPlayerDeck = true",
+    "GenerateNeowOption: adds a Neow option (modifier Neow chain): 30 cards from the character pool (uniform odds, NoRarityModification) into the deck, then PandorasBox leaves every grab bag"
+   ],
+   "hooks": [
+    {
+     "member": "GenerateNeowOption",
+     "cite": "Models.Modifiers/Insanity.cs:208"
+    },
+    {
+     "member": "ClearsPlayerDeck",
+     "cite": "Models.Modifiers/Insanity.cs:206"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_generation",
+    "kernel:run_modifiers",
+    "run:deck",
+    "run:neow_and_ancients",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "the Neow event Rng for the card rolls"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "loop rewritten as an async state machine; CreateForReward returns CardCreationResult wrappers",
+    "v107_file": "Models/Modifiers/Insanity.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "i < 30"
+      ],
+      "only_v111": [
+       "num < 0"
+      ]
+     },
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "CardCreationResult"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MIDAS",
+   "model_id": "MODIFIER.MIDAS",
+   "class": "Midas",
+   "file": "Models.Modifiers/Midas.cs",
+   "class_line": 12,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "TryModifyRewardsLate: every GoldReward amount doubled",
+    "TryModifyRestSiteOptions: removes Smith"
+   ],
+   "hooks": [
+    {
+     "member": "TryModifyRewardsLate",
+     "cite": "Models.Modifiers/Midas.cs:14"
+    },
+    {
+     "member": "TryModifyRestSiteOptions",
+     "cite": "Models.Modifiers/Midas.cs:44"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "TryModifyRestSiteOptions",
+    "TryModifyRewardsLate",
+    "kernel:run_modifiers",
+    "run:rest_site",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/Midas.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "MURDEROUS",
+   "model_id": "MODIFIER.MURDEROUS",
+   "class": "Murderous",
+   "file": "Models.Modifiers/Murderous.cs",
+   "class_line": 16,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "AfterRoomEntered (combat room): StrengthPower 3 to every creature in combat",
+    "AfterCreatureAddedToCombat: StrengthPower 3 to every non-player creature added later"
+   ],
+   "hooks": [
+    {
+     "member": "AfterRoomEntered",
+     "cite": "Models.Modifiers/Murderous.cs:87"
+    },
+    {
+     "member": "AfterCreatureAddedToCombat",
+     "cite": "Models.Modifiers/Murderous.cs:99"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterRoomEntered",
+    "kernel:run_modifiers",
+    "run:room_flow"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "STRENGTH_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/Murderous.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "one of the two modifiers that listen to combat hooks",
+   "open_questions": []
+  },
+  {
+   "id": "NIGHT_TERRORS",
+   "model_id": "MODIFIER.NIGHT_TERRORS",
+   "class": "NightTerrors",
+   "file": "Models.Modifiers/NightTerrors.cs",
+   "class_line": 17,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "ModifyRestSiteHealAmount: heal to full (MaxHp)",
+    "AfterRestSiteHeal (not mimicked): CreatureCmd.LoseMaxHp(min(5, MaxHp - 1))"
+   ],
+   "hooks": [
+    {
+     "member": "ModifyRestSiteHealAmount",
+     "cite": "Models.Modifiers/NightTerrors.cs:90"
+    },
+    {
+     "member": "AfterRestSiteHeal",
+     "cite": "Models.Modifiers/NightTerrors.cs:96"
+    },
+    {
+     "member": "ModifyExtraRestSiteHealText",
+     "cite": "Models.Modifiers/NightTerrors.cs:109"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterRestSiteHeal",
+    "ModifyExtraRestSiteHealText",
+    "ModifyRestSiteHealAmount",
+    "kernel:run_modifiers",
+    "run:rest_site"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/NightTerrors.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "SEALED_DECK",
+   "model_id": "MODIFIER.SEALED_DECK",
+   "class": "SealedDeck",
+   "file": "Models.Modifiers/SealedDeck.cs",
+   "class_line": 23,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": true,
+   "clears_player_deck": true,
+   "mechanics": [
+    "ClearsPlayerDeck = true",
+    "GenerateNeowOption: adds a Neow option (modifier Neow chain): 30 generated character cards (regular encounter odds, NoUpgradeRoll | ForceRarityOddsChange | IsCardReward) shown in a grid sorted by rarity; pick exactly 10 (CardSelectorPrefs(prompt, 10), RequireManualConfirmation, not cancelable); picks go to the deck; PandorasBox leaves every grab bag"
+   ],
+   "hooks": [
+    {
+     "member": "GenerateNeowOption",
+     "cite": "Models.Modifiers/SealedDeck.cs:144"
+    },
+    {
+     "member": "ClearsPlayerDeck",
+     "cite": "Models.Modifiers/SealedDeck.cs:142"
+    }
+   ],
+   "prompts": [
+    {
+     "kind": "RewardsGrid",
+     "entry": "CardSelectCmd.FromSimpleGridForRewards",
+     "site": "SEALED_DECK:GenerateNeowOption",
+     "opened_by": "modifiers:SEALED_DECK",
+     "via": null,
+     "pile": "generated",
+     "min": 10,
+     "max": 10,
+     "require_confirm": true,
+     "can_skip": false,
+     "cancelable": false,
+     "context": "Inline",
+     "filter": null,
+     "cite": "Models.Modifiers/SealedDeck.cs:71",
+     "notes": "CardSelectorPrefs(prompt, 10) with Cancelable = false, RequireManualConfirmation = true, Comparison = rarity order (:162)"
+    }
+   ],
+   "phases": [],
+   "kernel_requirements": [
+    "CardSelectCmd.FromSimpleGridForRewards",
+    "kernel:card_generation",
+    "kernel:run_modifiers",
+    "run:deck",
+    "run:neow_and_ancients",
+    "run:relic_grab_bags"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "enum CompareTo and CompareOptions spelling only",
+    "v107_file": "Models/Modifiers/SealedDeck.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [],
+      "only_v111": [
+       "num < 0"
+      ]
+     },
+     "dotted": {
+      "only_v107": [
+       "CompareOptions.None",
+       "Rarity.CompareTo"
+      ],
+      "only_v111": []
+     },
+     "idents": {
+      "only_v107": [
+       "None"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "grid order: rarity, then localized Title (LocManager culture; CompareCards :162)",
+   "open_questions": []
+  },
+  {
+   "id": "SPECIALIZED",
+   "model_id": "MODIFIER.SPECIALIZED",
+   "class": "Specialized",
+   "file": "Models.Modifiers/Specialized.cs",
+   "class_line": 17,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "GenerateNeowOption: adds a Neow option (modifier Neow chain): one random character card (uniform odds) cloned 5 times into the deck"
+   ],
+   "hooks": [
+    {
+     "member": "GenerateNeowOption",
+     "cite": "Models.Modifiers/Specialized.cs:136"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:card_generation",
+    "kernel:run_modifiers",
+    "run:deck",
+    "run:neow_and_ancients"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "the Neow event Rng for the card roll"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "loop rewritten as an async state machine; CreateForReward returns CardCreationResult wrappers",
+    "v107_file": "Models/Modifiers/Specialized.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "i < 5"
+      ],
+      "only_v111": []
+     },
+     "idents": {
+      "only_v107": [],
+      "only_v111": [
+       "CardCreationResult"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "TERMINAL",
+   "model_id": "MODIFIER.TERMINAL",
+   "class": "Terminal",
+   "file": "Models.Modifiers/Terminal.cs",
+   "class_line": 17,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "bad",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "AfterRoomEntered (a new base room): every player loses 1 max HP (skipped at 1/1); in a combat room every player creature gains PlatingPower 5"
+   ],
+   "hooks": [
+    {
+     "member": "AfterRoomEntered",
+     "cite": "Models.Modifiers/Terminal.cs:177"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "AfterRoomEntered",
+    "kernel:run_modifiers",
+    "run:room_flow"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "powers": [
+      "PLATING_POWER"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "guards inverted by the state machine; same max-HP loss and Plating",
+    "v107_file": "Models/Modifiers/Terminal.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "BaseRoom == room",
+       "CurrentHp > 1",
+       "MaxHp > 1",
+       "creature == null"
+      ],
+      "only_v111": [
+       "BaseRoom != room",
+       "CurrentHp <= 1",
+       "MaxHp <= 1",
+       "creature != null",
+       "num < 0"
+      ]
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "VINTAGE",
+   "model_id": "MODIFIER.VINTAGE",
+   "class": "Vintage",
+   "file": "Models.Modifiers/Vintage.cs",
+   "class_line": 8,
+   "base_class": "ModifierModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "custom_modes_only",
+   "modifier_list": "good",
+   "mutually_exclusive": false,
+   "clears_player_deck": false,
+   "mechanics": [
+    "TryModifyRewardsLate: in normal (Monster) combat rooms every CardReward becomes a RelicReward"
+   ],
+   "hooks": [
+    {
+     "member": "TryModifyRewardsLate",
+     "cite": "Models.Modifiers/Vintage.cs:10"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "TryModifyRewardsLate",
+    "kernel:run_modifiers",
+    "run:rewards"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Modifiers/Vintage.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  }
+ ]
+}

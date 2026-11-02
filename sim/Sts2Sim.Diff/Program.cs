@@ -10,6 +10,22 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "run")
+        {
+            return Run.RunOracleRunner.RunMain(args[1..]);
+        }
+        if (args.Length > 0 && args[0] == "g3")
+        {
+            return V2.G3Replay.RunMain(args[1..]);
+        }
+        if (args.Length > 0 && args[0].StartsWith("replay", StringComparison.Ordinal))
+        {
+            return Replay.ReplayCli.Run(args);
+        }
+        if (V2.V2Cli.Wants(args))
+        {
+            return V2.V2Cli.RunMain(args);
+        }
         string? input = null;
         string? reportPath = null;
         bool verbose = false;

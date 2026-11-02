@@ -1,0 +1,730 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "acts",
+ "content_kind": "acts",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_acts.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "run:acts_room_sets",
+  "run:map_generation"
+ ],
+ "raw_manifest": "sim/specs/inventory/acts.json",
+ "raw_source_digest": "d0ba029bf8b1499073dc1e85fc95a4581b4d4685bf2b1e2fdf7f2c6599385867",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "standard acts with the W2 run layer: room sets, map point counts, ancient and unlock gates"
+ },
+ "count": 5,
+ "entries": [
+  {
+   "id": "DEPRECATED_ACT",
+   "model_id": "ACT.DEPRECATED_ACT",
+   "class": "DeprecatedAct",
+   "file": "Models.Acts/DeprecatedAct.cs",
+   "class_line": 10,
+   "base_class": "ActModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": true,
+   "scope": "deprecated",
+   "index": -1,
+   "is_default": false,
+   "number_of_weak_encounters": 0,
+   "base_number_of_rooms": 0,
+   "encounters_weak": [],
+   "encounters_normal": [],
+   "encounters_elite": [],
+   "encounters_boss": [],
+   "boss_discovery_order": [],
+   "ancients": [],
+   "events": [],
+   "map_params": {
+    "number_of_weak_encounters": 0,
+    "base_number_of_rooms": 0,
+    "get_map_point_types": [
+     "return new MapPointTypeCounts(0, 0);"
+    ],
+    "get_map_point_types_line": 65
+   },
+   "first_run_order": [],
+   "ancient_unlock_gates": [],
+   "is_unlocked_raw": "{ return true; }",
+   "mechanics": [
+    "empty pools, Index -1, zero rooms (save compatibility)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "Array.Empty spelling only",
+    "v107_file": "Models/Acts/DeprecatedAct.cs",
+    "fingerprint_diff": {
+     "props": {
+      "AllAncients": {
+       "v107": "=> Array.Empty<AncientEventModel>();",
+       "v111": "=> System.Array.Empty<AncientEventModel>();"
+      },
+      "AllEvents": {
+       "v107": "=> Array.Empty<EventModel>();",
+       "v111": "=> System.Array.Empty<EventModel>();"
+      },
+      "BgMusicOptions": {
+       "v107": "=> Array.Empty<string>();",
+       "v111": "=> System.Array.Empty<string>();"
+      },
+      "BossDiscoveryOrder": {
+       "v107": "=> Array.Empty<EncounterModel>();",
+       "v111": "=> System.Array.Empty<EncounterModel>();"
+      },
+      "MusicBankPaths": {
+       "v107": "=> Array.Empty<string>();",
+       "v111": "=> System.Array.Empty<string>();"
+      }
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "GLORY",
+   "model_id": "ACT.GLORY",
+   "class": "Glory",
+   "file": "Models.Acts/Glory.cs",
+   "class_line": 12,
+   "base_class": "ActModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "index": 2,
+   "is_default": true,
+   "number_of_weak_encounters": 2,
+   "base_number_of_rooms": 13,
+   "encounters_weak": [
+    "DevotedSculptorWeak",
+    "ScrollsOfBitingWeak",
+    "TurretOperatorWeak"
+   ],
+   "encounters_normal": [
+    "AxebotsNormal",
+    "ConstructMenagerieNormal",
+    "FabricatorNormal",
+    "FrogKnightNormal",
+    "GlobeHeadNormal",
+    "OwlMagistrateNormal",
+    "ScrollsOfBitingNormal",
+    "SlimedBerserkerNormal",
+    "TheLostAndForgottenNormal"
+   ],
+   "encounters_elite": [
+    "KnightsElite",
+    "MechaKnightElite",
+    "SoulNexusElite"
+   ],
+   "encounters_boss": [
+    "AeonglassBoss",
+    "QueenBoss",
+    "TestSubjectBoss"
+   ],
+   "boss_discovery_order": [
+    "QueenBoss",
+    "TestSubjectBoss",
+    "AeonglassBoss"
+   ],
+   "ancients": [
+    "Nonupeipe",
+    "Tanx",
+    "Vakuu"
+   ],
+   "events": [
+    "BattlewornDummy",
+    "GraveOfTheForgotten",
+    "HungryForMushrooms",
+    "Reflections",
+    "RoundTeaParty",
+    "Trial",
+    "TinkerTime"
+   ],
+   "map_params": {
+    "number_of_weak_encounters": 2,
+    "base_number_of_rooms": 13,
+    "get_map_point_types": [
+     "int restCount = mapRng.NextInt(5, 7);",
+     "int unknownCount = MapPointTypeCounts.StandardRandomUnknownCount(mapRng) - 1;",
+     "return new MapPointTypeCounts(unknownCount, restCount);"
+    ],
+    "get_map_point_types_line": 106
+   },
+   "first_run_order": [],
+   "ancient_unlock_gates": [],
+   "is_unlocked_raw": "{ return true; }",
+   "mechanics": [
+    "act index 2 (default); 13 base rooms, 2 weak encounters; GenerateAllEncounters split by room kind (weak/normal/elite/boss, Models/ActModel.cs:123-129), AllEvents, AllAncients and BossDiscoveryOrder; RoomSet shuffles them with the run Rng",
+    "ancients: Nonupeipe, Tanx, Vakuu (no epoch gate)",
+    "GetMapPointTypes(mapRng): rest sites NextInt(5, 7), unknown rooms StandardRandomUnknownCount(mapRng) - 1"
+   ],
+   "hooks": [
+    {
+     "member": "GetMapPointTypes",
+     "cite": "Models.Acts/Glory.cs:106"
+    },
+    {
+     "member": "GetUnlockedAncients",
+     "cite": "Models.Acts/Glory.cs:92"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:acts_room_sets",
+    "run:map_generation"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "events": [
+      "NONUPEIPE",
+      "TANX",
+      "VAKUU"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "map Rng (Rng(seed, act_<n>_map)): rest-site count, then the unknown-room count"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Acts/Glory.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 4,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "HIVE",
+   "model_id": "ACT.HIVE",
+   "class": "Hive",
+   "file": "Models.Acts/Hive.cs",
+   "class_line": 13,
+   "base_class": "ActModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "index": 1,
+   "is_default": true,
+   "number_of_weak_encounters": 2,
+   "base_number_of_rooms": 14,
+   "encounters_weak": [
+    "BowlbugsWeak",
+    "ExoskeletonsWeak",
+    "ThievingHopperWeak",
+    "TunnelerWeak"
+   ],
+   "encounters_normal": [
+    "BowlbugsNormal",
+    "ChompersNormal",
+    "ExoskeletonsNormal",
+    "HunterKillerNormal",
+    "LouseProgenitorNormal",
+    "MytesNormal",
+    "OvicopterNormal",
+    "SlumberingBeetleNormal",
+    "SpinyToadNormal",
+    "TheObscuraNormal"
+   ],
+   "encounters_elite": [
+    "DecimillipedeElite",
+    "EntomancerElite",
+    "InfestedPrismsElite"
+   ],
+   "encounters_boss": [
+    "KaiserCrabBoss",
+    "KnowledgeDemonBoss",
+    "TheInsatiableBoss"
+   ],
+   "boss_discovery_order": [
+    "TheInsatiableBoss",
+    "KnowledgeDemonBoss",
+    "KaiserCrabBoss"
+   ],
+   "ancients": [
+    "Orobas",
+    "Pael",
+    "Tezcatara"
+   ],
+   "events": [
+    "Amalgamator",
+    "Bugslayer",
+    "ColorfulPhilosophers",
+    "ColossalFlower",
+    "FieldOfManSizedHoles",
+    "InfestedAutomaton",
+    "LostWisp",
+    "SpiritGrafter",
+    "TheLanternKey",
+    "ZenWeaver"
+   ],
+   "map_params": {
+    "number_of_weak_encounters": 2,
+    "base_number_of_rooms": 14,
+    "get_map_point_types": [
+     "int restCount = mapRng.NextGaussianInt(6, 1, 6, 7);",
+     "int unknownCount = MapPointTypeCounts.StandardRandomUnknownCount(mapRng) - 1;",
+     "return new MapPointTypeCounts(unknownCount, restCount);"
+    ],
+    "get_map_point_types_line": 117
+   },
+   "first_run_order": [],
+   "ancient_unlock_gates": [
+    "OrobasEpoch"
+   ],
+   "is_unlocked_raw": "{ return true; }",
+   "mechanics": [
+    "act index 1 (default); 14 base rooms, 2 weak encounters; GenerateAllEncounters split by room kind (weak/normal/elite/boss, Models/ActModel.cs:123-129), AllEvents, AllAncients and BossDiscoveryOrder; RoomSet shuffles them with the run Rng",
+    "ancients: Orobas, Pael, Tezcatara; GetUnlockedAncients drops Orobas unless OrobasEpoch is revealed",
+    "GetMapPointTypes(mapRng): rest sites NextGaussianInt(6, 1, 6, 7), unknown rooms StandardRandomUnknownCount(mapRng) - 1"
+   ],
+   "hooks": [
+    {
+     "member": "GetMapPointTypes",
+     "cite": "Models.Acts/Hive.cs:117"
+    },
+    {
+     "member": "GetUnlockedAncients",
+     "cite": "Models.Acts/Hive.cs:98"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:acts_room_sets",
+    "run:map_generation",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "events": [
+      "OROBAS",
+      "PAEL",
+      "TEZCATARA"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "map Rng: rest-site Gaussian draw, then the unknown-room count"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Acts/Hive.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "OVERGROWTH",
+   "model_id": "ACT.OVERGROWTH",
+   "class": "Overgrowth",
+   "file": "Models.Acts/Overgrowth.cs",
+   "class_line": 15,
+   "base_class": "ActModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "index": 0,
+   "is_default": true,
+   "number_of_weak_encounters": 3,
+   "base_number_of_rooms": 15,
+   "encounters_weak": [
+    "FuzzyWurmCrawlerWeak",
+    "NibbitsWeak",
+    "ShrinkerBeetleWeak",
+    "SlimesWeak"
+   ],
+   "encounters_normal": [
+    "CubexConstructNormal",
+    "FlyconidNormal",
+    "FogmogNormal",
+    "InkletsNormal",
+    "MawlerNormal",
+    "NibbitsNormal",
+    "OvergrowthCrawlers",
+    "RubyRaidersNormal",
+    "SlimesNormal",
+    "SlitheringStranglerNormal",
+    "SnappingJaxfruitNormal",
+    "VineShamblerNormal"
+   ],
+   "encounters_elite": [
+    "BygoneEffigyElite",
+    "ByrdonisElite",
+    "PhrogParasiteElite"
+   ],
+   "encounters_boss": [
+    "CeremonialBeastBoss",
+    "TheKinBoss",
+    "VantomBoss"
+   ],
+   "boss_discovery_order": [
+    "VantomBoss",
+    "CeremonialBeastBoss",
+    "TheKinBoss"
+   ],
+   "ancients": [
+    "Neow"
+   ],
+   "events": [
+    "AromaOfChaos",
+    "ByrdonisNest",
+    "DenseVegetation",
+    "JungleMazeAdventure",
+    "LuminousChoir",
+    "MorphicGrove",
+    "SapphireSeed",
+    "SunkenStatue",
+    "TabletOfTruth",
+    "UnrestSite",
+    "Wellspring",
+    "WhisperingHollow",
+    "WoodCarvings"
+   ],
+   "map_params": {
+    "number_of_weak_encounters": 3,
+    "base_number_of_rooms": 15,
+    "get_map_point_types": [
+     "int restCount = mapRng.NextGaussianInt(7, 1, 6, 7);",
+     "int unknownCount = MapPointTypeCounts.StandardRandomUnknownCount(mapRng);",
+     "return new MapPointTypeCounts(unknownCount, restCount);"
+    ],
+    "get_map_point_types_line": 134
+   },
+   "first_run_order": [
+    {
+     "set": "normalEncounters",
+     "model": "NibbitsWeak",
+     "index": 0
+    },
+    {
+     "set": "normalEncounters",
+     "model": "SlimesWeak",
+     "index": 1
+    },
+    {
+     "set": "normalEncounters",
+     "model": "ShrinkerBeetleWeak",
+     "index": 2
+    },
+    {
+     "set": "normalEncounters",
+     "model": "InkletsNormal",
+     "index": 3
+    },
+    {
+     "set": "normalEncounters",
+     "model": "MawlerNormal",
+     "index": 4
+    },
+    {
+     "set": "normalEncounters",
+     "model": "RubyRaidersNormal",
+     "index": 5
+    },
+    {
+     "set": "normalEncounters",
+     "model": "NibbitsNormal",
+     "index": 6
+    },
+    {
+     "set": "events",
+     "model": "ByrdonisNest",
+     "index": 0
+    },
+    {
+     "set": "events",
+     "model": "SapphireSeed",
+     "index": 1
+    },
+    {
+     "set": "eliteEncounters",
+     "model": "ByrdonisElite",
+     "index": 0
+    },
+    {
+     "set": "eliteEncounters",
+     "model": "PhrogParasiteElite",
+     "index": 1
+    }
+   ],
+   "ancient_unlock_gates": [
+    "NeowEpoch"
+   ],
+   "is_unlocked_raw": "{ return true; }",
+   "mechanics": [
+    "act index 0 (default); 15 base rooms, 3 weak encounters; GenerateAllEncounters split by room kind (weak/normal/elite/boss, Models/ActModel.cs:123-129), AllEvents, AllAncients and BossDiscoveryOrder; RoomSet shuffles them with the run Rng",
+    "ancient: Neow, dropped unless NeowEpoch is revealed",
+    "ApplyActDiscoveryOrderModifications: on the first run ever (UnlockState.NumberOfRuns == 0) fixes the first 7 normal encounters, 2 events and 2 elites (RoomSet.SwapToOrCreateAtIndex)",
+    "GetMapPointTypes(mapRng): rest sites NextGaussianInt(7, 1, 6, 7), unknown rooms StandardRandomUnknownCount(mapRng)"
+   ],
+   "hooks": [
+    {
+     "member": "GetMapPointTypes",
+     "cite": "Models.Acts/Overgrowth.cs:134"
+    },
+    {
+     "member": "GetUnlockedAncients",
+     "cite": "Models.Acts/Overgrowth.cs:100"
+    },
+    {
+     "member": "ApplyActDiscoveryOrderModifications",
+     "cite": "Models.Acts/Overgrowth.cs:110"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:acts_room_sets",
+    "run:map_generation",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "events": [
+      "NEOW"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "map Rng: rest-site Gaussian draw, then the unknown-room count"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Acts/Overgrowth.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "the first-run order only matters for a profile with zero runs",
+   "open_questions": []
+  },
+  {
+   "id": "UNDERDOCKS",
+   "model_id": "ACT.UNDERDOCKS",
+   "class": "Underdocks",
+   "file": "Models.Acts/Underdocks.cs",
+   "class_line": 13,
+   "base_class": "ActModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "index": 0,
+   "is_default": false,
+   "number_of_weak_encounters": 3,
+   "base_number_of_rooms": 15,
+   "encounters_weak": [
+    "CorpseSlugsWeak",
+    "SeapunkWeak",
+    "SludgeSpinnerWeak",
+    "ToadpolesWeak"
+   ],
+   "encounters_normal": [
+    "CorpseSlugsNormal",
+    "CultistsNormal",
+    "FossilStalkerNormal",
+    "GremlinMercNormal",
+    "HauntedShipNormal",
+    "LivingFogNormal",
+    "PunchConstructNormal",
+    "SeapunkNormal",
+    "SewerClamNormal",
+    "TwoTailedRatsNormal"
+   ],
+   "encounters_elite": [
+    "PhantasmalGardenersElite",
+    "SkulkingColonyElite",
+    "TerrorEelElite"
+   ],
+   "encounters_boss": [
+    "LagavulinMatriarchBoss",
+    "SoulFyshBoss",
+    "WaterfallGiantBoss"
+   ],
+   "boss_discovery_order": [
+    "WaterfallGiantBoss",
+    "SoulFyshBoss",
+    "LagavulinMatriarchBoss"
+   ],
+   "ancients": [
+    "Neow"
+   ],
+   "events": [
+    "AbyssalBaths",
+    "DrowningBeacon",
+    "EndlessConveyor",
+    "PunchOff",
+    "SpiralingWhirlpool",
+    "SunkenStatue",
+    "SunkenTreasury",
+    "DoorsOfLightAndDark",
+    "TrashHeap",
+    "WaterloggedScriptorium"
+   ],
+   "map_params": {
+    "number_of_weak_encounters": 3,
+    "base_number_of_rooms": 15,
+    "get_map_point_types": [
+     "int restCount = mapRng.NextGaussianInt(7, 1, 6, 7);",
+     "int unknownCount = MapPointTypeCounts.StandardRandomUnknownCount(mapRng);",
+     "return new MapPointTypeCounts(unknownCount, restCount);"
+    ],
+    "get_map_point_types_line": 112
+   },
+   "first_run_order": [],
+   "ancient_unlock_gates": [
+    "NeowEpoch"
+   ],
+   "is_unlocked_raw": "{ return unlockState.IsEpochRevealed<UnderdocksEpoch>(); }",
+   "mechanics": [
+    "act index 0 (alternative to Overgrowth, IsDefault false); IsUnlocked needs UnderdocksEpoch; 15 base rooms, 3 weak encounters; GenerateAllEncounters split by room kind (weak/normal/elite/boss, Models/ActModel.cs:123-129), AllEvents, AllAncients and BossDiscoveryOrder; RoomSet shuffles them with the run Rng",
+    "ancient: Neow, dropped unless NeowEpoch is revealed",
+    "GetMapPointTypes(mapRng): rest sites NextGaussianInt(7, 1, 6, 7), unknown rooms StandardRandomUnknownCount(mapRng)"
+   ],
+   "hooks": [
+    {
+     "member": "GetMapPointTypes",
+     "cite": "Models.Acts/Underdocks.cs:112"
+    },
+    {
+     "member": "GetUnlockedAncients",
+     "cite": "Models.Acts/Underdocks.cs:93"
+    },
+    {
+     "member": "IsUnlocked",
+     "cite": "Models.Acts/Underdocks.cs:107"
+    }
+   ],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:acts_room_sets",
+    "run:map_generation",
+    "run:unlock_profile"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "events": [
+      "NEOW"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [
+    "map Rng: rest-site Gaussian draw, then the unknown-room count"
+   ],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Acts/Underdocks.cs"
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "which of Overgrowth/Underdocks a run uses is chosen at run creation (run layer)",
+   "open_questions": []
+  }
+ ]
+}

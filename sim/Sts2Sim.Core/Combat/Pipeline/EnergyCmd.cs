@@ -87,7 +87,9 @@ public static class EnergyCmd
         }
         if (amount > 0)
         {
-            LoseEnergyInternal(cs.Player, Math.Max(0, amount));
+            var owner = CombatStatus.CardOwner(cs, card);
+            cs.History.AppendEnergySpent(cs, amount, owner);
+            LoseEnergyInternal(owner, Math.Max(0, amount));
         }
         Hook.AfterEnergySpent(cs, card, amount);
     }

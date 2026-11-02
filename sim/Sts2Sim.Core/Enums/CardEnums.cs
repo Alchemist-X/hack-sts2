@@ -92,3 +92,35 @@ public enum CardPilePosition
     Top,
     Random
 }
+
+public enum AutoPlayType
+{
+    None,
+    Default,
+    SlyDiscard
+}
+
+public enum OrbEvokeType
+{
+    None,
+    Front,
+    All
+}
+
+public enum CardMultiplayerConstraint
+{
+    None,
+    MultiplayerOnly,
+    SingleplayerOnly
+}
+
+[Flags]
+public enum KeywordSources
+{
+    None = 0,
+    Local = 2,
+    Global = 4,
+    All = -1
+}
+
+public readonly record struct ResourceInfo(int EnergySpent, int EnergyValue, int StarsSpent, int StarValue);

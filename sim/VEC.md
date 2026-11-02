@@ -1,0 +1,738 @@
+# Sts2Sim.Vec — batched training interface
+
+> Policy authors: read `sim/ENV_SPEC.md` first (one page, generated column tables, metric, `sts2vec eval`). This page
+> documents the implementation.
+
+Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 integrate"). Shapes, names, buffer
+order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
+(`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
+`CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `fc2eb34c07bc8513`, 26,726
+bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; integration figures
+below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
+
+## Build and load
+
+```bash
+dotnet build sim/Sts2Sim.sln -c Release          # → sim/Sts2Sim.Vec/bin/Release/net9.0/Sts2Sim.Vec.dll
+uv run --project sim/tools/vec pytest -q
+uv run --project sim/tools/vec sts2vec check
+uv run --project sim/tools/vec sts2vec bench --envs 1024 --threads 8 --steps 500
+scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so (STS2VEC_AOT_LIB)
+```
+
+(`pytest -q` from the repo root is scoped to `sim/tools/vec` by the package's pytest plugin; see Python API.)
+
+- `Sts2Sim.Vec` is a `net9.0` class library referencing only `Sts2Sim.Core` (`EnableDynamicLoading`,
+  `ServerGarbageCollection`, `ConcurrentGarbageCollection=false`, `TieredPGO`, `InvariantGlobalization`).
+- Python hosts the CLR in-process through hostfxr with the shipped `sts2vec.runtimeconfig.json`
+  (`System.GC.Server = true`; the generated `Sts2Sim.Vec.runtimeconfig.json` has the same settings and is the fallback),
+  resolves every export with `load_assembly_and_get_function_pointer(…, UNMANAGEDCALLERSONLY_METHOD)` and calls it with
+  ctypes (`CFUNCTYPE` releases the GIL). Type `Sts2Sim.Vec.Exports, Sts2Sim.Vec`; managed method = PascalCase of the
+  export name without `sts2vec_` (`sts2vec_pool_add_fresh` → `PoolAddFresh`).
+- Discovery: `STS2VEC_DLL` (file or directory) else the Release build dir; libhostfxr from `DOTNET_ROOT`,
+  `/opt/homebrew/opt/dotnet@9/libexec`, standard roots, then `dotnet --list-runtimes`. A `.dylib`/`.so` path loads a
+  NativeAOT build with the same exports via `ctypes.CDLL`.
+- `sts2vec_create` fails with a "Server GC is off" error when `GCSettings.IsServerGC` is false (Workstation GC caps
+  batched stepping ~4.8× lower). Escape hatch for debugging only: `STS2VEC_ALLOW_WORKSTATION_GC=1`
+  (C# tests set `Exports.RequireServerGC = false`).
+- One CLR per process: the first load is cached.
+
+## Environment model (§D2)
+
+- Slot `i`: `RunSim? Sim`, `episode_id`, `step_index`, `start_entry`, `slot_seed = XXH64(UTF-8(seed_text) ‖ int32 LE i)`.
+- `episode_id = episodes_started_before_on_slot × N + i + 1` (unique per env, increasing per slot, independent of
+  thread scheduling).
+- Start sequence: `entry = (slot_seed + episodes_started_before) mod pool_count` (pool in insertion order).
+- `reset(mask, start_ids)`: masked slots restart (explicit entry, or the sequence when `< 0`); their observation and
+  signals (reward 0, terminated 0, truncated 0, status `RESET`, episode) are written; other slots are untouched.
+  A start id `>= pool_count` fails the whole call (-1) before anything changes. NULL mask = all slots; NULL start_ids =
+  all from the sequence.
+- `step(actions)`: `a < 0` → `NOOP`; `a ∉ [0, cand_n)` (or no run / finished) → `ILLEGAL_ACTION`, slot unchanged;
+  else `RunSim.StepFast(LegalActions()[a])` (`RunSim.Step` with `fast_path: false`; see "Fast path"). Terminal → `terminated`, reward 1 iff Victory; `step_index >= step_cap` →
+  `truncated`; NotImplemented/NotSupported → `CONTENT_GAP`, other exceptions → `SIM_ERROR` (episode ends with
+  `truncated = 1`, reward 0, run discarded, text in `sts2vec_last_error(h, slot)`). An encoder exception on a live
+  state ends the episode the same way. Then every slot's observation, candidates and signals are written.
+- Auto-reset (default): a finished episode writes `last_episode`, then the slot restarts from its sequence in the same
+  call (`RESET` bit, new `episode_id`, the new episode's first observation). A slot whose start failed retries the
+  next sequence entry on the following step. With `auto_reset = false` the slot stays terminal (`cand_n = 0`).
+- Pool: fresh entries create their template with `RunSim.NewRun` on first use and cache it (up to `pool_cache`
+  templates); `sts2vec_pool_warm` (`env.pool.warm()`) creates them ahead of time, in id order, on the env's worker
+  threads (the same templates, so no start changes). Resets `Clone()` the template under a per-entry lock. Save
+  entries use `RunImporter.FromSave` (checked) with the env's content filter. Snapshots hold `Clone()` of a slot
+  (hash-faithful: a clone steps exactly like its source). `config.pool.fresh` with `count = K` adds K
+  entries: character `characters[i % len]`, seed `"<seed_prefix>-<character>-<i>"` (interleaved, so any prefix of the
+  pool covers every character). Beyond `pool_cache` templates a fresh entry runs `NewRun` on every start (≈ 16 ms).
+- Save entries whose import stops at a prompt (a choice during the load) are re-imported from the parsed save on every
+  start instead of cloned, because `RunSim.Clone` shares the pending load room (`Pending.Load`) between clones. The
+  fixture save and every save point verified so far import without a pending prompt, so they clone normally.
+- Threads: `Parallel.For(0, N, MaxDegreeOfParallelism = threads)`; a slot is touched by one worker per call; the pool's
+  entry list is lock-protected and each entry's template creation + `Clone()` runs under its own lock. Verified: 256
+  envs × 300 steps on 1 vs 8 threads and two instances give byte-identical buffers after every step and equal
+  `StateHash` per slot; 1,024 envs × 200 steps on 1 vs 12 threads likewise.
+- Per-slot scratch: `VecSlot.Legal` (`List<RunAction>`, capacity 64) is refilled by `RunSim.LegalActions(list)` after
+  every change and is the action table `step` indexes; no per-step allocation in VecEnv beyond the sim's own.
+- Test hook: `VecEnv.FaultInjector = (slot, action) => Exception?` throws the returned exception in place of
+  `RunSim.Step` (classification and auto-reset apply). Null in production. `VecEnv.ForceFastPath = (slot, action) =>
+  bool` forces the clone-free step without the predicate (exercises the fail-closed path). Null in production.
+
+### Fast path (clone-free stepping, `config.fast_path`, default true)
+
+`RunSim.Step(a)` deep-clones the run before every action so that a choice prompt can be replayed from that basis with
+the answer tape. Most actions cannot prompt, so `RunSim.StepFast(a)` asks `RunSim.MayPrompt(a)` first and, when it is
+false, runs `Step(a, FastPathAnswerer.Instance)` without the clone. Outputs are byte-identical to `fast_path: false`.
+
+- **Table** (`sim/Sts2Sim.Core/Choice/PromptSites.g.cs`, generated by `python3 sim/tools/inventory/gen_prompt_sites.py`;
+  `--check` fails when stale, `--list` prints every site): scans every model def in Core for calls that can reach
+  `ChoiceRuntime.Ask` (`CardSelectCmd.From*`, `RelicDeckPromptsR91.From*`, `RoomPrompts.From*`, `EventKit3456` prompts,
+  `Choice.Ask`, `new ChoicePrompt`), for kernel entry points that can (relic obtain, merchant purchase, reward claim,
+  rest/event options, room and act transitions), for auto-play (`CardCmd.AutoPlay`, `AutoPlayFromDrawPile`) and for
+  Sly grants (a discarded Sly card is auto-played by the kernel). A closure adds models that reference a hazardous
+  power, monster, relic, enchantment, affliction, orb or modifier (by class name, id literal or id const), at the member
+  holding the reference (e.g. `TOOLS_OF_THE_TRADE` applies `TOOLS_OF_THE_TRADE_POWER` in OnPlay). Each model gets a
+  trigger class: card on play / anywhere, potion on use, relic on obtain / while owned, power, monster, enchantment,
+  affliction, orb, modifier (anywhere), event. Any hazard call outside a model def must be a reviewed kernel file
+  (`KERNEL_FILES`), and every decompile prompt record in `sim/specs/inventory/*.classified.json` whose opener is ported
+  must be in the table, else generation fails. Today: 153 hazardous models of 1,371 (60 cards, 33 relics, 10 potions,
+  10 powers, 2 monsters, 1 enchantment, 37 events) + 4 room sources (SMITH, COOK, MERCHANT_CARD_REMOVAL,
+  COMBAT_REWARD_CARD_REMOVAL); 185 inventory records cross-checked.
+- **Predicate** (`sim/Sts2Sim.Core/Run/Loop/RunSim.FastPath.cs`; `FastPathBlocker(a)` returns the reason): may prompt
+  when a prompt is pending; out of combat, when an event room is on the room stack; when any "anywhere" hazard is alive
+  (a run modifier, an owned relic/potion, a card in the deck or a combat pile or its enchantment/affliction, a power on
+  any creature, a monster, an orb); in combat when the played card or the used potion is hazardous, or a hazardous card
+  is Sly this turn; out of combat for travel to anything but a shop/rest site/treasure, claiming any reward but gold, a
+  potion or opening a card reward, a reward alternative, closing a terminal rewards screen after a boss or with a
+  continuation relic, buying, choosing a rest option, taking a treasure relic, using a hazardous potion. A combat step
+  never moves the room stack (a combat room's victory always pushes a rewards set), so events and act transitions are
+  handled on the out-of-combat steps.
+- **Fail-closed**: a prompt on the clone-free path reaches `FastPathAnswerer`, which throws `FastPathPromptException`
+  (an `InvalidOperationException` naming the action, site and source); the run is poisoned (`IsPoisoned`; `Step` and
+  `Clone` throw) and Vec ends the episode as `SIM_ERROR` with the message in the slot's last error. Nothing is ever
+  answered on that path. `VecSlot.FastSteps` / `SlowSteps` and `VecEnv.FastSteps` / `SlowSteps` count the two paths.
+- **Tests**: `ChoiceFastPathTests` (2,000-run soak, 5 characters x A0/A10 x uniform / play-biased / 999-HP play-biased:
+  every prompt's `SourceId` is in `PromptSites.PromptSourceIds` and no prompt follows `MayPrompt == false`; 20,000+
+  sampled clone-free steps give the same `StateHash` as the tape engine on a clone; a forced clone-free SURVIVOR play
+  throws and poisons), `VecTests.Test_Vec_FastPathMatchesCloningPath` (on/off byte-identical buffers and hashes, A0 and
+  A10), `VecTests.Test_Vec_FastPathPromptIsSimErrorNotSilent`.
+- **Measured** (`sim/BENCH.md` "Vec fast path"): 82–83 % of random-policy Vec steps take the fast path; a RunSim step
+  drops from 13–15 µs to ≈ 7.8 µs single-threaded (1.6–1.9x), but a Vec env-step is ≈ 80 µs of CPU dominated by
+  observation encoding and candidates, so 1024 x 8 gains +7–8 % env-steps/s, −9–10 % CPU per env-step and ≈ 3x fewer
+  gen0/gen1 collections (loaded host; medians of 3).
+- **After porting content**: rerun the generator (the gates' `--check` catches a stale table); a new prompt path the
+  scan cannot see shows up as a soak failure or, in production, as a `FastPathPromptException` SIM_ERROR, never as a
+  wrong answer.
+
+### Candidate table (`cand`, `CandidateTable.Fill`)
+
+Row `r < cand_n` is `RunSim.LegalActions()[r]` (same order); rows `>= cand_n` are zero. `cand_n = min(legal, 192)`;
+more legal actions set `CANDIDATE_OVERFLOW` and only the first 192 are selectable (constructible: a PileSelect over a
+250-card draw pile, or the merchant card removal with a 200-card deck). `CandidateTable.ToAction(row)` inverts a row to
+its `RunAction` (kind, A, B).
+
+Overflow consequences (tested by `VecTests.Test_VecEnv_PromptTableOverflow` and `Test_VecEnv_RemovalPromptOverflow`):
+
+- A step index at or after `cand_n` is `ILLEGAL_ACTION` and leaves the slot unchanged, even when `LegalActions()` lists
+  an action there. On a prompt the picks come first and `PromptConfirm` / `PromptCancel` last, so past the cap the
+  control actions are not selectable (a 200-card DeckRemove cannot be cancelled); a pick still leads to a state whose
+  confirm is listed (after the pick: `[confirm, cancel]`).
+- `prompt_options` holds the first 128 options (`TABLE_OVERFLOW`; `prompt_option_n` keeps the true count). Candidates
+  for options 128 and up stay selectable: their `option_index` points past the table, so read the option's identity
+  from the candidate row's `card_id`. A pick of such an option shows only in `prompt_picked`, not in a `picked` column.
+
+| Column | Value (−1 = does not apply unless stated) |
+| --- | --- |
+| `kind`, `A`, `B` | the `RunAction` fields verbatim (`RunActionKind` value; A/B as in CONTRACTS.md §C1, −1 = none) |
+| `hand_slot` | A for `PlayCard` (index into `hand`) |
+| `target_slot` | B for `PlayCard` / `UsePotion` when B ≥ 0 (index into `enemies`); −1 for self/none (B = −1) and for pets (B ≤ −3 = `Allies[-2 - B]`: read B) |
+| `potion_slot` | A for `UsePotion` / `DiscardPotion` (index into `potions`) |
+| `option_index` | A for `Travel` (rank of the destination among legal points sorted by (col, row)), `ClaimReward`, `PickRewardCard`, `RewardAlternative`, `BuyEntry`, `ChooseRestOption`, `ChooseEventOption`, `PromptSelect` (index into `prompt_options`) |
+| `card_id` | cards vocab id (0 = none) of the played hand card, of the picked card-reward card, or of a prompt option that is a card (not for Bundle prompts; on grid prompts only ids that are not also relic/potion ids) |
+| `target_uid` | `CombatId` of the targeted monster (= `enemies.uid`), 0 = none |
+
+## Bench
+
+```bash
+DOTNET_gcServer=1 dotnet run -c Release --project sim/Sts2Sim.Bench -- vec [envs=1024] [threads=8] [steps=500] [ascension=0] [pool=1024]
+```
+
+In-process through the real exports (`delegate* unmanaged` → `[UnmanagedCallersOnly]`), NativeMemory buffers, seeded
+uniform-random candidate policy, all five characters. Pool templates are warmed before the timed window. Prints
+env-steps/s (slot steps with an action ≥ 0), ms per batch (avg/min/max), resets/s, episode ends, error counts, GC mode
+and collections, bytes per env. `DOTNET_gcServer=1` matches the shipped runtimeconfig (the Bench exe itself defaults to
+Workstation GC, ~3× slower here). Rows go to `sim/BENCH.md` ("Vec (E2)").
+
+Python: `uv run --project sim/tools/vec sts2vec bench --envs N --threads T --steps 500 --pool P [--no-warm] [--json]`
+(the same exports through ctypes; reports the whole loop and the native step alone, which differ by < 1 %). Like the
+C# bench, it warms the pool before the timed window (`--warm`, the default): `env.pool.warm()` (`sts2vec_pool_warm`)
+creates every fresh template (`NewRun`, ≈ 16 ms each, on the env's threads) and the time is printed on its own line
+(`pool warm: 1,024 templates in 2929 ms`; JSON `warm`, `warm_ms`, `warmed_templates`). `--no-warm` measures cold starts:
+each fresh entry then pays its `NewRun` at the first reset that uses it, inside the timed window, which dominates
+small N with a large pool. Measured at E2c (8 threads, load average ≈ 4.5; same episodes either way):
+
+| N | pool | steps | warm (default) | `--no-warm` |
+| --- | --- | --- | --- | --- |
+| 64 | 64 | 200 | 55,168 (warm 613 ms) | 15,859 |
+| 64 | 1024 | 500 | 82,852 (warm 2,929 ms) | 5,664 |
+
+**Short JIT runs are warm-up dominated on small Linux hosts.** On Huginn (x86_64, 8 vCPU on 4 cores) tier-up compilation
+competes with the 8 workers for the cores, and the default tiered JIT needs ≈ 20 s of batches to reach steady state, so
+a 500-step window reads ≈ 45 % low (C# `vec` 1024×8: 28.1k env-steps/s at 500 steps, 50.5k at 3,000). Two ways reach
+full speed from the first batch: `DOTNET_TieredCompilation=0` (full JIT up front: 51.8k at 500 steps; Python pool 64:
+53.2k against 18.9k) or the NativeAOT library (`scripts/vec_publish_aot.sh`, `STS2VEC_AOT_LIB`; Python 1024×8 pool 64:
+61.4k against 21.6k through hostfxr). `TieredCompilation=0` slows a cold large pool (Python pool 1024: 22.6k against
+26.3k) because every method on the first `NewRun` paths is fully optimised on its first call, so warm the pool first.
+For Linux rows use ≥ 3,000 steps, `TieredCompilation=0` or AOT; the shipped runtime configs keep their defaults.
+Details: `docs/linux-validation-2026-11-01.md` §3.3.
+
+Measured at integration (E2, before `--warm` existed: the "Python (pool 1024, cold)" column is today's `--no-warm`;
+load average 3–7, other agents running; numbers vary ±30 % between runs):
+
+| N | threads | C# `vec` (pool 1024, warmed) | Python (pool 1024, cold) | Python (pool 64) |
+| --- | --- | --- | --- | --- |
+| 64 | 1 | 18,551 | 4,389 | 12,118 |
+| 64 | 8 | 89,125 | 5,682 | 20,740 |
+| 1024 | 1 | 27,418 | 23,798 | 29,561 |
+| 1024 | 8 | 116,350 | 73,194 | 54,137 |
+| 4096 | 1 | 41,549 | 39,685 | 39,899 |
+| 4096 | 8 | 144,421 | 162,928 | 86,682 |
+
+## C ABI (§D5, frozen)
+
+```c
+int32_t sts2vec_version(uint8_t* buf, int32_t cap);                       // "sts2vec/<encoder_version>"; returns needed length
+int32_t sts2vec_schema(uint8_t* buf, int32_t cap);                        // schema JSON; returns needed length (call with cap 0 first)
+int64_t sts2vec_create(const uint8_t* config_json, int32_t len);          // > 0 handle, or -1 (sts2vec_last_error(0, -1, …))
+int32_t sts2vec_destroy(int64_t h);
+int32_t sts2vec_set_threads(int64_t h, int32_t threads);
+int32_t sts2vec_pool_add_fresh(int64_t h, const uint8_t* json, int32_t len);   // {"character","ascension","seed","act1","content"} → entry id or -1
+int32_t sts2vec_pool_add_save(int64_t h, const uint8_t* path_utf8, int32_t len); // entry id or -1 (reasons in last_error)
+int32_t sts2vec_pool_count(int64_t h);
+int32_t sts2vec_snapshot(int64_t h, int32_t slot);                        // entry id or -1
+int32_t sts2vec_restore(int64_t h, int32_t slot, int32_t entry, void** buffers);
+int32_t sts2vec_reset(int64_t h, const uint8_t* mask, const int32_t* start_ids, void** buffers);
+int32_t sts2vec_step(int64_t h, const int32_t* actions, void** buffers);
+int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t* out);   // test/debug only
+int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
+// additive (E2c), appended after the frozen set:
+int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // fresh templates created now → count, or -1
+// additive (determinized clones), appended:
+int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // pool entry id of a determinized clone, or -1
+```
+
+- `sts2vec_clone_determinized`: appends a pool entry holding `RunSim.CloneDeterminized(seed)` of the slot's current
+  state (prompts included) and returns its id; `sts2vec_restore(h, other_slot, entry, buffers)` starts a slot from it.
+  The restored slot's observation equals the source slot's byte for byte; its hidden state is resampled (see
+  "Determinized clones" below). An empty slot is an error. Python: `env.clone_determinized(slot, seed)`.
+
+- `sts2vec_pool_warm`: creates the templates of up to `max_entries` fresh entries without one (`< 0`: all), in id
+  order, while the template cache (`pool_cache`) has room, on the env's threads; returns the number created by this
+  call (0 when all are warm or the cache is full). A template is the `NewRun` the entry's first start would create, so
+  warming changes no start (`VecTests.Test_VecPool_WarmCreatesTemplatesAhead`: warm and cold envs give byte-identical
+  buffers and hashes). Save and snapshot entries hold their template already. The Python loader treats exports added
+  after the freeze as optional: a library built before them still loads, and `env.pool.warm()` then raises
+  `Sts2VecError` ("rebuild").
+- String outputs write `min(cap, len)` bytes and return the full UTF-8 length.
+- Return 0 ok / −1 error. Every failing export stores `"<ExceptionType>: <message>"` globally (`h = 0`) and, when the
+  handle is valid, on the env (`slot = -1`). Per-slot problems go to `status` and the slot's last error (full
+  exception text). No exception crosses the ABI. Each env serialises its own calls with a lock.
+- Validation: an invalid handle, a slot outside `0..N-1` (`last_error` also accepts −1), a pool entry outside
+  `0..count-1`, a null or incomplete buffer table, a null actions pointer, `n < 0` or null pointers with `n > 0` in
+  `state_hash`, a start id `>= pool_count` (masked-in slots only), malformed or unknown-key JSON, an unknown character,
+  ascension outside 0..10 → −1 with the text, the env unchanged and usable.
+- `sts2vec_state_hash` writes 0 for a slot with no run; `sts2vec_snapshot` of an empty slot is an error.
+- `config_json`: `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC",
+  "content": "ported_only" | "all", "pool": {"fresh": {"characters": [...], "ascension": 0, "count": 4096,
+  "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096, "fast_path": true}`; `num_envs` required, unknown keys
+  rejected. `fast_path` (default true): clone-free stepping behind the static prompt-site predicate (section "Fast path").
+
+## Schema (§D3; published by `sts2vec_schema`)
+
+- Ids: index into the schema's vocabulary (`0` none/padding, `1` unknown, real ids from 2, sorted ordinal). Cards =
+  registry ids ∪ `CardCatalog` ids (unported ids stable); events also list the two stub events (CRYSTAL_SPHERE,
+  FAKE_MERCHANT). `card_vars` follows the same convention (2 + 131 names).
+- Enum columns hold the CLR enum value; the `vocab.enums` lists are indexed by value (RunPhase, RunActionKind,
+  IntentType, MapPointType, RewardType, ChoicePromptKind, CardType, TargetType, CardRarity, PileType, CardKeyword,
+  RelicStatus, EndKind). String-keyed enums (RestOption, CardRewardAlt, ShopCategory, PromptItemKind) use the vocabulary
+  convention (`""` 0, `"?"` 1). Rows beyond a table's count are zero; mask by the matching `*_n` (or id ≠ 0).
+- `playable_reason_id` holds the raw `UnplayableReason` bitmask; `playable_reason_bits` maps names to bits.
+- Count vectors: index `card_id * 2 + min(upgrade, 1)`, length `2 × V_cards`.
+- `encoder_version` = XXH64 (seed 0, lower-case hex) of the UTF-8 JSON text with the leading
+  `"encoder_version":"…",` member removed (Python: `Schema.verify_version()`).
+
+| # | Buffer | dtype | shape | Fields / content |
+| --- | --- | --- | --- | --- |
+| 0 | `global_i` | int32 | [58] | phase, character, ascension, act_index, act_id, total_floor, act_floor, map_row, map_col, hp, max_hp, gold, energy, max_energy, stars, block, turn, round, potion_slots, deck_n, draw_n, discard_n, exhaust_n, orb_slots, relic_n, hand_n, enemy_n, ally_n, boss_id, second_boss_id, card_removals_used, removal_price, incoming_damage, incoming_hits, prompt_kind, prompt_min, prompt_max, prompt_picked, prompt_needs_confirm, prompt_can_cancel, prompt_can_skip, prompt_ordered, prompt_option_n, prompt_pile, prompt_site_hash, reward_n, card_reward_can_skip, card_reward_skip_consumes, treasure_opened, treasure_relic_id, treasure_claimed, event_id, event_finished, event_option_n, rest_option_n, shop_entry_n, decision_kind, is_combat. See the field reference |
+| 1 | `global_f` | float32 | [4] | hp_frac, gold_log1p, floor_frac, incoming_net_hp |
+| 2 | `hand` | int32 | [10, 22] | card_id, upgrade, cost_current (−1 X, −2 unplayable), cost_base, type, target, rarity, keyword_mask (bit = 1 << CardKeyword), enchant_id, enchant_amount, affliction_id, playable, playable_reason_id, hits, var_id_0..3, var_val_0..3 |
+| 3 | `hand_f` | float32 | [10, 2] | block_eff, damage_eff_self_or_all |
+| 4 | `hand_dmg` | float32 | [10, 6] | vs_enemy_0..5 |
+| 5 | `deck` | int32 | [96, 5] | card_id, upgrade, enchant_id, enchant_amount, affliction_id |
+| 6–8 | `draw_counts`, `discard_counts`, `exhaust_counts` | int16 | [V_cards × 2] | multiset counts |
+| 9 | `relics` | int32 | [32, 5] | relic_id, counter, status, used_up, stack |
+| 10 | `potions` | int32 | [10, 3] | potion_id, usable_now, target_type |
+| 11 | `powers_player` | int32 | [24, 3] | power_id, amount, is_debuff |
+| 12 | `orbs` | int32 | [10, 3] | orb_id, passive, evoke |
+| 13 | `enemies` | int32 | [6, 9] | present, uid, monster_id, hp, max_hp, block, flank, behind, intent_n |
+| 14 | `enemy_intents` | int32 | [6, 3, 4] | type, damage, times, card_count |
+| 15 | `enemy_powers` | int32 | [6, 12, 2] | power_id, amount |
+| 16 | `allies` | int32 | [2, 5] | present, monster_id, hp, max_hp, block |
+| 17 | `ally_powers` | int32 | [2, 8, 2] | power_id, amount |
+| 18 | `map_nodes` | int32 | [18, 7, 6] | point_type, visited, current, legal_next, child_mask, quest |
+| 19 | `rewards` | int32 | [8, 4] | reward_type, amount, item_id, is_card_reward |
+| 20 | `card_reward` | int32 | [4, 22] | hand columns (playable, playable_reason_id, hits = 0) |
+| 21 | `card_reward_alts` | int32 | [2] | alt_id (CardRewardAlt) |
+| 22 | `shop` | int32 | [14, 7] | category, item_id, upgrade, price, stocked, on_sale, affordable |
+| 23 | `rest` | int32 | [9, 2] | option_id, enabled |
+| 24 | `event_options` | int32 | [8, 6] | key_hash, ordinal, enabled, locked, proceed, relic_id |
+| 25 | `prompt_options` | int32 | [128, 5] | item_id, upgrade, picked, kind_of_item (PromptItemKind), ordinal |
+| 26 | `cand` | int32 | [192, 9] | kind, A, B, hand_slot, target_slot, potion_slot, option_index, card_id, target_uid (see "Candidate table") |
+| 27 | `cand_n` | int32 | [] | candidates = min(len(LegalActions()), 192); 0 when terminal, finished or empty |
+| 28 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
+| 29 | `terminated` | uint8 | [] | episode ended at Victory/Defeat |
+| 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
+| 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128 |
+| 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
+| 33 | `aux` | float32 | [14] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms |
+| 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
+
+35 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20). ≈ 26.7 KB per env.
+
+## Field reference (observation encoder, `ObservationEncoder*.cs`)
+
+The encoder reads the run through public Core API only. It is pure: it writes no state, draws no RNG, and leaves the
+state hash unchanged (`Test_VecEncoder_IsPure` checks 1,000 sampled states, and also checks that encoding twice gives
+identical bytes). Apart from what Core calls allocate, it does not allocate: it uses per-thread scratch and no LINQ.
+Measured over 1,000 states it averages ≈ 36 µs and ≈ 440 B per call, and the bytes come from Core hooks. Each call
+clears every observation buffer first. A table that exceeds its capacity keeps its first CAP rows, sets
+`TABLE_OVERFLOW`, and still reports the true count in its `*_n` column. Fractional numbers are truncated to the
+integer the game UI shows.
+
+### Player-view rules (CONTRACTS.md §D3.3, hidden-information list H1–H15)
+
+| # | Rule | How the encoder applies it |
+| --- | --- | --- |
+| H1 | The draw pile order is hidden. | Draw, discard and exhaust piles are encoded only as count vectors. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. |
+| H2 | No seed, RNG stream or counter. | Nothing under `Rng`, `SeedText` or `Odds` is read. |
+| H3 | No future rooms. | Only the current act's `Boss` and `SecondBoss` appear (`boss_id`, `second_boss_id`); the game shows both on the map and the top bar. The map is the current act's map only. |
+| H4/H5 | No odds and no grab bags. | Neither is read. |
+| H6 | The treasure relic is hidden until the chest opens. | `treasure_relic_id` is 0 until `ChestOpened`. |
+| H7 | Card-reward cards are hidden on the rewards screen. | A card reward appears in `rewards` only as `is_card_reward = 1`. `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase. |
+| H8 | No move ids. | Intents come from `NextMove.Intents` through `PlayerView.Intent` (type, damage, times, card_count). The move's identity and the AI state are never read; `Test_VecEncoder_NoMoveIds` greps the encoder source and checks the rows. |
+| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra`, event fields and event RNG are not read. An event option is identified by `key_hash` and `ordinal` only. |
+| H10 | Powers are shown as the UI shows them. | Visibility uses `PlayerView.IsVisibleToPlayer` and amounts use `PlayerView.DisplayAmountToPlayer` (see below). |
+| H13 | No instance ids. | The only exception is the enemy `uid` (= `CombatId`, stable for the whole combat; the play server uses it as well). Prompt options are identified by (item_id, upgrade, ordinal). |
+| H12/H14/H15 | No profile, history or visited-event set. | None of these is read. |
+
+`PlayerView` (`sim/Sts2Sim.Core/Combat/Pipeline/PlayerView.cs`, decision D9) holds the helpers that were moved from
+`SimProjector`, with their semantics unchanged:
+
+- `IsVisible` and `DisplayAmount` are strict. They throw `PlayerViewGapException` for AMBERGRIS and for the
+  display-amount overrides that have no rule; the diff gate relies on this.
+- `Intent`, `CostOf`, `CanPlay` and `HitCount` are shared by the diff projection, the play server and the encoder.
+- `IsVisibleToPlayer` and `DisplayAmountToPlayer` never throw, and only the encoder uses them. AMBERGRIS is hidden, as
+  the game sets `IsVisibleInternal => false`. AUTOMATION, FERAL, MONOLOGUE, ORBIT, PALE_BLUE_DOT, PANACHE, SLOTH and
+  WITHERING_PRESENCE apply the game's DisplayAmount from the Core port's state; the decompile citations are inline in
+  the code. CACOPHONY and TAG_TEAM are not ported and fall back to `Amount`.
+
+### Columns
+
+Combat-only fields are 0 unless `RunState.Combat.IsInProgress`. Room tables are written from the loop phase
+(`RunSim.Loop.Phase`), so a pending prompt keeps its screen as context. For example, a merchant card-removal prompt
+still shows the shop.
+
+**global_i**
+
+| Column | Meaning |
+| --- | --- |
+| `phase` | `RunSim.Phase` (RunPhase). |
+| `decision_kind` | `Prompt` while `HasPendingChoice`, else `phase`. |
+| `is_combat` | 1 while a combat is in progress. |
+| `character` | Vocab id of the character. |
+| `ascension` | Ascension level. |
+| `act_index` | Act index, 0–2. |
+| `act_id` | Act vocab id. |
+| `total_floor` | `MapPointHistory.Count`. |
+| `act_floor` | Floor within the act. |
+| `map_row`, `map_col` | The current map coordinate; −1 before the first move. |
+| `hp`, `max_hp`, `gold`, `stars` | Read from the shared `PlayerState`. |
+| `energy` | Combat only. |
+| `max_energy` | `EnergyCmd.GetMaxEnergy` in combat, else `BaseMaxEnergy`. |
+| `block`, `turn`, `round` | Combat only (`PlayerState.TurnNumber`, `CombatState.RoundNumber`). |
+| `potion_slots` | Number of potion slots. |
+| `deck_n`, `relic_n` | Counts of the deck and the relics. |
+| `draw_n`, `discard_n`, `exhaust_n`, `hand_n` | Combat only. |
+| `orb_slots` | `OrbQueue.Capacity` in combat, else `BaseOrbSlotCount`. |
+| `enemy_n` | Number of live enemies. |
+| `ally_n` | Number of live pets. |
+| `boss_id`, `second_boss_id` | Encounter vocab ids of the current act's bosses. |
+| `card_removals_used` | Card removals bought so far. |
+| `removal_price` | Next removal price: base 75 / 100 at A6, plus 25 / 50 per removal used. In a shop it is the removal entry's `GetCost` (relic modifiers included), or −1 once sold. |
+| `incoming_damage`, `incoming_hits` | Sums over live enemies and their attack intents of damage × times, and of times. This is the play server's `danger`. |
+| `prompt_kind` | ChoicePromptKind. HandSelect = 0, so mask by `decision_kind`. |
+| `prompt_min`, `prompt_max` | Selection bounds. |
+| `prompt_picked` | Number of picks so far. |
+| `prompt_needs_confirm`, `prompt_can_cancel`, `prompt_can_skip`, `prompt_ordered` | Prompt flags. |
+| `prompt_option_n` | Number of options (the true count). |
+| `prompt_pile` | PileType; 0 when there is none. |
+| `prompt_site_hash` | Low 32 bits of XXH64(UTF-8 `SiteId`) (`ObservationEncoder.HashText`). |
+| `reward_n` | Number of unclaimed rewards. |
+| `card_reward_can_skip` | 1 when a `Skip` alternative exists (CardReward phase). |
+| `card_reward_skip_consumes` | 1 when skipping completes the reward. |
+| `treasure_opened` | 1 once the chest is open. |
+| `treasure_relic_id` | Relic vocab id, only once the chest is open (H6). |
+| `treasure_claimed` | 1 = taken, 2 = skipped. |
+| `event_id` | Event vocab id. |
+| `event_finished` | 1 when the event is finished. |
+| `event_option_n` | Number of options while the event is not finished, else 0. |
+| `rest_option_n` | `RestSiteRoom.Options.Count`. |
+| `shop_entry_n` | `MerchantInventory.AllEntries.Count`. |
+
+**global_f**
+
+| Column | Meaning |
+| --- | --- |
+| `hp_frac` | hp / max_hp. |
+| `gold_log1p` | ln(1 + gold). |
+| `floor_frac` | total_floor / 48, or / 49 at A10 (double boss). |
+| `incoming_net_hp` | hp − max(0, incoming_damage − block). |
+
+**hand / card_reward** (row i = `Hand[i]` / `CardReward.Cards[i]`)
+
+| Column | Meaning |
+| --- | --- |
+| `card_id`, `upgrade` | `UpgradeLevel`. |
+| `cost_current` | −1 for X cost; −2 when the cost is unplayable (`Base < 0`); otherwise `PlayerView.CostOf` (combat modifiers) in combat and `GetAmountToSpend()` out of combat. |
+| `cost_base` | `EnergyCost.Base`, with the same sentinels. |
+| `type`, `target`, `rarity` | Per-instance enum values. |
+| `keyword_mask` | `GetKeywordMaskWithSources(cs, All)`; bit = 1 << CardKeyword. |
+| `enchant_id`, `enchant_amount` | The card's enchantment. |
+| `affliction_id` | The card's affliction. |
+| `playable` | Hand only: `CanPlay` with reason None. |
+| `playable_reason_id` | Hand only: the raw UnplayableReason bitmask. |
+| `hits` | Hand only, for cards with a damage var: `PlayerView.HitCount` (Repeat var, else the def's `HitCount` constant, else 1; X cost 0). |
+| `var_id_k`, `var_val_k` | The first 4 dynamic vars in the card's declaration order (`card_vars` vocabulary), with their base `IntValue`. |
+
+**hand_f**
+
+| Column | Meaning |
+| --- | --- |
+| `block_eff` | `CardPreview.Block(cs, card, null)`. |
+| `damage_eff_self_or_all` | For cards with a damage var whose target is not AnyEnemy, the untargeted `CardPreview.Damage(cs, card, null)`. |
+
+**hand_dmg**
+
+| Column | Meaning |
+| --- | --- |
+| `vs_enemy_j` | `CardPreview.Damage(cs, card, Monsters[j])` for a live enemy in slot j and a card with a damage var; 0 otherwise. This equals the play server's `effective.damage[uid]`. |
+
+**deck** (row = pickup order; `deck_n` holds the true count)
+
+| Column | Meaning |
+| --- | --- |
+| `card_id`, `upgrade` | Card identity. |
+| `enchant_id`, `enchant_amount` | The card's enchantment. |
+| `affliction_id` | The card's affliction. |
+
+**draw_counts / discard_counts / exhaust_counts**
+
+Each is the count of the pile's cards at index `card_id * 2 + min(upgrade, 1)`, saturating at 32,767. These vectors
+are combat only.
+
+**relics** (pickup order)
+
+| Column | Meaning |
+| --- | --- |
+| `relic_id` | Relic vocab id. |
+| `counter` | `DisplayAmount` when `ShowCounter`, else −1. |
+| `status` | RelicStatus. |
+| `used_up` | `IsUsedUp`. |
+| `stack` | `StackCount`. |
+
+**potions** (row = slot; an empty slot is a zero row)
+
+| Column | Meaning |
+| --- | --- |
+| `potion_id` | Potion vocab id. |
+| `usable_now` | 1 exactly when a UsePotion action exists for the slot now: the combat rule of `LegalActionGenerator.FillPotions` at a combat decision point, or `CanUsePotionOutOfCombat` outside combat (Victory/Defeat excluded); 0 while a prompt is pending. |
+| `target_type` | TargetType. |
+
+**powers_player** (visible powers only, in list order)
+
+| Column | Meaning |
+| --- | --- |
+| `power_id` | Power vocab id. |
+| `amount` | `DisplayAmountToPlayer`. |
+| `is_debuff` | `TypeForCurrentAmount == Debuff`. |
+
+**orbs** (queue order)
+
+| Column | Meaning |
+| --- | --- |
+| `orb_id` | Orb vocab id. |
+| `passive` | `PassiveVal(cs)`. |
+| `evoke` | `EvokeVal(cs)`. |
+
+**enemies** (row j = `CombatState.Monsters[j]`, the PlayCard and UsePotion target index; a dead or non-enemy slot is a zero row)
+
+| Column | Meaning |
+| --- | --- |
+| `present` | 1 for a live enemy. |
+| `uid` | `CombatId`. |
+| `monster_id` | Monster vocab id. |
+| `hp`, `max_hp`, `block` | Current values. |
+| `flank` | 1 with BACK_ATTACK_LEFT, 2 with BACK_ATTACK_RIGHT. |
+| `behind` | 1 when this enemy's attacks hit the SURROUNDED player's back now. |
+| `intent_n` | Number of intent rows written. |
+
+**enemy_intents** [j][k] (the next move's intents k < 3)
+
+| Column | Meaning |
+| --- | --- |
+| `type` | IntentType. Attack = 0, so mask by `intent_n`. |
+| `damage` | Per-hit damage after modifiers (`AttackIntent.GetSingleDamage`). |
+| `times` | Hit count (`GetRepeats`). |
+| `card_count` | `StatusIntent.CardCount`. |
+
+**enemy_powers** [j][k] and **ally_powers** [a][k]
+
+| Column | Meaning |
+| --- | --- |
+| `power_id` | Power vocab id; visible powers only. |
+| `amount` | `DisplayAmountToPlayer`. |
+
+**allies** (row a−1 = `CombatState.Allies[a]`, the live pets; the UsePotion ally target is −2 − a)
+
+| Column | Meaning |
+| --- | --- |
+| `present` | 1 for a live pet. |
+| `monster_id` | Monster vocab id. |
+| `hp`, `max_hp`, `block` | Current values. |
+
+**map_nodes** [row][col] (the current act: grid points, start, boss, second boss)
+
+| Column | Meaning |
+| --- | --- |
+| `point_type` | MapPointType; 0 means no node. |
+| `visited` | The node is in `VisitedMapCoords`. |
+| `current` | The node is `CurrentMapCoord`. |
+| `legal_next` | `MapTravel.GetLegalMapPoints`; Map phase only and not at a prompt. Travel A is the rank of the point by (col, row). |
+| `child_mask` | Bit c = an edge to column c of the next row. |
+| `quest` | Number of quest marks at the node (FUR_COAT, SPOILS_MAP). |
+
+**rewards** (row i = `RewardsSet.Rewards[i]` = ClaimReward A; a claimed reward is a zero row with reward_type None; written in the Rewards and CardReward phases)
+
+| Column | Meaning |
+| --- | --- |
+| `reward_type` | RewardType. |
+| `amount` | Gold amount. |
+| `item_id` | Potion, relic or special-card vocab id (by reward type). |
+| `is_card_reward` | 1 for a card reward (its cards stay hidden, H7). |
+
+**card_reward_alts**
+
+Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative A).
+
+**shop** (row i = `AllEntries[i]` = BuyEntry A)
+
+| Column | Meaning |
+| --- | --- |
+| `category` | ShopCategory: card, colorless_card, relic, potion or card_removal. |
+| `item_id` | Card, relic or potion vocab id; 0 for removal. |
+| `upgrade` | The card's upgrade level. |
+| `price` | `GetCost(rs)`. |
+| `stocked` | 1 while the entry is in stock. |
+| `on_sale` | 1 for the sale card. |
+| `affordable` | stocked and price ≤ gold, which is BuyEntry's own rule. |
+
+**rest** (row i = `Options[i]` = ChooseRestOption A)
+
+| Column | Meaning |
+| --- | --- |
+| `option_id` | RestOption vocab id. |
+| `enabled` | 1 when the option can be chosen. |
+
+**event_options** (row i = `CurrentOptions[i]` = ChooseEventOption A, while not finished)
+
+| Column | Meaning |
+| --- | --- |
+| `key_hash` | Low 32 bits of XXH64(UTF-8 `"<eventId>:<TextKey>"`). |
+| `ordinal` | i. |
+| `enabled`, `locked`, `proceed` | Option flags. |
+| `relic_id` | Relic vocab id of the option's relic. |
+
+**prompt_options** (row i = `Options[i]` = PromptSelect A)
+
+| Column | Meaning |
+| --- | --- |
+| `item_id` | Card, relic or potion vocab id when the option's ModelId is one, else the `HashText` of the ModelId. |
+| `kind_of_item` | PromptItemKind: card, relic, potion, bundle (the Bundle prompt, whose item_id is the hash of the comma-joined card list) or index. |
+| `upgrade` | `UpgradeLevel`. |
+| `picked` | The 1-based position of i in `PendingPicks`; 0 = not picked. |
+| `ordinal` | i. Draw-pile prompts list their options as the game does: sorted by (rarity, id, pile index). |
+
+**aux** (float32, for logging and shaping; never part of the reward)
+
+| Column | Meaning |
+| --- | --- |
+| `total_floor`, `act_index`, `hp`, `max_hp`, `gold`, `deck_n`, `relic_n`, `is_combat` | The same values as in `global_i`. |
+| `bosses_killed`, `combats_won` | Monster, Elite and Boss rooms in the floor history. The current floor's last room is excluded while its combat runs, or after a Defeat when that room is a combat room. |
+| `act_floor`, `map_row`, `map_col` | The same values as in `global_i` (E3: appended for the protocol metric). |
+| `act_rooms` | Rooms in the current act = the act map's last row + 1 (start row 0 through the last boss row, second boss included; a GOLDEN_COMPASS path counts its own rows); 0 without a map. Equals the play server's `map.nodes` max row + 1 and `map_nodes`' last non-empty row + 1. |
+
+Protocol v0.2 progress (`docs/sts2-bench-protocol-v0.2-2026-11-01.md` §4.2) from `aux`: act `a = act_index + 1`, the
+act's start floor `total_floor - act_floor` (act 1: 0; equals the total floor at the act's first observation, checked
+by `VecEncoderTests.Test_VecEncoder_AuxProgressColumns` over 10,229 states / 24 act starts), `L = act_rooms`. With
+auto-reset, score a finished episode from the slot's aux of the previous call plus `last_episode` (win, floor, act):
+`sts2train.progress.ProgressTracker` (`sim/tools/train`) does exactly that and calls `sts2eval.progress.compute`.
+
+**last_episode**
+
+`ObservationEncoder.FillEpisodeSummary(RunSim, Span<int>)` fills floor, act, final_hp, final_max_hp and
+last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv writes win, steps and end_kind.
+
+### Encoder tests (`sim/Sts2Sim.Tests/VecTests.Encoder.cs`, class `VecEncoderTests`)
+
+| Test | What it checks |
+| --- | --- |
+| `IsPure` | 1,000 states from 60 random boosted runs across all characters and A0/A10. Each must keep its hash after encoding, encode to identical bytes twice, and hold no `?` id in any id column. |
+| `LeakTest_DrawOrder` | 600 combat points whose draw pile was reshuffled in a clone. The encoded bytes must be identical. |
+| `ParityWithServer` | 300 states (252 in combat). hp, max_hp, gold, energy, max_energy, block, floor and act must match the play server's `ObservationBuilder` JSON. So must the hand's ids, upgrades, costs, playability and hits, and the enemies' slot, uid, id, hp, max_hp, block and intents (type, damage, times, card_count). Also compared: incoming danger and every effective damage against every live enemy (751 values). |
+| `NoMoveIds` | Greps the encoder source for move, AI and RNG identifiers, and checks that the intent rows match the intents' types. |
+| `TreasureAndCardRewardHidden` | 5 closed and then opened chests, and 74 card rewards that are hidden on the Rewards screen and shown in the CardReward phase. |
+| `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
+| `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
+
+## Python API (§D6)
+
+Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full reference: `sim/tools/vec/README.md`.
+
+| Module | Content |
+| --- | --- |
+| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 16 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`, `sts2vec_clone_determinized`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
+| `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
+| `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `warm(max_entries=None)` → templates created, `len`). |
+| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
+| `cli.py` | `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
+
+```python
+from sts2vec import VecEnv, PoolSpec, STATUS, random_actions
+with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256)) as env:
+    obs = env.reset()                                   # dict of env-owned (N, *shape) arrays (views)
+    obs, reward, terminated, truncated, status, info = env.step(random_actions(rng, obs["cand_n"]))
+    env.pool.add_fresh("SILENT", seed="S1"); env.pool.add_save(path); len(env.pool); env.pool.warm()
+    e = env.snapshot(0); env.restore(3, e); env.state_hash([0, 3]); env.candidates(0)
+    d = env.clone_determinized(0, seed=17); env.restore(4, d)   # same view as slot 0, hidden state resampled
+```
+
+- `obs` = every buffer except `reward/terminated/truncated/status/episode/last_episode` (those come back as the step
+  signals and `info`); arrays are views valid until the next call (`copy=True` copies).
+- Inputs are validated in Python before the call: `actions`/`mask`/`start_ids` must have shape `(N,)` (no broadcasting)
+  and integer dtype.
+- Tests (`uv run --project sim/tools/vec pytest -q`): the tests that need V1/V2 (`test_full.py`, the fixture-save
+  3-candidate test) skip with reason `needs V1/V2` while `cand_n`/`hp` are 0 after a reset and run automatically
+  afterwards; `STS2VEC_REQUIRE_FULL=1` makes them fail instead (integrator gate). The NativeAOT round-trip test exists
+  only when `sim/Sts2Sim.Vec/bin/aot/Sts2Sim.Vec.<dylib|so>` exists.
+- The package registers a pytest plugin (`sts2vec._pytest_plugin`, entry point `pytest11`): when pytest runs without
+  paths and without a config file (e.g. the repo root), collection is limited to `sim/tools/vec`.
+- NativeAOT: `scripts/vec_publish_aot.sh` publishes with `PublishAot`, `NativeLib=Shared`, `ServerGarbageCollection`,
+  `TrimmerRootAssembly Sts2Sim.Core` (injected through `CustomAfterMicrosoftCommonTargets`; no csproj change),
+  `LIBRARY_PATH=/opt/homebrew/lib`, into `bin/aot-artifacts` (separate obj) and copies the library to `bin/aot/`.
+
+## Determinized clones
+
+`RunSim.CloneDeterminized(ulong seed, DeterminizeOptions? options = null)` (and `CombatSim.CloneDeterminized`) return a
+deep clone whose **public state is identical** and whose **hidden state is resampled** from `seed`: one sample of the
+information set, for information-set search (ISMCTS, PIMC) later. Implementation: `Sts2Sim.Core/Random/Determinizer.cs`
+(`Determinizer.Apply` works on a `RunState` / `CombatState` in place). Through the vec layer:
+`sts2vec_clone_determinized(h, slot, seed)` → pool entry, then `sts2vec_restore`; Python `env.clone_determinized(slot, seed)`.
+
+Contract (tests in `sim/Sts2Sim.Tests/VecTests.Determinize.cs`, class `VecDeterminizeTests`; Python
+`test_full.py::test_clone_determinized_same_view_resampled_hidden_state`):
+
+- the player view is unchanged: `ObservationEncoder` bytes and status equal the original's on 900 sampled decision
+  points (717 combat, 136 map / shop / event / reward / rest screens, 47 pending prompts);
+- the hidden state changed: the clone's `StateHash` differs; a reflection walk over the whole object graph
+  (`RngGraphWalker`) finds every `Rng` object of the clone distinct from, and in a different state than, every `Rng` of
+  the original (4,506 RNG objects over 300 states; the act map's construction RNG, shared by `Clone()`, is excluded);
+- two seeds give different draw orders over the same multiset (299 / 300 states) and different future monster moves
+  under the same end-turn policy (11 / 150 combats; most monster AIs are fixed cycles), while the current intents stay;
+- deterministic: same state + same seed + same options ⇒ same `StateHash`; restoring one entry twice gives the same
+  state; `CombatSim.CloneDeterminized` behaves the same on standalone combats.
+
+**What is resampled.**
+
+| Hidden item | Sim location | Game source (decompile) | How |
+| --- | --- | --- | --- |
+| Draw-pile order (H1) | `PlayerState.DrawPile` of every combat player | `Entities.Cards/CardPile.cs:18` (`_cards`, a plain list; top = index 0) | uniform permutation of the pile (multiset kept), except `KeepDrawTop` / `KeepDrawBottom` cards at the ends |
+| 12 run streams (UpFront, Shuffle, UnknownMapPoint, CombatCardGeneration, CombatPotionGeneration, CombatCardSelection, CombatEnergyCosts, CombatTargets, MonsterAi, Niche, CombatOrbs, TreasureRoomRelics) | `RunState.Rng` (`RunRngSet`) | `Runs/RunRngSet.cs:17` | every distinct stream object restarted in place from a seed-derived value (aliases stay aliases; the call counter is kept) |
+| Hashed run seed | `RunRngSet.Seed` | `Runs/RunRngSet.cs:27` | replaced: it is the root of every RNG derived later (act maps `StandardActMap` / `SpoilsActMap`, `EventModel.Rng` at event start, monster private and encounter RNGs at spawn, `Rng.ForPlayerModel` users such as Fur Coat), so those are resampled too. `StringSeed` / `RunConfig.SeedText` stay as run identity (read only at `NewRun`) |
+| 3 player streams (Rewards, Shops, Transformations) + set seed | `PlayerState.PlayerRng` (`PlayerRngSet`) | `Random/PlayerRngSet.cs:12,21` | restarted in place |
+| Current event RNG | `EventRoom.CanonicalEvent.Rng`, `EventRoom.LocalMutableEvent.Rng` | `Models/EventModel.cs:399` | restarted in place |
+| Reward RNG overrides | `Reward.RngOverride` (rewards stack, `CombatRoom.ExtraRewards`), `CardReward.Options` / `RerollOptions.RngOverride` | `Rewards/Reward.cs:159` (`_rngOverride`) | restarted in place (an override that aliases a player stream is restarted once) |
+| Monster private RNGs | `PrivateRngExtraState.PrivateRng` of monsters, allies and escaped creatures | `Models/MonsterModel.cs:336` (`_rng`) | restarted in place |
+| Future monster moves | rolled from `MonsterAi` / private RNGs when the next intent is chosen | `Models/MonsterModel.cs:721` (`RollMove(..., RunRng.MonsterAi)`) | follow from the reseeded streams; the **current** `NextMove` (the shown intent, H8) is untouched |
+| Relic grab-bag order (H5) | `RunState.SharedRelicGrabBag`, `PlayerState.RelicGrabBag` | `Runs/RelicGrabBag.cs:101,147` (each rarity deque `UnstableShuffle`d once) | each rarity deque reshuffled uniformly (pulls and removals never reorder the rest, so the remaining order is uniform given what was seen) |
+| Unvisited event order (H3) | `ActInstance.Rooms.events[eventsVisited..]` of the current and later acts | `Models/ActModel.cs:257` (one `UnstableShuffle`) | tail reshuffled uniformly; an already pulled current event keeps its slot |
+
+The last two rows are switched off with `DeterminizeOptions { ResampleRunQueues = false }`.
+
+**What stays** (public, or pre-rolled content that is not a plain shuffle):
+
+- everything the player sees: hand, discard and exhaust order, the piles' multisets, intents, HP / block / powers,
+  orbs, potions, relics, gold, the map, shop stock, generated card choices, prompt options, the current act's boss;
+- pre-rolled hidden content made by constrained generators, kept as rolled (a known leak for run-level search,
+  irrelevant inside one combat): normal / elite encounter queues (`ActInstance.GenerateRooms`, tag-aware
+  `AddWithoutRepeatingTags`), later acts' boss / second boss / ancient and the shared-ancient split, the relic inside an
+  unopened chest (H6), the cards of an unopened card reward (H7), odds values (`RunOddsSet`, `PlayerOddsSet`);
+- the act map's own construction RNG (shared between clones by `Clone()`, used only while generating the map).
+
+**Draw-pile placements the player may remember.** Cards put on top (`CardPilePosition.Top`: Headbutt, Thinking Ahead,
+Cosmic Indifference, Glimmer, Photon Cut, Shining Strike, Rebound, Nostalgia, Perfect Fit after a shuffle; game:
+`Commands/CardPileCmd.cs:309-311`, `Models.Cards/Headbutt.cs:112`), Innate cards moved to the top at combat start
+(`Combat/CombatManager.cs:4266-4273`) and cards sent to the bottom are positions a human can remember. Neither the game
+nor the kernel tracks this knowledge: `CardPile` is a bare list with no placement metadata
+(`Entities.Cards/CardPile.cs`, `AddInternal` / `MoveToTopInternal` :248-314; sim `State/CardPile.cs`), the draw-pile
+screen sorts the cards by (rarity, id) (`Nodes.Screens/NCardPileScreen.cs:185-187`) and so does the draw-pile selection
+grid (`Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-428`). The observation encoder does not carry it
+either (H1). Decision: the default resamples the whole draw pile, i.e. it conditions on the observation, not on the
+player's memory of the action log; a caller that tracks placements itself passes
+`DeterminizeOptions { KeepDrawTop = k, KeepDrawBottom = m }` (C# only; the C ABI uses the default).
+
+**Pending prompts.** A clone taken at a pending prompt keeps the prompt, the picks so far and the answer tape. The
+pending action is re-executed from its pre-action basis on every answer (tape engine), so resampling the basis would
+change what the re-run reveals before the prompt. Instead the clone records a hook (answer index k, seed, options): the
+re-run replays the recorded prefix unchanged (every taped prompt still passes `ChoiceTape.SameShape`) and resamples the
+work state when the tape hands out answer k, i.e. right after the current prompt's options were shown. The tape
+therefore always matches; the clone's current (paused) state is resampled as well. Hooks are cloned, hashed (tag
+`Determinize`, written only when present, so ordinary hashes and the F2 pins are unchanged) and accumulate when a
+clone is determinized again. `VecDeterminizeTests` answers 47 prompts on clones, checks that each resolved clone differs
+from the resolved original (the hook fired) and that no tape divergence occurs.
+
+**Not save-faithful.** `RunExporter.ToSave` of a determinized clone writes the original `StringSeed` next to resampled
+streams; a determinized state is for search, not for export.
+
+## Known gaps / notes for owners
+
+- No leak test through the C ABI (none in §D5); `sts2vec check` says so. The draw-order leak test is C#
+  (`VecEncoderTests.Test_VecEncoder_LeakTest_DrawOrder`, 600 reshuffled combat points).
+- The clone-free stepping path (§D0 D7) is implemented behind a static predicate ("Fast path"); steps it cannot clear
+  (≈ 17 % under a random policy) still deep-clone. The next throughput lever is the observation encoder, not the clone.
+- Random-policy soaks reach no victories (0 wins in ~60k episodes); reward 1 at Victory is covered by
+  `VecTests.Test_VecEnv_RewardOnlyOnVictory` with a boosted-HP snapshot.
+- `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1).
+  Handled in `StartPool`: a save that imports to a pending prompt is re-imported per start. A *snapshot* of a slot that
+  started from such a save and is still at that load prompt would still share it (not observed).
+- Clone fidelity of claimed rewards (fixed in E2c): `RunSim.Clone()` keeps the objects a claimed reward shares with
+  the run — a taken `PotionReward.Potion` is the belt's potion (the game's `PotionCmd.TryToProcure` stores the reward's
+  own instance), a picked card-reward card and a taken special card are the deck's cards, and a combat room's extra
+  rewards are the very objects its rewards set lists. Before the fix a clone copied them twice, so e.g. `DiscardPotion`
+  on a still-open Rewards screen after a clone flagged only the belt copy and `clone.Step(a)` hashed differently from
+  `original.Step(a)`. Snapshot/restore and template clones now step hash-identically to the original
+  (`SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep`, `RewardsTests.Test_Rewards_Claimed*` /
+  `Test_Rewards_Clone*`).
+- `hand` has no star-cost or affliction-amount column (not in §D3.1).
+- The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
+  episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).
+- `rewards` rows are indexed by `RewardsSet.Rewards` index (ClaimReward A), so a claimed reward leaves a zero row inside
+  the table; `reward_n` counts the unclaimed ones.

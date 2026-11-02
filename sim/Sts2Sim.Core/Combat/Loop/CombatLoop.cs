@@ -1,6 +1,6 @@
 namespace Sts2Sim.Core.Combat.Loop;
 
-public static class CombatLoop
+public static partial class CombatLoop
 {
     public const int BaseHandDrawCount = 5;
 
@@ -56,19 +56,140 @@ public static class CombatLoop
         => SetUpCombat(rng, deck, encounterId, ascension, currentHp, maxHp, CombatRunContext.Default, populateMonsters);
 
     public static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, int ascension, int? currentHp, int? maxHp, CombatRunContext context, Action<CombatState>? populateMonsters = null)
-        => SetUpCombat(rng, deck, encounterId, null, ascension, currentHp, maxHp, context, populateMonsters);
+    {
+        ArgumentNullException.ThrowIfNull(encounterId);
+        var run = CreateStandaloneRun(rng, deck, ascension, currentHp, maxHp);
+        return SetUpCombat(run, run.Players[0], encounterId, null, context, populateMonsters);
+    }
 
     public static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, EncounterDef encounter, int ascension, int? currentHp, int? maxHp, CombatRunContext context)
     {
         ArgumentNullException.ThrowIfNull(encounter);
-        return SetUpCombat(rng, deck, encounter.Id, encounter, ascension, currentHp, maxHp, context, null);
+        var run = CreateStandaloneRun(rng, deck, ascension, currentHp, maxHp);
+        return SetUpCombat(run, run.Players[0], encounter.Id, encounter, context, null);
     }
 
-    private static CombatState SetUpCombat(RunRngSet rng, IReadOnlyList<CardSpec> deck, string encounterId, EncounterDef? encounter, int ascension, int? currentHp, int? maxHp, CombatRunContext context, Action<CombatState>? populateMonsters)
+    public static CombatState SetUpCombat(RunState run, PlayerState player, string encounterId, CombatRunContext context, Action<CombatState>? populateMonsters = null)
+        => SetUpCombat(run, player, encounterId, null, context, populateMonsters);
+
+    public static CombatState SetUpCombat(RunState run, PlayerState player, EncounterDef encounter, CombatRunContext context)
+    {
+        ArgumentNullException.ThrowIfNull(encounter);
+        return SetUpCombat(run, player, encounter.Id, encounter, context, null);
+    }
+
+    public static IReadOnlyList<string> DeckForCombat(IReadOnlyList<string> deckIds, int ascension)
+        => StartingDecks.IsIroncladStartingDeck(deckIds) ? StartingDecks.ApplyAscensionEffectsToDeck(deckIds, ascension) : deckIds;
+
+    public static void StartCombat(CombatState cs)
+    {
+        if (!cs.IsStarting || cs.IsInProgress)
+        {
+            throw new InvalidOperationException("StartCombat needs a combat that SetUpCombat prepared and that has not started yet.");
+        }
+        var creatures = SnapshotMonsterCreatures(cs);
+        for (int i = 0; i < creatures.Length; i++)
+        {
+            MonsterLifecycle.AfterCreatureAdded(cs, creatures[i]);
+        }
+        cs.IsInProgress = true;
+        cs.IsStarting = false;
+        Hook.BeforeCombatStart(cs);
+        RunTurnLoop(cs);
+    }
+
+    public static void StartPlayerTurn(CombatState cs)
+    {
+        RequireSide(cs, CombatSide.Player);
+        StartTurn(cs);
+    }
+
+    public static void EndPlayerTurn(CombatState cs)
+    {
+        RequireSide(cs, CombatSide.Player);
+        EndTurnAndSwitchSides(cs);
+    }
+
+    public static void RunEnemyTurn(CombatState cs)
+    {
+        RequireSide(cs, CombatSide.Enemy);
+        StartTurn(cs);
+    }
+
+    public static void CheckWinCondition(CombatState cs)
+    {
+        ProcessWinCondition(cs);
+    }
+
+    public static void Step(CombatState cs, GameAction action)
+    {
+        if (!LegalActionGenerator.TryResolve(cs, action, out var target, out var error))
+        {
+            throw new InvalidOperationException($"Illegal action {action}: {error}");
+        }
+        ExecuteResolvedAction(cs, action, target);
+    }
+
+    public static void ExecuteResolvedAction(CombatState cs, GameAction action, CreatureState? target)
+    {
+        ArgumentNullException.ThrowIfNull(cs);
+        switch (action.Kind)
+        {
+            case ActionKind.PlayCard:
+                ActionExecutor.PlayCard(cs, action.CardIndex, target);
+                CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
+                break;
+            case ActionKind.UsePotion:
+                PotionActions.UsePotion(cs, action.CardIndex, target);
+                CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
+                break;
+            case ActionKind.DiscardPotion:
+                PotionActions.DiscardPotion(cs, action.CardIndex);
+                CheckWinConditionAfterAction(cs);
+                EndTurnIfAllPlayersReady(cs);
+                break;
+            case ActionKind.EndTurn:
+                PlayerCmd.EndTurn(cs, cs.Player, canBackOut: true);
+                if (EndTurnAndSwitchSides(cs))
+                {
+                    RunTurnLoop(cs);
+                }
+                break;
+            case ActionKind.ChoosePick:
+            case ActionKind.ChooseConfirm:
+            case ActionKind.ChooseCancel:
+                throw new InvalidOperationException($"{action.Kind} answers a pending prompt; CombatSim applies it through the choice engine, not CombatLoop.");
+            default:
+                throw new InvalidOperationException($"Unknown action kind {action.Kind}.");
+        }
+    }
+
+    private static void EndTurnIfAllPlayersReady(CombatState cs)
+    {
+        if (!cs.IsInProgress || cs.CurrentSide != CombatSide.Player || !cs.AllPlayersReadyToEndTurn())
+        {
+            return;
+        }
+        if (EndTurnAndSwitchSides(cs))
+        {
+            RunTurnLoop(cs);
+        }
+    }
+
+    private static void CheckWinConditionAfterAction(CombatState cs)
+    {
+        if (cs.IsInProgress)
+        {
+            ProcessWinCondition(cs);
+        }
+    }
+
+    private static RunState CreateStandaloneRun(RunRngSet rng, IReadOnlyList<CardSpec> deck, int ascension, int? currentHp, int? maxHp)
     {
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(deck);
-        ArgumentNullException.ThrowIfNull(encounterId);
         int resolvedMaxHp = maxHp ?? StartingDecks.IroncladStartingHp;
         int resolvedCurrentHp = currentHp ?? resolvedMaxHp;
         if (resolvedMaxHp <= 0)
@@ -80,7 +201,43 @@ public static class CombatLoop
             throw new ArgumentOutOfRangeException(nameof(currentHp), resolvedCurrentHp, $"Current HP must be between 1 and the max HP {resolvedMaxHp}.");
         }
         var player = new PlayerState(PlayerCombatId, StartingDecks.IroncladCharacterId, resolvedCurrentHp, resolvedMaxHp, StartingDecks.IroncladMaxEnergy);
-        var cs = new CombatState(player, encounterId, ascension, rng);
+        var run = RunState.CreateStandalone(player, rng, ascension);
+        BuildDeck(run, player, deck);
+        return run;
+    }
+
+    private static void BuildDeck(RunState run, PlayerState player, IReadOnlyList<CardSpec> deck)
+    {
+        for (int i = 0; i < deck.Count; i++)
+        {
+            var spec = deck[i];
+            var def = CardInstance.ResolveDef(spec);
+            var card = new CardInstance(def, run.AllocateCardInstanceId());
+            card.AttachTo(player);
+            def.AfterCreated(card);
+            if (spec.Upgraded)
+            {
+                card.Upgrade();
+            }
+            card.FloorAddedToDeck = 1;
+            player.Deck.Add(card);
+        }
+    }
+
+    private static CombatState SetUpCombat(RunState run, PlayerState player, string encounterId, EncounterDef? encounter, CombatRunContext context, Action<CombatState>? populateMonsters)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(encounterId);
+        if (run.Combat != null)
+        {
+            throw new InvalidOperationException("Make sure to reset the combat before setting up a new one.");
+        }
+        if (!run.Players.Contains(player))
+        {
+            throw new InvalidOperationException("The player must belong to the run that hosts the combat.");
+        }
+        var cs = new CombatState(run, player, encounterId);
         cs.RoundNumber = 1;
         cs.CurrentSide = CombatSide.Player;
         if (cs.NextCreatureId <= player.CombatId)
@@ -100,14 +257,20 @@ public static class CombatLoop
         else
         {
             encounter ??= EncounterRegistry.Get(encounterId);
+            cs.EncounterExtra = encounter.CreateExtraState();
             MonsterSpawner.SpawnEncounter(cs, encounter, context);
         }
-        cs.IsStarting = true;
-        PopulateDrawPile(cs, player, deck);
-        var monsters = cs.Monsters.ToArray();
-        for (int i = 0; i < monsters.Length; i++)
+        if (encounter != null && cs.EncounterExtra == null)
         {
-            var monster = monsters[i];
+            cs.EncounterExtra = encounter.CreateExtraState();
+        }
+        cs.IsStarting = true;
+        ResetCombatState(cs, player);
+        PopulateCombatState(cs, player);
+        var creatures = SnapshotMonsterCreatures(cs);
+        for (int i = 0; i < creatures.Length; i++)
+        {
+            var monster = creatures[i];
             MonsterLifecycle.SetUpForCombat(cs, monster);
             if (monster.SlotName != null)
             {
@@ -117,479 +280,62 @@ public static class CombatLoop
         return cs;
     }
 
-    public static IReadOnlyList<string> DeckForCombat(IReadOnlyList<string> deckIds, int ascension)
-        => StartingDecks.IsIroncladStartingDeck(deckIds) ? StartingDecks.ApplyAscensionEffectsToDeck(deckIds, ascension) : deckIds;
-
-    public static void StartCombat(CombatState cs)
+    private static void ResetCombatState(CombatState cs, PlayerState player)
     {
-        if (!cs.IsStarting || cs.IsInProgress)
+        var piles = player.AllPiles;
+        for (int i = 0; i < piles.Count; i++)
         {
-            throw new InvalidOperationException("StartCombat needs a combat that SetUpCombat prepared and that has not started yet.");
+            piles[i].ClearInternal();
         }
-        var monsters = cs.Monsters.ToArray();
-        for (int i = 0; i < monsters.Length; i++)
+        player.Energy = 0;
+        player.Stars = 0;
+        player.TurnNumber = 1;
+        player.Phase = PlayerTurnPhase.None;
+        player.PetIds.Clear();
+        player.OrbQueue.Clear();
+        if (player.BaseOrbSlotCount != 0)
         {
-            MonsterLifecycle.AfterCreatureAdded(cs, monsters[i]);
-        }
-        cs.IsInProgress = true;
-        cs.IsStarting = false;
-        Hook.BeforeCombatStart(cs);
-        RunTurnLoop(cs, extraTurn: false);
-    }
-
-    public static void StartPlayerTurn(CombatState cs)
-    {
-        RequireSide(cs, CombatSide.Player);
-        StartTurn(cs, extraTurn: false);
-    }
-
-    public static void EndPlayerTurn(CombatState cs)
-    {
-        RequireSide(cs, CombatSide.Player);
-        EndTurnAndSwitchSides(cs, out _);
-    }
-
-    public static void RunEnemyTurn(CombatState cs)
-    {
-        RequireSide(cs, CombatSide.Enemy);
-        StartTurn(cs, extraTurn: false);
-    }
-
-    public static void CheckWinCondition(CombatState cs)
-    {
-        ProcessWinCondition(cs);
-    }
-
-    public static void CheckForEmptyHand(CombatState cs, PlayerState player)
-    {
-        if (cs.IsInProgress && player.Hand.Count == 0)
-        {
-            Hook.AfterHandEmptied(cs, player);
+            player.OrbQueue.AddCapacity(player.BaseOrbSlotCount);
         }
     }
 
-    public static void Step(CombatState cs, GameAction action)
+    private static void PopulateCombatState(CombatState cs, PlayerState player)
     {
-        if (!LegalActionGenerator.TryResolve(cs, action, out var target, out var error))
-        {
-            throw new InvalidOperationException($"Illegal action {action}: {error}");
-        }
-        switch (action.Kind)
-        {
-            case ActionKind.PlayCard:
-                ActionExecutor.PlayCard(cs, action.CardIndex, target);
-                if (cs.IsInProgress)
-                {
-                    ProcessWinCondition(cs);
-                }
-                break;
-            case ActionKind.EndTurn:
-                if (EndTurnAndSwitchSides(cs, out bool extraTurn))
-                {
-                    RunTurnLoop(cs, extraTurn);
-                }
-                break;
-            default:
-                throw new InvalidOperationException($"Unknown action kind {action.Kind}.");
-        }
-    }
-
-    private static void PopulateDrawPile(CombatState cs, PlayerState player, IReadOnlyList<CardSpec> deck)
-    {
+        var deck = player.Deck.ToArray();
         var drawPile = player.DrawPile;
-        for (int i = 0; i < deck.Count; i++)
+        for (int i = 0; i < deck.Length; i++)
         {
-            drawPile.AddInternal(CardInstance.Create(cs, deck[i]));
+            drawPile.AddInternal(deck[i].CloneForCombat(cs.AllocateCardInstanceId()));
         }
         CardPileCmd.ShuffleInitialDrawPile(cs, player);
     }
 
-    private static void RunTurnLoop(CombatState cs, bool extraTurn)
+    private static MonsterState[] SnapshotMonsterCreatures(CombatState cs)
     {
-        for (int iteration = 0; cs.IsInProgress; iteration++)
-        {
-            if (iteration >= MaxTurnLoopIterationsPerStep)
-            {
-                throw new InvalidOperationException($"The turn loop ran {MaxTurnLoopIterationsPerStep} turns without reaching a player decision.");
-            }
-            if (cs.CurrentSide == CombatSide.Player)
-            {
-                if (!StartTurn(cs, extraTurn))
-                {
-                    return;
-                }
-                if (!EndTurnAndSwitchSides(cs, out extraTurn))
-                {
-                    return;
-                }
-                continue;
-            }
-            StartTurn(cs, extraTurn: false);
-            extraTurn = false;
-        }
-    }
-
-    private static bool StartTurn(CombatState cs, bool extraTurn)
-    {
-        if (!cs.IsInProgress)
-        {
-            return false;
-        }
-        var player = cs.Player;
-        var side = cs.CurrentSide;
-        bool isPlayerSide = side == CombatSide.Player;
-        player.Phase = PlayerTurnPhase.None;
-        var starting = CreaturesStartingTurn(cs, isPlayerSide);
-        for (int i = 0; i < starting.Length; i++)
-        {
-            CreatureCmd.BeforeTurnStart(cs, starting[i], side);
-        }
-        Hook.BeforeSideTurnStart(cs, side);
-        if (isPlayerSide)
-        {
-            player.Phase = PlayerTurnPhase.Start;
-            if (!extraTurn)
-            {
-                var monsters = cs.Monsters;
-                for (int i = 0; i < monsters.Count; i++)
-                {
-                    MonsterLifecycle.PrepareForNextTurn(cs, monsters[i]);
-                }
-            }
-        }
-        for (int i = 0; i < starting.Length; i++)
-        {
-            CreatureCmd.AfterTurnStart(cs, starting[i], side);
-        }
-        for (int i = 0; i < starting.Length; i++)
-        {
-            Hook.AfterBlockCleared(cs, starting[i]);
-        }
-        if (isPlayerSide)
-        {
-            SetupPlayerTurn(cs, player);
-        }
-        Hook.AfterSideTurnStart(cs, side);
-        if (isPlayerSide)
-        {
-            if (player.IsDead)
-            {
-                return true;
-            }
-            RunAutoPrePlayPhase(cs, player);
-            ProcessWinCondition(cs);
-            return false;
-        }
-        ProcessWinCondition(cs);
-        if (cs.IsInProgress)
-        {
-            ExecuteEnemyTurn(cs);
-        }
-        return false;
-    }
-
-    private static CreatureState[] CreaturesStartingTurn(CombatState cs, bool isPlayerSide)
-    {
-        if (isPlayerSide)
-        {
-            return new CreatureState[] { cs.Player };
-        }
+        var allies = cs.Allies;
         var monsters = cs.Monsters;
-        var starting = new CreatureState[monsters.Count];
-        for (int i = 0; i < starting.Length; i++)
+        int pets = 0;
+        for (int i = 0; i < allies.Count; i++)
         {
-            starting[i] = monsters[i];
-        }
-        return starting;
-    }
-
-    private static void SetupPlayerTurn(CombatState cs, PlayerState player)
-    {
-        if (player.IsDead)
-        {
-            return;
-        }
-        if (Hook.ShouldPlayerResetEnergy(cs, player))
-        {
-            EnergyCmd.ResetEnergy(cs, player);
-        }
-        else
-        {
-            EnergyCmd.AddMaxEnergyToCurrent(cs, player);
-        }
-        Hook.AfterEnergyReset(cs, player);
-        Hook.BeforeHandDraw(cs, player);
-        List<AbstractModel>? modifiers = null;
-        decimal handDraw = Hook.ModifyHandDraw(cs, player, BaseHandDrawCount, ref modifiers);
-        Hook.AfterModifyingHandDraw(cs, modifiers);
-        if (player.TurnNumber == 1)
-        {
-            handDraw = MoveInnateCardsToTop(player, handDraw);
-        }
-        CardPileCmd.Draw(cs, handDraw, player, fromHandDraw: true);
-        Hook.AfterPlayerTurnStart(cs, player);
-    }
-
-    private static decimal MoveInnateCardsToTop(PlayerState player, decimal handDraw)
-    {
-        var pile = player.DrawPile;
-        var cards = pile.Cards;
-        List<CardInstance>? innate = null;
-        for (int i = 0; i < cards.Count; i++)
-        {
-            if (cards[i].HasKeyword(CardKeyword.Innate))
+            if (allies[i] is MonsterState)
             {
-                (innate ??= new List<CardInstance>(2)).Add(cards[i]);
+                pets++;
             }
         }
-        int innateCount = 0;
-        if (innate != null)
+        var creatures = new MonsterState[pets + monsters.Count];
+        int k = 0;
+        for (int i = 0; i < allies.Count; i++)
         {
-            for (int i = 0; i < innate.Count; i++)
+            if (allies[i] is MonsterState pet)
             {
-                pile.MoveToTopInternal(innate[i]);
-            }
-            innateCount = innate.Count;
-        }
-        handDraw = Math.Max(handDraw, innateCount);
-        return Math.Min(handDraw, CardPileCmd.MaxCardsInHand);
-    }
-
-    private static void RunAutoPrePlayPhase(CombatState cs, PlayerState player)
-    {
-        player.Phase = PlayerTurnPhase.AutoPrePlay;
-        CheckForEmptyHand(cs, player);
-        player.Phase = PlayerTurnPhase.Play;
-    }
-
-    private static bool EndTurnAndSwitchSides(CombatState cs, out bool extraTurn)
-    {
-        extraTurn = false;
-        if (!cs.IsInProgress || cs.CurrentSide != CombatSide.Player)
-        {
-            return false;
-        }
-        EndPlayerTurnPhaseOne(cs);
-        if (!cs.IsInProgress)
-        {
-            return false;
-        }
-        if (cs.CurrentSide == CombatSide.Player)
-        {
-            EndPlayerTurnPhaseTwo(cs);
-            extraTurn = SwitchFromPlayerToEnemySide(cs);
-        }
-        return cs.IsInProgress;
-    }
-
-    private static void EndPlayerTurnPhaseOne(CombatState cs)
-    {
-        RequireSide(cs, CombatSide.Player);
-        var player = cs.Player;
-        player.Phase = PlayerTurnPhase.AutoPostPlay;
-        player.Phase = PlayerTurnPhase.End;
-        Hook.BeforeSideTurnEnd(cs, CombatSide.Player);
-        if (ProcessWinCondition(cs))
-        {
-            return;
-        }
-        DoTurnEnd(cs, player);
-        if (ProcessWinCondition(cs))
-        {
-            return;
-        }
-        Hook.BeforeFlush(cs, player);
-        ProcessWinCondition(cs);
-    }
-
-    private static void DoTurnEnd(CombatState cs, PlayerState player)
-    {
-        if (!cs.IsInProgress || CombatStatus.IsEnding(cs))
-        {
-            return;
-        }
-        var hand = player.Hand.Cards;
-        List<CardInstance>? turnEndCards = null;
-        List<CardInstance>? etherealCards = null;
-        for (int i = 0; i < hand.Count; i++)
-        {
-            var card = hand[i];
-            if (card.HasTurnEndInHandEffect)
-            {
-                (turnEndCards ??= new List<CardInstance>(2)).Add(card);
-            }
-            else if (card.HasKeyword(CardKeyword.Ethereal) && Hook.ShouldEtherealTrigger(cs, card))
-            {
-                (etherealCards ??= new List<CardInstance>(2)).Add(card);
+                creatures[k++] = pet;
             }
         }
-        if (etherealCards != null)
-        {
-            for (int i = 0; i < etherealCards.Count; i++)
-            {
-                CardPileCmd.Exhaust(cs, etherealCards[i], causedByEthereal: true);
-            }
-        }
-        if (turnEndCards != null)
-        {
-            for (int i = 0; i < turnEndCards.Count; i++)
-            {
-                ResolveTurnEndCard(cs, turnEndCards[i]);
-            }
-        }
-    }
-
-    private static void ResolveTurnEndCard(CombatState cs, CardInstance card)
-    {
-        CardPileCmd.Add(cs, card, PileType.Play, CardPilePosition.Bottom);
-        card.OnTurnEndInHand(cs);
-        if (!card.HasKeyword(CardKeyword.Ethereal))
-        {
-            CardPileCmd.Add(cs, card, PileType.Discard, CardPilePosition.Bottom);
-        }
-        else
-        {
-            CardPileCmd.Exhaust(cs, card, causedByEthereal: true);
-        }
-    }
-
-    private static void EndPlayerTurnPhaseTwo(CombatState cs)
-    {
-        RequireSide(cs, CombatSide.Player);
-        FlushPlayerHand(cs, cs.Player);
-        Hook.AfterSideTurnEnd(cs, CombatSide.Player);
-    }
-
-    private static void FlushPlayerHand(CombatState cs, PlayerState player)
-    {
-        if (player.IsDead)
-        {
-            return;
-        }
-        bool shouldFlush = Hook.ShouldFlush(cs, player);
-        var hand = player.Hand.Cards;
-        var flushed = new List<CardInstance>(hand.Count);
-        var retained = new List<CardInstance>(2);
-        for (int i = 0; i < hand.Count; i++)
-        {
-            var card = hand[i];
-            if (!shouldFlush || card.ShouldRetainThisTurn)
-            {
-                retained.Add(card);
-            }
-            else
-            {
-                flushed.Add(card);
-            }
-        }
-        if (flushed.Count > 0)
-        {
-            CardPileCmd.Add(cs, flushed, PileType.Discard, CardPilePosition.Bottom);
-        }
-        Hook.AfterFlush(cs, player, flushed, retained);
-        player.EndOfTurnCleanup();
-    }
-
-    private static bool SwitchFromPlayerToEnemySide(CombatState cs)
-    {
-        var player = cs.Player;
-        bool extraTurn = Hook.ShouldTakeExtraTurn(cs, player);
-        SwitchSides(cs, extraTurn);
-        if (extraTurn)
-        {
-            Hook.AfterTakingExtraTurn(cs, player);
-        }
-        return extraTurn;
-    }
-
-    private static void SwitchSides(CombatState cs, bool extraTurn)
-    {
-        if (cs.CurrentSide == CombatSide.Player && !extraTurn)
-        {
-            cs.CurrentSide = CombatSide.Enemy;
-        }
-        else
-        {
-            cs.CurrentSide = CombatSide.Player;
-            if (!extraTurn)
-            {
-                cs.RoundNumber++;
-            }
-            cs.Player.IncrementTurnNumber();
-        }
-        var monsters = cs.Monsters;
         for (int i = 0; i < monsters.Count; i++)
         {
-            MonsterLifecycle.OnSideSwitch(monsters[i]);
+            creatures[k++] = monsters[i];
         }
-    }
-
-    private static void ExecuteEnemyTurn(CombatState cs)
-    {
-        if (!cs.IsInProgress)
-        {
-            return;
-        }
-        var enemies = cs.Monsters.ToArray();
-        for (int i = 0; i < enemies.Length; i++)
-        {
-            var enemy = enemies[i];
-            if (!cs.Monsters.Contains(enemy))
-            {
-                continue;
-            }
-            MonsterLifecycle.TakeTurn(cs, enemy);
-            ProcessWinCondition(cs);
-            if (!cs.IsInProgress)
-            {
-                return;
-            }
-        }
-        EndEnemyTurn(cs);
-    }
-
-    private static void EndEnemyTurn(CombatState cs)
-    {
-        if (!cs.IsInProgress)
-        {
-            return;
-        }
-        RequireSide(cs, CombatSide.Enemy);
-        Hook.BeforeSideTurnEnd(cs, CombatSide.Enemy);
-        cs.Player.EndOfTurnCleanup();
-        Hook.AfterSideTurnEnd(cs, CombatSide.Enemy);
-        ProcessWinCondition(cs);
-        if (!CombatStatus.IsEnding(cs))
-        {
-            SwitchSides(cs, extraTurn: false);
-        }
-    }
-
-    private static bool ProcessWinCondition(CombatState cs)
-    {
-        if (cs.Outcome == CombatOutcome.Defeat && cs.IsInProgress)
-        {
-            ProcessPendingLoss(cs);
-            return true;
-        }
-        if (CombatStatus.IsEnding(cs))
-        {
-            EndCombatWithVictory(cs);
-            return true;
-        }
-        return false;
-    }
-
-    private static void ProcessPendingLoss(CombatState cs)
-    {
-        cs.IsInProgress = false;
-    }
-
-    private static void EndCombatWithVictory(CombatState cs)
-    {
-        cs.IsInProgress = false;
-        cs.Outcome = CombatOutcome.Victory;
-        cs.Player.Phase = PlayerTurnPhase.None;
+        return creatures;
     }
 
     private static void RequireSide(CombatState cs, CombatSide side)

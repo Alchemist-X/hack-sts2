@@ -10,7 +10,7 @@ public sealed class RavenousPower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public override void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented)
+    public override void AfterDeath(RunState rs, CreatureState creature, bool wasRemovalPrevented)
     {
         var owner = Owner;
         if (wasRemovalPrevented || ReferenceEquals(creature, owner) || creature.Side != owner.Side || owner.IsDead)
@@ -21,6 +21,7 @@ public sealed class RavenousPower : PowerModel
         {
             throw new InvalidOperationException($"{PowerId} is owned by a creature that is not a CorpseSlug");
         }
+        var cs = rs.Combat!;
         CorpseSlug.GetExtra(monster).IsRavenous = true;
         CreatureCmd.StunWithMove(cs, monster, StunnedMove);
         PowerCmd.Apply<StrengthPower>(cs, monster, Amount, monster, null);

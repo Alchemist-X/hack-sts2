@@ -18,23 +18,23 @@ public sealed class ShrinkPower : PowerModel
 
     public bool IsInfinite => Amount < 0;
 
-    public override void AfterSideTurnEnd(CombatState cs, CombatSide side)
+    public override void AfterSideTurnEnd(CombatState cs, CombatSide side, IReadOnlyList<CreatureState> participants)
     {
-        if (!IsInfinite && IsTurnParticipant(cs, side))
+        if (!IsInfinite && CombatStatus.ContainsById(participants, Owner))
         {
             PowerCmd.Decrement(cs, this);
         }
     }
 
-    public override void AfterDeath(CombatState cs, CreatureState creature, bool wasRemovalPrevented)
+    public override void AfterDeath(RunState rs, CreatureState creature, bool wasRemovalPrevented)
     {
         if (!wasRemovalPrevented && ApplierId != NoCreature && creature.CombatId == ApplierId)
         {
-            PowerCmd.Remove(cs, this);
+            PowerCmd.Remove(rs.Combat!, this);
         }
     }
 
-    public override decimal ModifyDamageMultiplicative(CombatState cs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
+    public override decimal ModifyDamageMultiplicative(RunState rs, CreatureState? target, decimal amount, ValueProp props, CreatureState? dealer, CardInstance? cardSource, CardPlay? cardPlay)
     {
         if (!ReferenceEquals(Owner, dealer))
         {

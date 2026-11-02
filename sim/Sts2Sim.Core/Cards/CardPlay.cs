@@ -2,11 +2,15 @@ namespace Sts2Sim.Core.Cards;
 
 public sealed class CardPlay
 {
-    public CardPlay(CardInstance card, CreatureState? target)
+    public CardPlay(CombatState cs, CardInstance card, CreatureState? target)
     {
+        ArgumentNullException.ThrowIfNull(cs);
+        PlayId = cs.AllocateCardPlayId();
         Card = card;
         Target = target;
     }
+
+    public int PlayId { get; }
 
     public CardInstance Card { get; }
 
@@ -14,9 +18,7 @@ public sealed class CardPlay
 
     public PileType ResultPile { get; set; }
 
-    public int EnergySpent { get; set; }
-
-    public int StarsSpent { get; set; }
+    public ResourceInfo Resources { get; set; }
 
     public bool IsAutoPlay { get; set; }
 

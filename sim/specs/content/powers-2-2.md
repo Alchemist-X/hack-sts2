@@ -1,0 +1,32 @@
+# powers-2-2 (W3 wave A) index
+
+- NOXIOUS_FUMES_POWER — Models.Powers/NoxiousFumesPower.cs:23 — Poison by id (POISON_POWER) per hittable enemy under one Throwing context; VFX/wait dropped
+- NO_DRAW_POWER — Models.Powers/NoDrawPower.cs:17 — none
+- OBLIVION_POWER — Models.Powers/OblivionPower.cs:16 — Data dict keyed by CardInstance.InstanceId (clone-safe); Doom by id
+- ONE_TWO_PUNCH_POWER — Models.Powers/OneTwoPunchPower.cs:17 — none
+- PANACHE_POWER — Models.Powers/PanachePower.cs:19 — CardsLeft DynamicVar and Data.alreadyApplied as per-instance fields; DisplayAmount/Wait dropped
+- PIERCING_WAIL_POWER — Models.Powers/PiercingWailPower.cs:5 — TemporaryStrengthPower subclass, IsPositive false, origin PIERCING_WAIL
+- PLATING_POWER — Models.Powers/PlatingPower.cs:20 — Decrement DynamicVar as field (Players.Count on enemy owners); GetScaledAmountForMultiplayer left to base (multiplayer only)
+- POISON_POWER — Models.Powers/PoisonPower.cs:20 — Accelerant by id; CalculateTotalDamageNextTurn (UI preview) dropped; loop keeps damaging a dead owner like the game
+- PREP_TIME_POWER — Models.Powers/PrepTimePower.cs:16 — Vigor by id
+- RAGE_POWER — Models.Powers/RagePower.cs:19 — none
+- REAPER_FORM_POWER — Models.Powers/ReaperFormPower.cs:19 — Vfx/AfterApplied/AfterRemoved (VFX only) dropped; Doom by id
+- REFLECT_POWER — Models.Powers/ReflectPower.cs:17 — none
+- REGEN_POWER — Models.Powers/RegenPower.cs:16 — none
+- REPTILE_TRINKET_POWER — Models.Powers/ReptileTrinketPower.cs:5 — TemporaryStrengthPower subclass, origin REPTILE_TRINKET
+- RETAIN_HAND_POWER — Models.Powers/RetainHandPower.cs:17 — none
+- RITUAL_POWER — Models.Powers/RitualPower.cs:17 — none
+- SETUP_STRIKE_POWER — Models.Powers/SetupStrikePower.cs:5 — TemporaryStrengthPower subclass, origin SETUP_STRIKE
+- SHACKLING_POTION_POWER — Models.Powers/ShacklingPotionPower.cs:5 — TemporaryStrengthPower subclass, IsPositive false, origin SHACKLING_POTION
+- SHADOWMELD_POWER — Models.Powers/ShadowmeldPower.cs:19 — (decimal)Math.Pow(2.0, Amount) through double as in the game
+- SHADOW_STEP_POWER — Models.Powers/ShadowStepPower.cs:16 — DoubleDamage by id
+- SHROUD_POWER — Models.Powers/ShroudPower.cs:16 — `power is DoomPower` as Id == DOOM_POWER
+- SLEIGHT_OF_FLESH_POWER — Models.Powers/SleightOfFleshPower.cs:16 — empty CanonicalVars omitted
+- SLOTH_POWER — Models.Powers/SlothPower.cs:12 — DisplayAmount dropped
+- SPEED_POTION_POWER — Models.Powers/SpeedPotionPower.cs:5 — TemporaryDexterityPower subclass, origin SPEED_POTION
+- STRANGLE_POWER — Models.Powers/StranglePower.cs:18 — Data dict keyed by CardInstance.InstanceId
+- THE_BOMB_POWER — Models.Powers/TheBombPower.cs:23 — Damage DynamicVar as field + SetDamage; DamageVar(Damage, Unpowered) built at trigger; waits dropped
+- TORIC_TOUGHNESS_POWER — Models.Powers/ToricToughnessPower.cs:16 — Block DynamicVar as field + SetBlock
+- TRACKING_POWER — Models.Powers/TrackingPower.cs:11 — Owner.Pets as PetOwnerOf(dealer) == Owner
+- WRAITH_FORM_POWER — Models.Powers/WraithFormPower.cs:17 — none
+- TEMPORARY_DEXTERITY_POWER, TEMPORARY_STRENGTH_POWER — already ported in W1 (abstract bases), not touched

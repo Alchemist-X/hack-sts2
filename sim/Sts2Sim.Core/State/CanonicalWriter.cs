@@ -30,6 +30,24 @@ public sealed class CanonicalWriter
 
     public void Reset() => _length = 0;
 
+    public void Truncate(int length)
+    {
+        if ((uint)length > (uint)_length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Truncate cannot extend the written bytes");
+        }
+        _length = length;
+    }
+
+    public ReadOnlySpan<byte> WrittenSince(int start)
+    {
+        if ((uint)start > (uint)_length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(start), start, "Start lies beyond the written bytes");
+        }
+        return new ReadOnlySpan<byte>(_buffer, start, _length - start);
+    }
+
     public byte[] ToArray() => WrittenSpan.ToArray();
 
     public void WriteByte(byte value)

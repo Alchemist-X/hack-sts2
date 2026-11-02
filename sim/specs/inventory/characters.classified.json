@@ -1,0 +1,901 @@
+{
+ "schema": "sts2sim.inventory.classified/v2",
+ "kind": "characters",
+ "content_kind": "characters",
+ "game_version": "0.111.0",
+ "generated_by": [
+  "sim/tools/inventory/classify/minor-kinds/vdiff.py",
+  "sim/tools/inventory/classify/minor-kinds/build.py",
+  "sim/tools/inventory/classify/minor-kinds/data_characters.py",
+  "sim/tools/inventory/classify/normalize/normalize.py"
+ ],
+ "requirements_catalogue": "sim/specs/inventory/requirements.json",
+ "batches": "sim/specs/inventory/batches.json",
+ "tier_legend": {
+  "1": "own code needs only facades and hooks the P0 sim has, or its kind's runtime (kind_baselines)",
+  "2": "needs game facades, hooks, hook parameters or model APIs the P0 sim lacks",
+  "3": "needs a player prompt or a new subsystem (choice runtime, orbs, Osty, stars, forge, card generation, combat history, potions, enchantments, run layer)",
+  "4": "unreadable, cross-cutting or test-only"
+ },
+ "schema_fields": {
+  "kernel_requirements": "requirement-catalogue keys (requirements.json) that the entry's own code needs and the P0 sim lacks",
+  "kernel_requirement_notes": "the classifier's free-text requirements, kept for reading (mapped to keys by normalize/catalog.py)",
+  "dependencies": "{requires, reads, co_port}: {content kind: [id]}; requires = applied, created, summoned or offered models, reads = only read or type-tested, co_port = definitions that call each other",
+  "prompts": "ChoicePromptKind records (sim/CONTRACTS.md B1): kind, entry, site, opened_by, via, pile, min, max, require_confirm, can_skip, cancelable, context, filter, cite, notes; via names the applied power, spawned monster or offered relic whose own prompt this is (null for the entry's own prompts)",
+  "phases": "run-scope decision phases the entry opens (Rewards, RestSite, EventCombat, CrystalSphere, Shop, PotionUse, AbandonRun): phase, role, entry, site, opened_by, via, detail, cite",
+  "nested_prompts": "prompts of the cards the entry auto-plays",
+  "version_delta_v107": "the classifier's v0.107.1 comparison: status same | cosmetic | rule-change | new | decompile-gap | unknown, note and its evidence fields; the reconciled, triaged list is version-deltas.json",
+  "tier": "own code only, 1-4 (tier_legend): max of the classifier's tier and the levels of kernel_requirements; test mocks 4",
+  "tier_with_deps": "max tier over the entry and every entry it depends on (all three relations), transitively",
+  "tier_classifier": "the classifier's own-code tier before normalisation",
+  "tier_from_requirements": "max requirements.json level of kernel_requirements (1 when empty)",
+  "tier_adjustments": "why tier differs from tier_classifier",
+  "port_batch": "batch in this kind's scheme (cards: the unified card scheme port_batch_legend); the cross-kind order is batches.json",
+  "port_batch_legacy": "cards: the slice classifier's own batch number",
+  "card_batch_raised_by": "cards: required powers or tokens whose card batch is later than the mapped one"
+ },
+ "kind_baseline": [
+  "run:run_state"
+ ],
+ "raw_manifest": "sim/specs/inventory/characters.json",
+ "raw_source_digest": "b38047368712eb61f7344673ade6b1a1aa5d110e01bff5003a2d37b97b001dc4",
+ "scope_legend": {
+  "game": "reachable in a standard single-player run",
+  "test_only": "test mock (IsMock or a Mocks namespace)",
+  "deprecated": "empty placeholder kept for save compatibility",
+  "unreferenced": "registered but applied by no model in v0.111.0",
+  "custom_modes_only": "only in custom or daily runs (run modifiers); excluded from the standard single-player scope",
+  "not_playable": "not selectable as a run character"
+ },
+ "port_batch_legend": {
+  "1": "playable characters with the W2 run layer: starting deck, relics, HP, gold, energy, orb slots, pools"
+ },
+ "count": 8,
+ "entries": [
+  {
+   "id": "DEFECT",
+   "model_id": "CHARACTER.DEFECT",
+   "class": "Defect",
+   "file": "Models.Characters/Defect.cs",
+   "class_line": 17,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "starting_hp": 75,
+   "starting_gold": 99,
+   "max_energy": 3,
+   "base_orb_slot_count": 3,
+   "starting_deck": [
+    "STRIKE_DEFECT",
+    "STRIKE_DEFECT",
+    "STRIKE_DEFECT",
+    "STRIKE_DEFECT",
+    "DEFEND_DEFECT",
+    "DEFEND_DEFECT",
+    "DEFEND_DEFECT",
+    "DEFEND_DEFECT",
+    "ZAP",
+    "DUALCAST"
+   ],
+   "starting_relics": [
+    "CRACKED_CORE"
+   ],
+   "starting_potions": [],
+   "card_pool": "DEFECT",
+   "relic_pool": "DEFECT",
+   "potion_pool": "DEFECT",
+   "is_playable": true,
+   "all_characters_index": 4,
+   "mechanics": [
+    "StartingHp 75, StartingGold 99, MaxEnergy 3 (default), BaseOrbSlotCount 3",
+    "StartingDeck: StrikeDefect x4, DefendDefect x4, Zap, Dualcast; StartingRelics: CrackedCore",
+    "pools: DefectCardPool, DefectRelicPool, DefectPotionPool; UnlocksAfterRunAs Necrobinder",
+    "GetArchitectAttackVfx: 5 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "kernel:orbs",
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "STRIKE_DEFECT",
+      "DEFEND_DEFECT",
+      "ZAP",
+      "DUALCAST"
+     ],
+     "relics": [
+      "CRACKED_CORE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "animator graph replaced by AnimationStates (UI only)",
+    "v107_file": "Models/Characters/Defect.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "AddAnyState",
+       "AddBranch",
+       "CreatureAnimator",
+       "GenerateAnimator",
+       "MegaSprite",
+       "NextState"
+      ],
+      "only_v111": [
+       "Add",
+       "AnimationStates",
+       "ValueTuple"
+      ]
+     },
+     "overrides": {
+      "only_v107": [
+       "GenerateAnimator"
+      ],
+      "only_v111": [
+       "AnimationStates"
+      ]
+     },
+     "strings": {
+      "only_v107": [
+       "Dead",
+       "Idle",
+       "Relaxed",
+       "die",
+       "idle_loop",
+       "relaxed_loop"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 3,
+   "tier_with_deps": 3,
+   "tier_classifier": 3,
+   "tier_from_requirements": 3,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "BaseOrbSlotCount sets the OrbQueue capacity at combat start; UnlocksAfterRunAs is profile progression (no in-run rule)",
+   "open_questions": []
+  },
+  {
+   "id": "DEPRECATED_CHARACTER",
+   "model_id": "CHARACTER.DEPRECATED_CHARACTER",
+   "class": "DeprecatedCharacter",
+   "file": "Models.Characters/DeprecatedCharacter.cs",
+   "class_line": 13,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": true,
+   "scope": "deprecated",
+   "starting_hp": 1000,
+   "starting_gold": 99,
+   "max_energy": 100,
+   "base_orb_slot_count": 0,
+   "starting_deck": [],
+   "starting_relics": [],
+   "starting_potions": [],
+   "card_pool": "MOCK",
+   "relic_pool": "IRONCLAD",
+   "potion_pool": "IRONCLAD",
+   "is_playable": false,
+   "all_characters_index": null,
+   "mechanics": [
+    "not playable; 1000 HP, 100 energy, MockCardPool (test placeholder)",
+    "GetArchitectAttackVfx: 1 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "Array.Empty spelling only",
+    "v107_file": "Models/Characters/DeprecatedCharacter.cs",
+    "fingerprint_diff": {
+     "props": {
+      "StartingDeck": {
+       "v107": "=> Array.Empty<CardModel>();",
+       "v111": "=> System.Array.Empty<CardModel>();"
+      },
+      "StartingRelics": {
+       "v107": "=> Array.Empty<RelicModel>();",
+       "v111": "=> System.Array.Empty<RelicModel>();"
+      }
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "DEPRIVED",
+   "model_id": "CHARACTER.DEPRIVED",
+   "class": "Deprived",
+   "file": "Models.Characters/Deprived.cs",
+   "class_line": 13,
+   "base_class": "CharacterModel",
+   "is_mock": true,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "test_only",
+   "starting_hp": 1000,
+   "starting_gold": 99,
+   "max_energy": 100,
+   "base_orb_slot_count": 0,
+   "starting_deck": [],
+   "starting_relics": [],
+   "starting_potions": [],
+   "card_pool": "DEPRIVED",
+   "relic_pool": "IRONCLAD",
+   "potion_pool": "IRONCLAD",
+   "is_playable": false,
+   "all_characters_index": null,
+   "mechanics": [
+    "IsMock, not playable; 1000 HP, 100 energy; card pool DeprivedCardPool unless a mock pool is set (test seam)",
+    "GetArchitectAttackVfx: 0 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "test seam: mock pool now defaults to DeprivedCardPool and is set with SetMockCardPool",
+    "v107_file": "Models/Characters/Deprived.cs",
+    "fingerprint_diff": {
+     "comparisons": {
+      "only_v107": [
+       "_mockCardPool == null"
+      ],
+      "only_v111": [
+       "_mockCardPool != null"
+      ]
+     },
+     "idents": {
+      "only_v107": [
+       "AddToPool",
+       "AssertCanonical"
+      ],
+      "only_v111": [
+       "DeprivedCardPool",
+       "IsMock",
+       "SetMockCardPool"
+      ]
+     },
+     "overrides": {
+      "only_v107": [],
+      "only_v111": [
+       "IsMock"
+      ]
+     },
+     "props": {
+      "CardPool": {
+       "v107": "=> _mockCardPool ?? ModelDb.CardPool<MockCardPool>();",
+       "v111": "{ get { if (_mockCardPool != null) { return _mockCardPool; } return ModelDb.CardPool<DeprivedCardPool>(); } }"
+      },
+      "IsMock": {
+       "v107": null,
+       "v111": "=> true;"
+      },
+      "StartingDeck": {
+       "v107": "=> Array.Empty<CardModel>();",
+       "v111": "=> System.Array.Empty<CardModel>();"
+      },
+      "StartingRelics": {
+       "v107": "=> Array.Empty<RelicModel>();",
+       "v111": "=> System.Array.Empty<RelicModel>();"
+      }
+     },
+     "strings": {
+      "only_v107": [],
+      "only_v111": [
+       "Mock card pool already initialized"
+      ]
+     }
+    }
+   },
+   "tier": 4,
+   "tier_with_deps": 4,
+   "tier_classifier": 4,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "IRONCLAD",
+   "model_id": "CHARACTER.IRONCLAD",
+   "class": "Ironclad",
+   "file": "Models.Characters/Ironclad.cs",
+   "class_line": 18,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "starting_hp": 80,
+   "starting_gold": 99,
+   "max_energy": 3,
+   "base_orb_slot_count": 0,
+   "starting_deck": [
+    "STRIKE_IRONCLAD",
+    "STRIKE_IRONCLAD",
+    "STRIKE_IRONCLAD",
+    "STRIKE_IRONCLAD",
+    "STRIKE_IRONCLAD",
+    "DEFEND_IRONCLAD",
+    "DEFEND_IRONCLAD",
+    "DEFEND_IRONCLAD",
+    "DEFEND_IRONCLAD",
+    "BASH"
+   ],
+   "starting_relics": [
+    "BURNING_BLOOD"
+   ],
+   "starting_potions": [],
+   "card_pool": "IRONCLAD",
+   "relic_pool": "IRONCLAD",
+   "potion_pool": "IRONCLAD",
+   "is_playable": true,
+   "all_characters_index": 0,
+   "mechanics": [
+    "StartingHp 80, StartingGold 99, MaxEnergy 3, no orb slots",
+    "StartingDeck: StrikeIronclad x5, DefendIronclad x4, Bash; StartingRelics: BurningBlood",
+    "pools: IroncladCardPool, IroncladRelicPool, IroncladPotionPool",
+    "GetArchitectAttackVfx: 5 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "STRIKE_IRONCLAD",
+      "DEFEND_IRONCLAD",
+      "BASH"
+     ],
+     "relics": [
+      "BURNING_BLOOD"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "animator graph replaced by AnimationStates (UI only)",
+    "v107_file": "Models/Characters/Ironclad.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "AddAnyState",
+       "AddBranch",
+       "CreatureAnimator",
+       "GenerateAnimator",
+       "MegaSprite",
+       "NextState"
+      ],
+      "only_v111": [
+       "AnimationStates",
+       "ValueTuple"
+      ]
+     },
+     "overrides": {
+      "only_v107": [
+       "GenerateAnimator"
+      ],
+      "only_v111": [
+       "AnimationStates"
+      ]
+     },
+     "strings": {
+      "only_v107": [
+       "Cast",
+       "Dead",
+       "Hit",
+       "Idle",
+       "PowerUp",
+       "Relaxed",
+       "attack",
+       "cast",
+       "die",
+       "hurt",
+       "idle_loop",
+       "relaxed_loop"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "NECROBINDER",
+   "model_id": "CHARACTER.NECROBINDER",
+   "class": "Necrobinder",
+   "file": "Models.Characters/Necrobinder.cs",
+   "class_line": 16,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "starting_hp": 66,
+   "starting_gold": 99,
+   "max_energy": 3,
+   "base_orb_slot_count": 0,
+   "starting_deck": [
+    "STRIKE_NECROBINDER",
+    "STRIKE_NECROBINDER",
+    "STRIKE_NECROBINDER",
+    "STRIKE_NECROBINDER",
+    "DEFEND_NECROBINDER",
+    "DEFEND_NECROBINDER",
+    "DEFEND_NECROBINDER",
+    "DEFEND_NECROBINDER",
+    "BODYGUARD",
+    "UNLEASH"
+   ],
+   "starting_relics": [
+    "BOUND_PHYLACTERY"
+   ],
+   "starting_potions": [],
+   "card_pool": "NECROBINDER",
+   "relic_pool": "NECROBINDER",
+   "potion_pool": "NECROBINDER",
+   "is_playable": true,
+   "all_characters_index": 3,
+   "mechanics": [
+    "StartingHp 66, StartingGold 99, MaxEnergy 3",
+    "StartingDeck: StrikeNecrobinder x4, DefendNecrobinder x4, Bodyguard, Unleash; StartingRelics: BoundPhylactery (summons Osty)",
+    "pools: NecrobinderCardPool, NecrobinderRelicPool, NecrobinderPotionPool; UnlocksAfterRunAs Regent",
+    "GetArchitectAttackVfx: 4 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "STRIKE_NECROBINDER",
+      "DEFEND_NECROBINDER",
+      "BODYGUARD",
+      "UNLEASH"
+     ],
+     "relics": [
+      "BOUND_PHYLACTERY"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "animator graph replaced by AnimationStates (UI only)",
+    "v107_file": "Models/Characters/Necrobinder.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "AddAnyState",
+       "AddBranch",
+       "CreatureAnimator",
+       "GenerateAnimator",
+       "MegaSprite",
+       "NextState"
+      ],
+      "only_v111": [
+       "Add",
+       "AnimationStates",
+       "ValueTuple"
+      ]
+     },
+     "overrides": {
+      "only_v107": [
+       "GenerateAnimator"
+      ],
+      "only_v111": [
+       "AnimationStates"
+      ]
+     },
+     "strings": {
+      "only_v107": [
+       "Dead",
+       "Idle",
+       "Relaxed",
+       "die",
+       "idle_loop",
+       "relaxed_loop"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "Osty comes from the starting relic BoundPhylactery (a dependency); UnlocksAfterRunAs is profile progression",
+   "open_questions": []
+  },
+  {
+   "id": "RANDOM_CHARACTER",
+   "model_id": "CHARACTER.RANDOM_CHARACTER",
+   "class": "RandomCharacter",
+   "file": "Models.Characters/RandomCharacter.cs",
+   "class_line": 13,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "not_playable",
+   "starting_hp": 1,
+   "starting_gold": 1,
+   "max_energy": 3,
+   "base_orb_slot_count": 0,
+   "starting_deck": [
+    "STRIKE_IRONCLAD",
+    "STRIKE_SILENT",
+    "STRIKE_REGENT",
+    "STRIKE_NECROBINDER",
+    "STRIKE_DEFECT",
+    "DEFEND_IRONCLAD",
+    "DEFEND_SILENT",
+    "DEFEND_REGENT",
+    "DEFEND_NECROBINDER",
+    "DEFEND_DEFECT"
+   ],
+   "starting_relics": [
+    "CIRCLET"
+   ],
+   "starting_potions": [],
+   "card_pool": "IRONCLAD",
+   "relic_pool": "IRONCLAD",
+   "potion_pool": "IRONCLAD",
+   "is_playable": false,
+   "all_characters_index": null,
+   "mechanics": [
+    "IsPlayable false: the lobby replaces it with a random playable character before the run (Multiplayer.Game.Lobby/StartRunLobby.cs)",
+    "placeholder stats 1 HP, 1 gold, Circlet, a mixed Strike/Defend deck",
+    "GetArchitectAttackVfx: 0 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {},
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "same",
+    "note": "token fingerprint identical (powers/vdiff.py method)",
+    "v107_file": "Models/Characters/RandomCharacter.cs"
+   },
+   "tier": 1,
+   "tier_with_deps": 1,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": null,
+   "notes": "",
+   "open_questions": []
+  },
+  {
+   "id": "REGENT",
+   "model_id": "CHARACTER.REGENT",
+   "class": "Regent",
+   "file": "Models.Characters/Regent.cs",
+   "class_line": 18,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "starting_hp": 75,
+   "starting_gold": 99,
+   "max_energy": 3,
+   "base_orb_slot_count": 0,
+   "starting_deck": [
+    "STRIKE_REGENT",
+    "STRIKE_REGENT",
+    "STRIKE_REGENT",
+    "STRIKE_REGENT",
+    "DEFEND_REGENT",
+    "DEFEND_REGENT",
+    "DEFEND_REGENT",
+    "DEFEND_REGENT",
+    "FALLING_STAR",
+    "VENERATE"
+   ],
+   "starting_relics": [
+    "DIVINE_RIGHT"
+   ],
+   "starting_potions": [],
+   "card_pool": "REGENT",
+   "relic_pool": "REGENT",
+   "potion_pool": "REGENT",
+   "is_playable": true,
+   "all_characters_index": 2,
+   "mechanics": [
+    "StartingHp 75, StartingGold 99, MaxEnergy 3; ShouldAlwaysShowStarCounter (UI)",
+    "StartingDeck: StrikeRegent x4, DefendRegent x4, FallingStar, Venerate; StartingRelics: DivineRight",
+    "pools: RegentCardPool, RegentRelicPool, RegentPotionPool; UnlocksAfterRunAs Silent",
+    "GetArchitectAttackVfx: 5 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "STRIKE_REGENT",
+      "DEFEND_REGENT",
+      "FALLING_STAR",
+      "VENERATE"
+     ],
+     "relics": [
+      "DIVINE_RIGHT"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "animator graph replaced by AnimationStates; sovereign-blade animation helpers removed (UI only)",
+    "v107_file": "Models/Characters/Regent.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "AddAnyState",
+       "AddBranch",
+       "CreatureAnimator",
+       "GenerateAnimator",
+       "GetSovereignBladeAnimIfApplicable",
+       "GetSovereignBladeDelayIfApplicable",
+       "MegaSprite",
+       "NextState"
+      ],
+      "only_v111": [
+       "AnimationStates",
+       "ValueTuple"
+      ]
+     },
+     "overrides": {
+      "only_v107": [
+       "GenerateAnimator"
+      ],
+      "only_v111": [
+       "AnimationStates"
+      ]
+     },
+     "strings": {
+      "only_v107": [
+       "Attack",
+       "Cast",
+       "Dead",
+       "Hit",
+       "Idle",
+       "PowerUp",
+       "Relaxed",
+       "attack",
+       "cast",
+       "die",
+       "hurt",
+       "idle_loop",
+       "relaxed_loop"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "stars come from its cards and DivineRight (dependencies); ShouldAlwaysShowStarCounter is UI only",
+   "open_questions": []
+  },
+  {
+   "id": "SILENT",
+   "model_id": "CHARACTER.SILENT",
+   "class": "Silent",
+   "file": "Models.Characters/Silent.cs",
+   "class_line": 18,
+   "base_class": "CharacterModel",
+   "is_mock": false,
+   "is_abstract": false,
+   "registered": true,
+   "is_deprecated": false,
+   "scope": "game",
+   "starting_hp": 70,
+   "starting_gold": 99,
+   "max_energy": 3,
+   "base_orb_slot_count": 0,
+   "starting_deck": [
+    "STRIKE_SILENT",
+    "STRIKE_SILENT",
+    "STRIKE_SILENT",
+    "STRIKE_SILENT",
+    "STRIKE_SILENT",
+    "DEFEND_SILENT",
+    "DEFEND_SILENT",
+    "DEFEND_SILENT",
+    "DEFEND_SILENT",
+    "DEFEND_SILENT",
+    "NEUTRALIZE",
+    "SURVIVOR"
+   ],
+   "starting_relics": [
+    "RING_OF_THE_SNAKE"
+   ],
+   "starting_potions": [],
+   "card_pool": "SILENT",
+   "relic_pool": "SILENT",
+   "potion_pool": "SILENT",
+   "is_playable": true,
+   "all_characters_index": 1,
+   "mechanics": [
+    "StartingHp 70, StartingGold 99, MaxEnergy 3",
+    "StartingDeck: StrikeSilent x5, DefendSilent x5, Neutralize, Survivor; StartingRelics: RingOfTheSnake",
+    "pools: SilentCardPool, SilentRelicPool, SilentPotionPool",
+    "GetArchitectAttackVfx: 4 entries; TheArchitect shuffles this list with the event Rng, so its length is rule-relevant (Models/CharacterModel.cs:215, Models.Events/TheArchitect.cs:284-285)"
+   ],
+   "hooks": [],
+   "prompts": [],
+   "phases": [],
+   "kernel_requirements": [
+    "run:run_state"
+   ],
+   "kernel_requirement_notes": [],
+   "dependencies": {
+    "requires": {
+     "cards": [
+      "STRIKE_SILENT",
+      "DEFEND_SILENT",
+      "NEUTRALIZE",
+      "SURVIVOR"
+     ],
+     "relics": [
+      "RING_OF_THE_SNAKE"
+     ]
+    },
+    "reads": {},
+    "co_port": {}
+   },
+   "rng_streams": [],
+   "ascension_sensitivity": "none",
+   "version_delta_v107": {
+    "status": "cosmetic",
+    "note": "animator graph replaced by AnimationStates (UI only)",
+    "v107_file": "Models/Characters/Silent.cs",
+    "fingerprint_diff": {
+     "idents": {
+      "only_v107": [
+       "AddAnyState",
+       "AddBranch",
+       "CreatureAnimator",
+       "GenerateAnimator",
+       "MegaSprite",
+       "NextState"
+      ],
+      "only_v111": [
+       "AnimationStates",
+       "ValueTuple"
+      ]
+     },
+     "overrides": {
+      "only_v107": [
+       "GenerateAnimator"
+      ],
+      "only_v111": [
+       "AnimationStates"
+      ]
+     },
+     "strings": {
+      "only_v107": [
+       "Attack",
+       "Cast",
+       "Dead",
+       "Hit",
+       "Idle",
+       "PowerUp",
+       "Relaxed",
+       "attack",
+       "cast",
+       "die",
+       "hurt",
+       "idle_loop",
+       "relaxed_loop"
+      ],
+      "only_v111": []
+     }
+    }
+   },
+   "tier": 1,
+   "tier_with_deps": 3,
+   "tier_classifier": 1,
+   "tier_from_requirements": 1,
+   "tier_adjustments": [],
+   "port_batch": 1,
+   "notes": "",
+   "open_questions": []
+  }
+ ]
+}

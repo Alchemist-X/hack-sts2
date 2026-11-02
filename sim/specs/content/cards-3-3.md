@@ -1,0 +1,30 @@
+# W3 cards-3-3 index (wave A)
+
+- PRECISE_CUT — Models.Cards/PreciseCut.cs:17 — WithHitFx dropped; calculated attack via DamageCmd.Attack(cs, Func) over CalculatedDamage.Calculate.
+- PRIMAL_FORCE — Models.Cards/PrimalForce.cs:15 — TriggerAnim dropped; GIANT_ROCK created by id (another owner ports it).
+- RAMPAGE — Models.Cards/Rampage.cs:16 — ExtraDamageFromPlays kept in a CardExtraState (cloned + hashed).
+- REAVE — Models.Cards/Reave.cs:18 — PreviewCardPileAdd / hover tips dropped.
+- REBOUND — Models.Cards/Rebound.cs:18 — REBOUND_POWER applied by id.
+- REFLEX — Models.Cards/Reflex.cs:14 — TriggerAnim dropped; Sly handled by the kernel discard pass.
+- REGRET — Models.Cards/Regret.cs:17 — BeforeSideTurnEnd via CardListener; CardsInHand in a CardExtraState.
+- REND — Models.Cards/Rend.cs:19 — counts Debuff powers that are not ITemporaryPower.
+- RICOCHET — Models.Cards/Ricochet.cs:16 — random-target attack via TargetingRandomOpponents().
+- ROCKET_PUNCH — Models.Cards/RocketPunch.cs:17 — AfterCardGeneratedForCombat via CardListener.
+- SCRAPE — Models.Cards/Scrape.cs:17 — cost check uses GetWithModifiers(cs, card, All) (global modifiers included, as in the game).
+- SEVERANCE — Models.Cards/Severance.cs:18 — PreviewCardPileAdd dropped.
+- SHADOW_STEP — Models.Cards/ShadowStep.cs:15 — SHADOW_STEP_POWER applied by id.
+- SHIV — Models.Cards/Shiv.cs:24 — FAN_OF_KNIVES_POWER checked by id; WithHitVfxNode / WithAttackerAnim dropped; static CreateInHand(cs, owner[, count], creator) helpers.
+- SOUL — Models.Cards/Soul.cs:16 — skipped: W1 pilot file already exists.
+- SOUL_STORM — Models.Cards/SoulStorm.cs:20 — counts SOUL cards in the exhaust pile.
+- STACK — Models.Cards/Stack.cs:18 — VisualCardPool dropped (UI only).
+- STAMPEDE — Models.Cards/Stampede.cs:15 — STAMPEDE_POWER applied by id.
+- STORM_OF_STEEL — Models.Cards/StormOfSteel.cs:16 — CustomScaledWait dropped.
+- TACTICIAN — Models.Cards/Tactician.cs:15 — nothing dropped.
+- THRASH — Models.Cards/Thrash.cs:20 — ExtraDamage in a CardExtraState; Log.Warn branch dropped (damage stays 0).
+- TIMES_UP — Models.Cards/TimesUp.cs:19 — DOOM_POWER amount read by id.
+- TURBO — Models.Cards/Turbo.cs:15 — Wait / PreviewCardPileAdd dropped.
+- UNDEATH — Models.Cards/Undeath.cs:15 — CreateClone mapped to cs.CloneCard + ExhaustOnNextPlay=false; _cloneOf is not modelled.
+- UNTOUCHABLE — Models.Cards/Untouchable.cs:15 — nothing dropped.
+- UPROAR — Models.Cards/Uproar.cs:18 — StableShuffle on Rng.Shuffle; AutoPlay with a null target.
+- UP_MY_SLEEVE — Models.Cards/UpMySleeve.cs:15 — TriggerAnim / Wait dropped; TimesPlayedThisCombat in a CardExtraState.
+- VOID — Models.Cards/Void.cs:14 — AfterCardDrawn via CardListener; Wait dropped.

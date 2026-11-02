@@ -1,7 +1,7 @@
 """sts2rec command-line interface.
 
 Subcommands: sessions, validate, canonical, watch, archive, report, pack,
-export-bundles.
+export-bundles, export-bundles-v2, export-run-oracles.
 Exit codes: 0 = ok, 1 = validation/operation errors, 2 = usage errors.
 """
 
@@ -20,11 +20,13 @@ from .audit import audit_lineage
 from .canonical import build_canonical
 from .diff_bundle import SimRegistry, scan_sim_registry
 from .diff_export import PRE_STATE_MODES, PRE_STATE_SETTLED, ExportError, export_bundles
+from .diff_export_v2 import DEFAULT_VERSIONS, ContentRegistry, export_bundles_v2, scan_content_registry
 from .errors import Sts2RecError
 from .pack import pack_session
 from .paths import profile_saves_dirs, recorder_output_root, sessions_root, user_data_dir
 from .report import build_report
 from .review import review_lineage, write_review
+from .run_oracles import ORACLE_BUILD_ID, RunOracleExportError, export_run_oracles
 from .session import COMPRESSED_SUFFIX, STREAM_NAMES, Manifest, load_manifest, stream_path
 from .validate import validate_session
 from .watch import watch_session
@@ -34,6 +36,7 @@ EXIT_ERRORS = 1
 EXIT_USAGE = 2
 
 DIFF_BUNDLE_DIR_ENV = "STS2REC_DIFF_BUNDLE_DIR"
+RUN_ORACLE_DIR_ENV = "STS2REC_RUN_ORACLE_DIR"
 DEFAULT_DIFF_BUNDLE_DIR = (
     "/private/tmp/claude-501/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-"
     "slay-the-spire-card-combo-fc5926/7fa8c8f8-229e-453c-ba28-de560fb8b5a7/scratchpad/diff-bundles"
@@ -321,6 +324,81 @@ def _cmd_export_bundles(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_export_bundles_v2(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else sessions_root(recorder_output_root())
+    if not args.out_dir:
+        print("error: pass OUT_DIR", file=sys.stderr)
+        return EXIT_USAGE
+    out_dir = Path(args.out_dir)
+    repo = _repo_root()
+    try:
+        if args.sim_registry:
+            raw = json.loads(Path(args.sim_registry).read_text(encoding="utf-8"))
+            registry = ContentRegistry.from_json(raw, source=f"file:{args.sim_registry}")
+        else:
+            sim_core = Path(args.sim_core) if args.sim_core else (repo / "sim" / "Sts2Sim.Core" if repo else None)
+            if sim_core is None or not sim_core.is_dir():
+                print("error: no sim sources found; pass --sim-core DIR or --sim-registry FILE", file=sys.stderr)
+                return EXIT_USAGE
+            registry = scan_content_registry(sim_core)
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"error: cannot load the sim registry: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    versions = None if args.versions == "all" else [v for v in args.versions.split(",") if v]
+    try:
+        index = export_bundles_v2(
+            root,
+            out_dir,
+            registry,
+            versions=versions,
+            pre_state_mode=args.pre_state,
+            mcr_readable=args.mcr_readable,
+            repo_root=repo,
+            log=lambda message: print(message, file=sys.stderr),
+        )
+    except ExportError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    summary = index["summary"]
+    print(
+        f"{summary['runs']} runs {summary['runs_by_version']}; segments {summary['segments_by_kind']} "
+        f"(eligible {summary['eligible_segments_by_kind']}); decisions {summary['decisions']} "
+        f"(eligible {summary['eligible_decisions']})"
+    )
+    print(f"reasons: {summary['reason_classes']}")
+    print(f"index: {out_dir / 'reasons.json'}")
+    return EXIT_OK
+
+
+def _cmd_export_run_oracles(args: argparse.Namespace) -> int:
+    out = args.out_dir or os.environ.get(RUN_ORACLE_DIR_ENV)
+    if not out:
+        print(f"error: pass OUT_DIR or set ${RUN_ORACLE_DIR_ENV}", file=sys.stderr)
+        return EXIT_USAGE
+    user_data = Path(args.user_data) if args.user_data else user_data_dir()
+    sessions = Path(args.root) if args.root else sessions_root(recorder_output_root())
+    repo = _repo_root()
+    try:
+        manifest = export_run_oracles(
+            user_data,
+            sessions,
+            Path(out),
+            build_id=args.build_id,
+            forbidden_roots=[repo] if repo else [],
+            log=lambda message: print(message, file=sys.stderr),
+        )
+    except (RunOracleExportError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    summary = manifest["summary"]
+    print(
+        f"{summary['saves']} saves, {summary['runs']} .run histories kept; {summary['excluded']} excluded"
+    )
+    print(f"manifest: {Path(out) / 'manifest.json'}")
+    print(f"next: dotnet run -c Release --project sim/Sts2Sim.Diff -- run {out}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sts2rec",
@@ -436,6 +514,46 @@ def build_parser() -> argparse.ArgumentParser:
         "projection (false divergences)",
     )
     export.set_defaults(handler=_cmd_export_bundles)
+
+    export_v2 = subparsers.add_parser(
+        "export-bundles-v2",
+        help="write per-run diff bundles v2 (sim/specs/diff-bundle-v2.md) from the corpus, read-only",
+    )
+    export_v2.add_argument(
+        "out_dir", nargs="?", help="output directory; never inside the corpus, nor the repo outside its tmp/"
+    )
+    export_v2.add_argument("--root", help="sessions root (default: recorder output root)")
+    registry_v2 = export_v2.add_mutually_exclusive_group()
+    registry_v2.add_argument(
+        "--sim-core", help="sim Core sources to scan for ported content (default: repo sim/Sts2Sim.Core)"
+    )
+    registry_v2.add_argument("--sim-registry", help="registry JSON (the sim_registry block of a reasons.json)")
+    export_v2.add_argument(
+        "--versions",
+        default=",".join(DEFAULT_VERSIONS),
+        help="comma-separated game versions to export, or 'all' (default: %(default)s)",
+    )
+    export_v2.add_argument("--pre-state", choices=PRE_STATE_MODES, default=PRE_STATE_SETTLED, help="as export-bundles")
+    export_v2.add_argument(
+        "--mcr-readable",
+        action="store_true",
+        help="treat native/replay.mcr anchors as readable (once the harness decodes .mcr)",
+    )
+    export_v2.set_defaults(handler=_cmd_export_bundles_v2)
+
+    run_oracles = subparsers.add_parser(
+        "export-run-oracles",
+        help="copy run saves and .run histories for the run-layer oracles (sim/specs/run-oracles.md), read-only",
+    )
+    run_oracles.add_argument(
+        "out_dir",
+        nargs="?",
+        help=f"output directory (default: ${RUN_ORACLE_DIR_ENV}); never inside the corpus, the game data or the repo",
+    )
+    run_oracles.add_argument("--user-data", help="game user-data root (default: platform location)")
+    run_oracles.add_argument("--root", help="recorder sessions root (default: recorder output root)")
+    run_oracles.add_argument("--build-id", default=ORACLE_BUILD_ID, help=f".run build gate (default {ORACLE_BUILD_ID})")
+    run_oracles.set_defaults(handler=_cmd_export_run_oracles)
     return parser
 
 

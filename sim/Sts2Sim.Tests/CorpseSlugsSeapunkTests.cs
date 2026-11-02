@@ -695,20 +695,20 @@ public static class CorpseSlugsSeapunkTests
         var power = Assert.NotNull(b.GetPower<RavenousPower>());
         ulong before = StateHasher.Hash(cs);
 
-        power.AfterDeath(cs, b, false);
-        power.AfterDeath(cs, cs.Player, false);
-        power.AfterDeath(cs, a, true);
+        power.AfterDeath(cs.Run, b, false);
+        power.AfterDeath(cs.Run, cs.Player, false);
+        power.AfterDeath(cs.Run, a, true);
         Assert.Equal(before, StateHasher.Hash(cs), "own death, a death on the other side and a prevented removal do nothing");
         Assert.False(b.IsStunned);
 
         b.CurrentHp = 0;
-        power.AfterDeath(cs, a, false);
+        power.AfterDeath(cs.Run, a, false);
         Assert.False(b.IsStunned, "a dead owner does nothing");
         Assert.Null(b.GetPower<StrengthPower>());
         Assert.False(CorpseSlug.GetExtra(b).IsRavenous);
 
         b.CurrentHp = b.MaxHp;
-        power.AfterDeath(cs, a, false);
+        power.AfterDeath(cs.Run, a, false);
         Assert.True(b.IsStunned, "a living owner reacts to a teammate's death");
         Assert.Equal(4, b.GetPowerAmount<StrengthPower>());
         Assert.True(CorpseSlug.GetExtra(b).IsRavenous);

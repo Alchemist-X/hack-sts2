@@ -20,13 +20,16 @@ namespace Sts2Recorder.Game;
 /// Session lifecycle: RunStarted attach (with the multiplayer/replay/test guard),
 /// SessionMeta construction, terminal handling (OnEnded first-call latch +
 /// CreateRunHistoryEntry catch-all), CleanUp teardown, save heartbeats, and
-/// native artifact archiving (.run / latest.mcr copies).
+/// native artifact archiving (.run / latest.mcr copies, per-save and per-replay
+/// anchors under native/saves and native/replays).
 /// </summary>
 public static class RunLifecycle
 {
     private static bool _terminalLatched;
     private static bool _savedSubscribed;
     private static AccessTools.FieldRef<RunManager, long>? _startTimeRef;
+    private static TrajectorySession? _cleanUpSession;
+    private static RunState? _cleanUpRunState;
 
     internal static void ApplyPatches(Harmony harmony)
     {
@@ -47,7 +50,8 @@ public static class RunLifecycle
             harmony,
             "patch:RunManager.CleanUp",
             () => AccessTools.Method(typeof(RunManager), nameof(RunManager.CleanUp)),
-            prefix: new HarmonyMethod(typeof(RunLifecycle), nameof(CleanUpPrefix)));
+            prefix: new HarmonyMethod(typeof(RunLifecycle), nameof(CleanUpPrefix)),
+            finalizer: new HarmonyMethod(typeof(RunLifecycle), nameof(CleanUpFinalizer)));
         RecorderMod.TryPatch(
             harmony,
             "patch:RunHistorySaveManager.SaveHistory",
@@ -76,6 +80,7 @@ public static class RunLifecycle
                 GD.Print($"[Sts2Recorder] Not recording this run (net type {netType}, test mode {TestMode.IsOn}).");
                 return;
             }
+            DisposeCleanUpSession();
             if (RecorderMod.Session != null)
             {
                 // Missed CleanUp (should not happen); close the stale session first.
@@ -105,6 +110,7 @@ public static class RunLifecycle
             EventTap.OnRunStarted(session);
             HumanFunnels.OnRunStarted(session);
             SubscribeSavedHeartbeat(session);
+            RecordRunStartAnchors(session, state, meta.StartTime);
 
             Snapshots.TakeSnapshot("phase");
             GD.Print($"[Sts2Recorder] Recording session started: {session.Directory}");
@@ -112,6 +118,31 @@ public static class RunLifecycle
         catch (Exception ex)
         {
             RecorderMod.Report("RunLifecycle.OnRunStarted", ex);
+        }
+    }
+
+    /// <summary>
+    /// R11 profile fields, then (on resume) a copy of the save the game just
+    /// rewrote in IncrementNumReloads before RunStarted, so every part has a
+    /// start anchor; a save from another run (start_time mismatch) is skipped.
+    /// </summary>
+    private static void RecordRunStartAnchors(TrajectorySession session, RunState state, long startTime)
+    {
+        try
+        {
+            NativeAnchors.RecordUnlockProfile(session, state);
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("RunLifecycle.RecordRunStartAnchors.UnlockProfile", ex);
+        }
+        try
+        {
+            NativeAnchors.CaptureRunSave(session, state, NativeAnchorEvents.TriggerRunStarted, startTime);
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("RunLifecycle.RecordRunStartAnchors.RunSave", ex);
         }
     }
 
@@ -249,8 +280,25 @@ public static class RunLifecycle
         }
     }
 
+    /// <summary>
+    /// Fires after RunSaveManager wrote current_run.save (RunSaveManager.cs:186):
+    /// archive a copy (R1), then the crash-resilience flush.
+    /// </summary>
     private static void OnSaved()
     {
+        try
+        {
+            var session = RecorderMod.Session;
+            if (session != null)
+            {
+                NativeAnchors.CaptureRunSave(
+                    session, RecorderMod.CurrentRunState, NativeAnchorEvents.TriggerSaved, requireStartTime: null);
+            }
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("RunLifecycle.OnSaved.CaptureRunSave", ex);
+        }
         try
         {
             RecorderMod.Session?.Flush();
@@ -287,13 +335,23 @@ public static class RunLifecycle
 
     private static void CloseSession()
     {
+        DetachSession(out _)?.Dispose();
+    }
+
+    /// <summary>
+    /// Stops every handler from writing to the active session and flushes it,
+    /// without disposing it. Returns the detached session (null when none).
+    /// </summary>
+    private static TrajectorySession? DetachSession(out RunState? runState)
+    {
         var session = RecorderMod.Session;
+        runState = RecorderMod.CurrentRunState;
         RecorderMod.Session = null;
         RecorderMod.CurrentRunState = null;
         _terminalLatched = false;
         if (session == null)
         {
-            return;
+            return null;
         }
         try
         {
@@ -302,10 +360,19 @@ public static class RunLifecycle
             ActionPipeline.OnRunEnding();
             session.Flush();
         }
-        finally
+        catch (Exception ex)
         {
-            session.Dispose();
+            RecorderMod.Report("RunLifecycle.DetachSession", ex);
         }
+        return session;
+    }
+
+    private static void DisposeCleanUpSession()
+    {
+        var session = _cleanUpSession;
+        _cleanUpSession = null;
+        _cleanUpRunState = null;
+        session?.Dispose();
     }
 
     private static void OnEndedPostfix(bool isVictory)
@@ -335,17 +402,34 @@ public static class RunLifecycle
 
     /// <summary>
     /// PREFIX (not postfix): CleanUp's finally block nulls RunManager.State and
-    /// LocalContext.NetId — this is the last window for a graceful flush.
+    /// LocalContext.NetId — this is the last window for a graceful flush. The
+    /// session is detached here but disposed only in the finalizer, so the
+    /// latest.mcr that CleanUp itself writes (RunManager.cs:4655-4657, the only
+    /// flush for a lost or abandoned combat) can still be archived into it.
     /// </summary>
     private static void CleanUpPrefix()
     {
         try
         {
-            CloseSession();
+            DisposeCleanUpSession();
+            _cleanUpSession = DetachSession(out _cleanUpRunState);
         }
         catch (Exception ex)
         {
             RecorderMod.Report("RunLifecycle.CleanUpPrefix", ex);
+        }
+    }
+
+    /// <summary>Runs after CleanUp, also when it throws (void finalizer: the exception is unchanged).</summary>
+    private static void CleanUpFinalizer()
+    {
+        try
+        {
+            DisposeCleanUpSession();
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("RunLifecycle.CleanUpFinalizer", ex);
         }
     }
 
@@ -375,24 +459,36 @@ public static class RunLifecycle
     }
 
     /// <summary>
-    /// Archives latest.mcr right after the game flushes it. WriteReplay fires on
-    /// the combat win path only (losses never flush it) — the .mcr is a bonus
-    /// artifact, not the primary event stream.
+    /// Archives latest.mcr right after the game flushes it: on the combat win
+    /// path (CombatManager.cs:1763) and in CleanUp (RunManager.cs:4655-4657,
+    /// the only write for a lost or quit combat). Every write gets its own
+    /// native/replays/&lt;seq&gt;.mcr (R2); native/replay.mcr keeps its old
+    /// meaning (latest copy while the session is live).
     /// </summary>
-    private static void WriteReplayPostfix(string filePath)
+    private static void WriteReplayPostfix(string filePath, bool stopRecording)
     {
         try
         {
-            var session = RecorderMod.Session;
-            if (session == null)
+            var live = RecorderMod.Session;
+            var target = live ?? _cleanUpSession;
+            if (target == null)
             {
                 return;
             }
             var path = RecorderMod.GlobalizePath(filePath);
-            if (System.IO.File.Exists(path))
+            if (!System.IO.File.Exists(path))
             {
-                session.ArchiveNative(path, "replay.mcr");
+                return;
             }
+            if (live != null)
+            {
+                live.ArchiveNative(path, "replay.mcr");
+            }
+            var duringCleanUp = live == null
+                || (JsonDescribe.Try<bool?>(() => RunManager.Instance.IsCleaningUp) ?? false);
+            NativeAnchors.CaptureReplay(
+                target, live != null ? RecorderMod.CurrentRunState : _cleanUpRunState,
+                path, stopRecording, duringCleanUp);
         }
         catch (Exception ex)
         {

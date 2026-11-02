@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -49,8 +50,21 @@ public static class HumanFunnels
     /// </summary>
     private static ConditionalWeakTable<Reward, object> _locallySelectedRewards = new();
 
+    /// <summary>
+    /// R4: every card a local CardReward has offered since its selection began
+    /// (the initial offer plus each reroll), so reward_taken can name the cards
+    /// that ended up in the deck.
+    /// </summary>
+    private static ConditionalWeakTable<CardReward, List<CardModel>> _cardRewardOffers = new();
+
+    /// <summary>R5: the option a local event-button click is choosing, for the event_option index.</summary>
+    private static EventOption? _clickedEventOption;
+    private static int _clickedEventOptionIndex = -1;
+
     internal static void ApplyPatches(Harmony harmony)
     {
+        RewardOffers.Initialize();
+
         // --- (a) annotation hooks: human scope around action-enqueuing UI handlers ---
         RecorderMod.TryPatch(
             harmony,
@@ -155,6 +169,13 @@ public static class HumanFunnels
             "patch:RewardsSetSynchronizer.SkipLocalRewardsSet",
             () => AccessTools.Method(typeof(RewardsSetSynchronizer), nameof(RewardsSetSynchronizer.SkipLocalRewardsSet)),
             prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(SkipLocalRewardsSetPrefix)));
+        // R4 reroll results: CardReward.Reroll() repopulates the offer in place
+        // (CardReward.cs:761); the postfix records the new cards.
+        RecorderMod.TryPatch(
+            harmony,
+            "patch:CardReward.Reroll",
+            () => AccessTools.Method(typeof(CardReward), nameof(CardReward.Reroll)),
+            postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(CardRewardRerollPostfix)));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalObtainedCard), nameof(SyncObtainedCardPrefix));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalSkippedCard), nameof(SyncSkippedCardPrefix));
         PatchSyncLocal(harmony, nameof(RewardSynchronizer.SyncLocalObtainedRelic), nameof(SyncObtainedRelicPrefix));
@@ -194,6 +215,9 @@ public static class HumanFunnels
     {
         _lastChoiceContextModel = null;
         _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
+        _cardRewardOffers = new ConditionalWeakTable<CardReward, List<CardModel>>();
+        _clickedEventOption = null;
+        _clickedEventOptionIndex = -1;
         try
         {
             var synchronizer = RunManager.Instance.RestSiteSynchronizer;
@@ -225,6 +249,9 @@ public static class HumanFunnels
         _restSiteSession = null;
         _lastChoiceContextModel = null;
         _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
+        _cardRewardOffers = new ConditionalWeakTable<CardReward, List<CardModel>>();
+        _clickedEventOption = null;
+        _clickedEventOptionIndex = -1;
     }
 
     private static void RecordCommitted(string source, string kind, JsonObject parameters)
@@ -335,7 +362,11 @@ public static class HumanFunnels
             }
             if (!option.IsProceed)
             {
-                return; // Real choices are captured post-commit via SaveEventOptionToHistory.
+                // Real choices are captured post-commit via SaveEventOptionToHistory;
+                // remember the clicked index for that record.
+                _clickedEventOption = option;
+                _clickedEventOptionIndex = index;
+                return;
             }
             RecordCommitted("hook:NEventRoom.OptionButtonClicked", "event_proceed", new JsonObject
             {
@@ -371,12 +402,18 @@ public static class HumanFunnels
             {
                 // Variables are cosmetic; drop them on failure.
             }
+            int? index = ReferenceEquals(option, _clickedEventOption) ? _clickedEventOptionIndex : null;
+            _clickedEventOption = null;
+            _clickedEventOptionIndex = -1;
             RecordCommitted("hook:EventSynchronizer.SaveEventOptionToHistory", "event_option", new JsonObject
             {
                 ["player"] = JsonDescribe.Try<long?>(() => (long)player.NetId),
                 ["title_key"] = JsonDescribe.Try(() => option.HistoryName?.LocEntryKey),
                 ["title"] = JsonDescribe.Try(() => option.HistoryName?.GetRawText()),
                 ["variables"] = variables,
+                ["text_key"] = JsonDescribe.Try(() => option.TextKey),
+                ["relic_id"] = JsonDescribe.Try(() => option.Relic?.Id.ToString()),
+                ["index"] = index,
             });
         }
         catch (Exception ex)
@@ -533,6 +570,14 @@ public static class HumanFunnels
             {
                 _locallySelectedRewards.Remove(__instance);
             }
+            // R4: the offer as it stands when the selection starts (the first await
+            // inside OnSelect is the player's pick, so nothing has been taken yet).
+            var offer = RewardOffers.Describe(__instance);
+            if (__instance is CardReward offeredCardReward)
+            {
+                var offeredCards = JsonDescribe.Try(() => offeredCardReward.Cards.ToList()) ?? new List<CardModel>();
+                _cardRewardOffers.AddOrUpdate(offeredCardReward, offeredCards);
+            }
             __result.ContinueWith(task =>
             {
                 try
@@ -548,6 +593,11 @@ public static class HumanFunnels
                         var parameters = DescribeReward(__instance);
                         parameters["human"] = human;
                         parameters["programmatic"] = !human; // e.g. Draft modifier auto-claims
+                        parameters["offer"] = offer;
+                        if (__instance is CardReward takenCardReward)
+                        {
+                            parameters["picked_cards"] = PickedCards(takenCardReward);
+                        }
                         RecordCommitted("hook:Reward.SelectUnsynchronized", "reward_taken", parameters);
                     });
                 }
@@ -560,6 +610,66 @@ public static class HumanFunnels
         catch (Exception ex)
         {
             RecorderMod.Report("HumanFunnels.RewardSelectPostfix", ex);
+        }
+    }
+
+    /// <summary>Offered cards (initial offer and rerolls) that are now in the master deck.</summary>
+    private static JsonArray PickedCards(CardReward cardReward)
+    {
+        var picked = new JsonArray();
+        try
+        {
+            if (!_cardRewardOffers.TryGetValue(cardReward, out var offered))
+            {
+                return picked;
+            }
+            _cardRewardOffers.Remove(cardReward);
+            var deck = new HashSet<CardModel>(cardReward.Player.Deck.Cards, ReferenceEqualityComparer.Instance);
+            foreach (var card in offered)
+            {
+                if (deck.Contains(card))
+                {
+                    picked.Add(RewardOffers.CardIdentity(card));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("HumanFunnels.PickedCards", ex);
+        }
+        return picked;
+    }
+
+    /// <summary>
+    /// R4: the rerolled card offer (CardReward.Reroll repopulates in place). Recorded on
+    /// the events stream; a deferred snapshot also captures the refreshed card-reward screen.
+    /// </summary>
+    private static void CardRewardRerollPostfix(CardReward __instance)
+    {
+        try
+        {
+            var session = RecorderMod.Session;
+            if (session == null || __instance == null
+                || !JsonDescribe.Try<bool?>(() => LocalContext.IsMe(__instance.Player)).GetValueOrDefault())
+            {
+                return;
+            }
+            var cards = JsonDescribe.Try(() => __instance.Cards.ToList()) ?? new List<CardModel>();
+            if (_cardRewardOffers.TryGetValue(__instance, out var offered))
+            {
+                offered.AddRange(cards);
+            }
+            session.RecordEvent("card_reward_rerolled", new JsonObject
+            {
+                ["player"] = JsonDescribe.Try<long?>(() => (long)__instance.Player.NetId),
+                ["cards"] = RewardOffers.CardIdentities(cards),
+                ["can_reroll"] = JsonDescribe.Try<bool?>(() => __instance.CanReroll),
+            });
+            Snapshots.RequestDeferredSnapshot();
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("HumanFunnels.CardRewardRerollPostfix", ex);
         }
     }
 

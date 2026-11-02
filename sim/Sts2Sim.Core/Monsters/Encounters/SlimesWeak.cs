@@ -14,6 +14,11 @@ public sealed class SlimesWeak : EncounterDef
 
     public override bool IsWeak => true;
 
+    // Models.Encounters/SlimesWeak.cs `Tags => [EncounterTag.Slimes]` (E3: ActModel.AddWithoutRepeatingTags, Models/ActModel.cs:357-369)
+    private static readonly IReadOnlyList<EncounterTag> TagList = Array.AsReadOnly(new[] { EncounterTag.Slimes });
+
+    public override IReadOnlyList<EncounterTag> Tags => TagList;
+
     public static IReadOnlyList<string> SmallSlimes => SmallSlimeIds;
 
     public static IReadOnlyList<string> MediumSlimes => MediumSlimeIds;

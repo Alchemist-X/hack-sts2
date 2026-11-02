@@ -426,3 +426,500 @@ on contract constructors plus `CanonicalWriter`. Coverage:
 - listener order (player powers before monsters, normal pass before Late pass), guarded vs unguarded
   iteration while ending, `AfterModifyingDamageAmount` only for actual modifiers;
 - energy gain/lose/set/reset/max/spend incl. X-cost capture; `CreatureInternals` clamps and throws.
+
+## 11. W1 kernel expansion, round 3 (2026-11-01)
+
+Owner: pipeline (CONTRACTS Part B §B4, §B5 pipeline rows, §B11 pipeline row; amendments §B12 A5, A15, A19).
+Base `263810d` (phase-0b scaffold). Citations are decompile v0.111.0 (`<ns-dir>/<File>.cs:<line>`,
+`MegaCrit.Sts2.Core.` dropped, line numbers of the unfiltered file; for async methods both the readable
+body and the `<Name>d__N` state machine are cited where the line order matters). This section supersedes
+the statements of §2-§9 listed in §11.18; everything else in §1-§10 still holds.
+
+### 11.1 Files
+
+| File | Change |
+| --- | --- |
+| `Combat/Pipeline/CombatStatus.cs` | attachment and side queries over `cs.Allies` (§11.2); pet, Osty, player-count helpers |
+| `Combat/Pipeline/CreatureCmd.cs` | `Add` ×3, the `DamageVar` / `BlockVar` overloads, pet-owner block, history sites, Kill / player death / pet bookkeeping, `HandlePlayerDeath`, `Escape`; `Stun` unchanged (IL closure §11.8) |
+| `Combat/Pipeline/AttackCommand.cs` | `FromOsty`, calculated-damage attacks, pet-owner random-target stream, the `BlockingPlayerChoiceContext` of monster attacks, `CreatureAttacked` history |
+| `Combat/Pipeline/PowerCmd.cs` | `Apply<T>(targets)` returns the powers, multiplayer gate, two `PowerReceived` sites, `Decrement` under a `Throwing` context |
+| `Combat/Pipeline/EnergyCmd.cs` | `SpendEnergy`: `EnergySpent` history, the card owner's energy |
+| `Powers/PowerModel.cs` | `ShouldScaleInMultiplayer`, `GetScaledAmountForMultiplayer`, `GetApplier` / `GetTarget` (ids → creatures) |
+| `Powers/ITemporaryPower.cs` (new) | `OriginModelId`, `InternallyAppliedPowerId` (ids instead of the game's model references) |
+| `Powers/MultiplierModifiers.cs` | relic scans `FirstVulnerableRelic` / `FirstWeakRelic`, relic ids |
+| `Powers/CardCmdForwarders.cs` (new) | three forwarding stubs for `CardCmd` members no scaffold provides (§11.15) |
+| `Powers/Defs/{Hellraiser,ToolsOfTheTrade,Entropy,DarkEmbrace,Focus,DieForYou}Power.cs` (new) | pilot powers (§11.13) |
+| `Powers/Defs/Temporary{Strength,Dexterity,Focus}Power.cs` (new) | the three abstract `ITemporaryPower` bases (§11.10) |
+| `Powers/Defs/{Vulnerable,Weak,Shrink}Power.cs` | re-ports (§11.14) |
+| `Sts2Sim.Tests/PipelineTests.cs` | 37 tests appended (§11.19) |
+
+`CreatureInternals.cs` and `DamageResult.cs` needed no change: `RemoveAllPowersInternal` is the game's
+`RemoveAllPowersInternalExcept()` with no exception list (`Entities.Creatures/Creature.cs:1225-1244`), used by
+`Escape`.
+
+### 11.2 `CombatStatus` (B12 A19)
+
+| Sim | Game | Rule |
+| --- | --- | --- |
+| `IsAttached(cs, c)` | `Creature.CombatState != null` for a creature of this combat; `CombatState.ContainsCreature` (`Combat/CombatState.cs:770-777`) | `c` is in `cs.Allies` (player, then pets) or `cs.Monsters`. A removed creature is unattached, as `RemoveCreature(c, unattach: true)` nulls its `CombatState` (`:739-768`) |
+| `CombatOf(cs, c)` | `c.CombatState` | `cs` when attached, else `null` |
+| `FindCreature(cs, id)` | `CombatState.GetCreature(combatId)` (`:784-791`) over `Creatures` = allies then enemies (`:558`) | scans `cs.Allies` then `cs.Monsters`; independent of the state-owned `GetCreatureById`, which does not list pets yet (A19 is the state owner's) |
+| `GetCreaturesOnSide` / `GetOpponentsOf` / `GetTeammatesOf` | `:831-848` | non-`Enemy` side → `Allies` (player and pets), `Enemy` → `Monsters` |
+| `GetPlayerCreatures` | `PlayerCreatures` (`:560`) | allies that are players; pets are allies but not player creatures (design-subsystems §1.5) |
+| `CanReceivePowers` | `Creature.CanReceivePowers` (`Entities.Creatures/Creature.cs:656-669`) | attached and `Hook.ShouldAllowHitting` |
+| `CardOwnerCreature` / `CardOwner` | `card.Owner.Creature` | `card.Owner` when the card has one, else `cs.Player` (P0 cards are still ownerless until B12 A23 lands; identical in single player) |
+| `PetOwnerOf(cs, c)` / `IsPet` | `Creature.PetOwner` / `IsPet` (`Creature.cs:520-537`) | a `MonsterState` with `PetOwnerId` set resolves to that player (fast path `cs.Player`) |
+| `GetPet(cs, player, id)`, `GetOsty`, `IsOstyAlive`, `IsOstyMissing` | `PlayerCombatState.GetPet<T>` (`Entities.Players/PlayerCombatState.cs:389-392`), `Player.Osty` / `IsOstyAlive` / `IsOstyMissing` (`Entities.Players/Player.cs:247-251`) | first id in `player.PetIds` (the game's `_pets` in insertion order) whose creature has model id `OSTY` (`OstyMonsterId`; the game tests `Monster is Osty`); a dead Osty that stayed in the pet list is still `Osty` |
+| `PlayerCount` | `combatState.Players.Count` (`Combat/CombatState.cs:562`) | players among the allies; 1 in single player (the multiplayer gates, §11.6, §11.10) |
+| `AllPlayersDead` / `AllCombatPlayersDead` | `runState.Players.All(dead)` (`Commands/CreatureCmd.cs:2399`) / `State.Players.All(dead)` (`Combat/CombatManager.cs:3492`) | over `cs.Run.Players` / over the allies; the same single player |
+| `ContainsById(participants, c)` | `participants.Contains(Owner)` | membership by `CombatId`, the brief's rule for the side-turn `participants` snapshots (unique ids make it equal to the game's reference test inside one state) |
+
+TargetType.Osty has no rule branch in the pipeline: `CardModel.IsValidTarget` treats it as an untargeted card
+(`Models/CardModel.cs:3362-3384`: a null target is valid for every type but `AnyEnemy` / `AnyAlly`, any non-null
+target is invalid), its only other reader is the reticle (`Nodes.Combat/NCardPlay.cs:348`), and Osty cards reach
+Osty through `Owner.Osty` (`CombatStatus.GetOsty`) and `AttackCommand.FromOsty` (e.g. `Models.Cards/Poke.cs`
+`OnPlay`). The card-side target rule is cards-kernel's.
+
+### 11.3 `CreatureCmd.Add` (summons and pets)
+
+| Sim | Game |
+| --- | --- |
+| `Add<T>(cs, slotName)` where `T : MonsterDef, new()` | `Commands/CreatureCmd.cs:3553-3561`: `CreateCreature(ModelDb.Monster<T>().ToMutable(), Enemy, slot)` then `Add(creature)`. The sim resolves the registered def by the new instance's id (defs are shared and immutable; the mutable part lives on `MonsterState`) |
+| `Add(cs, MonsterDef, side = Enemy, slotName = null) → MonsterState` | `:3563-3572`: `CombatState.CreateCreature` (`Combat/CombatState.cs:709-724`) is `MonsterSpawner.SpawnForAdd` (monsters-kernel), then `Add(creature)` |
+| `Add(cs, CreatureState creature)` | `:3575` + state machine `<Add>d__2` `:219-330`, in this order: throw `"Attempted to add a creature outside of combat."` unless `IsInProgress` (`:270`); `CombatState == null` throws (`:275`, a sim creature belongs to `cs` by construction); `IsLiveCombat()` is always true (`Combat/CombatState.cs:1077-1080`); `CombatState.AddCreature` (`:279`; `:993-1006`: allies for side `Player`, else enemies, `"Creature is already in this combat, but AddCreature was called on it again."`) → `cs.AddAlly` (state) or `cs.AddMonster`; `CombatManager.AddCreature` (`:280`; `Combat/CombatManager.cs:6990-7005`: contains check, `Monster.SetUpForCombat()`, `SortEnemiesBySlotName()` when the creature has a slot) → `MonsterLifecycle.SetUpForCombat`, `MonsterSpawner.SortEnemiesBySlotName(cs, encounter)` (encounter = `EncounterRegistry` entry of `cs.EncounterId`, none for an unregistered id, as the game's `Encounter == null`); `CombatManager.AfterCreatureAdded` (`:282`; state machine `Combat/CombatManager.cs:497-555`: `Creature.AfterAddedToRoom` only for side `Enemy` (`Entities.Creatures/Creature.cs:36-90`), then `RollMove` when `IsEnemy && CurrentSide == Player`) → `MonsterLifecycle.AfterCreatureAdded`; `PrepareForNextTurn(players, rollNewMove: false)` when `CurrentSide != Enemy` (`:300`; `Creature.cs:1128-1138`: no roll, intent refresh only) → `MonsterLifecycle.PrepareForNextTurn(cs, m, false)`; the map-point monster list (`:301-305`, run statistics) is dropped; `Hook.AfterCreatureAddedToCombat` (`:308`) |
+
+Division of labour with monsters-kernel: the brief reads `SpawnForAdd` as `CreateCreature` (id, `Niche` HP roll
+for enemies, the multiplayer HP gate, monster `Rng`, `OnCreatureSpawned`) and leaves the `Add(Creature)` sequence
+to `CreatureCmd.Add`; B8 lists the whole sequence under `MonsterSpawner`, and the monsters-kernel round-3 branch
+(`w1-r3/monsters-kernel`, `6b7ecd6`, read only) has `SpawnForAdd` = `CreateCreature` + `AddToCombat`, a second port
+of `<Add>d__2`. `Add(cs, MonsterDef, …)` therefore adds the spawned creature only when `SpawnForAdd` returned it
+unattached, so both readings run the sequence exactly once; integrate keeps one of the two ports (the
+contract member is `CreatureCmd.Add(Creature)`, B4). Pets come through `PlayerCmd.AddPet` (loop,
+`Commands/PlayerCmd.cs:946-967`), which runs `AddPetInternal` and then `CreatureCmd.Add(pet)`: a pet joins the
+allies, is set up, never gets `AfterAddedToRoom` or a roll (B12 A15). `Add` rejects a `PlayerState` with an
+`ArgumentException` (players join through the `CombatState` constructor, the game's `AddPlayer`,
+`Combat/CombatState.cs:703-707`; no v0.111.0 caller passes a player to `Add`).
+
+### 11.4 Damage kernel (`Commands/CreatureCmd.cs:3662-3870`)
+
+- Overloads (all forward, `:3588-3660`): `(target, DamageVar, card, play)`; `(target, amount, props, card, play)`
+  (dealer = the card owner's creature, `:3596-3603`); `(targets, DamageVar, dealer)`; `(targets, amount, props,
+  dealer)`; `(target, DamageVar, dealer)`; `(target, amount, props, dealer)`; `(target, DamageVar, dealer, card,
+  play)`; `(target, amount, props, dealer, card, play)`; `(targets?, DamageVar, dealer, card, play)`; the list body.
+  A `DamageVar` forwards `BaseValue` and `Props`.
+- `targets == null` → no results (`:3666-3669`); a dead dealer → one empty result per target (`:3670-3673`).
+- The combat of the whole call is `targetList[0].CombatState` (`:3680`): `CombatOf(cs, first)`. With an attached
+  first target this is `cs` (every P0 and W1 path). With a detached first target the game dispatches every hook
+  to run listeners only (`(rs, null)`, a hooks-owned path that is a stub at the base), skips
+  `ModifyUnblockedDamageTarget` (`:3701`) and `AfterDamageGiven` (`:3841-3844`), and, in a live combat that is not
+  ending, records `DamageReceived` against a null combat state (`:3737`), which dereferences null: the sim throws
+  `InvalidOperationException` there. This replaces the P0 approximation of §9.
+- Block (`:3697-3698`): the absorbing creature is `originalTarget.PetOwner?.Creature ?? originalTarget` →
+  `CombatStatus.PetOwnerOf(cs, target) ?? target`. The flags keep reading the original target (`:3708-3709`), so a
+  hit on a pet with 0 block that the owner's block absorbs is `WasBlockBroken` and `WasFullyBlocked` (test
+  `HitOnPetTakesItsOwnersBlock`).
+- HP phases: `ModifyHpLost(BeforeOsty)` on the original target (`:3699-3700`), `ModifyUnblockedDamageTarget`
+  (`:3701`, `DieForYouPower` is its only v0.111.0 rule override), `ModifyHpLost(AfterOsty)` on the receiving
+  creature (`:3702-3703`), redirected overkill back to the original target through `ModifyHpLost(AfterOsty)`
+  (`:3716-3725`); unchanged from P0 and now reachable.
+- `DamageReceived` history (`:3733-3738`): once per damage result of a target (the receiving creature's, then
+  the original target's in the redirect case), right after that target's HP loss, iff `IsInProgress &&
+  !IsEnding`. The killing blow on the last primary enemy is therefore not recorded (test
+  `KillingBlowOnTheLastEnemyIsNotRecorded`). Hit VFX, damage numbers, SFX, screen shake and
+  `MapPointHistoryEntry.DamageTaken` (`:3739-3810`) are dropped; `Task.WhenAll(hitTriggers)` waits on
+  `TriggerAnim` only.
+- Post-loop per result (`:3821-3866`): `AfterBlockBroken` (the original target's combat; a detached receiver would
+  dereference null in the game, the sim keeps `cs`), `AfterCurrentHpChanged(rs, combatState, …)`,
+  `ExtraFields.DamageDealt` (run statistics, dropped), `AfterDamageGiven` only with a combat, `AfterDamageReceived`
+  unless killed, then `Kill(killed)` (`:3867`).
+
+### 11.5 Block and HP
+
+- `GainBlock(creature, BlockVar, play)` (`:3942-3948`) forwards `BaseValue` / `Props`; the `fast` flag only
+  selects a wait (`:3974-3981`).
+- `BlockGained` history after `GainBlockInternal`, inside `modifiedAmount > 0`, with `(int)modifiedAmount`
+  (`:3970-3973`, state machine `:1872`).
+- `Heal` (`:2064-2245`): unchanged; the `AfterCurrentHpChanged` gate `creature.CombatState != null` (`:2209`) is
+  now `IsAttached` over the allies, so a pet's heal dispatches.
+- `SetCurrentHp` (`:3118-3205`): `AfterCurrentHpChanged(rs, creature.CombatState, …)` → `CombatOf(cs, creature)`.
+
+### 11.6 Death (`Kill`, `KillWithoutCheckingWinCondition`)
+
+`Kill(creatures, force)` (state machine `:2316-2456`): snapshot, `KillWithoutCheckingWinCondition` per creature;
+`RunManager.IsInProgress && !IsCleaningUp` is always true in a sim combat (`:2397`); when the list held a player
+and every run player is dead → `LoseCombat` (only while `IsInProgress`, `:2399-2404`); else, in progress, a dead
+player of the list ends its turn through `PlayerCmd.EndTurn` (`:2412-2430`), which needs another living player:
+the sim throws there (unreachable with one player: a dead listed player means every player is dead). The
+game-over UI and music (`:2405-2411`) are dropped.
+
+`KillWithoutCheckingWinCondition` (state machine `:2464-2906`), traced order:
+
+1. Return unless `CombatState != null || IsPlayer` (`:2595`).
+2. Multiplayer gate (`:2597-2609`): `!IsInProgress && IsPlayer && Players.Count > 1 && !force` → `Heal(1)` and
+   return; ported literally with `PlayerCount(cs) > 1` (false in single player).
+3. `LoseHpInternal(CurrentHp, Unblockable | Unpowered)` + `AfterCurrentHpChanged(−hp)` when `CurrentHp > 0`
+   (`:2612-2627`); `BeforeDeath` (`:2753`).
+4. Not prevented (`force || MaxHp <= 0 || ShouldDie`, `:2768`):
+   - `InvokeDiedEvent()` (`:2770`; `Creature.cs:1100-1103`). The only rule subscriber is
+     `PlayerCombatState.OnPetDied` (`Entities.Players/PlayerCombatState.cs:433-445`; subscribed in
+     `AddPetInternal` `:375-387`): a pet still in its owner's pet list leaves it iff
+     `ShouldCreatureBeRemovedFromCombatAfterDeath(pet)`. The subscription exists exactly while the pet is in
+     `_pets`, so the sim tests `owner.PetIds.Contains(pet)` instead of an event. The other subscribers are VFX:
+     `Models.Monsters/SlumberingBeetle.cs:137` / `:450-455`, `Models.Monsters/SoulNexus.cs:69` / `:380-384`, and
+     nodes.
+   - `shouldRemoveFromCombat = combatState != null && ShouldCreatureBeRemovedFromCombatAfterDeath` (`:2771`); the
+     death animation (`:2772-2781`) is dropped with `deathAnimLength` (D12); `AfterDeath(false)` (`:2782`).
+   - Living teammates (`:2811`; `GetTeammatesOf` → allies for the player side).
+   - An enemy that should be removed and is still listed: `CombatManager.RemoveCreature` (`:2817`;
+     `Combat/CombatManager.cs:7171-7180`: `BeforeRemovedFromRoom`, `ResetStateMachine`, tracker) then
+     `CombatState.RemoveCreature` unless it is performing its move (`:2819-2822`). `BeforeRemovedFromRoom` is
+     rule-inert in v0.111.0 (overriders: SFX loops, music, spine animation, and `TestSubject`'s
+     `PowerApplied` / `PowerRemoved` unsubscription, `Models.Monsters/TestSubject.cs:1239-1243`, on a creature that
+     leaves the combat), and `ResetStateMachine` (`Models/MonsterModel.cs:693-696`) nulls the move machine of a
+     creature that is removed then or after its move (`Models/MonsterModel.cs:285-291`), so neither is observable
+     at a decision point; neither has a sim member at the base. The monsters-kernel round-3 branch adds
+     `MonsterLifecycle.RemoveCreature(cs, monster)` (both steps, with a reset flag that `PerformMove` reads to skip
+     `OnMovePerformed`, `Models/MonsterModel.cs:285`) "for the pipeline's Kill and Escape": integrate inserts it at
+     `:2817` (before the list removal) and in `Escape` (`:3936`); no flag in the meantime.
+   - `isPrimaryEnemy` (`:2825`), `RemoveAllPowersAfterDeath` (`:2826`; `Creature.cs:1246-1249`, predicates
+     evaluated before any removal) and `AfterRemoved` per removed power (`:2660-2680`).
+   - Enemy: the last primary enemy takes its living secondary teammates with it (`:2688-2698`).
+   - Player (B12 A15): `PlayerCombatState?.OrbQueue.Clear()` (`:2704`), then `Kill(player.Osty, force)` iff
+     `IsOstyAlive` (`:2705-2707`) — no other pet dies, and Osty's death hooks run while the player's listeners are
+     still active —, then `DeactivateHooks()` (`:2850`), then `HandlePlayerDeath` when the player has a combat
+     (`:2851-2853`).
+5. Prevented: recursion ≥ 10 throws (`:2792-2795`); `AfterDeath(true)` (`:2796`), `AfterPreventingDeath`
+   (`:2837`), and again while still dead (`:2869-2871`).
+
+`HandlePlayerDeath` (`Combat/CombatManager.cs:7095-7106`, state machine `:3444-3560`): nothing unless the combat
+is live and not every combat player is dead (`:3492`), which with one player needs the dead player to have been
+healed between its death and this call (by an `AfterDeath` / `AfterRemoved` listener or Osty's death hooks).
+Then, unless a card or potion effect is running (`:3496`, `cs.CardOrPotionEffectDepth`),
+`RemoveDeadPlayerCardsFromCombat` (`:3576-3650`: hand, draw, discard, exhaust, play in that order through the
+batch `CardPileCmd.RemoveFromCombat`, which removes all cards before it dispatches `AfterCardChangedPiles` per card,
+`Commands/CardPileCmd.cs:2205-2460`), `SetEnergy(0)`, `SetStars(0)`. The sim has only the loop's single-card
+`RemoveFromCombat`, so it removes card by card and records `FidelityFlag.ApproximatedRule` with
+`CreatureCmd.HandlePlayerDeathFidelitySite`; `StarsCmd.SetStars` is a character-mechanics stub.
+
+Mid-resolution rules (design-combat-kernel §7) on this side: guarded dispatches (`AfterAttack`, `BeforeAttack`,
+block and card hooks) go silent once the last primary enemy is dead, so the killing attack's `AfterAttack` does
+not run (test `KillingBlowOnTheLastEnemyIsNotRecorded`) while the death hooks, which are run-sourced, do; the
+killing blow is not recorded as `DamageReceived`; a monster dying during its own move stays listed until the move
+ends; the win check is the loop's.
+
+### 11.7 `Escape` (`Commands/CreatureCmd.cs:3915-3939`)
+
+Dead → return; not in a live combat → return (`:3917-3924`); `RemoveAllPowersInternalExcept()` (no
+`AfterRemoved`, `:3925`; `Creature.cs:1225-1244`); the node removal (`:3926-3935`, `removeCreatureNode`) is UI;
+`CombatManager.RemoveCreature` (`:3936`, rule-inert as in §11.6); `CombatState.CreatureEscaped` (`:3937`;
+`Combat/CombatState.cs:733-737`: append to `_escapedCreatures`, then `RemoveCreature`, which removes from the
+enemies, else the allies, else throws, `:739-768`). The sim has no escaped-creature list (state owner); its only
+readers are reward gold (`Models/EncounterModel.cs:324-327`, `Models.Encounters/GremlinMercNormal.cs:56-67`, W2),
+so `Escape` records `FidelityFlag.ApproximatedRule` with `CreatureCmd.EscapeFidelitySite`. Callers (not ported):
+`Models.Monsters/ThievingHopper.cs:198`, `Models.Monsters/FatGremlin.cs:141`,
+`Models.Powers/BattlewornDummyTimeLimitPower.cs:87`.
+
+### 11.8 `Stun` — open question closed
+
+`Stun(creature, stunMove, nextMoveId)` (`Commands/CreatureCmd.cs:4105-4125`) calls `Creature.StunInternal(Wrapper,
+nextMoveId)` (`Creature.cs:1105-1125`). The wrapper's state machine has no body in the decompile; the IL
+(`IL:CreatureCmd.<>c__DisplayClass27_0.<<Stun>g__Wrapper|0>d.MoveNext`, 255 bytes, read with the scratch
+`System.Reflection.Metadata` probe of round 2 against `output/server-bootstrap/linux-assembly/sts2.dll`) is:
+`IL_0014-IL_0065` `NStunnedVfx.Create(creature)`, `Creature.GetVfxContainer`, `Godot.Callable.From(…).CallDeferred()`
+(VFX only), then `IL_006a-IL_0076` `stunMove.Invoke(c)`, awaited (`IL_007b-IL_00cb`). That is the v0.107.1 body
+(`Commands/CreatureCmd.cs:884-904` of that tree). The sim's direct pass-through of `stunMove`
+(`MonsterLifecycle.StunInternal`) is exact; §9's open question and design-combat-kernel §8 Q8 are closed.
+
+### 11.9 `AttackCommand` (`Commands.Builders/AttackCommand.cs`)
+
+- `FromOsty(osty, card, play)` (`:765-779`): `ArgumentException("Creature is not Osty")` unless the creature is a
+  `MonsterState` with model id `OSTY` (the game: `osty.Monster is Osty`); attacker = Osty, model source = card,
+  card play, source type Card; no "already set" guards (unlike `FromCard`); the attacker sound and animation are
+  UI.
+- Calculated damage: the game's second constructor (`:732-736`) sets `_damagePerHit = -1` and keeps a
+  `CalculatedDamageVar`; each hit computes `_calculatedDamageVar.Calculate(singleTarget)` after target selection
+  (`:1131`; `Localization.DynamicVars/CalculatedVar.cs`: `CalculationBase + CalculationExtra × multiplier(card,
+  target)` while the combat is in progress). `DamageCmd.Attack(CombatState, Func<CombatState, CreatureState?,
+  decimal>)` (`Commands/DamageCmd.cs:13`) takes that per-hit calculation; `DamagePerHit` is
+  `CalculatedDamagePerHit = -1`, `IsCalculated` is true; a multi-target hit passes a null target. cards-kernel's
+  `CalculatedVar` (B7) supplies the function (`(cs, t) => var.Calculate(cs, card, t)`), so the pipeline never names
+  a cards-owned type.
+- Random targets draw `(Attacker.Player ?? Attacker.PetOwner).RunState.Rng.CombatTargets` (`:1061`): the
+  combat's `CombatTargets` for a player or a pet attacker; a monster attacker throws, as the game dereferences
+  null.
+- Monster attacks: every monster attack in v0.111.0 is `Execute(null)` (209 call sites in `Models.Monsters`, none
+  elsewhere; cards pass their context, 196 sites), so its damage and `AfterAttack` run under a
+  `BlockingPlayerChoiceContext` (`:1132`, `:1146`). The sim pushes `ChoiceContextKind.Inline` (the B1 kind of every
+  `BlockingPlayerChoiceContext` site) around the hits and `AfterAttack` of a `FromMonster` attack, so a listener that
+  prompts in reaction to an enemy attack opens its prompt inline, also under a monster command's `Throwing`
+  context (test `MonsterAttacksRunUnderAnInlineContext`).
+- `Execute` (`:961-1148`): the order of §2 is unchanged; `IsOverOrEnding` returns only for a live combat, which
+  is every sim combat (`:970-973`); the attacker check is the attacker's combat (`:966-977`); `attackCount` is the
+  decimal result of the integer dispatcher (`:987`; `Hooks/Hook.cs:10052-10069`); `validTargets.Count == 0 &&
+  IsLiveCombat()` breaks (`:995`). `CreatureAttacked` history with the flattened results of all hits, after the
+  loop and before `AfterAttack` (`:1145`), also when no hit landed.
+- `AttackCommand.CreateContextAsync` / `AttackContext` (`Commands.Builders/AttackContext.cs`, Omnislice and
+  EchoingSlash) are not in `cmd_facades` and not ported.
+
+### 11.10 `PowerCmd` and `PowerModel`
+
+- `Apply<T>(targets)` returns the non-null powers it applied, in target order (`Commands/PowerCmd.cs:1185-1212`);
+  a null list → empty. Callers that ignore the result are unaffected.
+- `Apply(power)` (state machine `:270-562`, readable form absent): the multiplayer scaling gate
+  `Players.Count > 1 && (IsPrimaryEnemy || IsSecondaryEnemy) && ShouldScaleInMultiplayer` (`:550-553`) is ported
+  with `PlayerCount(cs) > 1`; `PowerModel.ShouldScaleInMultiplayer` (default false, `Models/PowerModel.cs:309`) and
+  `GetScaledAmountForMultiplayer` (`:619-622`, players × the multiplayer scaling model; throws
+  `NotSupportedException` in the sim, reachable only with more than one player). `PowerReceived` history after
+  `ApplyInternal`, iff `modifiedAmount != 0` (`:455-459`).
+- `ModifyAmount` (`:1299-1358`): `PowerReceived(modifiedOffset)` unconditionally, before `SetAmount` (`:1321`).
+- `Decrement` runs `ModifyAmount(new ThrowingPlayerChoiceContext(), power, -1, null, null)` (`:614`): the sim pushes
+  `ChoiceContextKind.Throwing` for the call (B1: a prompt there throws, as `ThrowingPlayerChoiceContext.
+  SignalPlayerChoiceBegun` does, `GameActions.Multiplayer/ThrowingPlayerChoiceContext.cs`). It is the only
+  `ThrowingPlayerChoiceContext` in `Commands/*.cs`.
+- `PowerModel.GetApplier(cs)` / `GetTarget(cs)` resolve the `Applier` / `Target` references
+  (`Models/PowerModel.cs:269-293`) from the stored ids.
+- `ITemporaryPower` (`Models/ITemporaryPower.cs`): `OriginModel` and `InternallyAppliedPower` become
+  `OriginModelId` and `InternallyAppliedPowerId` (model id strings). Its implementors are the three abstract bases
+  `TemporaryStrengthPower`, `TemporaryDexterityPower`, `TemporaryFocusPower`
+  (`Models.Powers/Temporary{Strength,Dexterity,Focus}Power.cs:18`), ported 1:1 and identical but for the inner
+  power: `Type` Buff when `IsPositive` (default true) else Debuff (`:268-278`), Counter (`:280`); `BeforeApplied`
+  applies `Sign × amount` of the inner power silently under a `ThrowingPlayerChoiceContext` (`:234`);
+  `AfterPowerAmountChanged(power, amount)` applies `Sign × amount` when `amount != Amount && power == this`
+  (`:63-65`), i.e. on stacking, not on the first application; `AfterSideTurnEnd` with the owner among the
+  participants removes itself, then applies `−Sign × Amount` with the owner as applier (`:151-170`). The 21
+  concrete subclasses (`AnticipatePower` … `SynchronizePower`) only override `OriginModel` and, for the "down"
+  variants, `IsPositive => false`, so each is a two-line W3 port. The 5 files that mention `ITemporaryPower` in
+  `Models.Powers` are these 3 bases plus the readers `IllusionPower.cs:300` and `SleightOfFleshPower.cs:59`; the
+  other readers are `Models.Cards/Misery.cs:116`, `Models.Cards/Rend.cs:128`, `Models.Relics/UnsettlingLamp.cs:165`
+  and the badge `DebufferModel.cs:12`.
+
+### 11.11 `EnergyCmd.SpendEnergy` (`Models/CardModel.cs:3421-3431`, state machine `:1221-1271`)
+
+X-cost capture; when `amount > 0`: `EnergySpent(amount, card.Owner)` history (`:1255`) before
+`card.Owner.PlayerCombatState.LoseEnergy` (`:1256`) — the card owner's energy (`CombatStatus.CardOwner`); then
+`AfterEnergySpent` (`:1258`).
+
+### 11.12 Combat history sites (D11)
+
+| Entry | Site | Gate | Sim |
+| --- | --- | --- | --- |
+| `DamageReceived(receiver, dealer, result, cardSource)` | `Commands/CreatureCmd.cs:3737` (state machine `:776`) | `IsInProgress && !IsEnding`, per damage result | `CreatureCmd.Damage` |
+| `BlockGained(receiver, (int)amount, props, cardPlay)` | `:3973` (`:1872`) | `modifiedAmount > 0` | `CreatureCmd.GainBlock` |
+| `PowerReceived(power, modifiedAmount, applier)` | `Commands/PowerCmd.cs:458` | `modifiedAmount != 0`, after `ApplyInternal` | `PowerCmd.Apply` |
+| `PowerReceived(power, modifiedOffset, applier)` | `:1321` (`:883`) | none, before `SetAmount` | `PowerCmd.ModifyAmount` |
+| `CreatureAttacked(attacker, results)` | `Commands.Builders/AttackCommand.cs:1145` (`:422`) | none, after the hits | `AttackCommand.Execute` |
+| `EnergySpent(amount, owner)` | `Models/CardModel.cs:1255` | `amount > 0` | `EnergyCmd.SpendEnergy` |
+
+`CombatHistory.Add` appends iff `IsLiveCombat()` (`Combat.History/CombatHistory.cs:159-170`), always true. The
+log is part of the canonical state (§10 of scaffold-w1), so wiring these sites moves `StateHash` for every later
+state: the final-state pin of `EndToEndTests.Test_EndToEnd_CanonicalHashesArePinnedAcrossProcesses` (owned by the
+loop owner per B12 A13) becomes `0xB899C4BCA7235886` in this worktree (§11.20); the opening pin is unchanged
+because nothing is damaged, blocked, buffed or spent before the first decision of seed 1.
+
+### 11.13 Pilot powers (complete 1:1 ports)
+
+| Power (id) | Game | Rule |
+| --- | --- | --- |
+| `HellraiserPower` (`HELLRAISER_POWER`) | `Models.Powers/HellraiserPower.cs` | Buff, Single (`:131-133`). `AfterCardDrawnEarly`: only the owner's Strike-tagged cards (`:69`); when every hittable enemy shows infinite HP (`HittableEnemies.All(HpDisplay.IsInfinite)`, `:73`, vacuously true with no hittable enemy) the count is checked against 9 (`:75`, the literal of `_infiniteAutoPlayCap`, `:129`; at or above it the card is not auto-played, the cap message is UI, `:78-82`) and then incremented (`:84`), otherwise the count resets (`:88`); then `CardCmd.AutoPlay(card, null)` (`:93`). `AfterSideTurnEnd`: reset when the owner is a participant (`:155-162`). `BeforeAttack` (`:165-174`) only restyles the hit VFX of its auto-played cards, so the `autoPlayingCards` set (`:92`, `:107`) and `showedCapReachedMessage` (`:81`) are UI state and not ported; `InfiniteAutoPlaysThisTurn` is cloned and hashed. `HpDisplay` (`Entities.Creatures/HpDisplay.cs`, set by `HardenedShellPower.cs:66`/`:75` and `WaterfallGiant.cs:918`, neither ported) has no sim field: every creature reads as `Normal`, which is exact for every ported creature (open question) |
+| `ToolsOfTheTradePower` (`TOOLS_OF_THE_TRADE_POWER`) | `Models.Powers/ToolsOfTheTradePower.cs` | Buff, Counter (`:122-124`). `ModifyHandDraw`: `+Amount` for the owner's player (`:126-133`). `AfterPlayerTurnStart` for the owner's player (`:72`): `CardSelectCmd.FromHandForDiscard(player, prefs(TO_DISCARD, Amount), null, this)` (`:74`), then `CardCmd.Discard(selected)` when any (`:90-93`). Site id `TOOLS_OF_THE_TRADE_POWER:AfterPlayerTurnStart`, a turn-setup prompt site (B1) |
+| `EntropyPower` (`ENTROPY_POWER`) | `Models.Powers/EntropyPower.cs` | Buff, Counter (`:150-152`). `AfterPlayerTurnStart` for the owner's player (`:75`): `CardSelectCmd.FromHand(prefs(TO_TRANSFORM, Amount), filter null, source this)` (`:77`), then `CardCmd.TransformToRandom(card, Rng.CombatCardSelection)` per selected card in selection order (`:100-108`) |
+| `DarkEmbracePower` (`DARK_EMBRACE_POWER`) | `Models.Powers/DarkEmbracePower.cs` | Buff, Counter (`:179-181`). `AfterCardExhausted` of a card owned by its owner (`:64`): not ethereal → `CardPileCmd.Draw(Amount)` (`:66-68`), ethereal → `etherealCount++` (`:78`). `AfterSideTurnEnd` with the owner a participant (`:141`): `Draw(Amount × etherealCount)` (`:144`, `int` product) then `etherealCount = 0` (`:157`). `EtherealCount` is cloned and hashed |
+| `FocusPower` (`FOCUS_POWER`) | `Models.Powers/FocusPower.cs:8-21` | Buff, Counter, AllowNegative. `ModifyOrbValue`: unchanged unless the orb's owner is the power owner's player (`:16`, a reference compare, so an ownerless orb is unchanged), else `Max(value + Amount, 0)` (`:20`) |
+| `DieForYouPower` (`DIE_FOR_YOU_POWER`) | `Models.Powers/DieForYouPower.cs:9-49` | Buff, Single; `ShouldPlayVfx` false (UI). `ModifyUnblockedDamageTarget`: a powered attack on its owner's pet owner is redirected to the owner while the owner lives (`:15-30`); `ShouldAllowHitting(creature) => creature.IsAlive` for every creature (`:32-35`); `ShouldCreatureBeRemovedFromCombatAfterDeath` false only for its owner (`:37-44`), which also keeps a dead Osty in the pet list; `ShouldPowerBeRemovedAfterOwnerDeath` false (`:46-49`). Applied by `OstyCmd.Summon` (`Commands/OstyCmd.cs:377`, character-mechanics, by id) |
+
+Prompts go through `CardSelectCmd` (choice) with `ChoiceSource.For(<power id>, NoInstance, "AfterPlayerTurnStart")`
+(powers have no instance id). The pause and the per-listener context of `AfterPlayerTurnStart` are the
+dispatcher's and the choice runtime's (B1); no pilot pushes a context.
+
+### 11.14 Re-ported powers
+
+- `VulnerablePower` (`Models.Powers/VulnerablePower.cs:98-128`, B12 A5): target is the owner and the attack is
+  powered (`:100-107`) → `1.5` (`:96`, `:108`); with a dealer: the dealer's relic (`dealer.Player?.GetRelic
+  <PaperPhrog>()`, `:111-115`) → the first relic of `(dealer as PlayerState)?.Relics` that implements
+  `IVulnerableMultiplierModifier` (only `PaperPhrog` does in v0.111.0: `+0.25` unless the target is its owner and
+  for powered attacks only, `Models.Relics/PaperPhrog.cs:16-27`; melted relics are not skipped, as `GetRelic`);
+  then Cruelty from the dealer, else from the dealer's pet owner (`:116-120`; by id `CRUELTY_POWER`,
+  `Models.Powers/CrueltyPower.cs:17-28`: `+Amount/100` unless the target is its owner); then the target's Debilitate
+  (`:122-126`; `DEBILITATE_POWER`, `DebilitatePower.cs:99-110`: `+(num − 1)`). A pet has no `Player`, so an Osty
+  dealer consults no relic but its owner's Cruelty.
+- `WeakPower` (`Models.Powers/WeakPower.cs:98-120`): dealer is the owner and the attack is powered → `0.75`; the
+  target player's relic (`target?.Player?.GetRelic<PaperKrane>()`, `:109-113`) → the first relic of
+  `(target as PlayerState)?.Relics` implementing `IWeakMultiplierModifier` (`PaperKrane`: `−0.15` for powered attacks
+  on its owner, `Models.Relics/PaperKrane.cs:16-27`); then the dealer's Debilitate with the dealer as target
+  (`:114-118`; `DebilitatePower.cs:112-123`: `−(1 − num)`).
+- `ShrinkPower` (`Models.Powers/ShrinkPower.cs`): `AfterSideTurnEnd` decrements a finite Shrink iff the owner is
+  among the participants (`:129-131`), whatever the side; `AfterDeath` removes it when its applier dies
+  (`:60-62`); the multiplier is `(100 − 30) / 100` (`:163`, `:255-263`); `AfterApplied` / `AfterRemoved` only scale
+  the node (UI). The P0 `IsTurnParticipant(cs, side)` reconstruction is no longer used by the rule; it stays public,
+  unchanged, because `WurmBeetleTests.Test_WurmBeetle_ShrinkDurationFollowsTurnParticipants` (monsters-owned)
+  calls it, and can be deleted at integrate.
+- `RavenousPower` keeps `CorpseSlug.GetExtra(monster)`: the game casts `(CorpseSlug)Owner.Monster`
+  (`Models.Powers/RavenousPower.cs:95`, `:164`), so the type use mirrors the decompile; the flag lives in the
+  monsters-owned `CorpseSlugExtraState` and has no id-based seam. Accepted exception to "cross-kind references by
+  id" until monsters-kernel offers one.
+
+### 11.15 Cross-area seams
+
+`Powers/CardCmdForwarders.cs`: the scaffold stubs no `CardCmd` member (neither `Combat/Pipeline/CardCmd.cs` of
+cards-kernel nor `Combat/Loop/CardCmd.Play.cs` of loop exists at `263810d`), so the pilots call three local
+forwarders that throw `NotImplementedException` naming the owner and the game line:
+`AutoPlay(cs, card, target, type = Default)` (loop, `Commands/CardCmd.cs:1779`, used by Hellraiser),
+`Discard(cs, cards)` (loop, `:1825` → `DiscardAndDraw(cards, 0)`, used by ToolsOfTheTrade),
+`TransformToRandom(cs, card, rng)` (cards-kernel, `:1949`, used by Entropy). Integrate replaces each body with the
+call to the real member. Until then the B2-chain gate (Hellraiser auto-play) throws inside `Step`.
+
+Other members called before their owners land (they throw `NotImplementedException` at the base and are reached in
+tests only through `W1Pending`): `CombatState.AddAlly` / `RemoveAlly` (state), `MonsterSpawner.SpawnForAdd`
+(monsters-kernel), `CardSelectCmd.FromHand` / `FromHandForDiscard` (choice), `Hook.ModifyOrbValue` and the
+`(rs, null)` run-listener path (hooks), `StarsCmd.SetStars` (character-mechanics). The listener snapshot still
+visits only the player's and the monsters' powers (hooks owner, B3); pets' powers (`DieForYouPower` on Osty) are
+visited once it walks `cs.Allies`. A scratch run with `AddAlly`, an allies-walking snapshot, `SpawnForAdd` and a
+minimal `AutoPlay` filled in locally (not committed) ran all eleven state-, monsters- and loop-dependent tests for
+real: 87 passed, 0 failed.
+
+### 11.16 Fidelity flags and deliberate non-flags
+
+Recorded (`FidelityFlag.ApproximatedRule`, site string in the code): `CreatureCmd.EscapeFidelitySite` (no
+escaped-creature list) and `CreatureCmd.HandlePlayerDeathFidelitySite` (per-card instead of batch removal, a branch
+that needs a revived dead player). No P0 path reaches either (the diff gate stays 4/4).
+
+Not flagged, because no reachable state differs: `HpDisplay` read as `Normal` (no ported creature sets it);
+`BeforeRemovedFromRoom` / `ResetStateMachine` (§11.6); the multiplayer branches (`PlayerCount(cs) > 1`, the dead
+player's `EndTurn`), which throw if ever reached; the detached-first-target `DamageReceived` crash, which throws as
+the game fails. The P0 approximations listed in §9 are ported now: history recording, the Cruelty pet-owner
+fallback, the Died-event pet bookkeeping, the detached first target, PaperPhrog / PaperKrane.
+
+### 11.17 Round-2 findings (`verify-notes-pipeline.md`)
+
+| Finding | Resolution |
+| --- | --- |
+| [high] Vulnerable: PaperPhrog step and pet-owner Cruelty fallback missing | Ported in the game's order (§11.14); tests `VulnerableConsultsTheDealersMultiplierRelic` (10 → 17.5, HP loss 17), `VulnerableAndWeakApplyRelicThenCrueltyThenDebilitate` (20, 30, Osty dealer 17.5) |
+| [high] Weak: PaperKrane consult missing | Ported (§11.14); `WeakConsultsTheTargetsMultiplierRelic` (10 → 6), Debilitate after the relic (→ 2) |
+| [high] Damage takes block from the pet, not its owner | `PetOwnerOf(cs, target) ?? target` (§11.4); flags on the original target; `HitOnPetTakesItsOwnersBlock` |
+| [high] CombatStatus ignores `cs.Allies` | All attachment and side queries walk the allies (§11.2); the dependent gates (`CanReceivePowers`, Heal's hook gate, `PowerCmd` owner/applier checks, the Kill gate, the attacker check) follow; `PetsAreAttachedAlliesOnThePlayerSide` |
+| [medium] `CreatureCmd.Add` not ported, `AfterCreatureAddedToCombat` never dispatched | Ported (§11.3) through `MonsterSpawner.SpawnForAdd`; `AddCreatureSetsUpRollsAndDispatches`, `AddMonsterDefSpawnsThroughTheSpawner`, `AddPetJoinsTheAllies` |
+| [medium] Player death skips `OrbQueue.Clear` and the Osty kill; Died-event bookkeeping missing | Ported (§11.6); `PlayerDeathKillsOnlyAnAliveOstyBeforeDeactivatingHooks`, `DeadOstyIsNotKilledAgainWithItsOwner`, `PetDeathDropsItFromPetIdsUnlessKeptInCombat` |
+| [medium] / [high] History recorded at none of the sites | All six sites (§11.12); `HistoryRecordsDamageBlockPowerAndEnergyAtTheGameSites`, `KillingBlowOnTheLastEnemyIsNotRecorded` |
+| [medium] Shrink uses `IsTurnParticipant` | Participants by combat id (§11.14); `ShrinkTicksByParticipantMembership` |
+| [medium] `FromOsty`, the Osty random-target stream, `DamageCmd.Attack(CalculatedDamageVar)` missing | Ported (§11.9); `FromOstyAcceptsOnlyOsty`, `OstyRandomAttackDrawsThePetOwnersTargetRng`, `CalculatedAttackComputesEachHitAfterTargetSelection` |
+| [medium] `Escape` missing | Ported with a flag (§11.7); `EscapeStripsPowersSilentlyRemovesAndFlags` |
+| [low] Stun IL | Closed (§11.8) |
+| [low] DamageVar / BlockVar overloads | Ported (§11.4, §11.5); `DamageVarAndBlockVarOverloadsForwardValueAndProps` |
+| [low] Multiplayer gates dropped | Encoded with `PlayerCount(cs) > 1` (PowerCmd scaling, Kill heal) or as a throwing unreachable branch (dead player's `EndTurn`, §11.6) |
+| [low] pipeline.md has no W1 section | This section; superseded statements §11.18 |
+| [low] Death removal never runs `CombatManager.RemoveCreature`'s monster steps | Rebutted: rule-inert in v0.111.0 (§11.6, every `BeforeRemovedFromRoom` override read; `ResetStateMachine` only on removed creatures); recorded as an open question for monsters-kernel |
+| [low] `Decrement` not under a Throwing context | Ported (§11.10); `DecrementRunsUnderAThrowingContext` |
+| [high] None of the W1 pipeline work exists; pilot powers missing | Delivered (§11.1, §11.13); the five pilots plus `DieForYouPower` are registered, `PilotContentIsRegistered` no longer lists them |
+| [medium] No FidelityFlag at any knowing approximation | §11.16 |
+| [low] No state-level clone/hash test | `CloneAndHashAreStableAcrossPipelineOperations` (twin determinism, clone hash, clone independence, with history) |
+| [low] RavenousPower uses the monsters-owned `CorpseSlug` | Accepted exception (§11.14) |
+
+### 11.18 Superseded statements
+
+§2 "`CalculatedDamageVar` constructor path … not ported" and "Random targeting by a monster attacker throws …
+`Attacker is not PlayerState`" (pets now draw too); §3 "The pet-owner redirection … is identity in P0"; §5 "orb
+queue clear and Osty kill … have nothing to act on in P0" and the `Stun` open question; §6 "(multiplayer scaling
+:550-553 dropped)"; §8 the history bullet ("dropped in P0") and the multiplayer bullet; §9 the bullets on dropped
+hook parameters (D12 restored `participants` and `AutoPlayType`, `deathAnimLength` stays dropped), on
+`PaperPhrog` / `PaperKrane` / Osty / `CalculatedDamageVar`, on the detached first target, on `InvokeDiedEvent` and
+on the Cruelty fallback. §1's "P0 listeners are powers only" still describes the snapshot at the base (hooks
+owner). The power table of §6 lists 5 P0 powers; the P0 tree also holds `RavenousPower`, `ShrinkPower`,
+`ThornsPower` (ported with the monsters, `monsters-corpseslugs-seapunk.md`, `monsters-wurm-beetle.md`).
+
+### 11.19 Tests (37 appended to `PipelineTests.cs`)
+
+Non-pending (23): `CombatStatusAttachmentWithoutPets`, `RedirectedUnblockedDamageReturnsOverkillToTheOriginalTarget`
+(a player-owned redirect double: 10 damage, 2 block, a 3-HP redirect target takes 3 with overkill 5, the player
+5), `DieForYouPowerRules`, `AddCreatureSetsUpRollsAndDispatches`, `EscapeStripsPowersSilentlyRemovesAndFlags`,
+`CalculatedAttackComputesEachHitAfterTargetSelection`, `FromOstyAcceptsOnlyOsty`,
+`MonsterAttacksRunUnderAnInlineContext`, `DecrementRunsUnderAThrowingContext`,
+`HistoryRecordsDamageBlockPowerAndEnergyAtTheGameSites`, `KillingBlowOnTheLastEnemyIsNotRecorded`,
+`VulnerableConsultsTheDealersMultiplierRelic`, `WeakConsultsTheTargetsMultiplierRelic`,
+`VulnerableAndWeakApplyRelicThenCrueltyThenDebilitate`, `ShrinkTicksByParticipantMembership`,
+`PilotPowerIdsAndTypes`, `HellraiserIgnoresCardsThatAreNotItsOwnersStrikes`,
+`ToolsOfTheTradeAddsToItsOwnersHandDraw`, `DarkEmbraceDrawsOnExhaustAndAfterEtherealTurnEnd`,
+`TemporaryStrengthAppliesAndRevertsItsInternalPower`, `ApplyToTargetsReturnsTheAppliedPowers`,
+`DamageVarAndBlockVarOverloadsForwardValueAndProps`, `CloneAndHashAreStableAcrossPipelineOperations`.
+Relic consults use test-double relics implementing the multiplier interfaces placed in `Player.Relics`
+(`PhrogDouble`, `KraneDouble`, the guards of `PaperPhrog.cs:16-27` / `PaperKrane.cs:16-27`); Cruelty and
+Debilitate are id-carrying doubles of `CrueltyPower.cs:17-28` / `DebilitatePower.cs:99-123`; pets are
+`MonsterState`s on the player side with `PetOwnerId` and a local `MonsterDef` double (`OSTY` for Osty).
+
+Through `W1Pending` (14 PENDING lines at the base; each runs for real once its owner lands): state —
+`PetsAreAttachedAlliesOnThePlayerSide`, `HitOnPetTakesItsOwnersBlock`, `DieForYouRedirectsPoweredAttacksOnTheOwnerToOsty`,
+`PlayerDeathKillsOnlyAnAliveOstyBeforeDeactivatingHooks`, `DeadOstyIsNotKilledAgainWithItsOwner`,
+`PetDeathDropsItFromPetIdsUnlessKeptInCombat`, `AddPetJoinsTheAllies`, `OstyRandomAttackDrawsThePetOwnersTargetRng`;
+monsters-kernel — `AddMonsterDefSpawnsThroughTheSpawner`; loop — `HellraiserAutoPlaysDrawnStrikes`,
+`HellraiserCapsAutoPlaysWithoutHittableEnemiesAtNine` (nine auto-plays, the 10th and 11th Strike stay in hand, the
+count reaches 11 and resets at the owner's turn end); choice — `ToolsOfTheTradePromptsItsOwnerToDiscard`,
+`EntropyPromptsItsOwnerToTransform` (empty hands: nothing selected); hooks — the `Hook.ModifyOrbValue` half of
+`FocusModifiesOnlyItsOwnersOrbValues`. `DieForYouRedirects…` also needs the hooks owner's allies-walking snapshot.
+
+### 11.20 Gates and measurements
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` | 0 warnings, 0 errors |
+| `dotnet run --project sim/Sts2Sim.Tests` | 408 passed, 3 failed, 411 total; `PENDING total: 14`. Failures: the two known content gates (`W1Gate_B2Chain…`: only `SEEKER_STRIKE` missing now; `W1Gate_PilotContentIsRegistered`: 18 missing, none of them pipeline's) and `EndToEnd_CanonicalHashesArePinnedAcrossProcesses`, whose final-state pin moves to `0xB899C4BCA7235886` because the history sites are wired (§11.12; pin owned by the loop owner, B12 A13, recomputed at integrate) |
+| Diff gate (`Sts2Sim.Diff -c Release`, P0 bundles) | bundles 4 (agree 4), decisions 69/69, outcome 4/4, soft diffs 0 |
+| Behaviour | 2 000 random `NIBBITS_WEAK` playouts (seeds 1000-2999): 40 447 steps on both the base and this tree (identical trajectories) |
+| Deterministic cost (`NIBBITS_WEAK` bench mid-fight state, Release) | canonical form 2 373 → 3 212 bytes (15 history entries); allocation per `Clone()` 6 648 → 7 760 B; allocation per playout step 1 005 → 1 343 B; 50.2 history entries per finished episode (the P0 loop clears nothing at combat end; B12 A18's `History.Clear` is the loop's) |
+
+Attribution (a scratch copy of this tree whose `CombatHistory` neither stores nor counts entries, same probe):
+canonical form 2 373 bytes and 6 648 B per `Clone()`, both equal to the base, and 1 047 B per playout step. The
+history entries carry all of the canonical and clone growth and 296 of the 338 extra bytes per step; the rest of
+this round's changes add 42 B per step. The same scratch copy passes the 14 tests named `*EndToEnd*`, including
+`Test_EndToEnd_CanonicalHashesArePinnedAcrossProcesses` with the old final-state pin `0xD7B055DC9B9E326E`, so the
+history entries are the only reason that pin moves.
+
+Timing (`dotnet run -c Release --project sim/Sts2Sim.Bench`, the base and this tree interleaved, 3 runs each, load
+average 15 to 22 from other agents):
+
+| Metric | Base, 3 runs | This tree, 3 runs |
+| --- | --- | --- |
+| `Clone()` (clone+hash minus hash-only) | 4.873 / 2.886 / 20.681 us | 5.778 / 4.191 / 3.755 us |
+| `StateHash()` | 2.503 / 1.635 / 5.102 us | 3.417 / 2.134 / 3.418 us |
+| Random playouts, 5 s window | 164 175 / 259 267 / 126 261 decisions/s | 311 600 / 199 410 / 128 169 decisions/s |
+
+Both trees play 20.1 decisions per episode and win 97.8 to 97.9 % of them. The same base binary's clone time varies
+7x and its throughput 2x between runs, and a CPU-time probe (`Process.TotalProcessorTime`, 3 rounds of 20 000
+playouts, 200 000 clones and hashes) varies 2.5x as well, so these runs rank nothing: the deterministic figures
+above are the comparison, and a quiet-machine bench at integrate updates `BENCH.md`. Both W1 Part B gates pass at
+the worst run: 128 169 decisions/s against >= 300 (about 400x) and 5.8 us per clone against <= 1 ms (about 170x).
+
+### 11.21 Open questions and contract change requests
+
+1. `CardCmd` has no stub: `AutoPlay`, `Discard(cards)`, `TransformToRandom` are reached through
+   `Powers/CardCmdForwarders.cs` (§11.15); integrate forwards them. The B2 chain needs `AutoPlay`.
+2. `MonsterSpawner.SpawnForAdd` versus `CreatureCmd.Add(Creature)`: two ports of the same sequence after the merge
+   (§11.3); `Add(cs, MonsterDef)` tolerates either, integrate keeps one.
+3. `CreatureState.HpDisplay` (state) is needed by Hellraiser once `HardenedShellPower` or `WaterfallGiant` is
+   ported (§11.13).
+4. An escaped-creature list on `CombatState` (state; `Combat/CombatState.cs:618`, `:733-737`) for W2's reward gold;
+   `Escape` flags its absence (§11.7).
+5. Wire monsters-kernel's `MonsterLifecycle.RemoveCreature` (`CombatManager.RemoveCreature`: `BeforeRemovedFromRoom`,
+   `ResetStateMachine`) into `Kill` and `Escape` at integrate (§11.6, §11.7); its `InvokeDiedEvent` / `OnPetDied`
+   duplicate the pipeline's pet bookkeeping (§11.6) with the same rule.
+6. The `(CombatState cs, …)` overloads of the hooks used here pass `cs`; the both-scope `(rs, cs?)` overloads are
+   used where the game passes a creature's combat (`Damage`, `Kill`, `SetCurrentHp`), so a detached creature reaches
+   the hooks owner's `(rs, null)` path.
+7. A batch `CardPileCmd.RemoveFromCombat(cards)` (loop) would remove the `HandlePlayerDeath` flag (§11.6).
+8. `ShrinkPower.IsTurnParticipant` can be deleted once `WurmBeetleTests` stops calling it (§11.14).
+9. History storage (state): `CombatHistory.DeepClone` copies every non-empty entry list, nested arrays included, on
+   each `Clone()`, which is the whole canonical and clone growth of this round (§11.20). The history is append-only
+   between `Clear` calls, so a clone could share the entries written before it (a chunked or persistent list)
+   instead of copying them.
+
+### 11.22 Read-only trial overlay with the other round-3 tracks
+
+A scratch copy of this tree with the files of `w1-r3/monsters-kernel` (`6b7ecd6`), `w1-r3/character-mechanics`
+(`76378e2`) and `w1-r3/relics-potions` (`1667af4`) copied over (no file overlaps with this area; nothing merged, no
+ref touched) builds with 0 warnings and gives 543 passed, 3 failed (the same three as §11.20), 57 PENDING.
+`RelicPotionTests.Test_RelicPotion_PaperPhrogAndPaperKraneThroughVulnerableAndWeak` runs for real against the
+re-ported Vulnerable / Weak and passes, and `Test_Pipeline_AddMonsterDefSpawnsThroughTheSpawner` runs against the
+monsters-kernel `SpawnForAdd` and passes (the attached-result guard of §11.3). Integrate items seen there:
+`MonsterKernelTests.Test_MonsterKernel_KillDuringItsOwnMoveRunsBeforeRemovedFromRoom` waits for `Kill` to call
+`MonsterLifecycle.RemoveCreature` (§11.6, §11.21 item 5); `MonsterLifecycle.InvokeDiedEvent` / `OnPetDied`,
+`MonsterSpawner.AddToCombat` and the character-mechanics `PlayerPets.GetOsty` duplicate `CreatureCmd`'s pet
+bookkeeping, `CreatureCmd.Add(Creature)` and `CombatStatus.GetOsty` with the same rules; the relics-potions
+`PendingKernelCalls` and this area's `CardCmdForwarders` route to the same missing `CardCmd` members.

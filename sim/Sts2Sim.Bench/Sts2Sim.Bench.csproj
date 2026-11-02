@@ -8,10 +8,12 @@
     <RootNamespace>Sts2Sim.Bench</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <CheckForOverflowUnderflow>false</CheckForOverflowUnderflow>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Sts2Sim.Core/Sts2Sim.Core.csproj" />
+    <ProjectReference Include="../Sts2Sim.Vec/Sts2Sim.Vec.csproj" />
   </ItemGroup>
 
 </Project>

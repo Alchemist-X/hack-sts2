@@ -23,12 +23,15 @@ namespace Sts2Recorder.Game;
 [ModInitializer("Initialize")]
 public static class RecorderMod
 {
-    public const string Version = "0.2.0";
+    public const string Version = "0.3.0";
     public const string HarmonyId = "alchemist-x.sts2recorder";
     private const string ConfigFileName = "Sts2Recorder.conf";
 
-    /// <summary>Game versions this recorder was verified against (manifest untested flag).</summary>
-    public static readonly IReadOnlyList<string> KnownGoodVersions = new[] { "v0.107.1" };
+    /// <summary>
+    /// Game versions this recorder was verified against (manifest untested flag);
+    /// v0.111.0 per the docs/hook-map.md drift addendum (2026-11-01).
+    /// </summary>
+    public static readonly IReadOnlyList<string> KnownGoodVersions = new[] { "v0.107.1", "v0.111.0" };
 
     private static readonly ConcurrentQueue<Action> _mainThreadQueue = new();
     private static readonly List<string> _startupDegradedHooks = new();

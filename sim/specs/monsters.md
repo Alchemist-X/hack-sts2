@@ -308,3 +308,313 @@ seed (or `DeepClone()` of the live stream) and replayed through the ported formu
   reference model at A0 and A10, which re-checks the HP roll, the alone cycle, the move values, SLICE
   block timing (gained on the enemy turn, cleared at the next enemy turn start) and the Strength
   stacking end to end.
+
+## 11. W1 monsters kernel (CONTRACTS Part B §B8, §B12 A15, A17, A21; 2026-11-01)
+
+Owner: monsters-kernel (Part B §B11). Base `263810d` (phase 0b). Rule truth: decompile v0.111.0, cited as
+`<ns-dir>/<File>.cs:<line>` with `MegaCrit.Sts2.Core.` dropped; async methods were traced through their state machines.
+This section supersedes §5 (rows `PerformMove`, `StunInternal`), §7 (row `History.MonsterPerformedMove`) and the §8
+bullets on `CombatManager.RemoveCreature`, monster listeners, the per-monster `Rng` seam and the `UNSET_MOVE` path.
+
+### 11.1 Files
+
+| File | Contents |
+| --- | --- |
+| `Monsters/MonsterDef.cs` | `MonsterExtraState`; `PrivateRngExtraState` (new, §11.10); `MonsterDef` with the W1 virtuals (§11.2); `MonsterSpawn`; `EncounterDef` + `GetNextSlot` (§11.5) |
+| `Monsters/MonsterSpawner.cs` (new; `MonsterSpawner` moved here from `MonsterDef.cs`, P0 members unchanged) | `CreateCreature`, `AddToCombat`, `SpawnForAdd`, `SpawnPet`, `AddPet`, `AddPetInternal`, `EncounterOf`, `SetEnemyIndex`; P0 `Spawn`, `SpawnEncounter`, `CreateEncounterRng`, `SortEnemiesBySlotName`, `IndexOfSlot`, `RollUniqueMonsterHp` |
+| `Monsters/MonsterListener.cs` (new) | the hook adapter (§11.3) |
+| `Monsters/MonsterLifecycle.cs` | listener install in `SetUpForCombat`; `PerformMove` (§11.9); `RemoveCreature`, `ResetStateMachine`, `RemoveFromCombatState`, `HasMoveStateMachine` (§11.8); `InvokeDiedEvent`, `OnPetDied`, `GetPet`, `GetPets` (§11.6); `IsInCombat`; the participant helpers (§11.7); the other P0 entry points keep their Part A signatures |
+| `Monsters/MoveStateMachine.cs` | `MonsterAiRuntime.IsMachineReset` (cloned, hashed through a variant tag), `ResetMachine`, `RequireMachine` guards (§11.8) |
+| `Monsters/MonsterCanonicalTags.cs` | every monster tag, including the two moved out of content files (§11.11) |
+| `Monsters/Defs/Toadpole.cs`, `Monsters/Defs/CorpseSlug.cs` | tag constants replaced by `MonsterCanonicalTags` (values unchanged) |
+| `Sts2Sim.Tests/MonsterKernelTests.cs` (new) | §11.14 |
+
+### 11.2 `MonsterDef` virtuals
+
+`MonsterModel` overrides only `ShouldReceiveCombatHooks => true` (`Models/MonsterModel.cs:350`) and inherits every other
+hook default from `AbstractModel`. The rule-relevant `MonsterModel` virtuals (`kernel-gaps.json → model_kind_virtuals.MonsterModel`)
+and the six `AbstractModel` hooks that v0.111.0 monsters override (`hooks.json → overridden_by_kinds.monsters`; checked by a
+grep over `Models.Monsters/*.cs`) become `MonsterDef` virtuals. Defaults are the game's (`Task.CompletedTask` → empty body).
+Signatures: the sim hook signature (Part B §B3, scaffold M1: `RunState rs` for both-scope hooks, `CombatState cs` for combat
+scope) with the monster inserted second as `MonsterState self`, the convention of the P0 `AfterAddedToRoom(cs, self)`.
+
+| `MonsterDef` virtual | Game | Overriders in v0.111.0 |
+| --- | --- | --- |
+| `AfterAddedToRoom(cs, self)` (P0) | `Models/MonsterModel.cs:604-607` | 61 files |
+| `BeforeRemovedFromRoom(cs, self)` | `:609-611` (`void`, no parameters) | `CubexConstruct.cs:657`, `KnowledgeDemon.cs:643`, `Ovicopter.cs:543`, `OwlMagistrate.cs:489`, `Queen.cs:803`, `Rocket.cs:723`, `SnappingJaxfruit.cs:215`, `SoulNexus.cs:386`, `TestSubject.cs:1239`, `ThievingHopper.cs:945`, `WaterfallGiant.cs:1108` (all `Models.Monsters/`) |
+| `AfterCardChangedPilesLate(rs, self, card, oldPileType, clonedBy)` | `Models/AbstractModel.cs:253` (scope both) | `SoulFysh.cs:777` |
+| `AfterCardGeneratedForCombat(cs, self, card, creator)` | `:278` (combat) | `Aeonglass.cs:624` |
+| `AfterCurrentHpChanged(rs, self, creature, delta)` | `:343` (both) | `Crusher.cs:800`, `Rocket.cs:693` |
+| `AfterDamageReceived(rs, self, target, result, props, dealer, cardSource)` | `:358` (both; `choiceContext` dropped) | `LagavulinMatriarch.cs:808` |
+| `BeforeDeath(rs, self, creature)` | `:368` (both) | `Crusher.cs:810`, `Rocket.cs:703` |
+| `AfterDeath(rs, self, creature, wasRemovalPrevented)` | `:373` (both; `choiceContext`, `deathAnimLength` dropped, D12) | `Aeonglass.cs:559`, `DecimillipedeSegment.cs:901` (and its three subclasses), `KinPriest.cs:451`, `LagavulinMatriarch.cs:826`, `Queen.cs:936`, `SoulFysh.cs:767`, `TestSubject.cs:1279`, `TheInsatiable.cs:592`, `Vantom.cs:795`, `WaterfallGiant.cs:1093` |
+| `UsesPrivateRng`, `InitPrivateRng(cs, self, rng)` (seam of `rng-encounter-private.md` §4.2) | `Models/MonsterModel.cs:396-411` | none (§11.10); the default now stores the `Rng` in the monster's extra state |
+
+Not ported, with the reason: `ShouldDisappearFromDoom` (`:460`) and `OnDieToDoom` (`:780-782`) are VFX only (critique C15;
+pinned by a test); `Title`, `IsHealthBarVisible`, `ExtraDeathVfxPadding`, `HpBarSizeReduction`, `VisualsPath`, `AssetPaths`,
+the SFX members, `HasPhobiaSpineSkin`, `ShouldFadeAfterDeath`, `HurtAnimationTrackOffsetForDoom`, `ShouldShowInCompendium`,
+`DeathAnimLengthOverride`, `CanChangeScale`, `GenerateBestiaryMoveList`, `ShouldShowMoveInBestiary`, `SetupSkins`,
+`GenerateAnimator` (`:352-474`, `:613-691`, `:751-772`) are UI, bestiary or animation. `ShouldReceiveCombatHooks` has no reader
+outside its declarations. `Creature.Died` subscriptions in `SlumberingBeetle.cs:137` and `SoulNexus.cs:69` only stop VFX
+(`SlumberingBeetle.cs:450-455`, `SoulNexus.cs:380-384`); the one rule-relevant `Died` subscriber is the pet list (§11.6).
+
+### 11.3 `MonsterListener`
+
+The game puts each monster creature's `MonsterModel` into the combat listener list right after that creature's powers, allies
+before enemies (`Combat/CombatState.cs:859-867`), and keeps it while `Creature.CombatState != null` (`:1047`), so a dead monster
+still in `_enemies` and a dead pet (pets never leave `_allies`, §11.6) stay listeners. `MonsterListener : AbstractModel,
+IOwnedListener<MonsterState>` stores only its owner (`readonly MonsterState _owner`; `Def` reads `Owner.Def`) and overrides
+exactly the six hooks of §11.2, each forwarding to the def virtual with `self = Owner` and the arguments unchanged. Every other
+hook keeps the `AbstractModel` default, so per-type hook masks (Part B §B3) visit it only for those six dispatchers.
+
+- Install: `MonsterLifecycle.SetUpForCombat` (the game's `MonsterModel.SetUpForCombat`, `Models/MonsterModel.cs:713-717`, called
+  from `CombatManager.AddCreature`, `Combat/CombatManager.cs:6998`) sets `MonsterState.Listener = new MonsterListener(monster)`
+  after the AI runtime. The game's model is a listener from list insertion on; installing at `SetUpForCombat` is equivalent
+  because nothing dispatches one of the six hooks in between: at setup the encounter monsters are inserted at room entry and set
+  up in `SetUpCombat` after the opening shuffle, which moves cards with `AddInternal` and raises no hook
+  (`Entities.Players/Player.cs:1214-1233`, `Combat/CombatManager.cs:6599-6625`); mid-combat, `CreatureCmd.Add` runs
+  `CombatManager.AddCreature` right after `CombatState.AddCreature` (`Commands/CreatureCmd.cs:279-280`).
+- Clone (scaffold M19, §14 item 2): `MonsterState`'s copy constructor calls `IOwnedListener<MonsterState>.CloneFor(clone)`
+  before it copies the clone's powers and AI (`State/CreatureState.cs:558-559`); `CloneFor` therefore only stores the new owner
+  and reads nothing. Canonical: the listener carries no state, so `MonsterState` writes only its presence (B12 A22);
+  `Hash(x) == Hash(Clone(x))` and the clone's listener routes to the cloned monster (tests).
+- Liveness and order belong to the hooks owner's listener snapshot (§11.13 row 1).
+
+### 11.4 Mid-combat spawn path
+
+`CreatureCmd.Add(MonsterModel, cs, side, slot)` (`Commands/CreatureCmd.cs:3564-3572`, state machine `:144-215`) is
+`CombatState.CreateCreature` then `CreatureCmd.Add(Creature)` (`:3575-3585`, state machine `:219-330`). The sim splits it the
+same way:
+
+| Sim | Game | Steps |
+| --- | --- | --- |
+| `MonsterSpawner.CreateCreature(cs, def, side, slotName[, configure, context])` | `Combat/CombatState.cs:709-724`, `Creature(MonsterModel, side, slot)` `Entities.Creatures/Creature.cs:946-962`, `SetUniqueMonsterHpValue` `:972-984` | `CreateExtraState`; allocate the combat id; `Side = side`; `configure` (the game sets mutable-model fields before `CreateCreature`, e.g. `Models.Powers/InfestedPower.cs:83`); throw when min > max (`Creature.cs:951-954`); HP = `MaxInitialHp` (`:955-961`); **only `side == Enemy`**: unique HP roll on `Niche` over the other enemies (`CombatState.cs:715-719`), written to `MaxHp`, `CurrentHp` and `MaxHpBeforeModification` (`Creature.cs:983`); `ScaleMonsterHpForMultiplayer` is the identity for one player (`:986-993`); then the private `Rng` for an opt-in def (`CombatState.cs:721`, §11.10). The id is allocated before the roll, the game attaches after it (`:720`); the roll reads no id, so the order is not observable (§4 step 2) |
+| `MonsterSpawner.AddToCombat(cs, monster[, encounter])` | `CreatureCmd.Add(Creature)` | throw `"Attempted to add a creature outside of combat."` unless `cs.IsInProgress` (`Commands/CreatureCmd.cs:268-271`); `CombatState.AddCreature` (`Combat/CombatState.cs:993-1008`): throw `"Creature is already in this combat, but AddCreature was called on it again."` when the creature is in either list, then `cs.AddAlly` for the player side, else `cs.AddMonster`; `CombatManager.AddCreature` (`Combat/CombatManager.cs:6990-7005`): `MonsterLifecycle.SetUpForCombat`, then `SortEnemiesBySlotName` when `SlotName != null` (`:6999-7002`); `MonsterLifecycle.AfterCreatureAdded` (`:7007-7010`, state machine `:495-556`: `AfterAddedToRoom` for the enemy side `Entities.Creatures/Creature.cs:67-69`, `RollMove` when `IsEnemy && CurrentSide == Player` `Combat/CombatManager.cs:540-543`); `PrepareForNextTurn(rollNewMove: false)` when `CurrentSide != Enemy` (`Commands/CreatureCmd.cs:298-301`; no rule effect, it only refreshes intents, `Entities.Creatures/Creature.cs:1128-1139`); `Hook.AfterCreatureAddedToCombat(cs, monster)` (`Commands/CreatureCmd.cs:308`) |
+| `MonsterSpawner.SpawnForAdd(cs, def, side, slotName[, configure[, encounter]])` | `CreatureCmd.Add(MonsterModel, …)` | `CreateCreature` then `AddToCombat`. So the id and the `Niche` draw are consumed before the in-progress check throws, as in the game (`:178-179` before `:268`) |
+
+`AddToCombat(cs, monster)` resolves the encounter with `MonsterSpawner.EncounterOf(cs)` (registry entry for `cs.EncounterId`,
+null when unregistered, like the game's `Encounter == null`); the overloads with an explicit `EncounterDef` serve combats built
+from an unregistered def. Not ported, with the reason: `NCombatRoom.AddCreature` (UI), `StateTracker.Subscribe` and
+`CreaturesChanged` (UI/network); the map-point history `MonsterIds` append (`Commands/CreatureCmd.cs:302-307`; read only by the
+bestiary, the run-history screen and progress saves, `Nodes.Screens.Bestiary/*`, `Saves.Managers/ProgressSaveManager.cs:306`;
+W2 run history); `EncounterModel.OnCreatureSpawned` (`Combat/CombatState.cs:722`, `Models/EncounterModel.cs:343-359`; feeds the
+gold-reward proportion `:324-327`, W2 rewards). Not representable: the attachment checks `"Attempted to add a creature with no
+combat state."` (`Commands/CreatureCmd.cs:273-276`) and `"Creature was created for a different combat."`
+(`Combat/CombatState.cs:997-1000`) — a sim creature is attached by being in a list of the `cs` that created it; the
+`"CombatState must already contain creature."` check (`Combat/CombatManager.cs:6994-6997`) cannot fail right after the add and
+is omitted.
+
+### 11.5 Slots
+
+- `EncounterDef.GetNextSlot(cs)` = `Models/EncounterModel.cs:195-198`: the first slot (in `Slots` order) that no creature in
+  `cs.Monsters` holds (ordinal), else `string.Empty`. An empty-string slot is non-null, so a summon placed there still triggers the
+  slot sort (with index -1).
+- `MonsterSpawner.SetEnemyIndex(cs[, encounter], creature, index)` = `Combat/CombatState.cs:966-980`, no caller in v0.111.0 rule
+  code (`Combat/ICombatState.cs:84` declares it): throw `InvalidOperationException("Cannot modify turn order of a combat with
+  pre-set slots")` when `Slots` is non-empty (`:970-973`); throw `ArgumentException("Creature must be a valid enemy to change its
+  turn order.")` when the creature is not in `Enemies` (`:974-977`); `Remove`, then `Insert(Math.Min(index, Count - 1))` with
+  `Count` read after the removal (`:978-979`): an index at or past the end puts the creature second to last, never last, and with
+  a single enemy the insert at -1 throws `ArgumentOutOfRangeException` after the removal. A null encounter throws
+  `ArgumentNullException` (the game dereferences `Encounter` without a check, a `NullReferenceException`).
+
+### 11.6 Pets (B12 A15)
+
+| Sim | Game | Rule |
+| --- | --- | --- |
+| `MonsterSpawner.SpawnPet(cs, def, owner)` | `PlayerCmd.AddPet<T>(player)` `Commands/PlayerCmd.cs:946-955` (state machine `:22-86`) | `CreateCreature(cs, def, owner.Side, null)` (`:51`, `:951`): player side, so no HP roll, no `Niche` draw, HP = `MaxInitialHp`, `MaxHpBeforeModification` stays null; then `AddPet` |
+| `MonsterSpawner.AddPet(cs, pet, owner)` | `PlayerCmd.AddPet(Creature, Player)` `:957-967` (state machine `:90-150`) | `AddPetInternal` (`:123`), then `CreatureCmd.Add(pet)` = `AddToCombat` (`:124`). The `"Pet must already be added to a combat state."` check (`:119-122`) is not representable (§11.4) |
+| `MonsterSpawner.AddPetInternal(owner, pet)` | `PlayerCombatState.AddPetInternal` `Entities.Players/PlayerCombatState.cs:375-387`; `Creature.PetOwner` `Entities.Creatures/Creature.cs:520-535` | nothing when already in `Pets`; set `PetOwnerId` when it differs (a different existing owner throws `"… already has an owner."`, `Creature.cs:531`); append to `PetIds` (`:385`). The `Died += OnPetDied` subscription (`:384`) is represented by membership in `PetIds` (subscribed iff listed, `:442-443`) |
+| `MonsterLifecycle.InvokeDiedEvent(cs, creature)` | `Creature.InvokeDiedEvent` `Creature.cs:1100-1103`, raised by `Kill` at `Commands/CreatureCmd.cs:2770` | the only rule-relevant subscriber: a pet listed in its owner's `PetIds` runs `OnPetDied` |
+| `MonsterLifecycle.OnPetDied(cs, owner, pet)` | `PlayerCombatState.OnPetDied` `:433-445` | throw `"Player does not have pet …"` when unlisted; remove from `PetIds` only if `Hook.ShouldCreatureBeRemovedFromCombatAfterDeath(cs, pet)` (`:440-444`) |
+| `MonsterLifecycle.GetPet(cs, owner, monsterId)`, `GetPets(cs, owner, buffer)` | `PlayerCombatState.GetPet<T>` `:389-392`, `Pets` `:39`; `Player.Osty` `Entities.Players/Player.cs:247`, `IsOstyAlive` `:249` | the first pet in `PetIds` order whose model id matches (ordinal); `Pets` resolved in `cs.Allies`. The game's `Monster is T` becomes an id comparison (cross-kind references by id, Part B §B5); `IsOstyAlive` = `GetPet(cs, player, "OSTY")?.IsAlive == true` |
+
+Lifecycle differences, all derived from the code above: a pet never gets `AfterAddedToRoom` (enemy side only,
+`Entities.Creatures/Creature.cs:67-69`) and never rolls (`IsEnemy` gate `Combat/CombatManager.cs:540`; the player-turn
+`PrepareForNextTurn` loop covers `Enemies` only, `:5315-5323`); `TakeTurn` throws `"Only enemy monsters can take automated
+turns."` (`Creature.cs:279-283`); pets are player-side turn participants (§11.7); `Kill` removes only enemy-side creatures from
+the lists (`Commands/CreatureCmd.cs:2812-2822`), so a dead pet stays in `Allies` and stays a listener (§11.3) while `OnPetDied` may
+drop it from `PetIds`; `OstyCmd.Summon` revives such a pet from `Allies` and re-adds it with `AddPetInternal` (same owner, no
+throw, `Commands/OstyCmd.cs:350-364`). Owner death (`Commands/CreatureCmd.cs:2701-2717`): `OrbQueue.Clear()`, then `Kill(Osty)`
+only if `IsOstyAlive`, then `DeactivateHooks` and `HandlePlayerDeath` (`:2850-2858`); no other pet dies (Byrdpip, PaelsLegion
+live on). That code is the pipeline's `Kill` (§11.13). Combat end clears the pet list (`PlayerCombatState.AfterCombatEnd`,
+`:279-297`, `_pets.Clear()` `:296`; loop A18).
+
+### 11.7 Side-turn participants (B12 A17)
+
+`MonsterLifecycle.PlayerSideParticipants(cs)` and `EnemySideParticipants(cs)` (phase 0b bodies, owned here and re-verified):
+turn start = the `PlayersTakingExtraTurn` creatures when the player side takes an extra turn, else
+`ToList(CreaturesOnCurrentSide)` (`Combat/CombatManager.cs:4873-4882`); `CreaturesOnCurrentSide` = `GetCreaturesOnSide(CurrentSide)`
+= `Allies` unless `Enemy` (`Combat/CombatState.cs:620`, `:831-838`), so the player side is the player then its pets in insertion
+order; the enemy turn end uses `ToList(CreaturesOnCurrentSide)` (`Combat/CombatManager.cs:2055`). Each call returns a fresh
+array; dead creatures still listed are included. The player side's turn end is a different set (the ending players only,
+`:2649`, `:2860`, scaffold §16.6 item 15) and is built by the loop. Part A's entry points (`SetUpForCombat`,
+`AfterCreatureAdded`, `RollMove`, `PrepareForNextTurn`, `TakeTurn`, `PerformMove`, `OnSideSwitch`, `SetMoveImmediate`,
+`StunInternal`, `IntendsToAttack`, `PlayerCreatures`) keep their signatures.
+
+### 11.8 Leaving the room: `RemoveCreature`, `ResetStateMachine`
+
+`CombatManager.RemoveCreature` (`Combat/CombatManager.cs:7171-7180`) runs `MonsterModel.BeforeRemovedFromRoom()` then
+`ResetStateMachine()` (`_moveStateMachine = null`, `Models/MonsterModel.cs:693-696`); it does not touch the creature lists.
+`Kill` calls it for every enemy it removes, also while that enemy performs its move, and only defers the list removal
+(`Commands/CreatureCmd.cs:2812-2822`); `Escape` calls it too (`:3936`). Sim: `MonsterLifecycle.RemoveCreature(cs, monster)` =
+`Def.BeforeRemovedFromRoom(cs, monster)` + `ResetStateMachine(monster)`.
+
+The game's model keeps `NextMove` and `IsPerformingMove` as model fields (`Models/MonsterModel.cs:431-442`, `:516-522`) that
+survive the reset; the sim keeps them on `MonsterAiRuntime`, so the reset is a flag on the runtime
+(`MonsterAiRuntime.IsMachineReset`) rather than dropping the runtime. Readers of the game's machine and their sim
+counterparts:
+
+| Game read of `MoveStateMachine` | After the reset | Sim |
+| --- | --- | --- |
+| `PerformMove`: `MoveStateMachine?.OnMovePerformed(move)` (`Models/MonsterModel.cs:285`) | skipped | skipped when `IsMachineReset` |
+| `PrepareForNextTurn`: `rollNewMove && MoveStateMachine != null` (`Entities.Creatures/Creature.cs:1131`) | no roll | `MonsterLifecycle.HasMoveStateMachine` (`HasAi && !IsMachineReset`) |
+| `RollMove` (`Models/MonsterModel.cs:721`), `SetMoveImmediate`'s `ForceCurrentState` (`:729`, after `NextMove = state`), `StunInternal`'s `StateLog` (`Creature.cs:1116`), `OnMovePerformed` | `NullReferenceException` | `InvalidOperationException` from `RequireMachine` at the same point (`SetMoveImmediate` still assigns `NextMove` first); a crash path in both |
+
+The flag is cloned and part of the canonical form: a reset runtime starts with tag `AiRuntimeReset` (0x4D03) instead of
+`AiRuntime` (0x4D01), so the bytes of every non-reset state are unchanged. It matters only while a reset monster stays listed: a
+monster killed during its own move until the end of that move, or one kept by `ShouldCreatureBeRemovedFromCombatAfterDeath`.
+
+### 11.9 `PerformMove`
+
+`Models/MonsterModel.cs:234-291` with `MoveState.PerformMove` (`MonsterMoves.MonsterMoveStateMachine/MoveState.cs:46-48`):
+`IsPerformingMove = true` (`:267`); `move = NextMove` (`:268`); `targets = PlayerCreatures` (`:269`); (`Log.Info`, `:270-273`,
+stripped); `MoveState.PerformMove`: mark the move performed (`MoveState.cs:46`), then its perform (`:48`);
+`MoveStateMachine?.OnMovePerformed(move)` (`Models/MonsterModel.cs:285`, §11.8); `History.MonsterPerformedMove(combatState,
+monster, move, targets)` (`:286`) = `cs.History.AppendMonsterPerformedMove(cs, monster, move, targets)` (state's contract member;
+recorded whether or not the machine was reset); `IsPerformingMove = false` (`:287`); if dead and
+`ShouldCreatureBeRemovedFromCombatAfterDeath`, `CombatState.RemoveCreature` (`:288-291`) =
+`MonsterLifecycle.RemoveFromCombatState` (`Combat/CombatState.cs:739-770`: an unattached creature returns, else it leaves
+`Enemies` or `Allies`). The waits at `:237` and `:292` are stripped. The outer `CombatState != null` guard (`:234`) is always true
+(`CombatState` falls back to `NullCombatState`, `:495`), so it has no sim counterpart.
+
+`UNSET_MOVE` is now exact: the default `NextMove` is `new MoveState()` = `("UNSET_MOVE", UnsetMove)` (`:522`, `MoveState.cs:145-146`),
+so the game marks that state performed before its perform throws `"No move has been set for the monster"` (`MoveState.cs:46`,
+`:187-191`); the sim adds `UNSET_MOVE` to `PerformedAtLeastOnce`, then throws the same message with `IsPerformingMove` left set.
+This replaces the P0 deviation of §8.
+
+### 11.10 RNG access (B12 A21, B8)
+
+- Spawn and move rolls draw only from `cs.Rng` streams: the enemy HP roll from `Niche` (`Combat/CombatState.cs:717`), the
+  move roll from `MonsterAi` (`Models/MonsterModel.cs:721`, `RunRng` = `RunState.Rng`, `Combat/CombatState.cs:712`). Content that
+  reads other run streams (`Fabricator` `MonsterAi`, `Models.Monsters/Fabricator.cs:416`; `ThievingHopper`
+  `CombatCardGeneration`, `ThievingHopper.cs:652`; `ToughEgg` `Niche`, `ToughEgg.cs:219`) reads them through `cs.Rng`. A def
+  holds no randomness (a reflection test over every registered monster and encounter def); `MonsterModel.Rng` returns
+  `Rng.Chaotic` for canonical models (`Models/MonsterModel.cs:396-411`), never modelled.
+- No v0.111.0 rule reads `MonsterModel.Rng`: its only reader is `ToughEgg.SetupSkins` (`Models.Monsters/ToughEgg.cs:549-555`,
+  visual). The seam is kept because other owners' tests use it (`EncounterRngTests`, `WurmBeetleTests`,
+  `CorpseSlugsSeapunkTests`) and is given per-instance storage: a def that opts in creates an extra state deriving from
+  `PrivateRngExtraState`, whose sealed `DeepClone` and `WriteCanonical` clone and hash the `Rng` (tag `PrivateRngExtra`
+  0x4D04, presence byte, the `Rng`'s counter and state, then the subclass fields). The default `InitPrivateRng` stores the `Rng`
+  there and throws `InvalidOperationException` when the extra state is not a `PrivateRngExtraState`.
+- The seed needs the map coordinate and act index (`Combat/CombatState.cs:721`), which neither `CombatState` nor the `RunState`
+  shell stores. Encounter spawns receive the `CombatRunContext` from the loop; a mid-combat spawn (`SpawnForAdd`, `SpawnPet`,
+  `CreateCreature` without a context) of an opt-in def seeds from `CombatRunContext.Default` and records
+  `FidelityFlag.ApproximatedRule` with site `MonsterSpawner.UnknownRunContextSite`. Unreachable in v0.111.0 (no def opts in);
+  open question 1.
+
+### 11.11 Canonical tags (`MonsterCanonicalTags`, 0x4Dxx)
+
+`AiRuntime 0x4D01`, `AiStateRef 0x4D02`, `AiRuntimeReset 0x4D03` (new), `PrivateRngExtra 0x4D04` (new), `NibbitExtra 0x4D10`,
+`ToadpoleExtra 0x4D31` and `CorpseSlugExtra 0x4D41` (moved from `ToadpoleExtraState.CanonicalTag` / `CorpseSlugExtraState.CanonicalTag`,
+values unchanged, so no hash moves). A test checks that every tag is in 0x4D00-0x4DFF, unique, and that no other type of the
+namespace declares a `const ushort`.
+
+### 11.12 Deviations, flags and stripped sites
+
+| Site | Game | Sim | Flag |
+| --- | --- | --- | --- |
+| private `Rng` of a mid-combat spawn | seeded with the current map coordinate and act index (`Combat/CombatState.cs:721`) | `CombatRunContext.Default` | `ApproximatedRule` (`MonsterSpawner.UnknownRunContextSite`); no def opts in |
+| reads of a reset machine (§11.8), `SetEnemyIndex` with a null encounter (§11.5) | `NullReferenceException` | `InvalidOperationException` / `ArgumentNullException` at the same point | none: crash paths |
+| attachment checks of §11.4 / §11.6 | `Creature.CombatState` checks | not representable (attachment = list membership) | none: unreachable for creatures created through `CreateCreature` |
+| `MonsterIds` map history, `OnCreatureSpawned`, `NCombatRoom`, `StateTracker`, `CreaturesChanged`, `Log.Info`, `Cmd.CustomScaledWait`, `RefreshIntents` | §11.4, §11.9, §7 | dropped | none: no combat rule reads them (W2 restores the run-history and reward data) |
+
+### 11.13 Calls other owners make (wiring requests)
+
+| # | Owner | Request | Pinned by |
+| --- | --- | --- | --- |
+| 1 | hooks | `ListenerSnapshot` yields `MonsterState.Listener` right after each creature's powers, for pets in `cs.Allies` and for `cs.Monsters`, in that order (`Combat/CombatState.cs:859-867`); liveness = the owner is in `cs.Monsters` or `cs.Allies` (`:1047`). `MonsterListener.Owner` exposes the owner | `Test_MonsterKernel_ListenerFollowsItsCreaturesPowersInDispatchOrder` (PENDING "hooks" until then) |
+| 2 | pipeline | `CreatureCmd.Kill`: call `MonsterLifecycle.InvokeDiedEvent(cs, creature)` where the game raises `Died`, before `shouldRemoveFromCombat` (`Commands/CreatureCmd.cs:2770-2771`); for an enemy it removes, call `MonsterLifecycle.RemoveCreature(cs, monster)` before the `IsPerformingMove`-gated list removal (`:2812-2822`); owner death per §11.6 with `MonsterLifecycle.GetPet(cs, player, "OSTY")`; count `cs.Allies` as attached (B12 A19). `CreatureCmd.Escape` (`:3915-3939`) also calls `RemoveCreature`. `CreatureCmd.Add(cs, def, side, slot)` = `MonsterSpawner.SpawnForAdd`; `CreatureCmd.Add(cs, creature)` for a `MonsterState` = `MonsterSpawner.AddToCombat` | `Test_MonsterKernel_KillDuringItsOwnMoveRunsBeforeRemovedFromRoom`, `Test_MonsterKernel_DeadPetsStayInAlliesAndLeaveThePetList` (PENDING "pipeline" until then) |
+| 3 | loop | `PlayerCmd.AddPet(cs, owner, def)` = `MonsterSpawner.SpawnPet(cs, def, owner)`, which already runs `CreatureCmd.Add(pet)`; calling `CreatureCmd.Add` again throws "already in this combat". `SwitchSides` calls `OnSideSwitch` for every creature, pets included (`Combat/CombatManager.cs:7488-7495`). Turn start and enemy turn end use the §11.7 helpers | — |
+| 4 | state | `CombatState.AddAlly` / `RemoveAlly` (B12 A19) | four PENDING "state" tests |
+| 5 | loop / integrate | refresh `EndToEndTests.PinnedSeedOneOpeningHash` and `PinnedSeedOneFinalHash` (§11.16) | `Test_EndToEnd_CanonicalHashesArePinnedAcrossProcesses` |
+
+### 11.14 Tests (`Sts2Sim.Tests/MonsterKernelTests.cs`, filter `MonsterKernel`)
+
+28 tests, all deterministic, hand-built states unless named. Listener: install and owner, a second `SetUpForCombat` throws; the
+listener overrides exactly the six hooks and `MonsterDef` declares them with the monster second, plus `AfterAddedToRoom` /
+`BeforeRemovedFromRoom`, and declares no `ShouldDisappearFromDoom` / `OnDieToDoom`; routing of each hook with its exact
+arguments through a test-double def, other hooks inert; clone routing to the cloned monster, equal hash and bytes, mutation
+independence, `MonsterState.DeepClone` rebinding; dispatch order through `Hook.IterateHookListeners` / `Hook.AfterDeath`
+(player power, monster power, its listener, next monster) with liveness (PENDING hooks). Spawn: `SpawnForAdd` id, unique `Niche`
+roll replayed on a cloned stream, one `Niche` and one `MonsterAi` draw on the player side, the order SetUpForCombat →
+`AfterAddedToRoom` → `AfterCreatureAddedToCombat`, append to the enemies; enemy-side spawn rolls no move; the in-progress check
+throws after the id and the `Niche` draw; duplicate add throws; slot sort through an explicit encounter and `GetNextSlot`;
+`SetEnemyIndex` order, clamp, both throws, null encounter, the single-enemy quirk. Pets: player-side `CreateCreature` (no roll,
+no draw, `MaxHpBeforeModification` null); `AddPetInternal` (owner once, no duplicate, revive re-add, foreign owner throws);
+no `AfterAddedToRoom`, no roll, `TakeTurn` throws; `OnPetDied` gated by a vetoing listener; `SpawnPet` order, `Allies`,
+duplicate add (PENDING state); a pet killed through `CreatureCmd.Kill` stays in `Allies` and leaves `PetIds` (PENDING state,
+pipeline); `GetPet` / `GetPets` order (PENDING state). Participants: without pets, snapshots, dead enemies, extra turn,
+unknown id, empty side; with pets in insertion order, a dead pet, extra turn without pets (PENDING state). RNG: only `Niche` and
+`MonsterAi` move across encounter spawns, a mid-combat spawn, a player-side creation and 15 rolls (one draw per roll), no def
+holds randomness, no registered def opts in; the private `Rng` stored in `PrivateRngExtraState`, seeded per §11.10, cloned,
+hashed, flagged for a mid-combat spawn, and an opt-in def without the storage throws. Moves: the history entry after the move
+with its fields; `UNSET_MOVE`; `RemoveCreature` (hook, flag, `NextMove` kept, lists untouched, hash variant, clone, guarded
+reads, no roll); a death during the own move skips `OnMovePerformed`, records history and leaves the list at the end, or stays
+listed when vetoed; the same through `CreatureCmd.Kill` (PENDING pipeline); `CombatSim` `NIBBITS_WEAK`: listeners, clone
+lockstep hashes over three enemy turns, `BUTT, SLICE, HISS` history. Tags: range, uniqueness, single file.
+
+PENDING bodies were run against stand-in implementations of the four requests (a scratch copy, not committed: `AddAlly` /
+`RemoveAlly` as list operations; the listener slot and owner liveness in `ListenerSnapshot`; `Kill` calling `InvokeDiedEvent`
+and `RemoveCreature` and counting allies as attached): 28/28 pass, 0 PENDING, the rest of the suite unchanged, diff gate 4/4.
+
+### 11.15 Round-2 findings (`w1-result/verify-notes-monsters-kernel.md`)
+
+| Finding | Resolution |
+| --- | --- |
+| [high] ×2 No W1 monsters-kernel work at `ef7c7b9` | Delivered: §11.1-11.14 |
+| [medium] ×2 No `MonsterListener`, no `MonsterDef` hook virtuals, `Listener` never installed; `ListenerSnapshot` enumerates powers only | §11.2, §11.3; the snapshot slot is the hooks owner's file, requested in §11.13 row 1 and pinned by a PENDING test |
+| [medium] Pet lifecycle missing; `Spawn` would draw `Niche` for pets; owner death over-generalised | §11.6: `SpawnPet` uses the player-side `CreateCreature` (no draw); the contract already reads "kills only an alive Osty" (B8, B12 A15); the `Kill` code is the pipeline's (§11.13 row 2) |
+| [medium] ×2 `BeforeRemovedFromRoom` / `ResetStateMachine` missing; `OnMovePerformed` after a mid-move death; no `MonsterState` reset member | §11.8. Rebuttal of the requested `MonsterState.ResetAi()`: dropping the runtime would also drop `NextMove` and `IsPerformingMove`, which are `MonsterModel` fields in the game and survive `ResetStateMachine` (`Models/MonsterModel.cs:431-442`, `:516-522`, `:693-696`); a flag on `MonsterAiRuntime` (this owner's file) is the faithful mapping, so no state change is needed. The `Kill` call site is requested (§11.13 row 2) |
+| [medium] Side-turn participant helpers absent | Implemented in phase 0b and re-verified (§11.7); tests with and without pets and on an extra turn |
+| [low] ×2 `MonsterPerformedMove` not recorded; no `FidelityFlag` for deviations | Recorded (§11.9). The `UNSET_MOVE` path is now exact and the mid-move `OnMovePerformed` is fixed (§11.8), so neither needs a flag; the remaining deviations are listed in §11.12 with their flag or the reason none applies |
+| [low] `SetEnemyIndex` not ported | §11.5 with both throws and the post-removal `Count` quirk |
+| [low] ×2 RNG access rules unpinned; `InitPrivateRng` hands a per-monster `Rng` to a shared def; no run context for a mid-combat seed | §11.10: storage in `PrivateRngExtraState` (cloned, hashed), the default stores there, flagged mid-combat seeding, reflection and stream tests; open question 1 |
+| [low] Canonical tags in content files | §11.11 |
+| [low] Listener clone/hash constraints unpinned | `IOwnedListener` storing only its owner, `CloneFor` reads nothing; tests pin hash equality and routing (§11.3, §11.14) |
+| scaffold §14 item 2 (listener design), §16.6 items 15-16 | §11.3; §11.7 (the player turn end is the loop's set); pet snapshots wait for `AddAlly` (PENDING) |
+
+### 11.16 Gates and measurements
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build sim/Sts2Sim.sln` | 0 warnings, 0 errors |
+| `dotnet run --project sim/Sts2Sim.Tests` | 399 passed, 3 failed, 402 total; `PENDING total: 6` (all from this file: 4 state, 1 hooks, 1 pipeline). The failures are the two known content gates (`W1GateTests.Test_W1Gate_B2Chain_StepsAndRecordsDeferredListenerPromptInline`, `Test_W1Gate_PilotContentIsRegistered`, failing at the base as well) and `EndToEndTests.Test_EndToEnd_CanonicalHashesArePinnedAcrossProcesses` |
+| Diff gate (P0 bundle set) | bundles 4 (agree 4), decisions 69/69, outcome 4/4, soft diffs 0 |
+
+The pinned-hash test moves for intended canonical changes only (scaffold §16.6 item 11): the opening hash of seed 1 because every
+monster now carries its listener (the `MonsterKernel` presence byte, `0xCA1423508C1168E3` → `0x870EF2BE2AE3F04D`), the final
+hash because `PerformMove` records `MonsterPerformedMove` (`0xD7B055DC9B9E326E` → `0xF07E158ED5F0B079`); without the listener the
+opening hash stays `0xCA1423508C1168E3` (probe). The action sequence and the victory snapshot of seed 1
+(`Test_EndToEnd_GreedySeedOneEndsInAPinnedVictory`) are unchanged. The pins live in a loop-owned test (B12 A13); the loop or the
+integrator recomputes them once after the merge, when the loop's own history sites move them again.
+
+Allocation probe (scratch, `NIBBITS_WEAK`, the bench's mid-fight state and 2 000 playouts with the bench's policy seed; base
+`263810d` vs this tree, deterministic): canonical form 2 373 → 2 429 bytes (one `MonsterPerformedMove` entry); `Clone()`
+6 648 → 6 808 bytes (+160: the listener, the history entry and its target list); 1 008.9 → 1 057.2 bytes per decision over the
+same 40 299 decisions (identical trajectories). Bench timings (`Sts2Sim.Bench -c Release`, interleaved with the base tree, load
+average 4.3-5.0 from other agents): `Clone()` medians 2.84 µs (base) and 2.82 µs (this tree), playouts 610k and 516k
+decisions/s with a per-run spread of 453k-639k for both trees; runs under load 11-17 were discarded. No timing change is
+resolvable on this machine; the allocation figures bound it.
+
+### 11.17 Open questions
+
+1. **Run context for mid-combat private `Rng` seeds.** `CombatState` and the `RunState` shell store no map coordinate or act
+   index, so a mid-combat spawn of an opt-in def seeds from `CombatRunContext.Default` (flagged, §11.10). W2 (or the state owner)
+   should keep the combat's `CombatRunContext` on `RunState`; `MonsterSpawner.CreateCreature` then passes it.
+2. **`configure` for mid-combat spawns.** Content that sets mutable-model fields before `CreatureCmd.Add`
+   (`Models.Powers/InfestedPower.cs:81-83` `StartStunned`, `StockPower.cs:57-61` `StockAmount`) needs the `configure` overloads
+   of `SpawnForAdd`; the pipeline's `CreatureCmd.Add(cs, def, side, slot)` has no such parameter. Content can call
+   `MonsterSpawner.SpawnForAdd` directly, or the pipeline adds an overload. `SurprisePower` creates first and adds later
+   (`SurprisePower.cs:80`, `:150`): `CreateCreature` then `AddToCombat`.
+3. **Hook signatures for monster content.** The six def virtuals take `RunState rs` for both-scope hooks (scaffold M1); monster
+   content reads the combat as `rs.Combat!`, which is never null when a monster listener is visited.
