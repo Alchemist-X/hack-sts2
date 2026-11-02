@@ -52,7 +52,8 @@ public sealed partial class CardReward : Reward
         _alternatives = source._alternatives;
         for (int i = 0; i < source._chosenCards.Count; i++)
         {
-            _chosenCards.Add(source._chosenCards[i].CloneFor(player));
+            // a chosen card is the instance CardPileCmd.Add put into the deck: alias the cloned deck card (Reward.CloneDeckCard)
+            _chosenCards.Add(CloneDeckCard(source._chosenCards[i], source.Player, player));
         }
         _rewardComplete = source._rewardComplete;
         CanReroll = source.CanReroll;

@@ -1,6 +1,7 @@
 """sts2vec CLI (CONTRACTS.md §D6).
 
-- ``sts2vec bench``  random-policy throughput: env-steps/s, ms per batch, obs MB per batch, GC mode, resets/s, status counts.
+- ``sts2vec bench``  random-policy throughput: env-steps/s, ms per batch, obs MB per batch, GC mode, resets/s, status counts;
+  the pool's fresh templates are warmed first and that time is printed separately (``--no-warm`` measures cold starts).
 - ``sts2vec check``  library/schema/buffer consistency + determinism (two envs with identical config, threads 1 vs 8,
   seeded random policy, byte-identical buffers every step and equal state hashes at the end).
 - ``sts2vec digest`` a JSON digest of a seeded random rollout (state hashes + observation bytes); two processes with the
@@ -54,6 +55,13 @@ def cmd_bench(args) -> int:
     schema = Schema.from_json(lib.schema_json())
     print(f"library {lib.path} ({lib.mode}); {lib.version()}; GC {lib.gc_mode}")
     with _env(args, args.threads) as env:
+        warmed, t_warm = 0, 0.0
+        if args.warm:
+            # create every fresh template now (sts2vec_pool_warm), so cold NewRun (~16 ms per entry) stays out of the
+            # timed window; --no-warm leaves them to the first reset that uses each entry
+            t0 = time.perf_counter()
+            warmed = env.pool.warm()
+            t_warm = time.perf_counter() - t0
         t0 = time.perf_counter()
         obs = env.reset()
         t_reset = time.perf_counter() - t0
@@ -87,6 +95,7 @@ def cmd_bench(args) -> int:
             "native_env_steps_per_s": n * args.steps / max(native, 1e-9),
             "ms_per_batch": dt / steps * 1e3, "native_ms_per_batch": native / steps * 1e3,
             "obs_mb_per_batch": env.buffers.observation_nbytes / 1e6, "buffers_mb": env.buffers.nbytes / 1e6,
+            "warm": bool(args.warm), "warm_ms": t_warm * 1e3, "warmed_templates": warmed,
             "reset_ms": t_reset * 1e3, "resets_per_s": resets / max(dt, 1e-9), "episodes_ended": ended, "wins": wins,
             "actions_taken": taken, "status_counts": totals, "reset_status_counts": reset_status,
         }
@@ -96,6 +105,10 @@ def cmd_bench(args) -> int:
     r = result
     print(f"envs={r['envs']} threads={r['threads']} steps={r['steps']} (+{r['warmup']} warmup) policy={r['policy']} "
           f"pool={r['pool']}")
+    if r["warm"]:
+        print(f"  pool warm: {r['warmed_templates']:,} templates in {r['warm_ms']:.0f} ms (before the timed window)")
+    else:
+        print("  pool warm: off (--no-warm: each fresh entry pays its NewRun at its first reset, inside the timed window)")
     print(f"  {r['env_steps_per_s']:,.0f} env-steps/s (native step only {r['native_env_steps_per_s']:,.0f}) | "
           f"{r['ms_per_batch']:.2f} ms/batch (native {r['native_ms_per_batch']:.2f}) | "
           f"{r['obs_mb_per_batch']:.1f} MB obs/batch")
@@ -227,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
     _add_env_args(b, envs=1024, steps=500, pool=64)
     b.add_argument("--threads", type=int, default=8)
     b.add_argument("--warmup", type=int, default=10, help="untimed steps after reset (default 10)")
+    b.add_argument("--warm", action=argparse.BooleanOptionalAction, default=True,
+                   help="create the pool's fresh templates before timing (default on; --no-warm measures cold starts)")
     b.add_argument("--policy", choices=["random"], default="random")
     b.add_argument("--json", action="store_true", help="print one JSON object instead of text")
     b.set_defaults(fn=cmd_bench)

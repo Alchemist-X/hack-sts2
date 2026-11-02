@@ -38,6 +38,9 @@ public sealed class StartEntry
 
     internal RunSim? Template { get; set; }
 
+    /// <summary>True once the entry holds the RunSim its resets clone (fresh entries: after the first start or a warm-up).</summary>
+    public bool HasTemplate => Template != null;
+
     /// <summary>
     /// Save entries whose import stops at a prompt (a choice during the load itself): RunSim.Clone shares the pending load
     /// room (Pending.Load) between clones, so these entries re-import the save on every materialisation instead.
@@ -52,8 +55,9 @@ public sealed class StartEntry
 
 /// <summary>
 /// Start pool (CONTRACTS.md §D4; owner: V2). Entries are ids 0..Count-1 in insertion order. Fresh templates are created on
-/// first use and cached while fewer than <see cref="CacheLimit"/> templates exist; beyond that a fresh entry runs NewRun on
-/// every materialisation. Adds are serialised; Materialize is safe from parallel workers.
+/// first use (or ahead of time by <see cref="Warm"/>, <c>sts2vec_pool_warm</c>) and cached while fewer than
+/// <see cref="CacheLimit"/> templates exist; beyond that a fresh entry runs NewRun on every materialisation. Adds are
+/// serialised; Materialize is safe from parallel workers.
 /// </summary>
 public sealed class StartPool
 {
@@ -154,20 +158,87 @@ public sealed class StartPool
             }
             if (e.Template == null)
             {
-                var fresh = e.Fresh ?? throw new InvalidOperationException($"pool entry {id} ({e.Kind}) has no template");
-                var sim = RunSim.NewRun(fresh.ToRunConfig());
-                if (Interlocked.Increment(ref _cached) <= CacheLimit)
+                var sim = NewTemplate(e);
+                if (!TryCache(e, sim))
                 {
-                    e.Template = sim;
-                }
-                else
-                {
-                    Interlocked.Decrement(ref _cached);
                     return sim;
                 }
             }
-            return e.Template.Clone();
+            return e.Template!.Clone();
         }
+    }
+
+    /// <summary>
+    /// Creates now the templates of up to <paramref name="maxEntries"/> fresh entries that have none yet (all of them when
+    /// negative), in id order and only while the cache has room (<see cref="CacheLimit"/>), on up to
+    /// <paramref name="threads"/> workers; returns how many were created (0 when every fresh entry is warm or the cache is
+    /// full). A warmed template is exactly the one the entry's first <see cref="Materialize"/> would create
+    /// (<c>RunSim.NewRun</c> of its config), so warming moves the cost of the cold starts out of reset/step without
+    /// changing what any slot starts from. Save and snapshot entries hold their template already. If a NewRun throws, the
+    /// first exception propagates; templates created before it stay cached.
+    /// </summary>
+    public int Warm(int maxEntries, int threads)
+    {
+        var todo = new List<StartEntry>();
+        lock (_lock)
+        {
+            int room = CacheLimit - CachedTemplates;
+            int limit = maxEntries < 0 ? room : Math.Min(maxEntries, room);
+            for (int i = 0; i < _entries.Count && todo.Count < limit; i++)
+            {
+                var e = _entries[i];
+                if (e.Kind == StartKind.Fresh && e.Template == null)
+                {
+                    todo.Add(e);
+                }
+            }
+        }
+        int created = 0;
+        void WarmOne(StartEntry e)
+        {
+            lock (e.Gate)
+            {
+                if (e.Template == null && TryCache(e, NewTemplate(e)))
+                {
+                    Interlocked.Increment(ref created);
+                }
+            }
+        }
+        if (threads <= 1 || todo.Count <= 1)
+        {
+            foreach (var e in todo)
+            {
+                WarmOne(e);
+            }
+            return created;
+        }
+        try
+        {
+            Parallel.ForEach(todo, new ParallelOptions { MaxDegreeOfParallelism = threads }, WarmOne);
+        }
+        catch (AggregateException ae) when (ae.InnerExceptions.Count > 0)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ae.InnerExceptions[0]).Throw();
+        }
+        return created;
+    }
+
+    private static RunSim NewTemplate(StartEntry e)
+    {
+        var fresh = e.Fresh ?? throw new InvalidOperationException($"pool entry {e.Id} ({e.Kind}) has no template");
+        return RunSim.NewRun(fresh.ToRunConfig());
+    }
+
+    /// <summary>Caches <paramref name="sim"/> as the entry's template if the cache has room (caller holds the entry's gate).</summary>
+    private bool TryCache(StartEntry e, RunSim sim)
+    {
+        if (Interlocked.Increment(ref _cached) <= CacheLimit)
+        {
+            e.Template = sim;
+            return true;
+        }
+        Interlocked.Decrement(ref _cached);
+        return false;
     }
 
     private int Add(StartKind kind, FreshStart? fresh, string? path, RunSim? template)

@@ -10,7 +10,7 @@ created with:
 
 At run time ``env.pool.add_fresh(...)`` / ``env.pool.add_save(path)`` append more, and ``env.snapshot(slot)`` appends a
 clone of a live slot. Fresh templates are created lazily on first use (``RunSim.NewRun``, ~10–20 ms) and cached up to
-``config.pool_cache``; every reset clones a template (~15 µs).
+``config.pool_cache``; every reset clones a template (~15 µs). ``env.pool.warm()`` creates them ahead of time.
 """
 
 from __future__ import annotations
@@ -179,6 +179,21 @@ class Pool:
         rid = env._check(env._lib.sts2vec_pool_add_save(env._live_handle(), b, len(b)), "pool_add_save")
         self.added.append((rid, SaveEntry(p)))
         return rid
+
+    def warm(self, max_entries: int | None = None) -> int:
+        """Create fresh entries' start templates now rather than at their first reset (``sts2vec_pool_warm``).
+
+        Warms up to ``max_entries`` fresh entries that have no template yet (None = all of them), in id order and only
+        while the template cache (``pool_cache``) has room, on the env's worker threads. Returns how many templates this
+        call created (0 when everything is warm or the cache is full). Starts do not change: a warm template is the
+        ``RunSim.NewRun`` the entry's first reset would create; only that cold cost (~16 ms per entry) moves out of
+        reset/step."""
+        if max_entries is not None and int(max_entries) < 0:
+            raise ValueError(f"max_entries must be >= 0 or None for all (got {max_entries})")
+        env = self._env
+        h = env._live_handle()
+        fn = env._lib.require("sts2vec_pool_warm")
+        return env._check(fn(h, -1 if max_entries is None else int(max_entries)), "pool_warm")
 
     def __len__(self) -> int:
         env = self._env

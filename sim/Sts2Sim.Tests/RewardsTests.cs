@@ -1,5 +1,6 @@
 using Sts2Sim.Core;
 using Sts2Sim.Core.Cards;
+using Sts2Sim.Core.Potions;
 using Sts2Sim.Core.Random;
 using Sts2Sim.Core.Registry;
 using Sts2Sim.Core.Relics;
@@ -282,5 +283,212 @@ public static class RewardsTests
         var room = new CombatRoom(encounter);
         var set = RewardsCmd.GenerateForRoomEnd(rs, player, room);
         Assert.True(set.Rewards.Count > 0);
+    }
+
+    // ------------------------------------------------------------------------ clone fidelity of claimed rewards (E2c)
+
+    /// <summary>
+    /// A claimed potion reward and the belt share one PotionModel (the game's PotionReward.OnSelect hands its Potion to
+    /// PotionCmd.TryToProcure, which stores that instance in Player._potionSlots). RunSim.Clone() must keep that aliasing:
+    /// clone-then-DiscardPotion on the still-open Rewards screen hashes like DiscardPotion on the original.
+    /// </summary>
+    public static void Test_Rewards_ClaimedPotionCloneAliasesTheBelt()
+    {
+        var (sim, index) = RewardsScreenWithPotionReward();
+        sim.Step(RunAction.Of(RunActionKind.ClaimReward, index));
+        Assert.Equal(RunPhase.Rewards, sim.Phase, "the rewards screen stays open after the claim");
+        var reward = (PotionReward)RunLegalActionGenerator.TopRewards(sim.State)!.Rewards[index];
+        Assert.True(reward.SuccessfullySelected, "the potion reward was claimed");
+        int slot = sim.State.Players[0].GetPotionSlotIndex(reward.Potion!);
+        Assert.True(slot >= 0, "the claimed reward holds the belt's PotionModel");
+
+        var clone = sim.Clone();
+        var cloneReward = (PotionReward)RunLegalActionGenerator.TopRewards(clone.State)!.Rewards[index];
+        Assert.True(ReferenceEquals(cloneReward.Potion, clone.State.Players[0].PotionSlots[slot]), "the clone's reward aliases the clone's belt potion");
+        Assert.False(ReferenceEquals(cloneReward.Potion, reward.Potion), "the clone shares nothing with the source");
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "Hash(x) == Hash(x.Clone())");
+        var cloneOfClone = clone.Clone();
+
+        var discard = RunAction.Of(RunActionKind.DiscardPotion, slot);
+        Assert.True(sim.IsLegal(discard), "the rewards screen lists DiscardPotion for the claimed potion");
+        sim.Step(discard);
+        clone.Step(discard);
+        cloneOfClone.Step(discard);
+        Assert.True(reward.Potion!.HasBeenRemovedFromState, "the original's reward potion is the discarded one");
+        Assert.True(cloneReward.Potion!.HasBeenRemovedFromState, "so is the clone's");
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "clone-then-DiscardPotion == DiscardPotion on the original");
+        Assert.Equal(sim.StateHash(), cloneOfClone.StateHash(), "a clone of the clone as well");
+        foreach (var next in new[] { sim.LegalActions()[0], RunAction.Of(RunActionKind.ProceedRewards) })
+        {
+            if (!sim.IsLegal(next))
+            {
+                continue;
+            }
+            sim.Step(next);
+            clone.Step(next);
+            Assert.Equal(sim.StateHash(), clone.StateHash(), $"after {next}");
+        }
+    }
+
+    /// <summary>The same aliasing through UsePotion out of combat (an AnyTime potion on a custom rewards screen).</summary>
+    public static void Test_Rewards_ClaimedPotionCloneUsesTheBeltPotion()
+    {
+        var sim = RunSim.NewRun(new RunConfig("POTALIAS-USE", StartingDecks.IroncladCharacterId, 0) { Content = ContentFilter.PortedOnly });
+        Assert.False(sim.HasPendingChoice, "the run starts at the Neow event, not at a prompt");
+        var rs = sim.State;
+        var player = rs.Players[0];
+        player.CurrentHp = player.MaxHp / 2;
+        var potion = PotionRegistry.Create(BloodPotion.PotionId);
+        var reward = new PotionReward(potion, player);
+        rs.RewardsStack.Add(new RewardsSet(player).WithCustomRewards(new List<Reward> { reward, new GoldReward(17, player) }));
+        RunLoop.AfterAction(rs, sim.Loop);
+        Assert.Equal(RunPhase.Rewards, sim.Phase);
+        sim.Step(RunAction.Of(RunActionKind.ClaimReward, 0));
+        int slot = player.GetPotionSlotIndex(potion);
+        Assert.True(slot >= 0 && ReferenceEquals(reward.Potion, potion), "the belt holds the reward's own potion");
+
+        var clone = sim.Clone();
+        var use = RunAction.Of(RunActionKind.UsePotion, slot, RunAction.NoIndex);
+        Assert.True(sim.IsLegal(use), "an AnyTime potion is usable on the rewards screen");
+        sim.Step(use);
+        clone.Step(use);
+        Assert.True(potion.HasBeenRemovedFromState, "the used potion is the reward's potion");
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "clone-then-UsePotion == UsePotion on the original");
+        var gold = RunAction.Of(RunActionKind.ClaimReward, 1);
+        sim.Step(gold);
+        clone.Step(gold);
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "after claiming the gold");
+    }
+
+    /// <summary>
+    /// A combat room's extra rewards are the very Reward objects its rewards set lists (the game's WithRewardsFromRoom adds
+    /// <c>combatRoom.ExtraRewards[player]</c>); a clone keeps one object for both, so a claim after the clone updates the
+    /// room's copy as it does in the original.
+    /// </summary>
+    public static void Test_Rewards_CloneSharesCombatRoomExtraRewards()
+    {
+        var sim = RunSim.NewRun(new RunConfig("EXTRA-ALIAS", StartingDecks.IroncladCharacterId, 0) { Content = ContentFilter.PortedOnly });
+        Assert.False(sim.HasPendingChoice);
+        var rs = sim.State;
+        var player = rs.Players[0];
+        var encounter = EncounterRegistry.AllIds.Select(EncounterRegistry.Get).First(e => e.RoomType == RoomType.Monster && e.ShouldGiveRewards);
+        var room = new CombatRoom(encounter);
+        room.AddExtraReward(new GoldReward(33, player));
+        room.AddExtraReward(new PotionReward(PotionRegistry.Create(BloodPotion.PotionId), player));
+        rs.CurrentRooms.Add(room);
+        var set = new RewardsSet(player).WithRewardsFromRoom(rs, room);
+        set.GenerateWithoutOffering(rs);
+        rs.RewardsStack.Add(set);
+        RunLoop.AfterAction(rs, sim.Loop);
+        Assert.Equal(RunPhase.Rewards, sim.Phase);
+        int gold = set.Rewards.FindIndex(r => ReferenceEquals(r, room.ExtraRewards[0]));
+        int potion = set.Rewards.FindIndex(r => ReferenceEquals(r, room.ExtraRewards[1]));
+        Assert.True(gold >= 0 && potion >= 0, "the set lists the room's extra rewards themselves");
+
+        var clone = sim.Clone();
+        var cloneRoom = (CombatRoom)clone.State.CurrentRooms[^1];
+        var cloneSet = clone.State.RewardsStack[^1];
+        Assert.True(ReferenceEquals(cloneSet.Rewards[gold], cloneRoom.ExtraRewards[0]) && ReferenceEquals(cloneSet.Rewards[potion], cloneRoom.ExtraRewards[1]),
+            "the clone's set lists the clone room's extra rewards");
+        Assert.Equal(sim.StateHash(), clone.StateHash());
+        foreach (var action in new[] { RunAction.Of(RunActionKind.ClaimReward, gold), RunAction.Of(RunActionKind.ClaimReward, potion) })
+        {
+            sim.Step(action);
+            clone.Step(action);
+            Assert.Equal(sim.StateHash(), clone.StateHash(), $"after {action}");
+        }
+        Assert.True(room.ExtraRewards.All(r => r.SuccessfullySelected) && cloneRoom.ExtraRewards.All(r => r.SuccessfullySelected), "the claims reach the rooms");
+        var discard = RunAction.Of(RunActionKind.DiscardPotion, player.GetPotionSlotIndex(((PotionReward)room.ExtraRewards[1]).Potion!));
+        sim.Step(discard);
+        clone.Step(discard);
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "an extra potion reward also aliases the belt");
+    }
+
+    /// <summary>
+    /// A picked card-reward card and a taken special-card reward's card are the instances put into the deck. A clone taken
+    /// after the claims must follow later edits of those deck cards like the original does (here WHETSTONE, claimed after
+    /// the clone, upgrades both: they are the deck's only upgradable attacks).
+    /// </summary>
+    public static void Test_Rewards_ClonedRewardCardsFollowTheDeck()
+    {
+        var sim = RunSim.NewRun(new RunConfig("CHOSEN-ALIAS", StartingDecks.IroncladCharacterId, 0) { Content = ContentFilter.PortedOnly });
+        Assert.False(sim.HasPendingChoice);
+        var rs = sim.State;
+        var player = rs.Players[0];
+        player.Deck.RemoveAll(c => c.Type == CardType.Attack);
+        var offered = CardFactory.CreateRunCard(rs, CardRegistry.Get(StrikeIronclad.CardId), player);
+        var cardReward = new CardReward(new[] { offered }, CardCreationSource.Encounter, player, CardCreationOptions.ForRoom(rs, player, RoomType.Monster));
+        var special = new SpecialCardReward(CardFactory.CreateRunCard(rs, CardRegistry.Get(Bash.CardId), player), player);
+        var relicReward = new RelicReward(RelicRegistry.Create(Whetstone.RelicId), player);
+        rs.RewardsStack.Add(new RewardsSet(player).WithCustomRewards(new List<Reward> { relicReward, cardReward, special }));
+        RunLoop.AfterAction(rs, sim.Loop);
+        sim.Step(RunAction.Of(RunActionKind.ClaimReward, 1));
+        Assert.Equal(RunPhase.CardReward, sim.Phase);
+        sim.Step(RunAction.Of(RunActionKind.PickRewardCard, 0));
+        sim.Step(RunAction.Of(RunActionKind.ClaimReward, 2));
+        Assert.Equal(RunPhase.Rewards, sim.Phase);
+        var chosen = cardReward.ChosenCards.Single();
+        Assert.True(ReferenceEquals(chosen, player.Deck[^2]) && ReferenceEquals(special.Card, player.Deck[^1]), "the rewards hold the deck's cards");
+
+        var clone = sim.Clone();
+        var cloneDeck = clone.State.Players[0].Deck;
+        var cloneRewards = clone.State.RewardsStack[^1].Rewards;
+        var cloneChosen = ((CardReward)cloneRewards[1]).ChosenCards[0];
+        var cloneSpecial = ((SpecialCardReward)cloneRewards[2]).Card;
+        Assert.True(ReferenceEquals(cloneChosen, cloneDeck[^2]) && ReferenceEquals(cloneSpecial, cloneDeck[^1]), "the clone's rewards hold the clone's deck cards");
+        Assert.Equal(sim.StateHash(), clone.StateHash());
+        var claimRelic = RunAction.Of(RunActionKind.ClaimReward, 0);
+        sim.Step(claimRelic);
+        clone.Step(claimRelic);
+        Assert.True(chosen.UpgradeLevel == 1 && special.Card.UpgradeLevel == 1, "WHETSTONE upgraded both reward cards");
+        Assert.True(cloneChosen.UpgradeLevel == 1 && cloneSpecial.UpgradeLevel == 1, "in the clone as well");
+        Assert.Equal(sim.StateHash(), clone.StateHash(), "clone-then-claim == claim on the original");
+    }
+
+    /// <summary>
+    /// Seeded Ironclad runs (boosted HP, uniform random actions without potion discards) up to the first Rewards screen
+    /// that offers an unclaimed potion reward while the belt has a free slot.
+    /// </summary>
+    private static (RunSim Sim, int RewardIndex) RewardsScreenWithPotionReward()
+    {
+        var legal = new List<RunAction>(32);
+        for (int seed = 1; seed <= 40; seed++)
+        {
+            var sim = RunSim.NewRun(new RunConfig($"POTALIAS-{seed}", StartingDecks.IroncladCharacterId, 0) { Content = ContentFilter.PortedOnly });
+            var random = new System.Random(seed);
+            try
+            {
+                for (int step = 0; step < 3_000 && !sim.IsTerminal; step++)
+                {
+                    var player = sim.State.Players[0];
+                    if (!sim.HasPendingChoice && player.CurrentHp > 0 && player.CurrentHp < 300)
+                    {
+                        player.MaxHp = Math.Max(player.MaxHp, 300);
+                        player.CurrentHp = player.MaxHp;
+                    }
+                    if (sim.Phase == RunPhase.Rewards && !sim.HasPendingChoice && player.HasOpenPotionSlot
+                        && RunLegalActionGenerator.TopRewards(sim.State) is { } set)
+                    {
+                        int index = set.Rewards.FindIndex(r => r is PotionReward && !r.SuccessfullySelected);
+                        if (index >= 0)
+                        {
+                            return (sim, index);
+                        }
+                    }
+                    sim.LegalActions(legal);
+                    if (legal.Count > 1)
+                    {
+                        legal.RemoveAll(a => a.Kind == RunActionKind.DiscardPotion);
+                    }
+                    sim.Step(legal[random.Next(legal.Count)]);
+                }
+            }
+            catch (NotImplementedException)
+            {
+                // an unported event or card on this seed: try the next one
+            }
+        }
+        Assert.Fail("no Rewards screen with a potion reward in 40 seeded runs");
+        return default;
     }
 }

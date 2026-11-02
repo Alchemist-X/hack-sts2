@@ -27,9 +27,12 @@ uv run --project sim/tools/vec sts2vec digest --envs 32 --steps 100   # rollout 
 uv run --project sim/tools/vec pytest -q                            # from the repo root or sim/tools/vec
 ```
 
-`bench` reports env-steps/s (whole loop and native step only), ms per batch, MB of observation buffers per batch, GC
-mode, reset time, resets/s, episodes ended / wins, and per-flag status counts (slot-steps). `check` exits 1 on any
-schema inconsistency or determinism difference.
+`bench` first warms the pool (`env.pool.warm()`: every fresh template is created before the timed window, and that time
+is printed on its own line; `--no-warm` measures cold starts instead, where each entry's first reset pays a `NewRun`
+of ≈ 16 ms), then reports env-steps/s (whole loop and native step only), ms per batch, MB of observation buffers per
+batch, GC mode, reset time, resets/s, episodes ended / wins, and per-flag status counts (slot-steps). `check` exits 1
+on any schema inconsistency or determinism difference. Short JIT runs on small Linux hosts are warm-up dominated: use
+≥ 3,000 steps, `DOTNET_TieredCompilation=0` or the NativeAOT library there (`sim/VEC.md`, Bench).
 
 ## API
 
@@ -56,6 +59,7 @@ with VecEnv(1024, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", co
 | `.restore(slot, entry, *, copy=False) -> obs` / `.snapshot(slot) -> entry` | one-slot restart from a pool entry / clone a live slot into the pool |
 | `.state_hash(slots=None) -> uint64 [n]` | `RunSim.StateHash` (debug/test only; 0 = no run) |
 | `.pool.add_fresh(character, *, seed, ascension=0, act1="random", content=None)`, `.pool.add_save(path)`, `len(.pool)` | runtime pool entries (ids in insertion order) |
+| `.pool.warm(max_entries=None) -> int` | create fresh entries' start templates now (None = all, up to `pool_cache`), in id order on the env's threads; returns how many this call created. Starts do not change; only the cold `NewRun` moves out of reset/step |
 | `.candidates(i)`, `.legal_mask()`, `.last_episode(i)` | decoded candidate rows (RunActionKind names), bool [N, 192], decoded last-episode row |
 | `.status`, `.status_counts()`, `.slot_errors()`, `.last_error(slot=-1)` | status bits of the last call; native exception text per failed slot |
 | `.schema` | parsed schema: `schema["hand"].fields`, `schema.cols("hand").card_id`, `schema.col("global_i", "hp")`, `schema.vocab.cards[i]`, `schema.vocab.cards.index_of(id)`, `schema.vocab.enums["RunActionKind"]`, `schema.caps`, `schema.encoder_version`, `schema.verify_version()` |
@@ -74,7 +78,9 @@ With auto-reset a finished slot already shows its next episode; the finished one
 
 Lower level: `sts2vec.load()` returns the `Library` (one per process) with every export as a ctypes function
 (`lib.sts2vec_step(h, actions_ptr, buffers_ptr)`), `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`,
-`lib.gc_server`, `lib.runtime_properties`.
+`lib.gc_server`, `lib.runtime_properties`. Exports added after the ABI freeze (`sts2vec_pool_warm`) are optional: a
+library built before them still loads with the attribute set to None (`lib.missing_exports`), and the wrapper that
+needs one raises `Sts2VecError` asking for a rebuild.
 
 ## Environment variables
 
@@ -100,7 +106,8 @@ produces `Sts2Sim.Vec.so` (13 MB, ~35 s on Huginn) and links with gcc when clang
 
 ## Tests
 
-`tests/` covers the loader (exports, version, Server GC refusal in a subprocess, hostfxr failure text, discovery),
+`tests/` covers the loader (exports, optional exports of older builds, version, Server GC refusal in a subprocess,
+hostfxr failure text, discovery),
 schema/buffers (order, dtypes, sizes, pointer table, vocab/enum maps, xxh64 / encoder_version), the env API against
 the stubs (shapes, dtypes, status bits, partial reset, start sequence, start-id validation, empty pool, snapshot /
 restore, copy semantics, close), pools (spec JSON, entries, add_fresh/add_save with the fixture save) and the CLIs.
