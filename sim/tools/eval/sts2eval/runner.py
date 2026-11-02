@@ -16,7 +16,7 @@ from . import prices as P
 from .policies import BudgetExceeded, FatalApiError, empty_meta
 from .seedsets import game_key
 from .simclient import SimClient, SimCrash, SimError, SimIllegal
-from .tokens import illegal_message, resolve
+from .tokens import any_line_token, illegal_message, resolve
 
 LOG_LINES = 12
 LAST_ACTIONS = 6
@@ -89,7 +89,7 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
          "game_id": None, "result": None, "cap_reason": None, "abort_reason": None, "error": None,
          "floor": None, "act": None, "progress_pct": None, "steps": 0, "turns": 0,
          "illegal": 0, "illegal_replies": 0, "retries": 0, "api_errors": 0, "refusals": 0,
-         "timeouts": 0, "max_tokens_stops": 0, "fallbacks": 0, "api_calls": 0,
+         "timeouts": 0, "max_tokens_stops": 0, "fallbacks": 0, "api_calls": 0, "late_line_tokens": 0,
          "tokens": P.usage_dict(None), "cost_usd": 0.0, "seconds": None, "final_hp": None, "max_hp": None,
          "death": None, "history_tokens": None, "history_steps": None, "replayable": None,
          "server_version": server_version}
@@ -161,6 +161,9 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                 err = meta.get("error")
                 if err is None:
                     token = resolve(cand, legal)
+                    if token is None and (late := any_line_token(meta.get("raw"), legal)) is not None:
+                        token, meta["token_line"] = late
+                        s["late_line_tokens"] += 1
                     if token is None:
                         s["illegal_replies"] += 1
                         s["retries"] += 1
@@ -168,6 +171,9 @@ async def play_game(client: SimClient, policy, game: dict, seedset: dict, out_di
                         err = meta2.get("error")
                         if err is None:
                             token = resolve(cand2, legal)
+                            if token is None and (late := any_line_token(meta2.get("raw"), legal)) is not None:
+                                token, meta2["token_line"] = late
+                                s["late_line_tokens"] += 1
                             if token is None:
                                 s["illegal_replies"] += 1
                                 s["illegal"] += 1

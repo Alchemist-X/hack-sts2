@@ -63,6 +63,28 @@ def first_line_token(reply: str | None) -> str | None:
     return None
 
 
+def _clean_line(line: str) -> str:
+    s = line.strip().strip("*_`\"' ")
+    s = _PREFIX.sub("", s)
+    return s.strip("*_`\"' ").rstrip(".")
+
+
+def any_line_token(reply: str | None, legal: list[str]) -> tuple[str, int] | None:
+    """Fallback when the first line is not a legal token: the LAST line of the reply that resolves
+    to a legal token (models that reason first put the answer last). Returns (legal token as listed,
+    0-based line index) or None. Fence lines are skipped."""
+    if not reply:
+        return None
+    found = None
+    for i, line in enumerate(reply.splitlines()):
+        if not line.strip() or line.strip().startswith("```"):
+            continue
+        token = resolve(_clean_line(line), legal)
+        if token is not None:
+            found = (token, i)
+    return found
+
+
 def illegal_message(candidate: str | None, legal: list[str]) -> str:
     """The server's 400 wording, so a re-ask reads the same as a rejected step."""
     if not legal:

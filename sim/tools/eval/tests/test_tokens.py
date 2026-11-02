@@ -1,4 +1,4 @@
-from sts2eval.tokens import first_line_token, illegal_message, normalize, resolve
+from sts2eval.tokens import any_line_token, first_line_token, illegal_message, normalize, resolve
 
 LEGAL = ["play 0 -> 0", "play 1", "potion 2 -> 1", "end", "proceed", "take 0"]
 
@@ -45,9 +45,19 @@ def test_first_line_token_variants():
     assert first_line_token(None) is None
 
 
-def test_only_first_line_counts():
-    # a legal token on line 2 is not accepted (the contract is: token on the first line)
+def test_only_first_line_counts_for_first_line_token():
+    # first_line_token keeps the contract (token on the first line); any_line_token is the fallback
     assert resolve(first_line_token("I think we should\nend"), LEGAL) is None
+
+
+def test_any_line_token_takes_the_last_legal_line():
+    reply = "Incoming 14 damage. Bash then Strike kills it.\n\nplay 1 -> 0\nBash first."
+    assert any_line_token(reply, ["play 0", "play 1 -> 0", "end"]) == ("play 1 -> 0", 2)
+    # prose around a token does not count; the bare 'end' line is the last resolving line
+    assert any_line_token("end\nActually no: play 0", ["play 0", "end"]) == ("end", 0)
+    assert any_line_token("`end`\n", ["play 0", "end"]) == ("end", 0)
+    assert any_line_token("no token here", ["play 0", "end"]) is None
+    assert any_line_token(None, ["end"]) is None
 
 
 def test_illegal_message_uses_server_wording():
