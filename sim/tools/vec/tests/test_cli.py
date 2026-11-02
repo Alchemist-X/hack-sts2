@@ -23,6 +23,21 @@ def test_bench_json(capsys):
     assert sum(r["status_counts"].values()) >= 4 * 2
 
 
+def test_bench_warm_flag(capsys):
+    # default: the pool's fresh templates are created before timing and the warm time is reported separately
+    args = ["bench", "--envs", "4", "--threads", "2", "--steps", "2", "--warmup", "0", "--pool", "3"]
+    assert main(args + ["--json"]) == 0
+    r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert r["warm"] is True and r["warmed_templates"] == 3 and r["warm_ms"] > 0
+    assert main(args + ["--no-warm", "--json"]) == 0
+    r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert r["warm"] is False and r["warmed_templates"] == 0 and r["warm_ms"] == 0
+    assert main(args) == 0
+    assert "pool warm: 3 templates in " in capsys.readouterr().out
+    assert main(args + ["--no-warm"]) == 0
+    assert "pool warm: off" in capsys.readouterr().out
+
+
 def test_check_smoke(capsys):
     assert main(["check", "--envs", "4", "--steps", "5", "--pool", "2"]) == 0
     out = capsys.readouterr().out

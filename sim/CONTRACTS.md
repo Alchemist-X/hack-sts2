@@ -1351,8 +1351,9 @@ re-implemented formulas.
 ## D4. Start pool (`StartPool.cs`)
 
 - Entry kinds: `Fresh(character, ascension, seedText, act1, content)` (template created on first use with
-  `RunSim.NewRun`, cached; resets clone it), `Save(path)` (`RunImporter.FromSave` with `ImportOptions.Default`,
-  `Content = PortedOnly`; unsupported → error with the reasons), `Snapshot(RunSim clone)` (from `sts2vec_snapshot(slot)`).
+  `RunSim.NewRun`, or ahead of time with `sts2vec_pool_warm`, and cached; resets clone it), `Save(path)`
+  (`RunImporter.FromSave` with `ImportOptions.Default`, `Content = PortedOnly`; unsupported → error with the reasons),
+  `Snapshot(RunSim clone)` (from `sts2vec_snapshot(slot)`).
 - `config.pool` may pre-populate fresh entries: `{"fresh": {"characters": [...], "ascension": 0, "count": 4096,
   "seed_prefix": "TRAIN"}}` → seed texts `"<prefix>-<character>-<i>"`; entries are also added at run time with
   `sts2vec_pool_add_fresh/save`. Template cache size is bounded by `config.pool_cache` (default 4,096 templates ≈ 0.4 GB);
@@ -1377,7 +1378,15 @@ int32_t sts2vec_reset(int64_t h, const uint8_t* mask, const int32_t* start_ids, 
 int32_t sts2vec_step(int64_t h, const int32_t* actions, void** buffers);
 int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t* out);   // test/debug only (14–53 µs each)
 int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
+// additive exports (appended after the freeze; the frozen signatures above are unchanged)
+int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // E2c: fresh templates created now → count, or -1
 ```
+
+`sts2vec_pool_warm` creates the templates of up to `max_entries` fresh entries that have none yet (`max_entries < 0`: all),
+in entry-id order and only while the template cache (`config.pool_cache`) has room, on the env's worker threads; it
+returns the number created by the call (0 when all are warm or the cache is full). A warm template is the `NewRun` the
+entry's first start would create, so warming changes no start, only when the ≈ 16 ms per entry is paid. Additive exports
+are appended to the export list; a loader treats them as optional for library builds that predate them.
 
 `buffers` is an array of `void*` in the order of `schema.buffers`, each pointing at a C-contiguous array of shape
 `(N, *shape)`. Return values: 0 ok, −1 error (text in last_error); per-slot problems are reported in `status`, never as
@@ -1397,12 +1406,13 @@ a return code. Every export is wrapped in `try/catch`: an exception never crosse
   `.schema` (parsed JSON, vocab helpers `vocab.cards[i]`, reverse maps), `.reset(mask=None, start_ids=None) -> obs`,
   `.step(actions) -> (obs, reward, terminated, truncated, status, info)` where `obs` is a dict of the env-owned numpy
   arrays (views, valid until the next call; `copy=True` to copy), `info = {"episode_id", "step_index", "start_entry",
-  "last_episode"}`; `.pool.add_fresh(...)`, `.pool.add_save(path)`, `.snapshot(slot)`, `.restore(slot, entry)`,
-  `.state_hash(slots)`, `.close()`, context manager. `.candidates(i)` returns the slot's candidate rows decoded to
-  `RunActionKind` names for debugging.
-- CLIs: `sts2vec bench [--envs 1024 --threads 8 --steps 500 --policy random]` (env-steps/s, ms per batch, MB obs per batch,
-  GC mode) and `sts2vec check` (determinism across two envs and two thread counts; leak test via the C# export when
-  present; schema/buffer consistency).
+  "last_episode"}`; `.pool.add_fresh(...)`, `.pool.add_save(path)`, `.pool.warm(max_entries=None)` (E2c), `.snapshot(slot)`,
+  `.restore(slot, entry)`, `.state_hash(slots)`, `.close()`, context manager. `.candidates(i)` returns the slot's
+  candidate rows decoded to `RunActionKind` names for debugging.
+- CLIs: `sts2vec bench [--envs 1024 --threads 8 --steps 500 --policy random --warm/--no-warm]` (env-steps/s, ms per
+  batch, MB obs per batch, GC mode; the pool is warmed before timing by default and the warm time is printed separately)
+  and `sts2vec check` (determinism across two envs and two thread counts; leak test via the C# export when present;
+  schema/buffer consistency).
 
 ## D7. Tests and gates
 

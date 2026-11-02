@@ -201,6 +201,178 @@ public static class SelfConsistencyTests
         Console.WriteLine($"     SelfConsistency F7 replay: {replays} clone replays matched the original hash stream");
     }
 
+    /// <summary>
+    /// Clone fidelity as a property (CONTRACTS.md Part A §6): at ≥ 500 random decision points of seeded random runs (every
+    /// character, A0 and A10, boosted HP, ported content) a clone is taken and stepped in lockstep with the original for 1–4
+    /// actions; the clone hashes like its source when taken and like the original after every action. On Rewards screens the
+    /// policy claims potion rewards and then uses or discards belt potions, and every such Rewards-phase potion action is a
+    /// clone point (the claimed PotionReward / belt aliasing that clone-then-step used to break, E2c ticket 1).
+    /// </summary>
+    public static void Test_SelfConsistency_F7_CloneThenStepMatchesStep()
+    {
+        const int MinPoints = 500, MinRewardPotionPoints = 40, MaxRuns = 120, RunStepCap = 900;
+        var characters = CharacterRegistry.AllIds;
+        var legal = new List<RunAction>(64);
+        var choices = new List<RunAction>(64);
+        var live = new List<(RunSim Clone, int Left, string Label)>();
+        var rewardPotionKinds = new SortedDictionary<RunActionKind, int>();
+        var phases = new SortedDictionary<RunPhase, int>();
+        int runs = 0, points = 0, rewardPotionPoints = 0, lockstep = 0, gaps = 0;
+        for (int r = 0; r < MaxRuns && (points < MinPoints || rewardPotionPoints < MinRewardPotionPoints); r++)
+        {
+            runs++;
+            string character = characters[r % characters.Count];
+            int ascension = r / characters.Count % 2 == 0 ? 0 : 10;
+            var sim = RunSim.NewRun(new RunConfig($"CLONESTEP-{r}", character, ascension) { Content = ContentFilter.PortedOnly });
+            var random = new System.Random(7919 * r + 13);
+            bool potionClaimed = false;
+            live.Clear();
+            for (int step = 0; step < RunStepCap && !sim.IsTerminal; step++)
+            {
+                var player = sim.State.Players[0];
+                if (live.Count == 0 && !sim.HasPendingChoice && player.CurrentHp > 0 && player.CurrentHp * 2 <= player.MaxHp)
+                {
+                    // state edits outside a step only while no clone is in lockstep (the clones would not see them)
+                    player.MaxHp = Math.Max(player.MaxHp, 400);
+                    player.CurrentHp = player.MaxHp;
+                }
+                if (sim.State.RewardsStack.Count == 0)
+                {
+                    potionClaimed = false;
+                }
+                sim.LegalActions(legal);
+                var phase = sim.Phase;
+                bool rewardPotion = false;
+                RunAction chosen;
+                if (phase == RunPhase.Rewards)
+                {
+                    var set = RunLegalActionGenerator.TopRewards(sim.State)!;
+                    int claimPotion = legal.FindIndex(a => a.Kind == RunActionKind.ClaimReward && set.Rewards[a.A] is PotionReward);
+                    choices.Clear();
+                    choices.AddRange(legal.Where(a => a.Kind is RunActionKind.UsePotion or RunActionKind.DiscardPotion));
+                    if (claimPotion >= 0 && player.HasOpenPotionSlot && random.Next(10) < 9)
+                    {
+                        chosen = legal[claimPotion];
+                        potionClaimed = true;
+                    }
+                    else if (choices.Count > 0 && (potionClaimed || claimPotion >= 0) && random.Next(10) < 6)
+                    {
+                        chosen = choices[random.Next(choices.Count)];
+                        rewardPotion = true;
+                    }
+                    else
+                    {
+                        choices.Clear();
+                        choices.AddRange(legal.Where(a => a.Kind == RunActionKind.ClaimReward));
+                        chosen = choices.Count > 0 && random.Next(10) < 8 ? choices[random.Next(choices.Count)] : legal[random.Next(legal.Count)];
+                    }
+                }
+                else if (phase == RunPhase.Combat && !sim.HasPendingChoice && random.Next(8) != 0 && legal.Any(a => a.Kind == RunActionKind.PlayCard))
+                {
+                    choices.Clear();
+                    choices.AddRange(legal.Where(a => a.Kind == RunActionKind.PlayCard));
+                    chosen = choices[random.Next(choices.Count)];
+                }
+                else
+                {
+                    choices.Clear();
+                    choices.AddRange(legal.Where(a => a.Kind != RunActionKind.DiscardPotion));
+                    chosen = choices.Count > 0 ? choices[random.Next(choices.Count)] : legal[random.Next(legal.Count)];
+                }
+
+                if (rewardPotion || random.Next(100) < 12)
+                {
+                    string label = $"run {r} ({character} A{ascension}) step {step} {phase} {chosen}";
+                    var clone = sim.Clone();
+                    Assert.Equal(sim.StateHash(), clone.StateHash(), label + ": Hash(x) == Hash(x.Clone())");
+                    live.Add((clone, 1 + random.Next(4), label));
+                    points++;
+                    phases[phase] = phases.GetValueOrDefault(phase) + 1;
+                    if (rewardPotion)
+                    {
+                        rewardPotionPoints++;
+                        rewardPotionKinds[chosen.Kind] = rewardPotionKinds.GetValueOrDefault(chosen.Kind) + 1;
+                    }
+                }
+                try
+                {
+                    sim.Step(chosen);
+                }
+                catch (NotImplementedException)
+                {
+                    gaps++;
+                    break; // a content gap on this seed ends the run (RunSim.Step restored the state; the clones are dropped)
+                }
+                if (live.Count == 0)
+                {
+                    continue;
+                }
+                ulong hash = sim.StateHash();
+                for (int i = live.Count - 1; i >= 0; i--)
+                {
+                    var (clone, left, label) = live[i];
+                    clone.Step(chosen);
+                    lockstep++;
+                    if (clone.StateHash() != hash)
+                    {
+                        Assert.Fail($"{label}: the clone diverges from the original after {chosen}; {Divergence(sim, clone)}");
+                    }
+                    if (left <= 1)
+                    {
+                        live.RemoveAt(i);
+                    }
+                    else
+                    {
+                        live[i] = (clone, left - 1, label);
+                    }
+                }
+            }
+        }
+        Console.WriteLine($"     SelfConsistency F7 clone-then-step: {runs} runs, {points} clone points ({string.Join(", ", phases.Select(p => $"{p.Key} {p.Value}"))}), "
+                          + $"{lockstep} lockstep steps with equal hashes; Rewards-phase potion actions {rewardPotionPoints} ({string.Join(", ", rewardPotionKinds.Select(p => $"{p.Key} {p.Value}"))}); {gaps} runs ended on a content gap");
+        Assert.True(points >= MinPoints, $"only {points} clone points in {runs} runs");
+        Assert.True(rewardPotionPoints >= MinRewardPotionPoints, $"only {rewardPotionPoints} Rewards-phase potion actions in {runs} runs");
+    }
+
+    /// <summary>The top-level parts (loop, players, RNG, rooms, each reward on the stack, combat) whose canonical bytes differ.</summary>
+    private static string Divergence(RunSim a, RunSim b)
+    {
+        var parts = new List<string>();
+        void Compare(string name, ICanonical? x, ICanonical? y)
+        {
+            if (x == null || y == null ? x != y : StateHasher.Hash(x) != StateHasher.Hash(y))
+            {
+                parts.Add(name);
+            }
+        }
+
+        var (sa, sb) = (a.State, b.State);
+        if (a.HasPendingChoice || b.HasPendingChoice)
+        {
+            parts.Add("(a prompt is pending: the parts below are the live states, not the hashed basis)");
+        }
+        Compare("loop", a.Loop, b.Loop);
+        for (int i = 0; i < Math.Min(sa.Players.Count, sb.Players.Count); i++)
+        {
+            Compare($"player {i}", sa.Players[i], sb.Players[i]);
+        }
+        Compare("run rng", sa.Rng, sb.Rng);
+        for (int i = 0; i < Math.Min(sa.CurrentRooms.Count, sb.CurrentRooms.Count); i++)
+        {
+            Compare($"room {i} ({sa.CurrentRooms[i].GetType().Name})", sa.CurrentRooms[i], sb.CurrentRooms[i]);
+        }
+        for (int s = 0; s < Math.Min(sa.RewardsStack.Count, sb.RewardsStack.Count); s++)
+        {
+            var (ra, rb) = (sa.RewardsStack[s].Rewards, sb.RewardsStack[s].Rewards);
+            for (int k = 0; k < Math.Min(ra.Count, rb.Count); k++)
+            {
+                Compare($"rewards set {s} reward {k} ({ra[k].GetType().Name})", ra[k], rb[k]);
+            }
+        }
+        Compare("combat", sa.Combat, sb.Combat);
+        return parts.Count == 0 ? "no top-level part differs" : "differs in: " + string.Join(", ", parts);
+    }
+
     public static void Test_SelfConsistency_F7_InterchangeableCopiesGiveEqualProjections()
     {
         int pairs = 0;

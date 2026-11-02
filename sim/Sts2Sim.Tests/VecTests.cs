@@ -100,6 +100,7 @@ public static unsafe partial class VecTests
         delegate* unmanaged<long, byte*, int, int> addFresh = &Exports.PoolAddFresh;
         delegate* unmanaged<long, byte*, int, int> addSave = &Exports.PoolAddSave;
         delegate* unmanaged<long, int> poolCount = &Exports.PoolCount;
+        delegate* unmanaged<long, int, int> poolWarm = &Exports.PoolWarm;
         delegate* unmanaged<long, int, int> snapshot = &Exports.Snapshot;
         delegate* unmanaged<long, int, int, void**, int> restore = &Exports.Restore;
         delegate* unmanaged<long, byte*, int*, void**, int> reset = &Exports.Reset;
@@ -138,6 +139,7 @@ public static unsafe partial class VecTests
         Assert.Equal(-1, addFresh(bad, null, 0));
         Assert.Equal(-1, addSave(bad, null, 0));
         Assert.Equal(-1, poolCount(bad));
+        Assert.Equal(-1, poolWarm(bad, -1));
         Assert.Equal(-1, snapshot(bad, 0));
         Assert.Equal(-1, restore(bad, 0, 0, null));
         Assert.Equal(-1, reset(bad, null, null, null));
@@ -294,6 +296,7 @@ public static unsafe partial class VecTests
                 .Cast<System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute>().Single();
             Assert.Equal(name, attr.EntryPoint);
         }
-        Assert.Equal(14, Exports.ExportNames.Count);
+        Assert.Equal(15, Exports.ExportNames.Count);
+        Assert.Equal("sts2vec_pool_warm", Exports.ExportNames[^1], "exports added after the scaffold freeze are appended");
     }
 }

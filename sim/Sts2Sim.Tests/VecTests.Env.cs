@@ -320,8 +320,8 @@ public static unsafe partial class VecTests
         env.Reset(default, default, nb.Table);
         var rng = SlotRngs(N, 4);
         var actions = new int[N];
-        // Shadow runs: a second materialisation of each slot's start entry, stepped by RunAction (no mid-episode Clone:
-        // Clone() does not preserve the claimed-PotionReward/belt potion aliasing, so clone-then-step can hash differently).
+        // Shadow runs: a second materialisation of each slot's start entry, stepped by RunAction alongside the env (clone-then-
+        // step fidelity itself is SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep).
         var shadow = new RunSim?[N];
         var shadowEpisode = new long[N];
         var stepped = new bool[N];
@@ -737,6 +737,78 @@ public static unsafe partial class VecTests
         }
         Assert.Equal(2, env.Pool.CachedTemplates);
         Assert.Equal(2, env.Pool.CacheLimit);
+    }
+
+    /// <summary>
+    /// sts2vec_pool_warm (additive, E2c): creates fresh templates ahead of time, in id order, up to max_entries and the
+    /// cache limit, returns the count created by the call; warmed starts hash like cold ones (NewRun of the entry).
+    /// </summary>
+    public static void Test_VecPool_WarmCreatesTemplatesAhead()
+    {
+        delegate* unmanaged<long, int, int> poolWarm = &Exports.PoolWarm;
+        bool saved = Exports.RequireServerGC;
+        Exports.RequireServerGC = false;
+        try
+        {
+            const string cfg = "{\"num_envs\": 4, \"threads\": 3, \"seed_text\": \"WARM\", \"pool_cache\": 4, \"pool\": {\"fresh\": {\"characters\": [\"IRONCLAD\", \"SILENT\", \"DEFECT\"], \"count\": 6, \"seed_prefix\": \"WM\"}}}";
+            long h = CreateEnv(cfg);
+            long cold = CreateEnv(cfg);
+            Assert.True(h > 0 && cold > 0, Exports.GlobalError);
+            try
+            {
+                var env = Exports.EnvOf(h)!;
+                var coldEnv = Exports.EnvOf(cold)!;
+                var snapConfig = new RunConfig("WM-SNAP", "REGENT", 0) { Content = ContentFilter.PortedOnly };
+                int snap = env.Pool.AddSnapshot(RunSim.NewRun(snapConfig));
+                Assert.Equal(snap, coldEnv.Pool.AddSnapshot(RunSim.NewRun(snapConfig)), "both pools hold the same entries");
+                Assert.Equal(0, poolWarm(h, 0), "max_entries 0 warms nothing");
+                Assert.Equal(0, env.Pool.CachedTemplates);
+                Assert.Equal(2, poolWarm(h, 2), Exports.GlobalError);
+                Assert.True(env.Pool[0].HasTemplate && env.Pool[1].HasTemplate && !env.Pool[2].HasTemplate, "id order");
+                Assert.Equal(2, poolWarm(h, -1), "the rest, up to pool_cache = 4");
+                Assert.Equal(0, poolWarm(h, -1), "the cache is full");
+                Assert.Equal(4, env.Pool.CachedTemplates);
+                Assert.True(!env.Pool[4].HasTemplate && !env.Pool[5].HasTemplate, "entries beyond the cache stay cold");
+                Assert.True(env.Pool[snap].HasTemplate, "a snapshot entry holds its template already");
+                for (int i = 0; i < 6; i++)
+                {
+                    var f = env.Pool[i].Fresh!;
+                    ulong expect = RunSim.NewRun(f.ToRunConfig()).StateHash();
+                    Assert.Equal(expect, env.Pool.Materialize(i).StateHash(), $"entry {i}: a warmed (or cold) start = NewRun");
+                }
+
+                // a warmed env starts and steps exactly like a cold one
+                var warm = env;
+                using var nw = new NativeBuffers(4);
+                using var nc = new NativeBuffers(4);
+                warm.Reset(default, default, nw.Table);
+                coldEnv.Reset(default, default, nc.Table);
+                AssertBuffersEqual(nc, nw, "reset after warm vs cold");
+                var rng = SlotRngs(4, 5);
+                var actions = new int[4];
+                for (int t = 0; t < 30; t++)
+                {
+                    RandomActions(nw, rng, actions);
+                    warm.Step(actions, nw.Table);
+                    coldEnv.Step(actions, nc.Table);
+                }
+                AssertBuffersEqual(nc, nw, "30 steps after warm vs cold");
+                Assert.SequenceEqual(Hashes(coldEnv), Hashes(warm), "state hashes");
+
+                Assert.Equal(0, poolWarm(cold, 0));
+                Assert.Equal(-1, poolWarm(987654321, -1), "invalid handle");
+                Assert.True(Exports.GlobalError.Contains("invalid handle", StringComparison.Ordinal), Exports.GlobalError);
+            }
+            finally
+            {
+                Destroy(h);
+                Destroy(cold);
+            }
+        }
+        finally
+        {
+            Exports.RequireServerGC = saved;
+        }
     }
 
     // ------------------------------------------------------------------------------------------- T8 ABI + errors

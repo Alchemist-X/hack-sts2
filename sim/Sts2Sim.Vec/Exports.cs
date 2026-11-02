@@ -169,6 +169,28 @@ public static unsafe class Exports
         }
     }
 
+    // int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);   additive (E2c), listed last in ExportNames
+    // Creates the templates of up to max_entries fresh entries now (max_entries < 0: all of them), in id order, while the
+    // template cache (config.pool_cache) has room, on the env's worker threads. Returns the number created by this call
+    // (0 when everything is warm or the cache is full), or -1. Resets then clone the warm templates: same starts, no NewRun.
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_pool_warm")]
+    public static int PoolWarm(long h, int maxEntries)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            lock (env)
+            {
+                return env.Pool.Warm(maxEntries, env.Threads);
+            }
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
     // int32_t sts2vec_snapshot(int64_t h, int32_t slot);
     [UnmanagedCallersOnly(EntryPoint = "sts2vec_snapshot")]
     public static int Snapshot(long h, int slot)
@@ -319,12 +341,16 @@ public static unsafe class Exports
 
     // ----------------------------------------------------------------------------------------------- helpers
 
-    /// <summary>Names of every export, in §D5 order (the Python loader resolves exactly these).</summary>
+    /// <summary>
+    /// Names of every export, in §D5 order (the Python loader resolves exactly these). The frozen scaffold set comes first;
+    /// exports added later are appended (E2c: sts2vec_pool_warm).
+    /// </summary>
     public static readonly IReadOnlyList<string> ExportNames = new[]
     {
         "sts2vec_version", "sts2vec_schema", "sts2vec_create", "sts2vec_destroy", "sts2vec_set_threads",
         "sts2vec_pool_add_fresh", "sts2vec_pool_add_save", "sts2vec_pool_count", "sts2vec_snapshot", "sts2vec_restore",
         "sts2vec_reset", "sts2vec_step", "sts2vec_state_hash", "sts2vec_last_error",
+        "sts2vec_pool_warm",
     };
 
     /// <summary>The managed method behind an export: "sts2vec_pool_add_fresh" → "PoolAddFresh".</summary>

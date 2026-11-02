@@ -183,6 +183,13 @@ public sealed partial class RewardsSet : ICanonical
         }
     }
 
+    /// <summary>
+    /// Clones the set for <paramref name="player"/> (the clone of <see cref="Player"/>) and <paramref name="room"/> (the clone
+    /// of <see cref="Room"/>, already cloned). A combat room's extra rewards are the very Reward objects this set lists — the
+    /// game's WithRewardsFromRoom adds <c>combatRoom.ExtraRewards[player]</c> itself (Rewards/RewardsSet.cs:426-430) — so a
+    /// claim updates both. The clone keeps that aliasing (CONTRACTS.md Part A §6) by reusing the cloned room's reward at the
+    /// same index instead of copying the reward a second time.
+    /// </summary>
     public RewardsSet CloneFor(PlayerState player, AbstractRoom? room)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -196,11 +203,29 @@ public sealed partial class RewardsSet : ICanonical
             _isGenerated = _isGenerated,
             ContinuationRelicId = ContinuationRelicId
         };
+        var sourceExtra = (Room as CombatRoom)?.ExtraRewards;
+        var cloneExtra = (room as CombatRoom)?.ExtraRewards;
         for (int i = 0; i < Rewards.Count; i++)
         {
-            clone.Rewards.Add(Rewards[i].CloneFor(player));
+            var reward = Rewards[i];
+            int k = sourceExtra == null || cloneExtra == null ? -1 : IndexOfReference(sourceExtra, reward);
+            clone.Rewards.Add(k >= 0 && k < cloneExtra!.Count && cloneExtra[k].GetType() == reward.GetType()
+                ? cloneExtra[k]
+                : reward.CloneFor(player));
         }
         return clone;
+    }
+
+    private static int IndexOfReference(List<Reward> rewards, Reward reward)
+    {
+        for (int i = 0; i < rewards.Count; i++)
+        {
+            if (ReferenceEquals(rewards[i], reward))
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public void WriteCanonical(CanonicalWriter w)

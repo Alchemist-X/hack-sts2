@@ -143,9 +143,11 @@ C# — `DOTNET_gcServer=1 dotnet run -c Release --no-build --project sim/Sts2Sim
 | 4096 | 8 | 144,421 | 28.362 / 11.614 / 71.979 | 2,062 | 29,235 | 109.4 | 44/17/8 | 3.0 |
 
 Python — `uv run --project sim/tools/vec sts2vec bench --envs <N> --threads <T> --steps 500 --pool <P> --seed 0`
-(hostfxr, ctypes; whole-loop figure, the native step alone is < 1 % faster; the Python bench does not pre-warm the pool,
-so with pool 1024 each first start of an entry pays `NewRun`, ~16 ms; status counts OK/RESET only — 0 SIM_ERROR,
-0 CONTENT_GAP, 0 ILLEGAL_ACTION):
+(hostfxr, ctypes; whole-loop figure, the native step alone is < 1 % faster; the Python bench did not pre-warm the pool
+then, so with pool 1024 each first start of an entry pays `NewRun`, ~16 ms; status counts OK/RESET only — 0 SIM_ERROR,
+0 CONTENT_GAP, 0 ILLEGAL_ACTION). Since E2c `sts2vec bench` warms the pool by default (`sts2vec_pool_warm`, warm time
+printed separately); these rows are today's `--no-warm`. Warm against cold at N = 64 / 8 threads: pool 64, 200 steps
+55,168 against 15,859; pool 1024, 500 steps 82,852 (warm 1,024 templates in 2.9 s) against 5,664 (`sim/VEC.md`, Bench):
 
 | N | threads | pool | env-steps/s | ms/batch | obs MB/batch | resets/s | first reset ms | load avg |
 |---|---|---|---|---|---|---|---|---|

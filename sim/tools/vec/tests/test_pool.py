@@ -114,3 +114,28 @@ def test_add_save_fixture_starts_at_rewards_with_three_candidates(full):
         phases = env.schema.vocab.enums["RunPhase"]
         assert phases.name(obs["global_i"][0, env.schema.col("global_i", "phase")]) == "Rewards"
         assert int(obs["cand_n"][0]) == 3, env.candidates(0)
+
+
+def test_pool_warm_creates_templates_ahead(full):
+    # sts2vec_pool_warm: fresh templates up to max_entries and pool_cache, in id order; starts are unchanged
+    spec = PoolSpec(characters=("IRONCLAD", "SILENT", "DEFECT"), count=6, seed_prefix="PW")
+    with VecEnv(4, threads=2, pool=spec, pool_cache=4, seed_text="W") as env, \
+            VecEnv(4, threads=2, pool=spec, pool_cache=4, seed_text="W") as cold:
+        assert env.pool.warm(0) == 0
+        assert env.pool.warm(2) == 2
+        assert env.pool.warm() == 2, "the rest, up to pool_cache = 4"
+        assert env.pool.warm() == 0, "the cache is full"
+        with pytest.raises(ValueError, match="max_entries"):
+            env.pool.warm(-1)
+        a, b = env.reset(copy=True), cold.reset(copy=True)
+        for name in a:
+            np.testing.assert_array_equal(a[name], b[name], err_msg=name)
+        rng_a, rng_b = np.random.default_rng(3), np.random.default_rng(3)
+        from sts2vec import random_actions
+        for _ in range(20):
+            env.step(random_actions(rng_a, env.obs["cand_n"]))
+            cold.step(random_actions(rng_b, cold.obs["cand_n"]))
+        assert np.array_equal(env.state_hash(), cold.state_hash()), "a warmed env steps like a cold one"
+        assert not np.any(env.status & (STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]))
+    with pytest.raises(Sts2VecError, match="closed"):
+        env.pool.warm()

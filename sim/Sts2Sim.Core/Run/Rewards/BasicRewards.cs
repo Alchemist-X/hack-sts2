@@ -87,10 +87,19 @@ public sealed class PotionReward : Reward
         PotionId = potion.Id;
     }
 
+    /// <remarks>
+    /// The game hands this reward's own <c>Potion</c> to <c>PotionCmd.TryToProcure</c> and keeps it as <c>ClaimedPotion</c>
+    /// (Rewards/PotionReward.cs:180-192); <c>Player.AddPotionInternal</c> stores that very instance in the belt
+    /// (Commands/PotionCmd.cs:267, Entities/Players/Player.cs:1048-1049). A claimed reward and its belt slot therefore
+    /// share one PotionModel until the potion is used or discarded (a discard flags the reward's potion too), and the clone
+    /// points at the cloned belt potion instead of a second copy. Unclaimed, refused, used or discarded potions are copied.
+    /// </remarks>
     private PotionReward(PotionReward source, PlayerState player) : base(player)
     {
         PotionId = source.PotionId;
-        Potion = source.Potion?.CloneFor(player);
+        Potion = source.Potion is not { } potion ? null
+            : source._wasTaken ? CloneBeltPotion(potion, source.Player, player)
+            : potion.CloneFor(player);
         ClaimedPotionId = source.ClaimedPotionId;
         _wasTaken = source._wasTaken;
     }
@@ -244,9 +253,13 @@ public sealed class SpecialCardReward : Reward
         _card = card;
     }
 
+    /// <remarks>
+    /// A taken reward's card is the instance <c>CardPileCmd.Add</c> put into the deck (Rewards/SpecialCardReward.cs:158), so
+    /// the clone points at the cloned deck card while it is still in the deck.
+    /// </remarks>
     private SpecialCardReward(SpecialCardReward source, PlayerState player) : base(player)
     {
-        _card = source._card.CloneFor(player);
+        _card = source._wasTaken ? CloneDeckCard(source._card, source.Player, player) : source._card.CloneFor(player);
         _wasTaken = source._wasTaken;
         CustomDescriptionEncounterSourceId = source.CustomDescriptionEncounterSourceId;
     }

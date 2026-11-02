@@ -34,7 +34,7 @@ import threading
 from ctypes import POINTER, Structure, c_char_p, c_int32, c_int64, c_size_t, c_void_p
 from pathlib import Path
 
-from .errors import LoaderError
+from .errors import LoaderError, Sts2VecError
 
 ASSEMBLY = "Sts2Sim.Vec"
 EXPORTS_TYPE = "Sts2Sim.Vec.Exports, Sts2Sim.Vec"
@@ -44,8 +44,9 @@ HDT_LOAD_ASSEMBLY_AND_GET_FUNCTION_POINTER = 5
 NATIVE_SUFFIXES = (".dylib", ".so")
 HOMEBREW_DOTNET_ROOT = "/opt/homebrew/opt/dotnet@9/libexec"
 
-# export name -> (restype, argtypes), in §D5 order. Pointers are passed as integers (numpy ``.ctypes.data``) or None;
-# strings as ``bytes`` (c_char_p). CFUNCTYPE / CDLL functions release the GIL for the duration of the call.
+# export name -> (restype, argtypes), in §D5 order (the scaffold's frozen set, then exports added later). Pointers are
+# passed as integers (numpy ``.ctypes.data``) or None; strings as ``bytes`` (c_char_p). CFUNCTYPE / CDLL functions release
+# the GIL for the duration of the call.
 EXPORTS: dict[str, tuple[type, list[type]]] = {
     "sts2vec_version": (c_int32, [c_void_p, c_int32]),
     "sts2vec_schema": (c_int32, [c_void_p, c_int32]),
@@ -61,7 +62,12 @@ EXPORTS: dict[str, tuple[type, list[type]]] = {
     "sts2vec_step": (c_int32, [c_int64, c_void_p, c_void_p]),
     "sts2vec_state_hash": (c_int32, [c_int64, c_void_p, c_int32, c_void_p]),
     "sts2vec_last_error": (c_int32, [c_int64, c_int32, c_void_p, c_int32]),
+    "sts2vec_pool_warm": (c_int32, [c_int64, c_int32]),  # additive (E2c)
 }
+
+# Exports added after the scaffold froze the ABI. A library built before one of them still loads: its attribute is None,
+# ``Library.missing_exports`` names it, and the Python wrapper that needs it raises Sts2VecError ("rebuild the library").
+OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm"})
 
 # hostfxr / hostpolicy status codes worth naming (src/native/corehost/error_codes.h)
 HOSTFXR_CODES = {
@@ -250,7 +256,21 @@ class Library:
 
     @property
     def exports(self) -> list[str]:
-        return list(self._functions)
+        """The exports this library provides (§D5 order)."""
+        return [name for name, fn in self._functions.items() if fn is not None]
+
+    @property
+    def missing_exports(self) -> list[str]:
+        """Optional exports (``OPTIONAL_EXPORTS``) this library lacks because it was built before they were added."""
+        return [name for name, fn in self._functions.items() if fn is None]
+
+    def require(self, export: str):
+        """The ctypes function of ``export``; raises Sts2VecError when this (older) library build lacks it."""
+        fn = self._functions.get(export)
+        if fn is None:
+            raise Sts2VecError(f"{export}: not exported by {self.path} (built before the export was added); rebuild it "
+                               "(dotnet build sim/Sts2Sim.sln -c Release, or scripts/vec_publish_aot.sh for NativeAOT)")
+        return fn
 
     @property
     def gc_server(self) -> bool | None:
@@ -355,9 +375,14 @@ def _load_hostfxr(dll: Path) -> Library:
         functions = {}
         for export, (restype, argtypes) in EXPORTS.items():
             out = c_void_p()
+            seen = len(messages)
             rc3 = load_fn(str(dll).encode(), EXPORTS_TYPE.encode(), managed_name(export).encode(),
                           UNMANAGEDCALLERSONLY_METHOD, None, ctypes.byref(out))
             if rc3 != 0 or not out:
+                if export in OPTIONAL_EXPORTS:
+                    functions[export] = None  # a build that predates the export (see OPTIONAL_EXPORTS)
+                    del messages[seen:]
+                    continue
                 raise fail(f"load_assembly_and_get_function_pointer({dll.name}, {EXPORTS_TYPE}, {managed_name(export)})", rc3)
             fn = ctypes.CFUNCTYPE(restype, *argtypes)(out.value)
             fn.__name__ = export
@@ -380,6 +405,9 @@ def _load_native(path: Path) -> Library:
         try:
             fn = getattr(lib, export)
         except AttributeError as e:
+            if export in OPTIONAL_EXPORTS:
+                functions[export] = None  # published before the export was added (see OPTIONAL_EXPORTS)
+                continue
             raise LoaderError(f"{path} does not export {export} (not a sts2vec NativeAOT build?)") from e
         fn.restype = restype
         fn.argtypes = argtypes

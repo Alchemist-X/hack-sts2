@@ -9,12 +9,14 @@ from pathlib import Path
 import pytest
 
 from sts2vec import LoaderError, PoolSpec, Sts2VecError, VecEnv, load
-from sts2vec.loader import EXPORTS, default_dll, find_hostfxr, find_library, is_native, managed_name
+from sts2vec import loader as loader_module
+from sts2vec.loader import EXPORTS, OPTIONAL_EXPORTS, default_dll, find_hostfxr, find_library, is_native, managed_name
 
 EXPECTED_EXPORTS = [
     "sts2vec_version", "sts2vec_schema", "sts2vec_create", "sts2vec_destroy", "sts2vec_set_threads",
     "sts2vec_pool_add_fresh", "sts2vec_pool_add_save", "sts2vec_pool_count", "sts2vec_snapshot", "sts2vec_restore",
     "sts2vec_reset", "sts2vec_step", "sts2vec_state_hash", "sts2vec_last_error",
+    "sts2vec_pool_warm",  # additive (E2c)
 ]
 
 
@@ -26,8 +28,10 @@ def _run_py(code: str, env_extra: dict | None = None, timeout: int = 120) -> sub
 def test_loads_all_exports(lib):
     assert list(EXPORTS) == EXPECTED_EXPORTS  # §D5 order
     assert lib.exports == EXPECTED_EXPORTS
+    assert lib.missing_exports == []
     for name in EXPECTED_EXPORTS:
         assert callable(getattr(lib, name))
+        assert lib.require(name) is getattr(lib, name)
     if lib.mode == "hostfxr":
         assert lib.runtimeconfig is not None and lib.runtimeconfig.name == "sts2vec.runtimeconfig.json"
         assert lib.hostfxr is not None and lib.hostfxr.exists()
@@ -134,7 +138,7 @@ def test_managed_names():
     assert managed_name("sts2vec_state_hash") == "StateHash"
     assert [managed_name(e) for e in EXPECTED_EXPORTS] == [
         "Version", "Schema", "Create", "Destroy", "SetThreads", "PoolAddFresh", "PoolAddSave", "PoolCount", "Snapshot",
-        "Restore", "Reset", "Step", "StateHash", "LastError"]
+        "Restore", "Reset", "Step", "StateHash", "LastError", "PoolWarm"]
 
 
 def test_find_library_discovery(monkeypatch, tmp_path):
@@ -170,6 +174,31 @@ def test_native_loader_rejects_a_non_library(tmp_path):
     bogus.write_bytes(b"\0" * 16)
     with pytest.raises(LoaderError, match="cannot load NativeAOT library"):
         _load_native(bogus)
+
+
+class _FakeFunction:
+    """Stands in for a ctypes function of a fake native library (accepts restype/argtypes)."""
+
+    def __call__(self, *args):
+        return 0
+
+
+def test_optional_exports_tolerate_an_older_native_build(monkeypatch, tmp_path):
+    # a NativeAOT build published before the additive exports loads; the missing ones are None and raise when needed
+    from types import SimpleNamespace
+    assert OPTIONAL_EXPORTS == {"sts2vec_pool_warm"} and OPTIONAL_EXPORTS <= set(EXPORTS)
+    old = {name: _FakeFunction() for name in EXPORTS if name not in OPTIONAL_EXPORTS}
+    monkeypatch.setattr(loader_module.ctypes, "CDLL", lambda path: SimpleNamespace(**old))
+    lib = loader_module._load_native(tmp_path / "Sts2Sim.Vec.dylib")
+    assert lib.missing_exports == ["sts2vec_pool_warm"] and lib.sts2vec_pool_warm is None
+    assert lib.exports == [n for n in EXPECTED_EXPORTS if n not in OPTIONAL_EXPORTS]
+    with pytest.raises(Sts2VecError, match="sts2vec_pool_warm: not exported .* rebuild"):
+        lib.require("sts2vec_pool_warm")
+    # a required export is still mandatory
+    broken = {name: fn for name, fn in old.items() if name != "sts2vec_step"}
+    monkeypatch.setattr(loader_module.ctypes, "CDLL", lambda path: SimpleNamespace(**broken))
+    with pytest.raises(LoaderError, match="does not export sts2vec_step"):
+        loader_module._load_native(tmp_path / "Sts2Sim.Vec.dylib")
 
 
 AOT_LIB = Path(__file__).resolve().parents[3] / "Sts2Sim.Vec" / "bin" / "aot" / ("Sts2Sim.Vec.dylib" if sys.platform == "darwin" else "Sts2Sim.Vec.so")

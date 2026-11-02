@@ -54,8 +54,10 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
   call (`RESET` bit, new `episode_id`, the new episode's first observation). A slot whose start failed retries the
   next sequence entry on the following step. With `auto_reset = false` the slot stays terminal (`cand_n = 0`).
 - Pool: fresh entries create their template with `RunSim.NewRun` on first use and cache it (up to `pool_cache`
-  templates); resets `Clone()` the template under a per-entry lock. Save entries use `RunImporter.FromSave` (checked)
-  with the env's content filter. Snapshots hold `Clone()` of a slot. `config.pool.fresh` with `count = K` adds K
+  templates); `sts2vec_pool_warm` (`env.pool.warm()`) creates them ahead of time, in id order, on the env's worker
+  threads (the same templates, so no start changes). Resets `Clone()` the template under a per-entry lock. Save
+  entries use `RunImporter.FromSave` (checked) with the env's content filter. Snapshots hold `Clone()` of a slot
+  (hash-faithful: a clone steps exactly like its source). `config.pool.fresh` with `count = K` adds K
   entries: character `characters[i % len]`, seed `"<seed_prefix>-<character>-<i>"` (interleaved, so any prefix of the
   pool covers every character). Beyond `pool_cache` templates a fresh entry runs `NewRun` on every start (≈ 16 ms).
 - Save entries whose import stops at a prompt (a choice during the load) are re-imported from the parsed save on every
@@ -74,7 +76,18 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
 
 Row `r < cand_n` is `RunSim.LegalActions()[r]` (same order); rows `>= cand_n` are zero. `cand_n = min(legal, 192)`;
 more legal actions set `CANDIDATE_OVERFLOW` and only the first 192 are selectable (constructible: a PileSelect over a
-250-card draw pile). `CandidateTable.ToAction(row)` inverts a row to its `RunAction` (kind, A, B).
+250-card draw pile, or the merchant card removal with a 200-card deck). `CandidateTable.ToAction(row)` inverts a row to
+its `RunAction` (kind, A, B).
+
+Overflow consequences (tested by `VecTests.Test_VecEnv_PromptTableOverflow` and `Test_VecEnv_RemovalPromptOverflow`):
+
+- A step index at or after `cand_n` is `ILLEGAL_ACTION` and leaves the slot unchanged, even when `LegalActions()` lists
+  an action there. On a prompt the picks come first and `PromptConfirm` / `PromptCancel` last, so past the cap the
+  control actions are not selectable (a 200-card DeckRemove cannot be cancelled); a pick still leads to a state whose
+  confirm is listed (after the pick: `[confirm, cancel]`).
+- `prompt_options` holds the first 128 options (`TABLE_OVERFLOW`; `prompt_option_n` keeps the true count). Candidates
+  for options 128 and up stay selectable: their `option_index` points past the table, so read the option's identity
+  from the candidate row's `card_id`. A pick of such an option shows only in `prompt_picked`, not in a `picked` column.
 
 | Column | Value (−1 = does not apply unless stated) |
 | --- | --- |
@@ -98,12 +111,31 @@ env-steps/s (slot steps with an action ≥ 0), ms per batch (avg/min/max), reset
 and collections, bytes per env. `DOTNET_gcServer=1` matches the shipped runtimeconfig (the Bench exe itself defaults to
 Workstation GC, ~3× slower here). Rows go to `sim/BENCH.md` ("Vec (E2)").
 
-Python: `uv run --project sim/tools/vec sts2vec bench --envs N --threads T --steps 500 --pool P [--json]` (the same
-exports through ctypes; reports the whole loop and the native step alone, which differ by < 1 %). The Python bench does
-**not** pre-warm the pool: a fresh entry is created with `NewRun` (~16 ms) the first time any slot starts from it, so
-with `--pool` larger than the number of resets in the window the figure is dominated by template creation (N = 64,
-pool 1024: 4.4k vs 12k env-steps/s with pool 64). Measured at integration (load average 3–7, other agents running;
-numbers vary ±30 % between runs):
+Python: `uv run --project sim/tools/vec sts2vec bench --envs N --threads T --steps 500 --pool P [--no-warm] [--json]`
+(the same exports through ctypes; reports the whole loop and the native step alone, which differ by < 1 %). Like the
+C# bench, it warms the pool before the timed window (`--warm`, the default): `env.pool.warm()` (`sts2vec_pool_warm`)
+creates every fresh template (`NewRun`, ≈ 16 ms each, on the env's threads) and the time is printed on its own line
+(`pool warm: 1,024 templates in 2929 ms`; JSON `warm`, `warm_ms`, `warmed_templates`). `--no-warm` measures cold starts:
+each fresh entry then pays its `NewRun` at the first reset that uses it, inside the timed window, which dominates
+small N with a large pool. Measured at E2c (8 threads, load average ≈ 4.5; same episodes either way):
+
+| N | pool | steps | warm (default) | `--no-warm` |
+| --- | --- | --- | --- | --- |
+| 64 | 64 | 200 | 55,168 (warm 613 ms) | 15,859 |
+| 64 | 1024 | 500 | 82,852 (warm 2,929 ms) | 5,664 |
+
+**Short JIT runs are warm-up dominated on small Linux hosts.** On Huginn (x86_64, 8 vCPU on 4 cores) tier-up compilation
+competes with the 8 workers for the cores, and the default tiered JIT needs ≈ 20 s of batches to reach steady state, so
+a 500-step window reads ≈ 45 % low (C# `vec` 1024×8: 28.1k env-steps/s at 500 steps, 50.5k at 3,000). Two ways reach
+full speed from the first batch: `DOTNET_TieredCompilation=0` (full JIT up front: 51.8k at 500 steps; Python pool 64:
+53.2k against 18.9k) or the NativeAOT library (`scripts/vec_publish_aot.sh`, `STS2VEC_AOT_LIB`; Python 1024×8 pool 64:
+61.4k against 21.6k through hostfxr). `TieredCompilation=0` slows a cold large pool (Python pool 1024: 22.6k against
+26.3k) because every method on the first `NewRun` paths is fully optimised on its first call, so warm the pool first.
+For Linux rows use ≥ 3,000 steps, `TieredCompilation=0` or AOT; the shipped runtime configs keep their defaults.
+Details: `docs/linux-validation-2026-11-01.md` §3.3.
+
+Measured at integration (E2, before `--warm` existed: the "Python (pool 1024, cold)" column is today's `--no-warm`;
+load average 3–7, other agents running; numbers vary ±30 % between runs):
 
 | N | threads | C# `vec` (pool 1024, warmed) | Python (pool 1024, cold) | Python (pool 64) |
 | --- | --- | --- | --- | --- |
@@ -131,8 +163,17 @@ int32_t sts2vec_reset(int64_t h, const uint8_t* mask, const int32_t* start_ids, 
 int32_t sts2vec_step(int64_t h, const int32_t* actions, void** buffers);
 int32_t sts2vec_state_hash(int64_t h, const int32_t* slots, int32_t n, uint64_t* out);   // test/debug only
 int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap);         // slot -1 = env-level; h 0 = global
+// additive (E2c), appended after the frozen set:
+int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // fresh templates created now → count, or -1
 ```
 
+- `sts2vec_pool_warm`: creates the templates of up to `max_entries` fresh entries without one (`< 0`: all), in id
+  order, while the template cache (`pool_cache`) has room, on the env's threads; returns the number created by this
+  call (0 when all are warm or the cache is full). A template is the `NewRun` the entry's first start would create, so
+  warming changes no start (`VecTests.Test_VecPool_WarmCreatesTemplatesAhead`: warm and cold envs give byte-identical
+  buffers and hashes). Save and snapshot entries hold their template already. The Python loader treats exports added
+  after the freeze as optional: a library built before them still loads, and `env.pool.warm()` then raises
+  `Sts2VecError` ("rebuild").
 - String outputs write `min(cap, len)` bytes and return the full UTF-8 length.
 - Return 0 ok / −1 error. Every failing export stores `"<ExceptionType>: <message>"` globally (`h = 0`) and, when the
   handle is valid, on the env (`slot = -1`). Per-slot problems go to `status` and the slot's last error (full
@@ -500,18 +541,18 @@ Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full re
 
 | Module | Content |
 | --- | --- |
-| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 14 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
+| `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 15 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
 | `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
-| `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `len`). |
+| `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `warm(max_entries=None)` → templates created, `len`). |
 | `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
-| `cli.py` | `sts2vec bench` (env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
+| `cli.py` | `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
 
 ```python
 from sts2vec import VecEnv, PoolSpec, STATUS, random_actions
 with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256)) as env:
     obs = env.reset()                                   # dict of env-owned (N, *shape) arrays (views)
     obs, reward, terminated, truncated, status, info = env.step(random_actions(rng, obs["cand_n"]))
-    env.pool.add_fresh("SILENT", seed="S1"); env.pool.add_save(path); len(env.pool)
+    env.pool.add_fresh("SILENT", seed="S1"); env.pool.add_save(path); len(env.pool); env.pool.warm()
     e = env.snapshot(0); env.restore(3, e); env.state_hash([0, 3]); env.candidates(0)
 ```
 
@@ -539,12 +580,14 @@ with VecEnv(1024, threads=8, pool=PoolSpec(characters=("IRONCLAD",), count=256))
 - `Clone()` shares the pre-finished room object (`Pending.Load`) of a save import between clones (inventory §1.1).
   Handled in `StartPool`: a save that imports to a pending prompt is re-imported per start. A *snapshot* of a slot that
   started from such a save and is still at that load prompt would still share it (not observed).
-- **Clone fidelity (Core, not fixed here):** `RunSim.Clone()` does not preserve the aliasing between a claimed
-  `PotionReward.Potion` and the same potion in the belt (`PotionReward` clones its potion with `CloneFor`). After a
-  clone, discarding that potion while the rewards screen is still open flags only the belt copy
-  (`HasBeenRemovedFromState`), so `clone.Step(a)` and `original.Step(a)` hash differently. No gameplay effect found (the
-  reward copy is not a listener), but snapshot/restore and template clones are hash-equivalent to the original only up
-  to this flag. Tests compare clones with clones (or with a second materialisation of the start entry).
+- Clone fidelity of claimed rewards (fixed in E2c): `RunSim.Clone()` keeps the objects a claimed reward shares with
+  the run — a taken `PotionReward.Potion` is the belt's potion (the game's `PotionCmd.TryToProcure` stores the reward's
+  own instance), a picked card-reward card and a taken special card are the deck's cards, and a combat room's extra
+  rewards are the very objects its rewards set lists. Before the fix a clone copied them twice, so e.g. `DiscardPotion`
+  on a still-open Rewards screen after a clone flagged only the belt copy and `clone.Step(a)` hashed differently from
+  `original.Step(a)`. Snapshot/restore and template clones now step hash-identically to the original
+  (`SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep`, `RewardsTests.Test_Rewards_Claimed*` /
+  `Test_Rewards_Clone*`).
 - `hand` has no star-cost or affliction-amount column (not in §D3.1).
 - The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
   episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).
