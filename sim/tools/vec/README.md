@@ -1,6 +1,7 @@
 # sts2vec — batched numpy environments for the Sts2Sim simulator
 
-Python side of the E2 training interface (CONTRACTS.md Part D, `sim/VEC.md`). `sts2vec` hosts the .NET simulator
+Python side of the E2 training interface (CONTRACTS.md Part D, `sim/VEC.md`). **Start with `sim/ENV_SPEC.md`**: the
+one-page environment spec (observation columns, actions, reward, metric, determinism) generated from the schema. `sts2vec` hosts the .NET simulator
 **in-process** (hostfxr + `[UnmanagedCallersOnly]` exports called through ctypes) and steps `N` games per call;
 observations are written in place into numpy arrays the package allocates from the published schema. No pipes, no
 per-env Python work, the GIL is released during native calls.
@@ -25,7 +26,51 @@ uv run --project sim/tools/vec sts2vec bench --envs 1024 --threads 8 --steps 500
 uv run --project sim/tools/vec sts2vec bench --envs 64 --steps 20 --json
 uv run --project sim/tools/vec sts2vec digest --envs 32 --steps 100   # rollout digest (compare across processes)
 uv run --project sim/tools/vec pytest -q                            # from the repo root or sim/tools/vec
+uv run --project sim/tools/vec sts2vec eval --policy heuristic --seedset std-a0-v1   # protocol score of a policy
+uv run --project sim/tools/vec python sim/tools/vec/tools/gen_env_spec.py           # regenerate sim/ENV_SPEC.md §5
 ```
+
+`eval` (alias `evaluate`) plays every game of a protocol seed set with one policy (one slot per game, no auto-reset,
+limits step_cap 1200 / 80 non-combat decisions per floor), scores it with the protocol v0.2 progress metric
+(`sts2vec/protocol.py`, a vendored copy of `sts2eval.progress` kept equal by `tests/test_protocol.py`) and writes
+`config.json`, `run.json`, `games/<CHAR>-<SEED>.summary.json`, `report.json` and `report.md` in the LLM runner's
+layout; a replay audit re-plays every game's candidate indices on a fresh env (result, act, floor and final state hash
+must match). Options: `--out DIR` (default `tmp/eval/vec-<policy>-<seedset>-<time>`), `--threads`, `--seed` (policy
+RNGs), `--step-cap`, `--floor-step-cap`. Exit status 1 when a replay fails.
+
+## Write your own policy in 20 lines
+
+A policy is `act(obs, ctx) -> int array (N,)`: one candidate index (row of `obs["cand"][i]`, `< obs["cand_n"][i]`) per
+slot with `ctx.live[i]`. `ctx` has `schema`, `cols(buffer)` (column indices by name), `kind(name)` (RunActionKind
+value), `live`, `keys` (`"<CHAR>-<SEED>"`), `ascension`, `step` and `rngs` (one seeded generator per game).
+
+```python
+import numpy as np
+
+def act(obs, ctx):
+    C, G = ctx.cols("cand"), ctx.cols("global_i")
+    END_TURN, PLAY_CARD = ctx.kind("EndTurn"), ctx.kind("PlayCard")
+    actions = np.zeros(ctx.num_envs, dtype=np.int32)
+    for i in np.flatnonzero(ctx.live):
+        n = int(obs["cand_n"][i])
+        kinds = obs["cand"][i, :n, C.kind]
+        plays = np.flatnonzero(kinds == PLAY_CARD)
+        if len(plays) and obs["global_i"][i, G.energy] > 0:
+            actions[i] = plays[0]                                   # play the first playable card
+        elif (kinds == END_TURN).any():
+            actions[i] = int(np.flatnonzero(kinds == END_TURN)[0])
+        else:
+            actions[i] = int(ctx.rngs[i].integers(0, n))            # anything else: seeded random
+    return actions
+```
+
+Save it as `my_policy.py` and run `sts2vec eval --policy my_policy.py:act --seedset std-a10-v1`. A class works too
+(`module:MyPolicy`, instantiated with no arguments, then called per step); so does an importable
+`package.module:callable`. Examples in `examples/`: `policy_template.py` (the code above), `random_policy.py` (raw
+`VecEnv` loop with auto-reset), `heuristic_policy.py` (the built-in rules through `sts2vec.evaluate.evaluate`).
+Built-ins: `random` (uniform, per-game seeded), `first` (candidate 0), `heuristic` (rules in
+`sts2vec/policies.py: HeuristicPolicy`). Reference scores (protocol §8, sim NN track): random 0.087 / 0.045,
+first 0.193 / 0.102, heuristic 0.221 / 0.104 on `std-a0-v1` / `std-a10-v1`.
 
 `bench` first warms the pool (`env.pool.warm()`: every fresh template is created before the timed window, and that time
 is printed on its own line; `--no-warm` measures cold starts instead, where each entry's first reset pays a `NewRun`

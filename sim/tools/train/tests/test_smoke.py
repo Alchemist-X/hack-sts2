@@ -216,3 +216,10 @@ def test_eval_entry_point_writes_protocol_report(tmp_path, spec):
         assert s["result"] in ("win", "loss", "capped", "stuck", "crashed")
         assert s["act_rooms_source"] in ("map", "win")
         assert s["steps"] == len(s["history_actions"])
+        assert s["weights_hash"] and s["policy"] == "nn:ck.pt"
+    # the run directory is the LLM runner's layout: sts2eval's own report reproduces the headline
+    from sts2eval.report import build_report
+
+    h2 = build_report(out)["headline"]
+    for k in ("games", "wins", "progress_mean", "floor_mean", "replayable", "steps_total"):
+        assert h2[k] == h[k], k

@@ -163,7 +163,19 @@ uv run --project sim/tools/train sts2train-smoke eval --seedset sim/tools/eval/s
 （`stuck`）同 §5；`act_start_floor` 与 `L` 来自 `aux` 新增的 `act_floor`、`act_rooms` 列（`total_floor − act_floor` 即该幕首次观测的
 floor），计分仍调 `sts2eval.progress.compute`，运行目录与 LLM runner 同构，`report.md` 由 `sts2eval.report` 写出。
 `server_version` 记 `sts2vec/<encoder_version>`，`prompt_hash` 记 `weights:<权重哈希>`；`history_actions` 是候选下标序列
-（同种子同入口经 sts2vec 重放）。实现：`sim/tools/train/sts2train/evaluate.py`。
+（同种子同入口经 sts2vec 重放）。
+
+**任意程序化策略（`sts2vec eval`，2026-11-02 起为 NN 赛道的正式入口）**：评测器已下沉到环境包，策略无关：
+
+```bash
+uv run --project sim/tools/vec sts2vec eval --policy random|heuristic|first|pkg.module:callable|file.py:callable \
+    --seedset std-a0-v1|std-a10-v1|<路径> [--out DIR] [--threads 8] [--seed 0]
+```
+
+策略接口 `act(obs, ctx) -> (N,) 候选下标`（`sim/ENV_SPEC.md`、`sim/tools/vec/README.md` "Write your own policy in 20 lines"）；
+限制、计分（`sts2vec/protocol.py`，与 `sts2eval.progress` 由测试锁定相等）、运行目录布局同上；重放审计除结果/幕/层外还比对终局
+`StateHash`。`prompt_hash` 记策略哈希（内置 `builtin:<名>`，文件策略为源文件 sha256，checkpoint 为 `weights:<哈希>`）。
+`sts2train-smoke eval` 现为它的薄封装（`sim/tools/train/sts2train/evaluate.py`）。
 
 ## 8. 排行榜（sim 赛道，v0.2 口径）
 
@@ -179,12 +191,24 @@ max_tokens 2048，prompt `e01daedf52519a6c`，服务器 `c64217d`。随机行：
 | 4 | Claude Sonnet 5.5 | `smoke-a0-v1` (A0, 10，冒烟集) | **0.594** [0.444, 0.744] | 0/10, 0.0% [0.0, 27.8] | 63.1% | 1: 2, 2: 6, 3: 2 | 427.0 | 2.13 | 15.67 |
 | 5 | Claude Sonnet 5.5（对等修复前，仅参考） | `smoke-a0-v1` (A0, 10) | (0.581 [0.440, 0.723]) | 0/10 | 61.9% | 1: 1, 2: 7, 3: 2 | 527.1 | 2.53 | 18.29 |
 | 6 | uniform random | `std-a0-v1` (A0, 20) | 0.065 [0.052, 0.078] | 0/20, 0.0% [0.0, 16.1] | 9.0% | 1: 20 | 57.1 | 0 | 0.01 |
+| 7 | **sim NN track**：uniform random（`sts2vec eval --policy random`） | `std-a0-v1` (A0, 20) | 0.087 [0.068, 0.106] | 0/20, 0.0% [0.0, 16.1] | 11.4% | 1: 20 | 79.0 | 0 | < 0.01 |
+| 8 | **sim NN track**：uniform random（`sts2vec eval --policy random`） | `std-a10-v1` (A10, 20) | 0.045 [0.032, 0.058] | 0/20, 0.0% [0.0, 16.1] | 6.7% | 1: 20 | 38.8 | 0 | < 0.01 |
+| 9 | **sim NN track**：first（恒选候选 0） | `std-a0-v1` (A0, 20) | 0.193 [0.154, 0.232] | 0/20, 0.0% [0.0, 16.1] | 22.6% | 1: 20 | 191.8 | 0 | < 0.01 |
+| 10 | **sim NN track**：first（恒选候选 0） | `std-a10-v1` (A10, 20) | 0.102 [0.090, 0.114] | 0/20, 0.0% [0.0, 16.1] | 12.7% | 1: 20 | 104.0 | 0 | < 0.01 |
+| 11 | **sim NN track**：heuristic（规则策略） | `std-a0-v1` (A0, 20) | 0.221 [0.187, 0.255] | 0/20, 0.0% [0.0, 16.1] | 25.5% | 1: 20 | 222.6 | 0 | < 0.01 |
+| 12 | **sim NN track**：heuristic（规则策略） | `std-a10-v1` (A10, 20) | 0.104 [0.091, 0.117] | 0/20, 0.0% [0.0, 16.1] | 12.9% | 1: 20 | 118.5 | 0 | < 0.01 |
 
 注：
 - 第 4 行来自服务器 `fb9d38c`：意图暴露了敌人下一招（`move`/`move_name`），没有循环守卫，1 局 `capped`（奖励屏循环 700 步），
   `reveal_moves` 未记录——不上榜，只说明修复前后 A0 冒烟进度没有显著差别（0.581 → 0.594，同种子）。
 - Sonnet 的 `std-a0-v1` 行（服务器 `1c61726`，20/20，墙钟 35.75 分钟，$36.13 合计）已于 2026-11-02 00:10 跑完：进度 0.499 [0.410, 0.588]，中位 0.458，0 胜，层数均值 25.9、最高 48，各角色进度 Regent 0.599 / Defect 0.535 / Necrobinder 0.465 / Silent 0.464 / Ironclad 0.433。
 - 人类参考线（真实引擎，非 sim）：录制者本人 A10 胜率约 11%，社区 A10 均值约 17%（v0.1）。
+- 第 7–12 行（**sim NN track**，2026-11-02）：`sts2vec eval`（`sim/tools/vec`，env `sts2vec/fc2eb34c07bc8513`，repo `1d077ba`，
+  limits 同 §5 的 step_cap 1200 / floor_step_cap 80，`--seed 0`，8 线程），每组 20 局重放审计 20/20（结果、幕、层与终局 `StateHash`），
+  每组墙钟 < 1 秒。随机行与第 3、6 行策略相同但随机数流不同（按 `sha256("0:<CHAR>-<SEED>")` 逐局播种，第 3、6 行为 LLM runner 的
+  `CHARACTER:SEED`），差异在两者置信区间的重叠范围内。heuristic 为 `sts2vec/policies.py` 的 `HeuristicPolicy`（打牌优先于结束回合、
+  来伤害时先格挡、攻击最低血敌人、领奖励、选第一张卡、走第一条路、血量 < 50% 休息否则锻造、不买东西、不用药水），未在这些种子上调参。
+  复跑：`uv run --project sim/tools/vec sts2vec eval --policy <random|first|heuristic> --seedset <std-a0-v1|std-a10-v1>`。
 
 ### 8.1 重算后的头牌表（`sts2eval report`，v0.2 指标）
 

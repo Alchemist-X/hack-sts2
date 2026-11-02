@@ -1,5 +1,8 @@
 # Sts2Sim.Vec — batched training interface
 
+> Policy authors: read `sim/ENV_SPEC.md` first (one page, generated column tables, metric, `sts2vec eval`). This page
+> documents the implementation.
+
 Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 integrate"). Shapes, names, buffer
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
