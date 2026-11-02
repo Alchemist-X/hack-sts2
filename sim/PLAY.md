@@ -172,3 +172,17 @@ while not obs["terminal"]:
     if status == 500: break            # simulator crash: repro is in tmp/play-crashes.jsonl
     if status == 200: obs = d["observation"]
 ```
+
+## Evaluation runner
+
+`sim/tools/eval` (Python package `sts2eval`, uv project) plays fixed seed sets of full runs against
+this server, many games in parallel, with a seeded random policy or a Claude model through the
+Anthropic SDK; every step is transcribed and the run ends with `report.md` (win rate with a Wilson
+interval, floors, steps, illegal actions, crashes, tokens, cost, wall time). It only uses the
+endpoints above. Install, flags, output layout and metric definitions: `sim/tools/eval/README.md`.
+
+```bash
+uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy random --concurrency 10 --spawn
+ANTHROPIC_API_KEY=... uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy claude \
+    --model claude-sonnet-5-5 --effort low --concurrency 10 --spawn
+```
