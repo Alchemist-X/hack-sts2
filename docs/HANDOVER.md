@@ -87,10 +87,10 @@ scripts/linux_validate.sh                                         # Huginn 全�
 
 ## 7. 进行中与开放问题
 
-- 波次 G（进行中）：紧凑观测 + 第二缓存断点（降本 30–40%）、`scripts/gates.sh`、版本差分内核映射补全、训练冒烟与 NN 评测入口、Docker amd64 验证（Huginn）。
+- 波次 G（已合入 2026-11-02，记录见 `sim/specs/integration.md` "G integrate"）：紧凑观测（`--obs-mode compact` 为 CLI 默认；每步成本 −19.5%，未达 30–40% 目标，std-a0-v1 full/compact A/B 未跑）；`scripts/gates.sh`（`docs/gates.md`）；内核映射 `sim/specs/kernel-map.json`（564 文件 0 unmapped，版本差分内核覆盖 45 → 95/134）；训练冒烟 `sim/tools/train` + NN 评测入口（std-a0-v1 进度 0.277，学到商店移除循环，`docs/train-smoke-2026-11-02.md`；vec aux 14 列，encoder `fc2eb34c07bc8513`）；Docker amd64 在 Huginn 验证通过（`docs/docker.md`）。
 - 波次 F / E3（进行中）：安装 REC recorder → 4 个无头实例 MCP 农场约 2 小时 → v2 bundle → G1/G2/G3 → 分诊与修复 → 关 MCP。报告落在 `docs/sim-port/e3-*.md`、`sim/specs/diff-report-e3-farm-2026-11-02.md`。
 - 待做：对照基线（Opus/Haiku/effort high/thinking off，约 $200，等紧凑观测落地后统一口径）；E4 搜索自举（等额度）；Huginn 根盘清理（管理员）。
-- 已知小票：Vec 去克隆快路径（吞吐 2.6×）、Python bench 已预热；事件选项 7/81 文案 `?`；商店 base_price 推算值；版本差分内核映射 45/134（补全中）。
+- 已知小票：Vec 去克隆快路径（吞吐 2.6×）、Python bench 已预热；事件选项 7/81 文案 `?`；商店 base_price 推算值；版本差分内核映射已补全（95/134 变更内核文件有 sim 文件，其余为 no_port）。
 
 ## 8. 优先级
 
@@ -105,5 +105,5 @@ scripts/linux_validate.sh                                         # Huginn 全�
 
 `docs/handoff-2026-11-01.md`（历史交接）· `docs/p1-sim-full-port-plan-2026-11-01.md`（状态日志）· `sim/CONTRACTS.md` · `sim/VEC.md` · `sim/PLAY.md` ·
 `docs/sts2-bench-protocol-v0.2-2026-11-01.md` · `docs/docker.md` · `docs/linux-validation-2026-11-01.md` · `docs/version-migration-playbook.md` ·
-`sim/specs/integration.md`（每波门的数字）· `sim/specs/diff-report-w4-*.md` · `docs/sim-port/playtest-2026-11-01.md` · `docs/a10-first-principles-review-2026-10-27.md` ·
+`sim/specs/integration.md`（每波门的数字）· `docs/gates.md` · `docs/train-smoke-2026-11-02.md` · `sim/specs/kernel-map.json`· `sim/specs/diff-report-w4-*.md` · `docs/sim-port/playtest-2026-11-01.md` · `docs/a10-first-principles-review-2026-10-27.md` ·
 `docs/sim-port/design-diff-gate.md`。会话记忆：`~/.claude/projects/-Users-Aincrad-dev-proj-hack-sts2/memory/`。

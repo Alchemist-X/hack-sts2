@@ -139,7 +139,8 @@ agent 只看到真实游戏玩家能看到的东西，不多不少（`sim/PLAY.m
 ## 7. 如何加一个策略
 
 **LLM（`sts2eval`）**：在 `sts2eval/policies.py` 加一个类，接口同 `RandomPolicy` / `ClaudePolicy`：属性 `name`，
-`for_game(seed) -> policy`（每局一个实例，确定性 rng），`async choose(obs_text, legal_tokens, recent_history, feedback) -> (候选文本, meta)`
+`for_game(seed) -> policy`（每局一个实例，确定性 rng），`async choose(obs_text, legal_tokens, recent_history, feedback, context=None) -> (候选文本, meta)`
+（`context` 是 §11 紧凑模式的缓存运行上下文块，full 模式为 `None`；新策略类必须接受这个关键字参数）
 （`meta` 用 `policies.empty_meta()` 起手，填 `usage`、`cost_usd`、`stop_reason`、`raw`、`error`）；在 `cli.py` 的 `--policy` 里注册。
 runner 负责合法性解析、一次重问、随机兜底、循环守卫、转录、计分；策略只管回答。跑法：
 
@@ -277,7 +278,7 @@ max_tokens 2048，prompt `e01daedf52519a6c`，服务器 `c64217d`。随机行：
 ## 10. 未完成项
 
 - 其他模型（Haiku、Opus、Fable）与 effort 档位；Sonnet `std-a0-v1` 已完成（见 §8）。
-- 专用 NN 评测入口（`sts2vec` 按种子集跑并写 summary）。
+- ~~专用 NN 评测入口~~：G 波已合入（`sts2train-smoke eval`，见 §7，自带逐局重放审计）。
 - 重放审计脚本（§6 第 2 条目前手工：`POST /runs` + `history_tokens`）。
 - 服务器 `c64217d` → `b3ac9d6` 之间的观测等价性声明（`8c65874` 改了能力显示数值的调用路径），之后新跑的行用 `b3ac9d6` 或更新的 sha。
 - 第二 Boss 与金罗盘的计分在真实转录上的验证（需要一局进入 A10 第 3 幕或拿到金罗盘）。

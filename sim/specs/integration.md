@@ -1048,3 +1048,46 @@ From 2026-11-02 the gates of each integration record are run by `scripts/gates.s
 
 An integrator records the closing table of `tmp/gates/<timestamp>/SUMMARY.txt` in the wave's section instead of
 retyping the numbers.
+
+## G integrate (2026-11-02)
+
+Base: session branch `claude/sts2-eval-pipeline-a3aee7` at `9e95fd6` (docs/HANDOVER.md on top of `ebc055f`). All four owner branches are cut from `ebc055f`; none skipped.
+
+Merged, in order (all `--no-ff`): g/gates-mapping `eb8e9cc` (merge `0171035`), g/compact-obs `575b248`+`b973d18` (merge `eb5d77a`), g/train-smoke `b438455` (merge `5ba20d9`), g/docker-amd64 `daa2a9e` (merge `d4e59ec`).
+
+Conflicts: none. The expected hot spots auto-merged: the protocol doc (compact-obs appended §11, train-smoke edited §7), `sim/BENCH.md` and `docs/docker.md` (only docker-amd64 appended), `sim/tools/eval/README.md` (only compact-obs). `kernel_map.py --check` after all merges: still OK (no other branch added Core types or spec lines).
+
+Fixes (integration, docs only):
+- Protocol §7: the LLM policy interface now reads `choose(..., feedback, context=None)` (compact-obs added the kwarg; new policy classes must accept it).
+- Protocol §10: the "dedicated NN eval entry point" open item struck (train-smoke's `sts2train-smoke eval`).
+- `docs/HANDOVER.md` §7/§9: wave G marked landed with its headline numbers; kernel-map ticket closed; doc index gains `docs/gates.md`, `docs/train-smoke-2026-11-02.md`, `sim/specs/kernel-map.json`.
+
+Gates (macOS M4 Pro, load average 6.4–8.7 from the concurrent E3 wave), `scripts/gates.sh` full on `d4e59ec`, 571 s, `tmp/gates/20261102T074217Z/SUMMARY.txt`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 8 | Release: 0 warnings, 0 errors |
+| build-debug | PASS | 6 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 457 | full suite: 1115/1115 passed, 0 failed, PENDING 0, 456 s in runner |
+| selftest | PASS | 6 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.6 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 4 | 76 passed (67 + compact-obs's 9) |
+| pytest-vec | PASS | 15 | 67 passed (`STS2VEC_REQUIRE_FULL=1`, incl. AOT round-trip) |
+| sts2rec | PASS | 73 | 701 passed, 4 skipped |
+| py-scripts | PASS | 0 | unittest 30 OK; kernel_map --check OK: 564 kernel files, mapped 374, no_port 190 (lines 104,637 / 34,344) |
+| bench-combat, bench-vec | SKIP | 0 | no `--bench` |
+
+Also: `uv run --project sim/tools/train pytest -q` 8 passed (13.9 s); `uv lock --check` clean for sim/tools/train and sim/tools/eval. Version-delta demo (`scripts/version_delta.py decompiled-v0.107.1 decompiled-9cb4f1ad`, 13.0 s): content 546, kernel 134, out_of_scope 407; rerun plan full_suite/G0/G3, 4 soak tests, 101 filters, registry + knowledge; kernel map: 95/134 changed kernel files with sim files (49 via the map only), mapped 91, no_port 43, unmapped 0 — identical to the owner run.
+
+Owner-run numbers carried into this record:
+- compact-obs: `--obs-mode compact` (renderer compact-v1, prompt_hash `01628730282753a2`; full mode byte-identical to v0.2, `e01daedf52519a6c`) is the CLI default; library default stays full. Probe smoke-a0-v1 ×3 games, Sonnet 5.5 effort low, 360 steps per mode: per call uncached input 1,253.7 → 790.2 (−37.0 %), cache read 2,186.6 → 2,783.6, cache write 18.4 → 64.7, output 91.3 → 83.9; cache hit 63.2 % → 76.5 %; cost/step $0.00390 → $0.00314 (−19.5 %), same-state −16.5 %; 0 illegal / fallbacks / API errors; spend $2.535. Parity: 7,290/7,290 baseline observations and 1,122/1,122 random-game observations, 0 failures, 0 unstable contexts. Run context = 3 cached system blocks (432 vs 580 µ$/step for one block).
+- gates-mapping: owner full gates 570 s PASS (1114/1114); kernel map 564 files (type 201, spec 79, cite 23, pattern 116, curated 66; 26 patterns, 143 curated records); version-delta kernel coverage 45 → 95/134; W0 version-deltas 518 → 546 entries (MusicBox judged changed, 27 refactor_only). Scratch bench: combat 135,441 decisions/s, Clone 2.477 µs, StateHash 2.727 µs; vec 1024×8×500 78,141 env-steps/s.
+- train-smoke: vec aux 10 → 14 columns (act_floor, map_row, map_col, act_rooms), encoder_version `dff07a6bc984b119` → `fc2eb34c07bc8513`, 26,710 → 26,726 bytes/env. 948,750-parameter PPO policy, 52 min shaped A0 on MPS: 20.3M env-steps, 83,190 episodes, 6,505 env-steps/s with learner (134,475 in env.step only; update 73 % of wall), 0 sim errors. std-a0-v1 NN eval: progress 0.277 [0.225, 0.329] (random-init 0.170, uniform random 0.065, Sonnet 5.5 0.499), 0/20 wins, 14 loss / 6 stuck (merchant removal loop), replay 20/20.
+- docker-amd64 (Huginn x86_64, Docker 29.9.2): cold build 79.3 s, image 563 MB; in-image build 0 warnings, Server tests 39/39; selftest 200/200 18.6 s; /health 0.41 s; 20 random games 1,379 steps 4.19 s; vec-check OK; Python vec-bench 1024×8 19.1k/21.1k env-steps/s; C# vec 1024×8×500 28.0k/28.3k, ×3000 50.9k; combat 41,203 decisions/s, hash sink 40788C706BFA21E0 (= native). Fix: `/app/tmp → /data/tmp` symlink so `eval --spawn` without `--out` works as uid 1654.
+
+Open issues:
+- Compact obs reached −19.5 % cost/step, not the 30–40 % target (output tokens ~27 % of cost and Recent history unchanged). The 3-block run context (vs the brief's single block) is accepted here on the offline measurement. No full-vs-compact A/B on std-a0-v1 yet, so compact rows are listed separately (§11); sts2eval `__version__` still 0.2.0.
+- Train smoke: the shaped objective learns a non-progress merchant loop (needs a stall cap / step cost / loop masking in the training env); the learner dominates wall time; sts2vec `add_fresh(act1='random')` vs server `POST /runs` start equivalence unchecked; the NN row is not leaderboard-eligible (smoke objective, `-dirty` repo sha).
+- gates.sh has not run on Linux (Huginn needs `--skip g0`; no `timeout` on stock macOS); `sim/BENCH.md` has no gates.sh `--bench` row yet. Kernel-map spec source is heuristic; curated verdicts need review at the next game version; `version_update.sh` only prints a reminder to regenerate the map. MusicBox "changed" verdict is code-reading only.
+- Docker: image `sts2sim:validate` (563 MB) left on Huginn; Huginn root fs 2.8 GB free; the Tokyo arm64 row claiming the compose eval profile passed at `ebc055f` is unexplained (it fails there without the fix).
+- Running `uv run --project sim/tools/eval pytest -q` without the path still collects vec/train tests and fails on imports; always pass `sim/tools/eval`.
