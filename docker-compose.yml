@@ -1,0 +1,68 @@
+# Sts2Sim services (docs/docker.md).
+#
+#   docker compose build                                       # image sts2sim:local
+#   docker compose up -d                                       # SIM_REPLICAS play servers (default 4) on host ports
+#                                                              # SIM_PORTS (default 8765-8768), loopback only
+#   SIM_REPLICAS=8 SIM_PORTS=8765-8772 docker compose up -d    # 8 replicas
+#   docker compose --profile vec run --rm vec                  # sts2vec bench (override: ... run --rm vec vec-check)
+#   docker compose --profile selftest run --rm selftest        # 200 random runs through the play service
+#   docker compose --profile eval run --rm eval run --seedset a0-s10 --policy random --spawn --concurrency 10
+#
+# Each replica is an independent server process with its own games (game ids are per server). A client must
+# keep talking to the replica that created its game: give every LLM runner ONE replica URL
+# (http://127.0.0.1:8765, :8766, ...) and run many games concurrently on it (the server is multi-threaded, one
+# lock per game; one sts2eval process with --concurrency N uses one server). Do not put a round-robin load
+# balancer in front of the replicas.
+
+x-sim: &sim
+  image: ${SIM_IMAGE:-sts2sim:local}
+  init: false            # the image's entrypoint already runs under tini
+  environment:
+    DOTNET_gcServer: "1"
+  volumes:
+    - sim-data:/data
+
+services:
+  sim:
+    <<: *sim
+    build:
+      context: .
+      args:
+        STS2SIM_VERSION: ${STS2SIM_VERSION:-unknown}
+    command: ["server"]
+    deploy:
+      replicas: ${SIM_REPLICAS:-4}
+    ports:
+      # one host port per replica from the range; host side bound to loopback (the server has no auth)
+      - "${SIM_HOST_IP:-127.0.0.1}:${SIM_PORTS:-8765-8768}:8765"
+    restart: unless-stopped
+
+  vec:
+    <<: *sim
+    profiles: ["vec"]
+    command: ["vec-bench", "--envs", "${VEC_ENVS:-1024}", "--threads", "${VEC_THREADS:-4}", "--steps", "${VEC_STEPS:-500}"]
+    healthcheck:
+      disable: true
+
+  selftest:
+    <<: *sim
+    profiles: ["selftest"]
+    command: ["selftest", "${SELFTEST_RUNS:-200}"]
+    healthcheck:
+      disable: true
+
+  eval:
+    <<: *sim
+    profiles: ["eval"]
+    # sts2eval CLI; '--spawn' starts a private server inside this container. The API key comes from the
+    # environment (ANTHROPIC_API_KEY is passed through only when set) or a mounted --api-key-file.
+    entrypoint: ["/usr/bin/tini", "--", "/usr/local/bin/sts2sim", "eval"]
+    command: ["--help"]
+    environment:
+      DOTNET_gcServer: "1"
+      ANTHROPIC_API_KEY:   # passed through from the host only when set
+    healthcheck:
+      disable: true
+
+volumes:
+  sim-data:
