@@ -4,8 +4,9 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `dff07a6bc984b119`, 26,710
-bytes/env, 35 buffers. Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `fc2eb34c07bc8513`, 26,726
+bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; integration figures
+below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
@@ -234,7 +235,7 @@ int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // fre
 | 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
 | 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128 |
 | 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
-| 33 | `aux` | float32 | [10] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat |
+| 33 | `aux` | float32 | [14] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms |
 | 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
 
 35 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20). ≈ 26.7 KB per env.
@@ -518,6 +519,14 @@ Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative
 | --- | --- |
 | `total_floor`, `act_index`, `hp`, `max_hp`, `gold`, `deck_n`, `relic_n`, `is_combat` | The same values as in `global_i`. |
 | `bosses_killed`, `combats_won` | Monster, Elite and Boss rooms in the floor history. The current floor's last room is excluded while its combat runs, or after a Defeat when that room is a combat room. |
+| `act_floor`, `map_row`, `map_col` | The same values as in `global_i` (E3: appended for the protocol metric). |
+| `act_rooms` | Rooms in the current act = the act map's last row + 1 (start row 0 through the last boss row, second boss included; a GOLDEN_COMPASS path counts its own rows); 0 without a map. Equals the play server's `map.nodes` max row + 1 and `map_nodes`' last non-empty row + 1. |
+
+Protocol v0.2 progress (`docs/sts2-bench-protocol-v0.2-2026-11-01.md` §4.2) from `aux`: act `a = act_index + 1`, the
+act's start floor `total_floor - act_floor` (act 1: 0; equals the total floor at the act's first observation, checked
+by `VecEncoderTests.Test_VecEncoder_AuxProgressColumns` over 10,229 states / 24 act starts), `L = act_rooms`. With
+auto-reset, score a finished episode from the slot's aux of the previous call plus `last_episode` (win, floor, act):
+`sts2train.progress.ProgressTracker` (`sim/tools/train`) does exactly that and calls `sts2eval.progress.compute`.
 
 **last_episode**
 
@@ -534,6 +543,7 @@ last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv 
 | `NoMoveIds` | Greps the encoder source for move, AI and RNG identifiers, and checks that the intent rows match the intents' types. |
 | `TreasureAndCardRewardHidden` | 5 closed and then opened chests, and 74 card rewards that are hidden on the Rewards screen and shown in the CardReward phase. |
 | `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
+| `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
 
 ## Python API (§D6)
 

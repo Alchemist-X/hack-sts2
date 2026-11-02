@@ -129,7 +129,7 @@ def test_buffer_sizes_and_pointer_order(schema):
     raw = (ctypes.c_void_p * len(BUFFER_ORDER)).from_address(bufs.ptr)
     assert [raw[i] for i in range(len(BUFFER_ORDER))] == bufs.pointers()
     assert bufs.nbytes == n * schema.bytes_per_env
-    assert schema.bytes_per_env == 26_710  # scaffold figure; changes only with a schema change
+    assert schema.bytes_per_env == 26_726  # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke)
     with pytest.raises(ValueError):
         schema.allocate(0)
 

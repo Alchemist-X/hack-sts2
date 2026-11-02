@@ -152,7 +152,17 @@ uv run --project sim/tools/eval sts2eval run --seedset std-a10-v1 --policy claud
 （`auto_reset` 后读 `last_episode`：win、floor、act、steps……）。逐步记录 `global_i` 的 `act_index + 1`、`total_floor`，以及
 `map_nodes` 的最大行号 + 1 作为该幕 `L`，然后调用 `sts2eval.progress.compute(result, act, floor, ascension, act_start_floor, act_rooms)`
 计分，并按 summary 的字段写 `games/<KEY>.summary.json` + `config.json`（`policy` = 模型名，`seedset` = 种子集原文），
-`sts2eval report DIR` 即可出同口径报表。专用的 NN 评测入口（`sts2vec eval --seedset`）是未完成项。
+`sts2eval report DIR` 即可出同口径报表。专用的 NN 评测入口已在 E3 补上（2026-11-02）：
+
+```bash
+uv run --project sim/tools/train sts2train-smoke eval --seedset sim/tools/eval/seedsets/a0-s20.json --checkpoint CKPT.pt
+```
+
+每个种子一个池入口、一个 env 槽位，`auto_reset=false`，贪心策略跑到终局；`step_cap` 1200（`capped`）与 `floor_step_cap` 80
+（`stuck`）同 §5；`act_start_floor` 与 `L` 来自 `aux` 新增的 `act_floor`、`act_rooms` 列（`total_floor − act_floor` 即该幕首次观测的
+floor），计分仍调 `sts2eval.progress.compute`，运行目录与 LLM runner 同构，`report.md` 由 `sts2eval.report` 写出。
+`server_version` 记 `sts2vec/<encoder_version>`，`prompt_hash` 记 `weights:<权重哈希>`；`history_actions` 是候选下标序列
+（同种子同入口经 sts2vec 重放）。实现：`sim/tools/train/sts2train/evaluate.py`。
 
 ## 8. 排行榜（sim 赛道，v0.2 口径）
 

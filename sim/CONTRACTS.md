@@ -1321,7 +1321,7 @@ When a table overflows its capacity the first CAP rows are written and the statu
 | 28 | `terminated`, 29 `truncated` | uint8 | [] | episode-end flags for this step |
 | 30 | `status` | int32 | [] | bit flags: OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64 (slot was reset this call), POOL_EMPTY 128 |
 | 31 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
-| 32 | `aux` | float32 | [A] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat (listed in the schema) |
+| 32 | `aux` | float32 | [A] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms (listed in the schema; the last four appended in E3 for the protocol progress metric, A = 14) |
 | 33 | `last_episode` | int32 | [8] | written when an episode ends: win, floor, act, steps, final_hp, final_max_hp, end_kind (terminal/truncated/content_gap/sim_error), last_encounter_id |
 
 `HC` and the field orders are published in the schema; the Python side never hard-codes offsets.

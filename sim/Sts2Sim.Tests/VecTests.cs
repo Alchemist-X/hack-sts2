@@ -288,6 +288,7 @@ public static unsafe partial class VecTests
         Assert.Equal(8, CandCol.TargetUid);
         Assert.Equal(7, LastEpCol.LastEncounterId);
         Assert.Equal(9, AuxCol.IsCombat);
+        Assert.Equal(13, AuxCol.ActRooms);
         foreach (var name in Exports.ExportNames)
         {
             var m = typeof(Exports).GetMethod(Exports.ManagedNameOf(name));
