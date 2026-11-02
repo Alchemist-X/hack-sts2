@@ -44,6 +44,7 @@ Useful flags:
 | `--step-cap N` | 1200 | accepted steps per game, then `capped` |
 | `--loop-repeat K` | 6 | when one observation has come up K times on a floor, the next prompt gets a one-time loop warning (once per floor; 0 = off) |
 | `--floor-step-cap N` | 80 | non-combat steps per floor (rewards, shop, event, map, rest, prompts outside combat); the next one ends the game as `stuck` before any API call (0 = off) |
+| `--obs-mode compact\|full` | `compact` | what the model is sent each step (below, "Observation modes"); `full` = the server's `text`, byte-identical to protocol v0.2 (`prompt_hash` `e01daedf52519a6c`) |
 | `--reveal-moves` | off | create games with `"reveal_moves": true` (intents and the enemy-turn log name the enemy's move; sim/PLAY.md "Hidden information"). Off is the game's view; the runner always sends the flag, so the server's own default does not matter |
 | `--game-minutes M` | 60 | wall clock per game, then `capped` |
 | `--step-timeout S` | 300 | seconds per decision incl. SDK retries; a timeout counts as an API error |
@@ -63,6 +64,11 @@ Seed sets: `seedsets/*.json` carry `id`, `version`, `role`, `frozen` and `sha256
 of `{ascension, content, games[{character, seed}]}`); `seedsets.load` rejects a file whose content no longer matches its
 checksum. Frozen sets never change: publish a new id instead.
 
+Parity check of the compact mode against a live server (every id, number and text of the server text must
+appear in run context + step text; run-context blocks must be byte-identical while their inputs are):
+`uv run --project sim/tools/eval sts2eval parity --spawn --replay tmp/eval/<run_id> --games 3 --samples 200`
+(replays the recorded `history_tokens`; without `--replay` it plays seeded random games). Exit 1 on any failure.
+
 Exit codes: 0 done, 2 bad arguments / server missing, 3 run aborted (budget, time, fatal API error,
 server down, 25 API errors in a row), 130 Ctrl-C (summaries so far are kept; `--resume` continues).
 
@@ -72,11 +78,12 @@ the repo root collects every test in the repository.
 
 ## How a step works
 
-1. The observation `text` from the server (header, deck, enemies, hand, the screen, the legal
-   tokens; rules text once loaded) plus `Recent history` (last 6 actions, last 12 log lines) is the
-   user message. The system prompt is static (`sts2eval/prompt.py`, about 1.4k tokens: goal, phases,
-   full token grammar, strategy, keyword glossary) with `cache_control: ephemeral` on its block, above
-   the 512-token minimum cacheable prefix of the 5.x models. Each step is one stateless request.
+1. `--obs-mode full`: the observation `text` from the server (header, deck, enemies, hand, the screen,
+   the legal tokens; rules text once loaded) plus `Recent history` (last 6 actions, last 12 log lines)
+   is the user message. `--obs-mode compact` (default): see "Observation modes" below. The system
+   prompt is static (`sts2eval/prompt.py`, about 2.2k tokens: goal, phases, full token grammar,
+   strategy, keyword glossary) with `cache_control: ephemeral` on its block, above the 512-token
+   minimum cacheable prefix of the 5.x models. Each step is one stateless request.
    No temperature / top_p / top_k, no prefill, no server-side fallbacks.
 2. The reply's first line is the token (an optional `TOKEN:` prefix, backticks, bold and quotes are
    stripped), normalised with the server's rules (case and whitespace insensitive, `end turn` = `end`,
@@ -98,6 +105,34 @@ the repo root collects every test in the repository.
    than `--floor-step-cap` non-combat steps ends the game as `stuck` (truncated, reward 0). The system
    prompt also states the rule: `skip` keeps the card reward on the rewards screen, `proceed` leaves,
    reward -> skip -> reward chains change nothing (the Sonnet A0 baseline looped 700 steps on it).
+
+## Observation modes
+
+`compact` (default, protocol v0.3 draft, `sts2eval/compact.py`, renderer `compact-v1`) renders the prompt
+from the observation JSON instead of the server text, with the same information (sim/PLAY.md "Hidden
+information"; `sts2eval parity` and `tests/test_compact.py` check it):
+
+- **run context**: three system blocks after the static prompt, each with `cache_control: ephemeral`,
+  ordered by how often they change: (1) character, ascension, relics with name and rules text; (2) the
+  deck, one line per distinct card (count, id, name, cost, type, enchantment / affliction, keywords,
+  rules text) from `GET /games/{id}/piles`, fetched when the deck list changes and on every
+  out-of-combat step; (3) act and potion slots with rules text. A block is re-sent byte-identical
+  while it is unchanged (a cache read); when one changes, only it and the blocks after it are
+  re-written. Static prompt + 3 blocks = the API's 4 cache breakpoints.
+- **step text** (user message, before `Recent history`): the server text's lines minus the game id,
+  the relic / potion / deck lines (relic counters stay, `relic counters: PEN_NIB(3)`), and with three
+  shortenings: a hand card or prompt option leaves out its name and rules text when they equal its
+  deck line; a power's rules text is printed once per step; legal tokens whose desc only repeats the
+  screen (`play potion discard pick travel reward card buy event`) are listed bare, `play 0 -> 0 | play
+  0 -> 1` (one line per hand card / potion slot, one line per kind otherwise); every other token keeps
+  `token  : desc`.
+- The static prompt is `COMPACT_SYSTEM_PROMPT` (SYSTEM_PROMPT with the "Reading the observation"
+  paragraph rewritten; the glossary stays in it); `prompt_hash` covers it and the renderer version.
+  The loop guard still hashes the server text, so both modes stop loops the same way.
+- Transcripts keep `obs_text` (server text) and add `prompt_text` (the step text sent), `context_sha`,
+  and on the steps where it changed `context_changed_from` (first changed block) and `context` (all
+  three blocks). Summaries add `obs_mode`, `context_rebuilds`, `context_block_rebuilds`,
+  `piles_fetches`; `config.json` / `report.json` record `obs_mode` and `render_version`.
 
 The random policy uses the same loop with a per-game seeded rng (sha256 of `CHARACTER:SEED`), so a
 random run is reproducible; the Claude policy differs only in the client object.
@@ -163,11 +198,21 @@ Headline (protocol v0.2, `docs/sts2-bench-protocol-v0.2-2026-11-01.md`): **progr
 
 ## Cost estimate
 
-Per step at Sonnet 5.5 ($2 in, $10 out, $0.20 cache read): system prompt about 1.4k cached tokens
-(`1400 * 0.20 / 1e6 = $0.0003`), observation plus history about 500-1000 uncached tokens
-(`$0.001-0.002`, more once rules text is in the observation), output about 100-500 tokens including
-low-effort thinking (`$0.001-0.005`): roughly **$0.003-0.007 per step**. A game costs
-`steps * per-step`: random-like early deaths take ~50 steps, a run into act 2 a few hundred, a full
-run ~800-1200. Budget for `games * expected steps * $0.005` and set `--max-cost-usd` accordingly
-(for example `--max-cost-usd 30` for a first a0-s10 Sonnet baseline). The report gives the measured
-per-game cost; Haiku 5.5 is ~20x cheaper, Opus 5.5 ~2x and Fable 5.1 ~5x more expensive.
+Measured at Sonnet 5.5 ($2 in, $10 out, $0.20 cache read, $2.50 cache write), effort low, on the first 120
+steps of three `smoke-a0-v1` games (IRONCLAD E1A0IC01, SILENT E1A0SI01, DEFECT E1A0DE01; 360 steps per mode,
+2026-11-02; details and the parity checks in docs/sts2-bench-protocol-v0.2-2026-11-01.md section 11):
+
+| obs mode | per call: uncached in / cache write / cache read / output | cache hit rate | cost per step |
+| --- | --- | --- | --- |
+| `full` (protocol v0.2) | 1,253.7 / 18.4 / 2,186.6 / 91.3 | 63.2% | $0.00390 |
+| `compact` (default) | 790.2 / 64.7 / 2,783.6 / 83.9 | 76.5% | $0.00314 (-19.5%) |
+
+On the same 360 states (same history, `count_tokens`) the user message is 1,217 tokens in `full` and 784 in
+`compact` (-35.6%), about -16.5% of the cost per step; output (incl. low-effort thinking) is unchanged and
+is now about a quarter of the cost. The whole-run v0.2 Sonnet baseline (`std-a0-v1`, full mode) averaged
+1,551 uncached / 2,202 cache read / 140 output tokens per call, about $0.0049 per step: later floors carry
+larger decks and more relics. A game costs `steps * per-step`: random-like early deaths take ~50 steps,
+a run into act 2 a few hundred, a full run ~800-1200. Budget for `games * expected steps * $0.005` and set
+`--max-cost-usd` accordingly (for example `--max-cost-usd 30` for a first a0-s10 Sonnet baseline). The
+report gives the measured per-call tokens, cache hit rate, cost per step and per game; Haiku 5.5 is ~20x
+cheaper, Opus 5.5 ~2x and Fable 5.1 ~5x more expensive.

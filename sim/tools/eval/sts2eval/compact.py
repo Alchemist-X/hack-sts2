@@ -2,9 +2,12 @@
 
 The runner renders its own text from the observation JSON (sim/PLAY.md) instead of sending the server's
 `text`. What rarely changes - character, ascension, act, relics, potions and the deck with card rules
-text (GET /games/{id}/piles) - goes into a "run context" block that is sent as a second, cached system
-block; it is re-sent byte-identical while unchanged (a cache read) and rebuilt only when its content
-changes. Everything else is the per-step block of the user message.
+text (GET /games/{id}/piles) - is the "run context", sent after the static system prompt as cached
+system blocks; each is re-sent byte-identical while unchanged (a cache read) and rebuilt only when its
+content changes. The run context is split into three blocks ordered by volatility - (character,
+ascension, relics), (deck), (act, potions) - so a used potion re-writes only the small last block and
+a new card only the deck and potion blocks (static + 3 = the API's 4 cache breakpoints). Everything else
+is the per-step block of the user message.
 
 Information parity: every id, number and text of the server `text` appears in context + step text
 (`parity_problems` checks it; tests/test_compact.py and `sts2eval parity` run it). Dropped only:

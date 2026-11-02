@@ -338,7 +338,10 @@ interval, floors, steps, illegal actions, crashes, tokens, cost, wall time). It 
 endpoints above and sends `"reveal_moves"` explicitly (default false; `--reveal-moves` to ablate), so an
 evaluation sees the game's view whatever the server default. A per-game loop guard hints once when the
 same observation repeats on a floor and ends a game as `stuck` when a floor takes too many non-combat
-steps. Install, flags, output layout and metric definitions: `sim/tools/eval/README.md`.
+steps. By default (`--obs-mode compact`) it does not send `text` but renders the same information from
+the observation JSON and `/piles`, with relics, deck and potions in cached system blocks (`sts2eval parity`
+checks that every id, number and text of `text` is kept); `--obs-mode full` sends `text`.
+Install, flags, output layout and metric definitions: `sim/tools/eval/README.md`.
 
 ```bash
 uv run --project sim/tools/eval sts2eval run --seedset a0-s10 --policy random --concurrency 10 --spawn
