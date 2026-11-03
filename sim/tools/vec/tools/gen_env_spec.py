@@ -180,7 +180,7 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
     "cand_n": ("scalar", [("*", "0..192", "number of legal candidates (0 when finished)")]),
     "reward": ("scalar", [("*", "0/1", "1 exactly at a Victory terminal step")]),
     "terminated": ("scalar", [("*", "0/1", "the episode ended at Victory or Defeat this step")]),
-    "truncated": ("scalar", [("*", "0/1", "ended by step_cap, CONTENT_GAP or SIM_ERROR this step")]),
+    "truncated": ("scalar", [("*", "0/1", "ended by step_cap, the floor stall cap (FLOOR_STALL), CONTENT_GAP or SIM_ERROR this step")]),
     "status": ("scalar", [("*", "{st}", "per-slot outcome bits of the last call (table below)")]),
     "episode": ("episode bookkeeping", [
         ("episode_id", ">= 1", "unique per env: episodes_started_before_on_slot x N + slot + 1"),
@@ -196,9 +196,9 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
     "last_episode": ("the episode that ended in this call (with auto-reset the slot already shows the next one)", [
         ("win", "0/1", "victory"),
         ("floor, act", ">= 0, 0..2", "final total floor; 0-based act"),
-        ("steps", ">= 0", "decisions taken"),
+        ("steps", ">= 0", "decisions taken (applied actions; illegal indices excluded)"),
         ("final_hp, final_max_hp", ">= 0", "final hp values"),
-        ("end_kind", "{e:EndKind}", "Terminal, Truncated, ContentGap, SimError"),
+        ("end_kind", "{e:EndKind}", "Terminal, Truncated (step_cap), ContentGap, SimError, FloorStall (floor_step_cap)"),
         ("last_encounter_id", "{v:encounters}", "last combat encounter (the killer on a Defeat)"),
     ]),
 }

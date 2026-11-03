@@ -20,6 +20,12 @@ Discovery (first match wins):
 Only one CLR can live in a process (hostfxr cannot re-initialise); the first successful load is cached and reused, and
 asking for a different library afterwards raises ``LoaderError``. hostfxr's own error messages are captured and put into
 the ``LoaderError`` text.
+
+ABI additions come in two forms, both optional for older library builds: exports appended after the freeze
+(``OPTIONAL_EXPORTS`` below) and ``config_json`` keys appended after it (``CONFIG_ADDITIONS``). A library rejects
+unknown config keys, so the Python side only sends an appended key when the library's schema shows the feature
+(``Schema.supports_floor_step_cap``: the ``EndKind`` enum lists ``FloorStall``); the version string
+``sts2vec/<encoder_version>`` changes with every such addition because the schema does.
 """
 
 from __future__ import annotations
@@ -69,6 +75,10 @@ EXPORTS: dict[str, tuple[type, list[type]]] = {
 # Exports added after the scaffold froze the ABI. A library built before one of them still loads: its attribute is None,
 # ``Library.missing_exports`` names it, and the Python wrapper that needs it raises Sts2VecError ("rebuild the library").
 OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm", "sts2vec_clone_determinized"})
+
+# config_json keys appended after the freeze -> how the Python side detects that a library build accepts them.
+# floor_step_cap (int, default 80, 0 = off): truncate after that many non-combat decisions on one floor (FLOOR_STALL).
+CONFIG_ADDITIONS = {"floor_step_cap": "schema EndKind lists FloorStall (Schema.supports_floor_step_cap)"}
 
 # hostfxr / hostpolicy status codes worth naming (src/native/corehost/error_codes.h)
 HOSTFXR_CODES = {

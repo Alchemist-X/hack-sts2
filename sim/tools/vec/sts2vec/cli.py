@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .env import VecEnv, random_actions
+from .env import FLOOR_STEP_CAP, VecEnv, random_actions
 from .loader import load
 from .pool import ALL_CHARACTERS, PoolSpec
 from .schema import STATUS, SIGNAL_BUFFERS, Schema, status_counts
@@ -34,8 +34,8 @@ def _pool(args) -> PoolSpec:
 
 
 def _env(args, threads: int) -> VecEnv:
-    return VecEnv(args.envs, threads=threads, step_cap=args.step_cap, seed_text=args.seed_text, content=args.content,
-                  pool=_pool(args), dll=args.dll)
+    return VecEnv(args.envs, threads=threads, step_cap=args.step_cap, floor_step_cap=args.floor_step_cap,
+                  seed_text=args.seed_text, content=args.content, pool=_pool(args), dll=args.dll)
 
 
 def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int, pool: int) -> None:
@@ -48,6 +48,8 @@ def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int, pool: in
     p.add_argument("--seed-text", default="VEC", help="config.seed_text (per-slot start sequences)")
     p.add_argument("--content", default="ported_only", choices=["ported_only", "all"])
     p.add_argument("--step-cap", type=int, default=3000)
+    p.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
+                   help=f"non-combat decisions on one floor before truncation (FLOOR_STALL; default {FLOOR_STEP_CAP}; 0 = off)")
     p.add_argument("--seed", type=int, default=0, help="random policy seed")
 
 
@@ -284,8 +286,9 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--threads", type=int, default=8)
     e.add_argument("--seed", type=int, default=0, help="seed of the per-game policy RNGs (ctx.rngs)")
     e.add_argument("--step-cap", type=int, default=1200, help="protocol step cap (result 'capped'; default 1200)")
-    e.add_argument("--floor-step-cap", type=int, default=80,
-                   help="non-combat decisions on one floor before 'stuck' (protocol default 80; 0 = off)")
+    e.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
+                   help=f"non-combat decisions on one floor before 'stuck' (env floor_step_cap; protocol default "
+                        f"{FLOOR_STEP_CAP}; 0 = off)")
     e.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)

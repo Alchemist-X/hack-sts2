@@ -7,9 +7,9 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `fc2eb34c07bc8513`, 26,726
-bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; integration figures
-below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `0f57a3a225333e34`, 26,726
+bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
+appended `EndKind.FloorStall`; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
@@ -51,9 +51,26 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
   all from the sequence.
 - `step(actions)`: `a < 0` → `NOOP`; `a ∉ [0, cand_n)` (or no run / finished) → `ILLEGAL_ACTION`, slot unchanged;
   else `RunSim.StepFast(LegalActions()[a])` (`RunSim.Step` with `fast_path: false`; see "Fast path"). Terminal → `terminated`, reward 1 iff Victory; `step_index >= step_cap` →
-  `truncated`; NotImplemented/NotSupported → `CONTENT_GAP`, other exceptions → `SIM_ERROR` (episode ends with
-  `truncated = 1`, reward 0, run discarded, text in `sts2vec_last_error(h, slot)`). An encoder exception on a live
-  state ends the episode the same way. Then every slot's observation, candidates and signals are written.
+  `truncated`; floor stall (below) → `truncated` + `FLOOR_STALL`; NotImplemented/NotSupported → `CONTENT_GAP`, other
+  exceptions → `SIM_ERROR` (episode ends with `truncated = 1`, reward 0, run discarded, text in
+  `sts2vec_last_error(h, slot)`). An encoder exception on a live state ends the episode the same way. Then every
+  slot's observation, candidates and signals are written.
+- Floor stall cap (`config.floor_step_cap`, default 80 = `VecConfig.DefaultFloorStepCap` = Python
+  `sts2vec.FLOOR_STEP_CAP`; 0 = off): `VecSlot.FloorSteps` counts the decisions (`a >= 0` on a live slot, legal or
+  illegal; no-ops are not decisions) taken at non-combat points (`RunState.Combat.IsInProgress` false, the encoder's
+  `is_combat`) since `RunState.TotalFloor` last changed (`VecSlot.FloorSeen`, set at every start/restore and after
+  every applied action). After a step whose resulting state is a non-combat point with `FloorSteps >= cap`, the
+  episode ends: `truncated = 1`, reward 0, status `FLOOR_STALL` (256), `last_episode.end_kind` = FloorStall (5), run
+  kept (like `step_cap`), auto-reset as for `step_cap`. Precedence: terminal, `step_cap`, stall. This is exactly the
+  protocol evaluator's `stuck` rule moved to the step that produces the state it would refuse to decide on (the
+  evaluator used to count per observation in Python; `sts2vec eval` now passes its cap to the env and maps
+  `FLOOR_STALL` to `stuck`). An illegal index is the one change to the "slot unchanged" rule: the run and the
+  observation are unchanged, but the decision counts toward the cap (as it did in the evaluator), so a policy stuck on
+  illegal indices at a non-combat point is truncated too. Tests: `VecTests.Test_VecEnv_FloorStepCapTruncatesShopStall`
+  (shop BuyEntry(removal) → PromptCancel loop cut at exactly 80 and 7, auto-reset on/off, cap 0, illegal/no-op
+  counting), `Test_VecEnv_FloorStepCapIgnoresCombat`; Python `test_floor_cap.py` (the env against the evaluator rule
+  recomputed from observations over 64 games × 900 steps with a shop-stall policy: 248 stalls, every one at the same
+  step; the C# default through the raw ABI).
 - Auto-reset (default): a finished episode writes `last_episode`, then the slot restarts from its sequence in the same
   call (`RESET` bit, new `episode_id`, the new episode's first observation). A slot whose start failed retries the
   next sequence entry on the following step. With `auto_reset = false` the slot stays terminal (`cand_n = 0`).
@@ -243,8 +260,13 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 - `sts2vec_state_hash` writes 0 for a slot with no run; `sts2vec_snapshot` of an empty slot is an error.
 - `config_json`: `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC",
   "content": "ported_only" | "all", "pool": {"fresh": {"characters": [...], "ascension": 0, "count": 4096,
-  "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096, "fast_path": true}`; `num_envs` required, unknown keys
-  rejected. `fast_path` (default true): clone-free stepping behind the static prompt-site predicate (section "Fast path").
+  "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096, "fast_path": true, "floor_step_cap": 80}`; `num_envs`
+  required, unknown keys rejected. `fast_path` (default true): clone-free stepping behind the static prompt-site
+  predicate (section "Fast path"). `floor_step_cap` (appended, default 80, 0 = off, < 0 rejected): the floor stall cap
+  ("Environment model"). Appended config keys are the ABI's additive options: a library built before a key rejects it
+  as unknown, so the Python side sends `floor_step_cap` only when the schema's `EndKind` lists `FloorStall`
+  (`Schema.supports_floor_step_cap`; `loader.CONFIG_ADDITIONS`) and otherwise refuses a non-zero cap with a rebuild hint.
+  The version string `sts2vec/<encoder_version>` changed with it (`fc2eb34c07bc8513` → `0f57a3a225333e34`).
 
 ## Schema (§D3; published by `sts2vec_schema`)
 
@@ -290,8 +312,8 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 | 27 | `cand_n` | int32 | [] | candidates = min(len(LegalActions()), 192); 0 when terminal, finished or empty |
 | 28 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
 | 29 | `terminated` | uint8 | [] | episode ended at Victory/Defeat |
-| 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
-| 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128 |
+| 30 | `truncated` | uint8 | [] | step cap, floor stall cap, content gap or sim error |
+| 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128, FLOOR_STALL 256 |
 | 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
 | 33 | `aux` | float32 | [14] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms |
 | 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
@@ -612,8 +634,8 @@ Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full re
 | `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 16 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`, `sts2vec_clone_determinized`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
 | `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
 | `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `warm(max_entries=None)` → templates created, `len`). |
-| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
-| `cli.py` | `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
+| `env.py` | `VecEnv` (§D6; kwargs mirror `config_json`, incl. `floor_step_cap=FLOOR_STEP_CAP`): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
+| `cli.py` | every env subcommand takes `--floor-step-cap` (default 80; `eval` passes it to the env); `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
 
 ```python
 from sts2vec import VecEnv, PoolSpec, STATUS, random_actions

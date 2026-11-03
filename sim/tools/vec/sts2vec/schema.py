@@ -29,6 +29,7 @@ class Status(enum.IntFlag):
     TABLE_OVERFLOW = 32
     RESET = 64
     POOL_EMPTY = 128
+    FLOOR_STALL = 256  # appended: truncated by floor_step_cap (non-combat decisions on one floor)
 
 
 # name -> bit (kept as a plain dict for numpy-friendly use: ``status & STATUS["RESET"]``)
@@ -219,6 +220,11 @@ class Schema:
     def cols(self, buffer: str) -> Columns:
         """``H = schema.cols("hand"); obs["hand"][..., H.card_id]``."""
         return self[buffer].cols()
+
+    @property
+    def supports_floor_step_cap(self) -> bool:
+        """The library implements ``floor_step_cap`` (its ``EndKind`` enum lists ``FloorStall``; builds before it do not)."""
+        return "FloorStall" in self.vocab.enums.get("EndKind", ())
 
     @property
     def v_cards(self) -> int:

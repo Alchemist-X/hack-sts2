@@ -86,7 +86,7 @@ def test_vocab_reverse_maps(schema):
     assert k.index_of("PlayCard") == 0 and k.index_of("EndTurn") == 1 and k.name(1) == "EndTurn"
     with pytest.raises(KeyError):
         k.index_of("NotAKind")
-    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError"]
+    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError", "FloorStall"]
     assert "Prompt" in schema.vocab.enums["RunPhase"]
     assert len(schema.card_vars) == 133 and schema.card_vars[:2] == ["", "?"]
     assert schema.playable_reason_bits["None"] == 0
@@ -98,7 +98,7 @@ def test_vocab_reverse_maps(schema):
 
 def test_status_flags():
     assert STATUS == {s.name: int(s) for s in Status}
-    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128
+    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128 and STATUS["FLOOR_STALL"] == 256
     assert status_names(0) == ["OK"]
     assert status_names(Status.NOOP | Status.RESET) == ["NOOP", "RESET"]
     c = status_counts(np.array([0, 1, 65, 8], dtype=np.int32))

@@ -3,7 +3,11 @@
 Plays every game of a seed set with one policy: one pool entry and one env slot per game
 (``pool.add_fresh(character, seed, ascension, content)``), ``auto_reset=False``, every slot run to its end, all slots
 stepped together in one batched call. Standard limits (protocol §5): ``step_cap`` 1200 decisions (``capped``) and
-``floor_step_cap`` 80 non-combat decisions on one floor (``stuck``); the evaluator stops a ``stuck`` game itself.
+``floor_step_cap`` 80 non-combat decisions on one floor (``stuck``). Both are enforced by the env itself
+(``VecEnv(step_cap=..., floor_step_cap=...)``; the floor cap ends the game with status ``FLOOR_STALL``), so training
+envs and the evaluator share one implementation and one default (``sts2vec.FLOOR_STEP_CAP``). Every live game decides
+every step: a negative action from the policy for a live game is sent as an illegal index (counted in ``illegal`` and,
+at a non-combat point, toward the floor cap), so a no-op loop ends ``stuck`` like any other stall.
 
 Results per game: ``win`` / ``loss`` (terminal), ``capped`` (step cap), ``stuck`` (floor step cap), ``crashed``
 (SIM_ERROR / CONTENT_GAP), ``error`` (a live slot without candidates). Scoring is ``protocol.compute`` on the final
@@ -28,13 +32,16 @@ from typing import Callable
 import numpy as np
 
 from . import protocol as PG
-from .env import VecEnv
+from .env import FLOOR_STEP_CAP, VecEnv
 from .policies import PolicyContext, game_rng, resolve
 from .schema import STATUS
 
 STEP_CAP = 1200
-FLOOR_STEP_CAP = 80
 ERROR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
+# what a live game's negative (no-op) action is sent as: an index outside [0, cand_n), i.e. ILLEGAL_ACTION
+ILLEGAL_INDEX = 2**31 - 1
+
+__all__ = ["FLOOR_STEP_CAP", "STEP_CAP", "evaluate", "replay"]
 
 
 def repo_sha() -> str | None:
@@ -49,10 +56,10 @@ def repo_sha() -> str | None:
         return None
 
 
-def _make_env(ss: dict, threads: int, step_cap: int, dll=None) -> VecEnv:
+def _make_env(ss: dict, threads: int, step_cap: int, floor_step_cap: int, dll=None) -> VecEnv:
     n = len(ss["games"])
-    env = VecEnv(n, threads=threads, step_cap=step_cap, auto_reset=False, seed_text="EVAL", content=ss["content"],
-                 pool=None, dll=dll)
+    env = VecEnv(n, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap, auto_reset=False,
+                 seed_text="EVAL", content=ss["content"], pool=None, dll=dll)
     try:
         for g in ss["games"]:
             env.pool.add_fresh(g["character"], seed=g["seed"], ascension=ss["ascension"], content=ss["content"])
@@ -65,17 +72,19 @@ def _make_env(ss: dict, threads: int, step_cap: int, dll=None) -> VecEnv:
 def _end_result(term: int, reward: float, status: int) -> str:
     if term:
         return "win" if reward > 0 else "loss"
-    return "crashed" if status & ERROR_BITS else "capped"
+    if status & ERROR_BITS:
+        return "crashed"
+    return "stuck" if status & STATUS["FLOOR_STALL"] else "capped"
 
 
-def replay(ss: dict, actions_log: list[list[int]], *, step_cap: int = STEP_CAP, threads: int = 8,
-           dll=None) -> list[dict]:
-    """Re-play each game's recorded candidate indices on a fresh env.
+def replay(ss: dict, actions_log: list[list[int]], *, step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP,
+           threads: int = 8, dll=None) -> list[dict]:
+    """Re-play each game's recorded candidate indices on a fresh env (same limits as the evaluation).
 
     Returns per game ``{"ended", "result", "act", "floor", "state_hash"}`` where ``state_hash`` is taken right after
-    the game's last recorded action (or after its terminal step)."""
+    the game's last recorded action (or after its terminal / truncating step)."""
     n = len(ss["games"])
-    env = _make_env(ss, threads, step_cap, dll)
+    env = _make_env(ss, threads, step_cap, floor_step_cap, dll)
     try:
         obs = env.reset(start_ids=np.arange(n, dtype=np.int32))
         le = env.schema.cols("last_episode")
@@ -123,7 +132,7 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
     out = Path(out_dir)
     (out / "games").mkdir(parents=True, exist_ok=True)
     t_start = time.monotonic()
-    env = _make_env(ss, threads, step_cap, dll)
+    env = _make_env(ss, threads, step_cap, floor_step_cap, dll)
     schema = env.schema
     try:
         obs = env.reset(start_ids=np.arange(n, dtype=np.int32))
@@ -139,8 +148,6 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
         steps = np.zeros(n, dtype=np.int64)
         turns = np.zeros(n, dtype=np.int64)
         illegal = np.zeros(n, dtype=np.int64)
-        floor_seen = np.full(n, -1, dtype=np.int64)
-        noncombat = np.zeros(n, dtype=np.int64)
         actions_log: list[list[int]] = [[] for _ in range(n)]
         t_games = np.zeros(n)
         end_hash = np.zeros(n, dtype=np.uint64)
@@ -157,24 +164,14 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
         while not done.all():
             gi, aux = obs["global_i"], obs["aux"]
             floor = gi[:, G.total_floor].astype(np.int64)
-            combat = gi[:, G.is_combat] != 0
             for i in np.flatnonzero(~done):          # per-act bookkeeping for the progress metric
                 act = int(aux[i, AX.act_index]) + 1
                 starts[i].setdefault(act, int(aux[i, AX.total_floor]) - int(aux[i, AX.act_floor]))
                 if int(aux[i, AX.act_rooms]) > 0:
                     rooms[i][act] = int(aux[i, AX.act_rooms])
-            newf = floor != floor_seen
-            floor_seen[newf] = floor[newf]
-            noncombat[newf] = 0
-            if floor_step_cap > 0:                  # protocol §5: the (cap + 1)-th non-combat decision on one floor
-                for i in np.flatnonzero((~done) & (~combat) & (noncombat >= floor_step_cap)):
-                    finish(int(i), "stuck", int(aux[i, AX.act_index]), int(floor[i]),
-                           stuck={"phase": phase_names.name(int(gi[i, G.decision_kind])), "floor": int(floor[i])},
-                           final_hp=int(gi[i, G.hp]), max_hp=int(gi[i, G.max_hp]))
             for i in np.flatnonzero((~done) & (obs["cand_n"] <= 0)):
                 finish(int(i), "error", int(aux[i, AX.act_index]), int(floor[i]),
                        error="non-terminal slot with cand_n = 0")
-            noncombat[(~combat) & (~done)] += 1
             if done.all():
                 break
             live = ~done
@@ -183,6 +180,7 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
             if a.shape != (n,):
                 raise ValueError(f"policy {policy_name} returned shape {a.shape}, expected ({n},)")
             a = a.astype(np.int32, copy=True)
+            a[live & (a < 0)] = ILLEGAL_INDEX      # a live game must decide: a no-op is an illegal decision
             a[~live] = -1
             cand = obs["cand"]
             cn = obs["cand_n"]
@@ -203,6 +201,9 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
                     extra["error"] = env.last_error(int(i))[:2000]
                 if res == "capped":
                     extra["cap_reason"] = "steps"
+                if res == "stuck":                  # auto_reset=False: obs still shows the final state
+                    extra["stuck"] = {"phase": phase_names.name(int(obs["global_i"][i, G.decision_kind])),
+                                      "floor": int(le[LE.floor])}
                 if res == "loss":
                     enc = int(le[LE.last_encounter_id])
                     extra["death"] = {"floor": int(le[LE.floor]), "act": int(le[LE.act]) + 1, "room_type": None,
@@ -213,11 +214,11 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
     finally:
         env.close()
 
-    rep = replay(ss, actions_log, step_cap=step_cap, threads=threads, dll=dll)
+    rep = replay(ss, actions_log, step_cap=step_cap, floor_step_cap=floor_step_cap, threads=threads, dll=dll)
     replay_ok = []
     for i in range(n):
         r, p = result[i] or {}, rep[i]
-        ended_expected = r.get("result") not in ("stuck", "error")
+        ended_expected = r.get("result") != "error"
         replay_ok.append(p["ended"] == ended_expected and (p["result"] == r.get("result") or not ended_expected)
                          and p["act"] == r.get("act") and p["floor"] == r.get("floor")
                          and p["state_hash"] == int(end_hash[i]))
