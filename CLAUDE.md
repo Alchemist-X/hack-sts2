@@ -25,15 +25,26 @@ same UI code paths as a human, so its actions can be indistinguishable in the
 
 ## Snapshot throttle (perf)
 
-`mods/Sts2Recorder.conf` sets `snapshot_min_interval_ms: 800` (default is 150).
-Raised to reduce main-thread snapshot cost during combat. Only throttles the
-intra-combat `StateTracker.CombatStateChanged` snapshots; per-action, per-turn,
-combat/room-boundary snapshots and the whole events stream are unthrottled, so
-no decision-relevant data is lost. `install_mod.sh` does not overwrite this
-conf — recreate it after a fresh mods-dir wipe.
+Recorder 0.3.1 (commit fa86de0, 2026-11-02) carries the main-thread lag fix:
+lazy popup probe, streaming hash + dedup-before-serialize, burst coalescing of
+phase/action snapshots (`burst_min_interval_ms`, default 100), async heartbeat
+flush off the main thread, `sp_checksum_enabled` (default off), and a
+`recorder_config` event per part recording the effective settings. Snapshot
+building itself still runs on the main thread; `snapshot_build_ms` now covers
+build + hash + serialize, so it is not directly comparable with <=0.3.0 parts
+(0.3.0 baseline, build only: avg 7.9 ms / max 31 ms).
 
-TODO (proper fix): move snapshot building off the main thread so intra-combat
-snapshots don't hitch even at 150 ms, then drop the throttle back down.
+`mods/Sts2Recorder.conf` still sets `snapshot_min_interval_ms: 800` (default
+150). It only throttles the intra-combat `StateTracker.CombatStateChanged` poll
+snapshots; per-action, per-turn, combat/room-boundary snapshots and the whole
+events stream are unthrottled (coalesced inside the burst window), so no
+decision-relevant data is lost. `install_mod.sh` does not overwrite this conf
+— recreate it after a fresh mods-dir wipe.
+
+TODO: after a real 0.3.1 session, compare its manifest `perf` block with the
+0.3.0 baseline; if build cost is well under a frame, step the throttle back
+toward 150. Lesson: the first version of this fix sat uncommitted in a worktree
+for four months — commit perf work on the branch as soon as the gates pass.
 
 ## Backlog: explicit `legal_actions` in the canonical trajectory
 
