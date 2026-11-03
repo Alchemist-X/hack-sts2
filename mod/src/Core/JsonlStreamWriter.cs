@@ -107,6 +107,19 @@ internal sealed class JsonlStreamWriter : IDisposable
     }
 
     /// <summary>
+    /// Line and byte counters read under ONE mutex acquisition, so a caller that
+    /// needs a consistent (lines, bytes) pair — e.g. a manifest rewrite — cannot
+    /// observe a line's count without its bytes or vice versa.
+    /// </summary>
+    public (long Lines, long Bytes) Counts()
+    {
+        lock (_mutex)
+        {
+            return (_lineCount, _bytesWritten);
+        }
+    }
+
+    /// <summary>
     /// Enqueues one already-materialized line buffer (line + trailing newline) for
     /// the writer thread. Returns immediately after enqueue; the counters are
     /// updated synchronously so a manifest rewrite that follows a drain sees exact
@@ -144,9 +157,10 @@ internal sealed class JsonlStreamWriter : IDisposable
     }
 
     /// <summary>
-    /// Blocks until every enqueued line has been written, then fsyncs. Called on
-    /// SaveManager.Saved heartbeats and before every manifest rewrite, this bounds
-    /// the crash-loss window to the lines enqueued since the last Flush.
+    /// Blocks until every enqueued line has been written, then fsyncs. Used by the
+    /// synchronous paths (Dispose-time manifest, tests); the recurring heartbeat
+    /// flush goes through <see cref="FlushUpTo"/> on the session's background
+    /// flusher instead.
     /// </summary>
     public void Flush()
     {
@@ -158,13 +172,65 @@ internal sealed class JsonlStreamWriter : IDisposable
             }
             DrainLocked();
         }
-        // fsync outside _mutex (so enqueues aren't blocked by disk latency) but
-        // under _ioLock: after DrainLocked the writer thread is idle (queue empty)
-        // and, because callers hold the session lock across Flush, no new line can
-        // be enqueued meanwhile — the fsync cannot race a Write.
+        FsyncQuietly();
+    }
+
+    /// <summary>
+    /// Blocks until the first <paramref name="lineCountTarget"/> accepted lines
+    /// have physically reached the stream, then fsyncs. Unlike <see cref="Flush"/>
+    /// this waits on a CAPTURED count, so a background flusher is not chasing a
+    /// moving target while the game thread keeps enqueueing — and the caller can
+    /// safely write a manifest claiming exactly those lines. Targets beyond the
+    /// accepted count clamp; a disposed writer is a no-op returning true (the
+    /// terminal paths have already drained and fsynced).
+    /// Returns false when the target could not be physically written even via the
+    /// synchronous fault fallback (disk genuinely failing) — the caller must then
+    /// NOT publish a manifest claiming these lines, or it would overcount disk.
+    /// </summary>
+    public bool FlushUpTo(long lineCountTarget)
+    {
+        lock (_mutex)
+        {
+            if (_disposed)
+            {
+                return true;
+            }
+            var target = Math.Min(lineCountTarget, _lineCount);
+            while (_writtenThrough < target && _fault is null)
+            {
+                Monitor.Wait(_mutex);
+            }
+            if (_writtenThrough < target)
+            {
+                DrainFaultedLocked();
+            }
+            if (_writtenThrough < target)
+            {
+                return false;
+            }
+        }
+        FsyncQuietly();
+        return true;
+    }
+
+    /// <summary>
+    /// fsync outside _mutex (so enqueues aren't blocked by disk latency) but under
+    /// _ioLock, which serializes it against writer-thread Writes and the Dispose
+    /// close. Dispose can win the race to _ioLock and close the stream first; that
+    /// is fine — Dispose's own drain+fsync already covered every line this flush
+    /// was waiting for, so the ObjectDisposedException is swallowed, not reported.
+    /// </summary>
+    private void FsyncQuietly()
+    {
         lock (_ioLock)
         {
-            _stream.Flush(flushToDisk: true);
+            try
+            {
+                _stream.Flush(flushToDisk: true);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
         }
     }
 

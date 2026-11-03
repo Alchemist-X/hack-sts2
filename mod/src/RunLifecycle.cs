@@ -110,6 +110,22 @@ public static class RunLifecycle
             EventTap.OnRunStarted(session);
             HumanFunnels.OnRunStarted(session);
             SubscribeSavedHeartbeat(session);
+
+            // Provenance marker: with sp_checksum_enabled off, a session with no
+            // "checksum" events must be distinguishable from a silently broken
+            // checksum hook; the effective config makes the intent auditable.
+            // checksum_tracker_enabled is the tracker's effective gate after the
+            // game's per-run init and EventTap (null when unreadable): false means
+            // no "checksum" events are expected in this part.
+            session.RecordEvent("recorder_config", new JsonObject
+            {
+                ["snapshot_min_interval_ms"] = RecorderMod.SnapshotMinIntervalMs,
+                ["burst_min_interval_ms"] = RecorderMod.BurstMinIntervalMs,
+                ["sp_checksum_enabled"] = RecorderMod.SpChecksumEnabled,
+                ["checksum_tracker_enabled"] =
+                    JsonDescribe.Try<bool?>(() => RunManager.Instance.ChecksumTracker.IsEnabled),
+            });
+
             RecordRunStartAnchors(session, state, meta.StartTime);
 
             Snapshots.TakeSnapshot("phase");
@@ -282,7 +298,9 @@ public static class RunLifecycle
 
     /// <summary>
     /// Fires after RunSaveManager wrote current_run.save (RunSaveManager.cs:186):
-    /// archive a copy (R1), then the crash-resilience flush.
+    /// archive a copy (R1), then the crash-resilience flush. Order matters: the
+    /// capture enqueues its run_saved event first, so the flush cut taken
+    /// afterwards covers it.
     /// </summary>
     private static void OnSaved()
     {
@@ -301,7 +319,11 @@ public static class RunLifecycle
         }
         try
         {
-            RecorderMod.Session?.Flush();
+            // Async: the heartbeat fires on the game thread at every map-point
+            // entry / post-combat save; the drain+fsync+manifest work runs on the
+            // session's background flusher, never blocking a frame here. The
+            // native copy above has its own writer thread.
+            RecorderMod.Session?.RequestFlush();
         }
         catch (Exception ex)
         {
@@ -323,6 +345,11 @@ public static class RunLifecycle
             return;
         }
         _terminalLatched = true;
+        // The forced terminal snapshot below captures the final state; cancel
+        // any pending trailing snapshot so its orphaned pump callback cannot
+        // fire a post-Complete build (which would only log a dropped-record
+        // notice).
+        Snapshots.CancelPendingSnapshots();
         Snapshots.TakeSnapshot("phase");
         session.RecordEvent("run_ended", new JsonObject
         {
@@ -344,6 +371,11 @@ public static class RunLifecycle
     /// </summary>
     private static TrajectorySession? DetachSession(out RunState? runState)
     {
+        // Save-and-quit reaches here WITHOUT a terminal: a trailing snapshot
+        // still pending in a coalescing window must be captured while the
+        // session is still attached, or the burst's final state is lost from
+        // this part.
+        Snapshots.FlushPendingSnapshot();
         var session = RecorderMod.Session;
         runState = RecorderMod.CurrentRunState;
         RecorderMod.Session = null;

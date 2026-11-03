@@ -3,6 +3,30 @@ using Xunit;
 
 namespace Sts2Recorder.Core.Tests;
 
+/// <summary>
+/// Teardown contract: cancelling a pending trailing snapshot clears the flag,
+/// reports whether one was pending, and stops the pump re-defer chain
+/// (TryReleaseTrailing stays false afterwards).
+/// </summary>
+public sealed class SnapshotThrottleCancelTests
+{
+    [Fact]
+    public void CancelTrailing_ClearsPendingAndReportsIt()
+    {
+        var clock = new FakeClock(1000, step: 0);
+        var throttle = new SnapshotThrottle(clock, minIntervalMs: 1000);
+        throttle.NoteSnapshotTaken();
+        Assert.Equal(SnapshotRequestOutcome.Deferred, throttle.Request());
+        Assert.True(throttle.TrailingPending);
+
+        Assert.True(throttle.CancelTrailing());
+
+        Assert.False(throttle.TrailingPending);
+        Assert.False(throttle.CancelTrailing());
+        Assert.False(throttle.TryReleaseTrailing());
+    }
+}
+
 /// <summary>Manually stepped clock (no auto-advance) for throttle timing tests.</summary>
 public sealed class ManualClock : IClock
 {

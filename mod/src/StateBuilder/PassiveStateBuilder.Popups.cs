@@ -39,7 +39,14 @@ public static partial class PassiveStateBuilder
 
     private static Dictionary<string, object?>? BuildVisibleFtueState(Node root)
     {
-        var tutorialFtue = FindVisibleAcceptTutorialsFtue(root);
+        // One preorder walk from root feeds every list-based probe below; each
+        // probe used to run its own full-tree FindAll walk (up to five per
+        // snapshot). The walk is lazy so the open-modal fast paths keep costing
+        // zero full-tree walks, as they did pre-refactor.
+        PopupProbeScan? rootScan = null;
+        PopupProbeScan EnsureRootScan() => rootScan ??= ScanPopupProbeTargets(root);
+
+        var tutorialFtue = FindVisibleAcceptTutorialsFtue(EnsureRootScan);
         if (tutorialFtue != null && IsFtueNodeActive(tutorialFtue))
         {
             return new Dictionary<string, object?>
@@ -49,7 +56,7 @@ public static partial class PassiveStateBuilder
             };
         }
 
-        var ftue = FindVisibleGenericFtue(root);
+        var ftue = FindVisibleGenericFtue(EnsureRootScan);
         if (ftue != null)
         {
             var canAdvance = FindFtueAdvanceButton(ftue) != null;
@@ -61,19 +68,19 @@ public static partial class PassiveStateBuilder
             };
         }
 
-        var popup = BuildVisiblePopupState(root);
+        var popup = BuildVisiblePopupState(EnsureRootScan);
         if (popup != null)
             return popup;
 
         return null;
     }
 
-    private static Dictionary<string, object?>? BuildVisiblePopupState(Node root)
+    private static Dictionary<string, object?>? BuildVisiblePopupState(Func<PopupProbeScan> ensureRootScan)
     {
-        var popup = FindVisibleVerticalPopup(root);
+        var popup = FindVisibleVerticalPopup(ensureRootScan);
         var options = popup != null
             ? GetPopupOptions(popup)
-            : GetVisiblePopupButtonOptions(root);
+            : GetVisiblePopupButtonOptions(ensureRootScan);
 
         var stateOptions = new List<Dictionary<string, object?>>();
         foreach (var option in options)
@@ -97,7 +104,7 @@ public static partial class PassiveStateBuilder
         };
     }
 
-    private static MegaCrit.Sts2.Core.Nodes.Ftue.NAcceptTutorialsFtue? FindVisibleAcceptTutorialsFtue(Node root)
+    private static MegaCrit.Sts2.Core.Nodes.Ftue.NAcceptTutorialsFtue? FindVisibleAcceptTutorialsFtue(Func<PopupProbeScan> ensureRootScan)
     {
         var openModal = GetOpenModalNode();
         if (openModal is MegaCrit.Sts2.Core.Nodes.Ftue.NAcceptTutorialsFtue openFtue &&
@@ -106,7 +113,7 @@ public static partial class PassiveStateBuilder
             return openFtue;
         }
 
-        foreach (var ftue in FindAll<MegaCrit.Sts2.Core.Nodes.Ftue.NAcceptTutorialsFtue>(root))
+        foreach (var ftue in ensureRootScan().AcceptTutorialFtues)
         {
             if (IsFtueNodeActive(ftue) || ReferenceEquals(openModal, ftue))
                 return ftue;
@@ -114,7 +121,7 @@ public static partial class PassiveStateBuilder
         return null;
     }
 
-    private static NVerticalPopup? FindVisibleVerticalPopup(Node root)
+    private static NVerticalPopup? FindVisibleVerticalPopup(Func<PopupProbeScan> ensureRootScan)
     {
         var openModal = GetOpenModalNode();
         if (openModal is NVerticalPopup openPopup && GetPopupOptions(openPopup).Count > 0)
@@ -122,20 +129,22 @@ public static partial class PassiveStateBuilder
 
         if (openModal != null)
         {
-            foreach (var popup in FindAll<NVerticalPopup>(openModal))
+            // Direct mini-scan of the modal subtree, not a filtered root scan:
+            // the open modal can be momentarily detached from the scene tree
+            // during open/close transitions and must still be probed.
+            foreach (var popup in ScanPopupProbeTargets(openModal).VerticalPopups)
             {
                 if (GetPopupOptions(popup).Count > 0)
                     return popup;
             }
         }
 
-        foreach (var popup in FindAll<NVerticalPopup>(root))
+        // No modal-descendant check here: the modal-subtree pass above already
+        // returned any such popup with options, so only visibility can qualify.
+        foreach (var popup in ensureRootScan().VerticalPopups)
         {
-            if ((IsNodeVisible(popup) || (openModal != null && IsDescendantOf(popup, openModal))) &&
-                GetPopupOptions(popup).Count > 0)
-            {
+            if (IsNodeVisible(popup) && GetPopupOptions(popup).Count > 0)
                 return popup;
-            }
         }
         return null;
     }
@@ -148,23 +157,26 @@ public static partial class PassiveStateBuilder
         return options;
     }
 
-    private static List<(string Name, NClickableControl Button)> GetVisiblePopupButtonOptions(Node root)
+    private static List<(string Name, NClickableControl Button)> GetVisiblePopupButtonOptions(Func<PopupProbeScan> ensureRootScan)
     {
         var options = new List<(string Name, NClickableControl Button)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var openModal = GetOpenModalNode();
         if (openModal != null)
         {
+            // NClickableControl stays a subtree walk on purpose: collecting it
+            // tree-wide in the scan would gather a huge list on every snapshot.
             foreach (var button in FindAll<NClickableControl>(openModal))
                 AddVisiblePopupButtonOption(options, seen, button, null, openModal);
         }
 
-        foreach (var button in FindAll<NPopupYesNoButton>(root))
+        var scan = ensureRootScan();
+        foreach (var button in scan.YesNoButtons)
         {
             AddVisiblePopupButtonOption(options, seen, button, button.IsYes ? "yes" : "no", null);
         }
 
-        foreach (var modal in FindAll<NModalContainer>(root))
+        foreach (var modal in scan.ModalContainers)
         {
             if (!IsNodeVisible(modal))
                 continue;
@@ -312,45 +324,25 @@ public static partial class PassiveStateBuilder
         return normalized.Length == 0 ? null : normalized;
     }
 
-    private static Node? FindVisibleGenericFtue(Node start)
+    private static Node? FindVisibleGenericFtue(Func<PopupProbeScan> ensureRootScan)
     {
-        if (ReferenceEquals(start, (Godot.Engine.GetMainLoop() as SceneTree)?.Root))
+        var openModal = GetOpenModalNode();
+        if (openModal != null)
         {
-            var openModal = GetOpenModalNode();
-            if (openModal != null)
+            // Direct mini-scan of the modal subtree, not a filtered root scan:
+            // the open modal can be momentarily detached from the scene tree
+            // during open/close transitions and must still be probed first.
+            foreach (var candidate in ScanPopupProbeTargets(openModal).GenericFtueCandidates)
             {
-                var openFtue = FindVisibleGenericFtue(openModal);
-                if (openFtue != null)
-                    return openFtue;
+                if (IsFtueNodeActive(candidate))
+                    return candidate;
             }
         }
 
-        if (!IsLiveNode(start))
-            return null;
-
-        var typeName = start.GetType().FullName ?? "";
-        if (typeName.StartsWith("MegaCrit.Sts2.Core.Nodes.Ftue.", StringComparison.Ordinal) &&
-            !typeName.EndsWith(".NAcceptTutorialsFtue", StringComparison.Ordinal) &&
-            IsFtueNodeActive(start))
+        foreach (var candidate in ensureRootScan().GenericFtueCandidates)
         {
-            return start;
-        }
-
-        Godot.Collections.Array<Node> children;
-        try
-        {
-            children = start.GetChildren();
-        }
-        catch (ObjectDisposedException)
-        {
-            return null;
-        }
-
-        foreach (var child in children)
-        {
-            var val = FindVisibleGenericFtue(child);
-            if (val != null)
-                return val;
+            if (IsFtueNodeActive(candidate))
+                return candidate;
         }
 
         return null;
