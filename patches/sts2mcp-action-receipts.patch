@@ -1,0 +1,139 @@
+--- a/McpMod.cs
++++ b/McpMod.cs
+@@ -359,7 +359,7 @@
+             {
+                 var option = parsed.TryGetValue("option", out var optElem) ? optElem.GetString() ?? "" : "";
+                 var seed = parsed.TryGetValue("seed", out var seedElem) ? seedElem.GetString() : null;
+-                var resultTask = RunOnMainThread(() => ExecuteMenuSelect(option, seed));
++                var resultTask = RunOnMainThread(() => RunTrackedAction(action, parsed, () => ExecuteMenuSelect(option, seed)));
+                 var result = resultTask.GetAwaiter().GetResult();
+                 SendJson(response, result);
+             }
+@@ -470,7 +470,7 @@
+ 
+         try
+         {
+-            var resultTask = RunOnMainThread(() => ExecuteAction(action, parsed));
++            var resultTask = RunOnMainThread(() => RunTrackedAction(action, parsed, () => ExecuteAction(action, parsed)));
+             var result = resultTask.GetAwaiter().GetResult();
+             SendJson(response, result);
+         }
+--- a/McpMod.StateBuilder.cs
++++ b/McpMod.StateBuilder.cs
+@@ -58,7 +58,7 @@
+ 
+ public static partial class McpMod
+ {
+-    private static Dictionary<string, object?> BuildGameState()
++    private static Dictionary<string, object?> BuildGameStateCore()
+     {
+         var result = new Dictionary<string, object?> { ["rules_context"] = BuildRulesContext() };
+         var tree = (Godot.Engine.GetMainLoop()) as SceneTree;
+--- /dev/null
++++ b/McpMod.ActionReceipts.cs
+@@ -0,0 +1,105 @@
++using System;
++using System.Collections.Generic;
++using System.Text.Json;
++using MegaCrit.Sts2.Core.Combat;
++using MegaCrit.Sts2.Core.Context;
++using MegaCrit.Sts2.Core.Entities.Actions;
++using MegaCrit.Sts2.Core.GameActions;
++using MegaCrit.Sts2.Core.Nodes.Combat;
++using MegaCrit.Sts2.Core.Nodes.Rooms;
++using MegaCrit.Sts2.Core.Runs;
++
++namespace STS2_MCP;
++
++public static partial class McpMod
++{
++    private static string? _lastRequestId;
++    private static string? _lastRequestAction;
++    private static GameAction? _lastSubmittedAction;
++    private static int? _submittedPlayerTurn;
++    private static readonly Dictionary<string, (string body, Dictionary<string, object?> result)> ActionReceipts = new();
++    private static readonly Queue<string> ActionReceiptOrder = new();
++
++    // Invoked on the main thread. Duplicate transport IDs cannot click twice.
++    private static Dictionary<string, object?> RunTrackedAction(string action, Dictionary<string, JsonElement> data, Func<Dictionary<string, object?>> execute)
++    {
++        string id = data.TryGetValue("request_id", out var value) ? value.GetString() ?? "" : Guid.NewGuid().ToString("N");
++        if (id.Length == 0 || id.Length > 100) return Error("Invalid request_id");
++        string body = JsonSerializer.Serialize(data);
++        if (ActionReceipts.TryGetValue(id, out var previous))
++            return previous.body == body ? previous.result : Error("request_id reused with different action");
++        var uncertain = Error("Prior request outcome unresolved; observe before acting");
++        ActionReceipts[id] = (body, uncertain);
++        ActionReceiptOrder.Enqueue(id);
++        while (ActionReceiptOrder.Count > 256) ActionReceipts.Remove(ActionReceiptOrder.Dequeue());
++        _lastRequestId = id;
++        _lastRequestAction = action;
++        _lastSubmittedAction = null;
++        var currentRun = RunManager.Instance.DebugOnlyGetState();
++        _submittedPlayerTurn = currentRun == null ? null : LocalContext.GetMe(currentRun)?.PlayerCombatState?.TurnNumber;
++        var queues = RunManager.Instance.ActionQueueSet;
++        void Track(GameAction candidate)
++        {
++            if (_lastSubmittedAction == null &&
++                ((action == "play_card" && candidate is PlayCardAction) ||
++                 (action == "end_turn" && candidate is EndPlayerTurnAction)))
++                _lastSubmittedAction = candidate;
++        }
++        if (queues != null) queues.ActionEnqueued += Track;
++        try
++        {
++            var result = execute();
++            result["request_id"] = id;
++            result["receipt_schema"] = 1;
++            ActionReceipts[id] = (body, result);
++            return result;
++        }
++        finally { if (queues != null) queues.ActionEnqueued -= Track; }
++    }
++
++    private static Dictionary<string, object?> BuildGameState()
++    {
++        var state = BuildGameStateCore();
++        var execution = new Dictionary<string, object?>
++        {
++            ["schema_version"] = 1, ["request_id"] = _lastRequestId,
++            ["action"] = _lastRequestAction, ["ready_for_next_action"] = false,
++            ["game_action_id"] = _lastSubmittedAction?.Id,
++            ["game_action_state"] = _lastSubmittedAction?.State.ToString(),
++            ["scope"] = "public action completion; no RNG or future state"
++        };
++        var run = RunManager.Instance.DebugOnlyGetState();
++        var player = run == null ? null : LocalContext.GetMe(run);
++        var pc = player?.PlayerCombatState;
++        if (pc != null && state.TryGetValue("battle", out var battleObject) && battleObject is Dictionary<string, object?> battle)
++            battle["player_turn"] = pc.TurnNumber;
++        if (player != null && pc != null && CombatManager.Instance.IsInProgress)
++        {
++            var manager = CombatManager.Instance;
++            var executor = RunManager.Instance.ActionExecutor;
++            var queues = RunManager.Instance.ActionQueueSet;
++            var hand = NCombatRoom.Instance?.Ui?.Hand;
++            bool queueIdle = queues != null && queues.IsEmpty && executor != null &&
++                !executor.IsRunning && executor.CurrentlyRunningAction == null;
++            bool playable = pc.Phase == PlayerTurnPhase.Play && !manager.PlayerActionsDisabled &&
++                !manager.EndingPlayerTurnPhaseOne && !manager.EndingPlayerTurnPhaseTwo &&
++                !manager.IsExecutingCardOrPotionEffect(player) && hand != null &&
++                !hand.InCardPlay && hand.CurrentMode == NPlayerHand.Mode.Play;
++            execution["queue_idle"] = queueIdle;
++            execution["player_turn"] = pc.TurnNumber;
++            execution["player_phase"] = pc.Phase.ToString();
++            // MCP calls PlayerCmd.EndTurn directly; it does not enqueue EndPlayerTurnAction.
++            // A later personal turn (including Pael's Eye) is the completion witness.
++            bool turnAdvanced = _lastRequestAction == "end_turn" && _submittedPlayerTurn.HasValue &&
++                pc.TurnNumber > _submittedPlayerTurn.Value;
++            bool cardFinished = _lastRequestAction == "play_card" &&
++                _lastSubmittedAction?.State == GameActionState.Finished;
++            execution["completion_kind"] = _lastRequestAction == "end_turn" ? "player_turn_advanced" : "game_action_finished";
++            execution["submitted_player_turn"] = _submittedPlayerTurn;
++            execution["completion_confirmed"] = turnAdvanced || cardFinished;
++            execution["ready_for_next_action"] = queueIdle && playable && (turnAdvanced || cardFinished);
++        }
++        state["execution"] = execution;
++        return state;
++    }
++}

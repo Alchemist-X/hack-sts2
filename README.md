@@ -40,7 +40,12 @@ game process remains the state-transition engine.
   shared official-engine runtime plus lightweight per-worker homes, ports, logs,
   saves, and trajectory directories. Workers normally run with Godot `--headless`
   and `--force-steam=off`; `--visible` shows one isolated worker without changing
-  its HOME, save tree, port, or recording directory.
+  its HOME, save tree, port, or recording directory. By default worker profiles
+  copy the human settings and seed unlocks from the human profile (the E3
+  coverage farm relies on this); `STS2_HEADLESS_FRESH_PROFILE=1` provisions
+  fresh profiles that never read the human save tree (benchmark pools, whose
+  save tree is replaced by a frozen baseline anyway). The worker MCP is built from `config/sts2mcp.lock.json` (upstream commit, ordered
+  patches, pinned game build) by `scripts/build_selection_mcp.sh`.
 
 State serialization is adapted from [STS2MCP](https://github.com/Gennadiyev/STS2MCP)
 (MIT). The human recorder keeps its action-injection and HTTP surface removed; the

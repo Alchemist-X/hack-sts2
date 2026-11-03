@@ -47,16 +47,34 @@ the human-dir MCP irrelevant to them; turning `mcp_mod.sh off` does not affect a
 
 ### MCP build fix for v0.111.0 (scripts/build_selection_mcp.sh)
 
-`headless_provision.sh` failed: the pinned STS2MCP `55e0648` + selection/rule-evidence patches do
-not compile against v0.111.0 (5 errors: `Hook.ModifyDamage` gained a `CardPlay?` parameter,
-`StartRunLobby.MaxPlayers` → field `_maxPlayers`, `LoadRunLobby.ConnectedPlayerIds` → `PlayerIds`).
-The same three substitutions were already used for the 2026-10-27 macOS training build
-(`training/adapt_mcp.py`, main checkout). `build_selection_mcp.sh` now applies them only when the
-installed `release_info.json` version is `v0.111.*` (v0.107.x builds unchanged). Result: 0 warnings,
-0 errors; sandbox `STS2_MCP.dll` sha256 `2247b47b…6280`. The build also needs
-`STS2_MCP_SOURCE_REPO=/Users/Aincrad/dev-proj/STS2MCP` from a worktree (the default resolves to
-`.claude/worktrees/STS2MCP`) and `artifacts/mcp/<pinned commit>/` copied from the main checkout to
-skip the upstream rebuild.
+At the time of this step `headless_provision.sh` failed: the pinned STS2MCP `55e0648` +
+selection/rule-evidence patches do not compile against v0.111.0 (5 errors: `Hook.ModifyDamage`
+gained a `CardPlay?` parameter, `StartRunLobby.MaxPlayers` → field `_maxPlayers`,
+`LoadRunLobby.ConnectedPlayerIds` → `PlayerIds`). E3 patched `build_selection_mcp.sh` with a
+version-gated inline substitution (the same three edits as `training/adapt_mcp.py`); that build
+produced sandbox `STS2_MCP.dll` sha256 `2247b47b…6280` and is the DLL the verification run below
+and the farm used. It needed `STS2_MCP_SOURCE_REPO=/Users/Aincrad/dev-proj/STS2MCP` from a
+worktree and `artifacts/mcp/<pinned commit>/` copied from the main checkout.
+
+**Superseded (2026-11-02, merged from the a10 branch `f713da2`).** The inline substitution is gone;
+`build_selection_mcp.sh` is now lock-driven (`config/sts2mcp.lock.json` schema 2, shared helpers in
+`scripts/mcp_build_env.sh`):
+
+- it applies the lock's ordered, sha256-pinned patch list — selection-state, rule-evidence,
+  action-receipts, seeded-standard-embark, eval-api, `sts2mcp-v0111-compat.patch` (the three
+  substitutions above plus the Eval-API drift: `Rngs` counters, `IncrementNumReloads(NetGameType)`);
+- it refuses any game build other than the pinned one (`release_info.json` version + `sts2.dll`
+  sha256 per assembly dir; `STS2_MCP_ALLOW_UNPINNED_GAME=1` for migration work only) and checks the
+  .NET SDK version;
+- the build is reproducible (SourceLink off, PathMap) and the DLL sha256 is checked against
+  `sandbox_build.dll_sha256` (macOS arm64 `83fc6828…ff18`; rebuilt from this tree on 2026-11-02
+  and matched);
+- the STS2MCP clone is found beside the *main* checkout via `.git` → `commondir`, so a worktree no
+  longer needs `STS2_MCP_SOURCE_REPO`; `headless_provision.sh` no longer builds or needs the
+  unpatched upstream artifact.
+
+The resulting worker MCP also carries the eval API and seeded standard embark, which the
+`55e0648`+2-patch build used below did not have.
 
 ## 4. Anchor verification run (one headless worker)
 

@@ -72,7 +72,7 @@
 | `sim/specs/` | 规格索引、集成日志 `integration.md`、差分报告 |
 | `sts2rec/` | 录像工具（uv）：`validate`、`export-bundles-v2`（绑定存档锚点、R4 奖励、R5 选项键）、`export-run-oracles`、存档读取 |
 | `mod/` | Sts2Recorder 被动录像 mod（REC 版，带存档锚点） |
-| `scripts/` | `sim_server.sh`、`gates.sh`、`ci_linux.sh`、`linux_validate.sh`、`sts2_cluster.sh`、`cluster_capacity.sh`、`version_delta.py`、`version_stubs.py`、`hook_drift.py`、`version_update.sh`、`install_mod.sh`、`mcp_mod.sh`、`headless_*.sh`（`--recorder-root`）、`farm/`（E3 覆盖农场：`run_farm.py`、`validate_farm.py`、`summarize_farm.py`）、`build_selection_mcp.sh`（v0.111 适配） |
+| `scripts/` | `sim_server.sh`、`gates.sh`、`ci_linux.sh`、`linux_validate.sh`、`sts2_cluster.sh`、`cluster_capacity.sh`、`version_delta.py`、`version_stubs.py`、`hook_drift.py`、`version_update.sh`、`install_mod.sh`、`mcp_mod.sh`、`headless_*.sh`（`--recorder-root`）、`farm/`（E3 覆盖农场：`run_farm.py`、`validate_farm.py`、`summarize_farm.py`）、`mcp_build_env.sh` + `build_selection_mcp.sh`（按 `config/sts2mcp.lock.json` 应用带 sha256 的补丁链，含 `sts2mcp-v0111-compat.patch`；只认锁定的游戏版本，DLL 可复现并校验） |
 | `knowledge/source/<版本>/` | 游戏文案（卡/遗物/药水/能力/事件/敌人/关键词）jsonl；`scripts/export_sts2_localization.py` 从 PCK 导出 |
 | `docs/` | 本页、协议、设计、评审、状态日志、试玩报告 |
 
@@ -161,7 +161,7 @@ dotnet run -c Release --project sim/Sts2Sim.Diff -- g3 <bundles> --report <r>.js
 - 波次 G（已合入）：紧凑观测（每步成本 −19.5%，full/compact A/B 未跑）、`scripts/gates.sh`、内核映射、训练冒烟
   （学到商店移除循环，`docs/train-smoke-2026-11-02.md`）、Docker amd64。
 - E3（已合入 2026-11-02，记录见 `sim/specs/integration.md` "E3 integrate"）：REC recorder v0.3.0 装进人类 mods 目录并验证锚点
-  （`docs/sim-port/e3-recorder-install-2026-11-02.md`；`build_selection_mcp.sh` 适配 v0.111 的 MCP 编译）；4 进程无头覆盖农场 39 局、
+  （`docs/sim-port/e3-recorder-install-2026-11-02.md`；当时 `build_selection_mcp.sh` 内联替换适配 v0.111；现已换成锁文件驱动的补丁链，见该文 §3）；4 进程无头覆盖农场 39 局、
   0 胜、MCP 已关（`docs/sim-port/e3-farm-2026-11-02.md`）；导出器存档锚点绑定 + R4/R5、G3 `--anchors` / `--anchors-every` /
   `--save-check`、6 处 Core 修复（存档导入的玩家战斗 id、6 个弱遭遇 Tags、战斗结束钩子拿到房间、`RelicCmd.Obtain` 移出遗物袋 +
   FloorAddedToDeck、起始遗物第 1 层、AUTOMATION 显示数值）与棘轮基线（`sim/specs/diff-report-e3-farm-2026-11-02.md`）。

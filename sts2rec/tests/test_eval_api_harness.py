@@ -100,8 +100,10 @@ def test_verify_seed_cross_checks_the_mcp_readback(tmp_path):
 
 def test_verify_seed_reads_custom_run_log_lines(tmp_path):
     (tmp_path / 'game.log').write_text('Embarking on a CUSTOM DEFECT run. Ascension: 3 Seed: CUST0M1 Modifiers: X\n')
-    ev = run_bench.verify_seed(make_inst(tmp_path, None), 'p', 'CUST0M1', 0, 3)
+    save = {'rng': {'seed': 'CUST0M1'}, 'game_mode': 'custom', 'ascension': 3}
+    ev = run_bench.verify_seed(make_inst(tmp_path, save), 'p', 'CUST0M1', 0, 3)
     assert ev['verified'] and ev['log']['character'] == 'DEFECT'
+    assert not run_bench.verify_seed(make_inst(tmp_path, None), 'p', 'CUST0M1', 0, 3)['verified']  # no save
 
 
 def test_cli_and_config_select_start_method_and_settings(tmp_path):
@@ -183,3 +185,19 @@ def test_player_choice_still_accepted_after_a_select_was_sent():
     state['execution'] = {'action': 'combat_select_card', 'game_action_state': None,
                           'queue_idle': False, 'ready_for_next_action': False}
     assert executor.awaiting_player_choice(state, {'busy': True, 'busy_reason': 'action_queue_not_empty'})
+
+
+def test_compare_models_passes_start_method_and_settings_to_run_bench(tmp_path, capsys):
+    import compare_models
+    pool = tmp_path / 'worker-pool-llm'
+    code = compare_models.main(['--models', 'anthropic:claude-haiku-5-5', '--dry-run', '--pool', str(pool),
+                                '--config', str(ROOT / 'config/bench/ironclad-a10-10seed.json'),
+                                '--start-method', 'eval', '--game-settings', json.dumps(SETTINGS),
+                                '--out', str(tmp_path / 'out')])
+    assert code == 0
+    line = capsys.readouterr().out
+    assert '--start-method eval' in line and '"fast_mode":"fast"' in line
+    with pytest.raises(SystemExit):
+        compare_models.main(['--models', 'x', '--dry-run', '--game-settings', '[1]'])
+    with pytest.raises(SystemExit):
+        compare_models.main(['--models', 'x', '--dry-run', '--engine', 'sim', '--start-method', 'eval'])

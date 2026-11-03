@@ -6,21 +6,31 @@ policies (stub, LLM, with/without wiki facts) can be compared run-for-run.
 
 ## Seed list
 
-`config/bench/ironclad-a0-10seed.json` (`ironclad-a0-10seed-v1`): IRONCLAD,
-ascension 0, standard mode, seeds `BENCHA0S01` ... `BENCHA0S10`.
-Limits per run: 3000 decisions, 5400 s wall time, 6 consecutive harness/policy
-errors (`--max-decisions` / `--max-wall-s` override).
+`config/bench/ironclad-a0-10seed.json` (`ironclad-a0-10seed-v1.1`, game
+**v0.111.0** / `41cef1ea`): IRONCLAD, ascension 0, standard mode, seeds
+`BENCHA0S01` ... `BENCHA0S10`. Limits per run: 3000 decisions, 5400 s wall
+time, 6 consecutive harness/policy errors (`--max-decisions` / `--max-wall-s`
+override). The limits are checked after each observation, so a run that ends
+on its last allowed decision is recorded as `game_over` with its terminal
+record, not as `max_decisions`.
 
-`config/bench/ironclad-a10-10seed.json` (`ironclad-a10-10seed-v1`): IRONCLAD,
+`config/bench/ironclad-a10-10seed.json` (`ironclad-a10-10seed-v1.1`): IRONCLAD,
 **ascension 10**, standard mode, the **same** seed strings `BENCHA0S01` ...
 `BENCHA0S10` (kept deliberately so A0 and A10 results compare seed-for-seed;
 the `A0` in the name is historical), same limits. It only accepts baseline
 `v2-a10` (`default_baseline`, so `--baseline` can be omitted).
 
+Versioning: a config pins one game build (`game_version`, `game_commit`,
+passed to `sts2_live start --game-version`, which selects
+`knowledge/source/<version>/` for rule authority) and the baselines cut on it.
+A game update bumps the minor version (`v1` = v0.107.1, `v1.1` = v0.111.0);
+never rank results of different versions together. The previous configs are
+in git history.
+
 ### Ascension 10
 
-With the eval API (`patches/sts2mcp-eval-api.patch` in hack-sts2-cloud, see
-"Seeded start") the runner sets the ascension itself through
+With the eval API (`patches/sts2mcp-eval-api.patch`, see "Seeded start")
+the runner sets the ascension itself through
 `start_run(character, ascension, seed)` on any unlocked baseline, and the
 `v2-a10` pin below only matters for the legacy menu path. The config keeps
 `v2-a10` as its default so A10 results stay on one pinned baseline sha256.
@@ -30,11 +40,13 @@ lobby starts at `min(preferred_ascension, max_ascension)` of the character
 (`StartRunLobby`, logged as `ascension set to preferred: 10`). Baseline
 `v2-a10` is v2 with every character's `preferred_ascension` = 10 (nothing
 else differs). The embark path is unchanged. The runner verifies the
-ascension for every seed: `verify_seed` requires both the game.log
-`Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: ...` line and
-`current_run.save` `ascension` to equal the config `ascension`, else the run
-fails with `seed/ascension not verified` (evidence in `run_start.seed_evidence`,
-`ascension_verified`).
+ascension for every seed: `verify_seed` requires the game.log
+`Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: ...` line,
+`current_run.save` and (eval path) the MCP readback to be **present** and to
+equal the config seed and `ascension`, else the run fails with
+`seed/ascension not verified` (evidence in `run_start.seed_evidence`:
+`missing`, `ascension_verified`). Sources that trail the first frame are
+polled for up to 15 s.
 
 ## Frozen save baseline
 
@@ -43,54 +55,83 @@ Every run (including each determinism start) begins with
 
 1. stop the instance (refuses to restore under a live game);
 2. verify the baseline tarball sha256 against its manifest;
-3. replace `<inst>/home/.local/share/SlayTheSpire2` with the tarball contents
-   (safe extraction; refuses the human save and any path outside a
-   `worker-pool*` directory);
+3. replace the worker save tree (`<inst>/home/.local/share/SlayTheSpire2` on
+   Linux, `<inst>/home/Library/Application Support/SlayTheSpire2` on macOS)
+   with the tarball contents (safe extraction; refuses the human save and any
+   path outside a `worker-pool*` directory);
 4. re-verify `progress.save` and `settings.save` hashes (settings holds the
    mod/MCP consent and is part of the baseline, never wiped).
 
-The baselines live outside the repo in `/workspace/private/bench-baseline/`
-(override with `STS2_BENCH_BASELINE_ROOT`). Pick one with `--baseline v1|v2`
-(default **v2**, or the config's `default_baseline`), or pass a baseline dir / manifest file:
+The baselines live outside the repo under `$STS2_BENCH_BASELINE_ROOT`
+(default `/workspace/private/bench-baseline/`; on the macOS workstation
+`/Users/Aincrad/dev-proj/hack-sts2/artifacts/bench-baseline/`, git-ignored),
+one directory per game version. A label (`--baseline v2|v2-a10|v1`, default
+**v2** or the config's `default_baseline`) resolves to
+`<root>/<config game_version>/<manifest>` when that exists, else to
+`<root>/<manifest>` (the flat v0.107.1 layout); a baseline dir or manifest
+file can be passed instead.
 
-| label | manifest | tarball | what it is |
-|---|---|---|---|
-| `v1` | `manifest.json` | `sts2-bench-baseline-v1.tar.gz` | original worker profile with the `IRONCLAD3_EPOCH` reveal (4/57 epochs, 106 cards, 76 relics, 34 potions) |
-| `v2` | `manifest-v2-unlocked.json` | `sts2-bench-baseline-v2-unlocked.tar.gz` | a copy of v1, fully unlocked: 57/57 epochs revealed (incl. `CUSTOM_AND_SEEDS_EPOCH`, daily), all 5 characters, 578 cards, 297 relics, 65 potions, 61 events, 4 acts, max ascension 10 (preferred 0), all FTUEs done, no pending reveals |
-| `v2-a10` | `manifest-v2-a10.json` | `sts2-bench-baseline-v2-a10.tar.gz` | v2 with `preferred_ascension` 10 for every character (lobby starts at A10); `make_unlocked_save.py --preferred-ascension 10` on a restored v2; progress.save `3ab4b56c...` |
+| game | label | manifest | tarball sha256 | what it is |
+|---|---|---|---|---|
+| v0.111.0 | `v2` | `v0.111.0/manifest-v2-unlocked.json` | `c45ec7a9...` | fresh v0.111.0 worker profile (created by the game, no human data) fully unlocked by `make_unlocked_save.py`: 57/57 epochs, 5 characters, 596 cards, 299 relics, 66 potions, 57 events, 4 acts, max ascension 10 (preferred 0), 15 FTUEs; progress.save `32111f66...` |
+| v0.111.0 | `v2-a10` | `v0.111.0/manifest-v2-a10.json` | `27c009af...` | v0.111.0 v2 with `preferred_ascension` 10; progress.save `f0698763...` |
+| v0.107.1 | `v1` | `manifest.json` | `72f1dd96...` | original worker profile with the `IRONCLAD3_EPOCH` reveal |
+| v0.107.1 | `v2` | `manifest-v2-unlocked.json` | `61f13ccc...` | v1 fully unlocked (578 cards, 297 relics, 65 potions, 61 events) |
+| v0.107.1 | `v2-a10` | `manifest-v2-a10.json` | `0e0be122...` | v2 with `preferred_ascension` 10 |
 
-The config pins every baseline it accepts (`baselines.v1` / `baselines.v2`,
-name + sha256) and the runner refuses any other name or a sha mismatch.
-`bench.json` records the baseline name and sha; compare only runs from the
-same baseline (card/relic/potion pools differ between v1 and v2).
+The config pins every baseline it accepts (`baselines.<label>`, name +
+sha256) and the runner refuses any other name or a sha mismatch, so a
+baseline of the wrong game version cannot be used. `bench.json` records the
+baseline name, sha and manifest path; compare only runs from the same
+baseline (card/relic/potion pools differ between baselines and versions).
+The v0.111.0 baselines cannot be re-created byte-identically (the game gives
+every fresh profile a random `unique_id`), so keep the files; re-cutting
+means a new name and a config bump.
 
 ```bash
-python3 scripts/bench/baseline.py verify  [--baseline v1|v2|DIR|MANIFEST]
-python3 scripts/bench/baseline.py restore --inst /workspace/private/worker-pool-bench/inst1 [--baseline v1]
+export STS2_BENCH_BASELINE_ROOT=/Users/Aincrad/dev-proj/hack-sts2/artifacts/bench-baseline
+python3 scripts/bench/baseline.py verify  --baseline v2-a10 --game-version v0.111.0
+python3 scripts/bench/baseline.py restore --inst <pool>/inst1 --baseline v2 --game-version v0.111.0
 ```
 
 ### Rebuilding the unlocked baseline (v2)
 
 `scripts/bench/make_unlocked_save.py` edits a worker profile's
-`progress.save` (plain JSON, schema 21, no checksum; it writes
-`progress.save.backup` identically because the game falls back to it). It
-mirrors the game's own `unlock all` console command and derives every list
-from the live game, never from hard-coded ids: it decompiles
-`$STS2_GAME_DATA_DIR/sts2.dll` with `ilspycmd` (cached under
-`artifacts/knowledge/decompiled-sts2-<sha12>`, git-ignored) and reads
-`ModelDb` (character + shared card/relic/potion pools, starting decks and
-relics), `EpochModel.EpochIds`, act events, encounters/monsters and the FTUE
-ids. `settings.save` (MCP consent) is never touched. It refuses paths outside
-a `worker-pool*` dir.
+`progress.save` (plain JSON, schema 21 on v0.107.1 and 24 on v0.111.0, no
+checksum; it writes `progress.save.backup` identically because the game falls
+back to it). It mirrors the game's own `unlock all` console command and
+derives every list from the live game, never from hard-coded ids: it
+decompiles `$STS2_GAME_DATA_DIR/sts2.dll` with `ilspycmd` (cached under
+`artifacts/knowledge/decompiled-sts2-<sha12>`, git-ignored; or pass
+`--decompiled-root`) and reads `ModelDb` (character + shared
+card/relic/potion pools, starting decks and relics), the epoch list
+(`EpochModel.EpochIds` on v0.107.1, the `EpochModel` static constructor and
+`EpochModel.AgnosticUnlocks` on v0.111.0), act events, encounters/monsters
+and the FTUE ids. `settings.save` (MCP consent) is never touched. It refuses
+paths outside a `worker-pool*` dir.
+
+Re-cutting for a new game version (what was done for v0.111.0):
 
 ```bash
-python3 scripts/bench/make_unlocked_save.py            # print derived counts
-python3 scripts/bench/baseline.py restore --inst /workspace/private/worker-pool-bench2/inst1 --baseline v1
-python3 scripts/bench/make_unlocked_save.py \
-  --saves-dir /workspace/private/worker-pool-bench2/inst1/home/.local/share/SlayTheSpire2/default/1/modded/profile1/saves
-# then tar <inst>/home/.local/share/SlayTheSpire2 (minus logs/sentry/shader_cache)
-# into the v2 tarball and write manifest-v2-unlocked.json
+POOL=<...>/worker-pool-bench; INST=$POOL/inst1
+STS2_HEADLESS_FRESH_PROFILE=1 STS2_HEADLESS_PORT_BASE=15610 scripts/headless_provision.sh 1 $POOL  # fresh profile, no human data
+scripts/headless_launch.sh 1 --base $POOL && scripts/headless_launch.sh 1 --base $POOL --stop  # game writes progress.save
+SAVES="$INST/home/Library/Application Support/SlayTheSpire2/default/1/modded/profile1/saves"  # Linux: home/.local/share/...
+export STS2_GAME_DATA_DIR=<install>/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64  # ilspycmd, or --decompiled-root
+python3 scripts/bench/make_unlocked_save.py --version <ver> --saves-dir "$SAVES"
+python3 scripts/bench/baseline.py freeze --inst $INST --out $STS2_BENCH_BASELINE_ROOT/<ver> \
+  --name sts2-bench-baseline-v2-unlocked-<ver> --manifest-file manifest-v2-unlocked.json \
+  --extra '{"game_version": "<ver>", "game_commit": "...", "sts2_dll_sha256": "..."}'
+python3 scripts/bench/make_unlocked_save.py --version <ver> --saves-dir "$SAVES" --preferred-ascension 10
+python3 scripts/bench/baseline.py freeze --inst $INST --out $STS2_BENCH_BASELINE_ROOT/<ver> \
+  --name sts2-bench-baseline-v2-a10-<ver> --manifest-file manifest-v2-a10.json --extra '{...}'
+# then pin both names + sha256 in config/bench/*.json (and bump the config version)
 ```
+
+`freeze` is deterministic (sorted members, uid/gid 0, fixed modes and
+mtimes, no gzip timestamp) and never overwrites an existing baseline. Launch
+the worker on the unlocked profile once before freezing to confirm it loads
+without a reset/backup fallback.
 
 The edit is deterministic (fixed `obtain_date` for newly revealed epochs), so
 re-running it on v1 reproduces the same `progress.save` sha256
@@ -155,7 +196,7 @@ The stock game ignores seeds for standard runs. With v2 the native seed input
 is available, but only on the Custom Mode screen (`NCustomRunScreen`, game
 mode `custom`, "cannot unlock epochs/achievements"); the MCP does not model
 that screen, so it is GUI-only and not a standard run. Therefore, even on v2, the worker MCP carries the
-`sts2mcp-seeded-standard-embark` patch (hack-sts2-cloud). It sets the game's
+`sts2mcp-seeded-standard-embark` patch (`patches/`). It sets the game's
 own `NGame.DebugSeedOverride` (the path its AutoSlayer uses) to the
 canonicalized seed just before clicking embark, and clears it on unseeded
 embarks. The runner then checks what the game actually used: the
@@ -170,6 +211,8 @@ the first fight).
 
 ## Running
 
+Cloud/Linux hosts (hack-sts2-cloud launcher and pools):
+
 ```bash
 export STS2_GAME_INSTALL_DIR=/workspace/private/sts2-linux-0.107.1   # STS2_GAME_EXECUTABLE / _DATA_DIR derived
 python3 scripts/bench/run_bench.py --instances 1,2,3 --policy stub
@@ -177,10 +220,25 @@ python3 scripts/bench/run_bench.py --instances 1,2,3 --policy 'cmd:python3 my_ag
 python3 scripts/bench/score.py /workspace/private/bench-runs/<run> [<run> ...]
 ```
 
+macOS workstation (this repo's provisioner and launcher; the worker MCP is
+built from `config/sts2mcp.lock.json` and the game must be the build it pins):
+
+```bash
+export STS2_MCP_SOURCE_REPO=/Users/Aincrad/dev-proj/STS2MCP          # optional; found beside the main checkout
+export STS2_BENCH_BASELINE_ROOT=/Users/Aincrad/dev-proj/hack-sts2/artifacts/bench-baseline
+POOL=$PWD/artifacts/worker-pool-llm                                    # any path containing worker-pool
+STS2_HEADLESS_FRESH_PROFILE=1 STS2_HEADLESS_PORT_BASE=15640 scripts/headless_provision.sh 4 $POOL   # ports 15641-15644, fresh profiles
+python3 scripts/bench/run_bench.py --config config/bench/ironclad-a10-10seed.json --pool $POOL \
+  --instances 1,2,3 --policy stub --start-method eval \
+  --game-settings '{"fast_mode":"fast","screenshake":0,"text_effects":false,"skip_tutorials":true}' \
+  --out <dir>/<stamp>-stub-a10
+```
+
 * `--instances` 1-3 worker instances of `--pool` (default
   `/workspace/private/worker-pool-bench`, ports 15611-15613); seeds are pulled
   from a shared queue. worker-pool-v2 / ports 15601-15603 are refused.
 * `--launcher` (or `STS2_BENCH_LAUNCHER`): hack-sts2-cloud
+  `scripts/headless_launch.sh` when it exists, else this repo's
   `scripts/headless_launch.sh`.
 * `--wiki-facts` starts the live session with `--wiki-facts`, adding
   `wiki_facts` (FactDB `facts_for_state`, <= 4000 chars) to every
@@ -261,9 +319,10 @@ mean act, boss kills, mean HP at boss entry, death causes, frictions per run
 
 ## Known gaps
 
-* Practice mode: rule authority is unverified for this build, so runs pass
-  `--allow-unverified-authority` (recorded per run).
-* Seeds and ascension depend on the hack-sts2-cloud MCP patches
+* Practice mode passes `--allow-unverified-authority` (recorded per run). On
+  v0.111.0 the config's `game_version` selects `knowledge/source/v0.111.0`,
+  and every decision of the v0.111.0 smokes was `authority_verified`.
+* Seeds and ascension depend on the worker MCP patches in `patches/`
   (`sts2mcp-eval-api` for `start_run`; on the legacy path
   `sts2mcp-seeded-standard-embark` plus the save's preferred ascension). An
   unpatched worker refuses the seeded embark and the runner stops.

@@ -1,15 +1,16 @@
 {
-  "name": "ironclad-a10-10seed-v1",
-  "description": "Fixed 10-seed Ironclad A10 standard-mode evaluation set. Same 10 seed strings as ironclad-a0-10seed (seed-by-seed A0 vs A10 comparison). Baseline v2-a10 (v2 fully unlocked with preferred ascension 10, so the lobby starts at A10); the runner verifies ascension 10 from game.log and current_run.save for every seed.",
-  "game_version": "v0.107.1",
+  "name": "ironclad-a10-10seed-v1.1",
+  "description": "Fixed 10-seed Ironclad A10 standard-mode evaluation set on game v0.111.0 (v1.1 = v1's seeds and limits, re-pinned from v0.107.1; never rank v1 and v1.1 results together). Same 10 seed strings as ironclad-a0-10seed (seed-by-seed A0 vs A10 comparison). Baseline v2-a10 (v2 with preferred ascension 10, so the lobby starts at A10 on the legacy menu path too); the runner verifies ascension 10 from the MCP readback, game.log and current_run.save for every seed.",
+  "game_version": "v0.111.0",
+  "game_commit": "41cef1ea",
   "character": "IRONCLAD",
   "ascension": 10,
   "game_mode": "standard",
   "default_baseline": "v2-a10",
   "baselines": {
     "v2-a10": {
-      "name": "sts2-bench-baseline-v2-a10",
-      "sha256": "0e0be1223fdd566b36ad1a2fc6dab49b997227bbdf02aa8093c88e31dd93e4de"
+      "name": "sts2-bench-baseline-v2-a10-v0.111.0",
+      "sha256": "27c009afcc1575b55279e82b707e53b3c3295d04d55d3ccd6107ddd2b4257233"
     }
   },
   "seeds": [

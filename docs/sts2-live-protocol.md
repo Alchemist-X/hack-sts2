@@ -4,9 +4,9 @@
 
 ## 本地依赖与测试
 
-构建 MCP 需要本机游戏、.NET 9 和锁文件对应的 STS2MCP 源码提交。`scripts/build_selection_mcp.sh` 通过 `STS2_MCP_SOURCE_REPO` 和 `STS2_GAME_INSTALL_DIR` 指定源码仓库与游戏安装目录，产物只写入隔离构建目录。`headless_provision.sh` 使用此补丁构建；启动窗口和退出步骤见 README。
+构建 MCP 需要本机游戏、.NET 9 和锁文件对应的 STS2MCP 源码提交。`config/sts2mcp.lock.json` 是唯一的版本来源：upstream commit、按顺序且带 sha256 的补丁清单、补丁针对的游戏构建（`game`：v0.111.0 / 41cef1ea，各程序集目录的 sts2.dll sha256）、.NET SDK 版本和沙盒 DLL 的 sha256。`scripts/build_selection_mcp.sh` 校验这些后才构建；游戏一旦更新就直接拒绝并指向迁移手册（迁移期间可用 `STS2_MCP_ALLOW_UNPINNED_GAME=1` 先看编译错误）。`STS2_MCP_SOURCE_REPO`（默认主检出目录旁的 STS2MCP，worktree 内也能正确找到）和 `STS2_GAME_INSTALL_DIR` 可覆盖默认路径，产物只写入隔离构建目录。`headless_provision.sh` 使用此构建；工作进程默认从人类存档复制 settings 并播种解锁（E3 覆盖农场依赖这一点），`STS2_HEADLESS_FRESH_PROFILE=1` 则为不读取人类存档的新档（基准池会整体恢复冻结基线）。启动窗口和退出步骤见 README。
 
-直播规则检索还需要与 `knowledge/source/v0.107.1/manifest.json` 指纹匹配的本地反编译源码，默认放在 `artifacts/knowledge/decompiled-v0.107.1/`。准备源码后运行 `python3 scripts/export_sts2_rule_evidence.py` 核对规则片段并生成证据。仓库不包含游戏程序集和完整反编译目录；缺少这些来源时，`observe` 会报告问题，`act` 会拒绝执行，不能把关闭校验当作安装步骤。
+直播规则检索还需要与 `knowledge/source/<版本>/manifest.json` 指纹匹配的本地反编译源码（v0.111.0 为 `knowledge/source/v0.111.0/`，sts2.dll `9cb4f1ad…`）。准备源码后运行 `python3 scripts/export_sts2_rule_evidence.py` 核对规则片段并生成证据。仓库不包含游戏程序集和完整反编译目录；缺少这些来源时，`observe` 会报告问题，`act` 会拒绝执行，不能把关闭校验当作安装步骤。`sts2_live start --game-version` 默认仍是 v0.107.1；基准测试由配置的 `game_version` 传入。
 
 在仓库根目录运行 `uv run --project sts2rec --locked --group dev pytest -q sts2rec/tests`。通用测试使用合成规则验证依赖检索、来源缺失/变化时拒绝执行，以及超时后禁止重复动作。另两项真实怪物规则集成测试在没有本地反编译目录时明确跳过；有该目录则必须核对原始哈希，不会因内容不匹配而跳过。Python CI 不安装游戏或启动游戏进程。
 
@@ -68,7 +68,7 @@ act 发送前等待“可行动”帧：战斗需 is_play_phase、queue_idle 且
 
 ## 评测 API（/api/v1/eval）
 
-hack-sts2-cloud 的 `patches/sts2mcp-eval-api.patch` 给 MCP 增加 `/api/v1/eval`（仅单人局；完整参数见该仓库 `patches/README.md`）：
+`patches/sts2mcp-eval-api.patch`（源自 hack-sts2-cloud，现已随本仓库补丁清单构建）给 MCP 增加 `/api/v1/eval`（仅单人局；完整参数见 `patches/README.md`）：
 
 - `GET /api/v1/eval?wait_settled_ms=&stable_ms=&include_state=`：已结算快照。`state_version` 单调递增（状态指纹变化才加一），`busy`/`busy_reason` 来自游戏自身的动作队列/执行器、战斗阶段、场景切换、存档任务（如击杀后、奖励出现前的 `combat_ending_awaiting_rewards`），另有 `run`（角色/种子/进阶/模式/修改器/幕/层）、`refs`（牌组 `d<i>`、手牌 `card_uid`/`deck_index`、敌人 `combat_id`）、`eval_meta.rng`（各 RNG 计数）、`pending_epoch_ids`、`run_result`。
 - POST `start_run`（character、ascension 0–10、seed、mode standard|custom、modifiers、settings、abandon_existing）：先校验再动菜单，返回 `verified` 与从实时状态读回的 `readback`；`configure`（fast_mode/screenshake/text_effects/skip_tutorials，默认不写 settings.save；也可启动时用 `STS2_MCP_EVAL_SETTINGS`）；`abandon`、`return_to_menu`、`run_result`（未结束时为 `in_progress`）；`checkpoint_save/restore/list`（复制官方自动存档，恢复点是房间起点，与 Continue 一致）；`act`/`batch`（逐步 `expect_state_version`/`expect_state_type` 校验、逐步等待结算，出错即停）。
@@ -77,7 +77,7 @@ harness 的用法：`run_bench.py` 用 `start_run` 开局并交叉核对 readbac
 
 ## 构建与验证范围
 
-`scripts/build_selection_mcp.sh` 从锁定的 upstream commit 应用 `patches/sts2mcp-selection-state.patch` 和 `patches/sts2mcp-rule-evidence.patch`，在隔离目录构建，再加原有 headless/端口补丁。headless_provision 已接入；现有运行进程不会热替换。不要往人类游戏安装。`scripts/export_sts2_rule_evidence.py` 在本地源码上验证必要片段，补充状态、附魔、污染模型和六条经核对的跨模型规则。
+`scripts/build_selection_mcp.sh` 从锁定的 upstream commit 依次应用锁文件里的六个补丁（selection-state、rule-evidence、action-receipts、seeded-standard-embark、eval-api、v0111-compat，逐个校验 sha256，`--fuzz=0`），在隔离目录构建，再加原有 headless/端口补丁。构建可复现（关闭 SourceLink、PathMap），DLL sha256 与锁文件比对（v0.111.0 macOS arm64：`83fc6828…`）。headless_provision 已接入；现有运行进程不会热替换。不要往人类游戏安装。`scripts/export_sts2_rule_evidence.py` 在本地源码上验证必要片段，补充状态、附魔、污染模型和六条经核对的跨模型规则。
 
 2026-09-09：C# 编译0错误0警告；Python回归覆盖选择确认、预览排除、牌堆信息边界、商店与知识引用、每局日志、超时阻止重复、成本去重、奖励口径与抽样概率。实机“两张变化/三张附魔”完整回归尚待下一次隔离运行启动，不把编译和合成状态测试冒充 UI 通过。
 
