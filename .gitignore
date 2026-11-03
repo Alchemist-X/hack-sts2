@@ -38,6 +38,8 @@ a10-eval-instances/
 .mcp-stashed/
 scripts/McpHeadlessPatcher/bin/
 scripts/McpHeadlessPatcher/obj/
+scripts/RecorderContractCheck/bin/
+scripts/RecorderContractCheck/obj/
 
 # Generated evaluation reports and PDF render scratch
 output/

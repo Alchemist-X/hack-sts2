@@ -11,7 +11,8 @@ namespace Sts2Recorder.Core.Tests;
 /// <summary>
 /// Recorder perf instrumentation (manifest "perf" detail) and the hot-path
 /// helpers it measures: the streaming state hash, the reflection metadata
-/// cache and the bounded latency histogram.
+/// cache, the bounded latency histogram, and decision-capture input
+/// coalescing (one pre-input build per outer input, never per nested call).
 /// </summary>
 public sealed class RecorderPerformanceTests
 {
@@ -97,6 +98,114 @@ public sealed class RecorderPerformanceTests
         Assert.Equal(33, byTrigger.EnumerateObject().Count());
         Assert.Equal(2, byTrigger.GetProperty("trigger0").GetProperty("count").GetInt64());
         Assert.Equal(8, byTrigger.GetProperty("other").GetProperty("count").GetInt64());
+    }
+
+    [Fact]
+    public void DecisionCaptureKeepsItsPinAcrossLaterChangedSnapshots()
+    {
+        using var session = TrajectorySession.Begin(NewTempRoot(), DefaultMeta(), new FakeClock(StartTime));
+        var cards = new JsonArray(Enumerable.Range(0, 200).Select(i => (JsonNode)new JsonObject
+            { ["id"] = "CARD." + i, ["choice_index"] = i, ["selected"] = false }).ToArray());
+        var state = new JsonObject { ["state_type"] = "card_select", ["cards"] = cards };
+        long before = session.RecordState("decision:before_input", "card_select", state, 1);
+        cards[199]!["selected"] = true;
+        Assert.NotEqual(before, session.RecordState("decision:updated", "card_select", state, 1));
+        new DecisionCapture(session, before, "before_input").Record(session, "test", "player_choice", new JsonObject());
+        session.Flush();
+        var action = ReadJsonl(session.Directory, "actions")[0];
+        Assert.Equal(before, action.GetProperty("state_seq").GetInt64());
+        Assert.Equal("captured", action.GetProperty("action").GetProperty("params")
+            .GetProperty("_decision").GetProperty("status").GetString());
+        var byTrigger = ReadManifest(session.Directory).GetProperty("perf").GetProperty("capture_by_trigger_ms");
+        Assert.Equal(1, byTrigger.GetProperty("decision:before_input").GetProperty("count").GetInt64());
+        Assert.Equal(1, byTrigger.GetProperty("decision:updated").GetProperty("count").GetInt64());
+    }
+
+    [Fact]
+    public void NestedInputUsesOuterPreClickStateButNextClickCapturesAgain()
+    {
+        var choices = new DecisionChoices(); var screen = new object();
+        choices.Reserve(1, 1); choices.Bind(screen, 1);
+        using (var outer = choices.BeginInput(screen)!)
+        {
+            Assert.True(outer.ShouldCapture);
+            using var inner = choices.BeginInput(screen)!;
+            Assert.False(inner.ShouldCapture);
+            Assert.True(choices.IsCurrent(screen, inner));
+        }
+        using var next = choices.BeginInput(screen)!;
+        Assert.True(next.ShouldCapture);
+    }
+
+    [Fact]
+    public void CoalescedCompletionRecordsFullOuterCandidatesAndOriginalPin()
+    {
+        using var session = TrajectorySession.Begin(NewTempRoot(), DefaultMeta(), new FakeClock(StartTime));
+        var choices = new DecisionChoices(); var screen = new object();
+        choices.Reserve(1, 1); choices.Bind(screen, 1);
+        var state = new JsonObject { ["cards"] = new JsonArray("A", "B", "C") };
+        int builds = 0;
+        DecisionChoices.InputScope Enter()
+        {
+            var input = choices.BeginInput(screen)!;
+            session.NoteDecisionInput(!input.ShouldCapture);
+            if (input.ShouldCapture)
+            {
+                builds++;
+                choices.Update(screen, new DecisionCapture(session,
+                    session.RecordState("decision:before_input", "card_select", state, 0), "before_input"));
+            }
+            return input;
+        }
+        using (var outer = Enter())
+        {
+            state["cards"] = new JsonArray("C"); // UI has already changed inside click handler
+            using var completion = Enter();
+            session.RecordState("decision:updated", "card_select", state, 0);
+            choices.Consume(1, 1)!.Record(session, "test", "player_choice", new JsonObject { ["index"] = 2 });
+        }
+        Assert.Equal(1, builds);
+        session.Flush();
+        var action = ReadJsonl(session.Directory, "actions")[0];
+        var pinned = ReadJsonl(session.Directory, "states").Single(s =>
+            s.GetProperty("seq").GetInt64() == action.GetProperty("state_seq").GetInt64());
+        Assert.Equal(3, pinned.GetProperty("state").GetProperty("cards").GetArrayLength());
+        var perf = ReadManifest(session.Directory).GetProperty("perf");
+        Assert.Equal(1, perf.GetProperty("decision_input_scopes").GetInt64());
+        Assert.Equal(1, perf.GetProperty("nested_inputs_coalesced").GetInt64());
+    }
+
+    [Fact]
+    public void NestedOtherScreenAndRerollOnSameScreenNeverCoalesce()
+    {
+        var choices = new DecisionChoices(); var a = new object(); var b = new object();
+        choices.Reserve(1, 1); choices.Bind(a, 1);
+        using var outer = choices.BeginInput(a)!;
+        choices.Reserve(1, 2); choices.Bind(b, 1);
+        using var child = choices.BeginInput(b)!;
+        Assert.True(child.ShouldCapture);
+        choices.Consume(1, 1);
+        choices.Reserve(1, 3); choices.Bind(a, 1);
+        using var reroll = choices.BeginInput(a)!;
+        Assert.True(reroll.ShouldCapture);
+        Assert.False(choices.IsCurrent(a, outer));
+        outer.Dispose(); // old finalizer cannot close the new choice's scope
+        using var nestedReroll = choices.BeginInput(a)!;
+        Assert.False(nestedReroll.ShouldCapture);
+    }
+
+    [Fact]
+    public void FailedInputUnwindsAndDoesNotSuppressNextObservation()
+    {
+        var choices = new DecisionChoices(); var screen = new object();
+        choices.Reserve(1, 1); choices.Bind(screen, 1);
+        Assert.Throws<InvalidOperationException>((Action)(() =>
+        {
+            using var input = choices.BeginInput(screen)!;
+            throw new InvalidOperationException();
+        }));
+        using var next = choices.BeginInput(screen)!;
+        Assert.True(next.ShouldCapture);
     }
 
     private class Parent

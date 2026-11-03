@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Models;
@@ -40,6 +41,14 @@ public static class HumanFunnels
 {
     private static TrajectorySession? _restSiteSession;
     private static Action<RestSiteOption, bool, ulong>? _restSiteHandler;
+    private static Action<RestSiteOption, ulong>? _restSiteBeforeHandler;
+    private static ConditionalWeakTable<RestSiteOption, DecisionCapture> _restDecisions = new();
+    /// <summary>
+    /// R5 + decision capture: the pre-click observation and clicked index of a local
+    /// event-button click, consumed by the SaveEventOptionToHistory record.
+    /// </summary>
+    private sealed record EventInput(DecisionCapture Capture, int Index);
+    private static ConditionalWeakTable<EventOption, EventInput> _eventDecisions = new();
     private static string? _lastChoiceContextModel;
 
     /// <summary>
@@ -48,7 +57,8 @@ public static class HumanFunnels
     /// remote claims and programmatic auto-claims too (Draft run-start, v0.107.1) — this
     /// table is how the committed-claim record gets its human/programmatic attribution.
     /// </summary>
-    private static ConditionalWeakTable<Reward, object> _locallySelectedRewards = new();
+    private static ConditionalWeakTable<Reward, DecisionCapture> _locallySelectedRewards = new();
+    private sealed record PurchaseInput(DecisionCapture Capture, JsonObject Parameters);
 
     /// <summary>
     /// R4: every card a local CardReward has offered since its selection began
@@ -56,10 +66,6 @@ public static class HumanFunnels
     /// that ended up in the deck.
     /// </summary>
     private static ConditionalWeakTable<CardReward, List<CardModel>> _cardRewardOffers = new();
-
-    /// <summary>R5: the option a local event-button click is choosing, for the event_option index.</summary>
-    private static EventOption? _clickedEventOption;
-    private static int _clickedEventOptionIndex = -1;
 
     internal static void ApplyPatches(Harmony harmony)
     {
@@ -131,6 +137,7 @@ public static class HumanFunnels
             harmony,
             "patch:MerchantEntry.OnTryPurchaseWrapper",
             () => AccessTools.Method(typeof(MerchantEntry), nameof(MerchantEntry.OnTryPurchaseWrapper)),
+            prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(MerchantPurchasePrefix)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(MerchantPurchasePostfix)));
         // Method HIDING (not override): the card-removal overload must be patched separately.
         // Explicit parameter types: the class sees BOTH its own hiding 3-arg overload and
@@ -142,6 +149,7 @@ public static class HumanFunnels
                 typeof(MerchantCardRemovalEntry),
                 nameof(MerchantCardRemovalEntry.OnTryPurchaseWrapper),
                 new[] { typeof(MerchantInventory), typeof(bool), typeof(bool) }),
+            prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(MerchantPurchasePrefix)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(CardRemovalPurchasePostfix)));
         // v0.107.1 reward claiming is synchronized (Reward.OnSelectWrapper removed):
         //   * RewardsSetSynchronizer.SelectLocalReward = the LOCAL player's explicit UI
@@ -159,6 +167,7 @@ public static class HumanFunnels
             harmony,
             "patch:Reward.SelectUnsynchronized",
             () => AccessTools.Method(typeof(Reward), nameof(Reward.SelectUnsynchronized)),
+            prefix: new HarmonyMethod(typeof(HumanFunnels), nameof(RewardSelectPrefix)),
             postfix: new HarmonyMethod(typeof(HumanFunnels), nameof(RewardSelectPostfix)));
         // v0.107.1: reward-set skips are synchronized too. SkipLocalRewardsSet is the
         // ONE local human skip decision; the per-subclass Reward.OnSkipped overrides now
@@ -213,16 +222,19 @@ public static class HumanFunnels
     /// <summary>RestSiteSynchronizer is recreated each run — resubscribe on every RunStarted.</summary>
     internal static void OnRunStarted(TrajectorySession session)
     {
+        DecisionHooks.Reset();
+        _restDecisions = new();
+        _eventDecisions = new();
         _lastChoiceContextModel = null;
-        _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
+        _locallySelectedRewards = new();
         _cardRewardOffers = new ConditionalWeakTable<CardReward, List<CardModel>>();
-        _clickedEventOption = null;
-        _clickedEventOptionIndex = -1;
         try
         {
             var synchronizer = RunManager.Instance.RestSiteSynchronizer;
             _restSiteSession = session;
             _restSiteHandler = OnRestSiteOptionChosen;
+            _restSiteBeforeHandler = OnBeforeRestSiteOptionChosen;
+            synchronizer.BeforePlayerOptionChosen += _restSiteBeforeHandler;
             synchronizer.AfterPlayerOptionChosen += _restSiteHandler;
         }
         catch (Exception ex)
@@ -236,6 +248,8 @@ public static class HumanFunnels
     {
         try
         {
+            if (_restSiteBeforeHandler != null)
+                RunManager.Instance.RestSiteSynchronizer.BeforePlayerOptionChosen -= _restSiteBeforeHandler;
             if (_restSiteHandler != null)
             {
                 RunManager.Instance.RestSiteSynchronizer.AfterPlayerOptionChosen -= _restSiteHandler;
@@ -246,19 +260,26 @@ public static class HumanFunnels
             // The synchronizer may already be disposed during CleanUp.
         }
         _restSiteHandler = null;
+        _restSiteBeforeHandler = null;
+        _restDecisions = new();
+        _eventDecisions = new();
+        DecisionHooks.Reset();
         _restSiteSession = null;
         _lastChoiceContextModel = null;
-        _locallySelectedRewards = new ConditionalWeakTable<Reward, object>();
+        _locallySelectedRewards = new();
         _cardRewardOffers = new ConditionalWeakTable<CardReward, List<CardModel>>();
-        _clickedEventOption = null;
-        _clickedEventOptionIndex = -1;
     }
 
-    private static void RecordCommitted(string source, string kind, JsonObject parameters)
+    private static void RecordCommitted(string source, string kind, JsonObject parameters,
+        DecisionCapture? decision = null)
     {
         try
         {
-            RecorderMod.Session?.RecordAction(source, kind, parameters, "committed", null);
+            if (decision != null && !ReferenceEquals(decision.Session, RecorderMod.Session)) return;
+            if (decision != null)
+                decision.Record(RecorderMod.Session, source, kind, parameters);
+            else
+                RecorderMod.Session?.RecordAction(source, kind, parameters, "committed", null);
             Snapshots.RequestDeferredSnapshot();
         }
         catch (Exception ex)
@@ -294,19 +315,19 @@ public static class HumanFunnels
 
     private static void TryManualPlayPrefix()
     {
-        ActionPipeline.BeginHumanScope("hook:CardModel.TryManualPlay");
+        ActionPipeline.BeginHumanScope("hook:CardModel.TryManualPlay", combatInput: true);
     }
 
     private static void CallReleaseLogicPrefix()
     {
         // The enqueued type disambiguates: IsPlayerReadyToEndTurn false -> EndPlayerTurnAction,
         // true -> UndoEndPlayerTurnAction (the game reads it inside CallReleaseLogic itself).
-        ActionPipeline.BeginHumanScope("hook:NEndTurnButton.CallReleaseLogic");
+        ActionPipeline.BeginHumanScope("hook:NEndTurnButton.CallReleaseLogic", combatInput: true);
     }
 
     private static void SecretEndTurnPrefix()
     {
-        ActionPipeline.BeginHumanScope("hook:NEndTurnButton.SecretEndTurnLogicViaFtue");
+        ActionPipeline.BeginHumanScope("hook:NEndTurnButton.SecretEndTurnLogicViaFtue", combatInput: true);
     }
 
     private static void EnqueueManualUsePrefix(PotionModel __instance)
@@ -316,7 +337,7 @@ public static class HumanFunnels
             // Local machine only: remote uses arrive via net messages, not this method.
             if (LocalContext.IsMe(__instance.Owner))
             {
-                ActionPipeline.BeginHumanScope("hook:PotionModel.EnqueueManualUse");
+                ActionPipeline.BeginHumanScope("hook:PotionModel.EnqueueManualUse", combatInput: IsCombatInProgress());
             }
         }
         catch (Exception ex)
@@ -327,12 +348,25 @@ public static class HumanFunnels
 
     private static void DiscardPotionPrefix()
     {
-        ActionPipeline.BeginHumanScope("hook:NPotionPopup.OnDiscardButtonPressed");
+        ActionPipeline.BeginHumanScope("hook:NPotionPopup.OnDiscardButtonPressed", combatInput: IsCombatInProgress());
     }
 
-    private static void MapPointSelectedPrefix()
+    /// <summary>Potion use/discard is a combat input (gated capture) only while a combat runs.</summary>
+    private static bool IsCombatInProgress()
     {
-        ActionPipeline.BeginHumanScope("hook:NMapScreen.OnMapPointSelectedLocally");
+        try
+        {
+            return CombatManager.Instance.IsInProgress;
+        }
+        catch
+        {
+            return true; // unknown: treat as combat, i.e. never add an ungated capture
+        }
+    }
+
+    private static void MapPointSelectedPrefix(NMapScreen __instance)
+    {
+        ActionPipeline.BeginHumanScope("hook:NMapScreen.OnMapPointSelectedLocally", __instance);
     }
 
     private static void PickRelicLocallyPrefix()
@@ -352,7 +386,7 @@ public static class HumanFunnels
     /// this prefix is the only capture for proceed clicks (and for options with
     /// ShouldSaveChoiceToHistory == false the game itself never records).
     /// </summary>
-    private static void EventOptionClickedPrefix(EventOption option, int index)
+    private static void EventOptionClickedPrefix(NEventRoom __instance, EventOption option, int index)
     {
         try
         {
@@ -362,18 +396,19 @@ public static class HumanFunnels
             }
             if (!option.IsProceed)
             {
-                // Real choices are captured post-commit via SaveEventOptionToHistory;
-                // remember the clicked index for that record.
-                _clickedEventOption = option;
-                _clickedEventOptionIndex = index;
+                // Real choices are committed via SaveEventOptionToHistory; pin the
+                // pre-click observation and the clicked index for that record.
+                var capture = Snapshots.CaptureDecision(__instance);
+                if (capture != null) _eventDecisions.AddOrUpdate(option, new EventInput(capture, index));
                 return;
             }
+            var before = Snapshots.CaptureDecision(__instance);
             RecordCommitted("hook:NEventRoom.OptionButtonClicked", "event_proceed", new JsonObject
             {
                 ["index"] = index,
                 ["text_key"] = JsonDescribe.Try(() => option.TextKey),
                 ["title"] = JsonDescribe.Try(() => option.Title?.GetRawText()),
-            });
+            }, before);
         }
         catch (Exception ex)
         {
@@ -391,6 +426,9 @@ public static class HumanFunnels
                 return;
             }
             var variables = new JsonObject();
+            _eventDecisions.TryGetValue(option, out var input);
+            _eventDecisions.Remove(option);
+            var before = input?.Capture ?? new DecisionCapture(RecorderMod.Session, 0, "missing_event_input");
             try
             {
                 foreach (var pair in option.HistoryName.Variables)
@@ -402,9 +440,6 @@ public static class HumanFunnels
             {
                 // Variables are cosmetic; drop them on failure.
             }
-            int? index = ReferenceEquals(option, _clickedEventOption) ? _clickedEventOptionIndex : null;
-            _clickedEventOption = null;
-            _clickedEventOptionIndex = -1;
             RecordCommitted("hook:EventSynchronizer.SaveEventOptionToHistory", "event_option", new JsonObject
             {
                 ["player"] = JsonDescribe.Try<long?>(() => (long)player.NetId),
@@ -413,13 +448,24 @@ public static class HumanFunnels
                 ["variables"] = variables,
                 ["text_key"] = JsonDescribe.Try(() => option.TextKey),
                 ["relic_id"] = JsonDescribe.Try(() => option.Relic?.Id.ToString()),
-                ["index"] = index,
-            });
+                ["index"] = input?.Index,
+            }, before);
         }
         catch (Exception ex)
         {
             RecorderMod.Report("HumanFunnels.SaveEventOptionPostfix", ex);
         }
+    }
+
+    private static void OnBeforeRestSiteOptionChosen(RestSiteOption option, ulong playerId)
+    {
+        try
+        {
+            if (playerId != LocalContext.NetId || RecorderMod.Session != _restSiteSession) return;
+            var before = Snapshots.CaptureDecision(NRestSiteRoom.Instance);
+            if (before != null) _restDecisions.AddOrUpdate(option, before);
+        }
+        catch (Exception ex) { RecorderMod.Report("HumanFunnels.BeforeRestSite", ex); }
     }
 
     private static void OnRestSiteOptionChosen(RestSiteOption option, bool success, ulong playerId)
@@ -430,7 +476,10 @@ public static class HumanFunnels
             {
                 return;
             }
-            if (playerId != LocalContext.NetId || !success)
+            if (playerId != LocalContext.NetId) return;
+            _restDecisions.TryGetValue(option, out var before);
+            _restDecisions.Remove(option);
+            if (!success)
             {
                 return; // success=false means the sub-flow was backed out (no commitment).
             }
@@ -438,7 +487,7 @@ public static class HumanFunnels
             {
                 ["option_id"] = JsonDescribe.Try(() => option.OptionId),
                 ["player"] = (long)playerId,
-            });
+            }, before ?? new DecisionCapture(_restSiteSession, 0, "missing_rest_input"));
         }
         catch (Exception ex)
         {
@@ -451,29 +500,41 @@ public static class HumanFunnels
     /// captured synchronously, and the record is committed only when the returned
     /// Task&lt;bool&gt; resolves true (false = failed/cancelled purchase).
     /// </summary>
-    private static void MerchantPurchasePostfix(MerchantEntry __instance, Task<bool> __result, bool ignoreCost)
+    private static void MerchantPurchasePrefix(MerchantEntry __instance, bool ignoreCost, out PurchaseInput? __state)
     {
-        RecordPurchaseWhenComplete(__instance, __result, ignoreCost, "shop_purchase",
+        __state = null;
+        try
+        {
+            var before = Snapshots.CaptureDecision(null);
+            if (before == null) return;
+            var parameters = DescribeMerchantEntry(__instance);
+            parameters["ignore_cost"] = ignoreCost;
+            __state = new PurchaseInput(before, parameters);
+        }
+        catch (Exception ex) { RecorderMod.Report("HumanFunnels.BeforePurchase", ex); }
+    }
+
+    private static void MerchantPurchasePostfix(Task<bool> __result, PurchaseInput? __state)
+    {
+        RecordPurchaseWhenComplete(__state, __result, "shop_purchase",
             "hook:MerchantEntry.OnTryPurchaseWrapper");
     }
 
-    private static void CardRemovalPurchasePostfix(MerchantCardRemovalEntry __instance, Task<bool> __result, bool ignoreCost)
+    private static void CardRemovalPurchasePostfix(Task<bool> __result, PurchaseInput? __state)
     {
-        RecordPurchaseWhenComplete(__instance, __result, ignoreCost, "shop_card_removal",
+        RecordPurchaseWhenComplete(__state, __result, "shop_card_removal",
             "hook:MerchantCardRemovalEntry.OnTryPurchaseWrapper");
     }
 
     private static void RecordPurchaseWhenComplete(
-        MerchantEntry entry, Task<bool>? result, bool ignoreCost, string kind, string source)
+        PurchaseInput? input, Task<bool>? result, string kind, string source)
     {
         try
         {
-            if (RecorderMod.Session == null || result == null)
+            if (RecorderMod.Session == null || result == null || input == null)
             {
                 return;
             }
-            var parameters = DescribeMerchantEntry(entry);
-            parameters["ignore_cost"] = ignoreCost; // true = relic-granted free purchase, not human gold spend
             result.ContinueWith(task =>
             {
                 try
@@ -482,7 +543,7 @@ public static class HumanFunnels
                     {
                         return;
                     }
-                    RecorderMod.RunOnMainThread(() => RecordCommitted(source, kind, parameters));
+                    RecorderMod.RunOnMainThread(() => RecordCommitted(source, kind, input.Parameters, input.Capture));
                 }
                 catch (Exception ex)
                 {
@@ -541,7 +602,8 @@ public static class HumanFunnels
             {
                 return;
             }
-            _locallySelectedRewards.AddOrUpdate(reward, new object());
+            var before = Snapshots.CaptureDecision(null);
+            if (before != null) _locallySelectedRewards.AddOrUpdate(reward, before);
         }
         catch (Exception ex)
         {
@@ -554,7 +616,19 @@ public static class HumanFunnels
     /// EVERY machine (local + remote claims) and for programmatic auto-claims (Draft
     /// run-start modifier), so filter to the local player and tag the source.
     /// </summary>
-    private static void RewardSelectPostfix(Reward __instance, Task<bool> __result)
+    private static void RewardSelectPrefix(Reward __instance, out DecisionCapture? __state)
+    {
+        __state = null;
+        try
+        {
+            if (RecorderMod.Session == null || !LocalContext.IsMe(__instance.Player)) return;
+            __state = _locallySelectedRewards.TryGetValue(__instance, out var before)
+                ? before : Snapshots.CaptureDecision(null);
+        }
+        catch (Exception ex) { RecorderMod.Report("HumanFunnels.BeforeReward", ex); }
+    }
+
+    private static void RewardSelectPostfix(Reward __instance, Task<bool> __result, DecisionCapture? __state)
     {
         try
         {
@@ -590,6 +664,7 @@ public static class HumanFunnels
                     // serialize on the main thread via the pump.
                     RecorderMod.RunOnMainThread(() =>
                     {
+                        if (__state == null || !ReferenceEquals(__state.Session, RecorderMod.Session)) return;
                         var parameters = DescribeReward(__instance);
                         parameters["human"] = human;
                         parameters["programmatic"] = !human; // e.g. Draft modifier auto-claims
@@ -598,7 +673,7 @@ public static class HumanFunnels
                         {
                             parameters["picked_cards"] = PickedCards(takenCardReward);
                         }
-                        RecordCommitted("hook:Reward.SelectUnsynchronized", "reward_taken", parameters);
+                        RecordCommitted("hook:Reward.SelectUnsynchronized", "reward_taken", parameters, __state);
                     });
                 }
                 catch (Exception ex)
@@ -786,7 +861,8 @@ public static class HumanFunnels
             };
             var picked = DecodeChoice(result, parameters);
             parameters["picked"] = picked;
-            RecordCommitted("hook:PlayerChoiceSynchronizer.SyncLocalChoice", "player_choice", parameters);
+            RecordCommitted("hook:PlayerChoiceSynchronizer.SyncLocalChoice", "player_choice", parameters,
+                DecisionHooks.Consume(player.NetId, choiceId));
         }
         catch (Exception ex)
         {
@@ -830,6 +906,7 @@ public static class HumanFunnels
                 case PlayerChoiceType.MutableCard:
                 {
                     var cards = new JsonArray();
+                    var instances = new JsonArray();
                     var count = 0;
                     var models = JsonDescribe.Try<IEnumerable<CardModel>>(() => result.AsCards(result.ChoiceType));
                     if (models != null)
@@ -837,10 +914,16 @@ public static class HumanFunnels
                         foreach (var card in models)
                         {
                             cards.Add(JsonDescribe.Model(card));
+                            instances.Add(new JsonObject
+                            {
+                                ["id"] = JsonDescribe.Model(card),
+                                ["instance_id"] = PassiveStateBuilder.CardInstanceId(card),
+                            });
                             count++;
                         }
                     }
                     parameters["cards"] = cards;
+                    parameters["card_instances"] = instances;
                     return count > 0;
                 }
                 default:

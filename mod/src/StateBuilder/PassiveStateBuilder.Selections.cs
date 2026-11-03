@@ -7,6 +7,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
@@ -121,21 +124,31 @@ public static partial class PassiveStateBuilder
     {
         var state = new Dictionary<string, object?>();
 
-        var cardHolders = FindAllSortedByPosition<NCardHolder>(cardScreen);
+        // The screen's offered models are authoritative. UI child order changes
+        // on focus, and QueueFree leaves old holders alive during a reroll frame.
+        var offered = RequireSelectionField<IReadOnlyList<CardCreationResult>>(cardScreen, "_options");
         var cards = new List<Dictionary<string, object?>>();
         int index = 0;
-        foreach (var holder in cardHolders)
+        foreach (var offer in offered)
         {
-            var card = holder.CardModel;
-            if (card == null) continue;
-
-            cards.Add(BuildOfferedCard(card, index));
+            var cardInfo = BuildOfferedCard(offer.Card, index);
+            cardInfo["choice_index"] = index;
+            cards.Add(cardInfo);
             index++;
         }
         state["cards"] = cards;
 
-        var altButtons = FindAll<NCardRewardAlternativeButton>(cardScreen);
-        state["can_skip"] = altButtons.Count > 0;
+        var alternatives = RequireSelectionField<IReadOnlyList<CardRewardAlternative>>(cardScreen, "_extraOptions");
+        state["alternatives"] = alternatives.Select((option, i) => new Dictionary<string, object?>
+        {
+            ["index"] = i,
+            ["choice_index"] = offered.Count + i,
+            ["id"] = option.OptionId,
+            ["title"] = SafeGetText(() => option.Title),
+            ["after_selected"] = option.AfterSelected.ToString(),
+        }).ToList();
+        state["can_skip"] = alternatives.Any(a => string.Equals(a.OptionId, "Skip", StringComparison.OrdinalIgnoreCase));
+        state["candidate_source"] = "screen_offered_models";
 
         return state;
     }
@@ -163,21 +176,32 @@ public static partial class PassiveStateBuilder
             state["prompt"] = prompt;
         }
 
-        // Cards in the grid (sorted by visual position - MoveToFront can reorder children)
-        var cardHolders = FindAllSortedByPosition<NGridCardHolder>(screen);
+        // Keep original choice indices (the game's synchronized index space),
+        // independent of UI sorting, scrolling and preview holders.
+        // Combat-pile screens initialize their inherited _cards to EMPTY and
+        // refresh the grid as the pile changes. The grid owns the full, already
+        // publicly sorted set; CurrentlyDisplayedCards contains only a viewport
+        // chunk. Never read the underlying draw pile's private order here.
+        var offered = screen is NCombatPileCardSelectScreen
+            ? RequireSelectionField<IReadOnlyList<CardModel>>(
+                RequireSelectionField<NCardGrid>(screen, "_grid"), "_cards")
+            : RequireSelectionField<IReadOnlyList<CardModel>>(screen, "_cards");
+        var selected = GetInstanceFieldValue(screen, "_selectedCards") as IEnumerable<CardModel>;
+        var selectedSet = selected?.ToHashSet() ?? new HashSet<CardModel>();
         var cards = new List<Dictionary<string, object?>>();
         int index = 0;
-        foreach (var holder in cardHolders)
+        foreach (var card in offered)
         {
-            var card = holder.CardModel;
-            if (card == null) continue;
-
             var cardInfo = BuildCardInfo(card);
             cardInfo["index"] = index;
+            cardInfo["choice_index"] = index;
+            cardInfo["selected"] = selectedSet.Contains(card);
             cards.Add(cardInfo);
             index++;
         }
         state["cards"] = cards;
+        state["candidate_source"] = "screen_offered_models";
+        AddSelectionPrefs(state, screen);
 
         // Preview container showing? (selection complete, awaiting confirm)
         // Upgrade screens use UpgradeSinglePreviewContainer / UpgradeMultiPreviewContainer
@@ -255,20 +279,19 @@ public static partial class PassiveStateBuilder
 
         state["prompt"] = "Choose a card.";
 
-        var cardHolders = FindAllSortedByPosition<NGridCardHolder>(screen);
+        var offered = RequireSelectionField<IReadOnlyList<CardModel>>(screen, "_cards");
         var cards = new List<Dictionary<string, object?>>();
         int index = 0;
-        foreach (var holder in cardHolders)
+        foreach (var card in offered)
         {
-            var card = holder.CardModel;
-            if (card == null) continue;
-
             var cardInfo = BuildCardInfo(card);
             cardInfo["index"] = index;
+            cardInfo["choice_index"] = index;
             cards.Add(cardInfo);
             index++;
         }
         state["cards"] = cards;
+        state["candidate_source"] = "screen_offered_models";
 
         var skipButton = screen.GetNodeOrNull<NClickableControl>("SkipButton");
         state["can_skip"] = skipButton?.IsEnabled == true && skipButton.Visible;
@@ -277,6 +300,21 @@ public static partial class PassiveStateBuilder
         state["can_cancel"] = state["can_skip"];
 
         return state;
+    }
+
+    private static T RequireSelectionField<T>(object screen, string field) =>
+        GetInstanceFieldValue(screen, field) is T value ? value
+            : throw new InvalidOperationException($"Missing offered-candidate field {screen.GetType().Name}.{field}");
+
+    private static void AddSelectionPrefs(Dictionary<string, object?> state, object screen)
+    {
+        if (GetInstanceFieldValue(screen, "_prefs") is CardSelectorPrefs prefs)
+        {
+            state["min_select"] = prefs.MinSelect;
+            state["max_select"] = prefs.MaxSelect;
+            state["require_manual_confirmation"] = prefs.RequireManualConfirmation;
+            state["cancelable"] = prefs.Cancelable;
+        }
     }
 
     private static Dictionary<string, object?> BuildBundleSelectState(NChooseABundleSelectionScreen screen, RunState runState)
@@ -288,11 +326,11 @@ public static partial class PassiveStateBuilder
 
         var bundles = new List<Dictionary<string, object?>>();
         int index = 0;
-        foreach (var bundle in FindAll<NCardBundle>(screen))
+        foreach (var bundle in RequireSelectionField<IReadOnlyList<IReadOnlyList<CardModel>>>(screen, "_bundles"))
         {
             var cards = new List<Dictionary<string, object?>>();
             int cardIndex = 0;
-            foreach (var card in bundle.Bundle)
+            foreach (var card in bundle)
             {
                 var cardInfo = BuildCardInfo(card);
                 cardInfo["index"] = cardIndex;
@@ -303,6 +341,7 @@ public static partial class PassiveStateBuilder
             bundles.Add(new Dictionary<string, object?>
             {
                 ["index"] = index,
+                ["choice_index"] = index,
                 ["card_count"] = cards.Count,
                 ["cards"] = cards
             });
@@ -346,17 +385,15 @@ public static partial class PassiveStateBuilder
 
         state["prompt"] = "Choose a relic.";
 
-        var relicHolders = FindAll<NRelicBasicHolder>(screen);
+        var offered = RequireSelectionField<IReadOnlyList<RelicModel>>(screen, "_relics");
         var relics = new List<Dictionary<string, object?>>();
         int index = 0;
-        foreach (var holder in relicHolders)
+        foreach (var relic in offered)
         {
-            var relic = holder.Relic?.Model;
-            if (relic == null) continue;
-
             relics.Add(new Dictionary<string, object?>
             {
                 ["index"] = index,
+                ["choice_index"] = index,
                 ["id"] = relic.Id.Entry,
                 ["name"] = SafeGetText(() => relic.Title),
                 ["description"] = SafeGetText(() => relic.DynamicDescription),

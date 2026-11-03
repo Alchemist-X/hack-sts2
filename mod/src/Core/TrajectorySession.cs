@@ -66,6 +66,8 @@ public sealed class TrajectorySession : IDisposable
     private readonly LatencyHistogram _snapshotBuildLatency = new();
     private readonly Dictionary<string, LatencyHistogram> _snapshotBuildByTrigger = new();
     private long _statesDeduplicated;
+    private long _decisionInputs;
+    private long _nestedInputs;
 
     private TrajectorySession(string directory, int part, SessionMeta meta, IClock clock)
     {
@@ -197,13 +199,39 @@ public sealed class TrajectorySession : IDisposable
     }
 
     /// <summary>
+    /// Counts a decision-input hook entry for the manifest perf detail:
+    /// <paramref name="nested"/> true = a synchronous nested input on the same
+    /// binding that reused the outer pre-input capture (no build).
+    /// </summary>
+    public void NoteDecisionInput(bool nested)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _completed)
+            {
+                return;
+            }
+            if (nested)
+            {
+                _nestedInputs++;
+            }
+            else
+            {
+                _decisionInputs++;
+            }
+        }
+    }
+
+    /// <summary>
     /// Records a hooked action. <paramref name="status"/> must be "committed"
     /// (already-final decisions), "executed" or "cancelled" (GameAction lifecycle).
     /// <paramref name="stateSeq"/> null means "the latest snapshot" (LatestStateSeq).
     /// When no snapshot exists yet (LatestStateSeq == 0, or a caller passes a
-    /// stale 0), state_seq is written as JSON null — the contract for "action
-    /// fired before the first snapshot"; sts2rec canonical degrades gracefully
-    /// (next snapshot as best-effort state_before, flagged in info).
+    /// 0), state_seq is written as JSON null. DecisionCapture explicitly passes
+    /// 0 on failure and marks params._decision; consumers must not substitute a
+    /// future observation for such failures. Legacy no-snapshot records retain
+    /// the canonical estimated-state compatibility behavior (next snapshot as
+    /// best-effort state_before, flagged in info).
     /// </summary>
     public long RecordAction(
         string source, string kind, JsonNode parameters, string status, long? stateSeq)
@@ -746,6 +774,8 @@ public sealed class TrajectorySession : IDisposable
         }
         perf["capture_by_trigger_ms"] = byTrigger;
         perf["states_deduplicated"] = _statesDeduplicated;
+        perf["decision_input_scopes"] = _decisionInputs;
+        perf["nested_inputs_coalesced"] = _nestedInputs;
         perf["writer_queues"] = new JsonObject
         {
             // Null-conditional: the constructor's first manifest write can run

@@ -122,6 +122,7 @@ public static class RunLifecycle
                 ["snapshot_min_interval_ms"] = RecorderMod.SnapshotMinIntervalMs,
                 ["burst_min_interval_ms"] = RecorderMod.BurstMinIntervalMs,
                 ["sp_checksum_enabled"] = RecorderMod.SpChecksumEnabled,
+                ["decision_capture_combat_inputs"] = RecorderMod.DecisionCaptureCombatInputs,
                 ["checksum_tracker_enabled"] =
                     JsonDescribe.Try<bool?>(() => RunManager.Instance.ChecksumTracker.IsEnabled),
             });

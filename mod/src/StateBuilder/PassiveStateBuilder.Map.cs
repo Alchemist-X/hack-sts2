@@ -47,6 +47,8 @@ public static partial class PassiveStateBuilder
         // Next options - read travelable state from UI nodes (read-only)
         var nextOptions = new List<Dictionary<string, object?>>();
         var mapScreen = NMapScreen.Instance;
+        state["is_open"] = mapScreen?.IsOpen ?? false;
+        state["travel_enabled"] = mapScreen?.IsTravelEnabled ?? false;
         if (mapScreen != null)
         {
             var travelable = FindAll<NMapPoint>(mapScreen)

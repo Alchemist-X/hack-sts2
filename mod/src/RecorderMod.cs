@@ -23,7 +23,7 @@ namespace Sts2Recorder.Game;
 [ModInitializer("Initialize")]
 public static class RecorderMod
 {
-    public const string Version = "0.3.1";
+    public const string Version = "0.4.0";
     public const string HarmonyId = "alchemist-x.sts2recorder";
     private const string ConfigFileName = "Sts2Recorder.conf";
 
@@ -81,6 +81,19 @@ public static class RecorderMod
 
     public const bool DefaultSpChecksumEnabled = false;
 
+    /// <summary>
+    /// Whether combat inputs (manual card play, end turn, in-combat potion
+    /// use/discard) take a synchronous pre-input decision snapshot
+    /// (Sts2Recorder.conf key "decision_capture_combat_inputs"). Each capture is
+    /// a full main-thread state build (~8 ms) on every combat input, so it is
+    /// opt-in; with it off those actions keep the 0.3.1 latest-snapshot
+    /// state_seq. Non-combat decision captures (rewards, map, events, shop,
+    /// rest site, selection screens) are always on.
+    /// </summary>
+    public static bool DecisionCaptureCombatInputs { get; private set; } = DefaultDecisionCaptureCombatInputs;
+
+    public const bool DefaultDecisionCaptureCombatInputs = false;
+
     public static void Initialize()
     {
         try
@@ -96,6 +109,7 @@ public static class RecorderMod
             RunLifecycle.ApplyPatches(harmony);
             ActionPipeline.ApplyPatches(harmony);
             HumanFunnels.ApplyPatches(harmony);
+            DecisionHooks.ApplyPatches(harmony);
 
             TrySubscribe("event:RunManager.RunStarted",
                 () => RunManager.Instance.RunStarted += RunLifecycle.OnRunStarted);
@@ -295,6 +309,11 @@ public static class RecorderMod
                     && checksumElem.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 {
                     SpChecksumEnabled = checksumElem.GetBoolean();
+                }
+                if (doc.RootElement.TryGetProperty("decision_capture_combat_inputs", out var combatCaptureElem)
+                    && combatCaptureElem.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    DecisionCaptureCombatInputs = combatCaptureElem.GetBoolean();
                 }
             }
 

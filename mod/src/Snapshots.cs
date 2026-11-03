@@ -19,7 +19,7 @@ namespace Sts2Recorder.Game;
 /// drops empty-state callbacks. Post-action snapshots are deferred one frame
 /// via the ProcessFrame pump so state_after exists for canonical alignment.
 /// All snapshots go through PassiveStateBuilder.TryBuildSnapshot + RecordState
-/// (hash-deduped by the session, so redundant triggers are cheap).
+/// (dedup saves serialization/I/O, but building a redundant state still costs CPU).
 ///
 /// Throttle (docs/design.md, "Snapshot throttling"): StateTracker bursts are
 /// trailing-coalesced through a Core SnapshotThrottle with window
@@ -116,27 +116,51 @@ public static class Snapshots
     /// </summary>
     public static void TakeSnapshot(string trigger, bool includeDeck = false)
     {
+        CaptureSnapshot(trigger, includeDeck);
+    }
+
+    /// <summary>
+    /// Decision capture (recorder 0.4.0): builds the pre-choice snapshot NOW,
+    /// synchronously, bypassing both throttle windows and the burst coalescing,
+    /// and pins its seq to the decision — the action must reference this exact
+    /// observation, never a later trailing one. <paramref name="screen"/> is the
+    /// UI owner of the choice (null = whatever the builder sees on top). Returns
+    /// null without a session; a failed build yields StateSeq 0, which the
+    /// action records as <c>_decision.status: "missing"</c>.
+    /// </summary>
+    internal static DecisionCapture? CaptureDecision(object? screen, string stage = "before_input")
+    {
+        var session = RecorderMod.Session;
+        if (session == null) return null;
+        return new DecisionCapture(session, CaptureSnapshot("decision:" + stage, includeDeck: false, screen), stage);
+    }
+
+    private static long CaptureSnapshot(string trigger, bool includeDeck, object? decisionScreen = null)
+    {
         try
         {
             var session = RecorderMod.Session;
             var runState = RecorderMod.CurrentRunState;
             if (session == null || runState == null)
             {
-                return;
+                return 0;
             }
             var stopwatch = Stopwatch.StartNew();
-            PassiveStateBuilder.TryBuildSnapshot(runState, includeDeck, out var screen, out var state);
-            session.RecordState(trigger, screen, state);
+            bool built = PassiveStateBuilder.TryBuildSnapshot(
+                runState, includeDeck, out var screen, out var state, decisionScreen);
+            long seq = session.RecordState(trigger, screen, state);
             stopwatch.Stop();
             session.RecordSnapshotCost(stopwatch.Elapsed.TotalMilliseconds, trigger);
             // Any snapshot resets BOTH windows, so a poll or phase trigger right
             // after a forced snapshot coalesces instead of building again.
             Throttle.NoteSnapshotTaken();
             BurstThrottle.NoteSnapshotTaken();
+            return built ? seq : 0;
         }
         catch (Exception ex)
         {
             RecorderMod.Report($"Snapshots.TakeSnapshot:{trigger}", ex);
+            return 0;
         }
     }
 

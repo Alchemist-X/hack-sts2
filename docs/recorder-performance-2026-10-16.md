@@ -17,6 +17,16 @@
 - `scripts/RecorderBench` 与 `scripts/benchmark_recorder_reads.py` 两套基准没有移植；
   归档里 C# 旧路径/新路径的对比数字针对的是被取代的实现，已删除。
 
+## 决策输入的嵌套合并（0.4.0）
+
+`DecisionChoices.InputScope` 只合并同一屏幕、同一次绑定内同步嵌套的输入方法：外层输入先采样，
+内层完成检查（例如 `OnCardClicked` 里同步调用的 `CheckIfSelectionComplete`）复用外层的选择前快照，
+不再重新构建，也不会覆盖外层固定的引用。下一次输入、新屏幕、重掷后的新绑定各自重新采样；
+Harmony finalizer 在异常时也释放作用域，旧绑定的 finalizer 不能关闭新绑定。
+没有给选择前快照加时间/帧节流——合并的是一次操作内部的重复读取，不是多个用户输入。
+战斗内逐次输入（出牌、结束回合、战斗中药水）的采样由 `decision_capture_combat_inputs` 控制，默认关闭，
+见 [决策采样说明](recorder-decision-capture-2026-10-16.md)。
+
 ## 反射元数据缓存
 
 `FieldReaders` 按（类型，字段名）缓存反射得到的 `FieldInfo`，包含基类字段和"找不到"的结果；
@@ -32,6 +42,7 @@
 | `capture_by_trigger_ms` | 同一测量按快照触发点（`phase` / `poll` / `action` …）拆分，每项 `{count, avg, max, p95_upper_bound, p99_upper_bound}`；最多 32 个触发点，其余归入 `other` |
 | `states_deduplicated` | 因哈希与上一快照相同而未写入的状态数 |
 | `writer_queues` | 每个流（states/actions/events）当前待写行数、字节数和历史峰值；不含写线程正在写的一行，峰值在 Flush 后保留 |
+| `decision_input_scopes` / `nested_inputs_coalesced` | 决策输入钩子的外层输入次数 / 被合并、复用外层采样的同步嵌套回调数（0.4.0 决策采样） |
 
 分位数来自固定内存直方图（96 个桶，桶宽约 19%），报告的是上界；落在最后一个桶时用实际 max。
 耗时不包含整个 Harmony 回调、动画、帧时间或之后的 fsync。保存/结束时仍可能等待队列落盘，

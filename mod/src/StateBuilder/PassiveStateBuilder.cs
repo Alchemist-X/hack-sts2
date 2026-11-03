@@ -44,12 +44,16 @@ public static partial class PassiveStateBuilder
     /// <summary>
     /// As above; <paramref name="includeDeck"/> forces the master deck into the
     /// player section while a combat is in progress (combat-setup snapshot).
+    /// <paramref name="decisionScreen"/> (decision capture) names the UI owner of
+    /// the choice being made, so a lingering overlay, popup or inspection screen
+    /// cannot replace the decision surface.
     /// </summary>
-    public static bool TryBuildSnapshot(RunState runState, bool includeDeck, out string screen, out JsonNode state)
+    public static bool TryBuildSnapshot(RunState runState, bool includeDeck, out string screen, out JsonNode state,
+        object? decisionScreen = null)
     {
         try
         {
-            var result = BuildSnapshotDict(runState, includeDeck);
+            var result = BuildSnapshotDict(runState, includeDeck, decisionScreen);
             screen = result.TryGetValue("state_type", out var st) ? st as string ?? "unknown" : "unknown";
             state = ToJsonNode(result) ?? new JsonObject();
             return true;
@@ -66,14 +70,15 @@ public static partial class PassiveStateBuilder
         }
     }
 
-    private static Dictionary<string, object?> BuildSnapshotDict(RunState? runState, bool includeDeck)
+    private static Dictionary<string, object?> BuildSnapshotDict(RunState? runState, bool includeDeck,
+        object? decisionScreen = null)
     {
         var result = new Dictionary<string, object?>();
         var tree = Godot.Engine.GetMainLoop() as SceneTree;
 
         // Tutorial (FTUE) popups and yes/no popups can block input at any point
         // during a run; report them as the active screen when present.
-        if (tree?.Root != null)
+        if (decisionScreen == null && tree?.Root != null)
         {
             Dictionary<string, object?>? ftueState = null;
             try { ftueState = BuildVisibleFtueState(tree.Root); }
@@ -100,7 +105,20 @@ public static partial class PassiveStateBuilder
         bool mapIsOpen = false;
         try { mapIsOpen = IsMapScreenOpenOrVisible(); } catch { }
 
-        if (topOverlay is NCardGridSelectionScreen cardSelectScreen)
+        // Input hooks know the actual owner. A lingering overlay or an inspection
+        // screen must not replace the decision surface being committed.
+        if (decisionScreen != null)
+        {
+            topOverlay = decisionScreen as IOverlayScreen;
+            mapIsOpen = decisionScreen is MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen;
+        }
+
+        if (decisionScreen is NPlayerHand selectingHand)
+        {
+            result["state_type"] = "hand_select";
+            result["hand_select"] = Guarded(() => BuildHandSelectState(selectingHand, runState));
+        }
+        else if (topOverlay is NCardGridSelectionScreen cardSelectScreen)
         {
             result["state_type"] = "card_select";
             result["card_select"] = Guarded(() => BuildCardSelectState(cardSelectScreen, runState));
