@@ -1,8 +1,9 @@
-"""PPO on sts2vec (smoke scale).
+"""PPO on sts2vec.
 
-Default objective is the contract's: reward 1 at a Victory terminal, else 0, gamma = 1 (CONTRACTS.md D5); progress and
-floor are logged only. `--shaped` (SMOKE ONLY) adds the floor-reached shaping reward (delta total_floor / 48 per step)
-so a short run on one Mac sees any learning signal at all; it is not the benchmark objective.
+Objectives (``sts2train.objective``): ``protocol`` (default) = per-step change of the STS2-Bench v0.2 progress metric
+(the function ``sts2vec eval`` scores with) + ``win_bonus`` at a Victory terminal, so an episode's return is its
+protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory terminal, else 0; CONTRACTS.md D5);
+``shaped`` (LEGACY, ``--shaped``) = ``win`` + delta(total_floor) / 48 per step, the 2026-11-02 smoke objective.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from sts2vec.pool import ALL_CHARACTERS
 
 from .features import ModelSpec, RolloutStore, bind_spec, obs_to_torch
 from .model import Policy, param_count
+from .objective import OBJECTIVES, EpisodeRewards
 from .progress import ProgressTracker
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
@@ -43,7 +45,9 @@ class TrainConfig:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    shaped: bool = False            # SMOKE ONLY: + delta(total_floor) / shaped_floors per step
+    objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
+    win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
+    shaped: bool = False            # LEGACY flag: same as objective="shaped" (delta(total_floor) / shaped_floors)
     shaped_floors: float = 48.0
     minutes: float = 50.0
     max_updates: int = 0            # 0 = until `minutes`
@@ -184,6 +188,12 @@ def train(cfg: TrainConfig, log=print) -> dict:
     warm_s = time.monotonic() - t
     log(f"pool warm: {warmed} templates in {warm_s:.1f} s; encoder_version {spec.encoder_version}")
     tracker = ProgressTracker(spec.aux_fields, env.schema["last_episode"].fields, cfg.envs, cfg.ascension)
+    objective = "shaped" if cfg.shaped else cfg.objective
+    if objective not in OBJECTIVES:
+        raise ValueError(f"objective {objective!r}: expected one of {OBJECTIVES}")
+    rewards = EpisodeRewards(objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs, cfg.ascension,
+                             win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
+    log(f"objective: {objective}" + (f" (win bonus {cfg.win_bonus})" if objective == "protocol" else ""))
 
     baseline = None
     if cfg.baseline_steps:
@@ -200,11 +210,8 @@ def train(cfg: TrainConfig, log=print) -> dict:
     dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
     store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes)
     log(f"rollout store: {store.nbytes / 2**20:.0f} MiB")
-    aux_floor = spec.cols["aux"]["total_floor"]
-    le_floor = spec.cols["last_episode"]["floor"]
-
     obs = env.reset()
-    tracker.observe(obs["aux"])
+    rewards.reset(obs["aux"])
     win = Windows(out / "curve.csv", cfg.window_min * 60)
     updates_log = open(out / "updates.csv", "w", newline="")
     uw = csv.writer(updates_log)
@@ -245,18 +252,11 @@ def train(cfg: TrainConfig, log=print) -> dict:
             store.logp[t] = logp.cpu().numpy()
             store.values[t] = value.cpu().numpy()
             store.valid[t] = valid
-            prev_floor = tracker.prev[:, 1].copy()
             t1 = time.monotonic()
             obs, rew, term, trunc, status, info = env.step(a_np)
             t2 = time.monotonic()
             done = (term | trunc).astype(bool)
-            fin = tracker.finished(done, info["last_episode"])
-            floor_now = obs["aux"][:, aux_floor].astype(np.int64)
-            floor_now[done] = info["last_episode"][done, le_floor]
-            r = rew.astype(np.float32).copy()
-            if cfg.shaped:
-                r += (floor_now - prev_floor).astype(np.float32) / cfg.shaped_floors
-            tracker.observe(obs["aux"])
+            r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"])
             store.rewards[t] = r
             store.dones[t] = done
             se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -342,7 +342,7 @@ def train(cfg: TrainConfig, log=print) -> dict:
         totals["update_s"] += update_s
         totals["episodes"] += len(ep_this)
         totals["wins"] += sum(e["win"] for e in ep_this)
-        all_eps += [{k: e[k] for k in ("win", "floor", "act", "progress", "steps")} for e in ep_this]
+        all_eps += [{k: e[k] for k in ("win", "floor", "act", "progress", "steps", "return")} for e in ep_this]
         win.c["updates"] += 1
         win.c["env_s"] += env_s
         win.c["infer_s"] += infer_s
@@ -380,7 +380,7 @@ def train(cfg: TrainConfig, log=print) -> dict:
     wall = now - train_start
     summary = {
         "config": {k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(cfg).items()},
-        "encoder_version": spec.encoder_version, "params": n_params, "weights_hash": wh,
+        "objective": objective, "encoder_version": spec.encoder_version, "params": n_params, "weights_hash": wh,
         "pool_warm_s": round(warm_s, 2), "pool_warmed": warmed, "baseline": baseline,
         "updates": upd, "wall_s": round(wall, 1), "env_steps": totals["env_steps"],
         "env_steps_per_s": round(totals["env_steps"] / wall, 1),

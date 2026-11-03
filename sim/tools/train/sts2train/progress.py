@@ -1,6 +1,7 @@
 """Protocol v0.2 progress of finished sts2vec episodes, from the `aux` block and `last_episode`.
 
-The metric itself is `sts2eval.progress.compute` (the protocol's single implementation). Its per-act inputs come from
+The metric itself is `sts2vec.protocol.compute`: the function `sts2vec eval` (`sts2vec.evaluate`) scores games with, a
+vendored copy of `sts2eval.progress.compute` that sts2vec's tests pin to the original. Its per-act inputs come from
 the aux columns added for this purpose (sim/VEC.md, aux): the act's start floor is `total_floor - act_floor` (act 1:
 0) and the act's room count L is `act_rooms` (the current act map's last row + 1 = the play server's `map.nodes` max
 row + 1). With auto-reset a finished slot's aux already shows the next episode, so the tracker keeps each slot's aux
@@ -10,7 +11,7 @@ from the previous call and scores the finished episode from it plus `last_episod
 from __future__ import annotations
 
 import numpy as np
-from sts2eval import progress as PG
+from sts2vec import protocol as PG
 
 
 class ProgressTracker:

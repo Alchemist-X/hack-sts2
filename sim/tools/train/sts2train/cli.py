@@ -69,8 +69,12 @@ def main(argv=None) -> int:
     tr.add_argument("--gamma", type=float, default=1.0)
     tr.add_argument("--lam", type=float, default=0.95)
     tr.add_argument("--ent-coef", type=float, default=0.01)
+    tr.add_argument("--objective", choices=["protocol", "win", "shaped"], default="protocol",
+                    help="protocol (default): per-step delta of the protocol v0.2 progress + --win-bonus at a win; "
+                         "win: 1 at a Victory terminal; shaped: LEGACY smoke objective (win + delta floor / 48)")
+    tr.add_argument("--win-bonus", type=float, default=1.0, help="protocol objective: reward added at a Victory terminal")
     tr.add_argument("--shaped", action="store_true",
-                    help="SMOKE ONLY: add delta(total_floor)/48 per step to the win/loss reward")
+                    help="LEGACY (= --objective shaped): add delta(total_floor)/48 per step to the win/loss reward")
     tr.add_argument("--ascension", type=int, default=0)
     tr.add_argument("--pool", type=int, default=2048)
     tr.add_argument("--device", default="cpu", help="cpu | mps | cuda")
@@ -92,12 +96,13 @@ def main(argv=None) -> int:
         from .ppo import TrainConfig, train
 
         cfg = TrainConfig(envs=a.envs, threads=a.threads, rollout=a.rollout, epochs=a.epochs, minibatch=a.minibatch,
-                          lr=a.lr, gamma=a.gamma, lam=a.lam, ent_coef=a.ent_coef, shaped=a.shaped, minutes=a.minutes,
+                          lr=a.lr, gamma=a.gamma, lam=a.lam, ent_coef=a.ent_coef, objective=a.objective,
+                          win_bonus=a.win_bonus, shaped=a.shaped, minutes=a.minutes,
                           max_updates=a.max_updates, ascension=a.ascension, pool=a.pool, device=a.device,
                           torch_threads=a.torch_threads, seed=a.seed, out=a.out, baseline_steps=a.baseline_steps,
                           window_min=a.window_min)
-        if cfg.shaped:
-            print("NOTE: --shaped is a SMOKE-ONLY objective (floor-reached shaping); the default objective is win/loss.")
+        if cfg.shaped or cfg.objective == "shaped":
+            print("NOTE: --shaped is the LEGACY smoke objective (floor-reached shaping); the default is --objective protocol.")
         s = train(cfg, log=lambda m: print(m, flush=True))
         _plot(Path(a.out))
         print(json.dumps({k: v for k, v in s.items() if k not in ("windows", "config")}, indent=1, default=str))

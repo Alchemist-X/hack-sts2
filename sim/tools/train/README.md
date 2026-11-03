@@ -26,12 +26,17 @@ uv run --project sim/tools/eval sts2eval report tmp/eval/nn-smoke-a0-s20      # 
 | `features.py` | `ModelSpec` (vocab / enum sizes, column maps, shapes, encoder_version from the published schema; stored in checkpoints), `obs_to_torch` (selects the 27 buffers the model reads; cuts `cand` / `prompt_options` to the rows the batch needs), `RolloutStore` ([T, N, ...] numpy copies, 643 MiB at 32 × 1024 with 64 candidate / prompt rows) |
 | `model.py` | `Policy` (948,750 parameters at d = 96, s = 256): id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; a global head; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head |
 | `ppo.py` | PPO (GAE, clipped policy and value loss, entropy bonus, Adam), `--shaped` flag, 5-minute curve windows, checkpoints, uniform-random baseline on the same env |
-| `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2eval.progress.compute` |
+| `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
+| `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return) |
 | `evaluate.py` | `eval`: one pool entry and one slot per seed (`auto_reset=false`), greedy, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), writes `config.json` / `run.json` / `games/<KEY>.summary.json` and `report.md` through `sts2eval.report` |
 
-Objective: the default is the contract's (reward 1 at a Victory terminal, else 0; gamma = 1; floor / progress logged
-only). `--shaped` adds `delta(total_floor) / 48` per step — a **smoke-only** objective so a one-hour run on one Mac sees
-any signal; it is not the benchmark objective.
+Objective (`objective.py`, `--objective`): the default `protocol` rewards each step with the change of the protocol
+v0.2 progress metric (§4.2 of `docs/sts2-bench-protocol-v0.2-2026-11-01.md`: per-act normalised, `sts2vec.protocol.compute`,
+the function `sts2vec eval` scores with) and adds `--win-bonus` (default 1.0) at a Victory terminal. Rewards telescope,
+so a fresh episode's return is exactly its protocol progress (+ bonus on a win); truncated episodes keep the progress
+of their last state, as the protocol scores `capped` / `stuck` games (`tests/test_objective.py` replays synthetic and
+real episodes against the evaluator's bookkeeping). `win` is the contract's reward (1 at a Victory terminal, else 0).
+`--shaped` (= `--objective shaped`) is the LEGACY smoke objective, `win` + `delta(total_floor) / 48` per step.
 
 Training restricts actions to the first 64 candidates (`max_rows`; rare overflow is counted as `cand_over_max_rows`);
 eval passes every candidate row. With `--device mps` the model runs on the Apple GPU (CPU fwd at N = 1024 ≈ 63 ms,
