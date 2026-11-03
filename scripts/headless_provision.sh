@@ -120,6 +120,13 @@ settings = {
     "seen_ea_disclaimer": True,
     "skip_intro_logo": True,
     "fullscreen": False,
+    # Workers are silent by default: FMOD plays through Godot --headless, so
+    # zero the game's volume sliders (headless_launch.sh re-asserts this after
+    # every baseline restore; STS2_HEADLESS_AUDIBLE=1 at launch keeps sound).
+    "volume_master": 0.0,
+    "volume_bgm": 0.0,
+    "volume_sfx": 0.0,
+    "volume_ambience": 0.0,
 }
 with open(dst, "w", encoding="utf-8") as handle:
     json.dump(settings, handle, indent=2)
