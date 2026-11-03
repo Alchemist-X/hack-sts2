@@ -48,6 +48,30 @@ def _items(block: Any, key: str) -> list[dict[str, Any]]:
     return [item for item in block[key] if isinstance(item, dict)]
 
 
+def _potion_belt_full(state: dict[str, Any]) -> bool:
+    player=state.get("player",{})
+    capacity=player.get("max_potion_slots") if isinstance(player,dict) else None
+    return isinstance(capacity,int) and len(_items(player,"potions"))>=capacity
+
+
+def _grid_card_can_toggle(block: dict[str, Any], card: dict[str, Any]) -> bool:
+    # These native screens ignore new selections at capacity, but still allow
+    # deselection. Other screens can replace a selection or open a preview.
+    if block.get("screen_type") not in {"NCombatPileCardSelectScreen", "NSimpleCardSelectScreen", "simple_select"}:
+        return True
+    count, maximum = block.get("selected_count"), block.get("max_select")
+    return (type(count) is not int or type(maximum) is not int or count < maximum
+            or card.get("is_selected") is True)
+
+
+def _grid_can_confirm(block: dict[str, Any]) -> bool:
+    # Enchant/upgrade preview handlers require at least one selected card even
+    # when their main button is enabled for a zero-minimum selector. Confirming
+    # zero opens an empty preview whose native Confirm handler does nothing.
+    return not (block.get("selected_count") == 0 and block.get("screen_type") in
+                {"NDeckEnchantSelectScreen", "NDeckUpgradeSelectScreen", "upgrade"})
+
+
 def _combat_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
     player = state.get("player") if isinstance(state.get("player"), dict) else {}
     battle = state.get("battle") if isinstance(state.get("battle"), dict) else {}
@@ -78,6 +102,8 @@ def _combat_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
                 actions.append(_candidate("play_card", card, **params))
         for potion in _items(player, "potions"):
             if not potion.get("can_use_in_combat", False):
+                if potion.get("can_discard", True):
+                    actions.append(_candidate("discard_potion", potion, slot=potion.get("slot")))
                 continue
             target_type = str(potion.get("target_type", "None")).lower()
             if "anyenemy" in target_type or target_type in {"enemy", "singleenemy"}:
@@ -93,12 +119,13 @@ def _combat_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
                     )
             else:
                 actions.append(_candidate("use_potion", potion, slot=potion.get("slot")))
-            actions.append(_candidate("discard_potion", potion, slot=potion.get("slot")))
+            if potion.get("can_discard", True):
+                actions.append(_candidate("discard_potion", potion, slot=potion.get("slot")))
         actions.append(_candidate("end_turn"))
     return actions
 
 
-def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _screen_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Return all actions exposed by the current public snapshot.
 
     An empty list can be legitimate for a transition frame.  Use
@@ -127,9 +154,11 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
         return actions
     if state_type == "rewards":
         block = state.get("rewards")
+        potion_full = _potion_belt_full(state)
         actions = [
             _candidate("claim_reward", item, index=item.get("index"))
             for item in _items(block, "items")
+            if item.get("can_claim", not (item.get("type") == "potion" and potion_full))
         ]
         if isinstance(block, dict) and block.get("can_proceed"):
             actions.append(_candidate("proceed"))
@@ -140,7 +169,11 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
             _candidate("select_card_reward", card, card_index=card.get("index"))
             for card in _items(block, "cards")
         ]
-        if isinstance(block, dict) and block.get("can_skip"):
+        if isinstance(block, dict) and "alternatives" in block:
+            for option in _items(block, "alternatives"):
+                command = "skip_card_reward" if str(option.get("id", "")).lower() == "skip" else "select_card_reward_alternative"
+                actions.append(_candidate(command, option, choice_index=option.get("choice_index")))
+        elif isinstance(block, dict) and block.get("can_skip"):
             actions.append(_candidate("skip_card_reward"))
         return actions
     if state_type == "map":
@@ -155,7 +188,7 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
         return [
             _candidate("choose_event_option", option, index=option.get("index"))
             for option in _items(block, "options")
-            if not option.get("is_locked", False) and not option.get("was_chosen", False)
+            if option.get("is_enabled", True) and not option.get("is_locked", False) and not option.get("was_chosen", False)
         ]
     if state_type == "rest_site":
         block = state.get("rest_site")
@@ -174,6 +207,7 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
             _candidate("shop_purchase", item, index=item.get("index"))
             for item in _items(block, "items")
             if item.get("is_stocked", False) and item.get("can_afford", False)
+            and item.get("can_purchase", not (item.get("category") == "potion" and _potion_belt_full(state)))
         ]
         # A shop is always leaveable from the player's perspective.  The UI's
         # can_proceed flag can briefly be false while the inventory is open;
@@ -197,8 +231,9 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
             _candidate("select_card", card, index=card.get("index"))
             for card in _items(block, "cards")
             if not (isinstance(block, dict) and block.get("preview_showing"))
+            and (not isinstance(block, dict) or _grid_card_can_toggle(block, card))
         ]
-        if isinstance(block, dict) and block.get("can_confirm"):
+        if isinstance(block, dict) and block.get("can_confirm") and _grid_can_confirm(block):
             actions.append(_candidate("confirm_selection"))
         if isinstance(block, dict) and block.get("can_cancel"):
             actions.append(_candidate("cancel_selection"))
@@ -210,6 +245,7 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
         actions = [
             _candidate("select_bundle", bundle, index=bundle.get("index"))
             for bundle in _items(block, "bundles")
+            if not (isinstance(block, dict) and block.get("preview_showing"))
         ]
         if isinstance(block, dict) and block.get("can_confirm"):
             actions.append(_candidate("confirm_bundle_selection"))
@@ -239,15 +275,34 @@ def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     return []
 
 
-def audit_action_space(state: dict[str, Any] | None) -> dict[str, Any]:
+def derive_legal_actions(state: dict[str, Any] | None) -> list[dict[str, Any]]:
+    actions=_screen_actions(state)
+    if not isinstance(state,dict) or state.get("state_type") not in SUPPORTED_TYPES-COMBAT_TYPES-{"menu","game_over"}:
+        return actions
+    for potion in _items(state.get("player"),"potions"):
+        if potion.get("can_discard_out_of_combat",False):
+            actions.append(_candidate("discard_potion",potion,slot=potion.get("slot")))
+        if potion.get("can_use_out_of_combat",False):
+            actions.append(_candidate("use_potion",potion,slot=potion.get("slot")))
+    return actions
+
+
+def audit_action_space(state: dict[str, Any] | None, *,
+                       actions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Describe action-set coverage without treating transition frames as legal moves."""
     state_type = state.get("state_type") if isinstance(state, dict) else None
-    actions = derive_legal_actions(state)
+    if actions is None:
+        actions = derive_legal_actions(state)
     issues: list[str] = []
     if state_type not in SUPPORTED_TYPES:
         issues.append(f"unsupported_state_type:{state_type}")
     elif state_type != "game_over" and not actions:
         issues.append("no_visible_action:transition_or_incomplete_snapshot")
+    if isinstance(state, dict):
+        for value in state.values():
+            if isinstance(value, dict) and ("section_error" in value or "error" in value):
+                issues.append("snapshot_section_failed")
+                break
     candidate_actions = sum(1 for action in actions if "candidate" in action)
     return {
         "state_type": state_type,

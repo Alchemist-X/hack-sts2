@@ -18,6 +18,10 @@ artifacts/
 checkpoints/
 *.jsonl
 *.mcr
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Versioned, reviewable game knowledge is source data, not trajectory output.
 !knowledge/**/*.jsonl

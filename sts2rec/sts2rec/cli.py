@@ -135,7 +135,8 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 def _cmd_canonical(args: argparse.Namespace) -> int:
     try:
-        trajectory = build_canonical(args.session_dir)
+        trajectory = build_canonical(args.session_dir, cache_dir=args.cache_dir,
+                                     action_seqs=set(args.action_seq) if args.action_seq else None)
     except Sts2RecError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_ERRORS
@@ -422,6 +423,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     canonical.add_argument("session_dir")
     canonical.add_argument("-o", "--output", help="write JSON here instead of stdout")
+    canonical.add_argument("--cache-dir", help="optional disposable raw-record index outside the session")
+    canonical.add_argument("--action-seq", type=int, action="append",
+                           help="read only this action seq (repeatable); preserve original step indices")
     canonical.set_defaults(handler=_cmd_canonical)
 
     audit_lineage_parser = subparsers.add_parser(

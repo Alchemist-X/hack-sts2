@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .errors import JsonlError, ManifestError, RecordError
+from .decision_coverage import audit_decision
 from .session import (
     Manifest,
     iter_jsonl,
@@ -157,7 +158,7 @@ def _cross_stream_errors(
             errors.append(
                 f"actions.jsonl: action seq={action.seq} references "
                 f"state_seq={action.state_seq} at or after its own seq "
-                "(state_seq must be the latest snapshot before the action)"
+                "(state_seq must refer to an earlier snapshot)"
             )
     for action in actions.records:
         if action.status is not None and action.status not in ACTION_STATUSES:
@@ -254,6 +255,12 @@ def validate_session(session_dir: Path | str) -> ValidationReport:
     else:
         errors.extend(count_mismatches)
     warnings.extend(_native_warnings(session_dir, manifest))
+    states_by_seq = {record.seq: record for record in results["states"].records}
+    for action in results["actions"].records:
+        before = states_by_seq.get(action.state_seq)
+        audit = audit_decision(before.state if before else None, action.action)
+        if audit["checked"] and audit["issues"]:
+            warnings.append(f"decision coverage: action seq={action.seq}: " + "; ".join(audit["issues"]))
     return ValidationReport(
         session_dir=str(session_dir),
         errors=tuple(errors),
