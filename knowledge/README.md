@@ -24,6 +24,46 @@ python3 scripts/export_sts2_knowledge.py --port 15601 --skip-decompile
 Omit `--skip-decompile` to rebuild the ignored ILSpy source tree under
 `artifacts/knowledge/decompiled-v0.107.1/` first.
 
+`source/v0.111.0/` (public-beta build 41cef1ea) is a merge of two exporters.
+Its table files are the localisation export (`scripts/export_sts2_localization.py`,
+see the last section; 624 cards, 126 enemies, plus `powers`/`events`), which the
+simulator loads. The real-engine harness additionally needs the source facts of
+an offline `scripts/export_sts2_knowledge.py` run (no live MCP, so every
+`runtime` is null; version and commit from the build's `release_info.json`):
+
+- `rule-evidence.json` and `mechanics.jsonl` are that run's files as written;
+- `manifest.json` keeps the localisation export's fields and adds that run's
+  `sources` (the `sts2.dll` sha256 that `sts2rec.knowledge.authority()` and the
+  bench consistency test check), `coverage` (which describes that run: 604
+  cards, 300 relics, 127 enemies) and `release_channel`;
+- the localisation rows gained that run's `model_id` and `source` blocks, merged
+  by `id` (602 cards, 116 enemies, 299 relics, 66 potions matched; rows without
+  a match keep the localisation fields only). Rule retrieval follows `source`,
+  and reviewed checks attach through `model_id`.
+
+`export_sts2_knowledge.py` refuses to write into a directory that holds
+localisation-export files (manifest `generator`, `powers.jsonl`,
+`events.jsonl`) unless `--overwrite-localization-export` is passed, so a
+re-export goes to a scratch directory and is merged by `id` as above. Both
+exporters accept the flat `ilspycmd -p` layout as well as
+`--nested-directories`; zhs text is picked by its PCK path, because v0.111.0
+added zht after zhs:
+
+```bash
+python3 scripts/export_sts2_knowledge.py --offline --skip-decompile \
+  --release-channel public-beta \
+  --decompiled-root artifacts/knowledge/decompiled-9cb4f1ad \
+  --output <scratch>/v0.111.0          # then merge model_id/source by id
+python3 scripts/export_sts2_rule_evidence.py \
+  --decompiled-root artifacts/knowledge/decompiled-9cb4f1ad \
+  --output knowledge/source/v0.111.0   # writes rule-evidence.json only
+```
+
+`export_sts2_rule_evidence.py` only exports versions listed in its
+`REVIEWED_VERSIONS`. To add a version, first re-read every cited file. The
+v0.111.0 review changed one check: `AEONGLASS_CYCLE`, where the A10 EBB attack
+dropped from 32 to 26.
+
 Query by stable ID or Chinese/English name; facts and community priors remain
 separate in the result:
 

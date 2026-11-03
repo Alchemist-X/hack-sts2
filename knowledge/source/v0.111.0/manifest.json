@@ -4,9 +4,28 @@
     "enemies": 126,
     "events": 70,
     "keywords": 7,
+    "mechanics": 1,
     "potions": 66,
     "powers": 296,
     "relics": 306
+  },
+  "coverage": {
+    "cards_with_eng_text": 602,
+    "cards_with_runtime_text": 0,
+    "cards_with_source": 604,
+    "cards_with_zhs_text": 602,
+    "enemy_internal_or_test_models": 14,
+    "enemy_public_models": 113,
+    "potions_with_source": 66,
+    "profile_discovered_cards": 0,
+    "profile_discovered_potions": 0,
+    "profile_discovered_relics": 0,
+    "relics_with_runtime_text": 0,
+    "relics_with_source": 300,
+    "source_card_models": 604,
+    "source_potion_models": 66,
+    "source_relic_models": 300,
+    "verified_cross_model_mechanics": 1
   },
   "game_commit": "41cef1ea",
   "game_version": "0.111.0",
@@ -15,13 +34,26 @@
     "eng",
     "zhs"
   ],
-  "note": "Localisation templates only (no runtime text, no decompiled facts); see knowledge/source/v0.107.1 for the full knowledge export.",
+  "note": "Table rows are localisation templates from scripts/export_sts2_localization.py (no runtime text). Their model_id/source blocks (merged by id), rule-evidence.json and mechanics.jsonl come from an offline scripts/export_sts2_knowledge.py run against the same build; sources and coverage describe that run. See knowledge/README.md.",
+  "release_channel": "public-beta",
   "schema_version": 1,
   "sources": {
     "assembly": {
       "method": "ILSpy 9.1 decompilation and normalized source facts",
       "name": "sts2.dll",
       "sha256": "9cb4f1ad8c9f284aa8fec3122ffd6d780bbf543d875c817abdd12ff63fbf12b4"
+    },
+    "localization": {
+      "locales": [
+        "eng",
+        "zhs"
+      ],
+      "name": "Slay the Spire 2.pck",
+      "sha256": "b3c9f133143f98a1c329c3d2efc7d8a9feb395db46fd3965b899487bf1f4d106"
+    },
+    "runtime": {
+      "note": "Offline export without a live MCP: runtime is null and profile_discovered is false for every record. Localized templates come from the PCK; source facts from the decompiled assembly.",
+      "scope": "none"
     }
   }
 }
