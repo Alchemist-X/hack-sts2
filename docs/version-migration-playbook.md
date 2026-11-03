@@ -94,7 +94,7 @@ python3 scripts/kernel_map.py [--tree <新树> --tree-version X.Y.Z] [--unmapped
 | 10 | selftest 300 局 | execute | `logs/selftest.log` |
 | 11 | G0（`--bundles` 或环境变量 `STS2SIM_G0_BUNDLES`） | execute | `g0.json` |
 | 12 | G3（`--bundles-v2`） | execute | |
-| 13 | harness 搬迁（recorder/MCP 重建、规则证据、存档基线、benchmark minor bump） | 人工 | |
+| 13 | harness 搬迁（recorder/MCP 重建、规则证据、存档基线、benchmark minor bump；逐步清单见附录 A） | 人工 | |
 
 工作包内容见 [`docs/version-stubs-demo-2026-11-02.md`](version-stubs-demo-2026-11-02.md)（v0.107.1 → v0.111.0：
 546 个包，新增 36 / 删除 3 / 唯一改动 279 / 纯批量 228，23 个骨架全部编译通过）。钩子检查在当前 v0.111.0 树上
@@ -149,8 +149,8 @@ recorder）；inventory 重生成；`GameVersions.Default` → 0.111.1；导出 
 4. **差分闸回归 = 迁移验收器**：旧版本语料按旧 seeding 继续重放（历史
    资产永不作废）；新版本攒 1–2 局录像（正常游玩即可）→ 新 seeding 路径
    重放全绿 = 迁移通过。
-5. **harness 搬迁**：MCP 重建（`scripts/build_selection_mcp.sh`，源码仓库
-   与游戏目录**显式传参**）→ 规则证据重导（`export_sts2_rule_evidence.py`
+5. **harness 搬迁**（逐步清单见附录 A）：MCP 重建（`scripts/build_selection_mcp.sh`，
+   按 `config/sts2mcp.lock.json` 构建）→ 规则证据重导（`export_sts2_rule_evidence.py`
    → `knowledge/source/<ver>/`）→ 冻结存档基线重切（make_unlocked_save +
    baseline manifest SHA-256）→ stub 策略 `run_bench` 冒烟。
    清单执行器 `scripts/version_update.sh` 已把第 2–4 步的可自动部分（delta、知识导出、构建、受影响测试 /
@@ -170,8 +170,10 @@ recorder）；inventory 重生成；`GameVersions.Default` → 0.111.1；导出 
   `Saves.Migrations` 是第一检查点；sim 保留双实现按版本选择。
 - 反编译 async/局部函数体可能缺失（Neow OnChosen 先例）：关键规则读不到
   时查 sts2.dll IL，禁止臆测补全。
-- `build_selection_mcp.sh` 的默认 STS2MCP 源码路径按脚本所在仓库根的兄弟
-  目录解析——**在 worktree 里必须显式传 `STS2_MCP_SOURCE_REPO`**。
+- `build_selection_mcp.sh` 的默认 STS2MCP 源码路径曾按脚本所在仓库根的兄弟
+  目录解析，worktree 里必须显式传 `STS2_MCP_SOURCE_REPO`。现由
+  `scripts/mcp_build_env.sh` 经 `.git` → `commondir` 找到主检出旁的 STS2MCP，
+  worktree 内无需再传（传了仍然优先）。
 - 静态字段按进阶一次性初始化（CardRarityOdds 等）的进程内复用陷阱，迁移
   后重验。
 - recorder 的 `context_model` 标签粘滞（PushModel 不出栈）：升级 recorder
@@ -188,5 +190,59 @@ recorder）；inventory 重生成；`GameVersions.Default` → 0.111.1；导出 
   （`test_version_delta.py` 21、`test_kernel_map.py` 9）；闸门脚本 `scripts/gates.sh`（`docs/gates.md`）。
 - 2026-11-01：`scripts/version_delta.py` + `scripts/version_update.sh` 落地（19 个单元测试）；
   v0.107.1 → v0.111.0 演示见 `docs/version-delta-demo-2026-11-01.md`。
-- 2026-10-30：手册首版。第 5 步（评测 runner v0.107.1→v0.111 搬迁）首跑
-  进行中；结果与教训回填于此。
+- 2026-10-31（a10 分支 `f713da2`，2026-11-02 合入）：第 5 步（评测 runner
+  v0.107.1→v0.111.0）完成：锁文件驱动的 MCP 构建（沙盒 DLL `83fc6828…`）、
+  `knowledge/source/v0.111.0` 的规则证据与 source 块、基线 v2 `c45ec7a9…` /
+  v2-a10 `27c009af…`、bench 配置 v1.1；A0/A10 stub 冒烟、双实例并行与确定性
+  检查通过。清单与实测笔记见附录。
+- 2026-10-30：手册首版。
+
+## 附录 A：harness 搬迁清单（第 5 步 / 执行器第 13 步）
+
+来自 v0.107.1 → v0.111.0 的实测（a10 分支 `f713da2`，2026-10-31）。版本相关的东西只在三处：
+`config/sts2mcp.lock.json`、`knowledge/source/<ver>/`、`config/bench/*.json`；
+`sts2rec/tests/test_bench_runner.py::test_bench_configs_match_the_pinned_game_and_knowledge`
+检查三者一致。
+
+1. **触发**：`scripts/build_selection_mcp.sh` 因游戏版本或 sts2.dll sha256 与锁文件 `game` 段不符而拒绝
+   构建——这就是信号。`STS2_MCP_ALLOW_UNPINNED_GAME=1` 再跑一次，拿到编译错误清单（只用于迁移）。
+2. **MCP 补丁与锁文件**：编译漂移写成新补丁 `patches/sts2mcp-v<ver>-compat.patch`（参照
+   `sts2mcp-v0111-compat.patch`：每处照抄引擎自己的新调用、保持输出 schema 不变），追加进锁文件
+   `patches`（带 sha256）；更新 `game` 段（version、commit、各程序集目录 sts2.dll sha256、
+   `knowledge_source`）。构建通过后把沙盒 DLL sha256 记入 `sandbox_build.dll_sha256`（构建可复现，换目录或
+   换提交结果不变）。不要再往构建脚本里加内联替换。
+3. **知识与规则证据**：表文件由执行器第 7 步的 `export_sts2_localization.py` 写入 `knowledge/source/<ver>/`
+   （sim 的 RulesText 读它）。harness 另需 `export_sts2_knowledge.py --offline` 的 source 事实：它拒绝写入
+   localisation 导出目录（`--overwrite-localization-export` 才放行），所以导出到草稿目录，再把
+   `model_id`/`source` 按 `id` 并入表行、`mechanics.jsonl` 原样拷入、manifest 补 `sources`/`coverage`
+   （做法见 `knowledge/README.md`）。然后 `export_sts2_rule_evidence.py --output knowledge/source/<ver>`
+   写 `rule-evidence.json`；新版本须先列入它的 `REVIEWED_VERSIONS`（重读每个被引文件，含义变了就写
+   覆盖）。反编译树需带引用程序集。
+4. **冻结存档基线**：`STS2_HEADLESS_FRESH_PROFILE=1 scripts/headless_provision.sh` 建新池（新档，不读
+   人类存档；默认模式会从人类存档复制设置并播种解锁）→ 启动一次让游戏写出 progress.save →
+   `make_unlocked_save.py` → `baseline.py freeze` 冻结 v2 / v2-a10 到 `$STS2_BENCH_BASELINE_ROOT/<ver>/`
+   （命令见 `docs/benchmark.md`）。新档 `unique_id` 随机，基线无法逐字节重做，**文件必须保留**。
+5. **bench 配置**：`config/bench/*.json` minor bump、`game_version` / `game_commit`、新基线名与 sha256。
+6. **验收**：stub `run_bench`（`--start-method eval`）+ `--determinism SEED --starts 2`；seed_evidence
+   三源（game.log、current_run.save、MCP readback）一致，每步 `authority_verified`。
+
+TODO：把 1–6 的可自动部分接进 `scripts/version_update.sh` 第 13 步。
+
+## 附录 B：v0.111 harness 实测笔记
+
+- 评测 API、seeded-embark、action-receipts 三个补丁原先只在私有 hack-sts2-cloud 仓库，本仓库脚本只打
+  两个补丁；现已全部纳入 `patches/` 并由锁文件列出。补丁不在本仓库 = 迁移时找不到。
+- 未打补丁的 upstream 在新版不编译（v0.111.0 删了 `StartRunLobby.MaxPlayers` 和
+  `LoadRunLobby.ConnectedPlayerIds`）；`headless_provision.sh` 已不再构建它，`build_upstream_mcp.sh`
+  只认它锁定的旧版本。
+- macOS 工作进程存档在 `home/Library/Application Support`，不是 Linux 的 `home/.local/share`；基线还原、
+  current_run.save、history 查找都按实例自动选路径。
+- `run_bench` 必须把配置的 `game_version` 传给 `sts2_live start`，否则悄悄用 v0.107.1 的规则知识
+  （`sts2_live` 的 `--game-version` 默认仍是 v0.107.1）。
+- `make_unlocked_save.py` 依赖的源码标记会搬家（v0.111 的 epoch 列表移进 `EpochModel` 静态构造与
+  `AgnosticUnlocks`，progress schema 21 → 24）：先跑不带 `--saves-dir` 的计数核对。
+- 合成的 settings.save 要写 `language: eng`，否则工作进程跟随主机语言（中文系统会得到中文卡面文本）。
+- .NET SDK 默认 SourceLink 把外层仓库 HEAD 写进 MCP DLL，sha256 随提交变化；构建已关闭
+  （`EnableSourceLink=false` 等）并加 PathMap，可以固定 pin。
+- Steam 当前在 public-beta 分支且 AutoUpdateBehavior=1（启动即更新）：大版本可能在任何一次启动后到来，
+  锁文件的版本闸会第一时间拦下。
