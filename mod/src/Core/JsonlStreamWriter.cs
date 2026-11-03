@@ -53,6 +53,21 @@ internal sealed class JsonlStreamWriter : IDisposable
     private long _lineCount;
     private long _bytesWritten;
     private long _writtenThrough;
+    private long _pendingBytes;
+    private long _peakPendingBytes;
+    private int _peakPendingLines;
+
+    // Queue only (excludes the writer's in-flight line). Peaks survive Flush.
+    public JsonObject QueueStats()
+    {
+        lock (_mutex) return new JsonObject
+        {
+            ["pending_lines"] = _pending.Count,
+            ["pending_bytes"] = _pendingBytes,
+            ["peak_pending_lines"] = _peakPendingLines,
+            ["peak_pending_bytes"] = _peakPendingBytes,
+        };
+    }
 
     // The one item the writer thread had dequeued when a write faulted; kept so
     // the synchronous fallback can re-attempt it ahead of the rest of _pending.
@@ -141,6 +156,9 @@ internal sealed class JsonlStreamWriter : IDisposable
                 return;
             }
             _pending.Enqueue(lineBytes);
+            _pendingBytes += lineBytes.Length;
+            _peakPendingBytes = Math.Max(_peakPendingBytes, _pendingBytes);
+            _peakPendingLines = Math.Max(_peakPendingLines, _pending.Count);
             Monitor.Pulse(_mutex);
         }
     }
@@ -302,6 +320,7 @@ internal sealed class JsonlStreamWriter : IDisposable
                     return;
                 }
                 item = _pending.Dequeue();
+                _pendingBytes -= item.Length;
             }
             try
             {
@@ -343,7 +362,9 @@ internal sealed class JsonlStreamWriter : IDisposable
         }
         while (_pending.Count > 0)
         {
-            WriteSyncLocked(_pending.Dequeue());
+            var item = _pending.Dequeue();
+            _pendingBytes -= item.Length;
+            WriteSyncLocked(item);
         }
     }
 

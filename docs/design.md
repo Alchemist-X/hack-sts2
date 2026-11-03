@@ -217,6 +217,16 @@ session's canonical hash and envelope serialization (the whole main-thread
 snapshot cost); earlier sessions timed the build alone, so their numbers are
 not directly comparable.
 
+Optional perf detail (recorder ≥ 0.4.0; schema unchanged, readers must
+tolerate its absence): `snapshot_build_ms` also carries `p95_upper_bound` /
+`p99_upper_bound` from a fixed-memory histogram over the same measurement
+(~19% bucket width, upper bounds; `count/avg/max` unchanged);
+`capture_by_trigger_ms` splits that measurement by snapshot trigger
+(`{count, avg, max, p95_upper_bound, p99_upper_bound}` per trigger, at most 32
+triggers plus `other`); `states_deduplicated` counts hash-deduped snapshots;
+`writer_queues.{states,actions,events}` reports current and peak queued
+lines/bytes per JSONL writer. See docs/recorder-performance-2026-10-16.md.
+
 Per-snapshot cost reductions (same recorded bytes): the dedup hash streams the
 key-sorted canonical form straight into SHA-256 (no cloned tree, no
 intermediate string); the payload is serialized only after the dedup check

@@ -128,7 +128,7 @@ public static class Snapshots
             PassiveStateBuilder.TryBuildSnapshot(runState, includeDeck, out var screen, out var state);
             session.RecordState(trigger, screen, state);
             stopwatch.Stop();
-            session.RecordSnapshotCost(stopwatch.Elapsed.TotalMilliseconds);
+            session.RecordSnapshotCost(stopwatch.Elapsed.TotalMilliseconds, trigger);
             // Any snapshot resets BOTH windows, so a poll or phase trigger right
             // after a forced snapshot coalesces instead of building again.
             Throttle.NoteSnapshotTaken();

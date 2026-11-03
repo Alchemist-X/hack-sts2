@@ -61,6 +61,11 @@ public sealed class TrajectorySession : IDisposable
     private long _snapshotBuildCount;
     private double _snapshotBuildTotalMs;
     private double _snapshotBuildMaxMs;
+    // Distribution of the same per-snapshot cost that feeds count/avg/max
+    // (bounded buckets: p95/p99 upper bounds), plus the split by trigger.
+    private readonly LatencyHistogram _snapshotBuildLatency = new();
+    private readonly Dictionary<string, LatencyHistogram> _snapshotBuildByTrigger = new();
+    private long _statesDeduplicated;
 
     private TrajectorySession(string directory, int part, SessionMeta meta, IClock clock)
     {
@@ -165,9 +170,7 @@ public sealed class TrajectorySession : IDisposable
             ThrowIfUnusable();
             if (buildMillis is { } ms)
             {
-                _snapshotBuildCount++;
-                _snapshotBuildTotalMs += ms;
-                _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, ms);
+                AddSnapshotCostLocked(ms, trigger);
             }
             if (_completed)
             {
@@ -176,6 +179,7 @@ public sealed class TrajectorySession : IDisposable
             }
             if (hash == _lastStateHash)
             {
+                _statesDeduplicated++;
                 return _latestStateSeq;
             }
             var seq = _nextSeq++;
@@ -253,10 +257,11 @@ public sealed class TrajectorySession : IDisposable
     /// serialization, measured by the caller around the whole snapshot) to the
     /// manifest "perf.snapshot_build_ms" counters — the alternative to passing
     /// <c>buildMillis</c> to <see cref="RecordState"/>, for callers that want
-    /// the hash/serialize cost included. Never throws after Dispose (perf
-    /// bookkeeping must not break the snapshot path).
+    /// the hash/serialize cost included. <paramref name="trigger"/> (optional)
+    /// also files the cost under "perf.capture_by_trigger_ms". Never throws
+    /// after Dispose (perf bookkeeping must not break the snapshot path).
     /// </summary>
-    public void RecordSnapshotCost(double millis)
+    public void RecordSnapshotCost(double millis, string? trigger = null)
     {
         lock (_lock)
         {
@@ -264,10 +269,29 @@ public sealed class TrajectorySession : IDisposable
             {
                 return;
             }
-            _snapshotBuildCount++;
-            _snapshotBuildTotalMs += millis;
-            _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, millis);
+            AddSnapshotCostLocked(millis, trigger);
         }
+    }
+
+    private void AddSnapshotCostLocked(double millis, string? trigger)
+    {
+        _snapshotBuildCount++;
+        _snapshotBuildTotalMs += millis;
+        _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, millis);
+        _snapshotBuildLatency.Add(millis);
+        if (trigger is null)
+        {
+            return;
+        }
+        // Bounded key set: unexpected trigger labels fold into "other".
+        var key = _snapshotBuildByTrigger.ContainsKey(trigger) || _snapshotBuildByTrigger.Count < 32
+            ? trigger
+            : "other";
+        if (!_snapshotBuildByTrigger.TryGetValue(key, out var latency))
+        {
+            _snapshotBuildByTrigger[key] = latency = new LatencyHistogram();
+        }
+        latency.Add(millis);
     }
 
     /// <summary>
@@ -682,7 +706,7 @@ public sealed class TrajectorySession : IDisposable
         long stateCount, long actionCount, long eventCount,
         long statesBytes, long actionsBytes, long eventsBytes)
     {
-        return SessionMetaJson.BuildManifest(
+        var manifest = SessionMetaJson.BuildManifest(
             _meta,
             stateCount: stateCount,
             actionCount: actionCount,
@@ -699,6 +723,37 @@ public sealed class TrajectorySession : IDisposable
                 StatesBytes: statesBytes,
                 ActionsBytes: actionsBytes,
                 EventsBytes: eventsBytes));
+        AddPerfDetailLocked((JsonObject)manifest["perf"]!);
+        return manifest;
+    }
+
+    /// <summary>
+    /// Optional manifest "perf" detail on top of the schema-1 counters:
+    /// p95/p99 upper bounds for snapshot_build_ms (count/avg/max unchanged),
+    /// the same cost split by snapshot trigger, the hash-dedup count, and the
+    /// writer queue depths (current + peak).
+    /// </summary>
+    private void AddPerfDetailLocked(JsonObject perf)
+    {
+        var build = (JsonObject)perf["snapshot_build_ms"]!;
+        var distribution = _snapshotBuildLatency.Describe();
+        build["p95_upper_bound"] = distribution["p95_upper_bound"]!.DeepClone();
+        build["p99_upper_bound"] = distribution["p99_upper_bound"]!.DeepClone();
+        var byTrigger = new JsonObject();
+        foreach (var pair in _snapshotBuildByTrigger)
+        {
+            byTrigger[pair.Key] = pair.Value.Describe();
+        }
+        perf["capture_by_trigger_ms"] = byTrigger;
+        perf["states_deduplicated"] = _statesDeduplicated;
+        perf["writer_queues"] = new JsonObject
+        {
+            // Null-conditional: the constructor's first manifest write can run
+            // before every writer is assigned (see FlushStreamsLocked).
+            ["states"] = _states?.QueueStats(),
+            ["actions"] = _actions?.QueueStats(),
+            ["events"] = _events?.QueueStats(),
+        };
     }
 
     /// <summary>
