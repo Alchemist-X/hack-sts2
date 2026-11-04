@@ -45,6 +45,7 @@ from .model import ARCH_KEYS, PRESETS, Policy, activation_bytes_per_sample, arch
 from .objective import OBJECTIVES, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
+from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
 CKPT_FORMAT = 2
@@ -62,6 +63,9 @@ class TrainConfig:
     ascension: int = 0
     pool: int = 2048
     characters: tuple = ALL_CHARACTERS
+    start_saves: str | None = None  # directory of game .save files (recursive) to start episodes from (startpool.py)
+    save_mix: float = 0.5           # fraction of episode starts from start_saves (pool entry multiplicities)
+    save_copies: str = "determinized"   # further copies of a save: determinized (hidden state resampled) | exact
     # objective
     objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
@@ -132,6 +136,9 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         out.objective = "shaped"
     if out.objective not in OBJECTIVES:
         raise ValueError(f"objective {out.objective!r}: expected one of {OBJECTIVES}")
+    if not 0.0 <= float(out.save_mix) <= 1.0 or out.save_copies not in ("determinized", "exact"):
+        raise ValueError(f"save_mix {out.save_mix} must be in [0, 1] and save_copies {out.save_copies!r} one of "
+                         "determinized / exact")
     return out
 
 
@@ -221,9 +228,10 @@ def _set_rng_state(rng: np.random.Generator, st: dict, device: torch.device) -> 
 
 
 def env_kwargs(cfg: TrainConfig, seed_text: str, env_cls=VecEnv) -> dict:
-    """VecEnv keyword arguments; `floor_step_cap` only when set, and an error if this VecEnv does not take it."""
-    pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension, count=cfg.pool,
-                    seed_prefix=f"TRAIN{cfg.seed}")
+    """VecEnv keyword arguments; `floor_step_cap` only when set, and an error if this VecEnv does not take it. With
+    `start_saves` the pool starts empty: `startpool.start_pool_from_config` adds the fresh and save entries."""
+    pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension,
+                    count=0 if uses_start_saves(cfg) else cfg.pool, seed_prefix=f"TRAIN{cfg.seed}")
     kw = dict(threads=cfg.threads or os.cpu_count() or 8, step_cap=cfg.step_cap, auto_reset=True, seed_text=seed_text,
               pool=pool, pool_cache=max(4096, cfg.pool))
     if cfg.floor_step_cap is not None:
@@ -297,23 +305,31 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def random_baseline(env: VecEnv, tracker: ProgressTracker, steps: int, seed: int) -> dict:
-    """Uniform-random policy on the training env (same pool/tracker): finished-episode floor and progress."""
+def random_baseline(env: VecEnv, tracker: ProgressTracker, steps: int, seed: int, starts=None) -> dict:
+    """Uniform-random policy on the training env (same pool/tracker): finished-episode floor and progress (split by
+    fresh / save start when `starts`, the trainer's StartPool, is given)."""
     rng = np.random.default_rng(seed)
     obs = env.reset()
     tracker.observe(obs["aux"])
+    start = env.info()["start_entry"].copy()
     eps = []
     errs = 0
     for _ in range(steps):
         obs, rew, term, trunc, status, info = env.step(random_actions(rng, obs["cand_n"]))
         done = (term | trunc).astype(bool)
         errs += int(np.count_nonzero(status & ERR_BITS))
-        eps += tracker.finished(done, info["last_episode"])
+        fin = tracker.finished(done, info["last_episode"])
+        for e in fin:
+            e["start_entry"] = int(start[e["slot"]])
+        eps += fin
         tracker.observe(obs["aux"])
+        start = info["start_entry"].copy()
     prog = [e["progress"] for e in eps if e["progress"] is not None]
+    split = {k: v for k, v in split_stats(eps, starts).items() if k.split("_", 1)[1] in
+             ("episodes", "wins", "progress_mean", "floor_mean")}
     return {"steps": steps, "episodes": len(eps), "floor_mean": float(np.mean([e["floor"] for e in eps])) if eps else None,
             "progress_mean": float(np.mean(prog)) if prog else None, "wins": sum(e["win"] for e in eps),
-            "sim_error_or_gap": errs}
+            "sim_error_or_gap": errs, **split}
 
 
 def _mean(xs) -> float | None:
@@ -405,6 +421,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     env = VecEnv(cfg.envs, **env_kwargs(cfg, seed_text))
     old_handlers: dict = {}
     try:
+        starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only
         spec = ModelSpec.from_schema(env.schema)
         bind_spec(spec)
         if resume is not None and resume["spec"].get("encoder_version") != spec.encoder_version:
@@ -440,7 +457,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if cfg.baseline_steps and resume is None:
             t = time.monotonic()
             tracker = ProgressTracker(spec.aux_fields, env.schema["last_episode"].fields, cfg.envs, cfg.ascension)
-            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1)
+            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1, starts)
             baseline["seconds"] = round(time.monotonic() - t, 2)
             log(f"random baseline ({cfg.baseline_steps} steps x {cfg.envs}): {baseline}")
 
@@ -483,7 +500,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         atomic_write_json(run / "config.json", {
             "config": config_dict(cfg), "arch": arch, "params": n_params, "encoder_version": spec.encoder_version,
             "library": {"path": str(env.lib.path), "mode": env.lib.mode, "version": env.lib.version()},
-            "repo_sha": repo_sha(), "sessions": sessions})
+            "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None})
 
         stop = {"signal": None}
 
@@ -562,7 +579,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 "recent": {"updates": len(recent), "episodes": r_eps,
                            "progress_mean": (sum(x["progress_sum"] for x in recent) / r_eps) if r_eps else None,
                            "win_rate": (sum(x["wins"] for x in recent) / r_eps) if r_eps else None,
-                           "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None},
+                           "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None,
+                           **recent_view(recent)},
                 "best_eval": best_eval, "last_eval": last_eval,
                 "last_checkpoint": _rel(last_ckpt_path, run),
                 "last_checkpoint_update": last_ckpt_upd if last_ckpt_upd >= 0 else None,
@@ -571,7 +589,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 "pid": os.getpid(), "host": socket.gethostname(), "updated_at": _now_iso()})
 
         obs = env.reset()
-        rewards.reset(obs["aux"])
+        rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -619,7 +637,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 obs, rew, term, trunc, status, info = env.step(a_np)
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
-                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"])
+                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -710,9 +728,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             c["illegal"] += il_n
             c["overflow_cand"] += over_n
             es = _episode_stats(ep_this)
+            ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
-                           "floor_sum": sum(e["floor"] for e in ep_this)})
+                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
 
             # checkpoint / eval
             t_ck = time.monotonic()
@@ -738,7 +757,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
-                   "episodes_total": c["episodes"], **es,
+                   "episodes_total": c["episodes"], **es, **ss,
                    "reward_mean": float(store.rewards.reshape(-1)[idx_all].mean()) if len(idx_all) else None,
                    **sm, "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
@@ -755,6 +774,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"env={env_s:.2f}s infer={infer_s:.2f}s upd={update_s:.2f}s eps={len(ep_this)} "
                     f"prog={fmt(es['progress_mean'], '.4f')} floor={fmt(es['floor_mean'], '.2f')} wins={es['wins']} "
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
+                    + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
+                       f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
+                       f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -783,6 +805,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "episodes": c["episodes"], "wins": c["wins"], "sim_error": c["sim_error"],
             "content_gap": c["content_gap"], "illegal": c["illegal"], "cand_over_max_rows": c["overflow_cand"],
             "errors": errors_seen, "best_eval": best_eval, "last_eval": last_eval,
+            "start_pool": starts.summary(brief=True) if starts else None,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
         }
         atomic_write_json(run / "summary.json", summary)
