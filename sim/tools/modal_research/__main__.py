@@ -33,6 +33,7 @@ def main():
     finish_probe.add_argument("--status", required=True)
     finish_probe.add_argument("--session-id", action="append", default=[])
     finish_probe.add_argument("--report-ref", required=True)
+    finish_probe.add_argument("--details-json", type=json.loads)
     pause_access = commands.add_parser("pause-access")
     pause_access.add_argument("reason")
     pause_access.add_argument("--next-wake", required=True)
@@ -53,8 +54,10 @@ def main():
     elif args.command == "activate-access-probe":
         store.activate_access_probe(args.key)
     elif args.command == "finish-access-probe":
-        store.finish_access_probe(args.key, {"status": args.status, "session_ids": args.session_id,
-                                             "report_ref": args.report_ref})
+        evidence = {"status": args.status, "session_ids": args.session_id, "report_ref": args.report_ref}
+        if args.details_json is not None:
+            evidence["details"] = args.details_json
+        store.finish_access_probe(args.key, evidence)
     elif args.command == "pause-access":
         store.pause_access(args.reason, args.next_wake)
     elif args.command == "stop":

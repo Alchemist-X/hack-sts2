@@ -200,7 +200,8 @@ class Store:
         identifier(decision_id)
         identifier(category)
         reserve = cents(reserve_usd)
-        if not 0 < reserve <= 100 or type(seconds) is not int or not 0 < seconds <= 180:
+        max_reserve, max_seconds = (10, 600) if category == "env_cpu_validation" else (100, 180)
+        if not 0 < reserve <= max_reserve or type(seconds) is not int or not 0 < seconds <= max_seconds:
             raise ValueError("access probe exceeds local authorization envelope")
         payload = canonical({"decision_id": decision_id, "category": category, "seconds": seconds,
                              "retry_limit": 0})
@@ -245,10 +246,13 @@ class Store:
 
     def finish_access_probe(self, key, result):
         identifier(key)
-        if type(result) is not dict or set(result) != {"status", "session_ids", "report_ref"}:
+        required = {"status", "session_ids", "report_ref"}
+        if type(result) is not dict or set(result) not in (required, required | {"details"}):
             raise ValueError("invalid access probe evidence")
+        if "details" in result and (type(result["details"]) is not dict or len(canonical(result["details"])) > 4000):
+            raise ValueError("access probe detail exceeds evidence bounds")
         environment = result["status"] in {"blocked_prelaunch", "env_verified", "env_failed"}
-        if not environment and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed"}:
+        if not environment and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
             raise ValueError("unknown access probe status")
         session_ids = result["session_ids"]
         if type(session_ids) is not list or (len(session_ids) != 0 if environment else not 1 <= len(session_ids) <= 2):
@@ -264,10 +268,14 @@ class Store:
                 raise ValueError("unknown access probe reservation")
             if environment != (json.loads(old["payload"])["category"] == "env_cpu_validation"):
                 raise ValueError("probe evidence category does not match the reservation")
-            if old["state"] == "external_finished_cost_unknown" and old["outcome"] == outcome:
-                return
-            if old["state"] != "external_reserved":
-                raise ValueError("access probe result already finalized")
+            if old["state"] == "external_finished_cost_unknown":
+                previous = json.loads(old["outcome"])
+                if previous == result:
+                    return
+                if "details" in previous or "details" not in result or any(previous[key] != result[key] for key in required):
+                    raise ValueError("access probe result already finalized")
+            elif old["state"] != "external_reserved":
+                raise ValueError("access probe reservation is not active")
             db.execute("UPDATE jobs SET state='external_finished_cost_unknown',outcome=? WHERE id=?", (outcome, key))
 
     def pause_access(self, reason, next_wake):
