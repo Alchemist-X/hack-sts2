@@ -116,7 +116,13 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
         source_ts = max(source_ts, conditional.stat().st_mtime)
     formal = {"arms": arms, "status": "active" if experiments else "pending", "current_task": "正式实验执行中" if experiments else "等待正式实验准入"}
     smoke_arms = {a: {"stage": "plan", "decisions": 0, "target": None, "points": []} for a in ARMS}
-    engineering = {"arms": smoke_arms, "status": "verified", "current_task": "GPU 闭环待验收"}
+    completed_probes = status.get("finished_probes_cost_unknown", [])
+    gpu_verified = (isinstance(completed_probes, list) and any(
+        isinstance(probe, dict) and probe.get("id") == "reservation_runtime_gpu_015"
+        and probe.get("status") == "runtime_gpu_verified" for probe in completed_probes
+    ))
+    engineering = {"arms": smoke_arms, "status": "verified" if gpu_verified else "pending",
+                   "current_task": "GPU 闭环验收通过" if gpu_verified else "GPU 闭环待验收"}
     if include_engineering:
         p = root / "task023" / "sandbox-package" / "verified-output" / "reservation_gpu_fp32_009-train-batch" / "34355ef9915a4d8c8686d4d78acace4b" / "metrics.json"
         if p.exists():
@@ -184,17 +190,23 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
                     arm = formal_arm(telemetry["experiment_id"])
                     if arm is None:
                         raise ValueError("telemetry experiment arm unknown")
-                    raw = dict(metrics.get("last_completed_update", {}))
-                    raw["decisions"] = metadata.get("decisions")
-                    raw["at"] = checkpoint_at.isoformat().replace("+00:00", "Z") if checkpoint_at else None
-                    point = metric_point(raw)
-                    if not point or point["decisions"] is None or point["decisions"] < arms[arm]["decisions"]:
-                        raise ValueError("telemetry decision count regressed")
-                    arms[arm]["decisions"] = point["decisions"]
+                    checkpoint_decisions = integer(metadata.get("decisions"))
+                    if checkpoint_decisions is None or checkpoint_decisions < arms[arm]["decisions"]:
+                        raise ValueError("checkpoint decision count regressed")
+                    row = metrics.get("last_completed_update")
+                    metric_decisions = integer(row.get("env_steps")) if isinstance(row, dict) else None
+                    if metric_decisions is not None:
+                        if metric_decisions > checkpoint_decisions:
+                            raise ValueError("metric row exceeds checkpoint decisions")
+                        raw = dict(row)
+                        raw["at"] = checkpoint_at.isoformat().replace("+00:00", "Z") if checkpoint_at else None
+                        point = metric_point(raw)
+                        if point and any(value is not None for value in point["values"].values()):
+                            arms[arm]["points"].append(point)
+                    arms[arm]["decisions"] = checkpoint_decisions
                     arms[arm]["stage"] = "real"
-                    arms[arm]["points"].append(point)
                     formal["status"] = "active"
-                    formal["current_task"] = "运行中遥测，未终态验收"
+                    formal["current_task"] = "运行中遥测，未终态验收；指标可滞后一批"
                     if checkpoint_at:
                         checkpoint_source_ts = checkpoint_at.timestamp()
     if manifest:
