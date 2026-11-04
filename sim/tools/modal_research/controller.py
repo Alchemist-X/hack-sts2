@@ -84,8 +84,11 @@ class Controller:
             raise DispatchBlocked(f"{kind} requires an authorized provider and spending policy")
         if kind == "research" and hasattr(self.backend, "can_plan_research") and not self.backend.can_plan_research(db, job):
             raise DispatchBlocked("finite research authorization exhausted or event unavailable")
-        if kind in {"train", "eval"} and hasattr(self.backend, "gpu_waits_for_research") and self.backend.gpu_waits_for_research(db):
-            raise DispatchBlocked("waiting for research terminal usage reconciliation")
+        if kind in {"train", "eval"}:
+            if self.store.external_gpu_active(db):
+                raise DispatchBlocked("another authorized GPU operation is active")
+            if hasattr(self.backend, "gpu_waits_for_research") and self.backend.gpu_waits_for_research(db):
+                raise DispatchBlocked("waiting for research terminal usage reconciliation")
         db.execute(
             """INSERT INTO jobs (id,logical_key,attempt,kind,experiment_id,event_id,payload,reserve,deadline)
                VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -99,11 +102,17 @@ class Controller:
         analysis = db.execute(
             "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1",
         ).fetchone()
+        policy = getattr(self.backend, "research_policy", None)
+        event_filter = ""
+        event_ids = ()
+        if policy is not None:
+            event_ids = tuple(policy.allowed_event_ids)
+            event_filter = "AND events.id IN (" + ",".join("?" for _ in event_ids) + ")"
         event = db.execute(
-            """SELECT events.* FROM events WHERE decision_id IS NULL
+            f"""SELECT events.* FROM events WHERE decision_id IS NULL
                AND kind IN ('bootstrap','result','anomaly','sol_result') AND NOT EXISTS (
                SELECT 1 FROM jobs WHERE jobs.event_id=events.id AND kind='research')
-               ORDER BY rowid LIMIT 1""",
+               {event_filter} ORDER BY rowid LIMIT 1""", event_ids,
         ).fetchone()
         if event and not analysis:
             self._schedule_analysis(db, state, event)
@@ -131,6 +140,18 @@ class Controller:
             "allowed_experiments": dict(db.execute("SELECT id,config_hash FROM experiments").fetchall()),
             "engineering_task_types": ["diagnose", "implement_frozen_task"] if self.backend.tool_enabled else [],
         }
+        experiment_id = payload["event"]["evidence"].get("experiment_id")
+        experiment = db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
+        if experiment:
+            spec = json.loads(experiment["spec"])
+            payload["current_experiment"] = {
+                "experiment_id": experiment_id, "config_hash": experiment["config_hash"],
+                "stage": experiment["stage"], "completed_decisions": experiment["decisions"],
+                "next_milestone": next((n for n in spec["evaluation_milestones"] if n > experiment["decisions"]), None),
+                "next_train_reserve_usd": spec["resource_request"]["train_cost"],
+                "hypothesis": spec["hypothesis"], "stop_rules": spec["stop_rules"],
+                "promotion_rules": spec["promotion_rules"],
+            }
         try:
             self._create_job(
                 db, f"research-{digest(event['id'])[:32]}", 1, "research", payload,

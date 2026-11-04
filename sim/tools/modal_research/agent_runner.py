@@ -232,7 +232,8 @@ class AgentRunner:
         kinds = [event["type"] for event in evidence["events"]]
         usage = evidence["usage"]
         keys = {"input_tokens", "cached_input_tokens", "output_tokens"}
-        if (type(usage) is not dict or set(usage) != keys or evidence["exit_code"] != 0
+        optional = {"cache_write_input_tokens", "reasoning_output_tokens"}
+        if (type(usage) is not dict or not keys <= usage.keys() <= keys | optional or evidence["exit_code"] != 0
                 or evidence["terminal"] != ["turn.completed"] or kinds.count("turn.started") != 1
                 or kinds.count("thread.started") != 1 or evidence.get("unrecognized_items", 0)
                 or evidence["commands"] or evidence["diagnostics"] or any(kind in {"warning", "error"} for kind in kinds)
@@ -240,7 +241,9 @@ class AgentRunner:
                 or any(type(value) is not int for value in usage.values())):
             raise ValueError("research lacks a valid no-tool terminal usage receipt")
         inputs, cached, outputs = (usage[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens"))
-        if not 0 <= cached <= inputs or not 0 < inputs or not 0 < outputs:
+        if (not 0 <= cached <= inputs or not 0 < inputs or not 0 < outputs
+                or not 0 <= usage.get("cache_write_input_tokens", 0) <= inputs
+                or not 0 <= usage.get("reasoning_output_tokens", 0) <= outputs):
             raise ValueError("research terminal token usage is inconsistent")
         # GPT-6 Astra Standard credits per million: 250 / 25 / 1250.
         # $100 per 2500 purchased credits = 4 cents per credit.
@@ -512,7 +515,8 @@ def _event(stream, line, evidence, record_session):
         evidence["terminal"].append(kind)
     if kind == "turn.completed" and isinstance(usage := event.get("usage"), dict):
         evidence["usage"] = {key: value for key, value in usage.items()
-                             if key in {"input_tokens", "cached_input_tokens", "output_tokens"}
+                             if key in {"input_tokens", "cached_input_tokens", "output_tokens", "cache_write_input_tokens",
+                                        "reasoning_output_tokens"}
                              and type(value) is int and value >= 0}
     if (kind == "item.completed" and item_type == "agent_message"
             and item.get("channel") in (None, "final")

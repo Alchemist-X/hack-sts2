@@ -160,7 +160,8 @@ class RavenBroker:
         state = self._state(db)
         return (state["mode"] == "local" and row["actual"] is None
                 and row["state"] in {"intent", "running"}
-                and not (row["kind"] in GPU_KINDS and self.gpu_waits_for_research(db))
+                and not (row["kind"] in GPU_KINDS and
+                         (self.store.external_gpu_active(db) or self.gpu_waits_for_research(db)))
                 and self.controller._can_submit(db, state, Controller._job(row)))
 
     @staticmethod

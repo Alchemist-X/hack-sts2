@@ -196,6 +196,36 @@ class Store:
                 raise ValueError("experiment ID already has a different frozen spec")
         return config_hash
 
+    def start_registered(self, experiment_id, config_hash, reference):
+        """Record the operator's initial same-spec dispatch without fabricating a research result."""
+        identifier(experiment_id)
+        identifier(reference)
+        with self.transaction() as db:
+            state = db.execute("SELECT * FROM study").fetchone()
+            experiment = db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
+            if (not experiment or experiment["config_hash"] != config_hash or experiment["stage"] != "idle"
+                    or experiment["decisions"] or experiment["cursor"] or experiment["checkpoint"]
+                    or state["mode"] != "local" or state["stopped"] or state["analysis_paused"]
+                    or state["approved_budget"] is None or self.platform_headroom(state, self.ledger(db)[0]) is None
+                    or self.external_gpu_active(db)):
+                raise ValueError("initial dispatch requires an idle, funded and unpaused fresh experiment")
+            spec = json.loads(experiment["spec"])
+            if spec["absolute_deadline"] <= self.clock():
+                raise ValueError("frozen initial experiment expired")
+            target = spec["evaluation_milestones"][0]
+            self.append_event(db, reference, "operator_start", {
+                "experiment_id": experiment_id, "config_hash": config_hash, "target": target,
+            }, self.clock())
+            db.execute("UPDATE experiments SET stage='needs_train',target=? WHERE id=?", (target, experiment_id))
+
+    @staticmethod
+    def external_gpu_active(db):
+        return db.execute(
+            """SELECT 1 FROM jobs WHERE kind='access_probe'
+               AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
+               AND (state IN ('external_prepared','external_reserved') OR error='gpu_receipt_unknown') LIMIT 1"""
+        ).fetchone() is not None
+
     @staticmethod
     def append_event(db, event_id, kind, payload, now):
         identifier(event_id)
@@ -374,11 +404,25 @@ class Store:
                 raise ValueError("probe evidence category does not match the reservation")
             if runtime_gpu:
                 approved = json.loads(old["payload"])["authorized_jobs"]
-                children = details.get("child_job_ids")
-                if (type(children) is not list or len(children) != len(set(children))
-                        or any(child not in approved for child in children)
-                        or (result["status"] == "runtime_gpu_verified" and children != approved)):
+                children = details.get("child_receipts")
+                if (type(children) is not list or len(children) != len(approved)
+                        or any(type(child) is not dict for child in children)
+                        or [child.get("job_id") for child in children] != approved):
                     raise ValueError("runtime GPU result differs from authorized child jobs")
+                terminal_ids = set()
+                not_submitted = False
+                for child in children:
+                    if set(child) == {"job_id", "not_submitted"} and child["not_submitted"] is True:
+                        not_submitted = True
+                        if result["status"] == "runtime_gpu_failed":
+                            continue
+                    if (not_submitted or set(child) != {"job_id", "sandbox_id", "provider_exit_code"}
+                            or type(child["provider_exit_code"]) is not int
+                            or not isinstance(child["sandbox_id"], str) or not child["sandbox_id"].startswith("sb-")
+                            or child["sandbox_id"] in terminal_ids
+                            or (result["status"] == "runtime_gpu_verified" and child["provider_exit_code"] != 0)):
+                        raise ValueError("runtime GPU children require distinct terminal receipts or no-submit evidence")
+                    terminal_ids.add(identifier(child["sandbox_id"]))
             if result["status"] in {"gpu_verified", "gpu_failed"}:
                 details = result.get("details", {})
                 if (not old["remote_id"] or not old["submit_started"] or details.get("sandbox_id") != old["remote_id"]
