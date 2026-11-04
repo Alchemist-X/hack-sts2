@@ -207,7 +207,8 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
             for i in np.flatnonzero(live & (term | trunc).astype(bool)):
                 le = info["last_episode"][i]
                 res = _end_result(int(term[i]), float(rew[i]), int(status[i]))
-                extra = {"final_hp": int(le[LE.final_hp]), "max_hp": int(le[LE.final_max_hp]),
+                extra = {"end_kind": int(le[LE.end_kind]), "end_status": int(status[i]),
+                         "final_hp": int(le[LE.final_hp]), "max_hp": int(le[LE.final_max_hp]),
                          "steps_env": int(le[LE.steps])}
                 if res == "crashed":
                     extra["error"] = env.last_error(int(i))[:2000]
@@ -246,6 +247,7 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
              "refusals": 0, "timeouts": 0, "max_tokens_stops": 0, "cost_usd": 0.0,
              "seconds": round(float(t_games[i]), 3), "final_hp": r.get("final_hp"), "max_hp": r.get("max_hp"),
              "death": r.get("death"), "error": r.get("error"), "cap_reason": r.get("cap_reason"),
+             "end_kind": r.get("end_kind"), "end_status": r.get("end_status"),
              "stuck": r.get("stuck"), "truncated": r.get("result") in ("capped", "stuck"),
              "reward": 1 if r.get("result") == "win" else 0,
              "act_start_floor": r.get("act_start_floor"), "act_rooms": r.get("act_rooms"),

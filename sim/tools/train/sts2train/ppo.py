@@ -23,6 +23,19 @@ never-used seed ``<prefix>-<CHARACTER>-<n>``, the counter in the checkpoint). ``
 ``sample_seed`` / ``env_seed`` / ``start_seed``; ``rng_scheme`` legacy (pool mode without explicit init / sample seeds:
 the old single torch stream) or decoupled (``seed_rngs``, ``init_rng``). Isolation from the frozen eval seed sets and
 the blind-set gate: ``sts2train.isolation``; per-episode rows: ``sts2train.episodes``.
+UI revisit cycles (``sts2train.cycles``, 2026-11-04): every rollout runs the cycle detector (counting only; actions,
+rewards and RNG untouched): a verified zero-progress RestSite / Shop -> prompt -> cancel loop back to the same
+observation is logged in ``cycles.jsonl`` (update, rollout step, slot, episode, room, floor, action path, length) and
+counted per update (``cycles_total`` / ``cycles_rest`` / ``cycles_shop`` / ``cycle_steps`` / ``cycles_rejected`` /
+``episodes_with_cycle`` / ``cycle_max_per_episode`` / ``cycle_cost_total``; each finished episode's count is its
+``cycles`` field, ``cycle_episodes.jsonl`` until the per-episode log carries it). ``cycle_cost`` (``--cycle-cost c``,
+default 0) subtracts c from the trainer's reward of the transition that closes a cycle, once per cycle (GAE, gamma,
+lambda and the value targets are unchanged; the env, the objective's logged reward / return / progress and the
+acquisition shaping are untouched). Fixed-endpoint evaluation: ``eval_at`` (``--eval-at u1,u2``) evaluates the live
+model at those absolute updates on ``eval_at_seedset`` (default silent-a10-dev-v1) in each of ``eval_at_modes``
+(``sts2train.evaluate`` modes: greedy-on, greedy-off, sample-off) into ``evals/u<N>/<mode>/`` with a ``mode`` row in
+evals.jsonl and the checkpoint kept as ``checkpoints/pinned-<N>.pt``; these rows never select ``best.pt``.
+``no_best`` (``--no-best``) turns ``best.pt`` off altogether (the periodic eval stays a monitor).
 
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
@@ -77,7 +90,10 @@ import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
+from .cycles import CycleDetector
+from .cycles import update_stats as cycle_update_stats
 from .episodes import EPISODE_HOOKS, EpisodeLog
+from .gae import time_limit_advantages
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
                        obs_to_device, widen_spec)
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
@@ -144,7 +160,8 @@ class TrainConfig:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    max_rows: int = 64              # training candidate / prompt-option rows (actions restricted to j < min(cand_n, 64))
+    bootstrap_time_limits: bool = False  # stream-only: use valid pre-reset step-cap observation
+    max_rows: int = 64              # training candidate and prompt-option row cap
     # model (sts2train.model.PRESETS)
     preset: str | None = None
     d: int = 96                     # d_model
@@ -187,6 +204,13 @@ class TrainConfig:
     loop_breaker: bool = True       # the periodic eval's greedy policy runs with the loop breaker (sts2train.loopbreak)
     loop_breaker_k: int = 3         # returns to an observation before the breaker prefers leaving the screen
     rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
+    # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
+    cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
+    eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
+    eval_at_seedset: str = "silent-a10-dev-v1"
+    eval_at_modes: tuple = ("greedy-on", "greedy-off", "sample-off")
+    eval_at_sample_seed: int = 1    # sample-mode play RNG seed of the eval_at evaluations (one play per game)
+    no_best: bool = False           # never select best.pt (the periodic eval only monitors)
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
     episodes_log: bool = True       # <run>/episodes.jsonl: one row per episode (sts2train.episodes)
@@ -249,7 +273,35 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         stream_prefix(out)                  # validates an explicit prefix / the SP<env_seed> default
     elif "seed_stream_prefix" in given and given["seed_stream_prefix"]:
         raise ValueError("--seed-stream-prefix applies to --start-mode stream only")
+    if out.bootstrap_time_limits and out.start_mode != "stream":
+        raise ValueError("--bootstrap-time-limits requires --start-mode stream")
+    out.cycle_cost = float(out.cycle_cost)
+    if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
+        raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
+    out.eval_at = parse_eval_at(out.eval_at)
+    modes = out.eval_at_modes.split(",") if isinstance(out.eval_at_modes, str) else list(out.eval_at_modes)
+    out.eval_at_modes = tuple(m.strip() for m in modes if str(m).strip())
+    from .evaluate import parse_mode
+
+    for m in out.eval_at_modes:
+        parse_mode(m)                       # ValueError on an unknown mode
+    if out.eval_at and not out.eval_at_modes:
+        raise ValueError("eval_at is set but eval_at_modes is empty")
     return out
+
+
+def parse_eval_at(v) -> tuple[int, ...]:
+    """Sorted distinct absolute update numbers (> 0) from "u500,1000" / [500, 1000] / ()."""
+    items = v.split(",") if isinstance(v, str) else list(v or ())
+    out = set()
+    for x in items:
+        t = str(x).strip().lower().lstrip("u")
+        if not t:
+            continue
+        if not t.isdigit() or int(t) < 1:
+            raise ValueError(f"eval_at: {x!r} is not an update number >= 1")
+        out.add(int(t))
+    return tuple(sorted(out))
 
 
 def resolve_seeds(out: TrainConfig, given: dict, base: dict | None) -> None:
@@ -921,11 +973,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     Before anything is created: an eval seed set with games of a frozen blind set is refused unless
     ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
     game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
+    if cfg.bootstrap_time_limits and cfg.start_mode != "stream":
+        raise ValueError("--bootstrap-time-limits requires --start-mode stream")
     session_start = time.monotonic()
     run = Path(cfg.out)
     blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
                   if cfg.eval_every else None)
-    guard = IsolationGuard.from_seedsets(extra=[cfg.eval_seedset] if cfg.eval_every else ())
+    eval_holdouts = [cfg.eval_seedset] if cfg.eval_every else []
+    if cfg.eval_at:
+        check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
+        eval_holdouts.append(cfg.eval_at_seedset)
+    guard = IsolationGuard.from_seedsets(extra=eval_holdouts)
     if cfg.start_mode == "pool":
         isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
     else:
@@ -945,7 +1003,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     rng = seed_rngs(cfg)                # legacy: torch.manual_seed(seed) + default_rng(seed), as before
 
     c = dict(updates=0, env_steps=0, episodes=0, wins=0, sim_error=0, content_gap=0, illegal=0, overflow_cand=0,
-             floor_stall=0, wall_s=0.0, sessions=0, starts=0, dropped=0)
+             floor_stall=0, wall_s=0.0, sessions=0, starts=0, dropped=0, cycles=0)
     best_eval = last_eval = None
     if resume is not None:
         c.update({k: v for k, v in (resume.get("counters") or {}).items() if k in c})
@@ -1041,6 +1099,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             log(f"rollout loop breaker: back at an observation of its last {breaker.window} decisions a slot gives "
                 f"probability 0 to the candidates it took there; back there {cfg.loop_breaker_k} times or more, only "
                 f"the rows that leave the screen stay (when legal)")
+        # --- UI revisit cycles (sts2train.cycles): counted in every rollout; --cycle-cost charges the closing step ---
+        cycles = CycleDetector(spec, cfg.envs, card_name=env.schema.vocab.cards.name)   # the library's spec
+        cyc_cost = float(cfg.cycle_cost)
+        log("UI revisit cycles (RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> back to the same observation): "
+            + (f"cost {cyc_cost} on the trainer's reward of each closing transition" if cyc_cost else "counted only"))
+        eval_at = set(cfg.eval_at)
+        if eval_at:
+            log(f"fixed-endpoint evals at updates {sorted(eval_at)}: {cfg.eval_at_seedset} x {list(cfg.eval_at_modes)}"
+                + (" (sample seed " + str(cfg.eval_at_sample_seed) + ")" if any(m.startswith("sample")
+                                                                             for m in cfg.eval_at_modes) else ""))
+        if cfg.no_best:
+            log("--no-best: no evaluation selects best.pt")
+        # ---
 
         baseline = None
         if cfg.baseline_steps and resume is None:
@@ -1071,6 +1142,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})"
                 + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else "")
                 + f"; rng {rng_restored}; best_eval from {best_src['source']}")
+        if cfg.no_best:
+            best_eval = None
         adam_step = optimizer_step(opt)
         updater = MinibatchUpdater(model, opt, cfg, amp, device)
         runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
@@ -1100,6 +1173,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             else:                       # a checkpoint from before the in-flight record: every slot was running
                 dropped_now = int((resume.get("config") or {}).get("envs", 0) or 0)
             c["dropped"] += dropped_now
+        cycle_log = JsonlWriter(run / "cycles.jsonl", keep_upto=upd0)             # one row per closed cycle
+        cycle_eps = JsonlWriter(run / "cycle_episodes.jsonl", keep_upto=upd0)     # shim: per-episode counts
         last_ckpt_path = resume_path if resume is not None else None
         last_ckpt_upd = upd0 if resume is not None else -1
         if cfg.eval_every:
@@ -1209,7 +1284,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 row["best_skip"] = skip
             evals.write(row)
             last_eval = row
-            if is_new_best(row, best_eval):          # best.pt: the clean eval with the highest progress
+            if not cfg.no_best and is_new_best(row, best_eval):   # best.pt: the clean eval with the highest progress
                 best_eval = row
                 ckpts.mark_best(last_ckpt_path)
             pm = row["progress_mean"]
@@ -1218,6 +1293,58 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 + (f" loop breaks {lb['loop_breaks']}" if lb and lb["loop_breaks"] else "")
                 + (" *best*" if best_eval is row else "") + (f" [not eligible for best.pt: {skip}]" if skip else ""))
             return row
+
+        def run_eval_at(upd: int) -> list[dict]:
+            """Fixed-endpoint evaluation (--eval-at): every eval_at_modes mode on eval_at_seedset, the checkpoint
+            pinned; one evals.jsonl row per mode (``mode``, ``eval_at``); never selects best.pt."""
+            from .evaluate import evaluate_model, parse_mode
+
+            if last_ckpt_upd != upd:
+                save(upd)
+            pinned = ckpts.pin(last_ckpt_path, upd)
+            wh = weights_hash(model)
+            model.eval()
+            rows = []
+            for mode in cfg.eval_at_modes:
+                pol, br = parse_mode(mode)
+                out = run / "evals" / f"u{upd:07d}" / mode
+                t = time.monotonic()
+                base = {"update": upd, "env_steps": c["env_steps"], "wall_s": round(c["wall_s"], 1), "time": _now_iso(),
+                        "seedset": cfg.eval_at_seedset, "mode": mode, "eval_at": True, "policy": pol,
+                        "breaker": "on" if br else "off",
+                        "sample_seed": int(cfg.eval_at_sample_seed) if pol == "sample" else None,
+                        "weights_hash": wh, "checkpoint": _rel(pinned, run), "dir": _rel(out, run)}
+                try:
+                    rep = evaluate_model(model, spec, cfg.eval_at_seedset, str(out), weights_hash=wh,
+                                         checkpoint=str(pinned),
+                                         threads=cfg.eval_threads or min(os.cpu_count() or 4, 8), device=str(device),
+                                         loop_breaker=br, loop_breaker_k=cfg.loop_breaker_k, policy=pol,
+                                         sample_seed=cfg.eval_at_sample_seed, repeat=0, log=lambda m: None,
+                                         allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose)
+                except Exception as e:  # an eval failure must not end a multi-hour run
+                    log(f"eval-at u{upd} {mode} failed: {type(e).__name__}: {e}")
+                    row = {**base, "error": f"{type(e).__name__}: {e}", "seconds": round(time.monotonic() - t, 2)}
+                    evals.write(row)
+                    rows.append(row)
+                    continue
+                h, cy, lb = rep["headline"], rep.get("cycles") or {}, rep.get("loop_breaker") or {}
+                row = {**base, "progress_mean": h["progress_mean"], "progress_ci95": h.get("progress_ci95"),
+                       "progress_median": h.get("progress_median"), "wins": h["wins"], "games": h["games"],
+                       "win_rate": h["wins"] / max(h["games"], 1), "floor_mean": h.get("floor_mean"),
+                       "results": h.get("results"), "act_reached": h.get("act_reached"),
+                       "replayable": h.get("replayable"), "stuck": (h.get("results") or {}).get("stuck"),
+                       "cycles": cy.get("cycles"), "cycles_rest": cy.get("cycles_rest"),
+                       "cycles_shop": cy.get("cycles_shop"), "games_with_cycle": cy.get("games_with_cycle"),
+                       "loop_breaks": lb.get("loop_breaks"), "games_with_loop_breaks": lb.get("games_with_loop_breaks"),
+                       "seconds": round(time.monotonic() - t, 2)}
+                evals.write(row)
+                rows.append(row)
+            log(f"[eval-at u{upd}] {cfg.eval_at_seedset}: " + "; ".join(
+                f"{r['mode']} " + (f"error {r['error']}" if r.get("error") else
+                                   f"progress {r['progress_mean']:.4f} stuck {r['stuck']} cycles {r['cycles']} in "
+                                   f"{r['games_with_cycle']} games breaker games {r['games_with_loop_breaks']}")
+                for r in rows))
+            return rows
 
         recent: deque = deque(maxlen=20)
         errors_seen: dict[str, int] = {}
@@ -1256,6 +1383,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if shaper is not None:
             shaper.reset(obs["aux"], obs["deck"])
             r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)     # the objective's reward (unshaped)
+        cycles.observe(obs, episode_ids=env.info()["episode_id"])          # --- sts2train.cycles: first observations
+        cyc_r = None
+        if cyc_cost:                                                        # the cycle cost charged per step
+            cyc_r = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
+            if r_obj is None:
+                r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -1281,10 +1414,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             ep_this: list[dict] = []
             env_s = infer_s = 0.0
             n_steps = se_n = cg_n = il_n = over_n = fs_n = 0
+            prompt_over_n = native_cand_over_n = native_table_over_n = step_caps = 0
+            final_values = np.full_like(store.values, np.nan) if cfg.bootstrap_time_limits else None
+            step_args = {"capture_final": True} if cfg.bootstrap_time_limits else {}
             model.eval()
             for t in range(cfg.rollout):
                 t0 = time.monotonic()
                 cand_n = obs["cand_n"].copy()
+                prompt_n = obs["global_i"][:, spec.cols["global_i"]["prompt_option_n"]]
+                prompt_over_n += int(np.count_nonzero((cand_n > 0) & (prompt_n > cfg.max_rows)))
                 if aux_tg is not None:
                     aux_tg.before(t, obs["aux"])
                 x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
@@ -1305,14 +1443,30 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 a_np[~valid] = -1
                 if breaker is not None:
                     breaker.commit(a_np)
+                cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
                 store.actions[t] = np.maximum(a_np, 0)
                 store.logp[t] = logp.cpu().numpy()
                 store.values[t] = value.cpu().numpy()
                 store.valid[t] = valid
                 t1 = time.monotonic()
-                obs, rew, term, trunc, status, info = env.step(a_np)
+                obs, rew, term, trunc, status, info = env.step(a_np, **step_args)
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
+                cap_slots = cap_obs = None
+                if cfg.bootstrap_time_limits:
+                    invalid = (status & (ERR_BITS | STATUS["ILLEGAL_ACTION"] | STATUS["NOOP"])) != 0
+                    store.valid[t] &= ~invalid
+                    cap_slots, cap_obs = info["final_observation"]
+                    if cap_slots.size:
+                        cap_start = time.monotonic()
+                        cap_x = obs_to_device(cap_obs, device, max_rows=cfg.max_rows, static=static)
+                        _, cap_v = runner.forward(cap_x, compiled=False)
+                        cap_v = cap_v.cpu().numpy()
+                        if not np.isfinite(cap_v).all():
+                            raise FloatingPointError("non-finite critic value on step-cap observation")
+                        final_values[t, cap_slots] = cap_v
+                        step_caps += len(cap_slots)
+                        cap_infer_s = time.monotonic() - cap_start
                 if breaker is not None:             # auto-reset slots start new episodes
                     breaker.reset(done)
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
@@ -1325,14 +1479,28 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                             e["update"], e["t"] = upd + 1, t
                             e["fields"] = EPISODE_HOOKS.fields(e, episode_hooks)
                 if aux_tg is not None:
+                    if cfg.bootstrap_time_limits:
+                        term = np.where(invalid, 0, term)
+                        trunc = trunc | invalid
                     aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
                 if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
-                    f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
+                    final_phi = None
+                    if cap_slots is not None and cap_slots.size:
+                        final_phi = (cap_slots, shaper.potential(cap_obs["aux"], cap_obs["deck"]))
+                    f_acq, ended = shaper.step(done, obs["aux"], obs["deck"], final_phi=final_phi)
                     for e in fin:
                         e["shaping"] = ended.get(e["slot"], 0.0)
                         e["shaped_return"] = e["return"] + e["shaping"]
                     r_obj[t] = r
                     r = r + f_acq
+                # --- sts2train.cycles hook: did this transition close a verified UI revisit cycle (cost once) ---
+                closed = cycles.after_step(obs, done, fin, episode_ids=info["episode_id"], t=t)
+                if cyc_r is not None:
+                    if shaper is None:
+                        r_obj[t] = r
+                    cyc_r[t] = np.float32(cyc_cost) * closed
+                    r = r - cyc_r[t]
+                # ---
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -1345,8 +1513,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 se_n, cg_n, il_n = se_n + se, cg_n + cg, il_n + il
                 fs_n += int(np.count_nonzero(status & FLOOR_STALL)) if FLOOR_STALL else 0
                 over_n += int(np.count_nonzero(cand_n > cfg.max_rows))
+                native_cand_over_n += int(np.count_nonzero(status & STATUS["CANDIDATE_OVERFLOW"]))
+                native_table_over_n += int(np.count_nonzero(status & STATUS["TABLE_OVERFLOW"]))
                 n_steps += int(np.count_nonzero(valid))
                 infer_s += t1 - t0
+                if cap_slots is not None and cap_slots.size:
+                    infer_s += cap_infer_s
                 env_s += t2 - t1
                 ep_this += fin
             # bootstrap value of the state after the rollout
@@ -1364,14 +1536,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 aux_st.update(aux_win_prob_mean=float(win_b.mean()),
                               aux_combat_pred_mean=float(cmb_b[in_cmb].mean()) if in_cmb.any() else None)
             infer_s += time.monotonic() - t0
-            adv = np.zeros_like(store.rewards)
-            gae = np.zeros(cfg.envs, dtype=np.float32)
-            for t in reversed(range(cfg.rollout)):
-                nv = last_v if t == cfg.rollout - 1 else store.values[t + 1]
-                nonterm = 1.0 - store.dones[t]
-                delta = store.rewards[t] + cfg.gamma * nv * nonterm - store.values[t]
-                gae = delta + cfg.gamma * cfg.lam * nonterm * gae
-                adv[t] = gae
+            if cfg.bootstrap_time_limits:
+                adv = time_limit_advantages(store.rewards, store.values, last_v, store.dones, store.valid,
+                                            final_values, cfg.gamma, cfg.lam)
+            else:
+                adv = np.zeros_like(store.rewards)
+                gae = np.zeros(cfg.envs, dtype=np.float32)
+                for t in reversed(range(cfg.rollout)):
+                    nv = last_v if t == cfg.rollout - 1 else store.values[t + 1]
+                    nonterm = 1.0 - store.dones[t]
+                    delta = store.rewards[t] + cfg.gamma * nv * nonterm - store.values[t]
+                    gae = delta + cfg.gamma * cfg.lam * nonterm * gae
+                    adv[t] = gae
             ret = adv + store.values
 
             if cfg.start_mode == "stream":
@@ -1383,6 +1559,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             model.train()
             idx_all = np.flatnonzero(store.valid.reshape(-1))
             f_adv = adv.reshape(-1)
+            if len(idx_all) == 0:
+                raise RuntimeError("rollout contained no valid learning transitions")
             a_mean, a_std = float(f_adv[idx_all].mean()), float(f_adv[idx_all].std()) + 1e-8
             to = lambda a_: torch.from_numpy(np.ascontiguousarray(a_)).to(device)  # noqa: E731
             d_act, d_logp = to(store.actions.reshape(-1)), to(store.logp.reshape(-1))
@@ -1436,6 +1614,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
                 lb_st = {"loop_breaks": lb_n, "no_op_actions": no_n, "cycle_revisits": cy_n}
+            cy_counts, cy_events = cycles.pop()     # --- sts2train.cycles: this update's cycles
+            cy_st = cycle_update_stats(cy_counts, ep_this, cyc_cost)
+            c["cycles"] += cy_counts["cycles"]
+            for ev in cy_events:
+                cycle_log.write({"update": upd, **ev})
+            cycle_eps.write({"update": upd, "slot": [e["slot"] for e in ep_this],
+                             "start_entry": [e.get("start_entry") for e in ep_this],
+                             "cycles": [int(e.get("cycles", 0)) for e in ep_this]})
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
                            "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
@@ -1451,6 +1637,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             t_ev = time.monotonic()
             if cfg.eval_every and upd % cfg.eval_every == 0:
                 run_eval(upd)
+            if upd in eval_at:
+                run_eval_at(upd)
             eval_s = time.monotonic() - t_ev
             t_end = time.monotonic()
             iter_s = t_end - t_iter
@@ -1462,7 +1650,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             sps = n_steps / max(t_ck - t_iter, 1e-9)
             row = {"update": upd, "time": _now_iso(), "wall_s": round(c["wall_s"], 2),
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
-                   "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
+                   "env_steps_update": n_steps, "learning_samples_update": int(len(idx_all)),
+                   "bootstrap_step_caps": step_caps, "prompt_over_max_rows": prompt_over_n,
+                   "native_candidate_overflow": native_cand_over_n, "native_table_overflow": native_table_over_n,
+                   "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
                    "episodes_total": c["episodes"], **es, **ss,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
@@ -1479,7 +1670,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
                        "t_prefetch_s": round(tu["t_prefetch"], 3), "t_prefetch_wait_s": round(tu["t_prefetch_wait"], 3)}
                       if cfg.start_mode == "stream" else {}),
-                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **lb_st,
+                   **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
+                                             ep_this, shaper), **lb_st, **cy_st,
+                   "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
                    **gpu_memory(device)}
             metrics.write(row)
             episodes_log.write_update(upd, c["sessions"], ep_this)
@@ -1505,6 +1698,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        if aux_tg is not None else "")
                     + (f" | loop breaks={lb_st['loop_breaks']} no-ops={lb_st['no_op_actions']} "
                        f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
+                    + f" | ui cycles={cy_st['cycles_total']} eps={cy_st['episodes_with_cycle']}"
+                    + (f" cost={cy_st['cycle_cost_total']:.3f}" if cyc_cost else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -1522,6 +1717,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         evals.close()
         episodes_log.close()
         inflight_end = track.inflight()
+        cycle_log.close()
+        cycle_eps.close()
         train_s = time.monotonic() - train_start
         summary = {
             "config": config_dict(cfg), "objective": cfg.objective, "encoder_version": spec.encoder_version,
@@ -1550,6 +1747,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                             if cfg.start_mode == "stream" else isolation).items()
                           if k not in ("checked_sets", "exposed")},
             "episodes_log_rows": episodes_log.rows,
+            "cycles": {**cycles.totals_dict(), "cost": cyc_cost, "run_total": c["cycles"]},
         }
         if breaker is not None:
             t_lb = breaker.totals()
@@ -1612,7 +1810,7 @@ def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | 
     f = None if src is None else src / "evals.jsonl"
     if f is None or not f.exists():
         return best, last, rec
-    rows = [r for r in read_jsonl(f) if int(r.get("update", 0) or 0) <= upd0]
+    rows = [r for r in read_jsonl(f) if not r.get("eval_at") and int(r.get("update", 0) or 0) <= upd0]
     new_best = None
     for r in rows:
         if r.get("seedset") == seedset and is_new_best(r, new_best):

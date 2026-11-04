@@ -169,10 +169,16 @@ class AcqShaping:
         self.phi = self.potential(aux, deck)
         self.sum[:] = 0.0
 
-    def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray) -> tuple[np.ndarray, dict[int, float]]:
+    def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray, *,
+             final_phi: tuple[np.ndarray, np.ndarray] | None = None) -> tuple[np.ndarray, dict[int, float]]:
+        """Apply next-state potential from sparse final slots at externally truncated steps."""
         done = np.asarray(done, dtype=bool)
         nxt = self.potential(aux, deck)
-        f = np.where(done, 0.0, self.gamma * nxt) - self.phi
+        continuation_phi = np.where(done, 0.0, nxt)
+        if final_phi is not None:
+            slots, potential = final_phi
+            continuation_phi[slots] = potential
+        f = self.gamma * continuation_phi - self.phi
         self.sum += f
         ended = {int(i): float(self.sum[i]) for i in np.flatnonzero(done)}
         self.sum[done] = 0.0

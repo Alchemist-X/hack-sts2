@@ -52,8 +52,10 @@ uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset si
 | File | Content |
 | --- | --- |
 | `status.json` | rewritten atomically after every update: `state` (running / finished / stopped / aborted / error), `stop_reason`, `update`, `env_steps`, `episodes`, `wins`, `wall_s`, `env_steps_per_s`, `recent` (progress / win rate / floor over the last 20 updates), `best_eval`, `last_eval`, `last_checkpoint`, `updated_at` |
-| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker") |
+| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker"); always the UI revisit cycle counts `cycles_total` / `cycles_rest` / `cycles_shop` / `cycle_steps` / `cycles_rejected` / `episodes_with_cycle` / `cycle_max_per_episode` / `cycle_cost_total` and `reward_sum_trained` (the reward PPO trained on, summed over the update's valid steps; see "UI revisit cycles") |
 | `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; the greedy policy runs with the loop breaker (`--loop-breaker off` turns it off) and the row carries `loop_breaker`, `loop_breaks`, `no_op_actions`, `cycle_revisits`; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
+| `cycles.jsonl`, `cycle_episodes.jsonl` | one row per UI revisit cycle closed in a rollout (`update`, rollout step `t`, `slot`, `episode`, room `phase`, `prompt`, `act`, `floor`, `len`, `step` = the episode's decision index, `path` / `actions`); per update the finished episodes' `slot` / `start_entry` / `cycles` (aligned lists; a shim until the per-episode log carries the count) |
+| `evals/u<update>/<mode>/` | `--eval-at` runs: one protocol run directory per mode (`greedy-on`, `greedy-off`, `sample-off`), one `evals.jsonl` row each with `mode`, `eval_at`, `stuck`, `cycles`, `games_with_cycle`, `loop_breaks`; the weights stay in `checkpoints/pinned-<update>.pt` |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
 | `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`, and since 2026-11-04 `given` (the command line's explicit flags), `config_diff` ({key: [checkpoint, this session]}), `seeds`, `rng_restored` ({numpy, torch, cuda: ok / failed / absent / reseeded}), `adam_step`, `init_weights_hash` (fresh runs), `start_mode`, `seed_stream_next`, `dropped_at_start`, `best_eval_source`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save); `start_mode`, `seeds`, `isolation` (checked holdout sets, collisions), `seed_stream` (see "Start modes, seeds and isolation") |
 | `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind` + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
@@ -234,6 +236,37 @@ after all others, so a model with a flag on starts every other parameter from th
 `--acq-shaping` and the coefficients are objective settings and may change on resume. `bench-update --deck-counts
 --aux-heads` times the flagged model / loss.
 
+## Silent A10 Modal capacity experiments
+
+Start each capacity from a newly randomized model. Sample experience only
+from legal new Silent A10 games in the experiment's training seed namespace.
+Keep the seed, checkpoint and artifact manifests within this study. At worker
+launch, reject external or historical weights and allow resume only from a
+validated checkpoint of the same experiment's independently initialized
+lineage and frozen config. Reject human or modified saves, imported
+trajectories, teacher labels and harvest starts. Require `start_saves=None`,
+`save_mix=0` and `harvest=0` in the experiment specification.
+
+Use stream starts, full native rows (`--max-rows 192`) and the explicit step-cap
+bootstrap protocol below. Keep cycle cost at zero. The primary evaluation is
+greedy from a fresh game, with the loop breaker and search disabled, on the
+study's separate evaluation seed manifests.
+
+## External step limits in stream training
+
+Use `--start-mode stream --bootstrap-time-limits` to bootstrap a valid
+environment step cap from that episode's last observation before the slot
+resets. A cap ends the GAE trace. Victory, death and floor stalls end the
+trace with no continuation value. Simulator errors, content gaps and illegal
+actions are excluded from the PPO update in this mode, with counts retained
+in the rollout logs. A training worker's time budget stops at an update
+boundary and does not end an environment episode.
+
+For full native candidate support, pass `--max-rows 192`. Evaluation already
+uses the full native tables. Rollout metrics separately record candidate and
+prompt limits, native overflow flags, valid learning samples and the number
+of final-state step-cap bootstraps.
+
 ## Start modes, seeds and isolation (`--start-mode`, `--init-seed` / `--sample-seed` / `--env-seed`, blind sets)
 
 **`--start-mode stream`** (`sts2train.seedstream`; the 2026-11-04 mainline): every episode of every slot starts from a
@@ -392,6 +425,79 @@ taken in one `TakeRewardCard` decision); illegal indices and the shop removal �
 
 (4 cpu threads, library `5dbfa09dd9dcb5ed`; the remaining s5b-on non-loss is one game `capped` by the 1200-step limit
 in act 3, floor 48.)
+
+## UI revisit cycles, execution modes, fixed endpoints (`--cycle-cost`, `eval --policy / --breaker`, `compare`, `--eval-at`, `--no-best`)
+
+`sts2train.cycles.CycleDetector` counts the zero-progress UI loop that the loop breaker papers over in evaluation
+(2026-11-04: 176 of u2225's 177 dev-128 interventions were RestSite `SMITH` → `PromptSelect` → `PromptCancel` back
+to the byte-identical rest site, one was Shop removal → select → cancel). A cycle is completed at a RestSite / Shop
+decision whose 64-bit digest of the 27 model-read buffers (`loopbreak.ObsDigest`) equals an earlier RestSite / Shop
+decision of the same episode and floor at most 64 decisions back, when every decision in between (at least one) was
+a DeckUpgrade / DeckRemove prompt entered from that room that carried no new information: it equals the room
+observation in every model-read buffer except the prompt UI (the prompt columns, `phase` and `decision_kind` of
+`global_i`; `prompt_options`, `cand`, `cand_n`), its options are a sub-multiset of the deck's (card, upgrade) rows,
+and its candidates only select a listed option, confirm or cancel. Counted once at the revisit; going round again
+is another cycle. Not cycles: a confirmed upgrade or removal (the deck changes), leaving the room, a fight or any
+other screen in between, an event prompt cancelled back to the event, a prompt that fails the check (`rejected_*`),
+a no-op. Checked on the archived u2225 dev-128 games: 177 cycles at exactly the 177 intervention decisions
+(breaker on), 2,469 in the 94 stuck games of the breaker-off run; on all 5,476 room prompt screens the only
+differing global_i columns are prompt UI columns, the deck buffer is unchanged (no upgrade preview) and every option
+is a deck card.
+
+- **Training**: always on, counting only (the default path stays bit for bit the old one: `tests/test_perf.py`);
+  metrics keys and `cycles.jsonl` / `cycle_episodes.jsonl` above. `--cycle-cost c` subtracts c from the trainer's
+  reward of the transition that closes a cycle (the cancel back to the room), once per cycle; the env, gamma /
+  lambda, the value targets' construction, the logged objective (`reward_mean`, returns, progress) and the
+  acquisition shaping (`shaping_mean`) are unchanged; `cycle_cost_total` = c × cycles. Size of c = 0.01 (arm C1 of
+  the 2026-11-04 plan) against the s8a reward scale: half a room of Act-1 progress (1/51 = 0.0196), 0.83 of one
+  upgrade's shaping (0.012), one relic (0.01), 3.3 card acquisitions (0.003), a tenth of a fresh episode's death
+  debt (~0.10), 3.4 % of a fresh episode's mean return (0.29).
+- **Evaluation modes** (`sts2train eval`): `--policy greedy|sample` × `--breaker on|off` (`--breaker` =
+  `--loop-breaker`), same protocol limits for all. Sample = one draw per decision from the softmax over the legal
+  candidates (float64 inverse CDF), the play's RNG `cycles.sample_rng(--sample-seed, game key, repeat)` (batch
+  independent); `--repeats R` writes `OUT/r<k>/` + `OUT/repeats.json`; `--chunk i/n` plays one slice (config.json
+  `parent_seedset`). Every game summary gets `eval_mode`, `decisions`, `wall_s` (from the run's start to the game's end;
+  games run batched), `stalled`, `cycles`, `cycles_rest` / `cycles_shop`, `cycle_events` (decision index, room,
+  floor, length, path) next to `loop_breaks` and `stuck`; report.json the totals under `cycles`.
+- **`sts2train compare ARM ARM ...`**: an arm = comma-separated run directories (slices, repeat parents) of one seed
+  set; per arm progress [95 % t over per-seed means], clear rate, stalls (count, phase@floor), plays with a cycle,
+  cycles per play, loop-breaker plays, decisions, wall seconds, the stage funnel (`reportcard.stages`); per pair the
+  per-seed difference (t and 10,000-resample bootstrap 95 % intervals, better / worse / same, identical actions).
+- **Fixed endpoints** (`train --eval-at u1,u2 [--eval-at-seedset silent-a10-dev-v1] [--eval-at-modes
+  greedy-on,greedy-off,sample-off] [--eval-at-sample-seed 1]`): at those absolute updates the live model plays the
+  seed set once per mode into `evals/u<N>/<mode>/`, rows with `mode` in `evals.jsonl`, weights kept as
+  `checkpoints/pinned-<N>.pt`; these rows never select `best.pt`. `--no-best` turns `best.pt` off altogether (the
+  periodic `--eval-every` eval stays a monitor; `--best` undoes it on `--resume`).
+
+```bash
+# the three execution modes of one checkpoint on the dev set, two 64-game slices each (a Mac: <= 64 env slots)
+for c in 0 1; do
+  uv run --project sim/tools/train sts2train eval --seedset silent-a10-dev-v1 --checkpoint CK --threads 3 \
+      --chunk $c/2 --policy greedy --breaker off --out tmp/eval/modes/greedy-off-c$c
+  uv run --project sim/tools/train sts2train eval --seedset silent-a10-dev-v1 --checkpoint CK --threads 3 \
+      --chunk $c/2 --policy sample --breaker off --sample-seed 1 --repeats 3 --out tmp/eval/modes/sample-off-c$c
+  uv run --project sim/tools/train sts2train eval --seedset silent-a10-dev-v1 --checkpoint CK --threads 3 \
+      --chunk $c/2 --policy greedy --breaker on --out tmp/eval/modes/greedy-on-c$c
+done
+M=tmp/eval/modes
+uv run --project sim/tools/train sts2train compare $M/greedy-off-c0,$M/greedy-off-c1 \
+    $M/sample-off-c0,$M/sample-off-c1 $M/greedy-on-c0,$M/greedy-on-c1 --labels greedy-off,sample-off,greedy-on
+# a training arm with the loop cost and fixed-endpoint evals, no best.pt
+uv run --project sim/tools/train sts2train train ... --cycle-cost 0.01 --eval-at u381,u762 --no-best
+```
+
+| Checkpoint (silent-a10-dev-v1) | Mode | Plays | Progress [95 % t] | Stuck | Plays with a cycle | Cycles / play | Breaker plays |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| s8a u2225 | greedy, breaker off | 128 | 0.252 [0.237, 0.267] | 94 | 94 | 19.29 | 0 |
+| | sample (seed 1, 3 repeats), off | 384 | 0.281 [0.266, 0.296] | 1 | 192 | 2.10 | 0 |
+| | greedy, breaker on | 128 | 0.372 [0.348, 0.396] | 0 | 94 | 1.38 | 94 (177 breaks) |
+| s8a u2050 | greedy, breaker off | 128 | 0.282 [0.262, 0.302] | 52 | 52 | 12.19 | 0 |
+| | sample (seed 1, 3 repeats), off | 384 | 0.287 [0.271, 0.302] | 0 | 144 | 1.04 | 0 |
+| | greedy, breaker on | 128 | 0.351 [0.326, 0.376] | 0 | 52 | 0.69 | 52 (88 breaks) |
+
+(cpu, 3 threads, library `3b73317739c650bd`; paired per seed, u2225: greedy-on − greedy-off +0.120 [0.098, 0.143],
+sample-off − greedy-off +0.029 [0.009, 0.050], greedy-on − sample-off +0.091 [0.070, 0.112]; sampled, u2225 and
+u2050 are level: −0.005 [−0.018, 0.007]. Diagnosis memo: the 2026-11-04 q-modes memo.)
 
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 

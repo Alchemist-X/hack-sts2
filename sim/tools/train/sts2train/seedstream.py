@@ -64,6 +64,7 @@ from sts2vec import STATUS
 from sts2vec.errors import Sts2VecError
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
+NON_BOOTSTRAP_BITS = ERR_BITS | STATUS["ILLEGAL_ACTION"] | STATUS.get("FLOOR_STALL", 0)
 PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,23}$")
 LEGACY_PREFIX = "TRAIN"             # the legacy pool's family (TRAIN<seed>-<CHARACTER>-<i>, silent-a10-ab-v1)
 MAX_START_TRIES = 8
@@ -315,15 +316,19 @@ class StreamEnv(_Tracker):
         obs = self.env.obs
         return {k: v.copy() for k, v in obs.items()} if copy else obs
 
-    def step(self, actions, *, copy: bool = False):
+    def step(self, actions, *, copy: bool = False, capture_final: bool = False):
         """``VecEnv.step`` with the ended slots restarted from the stream before returning (module docstring); the
-        returned signals are the step's (copies)."""
+        returned signals are the step's (copies). With capture_final, info carries sparse copies of the valid
+        step-cap observations, indexed by slot, before the reset writes to the same buffers."""
         self._join()
         obs, rew, term, trunc, status, info = self.env.step(actions)
         rew, term, trunc, status = rew.copy(), term.copy(), trunc.copy(), status.copy()
         done = (term != 0) | (trunc != 0)
         self.errors = self.env.slot_errors() if (status & ERR_BITS).any() else {}
         self.ended = {}
+        if capture_final:
+            final_slots = np.flatnonzero((trunc != 0) & (term == 0) & ((status & NON_BOOTSTRAP_BITS) == 0))
+            final_obs = {key: value[final_slots] for key, value in obs.items()} if final_slots.size else {}
         if done.any():
             t = time.monotonic()
             slots = np.flatnonzero(done)
@@ -334,6 +339,8 @@ class StreamEnv(_Tracker):
             self.t_restart += dt
             self.totals["t_restart"] += dt
         info = self.env.info(copy)
+        if capture_final:
+            info["final_observation"] = (final_slots, final_obs)
         obs = self.env.obs
         return ({k: v.copy() for k, v in obs.items()} if copy else obs), rew, term, trunc, status, info
 
