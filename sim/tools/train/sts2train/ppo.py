@@ -8,7 +8,10 @@ protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory ter
 ``aux_heads`` (``--aux-heads``, off by default) adds a win-probability head and a combat-hp head on the state
 (``sts2train.heads``: targets per rollout window, masked BCE / squared error weighted ``aux_coef``); the policy, value
 head and PPO loss are unchanged. ``deck_counts`` (``--deck-counts``) switches the deck / pile encoders to count-aware
-pooling (``model.Policy._deck_bag``). With these flags off the trainer computes exactly what it computed before.
+pooling (``model.Policy._deck_bag``). ``acq_shaping`` (``--acq-shaping``) adds potential-based shaping for deck size,
+relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``reward_mean`` / ``return_mean`` /
+progress stay the objective's, the shaping is logged apart). With these flags off the trainer computes exactly what
+it computed before.
 
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
@@ -63,7 +66,7 @@ from sts2vec.pool import ALL_CHARACTERS
 from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
 from .model import PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count
-from .objective import OBJECTIVES, EpisodeRewards
+from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
 from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
@@ -96,6 +99,10 @@ class TrainConfig:
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
     shaped: bool = False            # LEGACY flag: same as objective="shaped" (delta(total_floor) / shaped_floors)
     shaped_floors: float = 48.0
+    acq_shaping: bool = False       # potential-based acquisition shaping on top of the objective (objective.AcqShaping)
+    acq_deck_coef: float = 0.003    # potential per deck card above 10 (at most 12 of them)
+    acq_relic_coef: float = 0.01    # potential per relic
+    acq_upgrade_coef: float = 0.004  # potential per upgrade level in the deck
     # PPO
     rollout: int = 32
     epochs: int = 2
@@ -771,6 +778,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
+        shaper = None
+        if cfg.acq_shaping:
+            shaper = AcqShaping(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, deck=cfg.acq_deck_coef,
+                                relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
+            log(f"acquisition shaping: phi = {cfg.acq_deck_coef} x min(deck - 10, 12) + {cfg.acq_relic_coef} x relics + "
+                f"{cfg.acq_upgrade_coef} x upgrades (0 at episode end), F = gamma phi(s') - phi(s) added to the "
+                f"{cfg.objective} reward; reward_mean / return_mean / progress stay unshaped")
         aux_tg = None
         if cfg.aux_heads:
             aux_tg = AuxTargets(spec.aux_fields, env.schema["last_episode"].fields, cfg.rollout, cfg.envs,
@@ -933,6 +947,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
         obs = env.reset()
         rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        r_obj = None
+        if shaper is not None:
+            shaper.reset(obs["aux"], obs["deck"])
+            r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)     # the objective's reward (unshaped)
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -988,6 +1006,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
                 if aux_tg is not None:
                     aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
+                if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
+                    f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
+                    for e in fin:
+                        e["shaping"] = ended.get(e["slot"], 0.0)
+                        e["shaped_return"] = e["return"] + e["shaping"]
+                    r_obj[t] = r
+                    r = r + f_acq
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -1110,14 +1135,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
                    "episodes_total": c["episodes"], **es, **ss,
-                   "reward_mean": float(store.rewards.reshape(-1)[idx_all].mean()) if len(idx_all) else None,
+                   "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
+                   if len(idx_all) else None,
                    **sm, "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   **aux_st, **gpu_memory(device)}
+                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **gpu_memory(device)}
             metrics.write(row)
             last_sps = round(sps, 1)
             write_status(upd, state)
@@ -1130,6 +1156,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")
+                    + (f" | shaped ret={fmt(row.get('shaped_return_mean'), '.4f')} shaping/step="
+                       f"{fmt(row.get('shaping_mean'), '.5f')}" if shaper is not None else "")
                     + (f" | aux win_bce={fmt(sm.get('aux_win_loss'), '.4f')} combat_se="
                        f"{fmt(sm.get('aux_combat_loss'), '.4f')} p_win={fmt(aux_st.get('aux_win_prob_mean'), '.4f')}"
                        if aux_tg is not None else "")
@@ -1184,6 +1212,21 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             with contextlib.suppress(Exception):
                 signal.signal(sg, h)
         env.close()
+
+
+def shaping_stats(rewards: np.ndarray, r_obj: np.ndarray | None, idx_all: np.ndarray, eps: list[dict],
+                  shaper: AcqShaping | None) -> dict:
+    """Metrics of --acq-shaping ({} without it): the mean shaped reward PPO trained on and the mean shaping per step
+    (valid steps of the window), the finished episodes' shaped return and shaping sum, the mean potential now."""
+    if shaper is None:
+        return {}
+    shaped = rewards.reshape(-1)[idx_all]
+    obj = r_obj.reshape(-1)[idx_all]
+    return {"reward_mean_shaped": float(shaped.mean()) if len(shaped) else None,
+            "shaping_mean": float((shaped - obj).mean()) if len(shaped) else None,
+            "shaped_return_mean": _mean([e["shaped_return"] for e in eps if "shaped_return" in e]),
+            "shaping_return_mean": _mean([e["shaping"] for e in eps if "shaping" in e]),
+            "acq_potential_mean": float(shaper.phi.mean())}
 
 
 def _rel(p: Path | None, run: Path) -> str | None:

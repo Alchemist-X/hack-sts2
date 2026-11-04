@@ -184,6 +184,14 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "win: 1 at a Victory terminal; shaped: LEGACY smoke objective (win + delta floor / 48)")
     g.add_argument("--win-bonus", dest="win_bonus", type=float, help=f"(default {D.win_bonus})")
     g.add_argument("--shaped", action="store_true", help="LEGACY (= --objective shaped)")
+    g.add_argument("--acq-shaping", dest="acq_shaping", action=argparse.BooleanOptionalAction,
+                   help="potential-based acquisition shaping added to the objective's reward: phi = deck_coef x "
+                        "min(deck - 10, 12) + relic_coef x relics + upgrade_coef x upgrade levels, 0 at the end of an "
+                        "episode, F = gamma phi(s') - phi(s) per step (telescopes; the optimal policy is unchanged); "
+                        "logged apart from the unshaped reward / return / progress (default off)")
+    g.add_argument("--acq-deck-coef", dest="acq_deck_coef", type=float, help=f"(default {D.acq_deck_coef})")
+    g.add_argument("--acq-relic-coef", dest="acq_relic_coef", type=float, help=f"(default {D.acq_relic_coef})")
+    g.add_argument("--acq-upgrade-coef", dest="acq_upgrade_coef", type=float, help=f"(default {D.acq_upgrade_coef})")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")

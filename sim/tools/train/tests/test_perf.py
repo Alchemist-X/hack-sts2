@@ -28,7 +28,8 @@ from sts2train.startpool import start_pool_from_config, uses_start_saves
 TINY_TRUNK = {"d": 64, "s": 128, "depth": 1, "heads": 4, "ff_mult": 2}
 MAX_ROWS = 64
 # the trainer's optional signal flags given explicitly off (their other knobs set to non-defaults: unused when off)
-FLAGS_OFF = {"aux_heads": False, "aux_coef": 0.7, "aux_bootstrap": False, "deck_counts": False}
+FLAGS_OFF = {"aux_heads": False, "aux_coef": 0.7, "aux_bootstrap": False, "deck_counts": False,
+             "acq_shaping": False, "acq_deck_coef": 0.5, "acq_relic_coef": 0.5, "acq_upgrade_coef": 0.5}
 
 
 @pytest.fixture(scope="module")
@@ -306,7 +307,8 @@ def test_train_default_path_reproduces_head_loop(tmp_path, one_thread, arch):
     """The default path (compile off, no static rows) with fresh starts only (no --start-saves): `train()` on a real
     env reproduces the trainer loop as of e80ea22 (`_head_train`) bit for bit: same weights, Adam state and
     per-update statistics after three updates of two epochs, each epoch ending in a short minibatch. "flags-off"
-    gives the optional signal flags (aux heads, deck counts, ...) explicitly off: still the e80ea22 loop."""
+    gives the optional signal flags (aux heads, deck counts, acquisition shaping) explicitly off: still the e80ea22
+    loop."""
     given = {**arch, "out": str(tmp_path / "run"), "envs": 16, "threads": 2, "pool": 8, "rollout": 8,
              "minibatch": 40, "epochs": 2, "max_updates": 3, "ckpt_every": 0, "ckpt_every_min": 0, "eval_every": 0,
              "baseline_steps": 0, "torch_threads": 1, "max_hours": 0.5, "seed": 3}
