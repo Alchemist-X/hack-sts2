@@ -631,3 +631,18 @@ def test_follow_never_maps_across_screens_and_never_discards_as_a_second_choice(
     assert Runner.second_choices(dec, tacts) == [0]
     dec2 = Decision(row=1, probs=np.array([0.1, 0.9]), value=0.0, win_prob=None, combat_hp=None)
     assert Runner.second_choices(dec2, tacts) == [1, 0]                 # ... unless the model wants it most
+
+
+def test_cancel_on_a_preview_is_followed_by_a_second_cancel():
+    """Smith -> pick -> cancel: the sim's PromptCancel closes the selection, the game's cancel on the preview returns to
+    the grid; the runner cancels again (never confirms an upgrade the network cancelled)."""
+    grid_back = grid("upgrade", [card("STRIKE_SILENT", 0), card("FLICK_FLACK", 1)], can_cancel=True)
+    r = Runner.__new__(Runner)
+    r.last_twin_kind = "cancel"
+    why, act = r.real_glue(_obs(grid_back), View("rest"))
+    assert why == "cancel" and act.native == {"action": "cancel_selection"}
+    stuck = grid("upgrade", [card("STRIKE_SILENT", 0)], preview_showing=True, can_confirm=True, can_cancel=False,
+                 selected_count=1)
+    assert r.real_glue(_obs(stuck), View("rest")) is None               # no cancel: never fall through to confirm
+    r.last_twin_kind = "select"
+    assert r.real_glue(_obs(stuck), View("rest"))[0] == "confirm"        # the twin settled on its pick

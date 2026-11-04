@@ -76,6 +76,7 @@ class Runner:
         self.since_boundary = 0            # real actions since the last save point (room entry / combat end / ...)
         self.boundary_kind: str | None = None   # the save point just crossed: room / combat_end / event_end
         self.combat_floor: int | None = None
+        self.last_twin_kind: str | None = None  # kind of the twin's last decided step (the cancel glue needs it)
         self.prev_real: View | None = None
         self.last_import_mtime = 0.0
         self.stop = False
@@ -294,6 +295,11 @@ class Runner:
         if tv is None:
             return None
         if real.screen == "prompt" and tv.screen not in SELECTION_SCREENS:
+            if getattr(self, "last_twin_kind", None) == "cancel":
+                # the sim's PromptCancel closes the whole selection; in the game a cancel on a preview (upgrade,
+                # transform, enchant) only goes back to the card grid: cancel again, never confirm
+                cancel = [a for a in acts if a.kind == "cancel"]
+                return ("cancel", cancel[0]) if cancel else None
             conf = [a for a in acts if a.kind == "confirm"]
             if conf:
                 return "confirm", conf[0]
@@ -613,6 +619,7 @@ class Runner:
             self.policy.commit(stepped)
             if dec.loop_break and stepped == dec.row:
                 self.stats["loop_breaks"] += 1
+        self.last_twin_kind = tacts[stepped].kind if stepped is not None and stepped < len(tacts) else None
         if how != "greedy":
             self.stats["decisions_" + how] += 1
         self.stats["decisions"] += 1
