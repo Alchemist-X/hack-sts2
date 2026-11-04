@@ -1,4 +1,6 @@
 from dataclasses import replace
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +9,7 @@ from types import SimpleNamespace
 from modal_research.adapters import Outcome, ProviderIntegrityError, ProviderScopeError
 from modal_research.broker import RavenBroker, RavenRuntime
 from modal_research.fixture import artifact, spec
-from modal_research.raven_runtime import ResearchUsagePolicy, SandboxRates, WorkspaceMetering, active_grant
+from modal_research.raven_runtime import ResearchUsagePolicy, SandboxRates, WorkspaceMetering, accepted_update_history, active_grant
 from modal_research.sandbox_provider import SandboxBinding, SandboxProvider
 from modal_research.store import Store
 
@@ -269,6 +271,26 @@ class DetachedTest(unittest.TestCase):
         meter.refresh()
         self.assertIsNone(meter.reservation(rates, replace(grant.job, deadline=self.now+30), self.now))
         self.assertEqual(self.store.status()["platform_snapshot"]["gross_used_usd"], 2.49)
+
+    def test_accepted_history_uses_only_bounded_hash_verified_rows(self):
+        ref = {"job_key": "train-one:1", "generation": "generation"}
+        path = self.artifacts / ref["job_key"] / ref["generation"] / "history.json"
+        path.parent.mkdir(parents=True)
+        raw = json.dumps({"version": 1, "series": "train", "omitted_rows": 0, "rows": [
+            {"update": 1, "env_steps": 5, "entropy": 1.25, "at": None, "other": "ignored"},
+            {"update": 2, "env_steps": 10, "entropy": 1.20, "at": "2026-11-04T22:00:00Z"},
+        ]}).encode()
+        path.write_bytes(raw)
+        manifest = {"files": {"history": {"name": path.name, "size": len(raw),
+                                          "sha256": hashlib.sha256(raw).hexdigest()}},
+                    "metadata": {"updates": 2, "decisions": 10}}
+        rows = accepted_update_history(self.artifacts, ref, manifest)
+        self.assertEqual([row["env_steps"] for row in rows], [5, 10])
+        self.assertNotIn("other", rows[0])
+        self.assertEqual(rows[1]["at"], "2026-11-04T22:00:00Z")
+        path.write_bytes(raw.replace(b"1.25", b"1.75"))
+        self.assertEqual(accepted_update_history(self.artifacts, ref, manifest), [])
+        self.assertEqual(accepted_update_history(self.artifacts, ref, {"files": {}}), [])
 
     def test_conservative_compute_estimate_keeps_full_hold_without_proven_bound(self):
         self.broker = RavenBroker(self.store, self.artifacts, authorize_spawn=lambda job: True,

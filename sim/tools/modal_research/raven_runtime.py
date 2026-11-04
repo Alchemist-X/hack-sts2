@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import fcntl
 import json
 import math
@@ -10,6 +11,7 @@ import os
 import stat
 import time
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
@@ -280,6 +282,53 @@ def active_grant(runtime):
     return grants[0] if len(grants) == 1 else {"schema_version": 2, "grants": grants}
 
 
+def accepted_update_history(artifacts, ref, manifest):
+    """Read an optional accepted history sidecar, never checkpoint weights."""
+    entry = manifest["files"].get("history")
+    if not entry:
+        return []
+    size = entry.get("size")
+    if type(size) is not int or not 0 < size <= 128 * 1024:
+        return []
+    try:
+        root = Path(artifacts).resolve(strict=True)
+        folder = root / identifier(ref["job_key"]) / identifier(ref["generation"])
+        path = folder / identifier(entry["name"])
+        if folder.resolve(strict=True) != folder:
+            return []
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != size:
+                return []
+            raw = handle.read(size + 1)
+        if len(raw) != size or hashlib.sha256(raw).hexdigest() != entry.get("sha256"):
+            return []
+        doc = json.loads(raw)
+        if doc["version"] != 1 or doc["series"] != "train" or type(doc["rows"]) is not list:
+            return []
+        rows = []
+        previous_update = previous_steps = 0
+        metadata = manifest["metadata"]
+        for raw in doc["rows"]:
+            update, steps = raw["update"], raw["env_steps"]
+            if (type(update) is not int or type(steps) is not int
+                    or not previous_update < update <= metadata["updates"]
+                    or not previous_steps < steps <= metadata["decisions"]):
+                return []
+            at = raw.get("at")
+            if at is not None and (type(at) is not str or len(at) > 64
+                                  or datetime.fromisoformat(at.replace("Z", "+00:00")).utcoffset() != timedelta(0)):
+                return []
+            row = {key: value for key, value in raw.items()
+                   if key in METRIC_FIELDS and type(value) in (int, float) and math.isfinite(value)}
+            rows.append({**row, "at": at})
+            previous_update, previous_steps = update, steps
+        return rows
+    except (OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError):
+        return []  # The accepted last completed update is still available.
+
+
 def accepted_metrics(runtime):
     """Use only the already accepted checkpoint head recorded in SQLite."""
     items = []
@@ -302,10 +351,14 @@ def accepted_metrics(runtime):
                     if key in METRIC_FIELDS and type(value) in (int, float) and math.isfinite(value)}
             if not 0 <= last.get("env_steps", -1) <= meta["decisions"]:
                 continue
+            metrics = {"last_completed_update": last}
+            history = accepted_update_history(runtime.broker.artifacts, ref, manifest)
+            if history:
+                metrics["update_history"] = history
             items.append({"experiment_id": row["id"], "config_hash": row["config_hash"],
                           "job_key": row["job_id"], "manifest_hash": ref["manifest_hash"], "checkpoint_at": None,
                           "metadata": {key: meta[key] for key in ("decisions", "result_label", "termination")},
-                          "metrics": {"last_completed_update": last}})
+                          "metrics": metrics})
     return {"schema_version": 1, "items": items}
 
 
