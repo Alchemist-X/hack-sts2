@@ -310,7 +310,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
             seed=int(sample_seed) if policy == "sample" else 0,
             policy_name=name, policy_hash=f"weights:{weights_hash}", log=log,
             summary_extra={"weights_hash": weights_hash},
-            config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint) if checkpoint else None,
+            config_extra={"model": "sts2train entity-encoder PPO",
+                          "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
                           "arch": getattr(model, "arch", None), "device": str(device), "greedy": policy == "greedy",
                           "checkpoint_encoder_version": spec.encoder_version, **extra,
@@ -327,8 +328,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
             f"games, {lb['cycle_revisits']} cycle revisits in {lb['games_with_cycles']} games")
         cy = rep["cycles"] = write_cycle_stats(det, keys, out_dir, mode)
         rep["eval_mode"] = mode
-        log(f"UI revisit cycles ({mode['name']}): {cy['cycles']} (rest {cy['cycles_rest']}, shop {cy['cycles_shop']}) in "
-            f"{cy['games_with_cycle']}/{cy['games']} games; stuck {cy['stuck']}")
+        log(f"UI revisit cycles ({mode['name']}): {cy['cycles']} (rest {cy['cycles_rest']}, shop "
+            f"{cy['cycles_shop']}) in {cy['games_with_cycle']}/{cy['games']} games; stuck {cy['stuck']}")
         return rep
     finally:
         model.train(was_training)

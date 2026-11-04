@@ -1086,9 +1086,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         "weights_hash": wh, "checkpoint": _rel(pinned, run), "dir": _rel(out, run)}
                 try:
                     rep = evaluate_model(model, spec, cfg.eval_at_seedset, str(out), weights_hash=wh,
-                                         checkpoint=str(pinned), threads=cfg.eval_threads or min(os.cpu_count() or 4, 8),
-                                         device=str(device), loop_breaker=br, loop_breaker_k=cfg.loop_breaker_k,
-                                         policy=pol, sample_seed=cfg.eval_at_sample_seed, repeat=0, log=lambda m: None)
+                                         checkpoint=str(pinned),
+                                         threads=cfg.eval_threads or min(os.cpu_count() or 4, 8), device=str(device),
+                                         loop_breaker=br, loop_breaker_k=cfg.loop_breaker_k, policy=pol,
+                                         sample_seed=cfg.eval_at_sample_seed, repeat=0, log=lambda m: None)
                 except Exception as e:  # an eval failure must not end a multi-hour run
                     log(f"eval-at u{upd} {mode} failed: {type(e).__name__}: {e}")
                     row = {**base, "error": f"{type(e).__name__}: {e}", "seconds": round(time.monotonic() - t, 2)}

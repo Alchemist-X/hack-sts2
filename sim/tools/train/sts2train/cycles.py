@@ -53,9 +53,9 @@ ANCHOR_PHASES = ("RestSite", "Shop")
 PROMPT_KINDS = ("DeckUpgrade", "DeckRemove")      # verified to carry no new information (docs: the q-modes memo)
 PROMPT_ACTIONS = ("PromptSelect", "PromptConfirm", "PromptCancel")
 # global_i columns that describe the pending prompt (phase / decision_kind are Prompt while one is pending): prompt UI
-PROMPT_UI_COLS = ("phase", "decision_kind", "prompt_kind", "prompt_min", "prompt_max", "prompt_picked", "prompt_needs_confirm",
-                  "prompt_can_cancel", "prompt_can_skip", "prompt_ordered", "prompt_option_n", "prompt_pile",
-                  "prompt_site_hash")
+PROMPT_UI_COLS = ("phase", "decision_kind", "prompt_kind", "prompt_min", "prompt_max", "prompt_picked",
+                  "prompt_needs_confirm", "prompt_can_cancel", "prompt_can_skip", "prompt_ordered", "prompt_option_n",
+                  "prompt_pile", "prompt_site_hash")
 UI_BUFFERS = ("prompt_options", "cand", "cand_n")
 WINDOW = 64
 REJECT_REASONS = ("no_op", "unverified_prompt", "room_change")
@@ -358,7 +358,8 @@ class CycleDetector:
                 return "rest:" + self.rest_names[int(obs["rest"][s, oi, self.R["option_id"]])]
             if k == "BuyEntry" and 0 <= oi < obs["shop"].shape[1] and self.shop_names:
                 cat = self.shop_names[int(obs["shop"][s, oi, self.S["category"]])]
-                return f"buy:{cat}" if cat == "card_removal" else f"buy:{cat}:{int(obs['shop'][s, oi, self.S['item_id']])}"
+                item = int(obs["shop"][s, oi, self.S["item_id"]])
+                return f"buy:{cat}" if cat == "card_removal" else f"buy:{cat}:{item}"
             if k == "PromptSelect" and 0 <= oi < obs["prompt_options"].shape[1]:
                 po = obs["prompt_options"][s, oi]
                 return "select:" + self._card(int(po[self.PO["item_id"]])) + "+" * int(po[self.PO["upgrade"]])

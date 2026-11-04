@@ -12,7 +12,6 @@ counted cycle, nothing else moves), --eval-at / --no-best, the CLI flags."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -263,7 +262,8 @@ def test_eval_modes_write_cycles_and_sample_is_batch_independent(tmp_path, lib, 
     for name, ss, kw in (("s2", TWO_GAMES, {}), ("s1", one, {}), ("s2r1", TWO_GAMES, {"repeat": 1})):
         evaluate_model(tiny_model, spec, ss, str(tmp_path / name), weights_hash="t", threads=2, loop_breaker=False,
                        policy="sample", sample_seed=7, log=lambda _: None, **kw)
-        runs[name] = {p.stem.split(".")[0]: json.loads(p.read_text()) for p in (tmp_path / name / "games").glob("*.json")}
+        runs[name] = {p.stem.split(".")[0]: json.loads(p.read_text())
+                      for p in (tmp_path / name / "games").glob("*.json")}
     key = "SILENT-E1A0SI01"
     assert runs["s2"][key]["history_actions"] == runs["s1"][key]["history_actions"]     # batch independent
     assert runs["s2"][key]["history_actions"] != runs["s2r1"][key]["history_actions"]   # another repeat
