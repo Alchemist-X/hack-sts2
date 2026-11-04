@@ -28,6 +28,9 @@ uv run --project sim/tools/train sts2train train --resume tmp/train/run1/checkpo
 # exit 1 when a game's history does not replay (the replay audit), like sts2vec eval
 uv run --project sim/tools/train sts2train eval --seedset std-a0-v1 \
     --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/eval/nn-run1-a0
+# the greedy policy runs with the loop breaker (see "Loop breaker"); --loop-breaker off = the plain argmax
+uv run --project sim/tools/train sts2train eval --seedset std-a0-v1 --loop-breaker off \
+    --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/eval/nn-run1-a0-plain
 uv run --project sim/tools/eval sts2eval report tmp/eval/nn-run1-a0      # recomputes the same report
 uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve.png from metrics.jsonl / evals.jsonl
 ```
@@ -39,8 +42,8 @@ uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve
 | File | Content |
 | --- | --- |
 | `status.json` | rewritten atomically after every update: `state` (running / finished / stopped / aborted / error), `stop_reason`, `update`, `env_steps`, `episodes`, `wins`, `wall_s`, `env_steps_per_s`, `recent` (progress / win rate / floor over the last 20 updates), `best_eval`, `last_eval`, `last_checkpoint`, `updated_at` |
-| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags") |
-| `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
+| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker") |
+| `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; the greedy policy runs with the loop breaker (`--loop-breaker off` turns it off) and the row carries `loop_breaker`, `loop_breaks`, `no_op_actions`, `cycle_revisits`; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
 | `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save) |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval) |
@@ -153,7 +156,8 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
 | `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`) |
 | `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` metrics) |
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
-| `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
+| `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; the loop breaker's counts in the game summaries / report.json (`write_loop_stats`); with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
+| `loopbreak.py` | `LoopBreaker` (the greedy eval policy's no-op / cycle breaker, optionally the rollout sampling's) and `ObsDigest` (vectorised 64-bit digest of the model-read buffers per slot) |
 
 Objective (`objective.py`, `--objective`): the default `protocol` rewards each step with the change of the protocol
 v0.2 progress metric (§4.2 of `docs/sts2-bench-protocol-v0.2-2026-11-01.md`: per-act normalised, `sts2vec.protocol.compute`,
@@ -260,6 +264,48 @@ uv run --project sim/tools/train sts2train train --characters SILENT --ascension
 
 Training restricts actions to the first 64 candidates (`--max-rows`; rare overflow is counted as `cand_over_max_rows`);
 eval passes every candidate row.
+
+## Loop breaker (`--loop-breaker`, `--rollout-loop-breaker`)
+
+A greedy policy that takes an action which leaves the observation unchanged (a no-op: `BuyEntry` of a potion with a
+full belt, an event option that changes nothing visible) or that leads back to it through other screens (a cycle:
+Rewards → claim the card reward → CardReward → skip → the same Rewards view) sees the same input again and repeats
+itself until the floor step cap ends the game `stuck`. On 2026-11-04 that was 2/20 games for the A10 checkpoint s3c
+(152 no-op potion buys) and 12/20 for the A0 mid-size checkpoint s5b (232 no-ops, 681 cycle revisits).
+
+`sts2train.loopbreak.LoopBreaker` keeps, per env slot, a 64-bit digest of the 27 model-read buffers (`ObsDigest`: sum
+of 4-byte words times fixed odd keys mod 2^64; one changed word always changes it) for each of its last 64 decisions
+and the action taken there. At an observation already in the window it masks (`NEG`) every candidate row it took there
+and the policy takes the best remaining one; from the 3rd return (`--loop-breaker-k`) only the rows that leave the
+screen (ProceedRewards, LeaveShop, LeaveRestSite, LeaveEvent, SkipTreasureRelic, EndTurn, PromptConfirm,
+PromptCancel) stay unmasked when one is legal and not yet taken, else the best remaining row. If every legal row was
+already taken nothing is masked (the env's caps apply as before). The leave kinds are resolved by name against the
+library's `RunActionKind` (the evaluator and the trainer build the breaker from the library's spec, never from a
+checkpoint's), so appended kinds shift nothing; the rewards-screen macros `TakeRewardCard` / `TakeRewardAlternative`
+(21 / 22 since `3b73317739c650bd`) are real actions, never leave rows. That library also removes the potion no-op and
+the card-reward cycle above at the source (a potion purchase or claim the game would refuse is not listed; a card is
+taken in one `TakeRewardCard` decision); illegal indices and the shop removal → prompt → cancel cycle remain.
+
+- **Eval** (`sts2train eval`, the periodic eval): on by default; `--loop-breaker off` is the plain argmax. The
+  evaluator records and replays the actions actually sent (the replay audit is unchanged). Each game summary gets
+  `loop_breaker`, `loop_breaks` (decisions where the chosen row is not the model's argmax), `no_op_actions` (actions
+  that left the observation unchanged) and `cycle_revisits` (returns through other observations; both counted with
+  the breaker off too); `config.json` records `loop_breaker` (mode, k, window, leave kinds), `report.json` and the
+  CLI's JSON the totals.
+- **Training** (`--rollout-loop-breaker`, off by default): the same mask on the rollout's sampling distribution; the
+  stored log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled.
+  `metrics.jsonl` gets `loop_breaks` / `no_op_actions` / `cycle_revisits` per update, `summary.json`
+  `rollout_loop_breaker`. Off, the rollout is unchanged (`tests/test_perf.py` pins the default path bit for bit).
+
+| Checkpoint (seed set) | Breaker | Progress | Stuck | No-op actions | Cycle revisits | Replay |
+| --- | --- | --- | --- | --- | --- | --- |
+| s3c A10 u160 (silent-a10-v1) | off | 0.156 | 2 | 152 | 0 | 20/20 |
+| | on | 0.160 | 0 | 3 | 0 | 20/20 |
+| s5b A0 u160 (silent-a0-v1) | off | 0.330 | 12 | 232 | 681 | 20/20 |
+| | on | 0.500 | 0 | 9 | 12 | 20/20 |
+
+(4 cpu threads, library `5dbfa09dd9dcb5ed`; the remaining s5b-on non-loss is one game `capped` by the 1200-step limit
+in act 3, floor 48.)
 
 ## Colab bundle (a box without .NET: the Colab A100 runtime)
 

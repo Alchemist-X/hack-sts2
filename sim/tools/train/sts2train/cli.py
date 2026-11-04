@@ -7,6 +7,7 @@
                                                          # (also across encoder versions: model inputs must match)
     sts2train train --characters SILENT --start-saves SAVES_DIR --save-mix 0.5 ...   # half the starts from saves
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
+    sts2train eval ... --loop-breaker off                # the plain argmax (no-op loops run into the floor cap)
 
 ``train`` flags that are not given keep the default (fresh run) or the checkpoint's value (``--resume``).
 """
@@ -154,6 +155,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="protocol eval every E updates (default 0 = off); also once at the end of a budget-ended session")
     g.add_argument("--eval-seedset", dest="eval_seedset", help=f"(default {D.eval_seedset})")
     g.add_argument("--eval-threads", dest="eval_threads", type=int, help="(0 = auto)")
+    g.add_argument("--loop-breaker", dest="loop_breaker", choices=["off", "on"],
+                   help="loop breaker of the periodic eval's greedy policy (sts2train.loopbreak): back at an "
+                        "observation a game already decided at (a no-op or a cycle), mask the candidates taken there; "
+                        "from the --loop-breaker-k-th return prefer leaving the screen (default on)")
     g.add_argument("--log-every", dest="log_every", type=int, help=f"stdout line every N updates (default {D.log_every})")
     g.add_argument("--baseline-steps", dest="baseline_steps", type=int, help="uniform-random baseline steps first")
     g = tr.add_argument_group("model")
@@ -192,6 +197,14 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--acq-deck-coef", dest="acq_deck_coef", type=float, help=f"(default {D.acq_deck_coef})")
     g.add_argument("--acq-relic-coef", dest="acq_relic_coef", type=float, help=f"(default {D.acq_relic_coef})")
     g.add_argument("--acq-upgrade-coef", dest="acq_upgrade_coef", type=float, help=f"(default {D.acq_upgrade_coef})")
+    g.add_argument("--rollout-loop-breaker", dest="rollout_loop_breaker", action=argparse.BooleanOptionalAction,
+                   help="apply the eval's loop breaker to the rollout sampling: back at an observation of its last "
+                        "64 decisions a slot samples with probability 0 for the candidates taken there (stored "
+                        "log-probs are the masked distribution's); logs loop_breaks / no_op_actions / cycle_revisits "
+                        "per update (default off)")
+    g.add_argument("--loop-breaker-k", dest="loop_breaker_k", type=int,
+                   help=f"returns to one observation after which the loop breaker prefers the rows that leave the "
+                        f"screen (eval and rollouts; default {D.loop_breaker_k})")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")
@@ -277,6 +290,11 @@ def main(argv=None) -> int:
     ev.add_argument("--out", default=None, help="run directory (default tmp/eval/nn-<checkpoint>-<seedset>-<time>)")
     ev.add_argument("--threads", type=int, default=8)
     ev.add_argument("--device", default="cpu")
+    ev.add_argument("--loop-breaker", choices=["off", "on"], default="on",
+                    help="back at an observation a game already decided at (a no-op or a cycle), mask the candidates "
+                         "taken there; from the --loop-breaker-k-th return prefer the rows that leave the screen "
+                         "(default on; off = the plain argmax)")
+    ev.add_argument("--loop-breaker-k", type=int, default=3, help="(default 3)")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
     _bench_parser(sub)
@@ -297,6 +315,8 @@ def main(argv=None) -> int:
         resume = given.pop("resume", None)
         if "minutes" in given:
             given["max_hours"] = given.pop("minutes") / 60.0
+        if "loop_breaker" in given:
+            given["loop_breaker"] = given["loop_breaker"] == "on"
         if "start_saves" in given:      # absolute, so a resume from another working directory finds it
             v = given["start_saves"]
             given["start_saves"] = None if v.lower() in ("", "none") else os.path.abspath(os.path.expanduser(v))
@@ -331,6 +351,7 @@ def main(argv=None) -> int:
         out = a.out or f"tmp/eval/nn-{Path(a.checkpoint).stem}-{Path(a.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
             rep = evaluate(a.seedset, a.checkpoint, out, threads=a.threads, device=a.device,
+                           loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k,
                            log=lambda m: print(m, flush=True))
         except SpecMismatch as e:
             print(f"error: {e}", flush=True)
@@ -340,6 +361,9 @@ def main(argv=None) -> int:
                           "wins": h["wins"], "games": h["games"], "results": h["results"],
                           "floor_mean": h["floor_mean"], "act_reached": h["act_reached"],
                           "replayable": h["replayable"],
+                          **({"loop_breaker": lb["mode"], "loop_breaks": lb["loop_breaks"],
+                              "no_op_actions": lb["no_op_actions"], "cycle_revisits": lb["cycle_revisits"]}
+                             if (lb := rep.get("loop_breaker")) else {}),
                           **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {})}, indent=1))
         if h["replayable"] != h["games"]:      # the replay audit failed: the score is not reproducible (sts2vec eval)
             print(f"error: replay audit failed: {h['replayable']}/{h['games']} games replayable (report.md lists "
