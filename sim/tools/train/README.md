@@ -87,10 +87,12 @@ buffers are ignored).
 ## Speed (`--compile`, `--static-rows`, `bench-update`)
 
 The default path (`--compile off`) computes exactly what the trainer computed before (tests/test_perf.py replays the
-old update loop bit for bit) but never waits for the device inside a minibatch or a rollout step: row cuts come from
-host-side cand_n / prompt_option_n counts, multi-column reads use device index buffers (a Python-list index uploads
-the list, a stream sync per call), every epoch's minibatch indices go up in one copy, the statistics come back once
-per update, the sampling distribution skips its argument validation and CUDA uploads go through pinned memory.
+old update loop, and the whole pre-merge `train()` loop of e80ea22 on a real env with fresh starts: rollout, start
+bookkeeping, GAE, update; same weights, Adam state and statistics bit for bit) but never waits for the device inside a
+minibatch or a rollout step: row cuts come from host-side cand_n / prompt_option_n counts, multi-column reads use
+device index buffers (a Python-list index uploads the list, a stream sync per call), every epoch's minibatch indices
+go up in one copy, the statistics come back once per update, the sampling distribution skips its argument validation
+and CUDA uploads go through pinned memory.
 
 `--compile default` wraps the minibatch forward + PPO loss (backward through AOTAutograd) and the rollout forward in
 `torch.compile` (inductor: fused elementwise / reduction kernels); `--compile reduce-overhead` adds CUDA graphs (no

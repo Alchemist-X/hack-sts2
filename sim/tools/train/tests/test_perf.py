@@ -1,4 +1,5 @@
-"""Gate tests of the fast update path: the sync-free eager update reproduces the pre-change trainer bit for bit, static
+"""Gate tests of the fast update path: the sync-free eager update reproduces the pre-change trainer bit for bit (the
+update loop on a fixed rollout, and the whole `train()` loop on a real env against the trainer as of e80ea22), static
 rows keep shapes fixed (one compiled graph) and change nothing but padding, the torch.compile'd update / forward match
 eager on a fixed batch (cpu, inductor), a compiled `train()` run finishes, and `bench-update` runs and guards size."""
 
@@ -12,12 +13,17 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from sts2vec import VecEnv
+
 from sts2train.bench import load_spec, random_obs
-from sts2train.features import RolloutStore, bind_spec, obs_to_device
-from sts2train.model import COL_GROUPS, Policy
-from sts2train.ppo import (InferenceRunner, MinibatchUpdater, check_compiled, check_compiled_forward, ppo_loss,
-                           resolve_config, train, weights_hash)
+from sts2train.features import (ROW_TRUNCATED, USED_BUFFERS, ModelSpec, RolloutStore, _row_need, bind_spec,
+                                obs_to_device)
+from sts2train.model import ARCH_KEYS, COL_GROUPS, Policy, activation_bytes_per_sample
+from sts2train.objective import EpisodeRewards
+from sts2train.ppo import (InferenceRunner, MinibatchUpdater, check_compiled, check_compiled_forward, env_kwargs,
+                           ppo_loss, resolve_config, train, use_static_rows, weights_hash)
 from sts2train.runlog import read_jsonl
+from sts2train.startpool import start_pool_from_config, uses_start_saves
 
 TINY_TRUNK = {"d": 64, "s": 128, "depth": 1, "heads": 4, "ff_mult": 2}
 MAX_ROWS = 64
@@ -74,8 +80,8 @@ def test_col_groups_match_list_indexing(schema_spec):
 
 
 def _legacy_update(model, opt, store, targets, rng, cfg):
-    """The trainer's PPO update loop as of ef35697 (per-minibatch row cuts from .item(), stats copied back per
-    minibatch), kept verbatim as the reference for the eager path."""
+    """The trainer's PPO update loop as of ef35697 and unchanged up to e80ea22 (per-minibatch row cuts from .item(),
+    stats copied back per minibatch), kept verbatim as the reference for the eager path."""
     d_act, d_logp, d_adv, d_ret, d_val = targets
     idx_all = np.flatnonzero(store.valid.reshape(-1))
     stats = []
@@ -143,6 +149,142 @@ def test_eager_update_reproduces_legacy_loop(schema_spec, one_thread, arch):
     assert np.array_equal(st_a, st_b)
     for sa, sb in zip(opt_a.state.values(), opt_b.state.values()):
         assert torch.equal(sa["exp_avg"], sb["exp_avg"]) and torch.equal(sa["exp_avg_sq"], sb["exp_avg_sq"])
+
+
+def _head_obs_to_device(obs, max_rows):
+    """features.obs_to_device as of e80ea22 on the cpu (cand / prompt_options cut to this batch's largest counts)."""
+    c, p = _row_need(obs, max_rows)
+    out = {}
+    for name in USED_BUFFERS:
+        a = obs[name]
+        if name == "cand":
+            a = a[:, :c]
+        elif name == "prompt_options":
+            a = a[:, :p]
+        out[name] = torch.from_numpy(np.ascontiguousarray(a))
+    return out
+
+
+def _head_put(store, t, x):
+    """RolloutStore.put as of e80ea22 (no host copies of the row counts)."""
+    for name in USED_BUFFERS:
+        dst, src = store.obs[name][t], x[name]
+        if name in ROW_TRUNCATED:
+            w = min(src.shape[1], dst.shape[1])
+            dst[:, :w].copy_(src[:, :w])
+            dst[:, w:].zero_()
+        else:
+            dst.copy_(src)
+
+
+def _head_train(cfg):
+    """`ppo.train` as of e80ea22 (HEAD before the trainer-perf merge: start pools, start_entry bookkeeping) for a
+    fresh-only cpu run of `cfg.max_updates` updates without baseline, checkpoints or evals, kept verbatim where it
+    computes: the set-up order that consumes RNG (seeds, env, model init, the activation probe's forward, pool warm,
+    Adam), the rollout (validated Categorical sampling, row cuts per step, rewards with start_entry), GAE and the PPO
+    update (`_legacy_update`). Returns (model, optimizer, one statistics row per update as in metrics.jsonl)."""
+    torch.set_num_threads(cfg.torch_threads)
+    torch.manual_seed(cfg.seed)
+    rng = np.random.default_rng(cfg.seed)
+    env = VecEnv(cfg.envs, **env_kwargs(cfg, f"PPO{cfg.seed}"))
+    try:
+        spec = ModelSpec.from_schema(env.schema)
+        bind_spec(spec)
+        assert start_pool_from_config(env, cfg) is None
+        model = Policy(spec, **{k: getattr(cfg, k) for k in ARCH_KEYS})
+        activation_bytes_per_sample(model, spec, rows=cfg.max_rows)
+        env.pool.warm()
+        rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
+                                 cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
+        opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
+        store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows,
+                             {k: env.buffers[k].dtype for k in env.buffers.arrays})
+        obs = env.reset()
+        rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        rows = []
+        for _ in range(cfg.max_updates):
+            episodes = 0
+            model.eval()
+            for t in range(cfg.rollout):
+                cand_n = obs["cand_n"].copy()
+                x = _head_obs_to_device(obs, cfg.max_rows)
+                with torch.no_grad():
+                    logits, value = model(x)
+                dist = torch.distributions.Categorical(logits=logits)
+                a = dist.sample()
+                logp = dist.log_prob(a)
+                _head_put(store, t, x)
+                a_np = a.cpu().numpy().astype(np.int32)
+                valid = cand_n > 0
+                a_np[~valid] = -1
+                store.actions[t] = np.maximum(a_np, 0)
+                store.logp[t] = logp.cpu().numpy()
+                store.values[t] = value.cpu().numpy()
+                store.valid[t] = valid
+                obs, rew, term, trunc, status, info = env.step(a_np)
+                done = (term | trunc).astype(bool)
+                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                store.rewards[t] = r
+                store.dones[t] = done
+                episodes += len(fin)
+            with torch.no_grad():
+                _, last_v = model(_head_obs_to_device(obs, cfg.max_rows))
+            last_v = last_v.cpu().numpy()
+            adv = np.zeros_like(store.rewards)
+            gae = np.zeros(cfg.envs, dtype=np.float32)
+            for t in reversed(range(cfg.rollout)):
+                nv = last_v if t == cfg.rollout - 1 else store.values[t + 1]
+                nonterm = 1.0 - store.dones[t]
+                delta = store.rewards[t] + cfg.gamma * nv * nonterm - store.values[t]
+                gae = delta + cfg.gamma * cfg.lam * nonterm * gae
+                adv[t] = gae
+            ret = adv + store.values
+            model.train()
+            idx_all = np.flatnonzero(store.valid.reshape(-1))
+            f_adv = adv.reshape(-1)
+            a_mean, a_std = float(f_adv[idx_all].mean()), float(f_adv[idx_all].std()) + 1e-8
+            to = lambda a_: torch.from_numpy(np.ascontiguousarray(a_))  # noqa: E731
+            targets = (to(store.actions.reshape(-1)), to(store.logp.reshape(-1)),
+                       to(((f_adv - a_mean) / a_std).astype(np.float32)), to(ret.reshape(-1)),
+                       to(store.values.reshape(-1)))
+            st = _legacy_update(model, opt, store, targets, rng, cfg)
+            sm = dict(zip(("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm"),
+                          (float(x) for x in st)))
+            ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
+            var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
+            ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
+            rows.append({"episodes": episodes, "env_steps_update": int(np.count_nonzero(store.valid)),
+                         "reward_mean": float(store.rewards.reshape(-1)[idx_all].mean()), **sm,
+                         "explained_variance": ev})
+        return model, opt, rows
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("arch", [{}, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_train_default_path_reproduces_head_loop(tmp_path, one_thread, arch):
+    """The default path (compile off, no static rows) with fresh starts only (no --start-saves): `train()` on a real
+    env reproduces the trainer loop as of e80ea22 (`_head_train`) bit for bit: same weights, Adam state and
+    per-update statistics after three updates of two epochs, each epoch ending in a short minibatch."""
+    given = {**arch, "out": str(tmp_path / "run"), "envs": 16, "threads": 2, "pool": 8, "rollout": 8,
+             "minibatch": 40, "epochs": 2, "max_updates": 3, "ckpt_every": 0, "ckpt_every_min": 0, "eval_every": 0,
+             "baseline_steps": 0, "torch_threads": 1, "max_hours": 0.5, "seed": 3}
+    cfg = resolve_config(given)
+    assert cfg.compile == "off" and not use_static_rows(cfg) and not uses_start_saves(cfg)
+    s = train(cfg, log=lambda m: None)
+    assert s["updates"] == 3 and s["static_rows"] is False and s["compile_check"] is None
+    ref_model, ref_opt, ref_rows = _head_train(resolve_config(given))
+    rows = read_jsonl(tmp_path / "run" / "metrics.jsonl")
+    assert len(rows) == len(ref_rows) == 3
+    assert all(r["env_steps_update"] > 2 * cfg.minibatch and r["env_steps_update"] % cfg.minibatch for r in ref_rows)
+    assert [{k: r[k] for k in ref} for r, ref in zip(rows, ref_rows)] == ref_rows
+    assert s["weights_hash"] == weights_hash(ref_model)
+    got = torch.load(s["last_checkpoint"], map_location="cpu", weights_only=False)["optimizer"]["state"]
+    want = ref_opt.state_dict()["state"]
+    assert sorted(got) == sorted(want) and len(want) > 100       # parameters that never get a gradient have none
+    for k in want:
+        assert torch.equal(got[k]["exp_avg"], want[k]["exp_avg"]) and torch.equal(got[k]["exp_avg_sq"],
+                                                                                   want[k]["exp_avg_sq"])
 
 
 def test_rollout_sampling_matches_validated_categorical(schema_spec):
