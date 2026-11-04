@@ -124,6 +124,7 @@ class AgentRunner:
         self, root: Path, workspaces: Path, study_id: str, launcher: Path,
         bindings: dict[str, AgentBinding], *, sol_tasks: dict[str, SolTask] | None = None,
         fixture=False, process_identity=linux_process_identity, system_identity=None, scoped_research=False,
+        research_instructions="",
     ):
         system_execution = SystemServiceExecution(**system_identity) if system_identity is not None else None
         if system_execution is not None and (fixture or Path(root) != system_execution.STATE):
@@ -132,6 +133,7 @@ class AgentRunner:
         if type(scoped_research) is not bool or (scoped_research and system_execution is None):
             raise ValueError("scoped research requires the verified system helper")
         self.scoped_research = scoped_research
+        self.research_instructions = research_instructions
         self.workspaces = (system_execution.workspace_root(workspaces) if system_execution is not None
                            else _private_directory(workspaces))
         if self.root == self.workspaces or self.root in self.workspaces.parents or self.workspaces in self.root.parents:
@@ -307,7 +309,7 @@ class AgentRunner:
                 workspace.mkdir(mode=0o700)
                 if isinstance(self.execution, SystemServiceExecution):
                     os.chown(workspace, self.execution.WORKER_UID, self.execution.WORKER_GID)
-                prompt, schema = _research_input(job.payload)
+                prompt, schema = _research_input(job.payload, self.research_instructions)
                 if self.scoped_research and len(prompt.encode()) > 24_000:
                     raise ValueError("scoped research prompt exceeds 24000 bytes")
             else:
@@ -576,7 +578,7 @@ def _schema(fields):
     return {"type": "object", "properties": fields, "required": list(fields), "additionalProperties": False}
 
 
-def _research_input(payload):
+def _research_input(payload, instructions=""):
     fields = {key: {"type": "string"} for key in (
         "decision_id", "study_id", "observed_facts", "comparison", "uncertainty", "action_reason", "next_wake_condition",
     )}
@@ -600,6 +602,7 @@ def _research_input(payload):
         "Return one structured decision under the output schema. Only reference registered experiments "
         "and task types. Put null in each inapplicable action-specific field. Report verifiable evidence "
         "and uncertainty in the final result. Use no tools.\n"
+        + (instructions + "\nThe registered state below is the latest approved scope.\n" if instructions else "")
         + canonical(payload)
     )
     return prompt, _schema(fields)

@@ -15,6 +15,7 @@ from .agent_runner import AgentRunner, SolTask, _research_input
 from .broker import AgentQueueProvider, GPU_KINDS, RavenBroker, RavenRuntime
 from .contracts import identifier
 from .gateway import AgentBinding
+from .manifests import file_digest
 from .sandbox_provider import CPU, MEMORY_MIB, SandboxBinding, SandboxProvider, generation_bytes
 from .store import Store
 
@@ -74,12 +75,14 @@ class ResearchUsagePolicy:
     reserve_cents: int
     max_calls: int
     allowed_event_ids: tuple[str, ...]
+    instructions: str = ""
 
     def __post_init__(self):
         identifier(self.reference)
         identifier(self.account_verification)
         if (type(self.valid_until) is not int or type(self.reserve_cents) is not int
                 or self.reserve_cents != 200 or type(self.max_calls) is not int or not 1 <= self.max_calls <= 2
+                or type(self.instructions) is not str or len(self.instructions.encode()) > 16_000
                 or not isinstance(self.allowed_event_ids, (tuple, list))
                 or len(self.allowed_event_ids) != self.max_calls or len(set(self.allowed_event_ids)) != self.max_calls):
             raise ValueError("invalid finite research allocation")
@@ -90,7 +93,7 @@ class ResearchUsagePolicy:
         return (job.kind == "research" and job.attempt == 1 and job.reserve_cents == self.reserve_cents
                 and now < job.deadline <= self.valid_until and job.deadline - now <= 180
                 and job.payload.get("consumed_event_ids") in ([event] for event in self.allowed_event_ids)
-                and len(_research_input(job.payload)[0].encode()) <= 24_000)
+                and len(_research_input(job.payload, self.instructions)[0].encode()) <= 24_000)
 
 
 def load_runtime(config, *, clock=time.time):
@@ -116,14 +119,18 @@ def load_runtime(config, *, clock=time.time):
     research_policy = None
     if agent is not None:
         required_agent = {"state", "workspaces", "launcher", "bindings", "sol_tasks", "cost_caps", "cost_verification"}
-        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy"}):
+        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy", "research_instructions", "launcher_sha256"}):
             raise ValueError("runtime agent requires verified role and spending bindings")
         if agent["cost_caps"]:
             identifier(agent["cost_verification"])
         if not agent["cost_caps"].keys() <= agent["bindings"].keys():
             raise ValueError("agent spend caps must refer to verified roles")
         if agent.get("research_usage_policy"):
-            research_policy = ResearchUsagePolicy(**agent["research_usage_policy"])
+            instructions = agent.get("research_instructions")
+            if (type(instructions) is not str or not instructions.strip()
+                    or file_digest(Path(agent["launcher"])) != agent.get("launcher_sha256")):
+                raise ValueError("finite research requires pinned instructions and the verified launcher digest")
+            research_policy = ResearchUsagePolicy(**agent["research_usage_policy"], instructions=instructions)
             if (set(agent["bindings"]) != {"research"} or agent["bindings"]["research"]["model_id"] != "gpt-6-astra"
                     or not agent.get("system_identity") or "research" in agent["cost_caps"]
                     or not 1 <= agent["bindings"]["research"]["max_output_bytes"] <= 16_000):
@@ -133,6 +140,7 @@ def load_runtime(config, *, clock=time.time):
             {name: AgentBinding(**value) for name, value in agent["bindings"].items()},
             sol_tasks={name: SolTask(**value) for name, value in agent["sol_tasks"].items()},
             system_identity=agent.get("system_identity"), scoped_research=research_policy is not None,
+            research_instructions=research_policy.instructions if research_policy else "",
         )
 
     def estimated(job):
