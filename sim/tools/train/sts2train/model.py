@@ -37,6 +37,20 @@ PRESETS = {
 }
 ARCH_KEYS = ("d", "s", "depth", "heads", "ff_mult")
 ARCH_DEFAULTS = PRESETS["smoke"]
+# (buffer key, table, columns) read together (`Policy._cols`).
+COL_GROUPS = (
+    ("relic_num", "relics", ("counter", "used_up", "stack")),
+    ("orb_num", "orbs", ("passive", "evoke")),
+    ("intent_num", "enemy_intents", ("damage", "times", "card_count")),
+    ("enemy_hpv", "enemies", ("hp", "max_hp", "block", "intent_n")),
+    ("enemy_flags", "enemies", ("present", "flank", "behind")),
+    ("ally_num", "allies", ("present", "hp", "max_hp", "block")),
+    ("map_flags", "map_nodes", ("visited", "current", "legal_next")),
+    ("reward_num", "rewards", ("amount", "is_card_reward")),
+    ("shop_num", "shop", ("upgrade", "price", "stocked", "on_sale", "affordable")),
+    ("event_flags", "event_options", ("enabled", "locked", "proceed")),
+    ("prompt_num", "prompt_options", ("upgrade", "ordinal")),
+)
 
 
 def symlog(x: torch.Tensor) -> torch.Tensor:
@@ -155,6 +169,11 @@ class Policy(nn.Module):
         self._gi_id_cols = {k: gi[k] for k in ("phase", "decision_kind", "character", "act_id", "boss_id",
                                                "second_boss_id", "prompt_kind", "event_id", "prompt_pile",
                                                "treasure_relic_id")}
+        # Multi-column reads as device index buffers (non-persistent: the state_dict is unchanged). Indexing a CUDA
+        # tensor with a Python list uploads the list first, a synchronous host->device copy (a stream sync) per call.
+        for key, buf, names in COL_GROUPS:
+            self.register_buffer(f"_ix_{key}", torch.tensor([C[buf][k] for k in names], dtype=torch.long),
+                                 persistent=False)
         skip = set(self._gi_id_cols.values()) | {gi["prompt_site_hash"]}
         self.register_buffer("gi_num_idx", torch.tensor([i for i in range(spec.shapes["global_i"][0]) if i not in skip]),
                              persistent=False)
@@ -241,6 +260,10 @@ class Policy(nn.Module):
 
     # ------------------------------------------------------------------------------------------------ tables
 
+    def _cols(self, key: str, table: torch.Tensor) -> torch.Tensor:
+        """table[..., [the COL_GROUPS columns of `key`]] through a device index (no host->device copy)."""
+        return table.index_select(-1, getattr(self, f"_ix_{key}"))
+
     def _cards(self, rows: torch.Tensor, extra_f: torch.Tensor | None) -> torch.Tensor:
         """hand / card_reward rows [B, R, 22] (+ hand_f/hand_dmg [B, R, 8]) -> [B, R, d]."""
         c = self.spec.cols["hand"]
@@ -306,7 +329,7 @@ class Policy(nn.Module):
         rel_m = rl[..., rc["relic_id"]] != 0
         rel = masked_mean(self.relic_mlp(torch.cat([
             self.relic_emb(rl[..., rc["relic_id"]]), self.relic_status_emb(rl[..., rc["status"]].clamp(0, self.spec.enums["RelicStatus"] - 1)),
-            symlog(rl[..., [rc["counter"], rc["used_up"], rc["stack"]]].float())], -1)), rel_m)
+            symlog(self._cols("relic_num", rl).float())], -1)), rel_m)
 
         pt, pc = x["potions"], C["potions"]
         pot_m = pt[..., pc["potion_id"]] != 0
@@ -323,7 +346,7 @@ class Policy(nn.Module):
 
         ob, oc = x["orbs"], C["orbs"]
         orbs = masked_mean(self.orb_mlp(torch.cat([self.orb_emb(ob[..., oc["orb_id"]]),
-                                                   symlog(ob[..., [oc["passive"], oc["evoke"]]].float())], -1)),
+                                                   symlog(self._cols("orb_num", ob).float())], -1)),
                            ob[..., oc["orb_id"]] != 0)
 
         en, ec = x["enemies"], C["enemies"]
@@ -332,22 +355,22 @@ class Policy(nn.Module):
         n_int = it.shape[2]
         imask = (torch.arange(n_int, device=it.device).view(1, 1, -1) < en[..., ec["intent_n"]].unsqueeze(-1)).float()
         intents = torch.cat([self.intent_emb(it[..., ic["type"]].clamp_min(0)),
-                             symlog(it[..., [ic["damage"], ic["times"], ic["card_count"]]].float())], -1)
+                             symlog(self._cols("intent_num", it).float())], -1)
         intents = (intents * imask.unsqueeze(-1)).flatten(-2)
         ep, epc = x["enemy_powers"], C["enemy_powers"]
         epw = F.relu(self.epower_proj(torch.cat([self.power_emb(ep[..., epc["power_id"]]),
                                                  symlog(ep[..., epc["amount"]].float()).unsqueeze(-1)], -1)))
         epm = (ep[..., epc["power_id"]] != 0).unsqueeze(-1).float()
         epw = (epw * epm).sum(2) / epm.sum(2).clamp_min(1.0)
-        hpv = en[..., [ec["hp"], ec["max_hp"], ec["block"], ec["intent_n"]]].float()
+        hpv = self._cols("enemy_hpv", en).float()
         frac = (hpv[..., 0] / hpv[..., 1].clamp_min(1.0)).unsqueeze(-1)
         en_e = self.enemy_mlp(torch.cat([self.monster_emb(en[..., ec["monster_id"]]), symlog(hpv), frac,
-                                         en[..., [ec["present"], ec["flank"], ec["behind"]]].float(), intents, epw], -1))
+                                         self._cols("enemy_flags", en).float(), intents, epw], -1))
         enemies = masked_mean(en_e, en_m)
 
         al, ac = x["allies"], C["allies"]
         allies = masked_mean(self.ally_mlp(torch.cat([self.monster_emb(al[..., ac["monster_id"]]),
-                                                      symlog(al[..., [ac["present"], ac["hp"], ac["max_hp"], ac["block"]]].float()),
+                                                      symlog(self._cols("ally_num", al).float()),
                                                       (al[..., ac["hp"]].float() / al[..., ac["max_hp"]].float().clamp_min(1.0)).unsqueeze(-1)], -1)),
                              al[..., ac["present"]] != 0)
 
@@ -357,7 +380,7 @@ class Policy(nn.Module):
         cols = self.col_emb.weight.view(1, 1, Cc, -1).expand(B, R, Cc, -1)
         node_e = self.node_mlp(torch.cat([
             self.point_emb(mp[..., mc["point_type"]].clamp_min(0)),
-            mp[..., [mc["visited"], mc["current"], mc["legal_next"]]].float(),
+            self._cols("map_flags", mp).float(),
             symlog(mp[..., mc["quest"]].float()).unsqueeze(-1),
             bits(mp[..., mc["child_mask"]], 7), rows, cols], -1))           # [B, R, Cc, d]
         node_m = mp[..., mc["point_type"]] != 0
@@ -375,7 +398,7 @@ class Policy(nn.Module):
         item_max = self.item_emb.num_embeddings - 1
         rw_e = self.reward_mlp(torch.cat([self.reward_type_emb(rw[..., wcol["reward_type"]].clamp_min(0)),
                                           self.item_emb(rw[..., wcol["item_id"]].clamp(0, item_max)),
-                                          symlog(rw[..., [wcol["amount"], wcol["is_card_reward"]]].float())], -1))
+                                          symlog(self._cols("reward_num", rw).float())], -1))
         rewards = masked_mean(rw_e, rw_m)
 
         cr = x["card_reward"]
@@ -391,8 +414,7 @@ class Policy(nn.Module):
         sh_m = sh[..., sc["category"]] != 0
         sh_e = self.shop_mlp(torch.cat([self.shop_cat_emb(sh[..., sc["category"]].clamp(0, self.spec.enums["ShopCategory"] - 1)),
                                         self.item_emb(sh[..., sc["item_id"]].clamp(0, item_max)),
-                                        symlog(sh[..., [sc["upgrade"], sc["price"], sc["stocked"], sc["on_sale"],
-                                                        sc["affordable"]]].float())], -1))
+                                        symlog(self._cols("shop_num", sh).float())], -1))
         shop = masked_mean(sh_e, sh_m)
 
         rs, rsc = x["rest"], C["rest"]
@@ -406,7 +428,7 @@ class Policy(nn.Module):
         ev_m = torch.arange(ev.shape[1], device=ev.device).view(1, -1) < n_ev.unsqueeze(-1)
         ev_e = self.event_mlp(torch.cat([self.hash_emb(torch.remainder(ev[..., evc["key_hash"]], HASH_BUCKETS)),
                                          self.relic_emb(ev[..., evc["relic_id"]].clamp(0, self.relic_emb.num_embeddings - 1)),
-                                         ev[..., [evc["enabled"], evc["locked"], evc["proceed"]]].float(),
+                                         self._cols("event_flags", ev).float(),
                                          symlog(ev[..., evc["ordinal"]].float()).unsqueeze(-1),
                                          ev_m.float().unsqueeze(-1)], -1))
         events = masked_mean(ev_e, ev_m)
@@ -422,7 +444,7 @@ class Policy(nn.Module):
         item = torch.where(other.unsqueeze(-1), self.hash_emb(torch.remainder(iid, HASH_BUCKETS)),
                            self.item_emb(iid.clamp(0, self.item_emb.num_embeddings - 1)))
         item = torch.where(is_card.unsqueeze(-1), card32[iid.clamp(0, card32.shape[0] - 1).long()], item)
-        po_e = self.prompt_mlp(torch.cat([item, self.pitem_emb(kind), symlog(po[..., [poc["upgrade"], poc["ordinal"]]].float()),
+        po_e = self.prompt_mlp(torch.cat([item, self.pitem_emb(kind), symlog(self._cols("prompt_num", po).float()),
                                           (po[..., poc["picked"]] > 0).float().unsqueeze(-1)], -1))
         prompt = masked_mean(po_e, po_m)
 
@@ -444,10 +466,12 @@ class Policy(nn.Module):
         H, E, P = hand_e.shape[1], en_e.shape[1], pot_e.shape[1]
         dev = hand_e.device
         tt = self.tok_type
+        # slot embeddings read as weight rows (= embedding(arange): same values and gradients, no lookup / scatter;
+        # the lookup form gets a wrong compiled backward on the MPS inductor backend, torch 2.15)
         seq = torch.cat([torch.stack(pooled, 1) + tt[:N_TABLES],
-                         hand_e + tt[N_TABLES] + self.hand_pos(torch.arange(H, device=dev)),
-                         en_e + tt[N_TABLES + 1] + self.enemy_pos(torch.arange(E, device=dev)),
-                         pot_e + tt[N_TABLES + 2] + self.potion_pos(torch.arange(P, device=dev))], 1)
+                         hand_e + tt[N_TABLES] + self.hand_pos.weight[:H],
+                         en_e + tt[N_TABLES + 1] + self.enemy_pos.weight[:E],
+                         pot_e + tt[N_TABLES + 2] + self.potion_pos.weight[:P]], 1)
         keep = torch.cat([torch.ones(B, N_TABLES, dtype=torch.bool, device=dev), hand_m, en_m, pot_m], 1)
         h = seq
         ckpt = self.grad_ckpt and self.training and torch.is_grad_enabled()

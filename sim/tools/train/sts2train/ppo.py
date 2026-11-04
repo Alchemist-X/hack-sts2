@@ -21,6 +21,14 @@ and enums the model does not embed may differ) and refuses any other checkpoint 
 records both encoder versions. ``floor_step_cap`` is passed to ``VecEnv`` only when set, and only if this sts2vec's
 ``VecEnv`` accepts it (unset = the env's default: 80 with a library that implements the cap); the cap in effect is
 recorded in config.json (``env.floor_step_cap``) and FLOOR_STALL truncations are counted per update.
+
+Speed (``sts2train bench-update`` measures it): the update and the rollout run without host<->device syncs inside a
+minibatch / step (row cuts from host-side counts, minibatch indices uploaded once per epoch, statistics copied back
+once per update, no distribution argument validation, pinned asynchronous uploads on CUDA). ``compile`` =
+``default`` / ``reduce-overhead`` wraps the minibatch forward + loss (``MinibatchUpdater``) and the rollout forward
+(``InferenceRunner``) in ``torch.compile`` (``reduce-overhead`` adds CUDA graphs); it implies ``static_rows`` (the
+candidate / prompt-option tables always ``max_rows`` wide, so shapes never change). The default, ``compile = off``
+without static rows, computes exactly what the trainer computed before these changes.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ import os
 import platform
 import signal
 import socket
+import sys
 import threading
 import time
 from collections import deque
@@ -55,6 +64,9 @@ from .startpool import recent_sums, recent_view, split_stats, start_pool_from_co
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
 FLOOR_STALL = STATUS.get("FLOOR_STALL", 0)   # truncated by the env's floor_step_cap (0 with an sts2vec without it)
 CKPT_FORMAT = 2
+COMPILE_MODES = ("off", "default", "reduce-overhead")
+STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
+NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
 
@@ -99,6 +111,8 @@ class TrainConfig:
     # runtime
     device: str = "cpu"             # cpu | mps | cuda[:i] | auto
     amp: bool = False               # bf16 autocast (CUDA only)
+    compile: str = "off"            # off | default | reduce-overhead: torch.compile of the update + rollout forwards
+    static_rows: bool | None = None  # cand / prompt_options always max_rows wide (None = on iff compile != off)
     grad_ckpt: bool = False         # recompute the trunk blocks in backward (less activation memory, more compute)
     allow_big_local: bool = False   # override the cpu / mps size guard (never inherited from a checkpoint)
     torch_threads: int = 0          # 0 = min(os.cpu_count(), 16)
@@ -145,7 +159,15 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     if not 0.0 <= float(out.save_mix) <= 1.0 or out.save_copies not in ("determinized", "exact"):
         raise ValueError(f"save_mix {out.save_mix} must be in [0, 1] and save_copies {out.save_copies!r} one of "
                          "determinized / exact")
+    if out.compile not in COMPILE_MODES:
+        raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
+    if out.compile == "reduce-overhead" and out.static_rows is False:
+        raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
     return out
+
+
+def use_static_rows(cfg: TrainConfig) -> bool:
+    return cfg.compile != "off" if cfg.static_rows is None else bool(cfg.static_rows)
 
 
 def config_dict(cfg: TrainConfig) -> dict:
@@ -267,6 +289,10 @@ def resume_compat(resume: dict, log=print) -> dict:
     return compat
 
 
+class CompiledMismatchError(RuntimeError):
+    """The torch.compile'd update / forward computes something else than eager (`check_compiled`)."""
+
+
 class BigLocalRunError(RuntimeError):
     """A model too big for a cpu / mps box (see `check_local_size`)."""
 
@@ -374,6 +400,192 @@ def _episode_stats(eps: list[dict]) -> dict:
             "steps_per_episode": _mean([e["steps"] for e in eps]), "act_reached": dict(sorted(acts.items()))}
 
 
+# ------------------------------------------------------------------------------------------------ PPO step
+
+
+def _autocast(amp: bool):
+    return torch.autocast("cuda", dtype=torch.bfloat16) if amp else contextlib.nullcontext()
+
+
+def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
+             madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
+             ent_coef: float, amp: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+    """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
+    and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor."""
+    with _autocast(amp):
+        logits, v = model(xb)
+    logp_all = F.log_softmax(logits, -1)
+    newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
+    ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
+    ratio = (newlogp - oldlogp).exp()
+    pg = -torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv).mean()
+    vclip = vold + (v - vold).clamp(-clip, clip)
+    vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
+    loss = pg + vf_coef * vl - ent_coef * ent
+    with torch.no_grad():
+        kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
+        cf = ((ratio - 1).abs() > clip).float().mean()
+    return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()])
+
+
+def _macos_inductor_openmp() -> None:
+    """macOS: inductor's CPU kernels would link Homebrew's libomp next to the libomp torch already loaded, and the
+    second OpenMP runtime aborts the process (OMP Error #15). With OMP_PREFIX set, inductor takes omp.h from there and
+    leaves the OpenMP symbols to the runtime already in the process."""
+    if sys.platform != "darwin" or "OMP_PREFIX" in os.environ:
+        return
+    for prefix in ("/opt/homebrew/opt/libomp", "/usr/local/opt/libomp"):
+        if os.path.exists(os.path.join(prefix, "include", "omp.h")):
+            os.environ["OMP_PREFIX"] = prefix
+            return
+
+
+def compile_fn(fn, mode: str, static: bool = True):
+    """`torch.compile(fn)` for `mode` default / reduce-overhead, None for off. `static` (fixed input shapes): a new
+    shape recompiles rather than switching to dynamic kernels; otherwise shapes that change between calls become
+    dynamic after the first recompile."""
+    if mode == "off":
+        return None
+    if mode not in COMPILE_MODES:
+        raise ValueError(f"compile {mode!r}: expected one of {COMPILE_MODES}")
+    _macos_inductor_openmp()
+    return torch.compile(fn, mode=None if mode == "default" else mode, dynamic=False if static else None)
+
+
+def _cudagraphs(mode: str, device: torch.device) -> bool:
+    return mode == "reduce-overhead" and device.type == "cuda"
+
+
+class MinibatchUpdater:
+    """One PPO minibatch step: forward + loss (`ppo_loss`, eager or `torch.compile`d), backward, grad-norm clip,
+    optimizer step. Returns the step's statistics (`STAT_NAMES`) as a float32 device tensor: nothing here waits for
+    the device, so consecutive minibatches queue back to back.
+
+    `compiled=False` runs the eager function (the trainer uses it for a short last minibatch, whose shape would
+    otherwise recompile the static-shape graph). Outputs of a CUDA-graph replay are overwritten by the next replay,
+    so the returned statistics are a fresh tensor and gradients are cleared before the forward."""
+
+    def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
+                 device: torch.device | str):
+        self.model, self.opt = model, opt
+        self.max_grad_norm = float(cfg.max_grad_norm)
+        clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
+        self.coefs = (vf_coef, ent_coef)
+
+        def loss_fn(xb, act, oldlogp, madv, vret, vold):
+            return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                            ent_coef=ent_coef, amp=amp)
+
+        self.eager = loss_fn
+        self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
+        self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
+
+    def loss(self, xb, act, oldlogp, madv, vret, vold, *, compiled: bool = True):
+        if compiled and self.compiled is not None:
+            if self.cudagraphs:
+                torch.compiler.cudagraph_mark_step_begin()
+            return self.compiled(xb, act, oldlogp, madv, vret, vold)
+        return self.eager(xb, act, oldlogp, madv, vret, vold)
+
+    def __call__(self, xb, act, oldlogp, madv, vret, vold, *, compiled: bool = True) -> torch.Tensor:
+        self.opt.zero_grad(set_to_none=True)
+        loss, st = self.loss(xb, act, oldlogp, madv, vret, vold, compiled=compiled)
+        loss.backward()
+        gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+        self.opt.step()
+        return torch.cat([st, gn.detach().float().view(1)])
+
+
+def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: bool = False) -> dict:
+    """Eager vs compiled forward + backward of one minibatch `args` (no optimizer step; gradients are cleared after):
+    the loss and every parameter's gradient norm. With CUDA graphs the compiled side runs three times (warm-up,
+    record, replay) and the replay is compared. `ok` is False when the compiled path computes something else (beyond
+    bf16 / TF32 rounding): a backend bug must stop a run rather than train it on wrong gradients.
+
+    The loss difference is measured against the magnitude of its terms (|policy| + vf * |value| + ent * |entropy|; the
+    total can cancel to ~0), a parameter's gradient-norm difference against its norm floored at a fraction of the
+    global norm (1e-3 fp32, 3e-3 TF32, 1e-2 bf16): gradients that are rounding noise (c_bias.bias: the loss is
+    invariant to a per-sample logit shift) must not fail the check, while a wrong gradient anywhere above that floor
+    does."""
+    model, opt = updater.model, updater.opt
+    names, params = zip(*model.named_parameters())
+    res = {}
+    for kind, repeats in (("eager", 1), ("compiled", 3 if updater.cudagraphs else 1)):
+        for _ in range(repeats):
+            opt.zero_grad(set_to_none=True)
+            loss, st = updater.loss(*args, compiled=kind == "compiled")
+            loss.backward()
+            gn = torch.stack([(p.grad if p.grad is not None else torch.zeros_like(p)).detach().float().norm()
+                              for p in params])
+            res[kind] = (st.detach().cpu().numpy().astype(np.float64), gn.cpu().numpy().astype(np.float64))
+    opt.zero_grad(set_to_none=True)
+    (se, ge), (sc, gc) = res["eager"], res["compiled"]
+    i = {k: STAT_NAMES.index(k) for k in ("entropy", "value_loss", "policy_loss", "loss")}
+    vf_coef, ent_coef = updater.coefs
+    scale = max(abs(se[i["loss"]]), abs(se[i["policy_loss"]]) + vf_coef * abs(se[i["value_loss"]])
+                + ent_coef * abs(se[i["entropy"]]), 1e-6)
+    loss_rel = float(abs(sc[i["loss"]] - se[i["loss"]]) / scale)
+    g_e, g_c = float(np.sqrt((ge ** 2).sum())), float(np.sqrt((gc ** 2).sum()))
+    floor = (1e-2 if amp else 3e-3 if tf32 else 1e-3) * g_e
+    grel = np.abs(gc - ge) / np.maximum(ge, max(floor, 1e-12))
+    worst = int(np.argmax(grel)) if len(grel) else 0
+    tol_loss = 1e-2 if (amp or tf32) else 1e-4
+    tol_grad = 0.25 if amp else 0.05 if tf32 else 1e-3
+    out = {"loss_eager": float(se[i["loss"]]), "loss_compiled": float(sc[i["loss"]]), "loss_rel": loss_rel,
+           "grad_norm_eager": g_e, "grad_norm_compiled": g_c, "worst_param": names[worst],
+           "worst_param_grad_rel": float(grel[worst]) if len(grel) else 0.0, "tol_loss": tol_loss,
+           "tol_grad": tol_grad, "replayed": updater.cudagraphs}
+    out["ok"] = bool(loss_rel <= tol_loss and out["worst_param_grad_rel"] <= tol_grad)
+    return out
+
+
+def check_compiled_forward(runner: "InferenceRunner", x: dict[str, torch.Tensor], *, amp: bool,
+                           tf32: bool = False) -> dict:
+    """Eager vs compiled rollout forward on `x`: largest difference of the live logits / values relative to their
+    scale (with CUDA graphs: the third, replayed, call)."""
+    le, ve = runner.forward(x, compiled=False)
+    for _ in range(3 if runner.cudagraphs else 1):
+        lc, vc = runner.forward(x)
+    live = le > NEG_LIVE
+    scale_l = float(le[live].abs().max().clamp_min(1.0)) if bool(live.any()) else 1.0
+    dl = float((lc - le)[live].abs().max()) / scale_l if bool(live.any()) else 0.0
+    dv = float((vc - ve).abs().max()) / float(ve.abs().max().clamp_min(1.0))
+    tol = 5e-2 if amp else 1e-2 if tf32 else 1e-4
+    return {"logits_rel": dl, "value_rel": dv, "tol": tol, "ok": bool(dl <= tol and dv <= tol)}
+
+
+class InferenceRunner:
+    """The rollout's policy forward (no grad; bf16 autocast when `amp`; eager or `torch.compile`d) and the action
+    sampling: `sample(x)` -> (actions, log-probs, values) on the device. The categorical distribution skips its
+    argument validation (two device syncs per step); the samples and log-probs are the validated ones'."""
+
+    def __init__(self, model: Policy, amp: bool, compile_mode: str = "off", device: torch.device | str = "cpu", *,
+                 static: bool = True):
+        self.model = model
+
+        def forward(x):
+            with _autocast(amp):
+                return model(x)
+
+        self.eager = forward
+        self.compiled = compile_fn(forward, compile_mode, static)
+        self.cudagraphs = _cudagraphs(compile_mode, torch.device(device))
+
+    def forward(self, x: dict[str, torch.Tensor], *, compiled: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+        with torch.no_grad():
+            if compiled and self.compiled is not None:
+                if self.cudagraphs:
+                    torch.compiler.cudagraph_mark_step_begin()
+                return self.compiled(x)
+            return self.eager(x)
+
+    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True):
+        logits, value = self.forward(x, compiled=compiled)
+        dist = torch.distributions.Categorical(logits=logits, validate_args=False)
+        a = dist.sample()
+        return a, dist.log_prob(a), value
+
+
 # ------------------------------------------------------------------------------------------------ run planning
 
 
@@ -427,7 +639,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-    autocast = (lambda: torch.autocast("cuda", dtype=torch.bfloat16)) if amp else contextlib.nullcontext
+    static = use_static_rows(cfg)
     torch.manual_seed(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
 
@@ -494,7 +706,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if resume is not None:
             restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr)
             log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})")
-        log(f"device: {device}" + (" [bf16 autocast]" if amp else "") + (" [trunk checkpointing]" if cfg.grad_ckpt else ""))
+        updater = MinibatchUpdater(model, opt, cfg, amp, device)
+        runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
+        tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
+        compile_check: dict = {}            # eager vs compiled, once per session (first rollout step / minibatch)
+        log(f"device: {device}" + (" [bf16 autocast]" if amp else "")
+            + (" [trunk checkpointing]" if cfg.grad_ckpt else "")
+            + (f" [torch.compile {cfg.compile}: the first update compiles]" if cfg.compile != "off" else "")
+            + (f" [static rows: cand / prompt_options {cfg.max_rows} wide]" if static else ""))
 
         dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
         store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device)
@@ -519,7 +738,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         sessions = list(prev_cfg.get("sessions", []))[: c["sessions"] - 1]
         sessions.append({"session": c["sessions"], "started_at": _now_iso(), "update_start": upd0,
                          "resumed_from": str(resume_path) if resume_path else None, "host": socket.gethostname(),
-                         "pid": os.getpid(), "device": str(device), "amp": amp, "torch": torch.__version__,
+                         "pid": os.getpid(), "device": str(device), "amp": amp, "compile": cfg.compile,
+                         "static_rows": static, "torch": torch.__version__,
                          "cuda_device": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
                          "python": platform.python_version(), "cpu_count": os.cpu_count(), "env_threads": env.threads,
                          "bundle": os.environ.get("STS2TRAIN_BUNDLE"), "encoder_version": spec.encoder_version,
@@ -652,13 +872,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             for t in range(cfg.rollout):
                 t0 = time.monotonic()
                 cand_n = obs["cand_n"].copy()
-                x = obs_to_device(obs, device, max_rows=cfg.max_rows)
-                with torch.no_grad(), autocast():
-                    logits, value = model(x)
-                dist = torch.distributions.Categorical(logits=logits)
-                a = dist.sample()
-                logp = dist.log_prob(a)
-                store.put(t, x)
+                x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+                if runner.compiled is not None and "forward" not in compile_check:
+                    compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
+                    log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
+                        f"{chk['value_rel']:.2e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}")
+                    if not chk["ok"]:
+                        raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
+                                                    f"rerun with --compile off")
+                a, logp, value = runner.sample(x)
+                store.put(t, x, obs)
                 a_np = a.cpu().numpy().astype(np.int32)
                 valid = cand_n > 0
                 a_np[~valid] = -1
@@ -689,8 +912,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 ep_this += fin
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
-            with torch.no_grad(), autocast():
-                _, last_v = model(obs_to_device(obs, device, max_rows=cfg.max_rows))
+            _, last_v = runner.forward(obs_to_device(obs, device, max_rows=cfg.max_rows, static=static))
             last_v = last_v.cpu().numpy()
             infer_s += time.monotonic() - t0
             adv = np.zeros_like(store.rewards)
@@ -703,7 +925,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 adv[t] = gae
             ret = adv + store.values
 
-            # PPO update (minibatches gathered on the device)
+            # PPO update: minibatches gathered on the device; every epoch's minibatch indices go up in one copy, row
+            # cuts come from host counts and the statistics come back once, so the minibatches queue without a sync
             t_up = time.monotonic()
             model.train()
             idx_all = np.flatnonzero(store.valid.reshape(-1))
@@ -713,41 +936,30 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             d_act, d_logp = to(store.actions.reshape(-1)), to(store.logp.reshape(-1))
             d_adv = to(((f_adv - a_mean) / a_std).astype(np.float32))
             d_ret, d_val = to(ret.reshape(-1)), to(store.values.reshape(-1))
-            stats = []
-            for _ in range(cfg.epochs):
-                perm = rng.permutation(idx_all)
-                for k in range(0, len(perm), cfg.minibatch):
-                    mb = to(np.sort(perm[k:k + cfg.minibatch]))
-                    xb = store.batch(mb)
-                    with autocast():
-                        logits, v = model(xb)
-                    logp_all = F.log_softmax(logits, -1)
-                    act = d_act[mb]
-                    newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
-                    ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
-                    oldlogp = d_logp[mb]
-                    ratio = (newlogp - oldlogp).exp()
-                    madv = d_adv[mb]
-                    pg = -torch.min(ratio * madv, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * madv).mean()
-                    vret, vold = d_ret[mb], d_val[mb]
-                    vclip = vold + (v - vold).clamp(-cfg.clip, cfg.clip)
-                    vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
-                    loss = pg + cfg.vf_coef * vl - cfg.ent_coef * ent
-                    opt.zero_grad(set_to_none=True)
-                    loss.backward()
-                    gn = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-                    opt.step()
-                    with torch.no_grad():
-                        kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
-                        cf = ((ratio - 1).abs() > cfg.clip).float().mean()
-                    st = torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(),
-                                      gn.detach().float()]).cpu().numpy()
-                    stats.append(st)
-                    if not np.isfinite(st[5]):
-                        raise FloatingPointError(f"non-finite loss at update {upd + 1}")
+            mbs = [np.sort(perm[k:k + cfg.minibatch]) for perm in (rng.permutation(idx_all) for _ in range(cfg.epochs))
+                   for k in range(0, len(perm), cfg.minibatch)]
+            d_mbs = torch.split(to(np.concatenate(mbs)), [len(m) for m in mbs]) if mbs else ()
+
+            def mb_args(mb_h, mb):
+                return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
+                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb])
+
+            if updater.compiled is not None and "update" not in compile_check and mbs \
+                    and len(mbs[0]) == cfg.minibatch:
+                compile_check["update"] = chk = check_compiled(updater, mb_args(mbs[0], d_mbs[0]), amp=amp, tf32=tf32)
+                log(f"compiled minibatch update vs eager: loss {chk['loss_compiled']:.6g} vs {chk['loss_eager']:.6g} "
+                    f"(rel {chk['loss_rel']:.2e}, tol {chk['tol_loss']:g}), worst parameter gradient norm "
+                    f"{chk['worst_param']} rel {chk['worst_param_grad_rel']:.2e} (tol {chk['tol_grad']:g}): "
+                    f"{'OK' if chk['ok'] else 'MISMATCH'}")
+                if not chk["ok"]:
+                    raise CompiledMismatchError(f"the compiled PPO update disagrees with eager ({chk}); rerun with "
+                                                f"--compile off")
+            stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch) for mb_h, mb in zip(mbs, d_mbs)]
+            stats = torch.stack(stats).cpu().numpy() if stats else None
             update_s = time.monotonic() - t_up
-            sm = dict(zip(("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm"),
-                          (float(x) for x in np.mean(stats, 0)))) if stats else {}
+            if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
+                raise FloatingPointError(f"non-finite loss at update {upd + 1}")
+            sm = dict(zip(STAT_NAMES, (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
             ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
@@ -843,7 +1055,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "episodes": c["episodes"], "wins": c["wins"], "sim_error": c["sim_error"],
             "content_gap": c["content_gap"], "illegal": c["illegal"], "cand_over_max_rows": c["overflow_cand"],
             "floor_stall": c["floor_stall"], "errors": errors_seen, "best_eval": best_eval, "last_eval": last_eval,
-            "start_pool": starts.summary(brief=True) if starts else None,
+            "start_pool": starts.summary(brief=True) if starts else None, "compile": cfg.compile,
+            "static_rows": static, "compile_check": compile_check or None,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
         }
         atomic_write_json(run / "summary.json", summary)

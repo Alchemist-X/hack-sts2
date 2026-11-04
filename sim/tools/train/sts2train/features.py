@@ -171,13 +171,24 @@ def _row_need(obs: dict, max_rows: int | None) -> tuple[int, int]:
     return max(1, min(c_need, c_cap)), max(1, min(p_need, p_cap))
 
 
+def _static_need(obs: dict, max_rows: int | None) -> tuple[int, int]:
+    """(candidate rows, prompt-option rows) of the static-shape path: `max_rows` capped at the table widths."""
+    c_w, p_w = obs["cand"].shape[1], obs["prompt_options"].shape[1]
+    return (c_w, p_w) if max_rows is None else (min(max_rows, c_w), min(max_rows, p_w))
+
+
 def obs_to_device(obs: dict[str, np.ndarray], device: torch.device | str = "cpu", *,
-                  max_rows: int | None = None) -> dict[str, torch.Tensor]:
+                  max_rows: int | None = None, static: bool = False) -> dict[str, torch.Tensor]:
     """The model's input tensors in their source dtypes (int16 pile counts stay int16), copied to ``device``.
 
-    `cand` / `prompt_options` are cut to the rows the batch needs (`_row_need`). The copies are synchronous, so the
-    env may overwrite its buffers right after this returns (on a cpu device the tensors may alias them until then)."""
-    c, p = _row_need(obs, max_rows)
+    `cand` / `prompt_options` are cut to the rows the batch needs (`_row_need`), or with `static` to exactly
+    `max_rows` rows (capped at the table widths) so every call has the same shapes (compiled / CUDA-graph forwards).
+    The env may overwrite its buffers right after this returns: on CUDA each buffer is first copied into pinned host
+    memory and then uploaded asynchronously (no stream sync per buffer); on cpu / mps the copies are synchronous (on a
+    cpu device the tensors may alias the env buffers until then)."""
+    c, p = _static_need(obs, max_rows) if static else _row_need(obs, max_rows)
+    device = torch.device(device)
+    pinned = device.type == "cuda"
     out = {}
     for name in USED_BUFFERS:
         a = obs[name]
@@ -185,7 +196,8 @@ def obs_to_device(obs: dict[str, np.ndarray], device: torch.device | str = "cpu"
             a = a[:, :c]
         elif name == "prompt_options":
             a = a[:, :p]
-        out[name] = torch.from_numpy(np.ascontiguousarray(a)).to(device)
+        t = torch.from_numpy(np.ascontiguousarray(a))
+        out[name] = t.pin_memory().to(device, non_blocking=True) if pinned else t.to(device)
     return out
 
 
@@ -231,7 +243,8 @@ class RolloutStore:
     `max_rows` rows) + numpy per-step scalars (actions, log-probs, values, rewards, dones, valid).
 
     The rollout writes the very tensors it ran inference on (`put`), so a GPU learner never copies observations back
-    to the host; `batch(index)` gathers a minibatch on the device and cuts `cand` / `prompt_options` to its needs."""
+    to the host; `batch(index)` gathers a minibatch on the device and cuts `cand` / `prompt_options` to its needs,
+    computed from host copies of cand_n / prompt_option_n (`rows`), so a minibatch costs no device->host sync."""
 
     def __init__(self, spec: ModelSpec, steps: int, num_envs: int, max_rows: int, dtypes: dict[str, np.dtype],
                  device: torch.device | str = "cpu"):
@@ -251,9 +264,12 @@ class RolloutStore:
         self.rewards = np.zeros((steps, num_envs), dtype=np.float32)
         self.dones = np.zeros((steps, num_envs), dtype=np.float32)
         self.valid = np.zeros((steps, num_envs), dtype=bool)
+        self.cand_n_h = np.zeros((steps, num_envs), dtype=np.int64)       # host copies of the row counts (`rows`)
+        self.prompt_n_h = np.zeros((steps, num_envs), dtype=np.int64)
 
-    def put(self, t: int, x: dict[str, torch.Tensor]) -> None:
-        """Store step t from `obs_to_device` tensors (row-cut buffers are zero-padded to `max_rows`)."""
+    def put(self, t: int, x: dict[str, torch.Tensor], obs: dict[str, np.ndarray] | None = None) -> None:
+        """Store step t from `obs_to_device` tensors (row-cut buffers are zero-padded to `max_rows`). `obs` = the host
+        observations `x` was made from (their cand_n / prompt_option_n feed `rows`; read back from `x` if not given)."""
         for name in USED_BUFFERS:
             dst, src = self.obs[name][t], x[name]
             if name in ROW_TRUNCATED:
@@ -262,19 +278,37 @@ class RolloutStore:
                 dst[:, w:].zero_()
             else:
                 dst.copy_(src)
+        if obs is None:
+            obs = {"cand_n": x["cand_n"].cpu().numpy(), "global_i": x["global_i"].cpu().numpy()}
+        self.cand_n_h[t] = obs["cand_n"]
+        self.prompt_n_h[t] = obs["global_i"][:, self._prompt_col]
 
     def put_obs(self, t: int, obs: dict[str, np.ndarray]) -> None:
-        self.put(t, obs_to_device(obs, self.device, max_rows=self.max_rows))
+        self.put(t, obs_to_device(obs, self.device, max_rows=self.max_rows), obs)
 
-    def batch(self, index: torch.Tensor | np.ndarray) -> dict[str, torch.Tensor]:
-        """Model inputs of the flat (t * N + i) samples `index`, gathered on the device."""
+    def rows(self, index: np.ndarray) -> tuple[int, int]:
+        """(candidate rows, prompt-option rows) the flat samples `index` need: their largest cand_n /
+        prompt_option_n clamped to [1, stored width], from the host copies (no device sync)."""
+        index = np.asarray(index)
+        if not len(index):
+            return 1, 1
+        c = int(self.cand_n_h.reshape(-1)[index].max())
+        p = int(self.prompt_n_h.reshape(-1)[index].max())
+        return max(1, min(c, self.obs["cand"].shape[2])), max(1, min(p, self.obs["prompt_options"].shape[2]))
+
+    def batch(self, index: torch.Tensor | np.ndarray, *, rows: tuple[int, int] | None = None,
+              static: bool = False) -> dict[str, torch.Tensor]:
+        """Model inputs of the flat (t * N + i) samples `index`, gathered on the device. `cand` / `prompt_options` are
+        cut to `rows` (default: `rows(index)`, what the samples need); `static` keeps the stored `max_rows` width, so
+        every minibatch has the same shapes (compiled / CUDA-graph updates)."""
         idx = torch.as_tensor(index, device=self.device, dtype=torch.long)
         x = {k: v.flatten(0, 1).index_select(0, idx) for k, v in self.obs.items()}
-        c = int(x["cand_n"].max().clamp(1, self.obs["cand"].shape[2]).item()) if len(idx) else 1
-        p = int(x["global_i"][:, self._prompt_col].max().clamp(1, self.obs["prompt_options"].shape[2]).item()) \
-            if len(idx) else 1
-        x["cand"] = x["cand"][:, :c]
-        x["prompt_options"] = x["prompt_options"][:, :p]
+        if static:
+            return x
+        if rows is None:
+            rows = self.rows(index.cpu().numpy() if torch.is_tensor(index) else index)
+        x["cand"] = x["cand"][:, :rows[0]]
+        x["prompt_options"] = x["prompt_options"][:, :rows[1]]
         return x
 
     @property

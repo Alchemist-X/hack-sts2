@@ -84,13 +84,40 @@ the `fc2eb34c07bc8513` and `5dbfa09dd9dcb5ed` schemas (same model inputs); every
 read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
 buffers are ignored).
 
+## Speed (`--compile`, `--static-rows`, `bench-update`)
+
+The default path (`--compile off`) computes exactly what the trainer computed before (tests/test_perf.py replays the
+old update loop bit for bit) but never waits for the device inside a minibatch or a rollout step: row cuts come from
+host-side cand_n / prompt_option_n counts, multi-column reads use device index buffers (a Python-list index uploads
+the list, a stream sync per call), every epoch's minibatch indices go up in one copy, the statistics come back once
+per update, the sampling distribution skips its argument validation and CUDA uploads go through pinned memory.
+
+`--compile default` wraps the minibatch forward + PPO loss (backward through AOTAutograd) and the rollout forward in
+`torch.compile` (inductor: fused elementwise / reduction kernels); `--compile reduce-overhead` adds CUDA graphs (no
+per-kernel launch cost). Both imply `--static-rows`: `cand` / `prompt_options` are always `--max-rows` wide (masked
+padding; same logits and loss up to float rounding), so every full minibatch and every rollout step has one shape; a
+short last minibatch runs eager. The first update compiles (minutes for the large preset) and first checks the
+compiled update and rollout forward against eager on the live batch (loss, every parameter's gradient norm, logits;
+bf16 / TF32 tolerances): a mismatch stops the run (`CompiledMismatchError`) instead of training on wrong gradients.
+Checkpoints are unchanged (the compiled functions wrap the same module).
+
+```bash
+# the PPO minibatch update (gather, forward + loss, backward, clip, Adam) and the rollout step on random inputs of the
+# schema's shapes: ms per minibatch, samples/s, numerics check, --profile = top ops by device time
+sts2train bench-update --preset large --minibatch 2048 --device cuda --amp --modes off,default,reduce-overhead --profile
+# local validation only (cpu / mps; refuses an estimated > 3 GiB of activations)
+PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --minibatch 512 --envs 256 --device mps \
+    --modes off,default
+```
+
 ## Pieces
 
 | Module | Content |
 | --- | --- |
 | `features.py` | `ModelSpec` (vocab / enum sizes, column maps, shapes, encoder_version from the published schema; stored in checkpoints), `check_spec_compat` (may a checkpoint's spec drive this library: model inputs identical), `obs_to_device` / `obs_to_torch` (the 27 buffers the model reads; `cand` / `prompt_options` cut to the rows the batch needs), `RolloutStore` ([T, N, ...] tensors on the training device in source dtypes, 643 MiB at 32 × 1024 with 64 candidate / prompt rows; minibatches are gathered on the device) |
 | `model.py` | `Policy`: id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; optional transformer trunk; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head. `PRESETS` |
-| `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
+| `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), `ppo_loss` / `MinibatchUpdater` / `InferenceRunner` (the update step and rollout forward, eager or compiled) and `check_compiled`, checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
+| `bench.py` | `sts2train bench-update`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
 | `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return) |
 | `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` metrics) |
