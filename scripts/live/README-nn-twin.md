@@ -31,15 +31,21 @@ checkpoint：s3c `best.pt`（encoder `5dbfa09dd9dcb5ed`，15.8M 参数，静默�
   录像器关闭，与你的 Steam 安装、存档、录像目录完全隔离）：
   - 纯 lockstep：255 个决策，**0 desync，0 resync**，游戏结果与 dry run 完全相同（第 17 层被
     LAGAVULIN_MATRIARCH_BOSS 击败，score 340），逐个决策的动作、概率、HP 与 dry run 一致；UI glue 20 次（19 次多选
-    确认，1 次离开宝箱房），孪生单边 1 次（模拟器的显式开箱，游戏里宝箱自己开）；503 秒，约 2 秒/决策（推理
-    9 ms，执行中位 1.4 s）。
+    确认，1 次离开宝箱房），孪生单边 1 次（模拟器的显式开箱，游戏里宝箱自己开）；约 505 秒，2 秒/决策（推理
+    9 ms，执行中位 1.4 s）。两次独立运行（提交前、提交 `ca9cfbd` 后）结果相同。
   - `--anchor room --inject-desync 100`：每个存档点都从游戏存档重新播种孪生，并在第 100 个决策故意让孪生走另一步。
     23 次导入：22 次导入后与游戏完全一致（16 次进房间、5 次战后奖励、1 次涅奥结束），1 次被导入器拒绝（第 8 层
     战后存档带 `extra_rewards`——小偷偷走的金币——已知不支持），runner 保留原孪生继续；注入的 desync 在第 6 层战斗
     中出现（能量/敌人 HP/手牌），follow 模式打完这场战斗，战后奖励存档 resync 成功回到 lockstep。
-- 单元测试 35 个：每种候选类型的映射（MCP 状态形状来自 E3 农场的 v0.111.0 记录）、视图对比、UI glue 规则、
-  play-server token 解码；集成测试 2 个：带 aux heads 的小 checkpoint dry run（验证 win_prob 记录），5 个随机策略
-  整局（商店、休息、事件、奖励、药水、多选、卡包）。
+  - 4 局随机策略（种子 `C0VER11/12/27/28`，共 429 个决策，用来覆盖 s3c 从不碰的画面：领卡、领金币/药水、商店
+    购买、战斗内喝药水、牌组多选、涅奥卡包）：0 个状态 desync。暴露的两处接口差异已修：非战斗画面的丢药水
+    （MCP 状态没带 `can_discard_out_of_combat`，runner 自己补上）、模拟器“空确认”= 游戏的跳过按钮；非战斗画面
+    喝药水 MCP 不开放，按 `substitute` 处理。
+  - 产物（git 忽略）：`output/nn-twin/20261104-s3c-silent-a10-TW1NA10S01-real`（提交 `ca9cfbd` 跑的最终真实局，
+    255 个决策，0 desync，与同目录 `-dry` 逐决策相同）和 `output/nn-twin/20261104-validation/`（上面各次验证）。
+- 单元测试 46 个：每种候选类型的映射（MCP 状态形状来自 E3 农场的 v0.111.0 记录）、视图对比、UI glue 规则、
+  resync 规则（存档种类、层数、只导入一次、回退）、play-server token 解码；集成测试 2 个：带 aux heads 的小
+  checkpoint dry run（验证 win_prob 记录），5 个随机策略整局（商店、休息、事件、奖励、药水、多选、卡包）。
 
 ## 你早上要做的（推荐：可见的隔离实例）
 
