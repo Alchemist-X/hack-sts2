@@ -1279,3 +1279,75 @@ Open (fidelity), from the triage report §4, unchanged by the merge:
 - G1 on the human combat gate is 99.50 %, under the 99.9 % target. Farm combat G1: decisions 2,664/2,673 (99.66 %;
   the 9 are 8 `select.screen_type` projection gaps and 1 `turn.phase`), outcomes 126/159 (the 33 are `final_hp`,
   recorder timing).
+
+## Train-cycle integrate (2026-11-03)
+
+Scope: the environment and trainer branches of the Silent A10 training cycle. Base:
+`claude/recorder-performance-lag-0f9d6d` at `b1d4a21` (PR #30); the three owner branches are cut from `b1d4a21`.
+
+Merged, in order (all `--no-ff`): train/env-cap-schema `5fd17d6`+`c20f882` (merge `86d2ac5`), train/trainer-colab
+`3540ea7`+`19857d5`+`ef35697` (merge `5918a05`), train/silent-seedsets `8eb7382` (merge `353d136`). Conflicts: none
+(Vec + `sim/tools/vec`; `sim/tools/train` + `scripts/train`; seed sets + two tests).
+
+Seams checked:
+- Schema: the libraries built from `b1d4a21` and from the merged tree differ only in encoder_version
+  (`fc2eb34c07bc8513` → `5dbfa09dd9dcb5ed`), the six appended buffers, four caps, `EndKind` (+FloorStall) and the new
+  `ItemKind` enum; the 35 old buffer entries (dtype, shape, fields) are identical. The trainer's 27 inputs, its
+  vocabularies and embedded enums are unchanged; preset sizes too (948,750 / 1,175,150 / 15,804,270).
+- Floor cap: the trainer passes `--floor-step-cap` only when given; unset, `VecEnv`'s default (80) applies on the new
+  library, so the cap is on in training by default. `sts2vec eval` now uses the env cap; NN track re-measured on the
+  merged tree: random 0.087 / 0.045, first 0.194 / 0.103, heuristic 0.221 / 0.110 (unchanged), replay 20/20.
+
+Follow-ups (integration):
+- `5cf12ec` resume across encoder versions (`features.check_spec_compat`): a checkpoint resumes when the model's inputs
+  are identical (27 buffers' shapes and column maps, MODEL_VOCABS / ENUMS sizes, pointer-enum members, card_vars);
+  anything else is refused before the env is built (exit 2, every difference listed, run directory untouched).
+  config.json records `encoder_version`, `checkpoint_encoder_version`, `resume_compat` (also per session) and
+  `env.floor_step_cap` (the cap in effect); metrics count `floor_stall`. `sts2train eval` applies the same rule.
+  `tests/test_resume_compat.py` (14 tests) pins the real Stage-1 spec (`tests/data/spec-fc2eb34c07bc8513.json`).
+- `0b1bbd3` `smoke_bundle.sh`: the CPU run passes `--floor-step-cap 80` and checks it in config.json; new step checks
+  the six appended buffers (documented shapes, filled) under the bundled library.
+- `79acb96` docs: `docs/HANDOVER.md` (§1 rows 1.1 / 1.2, §1.6 items 2-3 done, §2, §3 training / bundle commands, §4
+  Silent sets, §8); the trainer README changed with `5cf12ec` / `0b1bbd3`; this record.
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=6`), `scripts/gates.sh --quick` on `79acb96` (docs only after `0b1bbd3`),
+161 s, logs `tmp/gates/train-cycle-integrate-quick/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 5 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 3 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 40 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 125/125 passed, 0 failed, PENDING 0 |
+| selftest | PASS | 6 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 0 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 8 | 84 passed |
+| pytest-vec | PASS | 18 | 104 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 77 | 762 passed, 6 skipped (no rerun) |
+| py-scripts | PASS | 1 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, mapped 374, no_port 190): the decompile tree no longer has the 3,761 `._*` sidecars (0 left) |
+
+Also on the final tree: full C# suite 1,144/1,144 passed (E3's 1,139 + VecTests FloorCap 2 + Append 3), 0 failed,
+PENDING 0, 461 s in the runner; `-- Vec` 50/50; `uv run --project sim/tools/train pytest -q` 41 passed (27 + the 14
+resume-compat tests); `gen_env_spec.py --check` up to date (5dbfa09dd9dcb5ed).
+
+Colab bundle `tmp/colab/sts2train-0b1bbd3a4e.tar.gz` (5,450,745 bytes, sha256
+`c754754f5f284f326c62d1b1a81551fbbb6bbbda4056827de31543b96365d74b`; AOT key `64d964770dd0`, built on raven in 160 s,
+`Sts2Sim.Vec.so` sha256 `99bfc2b6…d8793c`, newest symbol GLIBC_2.34; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-train-20261103/`). Validated on raven (8 vCPU, idle) in a plain `python:3.13`
+container, no dotnet:
+- `sts2vec check` on the AOT library: `version sts2vec/5dbfa09dd9dcb5ed`, 41 buffers, 30,942 bytes/env, threads 1 vs 8
+  byte-identical, `check: OK`.
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, `--floor-step-cap 80`): config.json `config.floor_step_cap` 80 and
+  `env.floor_step_cap` 80; 4 updates, 32,768 env steps, 395 episodes, 370 env-steps/s with the CPU learner (env only
+  43,328), 0 sim errors / content gaps, std-a0-v1 eval at u4 progress 0.151 (20/20 replayable); raw bench 74,709
+  env-steps/s (1024 envs x 8 threads).
+- Appended buffers under NativeAOT (256 envs x 400 random steps): event_option_rows 9,438, with_numbers 2,014,
+  with_items 873, numbers_nonzero 2,503, ancient_shown 102,400, discard_rows 285,346, exhaust_rows 25,675,
+  draw_marked_rows 2,190, hand_x_nonzero 303, equal to the managed build on the same rollout. Per-buffer sha256 of a
+  seeded 256 x 400 rollout: all 41 buffers and the state hash (`7735fd5fd42aa068`) identical between the NativeAOT
+  linux-x64 library and the managed macOS build, so the publish keeps every reflected event member (no rd.xml /
+  DynamicDependency needed; Sts2Sim.Core is a TrimmerRootAssembly).
+- Resume across encoder versions with real bundles: the old bundle (`sts2train-ef356974fa`, fc2eb34c07bc8513) trains 2
+  updates; the new bundle's `run_train.sh` resumes that run (`--resume auto`) to update 4: config.json
+  `checkpoint_encoder_version` fc2eb34c07bc8513, `encoder_version` 5dbfa09dd9dcb5ed, `resume_compat.model_inputs`
+  identical (other differences: encoder_version, EndKind 5 -> 6, ItemKind new), `env.floor_step_cap` 80. `sts2train
+  eval` of the old checkpoint on silent-a10-v1 (seed set from the bundle): 20 games, 20/20 replayable.
