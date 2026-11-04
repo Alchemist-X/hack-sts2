@@ -53,6 +53,27 @@ CREATE TABLE IF NOT EXISTS jobs (
     deadline REAL NOT NULL, last_checked REAL, outcome TEXT, error TEXT,
     UNIQUE(logical_key, attempt)
 );
+CREATE TABLE IF NOT EXISTS provider_pauses (
+    provider TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    reason TEXT NOT NULL,
+    created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_origins (
+    event_id TEXT PRIMARY KEY REFERENCES events(id),
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    experiment_id TEXT NOT NULL REFERENCES experiments(id)
+);
+CREATE TABLE IF NOT EXISTS research_pauses (
+    event_id TEXT PRIMARY KEY REFERENCES events(id),
+    experiment_id TEXT REFERENCES experiments(id),
+    reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS job_billing (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    vendor TEXT NOT NULL CHECK (vendor IN ('modal','non_modal')),
+    reference TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS conservative_holds (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
     estimate_cents INTEGER NOT NULL,
@@ -140,25 +161,72 @@ class Store:
             db.execute("UPDATE study SET approved_budget=?,approval_ref=?,execution_cap=?",
                        (amount, reference, execution_cap))
 
-    def record_platform(self, *, gross_limit, net_limit, credit, gross_used, net_spent, reference):
+    def record_platform(self, *, gross_limit, net_limit, credit, gross_used, net_spent,
+                        reference, observed_at=None, cycle_start=None):
         identifier(reference)
         snapshot = {key: cents(value) for key, value in {
             "gross_limit": gross_limit, "net_limit": net_limit, "credit": credit,
             "gross_used": gross_used, "net_spent": net_spent,
         }.items()}
         with self.transaction() as db:
-            snapshot.update(reference=reference, observed_at=self.clock(),
-                            local_spend_at_snapshot=self.ledger(db)[0])
+            recorded_at = self.clock()
+            if observed_at is not None and (type(observed_at) not in (int, float) or not 0 < observed_at <= recorded_at):
+                raise ValueError("platform observation time must be verified and in the past")
+            if cycle_start is not None:
+                from datetime import date
+                if date.fromisoformat(cycle_start).day != 1:
+                    raise ValueError("expected the observed billing-cycle start date")
+            anchor = snapshot["gross_used"]
+            raw = db.execute("SELECT platform_snapshot FROM study").fetchone()[0]
+            previous = json.loads(raw) if raw else {}
+            if cycle_start is not None and previous.get("cycle_start") == cycle_start:
+                snapshot["gross_used"] = max(snapshot["gross_used"], previous["gross_used"])
+                snapshot["net_spent"] = max(snapshot["net_spent"], previous["net_spent"])
+            snapshot.update(reference=reference, observed_at=observed_at, recorded_at=recorded_at,
+                            cycle_start=cycle_start, credit_gross_anchor=anchor,
+                            local_spend_at_snapshot=self.ledger(db)[0],
+                            local_modal_spend_at_snapshot=self.modal_ledger(db)[0])
             db.execute("UPDATE study SET platform_snapshot=?", (canonical(snapshot),))
+            self._stop_if_reported_platform_overspent(db, snapshot)
 
     @staticmethod
-    def platform_headroom(state, spent):
+    def _stop_if_reported_platform_overspent(db, snapshot):
+        if snapshot["gross_used"] > snapshot["gross_limit"] or snapshot["net_spent"] > snapshot["net_limit"]:
+            db.execute("UPDATE study SET stopped=COALESCE(stopped,'reported Modal use exceeded workspace limit')")
+
+    def platform_snapshot(self):
+        with self.transaction() as db:
+            raw = db.execute("SELECT platform_snapshot FROM study").fetchone()[0]
+            return json.loads(raw) if raw else None
+
+    def record_metered_usage(self, *, gross_used, net_spent, cycle_start, observed_at, rates):
+        """Merge current provider observations without lowering the intra-cycle high-water mark."""
+        with self.transaction() as db:
+            raw = db.execute("SELECT platform_snapshot FROM study").fetchone()[0]
+            snapshot = json.loads(raw) if raw else {}
+            if (not snapshot or snapshot.get("cycle_start") != cycle_start
+                    or type(observed_at) not in (int, float) or not 0 < observed_at <= self.clock() + 5
+                    or observed_at <= snapshot.get("metered_observed_at", 0)):
+                raise ValueError("metering needs verified current-cycle limits and a newer observation")
+            snapshot.update(gross_used=max(snapshot["gross_used"], cents(gross_used)),
+                            net_spent=max(snapshot["net_spent"], cents(net_spent)),
+                            metered_observed_at=observed_at, metered_rates=rates)
+            db.execute("UPDATE study SET platform_snapshot=?", (canonical(snapshot),))
+            self._stop_if_reported_platform_overspent(db, snapshot)
+            return snapshot
+
+    @staticmethod
+    def platform_headroom(state, modal_spent):
         if not state["platform_snapshot"]:
             return None
         snapshot = json.loads(state["platform_snapshot"])
+        incremental_gross = snapshot["gross_used"] - snapshot.get("credit_gross_anchor", snapshot["gross_used"])
+        conservative_credit = max(0, snapshot["credit"] - incremental_gross)
         at_snapshot = min(snapshot["gross_limit"] - snapshot["gross_used"],
-                          snapshot["net_limit"] - snapshot["net_spent"] + snapshot["credit"])
-        return at_snapshot - (spent - snapshot["local_spend_at_snapshot"])
+                          snapshot["net_limit"] - snapshot["net_spent"] + conservative_credit)
+        # An older snapshot recorded project-wide spend. It cannot establish
+        # a Modal-only baseline, so conservatively count all Modal spend.
+        return at_snapshot - max(0, modal_spent - snapshot.get("local_modal_spend_at_snapshot", 0))
 
     def stop(self, reason):
         with self.transaction() as db:
@@ -206,8 +274,8 @@ class Store:
             if (not experiment or experiment["config_hash"] != config_hash or experiment["stage"] != "idle"
                     or experiment["decisions"] or experiment["cursor"] or experiment["checkpoint"]
                     or state["mode"] != "local" or state["stopped"] or state["analysis_paused"]
-                    or state["approved_budget"] is None or self.platform_headroom(state, self.ledger(db)[0]) is None
-                    or self.external_gpu_active(db)):
+                    or state["approved_budget"] is None or self.platform_headroom(state, self.modal_ledger(db)[0]) is None
+                    or self.external_gpu_conflicts(db, experiment_id)):
                 raise ValueError("initial dispatch requires an idle, funded and unpaused fresh experiment")
             spec = json.loads(experiment["spec"])
             if spec["absolute_deadline"] <= self.clock():
@@ -219,15 +287,7 @@ class Store:
             db.execute("UPDATE experiments SET stage='needs_train',target=? WHERE id=?", (target, experiment_id))
 
     @staticmethod
-    def external_gpu_active(db):
-        return db.execute(
-            """SELECT 1 FROM jobs WHERE kind='access_probe'
-               AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
-               AND (state IN ('external_prepared','external_reserved') OR error='gpu_receipt_unknown') LIMIT 1"""
-        ).fetchone() is not None
-
-    @staticmethod
-    def append_event(db, event_id, kind, payload, now):
+    def append_event(db, event_id, kind, payload, now, *, origin=None):
         identifier(event_id)
         encoded = canonical(payload)
         if len(encoded.encode()) > 96_000:
@@ -236,6 +296,11 @@ class Store:
         row = db.execute("SELECT kind,payload FROM events WHERE id=?", (event_id,)).fetchone()
         if tuple(row) != (kind, encoded):
             raise ValueError("event ID collision")
+        if origin is not None:
+            db.execute("INSERT OR IGNORE INTO research_origins VALUES (?,?,?)", (event_id, *origin))
+            row = db.execute("SELECT job_id,experiment_id FROM research_origins WHERE event_id=?", (event_id,)).fetchone()
+            if tuple(row) != origin:
+                raise ValueError("event origin changed")
 
     def ingest(self, event_id, kind, evidence):
         if kind not in {"result", "anomaly", "sol_result", "bootstrap"}:
@@ -246,7 +311,38 @@ class Store:
                 raise ValueError("operational results require reconciled job evidence")
             self.append_event(db, event_id, kind, evidence, self.clock())
 
-    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False, authorized_jobs=None, authorized_event=None):
+    @staticmethod
+    def isolated_smoke_namespace(key):
+        return f"sts2-a10-smoke-{digest(key)[:12]}"
+
+    @classmethod
+    def external_gpu_conflicts(cls, db, experiment_id, *, exclude=None):
+        rows = db.execute(
+            """SELECT id,payload,reserve,actual FROM jobs WHERE kind='access_probe'
+               AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
+               AND (state='external_reserved' OR error='gpu_receipt_unknown')"""
+        )
+        for row in rows:
+            if row["id"] == exclude:
+                continue
+            payload = json.loads(row["payload"])
+            scope = payload.get("isolated_gpu_namespace")
+            if (experiment_id is None or payload["category"] != "gpu_smoke"
+                    or scope != cls.isolated_smoke_namespace(row["id"])
+                    or scope == experiment_id or row["reserve"] <= 0 or row["actual"] is not None):
+                return True
+        return False
+
+    @staticmethod
+    def active_formal_gpu(db, experiment_id=None):
+        return db.execute(
+            """SELECT 1 FROM jobs WHERE kind IN ('train','eval') AND state IN ('intent','running','uncertain')
+               AND (? IS NULL OR experiment_id=?) LIMIT 1""", (experiment_id, experiment_id),
+        ).fetchone() is not None
+
+    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False,
+                             authorized_jobs=None, authorized_event=None, isolated_gpu_namespace=None,
+                             billing_vendor=None, billing_reference=None):
         identifier(key)
         identifier(decision_id)
         identifier(category)
@@ -258,6 +354,12 @@ class Store:
         if not 0 < reserve <= max_reserve or type(seconds) is not int or not 0 < seconds <= max_seconds:
             raise ValueError("access probe exceeds local authorization envelope")
         payload = {"decision_id": decision_id, "category": category, "seconds": seconds, "retry_limit": 0}
+        if isolated_gpu_namespace is not None:
+            if category != "gpu_smoke" or isolated_gpu_namespace != self.isolated_smoke_namespace(key):
+                raise ValueError("external GPU scope must match the dedicated immutable smoke namespace")
+            payload["isolated_gpu_namespace"] = isolated_gpu_namespace
+        if (billing_vendor is None) != (billing_reference is None):
+            raise ValueError("explicit billing vendor requires a verification reference")
         if category == "runtime_gpu_acceptance":
             if type(authorized_jobs) is not list or len(authorized_jobs) != 4 or len(set(authorized_jobs)) != 4:
                 raise ValueError("runtime GPU acceptance requires exactly four authorized child jobs")
@@ -278,18 +380,16 @@ class Store:
                 if tuple(old) != (payload, reserve):
                     raise ValueError("probe key already used with different parameters")
                 return
-            if category in {"gpu_smoke", "runtime_gpu_acceptance"} and db.execute(
-                """SELECT 1 FROM jobs WHERE
-                   (kind='access_probe' AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
-                    AND (state IN ('external_prepared','external_reserved') OR error='gpu_receipt_unknown'))
-                   OR (kind IN ('train','eval') AND state IN ('intent','running','uncertain'))"""
-            ).fetchone():
-                raise ValueError("another GPU operation is active or launch receipt is unresolved")
+            if (not prepare_only and category in {"gpu_smoke", "runtime_gpu_acceptance"}
+                    and (self.external_gpu_conflicts(db, isolated_gpu_namespace)
+                         or self.active_formal_gpu(db, isolated_gpu_namespace))):
+                raise ValueError("GPU probe scope conflicts with active or unresolved work")
             spent, reserved = self.ledger(db)
-            platform = self.platform_headroom(state, spent)
-            if (state["approved_budget"] is None or platform is None
+            modal_spent, modal_reserved = self.modal_ledger(db)
+            platform = self.platform_headroom(state, modal_spent)
+            if (state["approved_budget"] is None
                     or spent + reserved + reserve > min(state["approved_budget"], state["execution_cap"])
-                    or reserved + reserve > platform):
+                    or (billing_vendor != "non_modal" and (platform is None or modal_reserved + reserve > platform))):
                 raise ValueError("probe requires sufficient authorized headroom")
             db.execute(
                 """INSERT INTO jobs (id,logical_key,attempt,kind,payload,reserve,state,deadline)
@@ -297,6 +397,8 @@ class Store:
                 (key, key, payload, reserve, "external_prepared" if prepare_only else "external_reserved",
                  0 if prepare_only else self.clock() + seconds),
             )
+            if billing_vendor is not None:
+                self.record_job_billing(db, key, billing_vendor, billing_reference)
 
     def activate_access_probe(self, key):
         identifier(key)
@@ -306,12 +408,18 @@ class Store:
                 raise ValueError("probe is not prepared for activation")
             state = db.execute("SELECT * FROM study").fetchone()
             spent, reserved = self.ledger(db)
-            platform = self.platform_headroom(state, spent)
-            if (state["stopped"] or state["analysis_paused"] or platform is None
+            modal_spent, modal_reserved = self.modal_ledger(db)
+            platform = self.platform_headroom(state, modal_spent)
+            if (state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
                     or spent + reserved > min(state["approved_budget"], state["execution_cap"])
-                    or reserved > platform):
+                    or (self.bills_modal(db, key) and (platform is None or modal_reserved > platform))):
                 raise ValueError("probe lacks current authorized headroom")
-            seconds = json.loads(row["payload"])["seconds"]
+            payload = json.loads(row["payload"])
+            scope = payload.get("isolated_gpu_namespace")
+            if (payload["category"] in {"gpu_smoke", "runtime_gpu_acceptance"}
+                    and (self.external_gpu_conflicts(db, scope) or self.active_formal_gpu(db, scope))):
+                raise ValueError("GPU probe scope conflicts with active or unresolved work")
+            seconds = payload["seconds"]
             db.execute("UPDATE jobs SET state='external_reserved',deadline=? WHERE id=?",
                        (self.clock() + seconds, key))
 
@@ -326,8 +434,11 @@ class Store:
             if (not row or json.loads(row["payload"])["category"] != "gpu_smoke"
                     or row["state"] not in {"external_reserved", "external_finished_cost_unknown"}):
                 raise ValueError("GPU smoke requires its own operational reservation")
-            if binding.get("decision_id", binding.get("task")) != json.loads(row["payload"])["decision_id"]:
-                raise ValueError("GPU packet is outside its authorized decision")
+            payload = json.loads(row["payload"])
+            scope = payload.get("isolated_gpu_namespace")
+            if (binding.get("decision_id", binding.get("task")) != payload["decision_id"]
+                    or (scope is not None and (binding.get("app"), binding.get("volume")) != (scope, scope))):
+                raise ValueError("GPU packet is outside its authorized decision or namespace")
             previous = db.execute("SELECT payload FROM events WHERE id=?", (f"{key}-stage",)).fetchone()
             if previous and json.loads(previous["payload"]) != binding:
                 raise ValueError("GPU smoke packet differs from durable intent")
@@ -337,21 +448,21 @@ class Store:
                 return dict(row)
             now = self.clock()
             spent, reserved = self.ledger(db)
-            platform = self.platform_headroom(state, spent)
+            modal_spent, modal_reserved = self.modal_ledger(db)
+            platform = self.platform_headroom(state, modal_spent)
             minimum_time = 320 if step == "launch" else 380
             if (row["state"] != "external_reserved" or row["deadline"] - now < minimum_time
                     or state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
                     or platform is None or spent + reserved > min(state["approved_budget"], state["execution_cap"])
-                    or reserved > platform):
+                    or modal_reserved > platform):
                 raise ValueError("GPU smoke lacks current authorization, budget or time")
             if step == "stage":
                 if previous:
                     raise ValueError("stage already attempted; reconcile without starting again")
             else:
-                if not previous or row["submit_started"] or db.execute(
-                    "SELECT 1 FROM jobs WHERE kind IN ('train','eval') AND state IN ('intent','running','uncertain')"
-                ).fetchone():
-                    raise ValueError("launch already attempted, concurrent GPU job, or packet was never staged")
+                if (not previous or row["submit_started"] or self.external_gpu_conflicts(db, scope, exclude=key)
+                        or self.active_formal_gpu(db, scope)):
+                    raise ValueError("launch already attempted, conflicting GPU job, or packet was never staged")
                 db.execute("UPDATE jobs SET submit_started=1,error='gpu_receipt_unknown' WHERE id=?", (key,))
             self.append_event(db, f"{key}-{step}", f"gpu_smoke_{step}",
                               binding if step == "stage" else {**binding, "worker_deadline": int(now) + 300}, now)
@@ -473,6 +584,94 @@ class Store:
             f" FROM jobs{where}", (experiment_id,) if experiment_id else (),
         ).fetchone())
 
+    @staticmethod
+    def provider_paused(db, kind):
+        provider = {"train": "modal", "eval": "modal", "research": "member_models", "sol": "member_models"}.get(kind)
+        return db.execute("SELECT 1 FROM provider_pauses WHERE provider=?", (provider,)).fetchone() is not None
+
+    @staticmethod
+    def pause_provider(db, provider, job_id, reason, now):
+        db.execute("INSERT OR IGNORE INTO provider_pauses VALUES (?,?,?,?)", (provider, job_id, reason, now))
+
+    def resume_provider(self, provider, reason, reference):
+        if provider not in {"modal", "member_models"}:
+            raise ValueError("unknown scoped provider")
+        identifier(reference)
+        with self.transaction() as db:
+            row = db.execute("SELECT reason FROM provider_pauses WHERE provider=?", (provider,)).fetchone()
+            if not row or row["reason"] != reason:
+                raise ValueError("provider pause changed")
+            self.append_event(db, reference, "provider_resume", {"provider": provider, "reason": reason}, self.clock())
+            db.execute("DELETE FROM provider_pauses WHERE provider=?", (provider,))
+
+    def resume_research(self, event_id, reason, reference):
+        identifier(event_id)
+        identifier(reference)
+        with self.transaction() as db:
+            row = db.execute("SELECT reason FROM research_pauses WHERE event_id=?", (event_id,)).fetchone()
+            if not row or row["reason"] != reason:
+                raise ValueError("research pause changed")
+            self.append_event(db, reference, "research_resume", {"event_id": event_id, "reason": reason}, self.clock())
+            db.execute("DELETE FROM research_pauses WHERE event_id=?", (event_id,))
+
+    @staticmethod
+    def pause_research_chain(db, event_id, experiment_id, reason):
+        if experiment_id and not db.execute("SELECT 1 FROM experiments WHERE id=?", (experiment_id,)).fetchone():
+            experiment_id = None
+        db.execute("INSERT OR IGNORE INTO research_pauses VALUES (?,?,?)", (event_id, experiment_id, reason))
+
+    @staticmethod
+    def modal_ledger(db):
+        return tuple(db.execute(
+            """SELECT COALESCE(SUM(j.actual),0),
+                      COALESCE(SUM(CASE WHEN j.actual IS NULL THEN j.reserve ELSE 0 END),0)
+               FROM jobs j LEFT JOIN job_billing b ON b.job_id=j.id
+               WHERE COALESCE(b.vendor,'modal')='modal'"""
+        ).fetchone())
+
+    @staticmethod
+    def bills_modal(db, key):
+        billing = db.execute("SELECT vendor FROM job_billing WHERE job_id=?", (key,)).fetchone()
+        return billing is None or billing["vendor"] == "modal"
+
+    @staticmethod
+    def record_job_billing(db, key, vendor, reference):
+        identifier(key)
+        identifier(reference)
+        row = db.execute("SELECT kind,payload FROM jobs WHERE id=?", (key,)).fetchone()
+        if (row is None or not isinstance(vendor, str) or vendor not in {"modal", "non_modal"}
+                or (vendor != "modal" and (row["kind"] in {"train", "eval"}
+                    or row["kind"] == "access_probe" and json.loads(row["payload"])["category"] in {
+                        "gpu_smoke", "runtime_gpu_acceptance"}))):
+            raise ValueError("invalid verified job billing classification")
+        db.execute("INSERT OR IGNORE INTO job_billing VALUES (?,?,?)", (key, vendor, reference))
+        previous = db.execute("SELECT vendor FROM job_billing WHERE job_id=?", (key,)).fetchone()
+        if previous["vendor"] != vendor:
+            raise ValueError("verified billing classification is immutable")
+
+    def classify_billing(self, classifications, reference):
+        """Apply exact independently verified historical job classifications atomically."""
+        if type(classifications) is not dict or not classifications:
+            raise ValueError("expected exact job-to-vendor mapping")
+        with self.transaction() as db:
+            for key, vendor in classifications.items():
+                self.record_job_billing(db, key, vendor, reference)
+
+    def budget_evidence(self, db, state):
+        spent, reserved = self.ledger(db)
+        modal_spent, modal_reserved = self.modal_ledger(db)
+        snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
+        platform = self.platform_headroom(state, modal_spent)
+        if snapshot:
+            snapshot = {**snapshot, "remaining_after_holds_cents": platform - modal_reserved}
+            if "recorded_at" not in snapshot:
+                snapshot["recorded_at"] = snapshot["observed_at"]
+                snapshot["observed_at"] = None
+        return {"approved_cents": state["approved_budget"], "execution_cap_cents": state["execution_cap"],
+                "spent_and_reserved_cents": [spent, reserved], "modal_spent_and_reserved_cents": [modal_spent, modal_reserved],
+                "non_modal_spent_and_reserved_cents": [spent - modal_spent, reserved - modal_reserved],
+                "platform_snapshot_cents": snapshot}
+
     def status(self):
         with self.transaction() as db:
             state = db.execute("SELECT * FROM study").fetchone()
@@ -495,7 +694,8 @@ class Store:
             ).fetchall()
             prepared = db.execute("SELECT id,reserve,payload FROM jobs WHERE state='external_prepared' ORDER BY id").fetchall()
             snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
-            platform_remaining = self.platform_headroom(state, spent)
+            modal_spent, modal_reserved = self.modal_ledger(db)
+            platform_remaining = self.platform_headroom(state, modal_spent)
             held = db.execute(
                 "SELECT job_id,reserve,proven_bound FROM cost_holds WHERE settled_at IS NULL ORDER BY job_id",
             ).fetchall()
@@ -526,10 +726,24 @@ class Store:
                 "platform_snapshot": {
                     **{f"{key}_usd": snapshot[key] / 100 for key in
                        ("gross_limit", "net_limit", "credit", "gross_used", "net_spent")},
-                    "reference": snapshot["reference"], "observed_at": snapshot["observed_at"],
+                    "reference": snapshot["reference"],
+                    "observed_at": snapshot["observed_at"] if "recorded_at" in snapshot else None,
+                    "recorded_at": snapshot.get("recorded_at", snapshot["observed_at"]),
+                    "metered_observed_at": snapshot.get("metered_observed_at"),
+                    "cycle_start": snapshot.get("cycle_start"),
+                    "time_source": "verified_observation" if snapshot.get("recorded_at") and snapshot["observed_at"] is not None
+                    else "ledger_entry_only",
                 } if snapshot else None,
-                "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - reserved) / 100,
-                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held and not usage_holds and not conservative,
+                "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - modal_reserved) / 100,
+                "platform_reserved_usd": modal_reserved / 100,
+                "platform_spent_usd": modal_spent / 100,
+                "non_modal_reserved_usd": (reserved - modal_reserved) / 100,
+                "non_modal_spent_usd": (spent - modal_spent) / 100,
+                "spent_usd": spent / 100, "spend_complete": reserved == 0,
+                "provider_pauses": [dict(row) for row in db.execute("SELECT * FROM provider_pauses ORDER BY rowid")],
+                "research_pauses": [dict(row) for row in db.execute(
+                    "SELECT event_id,experiment_id,reason FROM research_pauses ORDER BY rowid"
+                )],
                 "reserved_usd": reserved / 100,
                 "conservative_budget_held_usd": sum(row["reserve"] for row in held) / 100,
                 "jobs_with_verified_cost_bounds": [

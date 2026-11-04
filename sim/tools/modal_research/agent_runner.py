@@ -24,7 +24,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 
-from .adapters import Job, Outcome
+from .adapters import Job, MODEL_PROVIDER_ISSUES, Outcome
 from .contracts import ACTIONS, COMMIT, bounded_text, canonical, digest, identifier, validate_decision
 from .gateway import AgentBinding
 
@@ -218,6 +218,13 @@ class AgentRunner:
     def poll(self, job: Job) -> Outcome:
         """Read the durable receipt without dispatch or process mutation."""
         return self._outcome(self._load(self._folder(job), self._fingerprint(job)))
+
+    def provider_issue(self, job):
+        path = self._folder(job) / "evidence.json"
+        if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 2 * PIPE_LIMIT:
+            return None
+        evidence = json.loads(path.read_bytes())
+        return next((item for item in evidence["diagnostics"] if item in MODEL_PROVIDER_ISSUES), None)
 
     def standard_usage_value(self, job):
         """Read the exact successful one-turn receipt and estimate purchased credit value."""

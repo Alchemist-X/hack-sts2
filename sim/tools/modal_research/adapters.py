@@ -6,6 +6,17 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+MODEL_PROVIDER_ISSUES = frozenset({"authentication", "rate_limit", "model_unavailable"})
+
+
+class ProviderScopeError(RuntimeError):
+    """A sanitized provider authentication or quota diagnostic."""
+
+
+class ProviderIntegrityError(RuntimeError):
+    """Conflicting authoritative provider identities for one durable attempt."""
+
+
 @dataclass(frozen=True)
 class Job:
     key: str               # per-attempt idempotency key

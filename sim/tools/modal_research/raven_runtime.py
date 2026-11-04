@@ -5,16 +5,18 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import math
 import os
 import stat
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
 from .agent_runner import AgentRunner, SolTask, _research_input
+from .artifact_adapter import METRIC_FIELDS
 from .broker import AgentQueueProvider, DetachedGrant, GPU_KINDS, RavenBroker, RavenRuntime
-from .contracts import digest, identifier
+from .contracts import DIGEST, digest, identifier
 from .gateway import AgentBinding
 from .lineage import artifact_identity
 from .manifests import file_digest
@@ -29,7 +31,7 @@ class SandboxRates:
     """Quoted rates, hard requested runtime and a conservative startup allowance."""
 
     reference: str
-    valid_until: int
+    valid_until: int | None
     gpu_per_second: str
     cpu_per_core_second: str
     memory_per_gib_second: str
@@ -40,7 +42,8 @@ class SandboxRates:
 
     def __post_init__(self):
         identifier(self.reference)
-        if (type(self.valid_until) is not int or type(self.startup_seconds) is not int
+        if ((self.valid_until is not None and type(self.valid_until) is not int)
+                or type(self.startup_seconds) is not int
                 or not 0 <= self.startup_seconds <= 300 or type(self.storage_months) is not int
                 or not 1 <= self.storage_months <= 2
                 or (self.storage_verified_until is not None and type(self.storage_verified_until) is not int)):
@@ -51,7 +54,8 @@ class SandboxRates:
                 raise ValueError("rates must be positive decimal strings")
 
     def reservation(self, job, now):
-        if (job.kind not in GPU_KINDS or job.deadline <= now or job.deadline > self.valid_until
+        if (job.kind not in GPU_KINDS or job.deadline <= now
+                or (self.valid_until is not None and job.deadline > self.valid_until)
                 or self.storage_verified_until is None or job.deadline > self.storage_verified_until
                 or self.storage_verified_until - now > self.storage_months * 28 * 86400):
             return None
@@ -69,40 +73,106 @@ class SandboxRates:
 
 @dataclass(frozen=True)
 class ResearchUsagePolicy:
-    """Explicitly bounded invocation policy. This is not a cash-cost upper bound."""
+    """Finite per-event research admission. Reserve values are not proven cash caps."""
 
     reference: str
     account_verification: str
-    valid_until: int
+    valid_until: int | None
     reserve_cents: int
-    max_calls: int
-    allowed_event_ids: tuple[str, ...]
+    max_calls: int | None = None  # Compatibility with frozen exact-event bindings.
+    allowed_event_ids: tuple[str, ...] | None = None
     instructions: str = ""
+    allowed_config_hashes: tuple[str, ...] = ()
 
     def __post_init__(self):
         identifier(self.reference)
         identifier(self.account_verification)
-        if (type(self.valid_until) is not int or type(self.reserve_cents) is not int
-                or self.reserve_cents != 200 or type(self.max_calls) is not int or not 1 <= self.max_calls <= 2
-                or type(self.instructions) is not str or len(self.instructions.encode()) > 16_000
-                or not isinstance(self.allowed_event_ids, (tuple, list))
-                or len(self.allowed_event_ids) != self.max_calls or len(set(self.allowed_event_ids)) != self.max_calls):
-            raise ValueError("invalid finite research allocation")
-        for event in self.allowed_event_ids:
-            identifier(event)
+        if ((self.valid_until is not None and type(self.valid_until) is not int)
+                or type(self.reserve_cents) is not int or not 0 < self.reserve_cents <= 10_000
+                or (self.max_calls is not None and (type(self.max_calls) is not int or self.max_calls < 1))
+                or type(self.instructions) is not str or len(self.instructions.encode()) > 16_000):
+            raise ValueError("invalid per-event research allocation")
+        if self.allowed_event_ids is not None:
+            if (self.valid_until is None or not isinstance(self.allowed_event_ids, (tuple, list)) or not self.allowed_event_ids
+                    or len(set(self.allowed_event_ids)) != len(self.allowed_event_ids)
+                    or (self.max_calls is not None and len(self.allowed_event_ids) != self.max_calls)):
+                raise ValueError("invalid exact-event research allowlist")
+            for event in self.allowed_event_ids:
+                identifier(event)
+        elif (self.max_calls is not None or not self.allowed_config_hashes
+              or any(not isinstance(value, str) or not DIGEST.fullmatch(value)
+                     for value in self.allowed_config_hashes)):
+            raise ValueError("dynamic research requires approved configuration hashes")
 
     def allows(self, job, now):
-        return (job.kind == "research" and job.attempt == 1 and job.reserve_cents == self.reserve_cents
-                and now < job.deadline <= self.valid_until and job.deadline - now <= 180
-                and job.payload.get("consumed_event_ids") in ([event] for event in self.allowed_event_ids)
+        events = job.payload.get("consumed_event_ids")
+        return (job.kind == "research" and type(job.attempt) is int
+                and 1 <= job.attempt <= (2 if self.allowed_event_ids is None else 1)
+                and job.reserve_cents == self.reserve_cents
+                and 0 < job.deadline - now <= 180
+                and (self.valid_until is None or job.deadline <= self.valid_until)
+                and type(events) is list and len(events) == 1 and isinstance(events[0], str)
+                and (job.payload.get("current_experiment", {}).get("config_hash") in self.allowed_config_hashes
+                     if self.allowed_event_ids is None else events[0] in self.allowed_event_ids)
                 and len(_research_input(job.payload, self.instructions)[0].encode()) <= 24_000)
+
+
+class WorkspaceMetering:
+    """Refresh read-only usage/quotes on a configured cadence; expired data gates only Modal sends."""
+
+    def __init__(self, store, sandbox, *, workspace, interval_seconds, max_age_seconds):
+        self.store, self.sandbox = store, sandbox
+        self.workspace = identifier(workspace)
+        if (type(interval_seconds) is not int or type(max_age_seconds) is not int
+                or not 0 < interval_seconds < max_age_seconds):
+            raise ValueError("invalid metering cadence and freshness window")
+        self.interval_seconds = interval_seconds
+        self.max_age_seconds = max_age_seconds
+        self.snapshot = store.platform_snapshot()
+
+    @staticmethod
+    def quoted_rates(raw):
+        return {field: str(Decimal(raw[key]) / denominator) for field, key, denominator in (
+            ("gpu_per_second", "gpu_hour_cost_h100", 3600),
+            ("cpu_per_core_second", "cpu_hour_cost_sandbox", 3600),
+            ("memory_per_gib_second", "mem_gib_hour_cost_sandbox", 3600),
+            ("volume_per_gib_month", "volume_storage_gib_month_cost", 1),
+        )}
+
+    def refresh(self):
+        last = (self.snapshot or {}).get("metered_observed_at", 0)
+        if self.store.clock() - last < self.interval_seconds:
+            return
+        try:
+            observation = self.sandbox.workspace_metering(self.workspace)
+            if observation["workspace"] != self.workspace:
+                return
+            rates = self.quoted_rates(observation["rates"])
+            if not all(Decimal("0") < Decimal(value) <= Decimal("1") for value in rates.values()):
+                return
+            gross = Decimal(observation["gross_used"]).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+            net = max(Decimal(0), Decimal(observation["net_spent"]).quantize(Decimal("0.01"), rounding=ROUND_CEILING))
+            self.snapshot = self.store.record_metered_usage(
+                gross_used=str(gross), net_spent=str(net), cycle_start=observation["cycle_start"],
+                observed_at=observation["observed_at"], rates=rates)
+        except (OSError, TimeoutError, RuntimeError, ValueError, KeyError, TypeError, ArithmeticError):
+            return  # retain the last good observation; never extend its freshness
+
+    def reservation(self, rates, job, now):
+        snapshot = self.snapshot or {}
+        if not 0 <= now - snapshot.get("metered_observed_at", 0) <= self.max_age_seconds:
+            return None
+        # Freshness is checked at admission. The worker keeps its own
+        # immutable deadline and reservation even if the quote later changes.
+        quoted = replace(rates, **snapshot["metered_rates"])
+        return quoted.reservation(job, now)
 
 
 def load_runtime(config, *, clock=time.time):
     """Build a runtime only from a trusted on-host file with reviewed bindings."""
     required = {"study_id", "state", "artifacts", "sandbox", "sandbox_identity_verification",
                 "sandbox_rates", "agent"}
-    if type(config) is not dict or set(config) != required:
+    if type(config) is not dict or not required <= set(config) <= required | {"modal_metering"}:
         raise ValueError("runtime requires the complete deployment binding")
     state = Path(config["state"])
     artifacts = Path(config["artifacts"])
@@ -112,10 +182,17 @@ def load_runtime(config, *, clock=time.time):
     store = Store(state, study_id, clock=clock)
     sandbox = None
     rates = None
+    metering = None
     if config["sandbox"] is not None:
         identifier(config["sandbox_identity_verification"])
         sandbox = SandboxProvider(SandboxBinding(**config["sandbox"]), artifacts, verified_identity=True, clock=clock)
         rates = SandboxRates(**config["sandbox_rates"])
+        if config.get("modal_metering") is not None:
+            metering = WorkspaceMetering(store, sandbox, **config["modal_metering"])
+        elif rates.valid_until is None:
+            raise ValueError("a Sandbox rate policy without fixed expiry requires live verified metering")
+    elif config.get("modal_metering") is not None:
+        raise ValueError("metering requires the exact Sandbox provider binding")
     agent = config["agent"]
     runner = None
     research_policy = None
@@ -132,7 +209,10 @@ def load_runtime(config, *, clock=time.time):
             if (type(instructions) is not str or not instructions.strip()
                     or file_digest(Path(agent["launcher"])) != agent.get("launcher_sha256")):
                 raise ValueError("finite research requires pinned instructions and the verified launcher digest")
-            research_policy = ResearchUsagePolicy(**agent["research_usage_policy"], instructions=instructions)
+            policy = dict(agent["research_usage_policy"])
+            if policy.get("allowed_event_ids") is None:
+                policy["allowed_config_hashes"] = tuple(sandbox.binding.bundle_hashes) if sandbox else ()
+            research_policy = ResearchUsagePolicy(**policy, instructions=instructions)
             if (set(agent["bindings"]) != {"research"} or agent["bindings"]["research"]["model_id"] != "gpt-6-astra"
                     or not agent.get("system_identity") or "research" in agent["cost_caps"]
                     or not 1 <= agent["bindings"]["research"]["max_output_bytes"] <= 16_000):
@@ -146,7 +226,10 @@ def load_runtime(config, *, clock=time.time):
         )
 
     def estimated(job):
-        return rates.reservation(job, clock()) if sandbox and sandbox.supports(job) else None
+        if not sandbox or not sandbox.supports(job):
+            return None
+        now = clock()
+        return metering.reservation(rates, job, now) if metering else rates.reservation(job, now)
 
     def bound(job):
         if runner and job.kind in runner.bindings:
@@ -159,13 +242,18 @@ def load_runtime(config, *, clock=time.time):
         ceiling = estimated(job) if job.kind in GPU_KINDS else bound(job)
         return type(ceiling) is int and 0 < ceiling <= job.reserve_cents
 
-    broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
+    billing = ({kind: ("modal", config["sandbox_identity_verification"]) for kind in GPU_KINDS}
+               if sandbox else {})
+    if runner:
+        billing.update({kind: ("non_modal", role.verification_ref) for kind, role in runner.bindings.items()})
+    broker = RavenBroker(store, artifacts, billing_sources=billing, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
                          research_policy=research_policy,
                          tool_enabled=bool(runner and "sol" in runner.bindings),
                          experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None)
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,
-                        archive_deadline=rates.storage_verified_until if rates else None), queue
+                        archive_deadline=rates.storage_verified_until if rates else None,
+                        refresh_metering=metering.refresh if metering else None), queue
 
 
 MONITOR_GRANT = Path("/var/lib/sts2-modal-production/monitor/active-grants.json")
@@ -177,17 +265,75 @@ def active_grant(runtime):
     with runtime.broker.store.transaction() as db:
         rows = db.execute(
             """SELECT d.grant_json FROM broker_detached d JOIN broker_jobs b ON b.job_id=d.job_id
-               WHERE b.state IN ('sending','ambiguous','submitted') LIMIT 2"""
+               WHERE b.state IN ('sending','ambiguous','submitted') ORDER BY b.rowid"""
         ).fetchall()
     if not rows:
         return {"schema_version": 1, "active": False}
-    if len(rows) != 1:
-        raise ValueError("multiple active GPU grants")
-    raw = rows[0]["grant_json"]
-    grant = DetachedGrant.from_json(raw)
-    return {"schema_version": 1, "volume_id": runtime.modal_provider.binding.volume_id,
-            "job_key": grant.job.key, "launch_token": grant.launch_token, "packet_hash": digest(json.loads(raw)),
-            "fence": grant.fence, "identity": artifact_identity(grant.job), "deadline": grant.job.deadline}
+    grants = []
+    for row in rows:
+        raw = row["grant_json"]
+        grant = DetachedGrant.from_json(raw)
+        grants.append({"schema_version": 1, "volume_id": runtime.modal_provider.binding.volume_id,
+                       "job_key": grant.job.key, "launch_token": grant.launch_token,
+                       "packet_hash": digest(json.loads(raw)), "fence": grant.fence,
+                       "identity": artifact_identity(grant.job), "deadline": grant.job.deadline})
+    return grants[0] if len(grants) == 1 else {"schema_version": 2, "grants": grants}
+
+
+def accepted_metrics(runtime):
+    """Use only the already accepted checkpoint head recorded in SQLite."""
+    items = []
+    with runtime.broker.store.transaction() as db:
+        rows = db.execute(
+            """SELECT x.id,x.config_hash,x.checkpoint,j.id AS job_id,j.outcome
+               FROM experiments x JOIN jobs j ON j.id=json_extract(x.checkpoint,'$.job_key')
+               WHERE j.kind='train' AND j.state IN ('done','failed') ORDER BY x.id"""
+        )
+        for row in rows:
+            ref = json.loads(row["checkpoint"])
+            outcome = json.loads(row["outcome"])
+            manifest = outcome["manifest"]
+            meta = manifest["metadata"]
+            if (outcome["checkpoint"] != ref or meta.get("result_label") != "capacity"
+                    or manifest["identity"]["config_hash"] != row["config_hash"]):
+                continue
+            values = outcome["metrics"].get("last_completed_update", {})
+            last = {key: value for key, value in values.items()
+                    if key in METRIC_FIELDS and type(value) in (int, float) and math.isfinite(value)}
+            if not 0 <= last.get("env_steps", -1) <= meta["decisions"]:
+                continue
+            items.append({"experiment_id": row["id"], "config_hash": row["config_hash"],
+                          "job_key": row["job_id"], "manifest_hash": ref["manifest_hash"], "checkpoint_at": None,
+                          "metadata": {key: meta[key] for key in ("decisions", "result_label", "termination")},
+                          "metrics": {"last_completed_update": last}})
+    return {"schema_version": 1, "items": items}
+
+
+def accepted_evaluations(runtime):
+    """Publish completed dev metrics separately from training update points."""
+    items = []
+    with runtime.broker.store.transaction() as db:
+        rows = db.execute(
+            """SELECT x.id,x.config_hash,j.id AS job_id,j.outcome
+               FROM jobs j JOIN experiments x ON x.id=j.experiment_id
+               WHERE j.kind='eval' AND j.state='done' ORDER BY j.rowid"""
+        )
+        for row in rows:
+            outcome = json.loads(row["outcome"])
+            manifest = outcome["manifest"]
+            meta = manifest["metadata"]
+            if (meta.get("result_label") != "capacity" or meta["termination"] != "completed"
+                    or manifest["identity"]["config_hash"] != row["config_hash"]):
+                continue
+            values = outcome["metrics"]
+            metrics = {key: values[key] for key in ("games", "wins", "act_reached", "progress_mean",
+                       "win_rate", "win_rate_ci95", "progress_ci95") if key in values}
+            items.append({"experiment_id": row["id"], "config_hash": row["config_hash"],
+                          "job_key": row["job_id"], "manifest_hash": outcome["checkpoint"]["manifest_hash"],
+                          "checkpoint_at": None,
+                          "metadata": {key: meta[key] for key in ("decisions", "result_label", "termination")},
+                          "metrics": metrics})
+    return {"schema_version": 1, "items": items}
 
 
 def _write_status(path, data):
@@ -233,6 +379,8 @@ def main():
                 _write_status(status, runtime.broker.store.status())
                 if args.export_monitor_grant:
                     _write_status(MONITOR_GRANT, active_grant(runtime))
+                    _write_status(MONITOR_GRANT.with_name("accepted-metrics.json"), accepted_metrics(runtime))
+                    _write_status(MONITOR_GRANT.with_name("accepted-evaluations.json"), accepted_evaluations(runtime))
         elif queue is None:
             raise RuntimeError("agent executor requires a verified binding")
         else:

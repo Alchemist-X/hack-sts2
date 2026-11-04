@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from types import SimpleNamespace
 
-from .adapters import Outcome
+from .adapters import Outcome, ProviderIntegrityError, ProviderScopeError
 from .artifact_adapter import ArtifactAdapter, ArtifactMirror, verify_bundle
 from .broker import DetachedGrant, MAX_SEND_SECONDS
 from .contracts import DIGEST, canonical, digest, identifier, integer
@@ -150,8 +150,17 @@ class SandboxProvider:
             return False
 
     def _request(self, operation, seconds, **payload):
-        return self.transport.request(
+        response = self.transport.request(
             {"operation": operation, "binding": asdict(self.binding), **payload}, seconds)
+        issue = response.get("provider_access_issue")
+        if issue == "integrity":
+            raise ProviderIntegrityError("multiple Sandboxes match one attempt")
+        if issue in {"authentication", "quota"}:
+            raise ProviderScopeError(issue)
+        return response
+
+    def workspace_metering(self, workspace):
+        return self._request("workspace_metering", 12, workspace=identifier(workspace))
 
     def spawn_detached(self, grant, *, send_not_after):
         if not isinstance(grant, DetachedGrant) or not self.supports(grant.job):
@@ -357,7 +366,7 @@ def _find_finished(binding, name):
         ))
         ids = {_object_id(item.id, "sb") for item in response.sandboxes}
         if len(ids) > 1:
-            raise ValueError("multiple Sandboxes match the original grant")
+            raise ProviderIntegrityError("multiple Sandboxes match the original grant")
         return next(iter(ids), None)
 
     return asyncio.run(lookup())
@@ -366,6 +375,17 @@ def _find_finished(binding, name):
 def _sdk_request(message, modal):
     binding = SandboxBinding(**message["binding"])
     operation = message["operation"]
+    if operation == "workspace_metering":
+        workspace = modal.Workspace.from_context().hydrate()
+        if workspace.name != message["workspace"]:
+            raise ProviderScopeError("authentication")
+        summary = workspace.billing.summary()
+        rates = workspace.billing.rates()
+        keys = ("gpu_hour_cost_h100", "cpu_hour_cost_sandbox", "mem_gib_hour_cost_sandbox",
+                "volume_storage_gib_month_cost")
+        return {"workspace": workspace.name, "gross_used": str(summary.metered_cost),
+                "net_spent": str(summary.billed_cost), "cycle_start": summary.start.date().isoformat(),
+                "observed_at": time.time(), "rates": {key: str(rates[key]) for key in keys}}
     if operation == "spawn":
         app = modal.App.lookup(binding.app_name, environment_name=binding.environment)
         if app.app_id != binding.app_id:
@@ -449,7 +469,17 @@ def _sdk_main():
     if modal.__version__ != SDK_VERSION:
         raise RuntimeError("Sandbox transport requires the audited SDK version")
     payload = sys.stdin.buffer.read(256_000)
-    print(canonical(_sdk_request(json.loads(payload), modal)))
+    try:
+        response = _sdk_request(json.loads(payload), modal)
+    except (ProviderScopeError, modal.exception.AuthError, modal.exception.PermissionDeniedError):
+        response = {"provider_access_issue": "authentication"}
+    except modal.exception.ResourceExhaustedError as error:
+        if not re.search(r"quota|workspace.{0,30}limit|rate.limit|concurrent gpu", str(error), re.IGNORECASE):
+            raise
+        response = {"provider_access_issue": "quota"}
+    except ProviderIntegrityError:
+        response = {"provider_access_issue": "integrity"}
+    print(canonical(response))
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--sdk-request"]:

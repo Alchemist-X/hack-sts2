@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
-from .adapters import Job, Outcome
+from .adapters import Job, MODEL_PROVIDER_ISSUES, Outcome, ProviderIntegrityError, ProviderScopeError
 from .contracts import DIGEST, canonical, digest, identifier, integer
 from .controller import Controller
 from .lineage import AcceptedCheckpoint, validate_job
@@ -106,9 +106,10 @@ class RavenBroker:
 
     fixture = False
     verified_cost_bounds = True
+    isolate_gpu_uncertainty = True
 
     def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None,
-                 tool_enabled=False, experiment_reserve_limits=None,
+                 tool_enabled=False, experiment_reserve_limits=None, billing_sources=None,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
         self.artifacts = Path(artifacts)
@@ -118,6 +119,7 @@ class RavenBroker:
         self.conservative_reserve = conservative_reserve
         self.research_policy = research_policy
         self.experiment_reserve_limits = experiment_reserve_limits or {}
+        self.billing_sources = billing_sources or {}
         self.tool_enabled = bool(tool_enabled)
         self.grant_seconds = integer(grant_seconds, 1)
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
@@ -142,12 +144,37 @@ class RavenBroker:
         if self.research_policy is None:
             return True
         policy = self.research_policy
-        count = db.execute("SELECT COUNT(*) FROM broker_research_usage_admissions").fetchone()[0]
-        return policy.allows(job, self.store.clock()) and count < policy.max_calls
+        if not policy.allows(job, self.store.clock()):
+            return False
+        event, = job.payload["consumed_event_ids"]
+        if policy.allowed_event_ids is None:
+            origin = db.execute(
+                """SELECT o.job_id,o.experiment_id,x.config_hash,e.kind,j.kind AS job_kind,j.state
+                   FROM research_origins o JOIN experiments x ON x.id=o.experiment_id
+                   JOIN events e ON e.id=o.event_id JOIN jobs j ON j.id=o.job_id
+                   WHERE o.event_id=? AND e.decision_id IS NULL""", (event,),
+            ).fetchone()
+            if (origin is None or origin["config_hash"] not in policy.allowed_config_hashes
+                    or job.payload.get("evidence_origin") != {key: origin[key] for key in ("job_id", "experiment_id")}
+                    or (origin["kind"], origin["job_kind"], origin["state"]) not in {
+                        ("result", "eval", "done"), ("sol_result", "sol", "done"),
+                        ("anomaly", "train", "failed"), ("anomaly", "eval", "failed"),
+                    }):
+                return False
+        count = db.execute(
+            """SELECT COUNT(*) FROM broker_research_usage_admissions a JOIN jobs j ON j.id=a.job_id
+               WHERE j.event_id=?""", (event,),
+        ).fetchone()[0]
+        return count < 2
 
-    def gpu_waits_for_research(self, db):
+    def gpu_waits_for_research(self, db, experiment_id):
         return self.research_policy is not None and db.execute(
-            "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1"
+            """SELECT 1 FROM research_pauses WHERE experiment_id=?
+               UNION ALL
+               SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain')
+               AND COALESCE(json_extract(payload,'$.current_experiment.experiment_id'),
+                            json_extract(payload,'$.event.evidence.experiment_id'))=? LIMIT 1""",
+            (experiment_id, experiment_id),
         ).fetchone() is not None
 
     def server_time(self):
@@ -159,10 +186,22 @@ class RavenBroker:
 
     def _dispatch_allowed(self, db, row):
         state = self._state(db)
+        if row["kind"] in GPU_KINDS:
+            experiment_id = row["experiment_id"]
+            if (experiment_id is None or self.store.external_gpu_conflicts(db, experiment_id)
+                    or self.gpu_waits_for_research(db, experiment_id)):
+                return False
+            # The same experiment has one effective writer. Positive-only
+            # receipt recovery and the reservation survive provider ambiguity.
+            if db.execute(
+                """SELECT 1 FROM jobs j LEFT JOIN broker_jobs b ON b.job_id=j.id
+                   WHERE j.experiment_id=? AND j.id<>? AND j.kind IN ('train','eval')
+                     AND (j.state='uncertain' OR b.state IN ('spawning','sending','ambiguous','submitted'))
+                   LIMIT 1""", (experiment_id, row["id"]),
+            ).fetchone():
+                return False
         return (state["mode"] == "local" and row["actual"] is None
                 and row["state"] in {"intent", "running"}
-                and not (row["kind"] in GPU_KINDS and
-                         (self.store.external_gpu_active(db) or self.gpu_waits_for_research(db)))
                 and self.controller._can_submit(db, state, Controller._job(row)))
 
     @staticmethod
@@ -243,17 +282,6 @@ class RavenBroker:
                     if row["deadline"] <= self.store.clock() or self._state(db)["stopped"]:
                         self._finish(db, row["id"], Outcome("failed", 0, error="cancelled_before_spawn"))
                     continue
-                if candidate["kind"] in GPU_KINDS and db.execute(
-                    """SELECT 1 FROM broker_jobs b JOIN jobs j ON j.id=b.job_id
-                       WHERE b.job_id<>? AND b.state IN ('spawning','sending','ambiguous','submitted')
-                         AND j.kind IN ('train','eval') LIMIT 1""", (candidate["job_id"],),
-                ).fetchone():
-                    continue
-                if candidate["kind"] in GPU_KINDS and db.execute(
-                    """SELECT 1 FROM jobs WHERE kind='access_probe' AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
-                       AND (state='external_reserved' OR error='gpu_receipt_unknown') LIMIT 1"""
-                ).fetchone():
-                    continue
                 job = Controller._job(row)
                 if not self.authorize_spawn(job):
                     continue
@@ -318,12 +346,19 @@ class RavenBroker:
             receipt = (provider.spawn_detached(detached, send_not_after=send_not_after) if detached else
                        provider.spawn(job, launch_token, send_not_after=send_not_after))
             provider_id = identifier(receipt)
-        except Exception:
+        except Exception as error:
             with self.store.transaction() as db:
+                if isinstance(error, ProviderIntegrityError):
+                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'provider identity conflict')")
+                elif job.kind in GPU_KINDS and isinstance(error, ProviderScopeError):
+                    self.store.pause_provider(db, "modal", job.key, str(error), self.store.clock())
                 db.execute("UPDATE broker_jobs SET state='ambiguous',error='provider receipt unknown',send_finished_at=? "
                            "WHERE job_id=? AND state='sending'", (self.store.clock(), job.key))
             return launch_token
-        self.attach_provider_receipt(launch_token, provider_id)
+        try:
+            self.attach_provider_receipt(launch_token, provider_id)
+        except ProviderIntegrityError as error:
+            self._pause_modal(job, error)
         return launch_token
 
     def _prepare_detached(self, db, job, job_row, launch_token):
@@ -361,8 +396,10 @@ class RavenBroker:
             row = db.execute("SELECT * FROM broker_jobs WHERE launch_token=?", (launch_token,)).fetchone()
             if not row or row["state"] not in PROVIDER_PENDING:
                 raise ValueError("receipt does not belong to an unresolved provider attempt")
-            if row["provider_id"] and row["provider_id"] != provider_id:
-                raise ValueError("conflicting provider receipt")
+            owner = db.execute("SELECT job_id FROM broker_jobs WHERE provider_id=?", (provider_id,)).fetchone()
+            if ((row["provider_id"] and row["provider_id"] != provider_id)
+                    or (owner is not None and owner["job_id"] != row["job_id"])):
+                raise ProviderIntegrityError("conflicting provider receipt")
             db.execute("UPDATE broker_jobs SET state='submitted',provider_id=?,error=NULL,"
                        "send_finished_at=COALESCE(send_finished_at,?) WHERE job_id=?",
                        (provider_id, self.store.clock(), row["job_id"]))
@@ -383,7 +420,10 @@ class RavenBroker:
                 return False
             job = Controller._job(self._job_row(db, row["job_id"]))
             detached = self._detached(db, job.key)
-            db.execute("UPDATE broker_jobs SET last_checked=? WHERE job_id=?", (self.store.clock(), job.key))
+            db.execute(
+                "UPDATE broker_jobs SET last_checked=MAX(?, (SELECT MAX(last_checked)+0.001 FROM broker_jobs)) WHERE job_id=?",
+                (self.store.clock(), job.key),
+            )
         if not row["provider_id"]:
             # Optional provider lookup is positive-only. An absent receipt might be
             # a crash before send, a completed launch, or queued work not yet visible.
@@ -393,12 +433,16 @@ class RavenBroker:
                     provider_id = find(job, row["launch_token"], row["input_id"])
                     if provider_id is not None:
                         self.attach_provider_receipt(row["launch_token"], provider_id)
+                except (ProviderScopeError, ProviderIntegrityError) as error:
+                    self._pause_modal(job, error)
                 except Exception:
                     pass
             return True
         try:
             outcome = provider.poll(row["provider_id"])
-        except Exception:
+        except Exception as error:
+            if isinstance(error, (ProviderScopeError, ProviderIntegrityError)):
+                self._pause_modal(job, error)
             self._request_cancel(provider, row, job)
             return True
         if not isinstance(outcome, Outcome) or outcome.status not in TERMINAL:
@@ -431,14 +475,24 @@ class RavenBroker:
                 outcome = self._gpu_outcome(db, current, outcome)
             envelope = db.execute("SELECT upper_cents FROM broker_cost_envelopes WHERE job_id=?", (job.key,)).fetchone()
             estimated = self.conservative_reserved(db, job.key)
+            if job.kind in {"research", "sol"} and outcome.error in MODEL_PROVIDER_ISSUES:
+                self.store.pause_provider(db, "member_models", job.key, outcome.error, self.store.clock())
             if job.kind == "research" and self.research_usage_admitted(db, job.key):
                 usage = outcome.usage_value_cents
-                if (outcome.status != "succeeded" or actual is not None
-                        or type(usage) is not int or not 0 < usage <= job.reserve_cents):
-                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'research usage or terminal proof outside policy')")
-                    self._finish(db, job.key, Outcome("failed", error="research_usage_unverified"))
-                else:
+                known_no_launch = (outcome.status == "failed" and type(actual) is int and actual == 0
+                                   and outcome.error in {"cancelled_before_agent_start", "agent_preflight", "deadline"})
+                if actual_known and actual > job.reserve_cents:
+                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'job exceeded its reserve')")
+                    self._finish(db, job.key, Outcome("failed", actual, error="research_cost_over_reserve"))
+                elif type(usage) is int and usage > job.reserve_cents:
+                    self.store.pause_provider(db, "member_models", job.key, "usage_value_over_reserve", self.store.clock())
+                    self._finish(db, job.key, Outcome("failed", error="research_usage_unverified",
+                                                     usage_value_cents=usage))
+                elif known_no_launch or (outcome.status == "succeeded" and actual is None
+                                       and type(usage) is int and 0 < usage <= job.reserve_cents):
                     self._finish(db, job.key, self._bounded_outcome(outcome))
+                else:
+                    self._finish(db, job.key, Outcome("failed", error="research_usage_unverified"))
                 return True
         materialize = getattr(provider, "materialize", None)
         if job.kind in GPU_KINDS and not detached and outcome.output is not None and materialize is not None:
@@ -503,7 +557,9 @@ class RavenBroker:
                 db.execute("UPDATE broker_jobs SET worker_outcome=? WHERE job_id=?",
                            (canonical(asdict(self._bounded_outcome(worker))), job.key))
             return True
-        except Exception:
+        except Exception as error:
+            if isinstance(error, (ProviderScopeError, ProviderIntegrityError)):
+                self._pause_modal(job, error)
             self._note_pending(job.key, "detached terminal evidence or mirror pending")
             return False
 
@@ -512,12 +568,7 @@ class RavenBroker:
         if retention_deadline is None or not callable(getattr(provider, "prune", None)):
             return False
         with self.store.transaction() as db:
-            if db.execute("""SELECT 1 FROM broker_jobs b JOIN jobs j ON j.id=b.job_id
-                           WHERE j.kind IN ('train','eval') AND b.state IN ('sending','ambiguous','submitted')"""
-                         ).fetchone():
-                return False
-            expired = self.store.clock() >= retention_deadline
-            protected = {} if expired else {
+            protected = {
                 ref["job_key"]: ref["generation"]
                 for (raw,) in db.execute("SELECT checkpoint FROM experiments WHERE checkpoint IS NOT NULL")
                 if (ref := json.loads(raw))
@@ -526,7 +577,10 @@ class RavenBroker:
                 """SELECT j.*,a.kept_generation FROM broker_detached d JOIN broker_jobs b ON b.job_id=d.job_id
                    JOIN jobs j ON j.id=d.job_id LEFT JOIN broker_cloud_archive a ON a.job_id=d.job_id
                    WHERE b.state='finished' AND b.provider_id IS NOT NULL AND j.state IN ('done','failed')
-                   ORDER BY b.rowid"""
+                   AND NOT EXISTS (
+                       SELECT 1 FROM jobs active WHERE active.experiment_id=j.experiment_id
+                       AND active.kind IN ('train','eval') AND active.state IN ('intent','running','uncertain')
+                   ) ORDER BY b.rowid"""
             ).fetchall()
             row = next((item for item in candidates
                         if item["kept_generation"] != protected.get(item["id"], "")), None)
@@ -549,6 +603,14 @@ class RavenBroker:
             db.execute("INSERT INTO broker_cloud_archive VALUES (?,?) ON CONFLICT(job_id) "
                        "DO UPDATE SET kept_generation=excluded.kept_generation", (job.key, keep or ""))
         return True
+
+    def _pause_modal(self, job, error):
+        if job.kind in GPU_KINDS or isinstance(error, ProviderIntegrityError):
+            with self.store.transaction() as db:
+                if isinstance(error, ProviderIntegrityError):
+                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'provider identity conflict')")
+                else:
+                    self.store.pause_provider(db, "modal", job.key, str(error), self.store.clock())
 
     def _note_pending(self, job_key, reason):
         with self.store.transaction() as db:
@@ -891,6 +953,14 @@ class AgentQueueProvider:
         if row["state"] == "queued":
             return Outcome("running")
         outcome = Outcome(**json.loads(row["outcome"])) if row["outcome"] else self.runner.poll(job)
+        diagnose = getattr(self.runner, "provider_issue", None)
+        if outcome.status in TERMINAL and diagnose is not None:
+            try:
+                issue = diagnose(job)
+            except (OSError, ValueError, KeyError, TypeError):
+                issue = None
+            if issue in MODEL_PROVIDER_ISSUES:
+                return Outcome("failed", error=issue)
         if job.kind == "research" and getattr(self.runner, "scoped_research", False) and outcome.status == "succeeded":
             try:
                 return replace(outcome, usage_value_cents=self.runner.standard_usage_value(job))
@@ -905,10 +975,11 @@ class AgentQueueProvider:
 class RavenRuntime:
     """One bounded scheduler tick; supervisor services own long-running work."""
 
-    def __init__(self, broker, *, modal_provider=None, agent_provider=None, archive_deadline=None):
+    def __init__(self, broker, *, modal_provider=None, agent_provider=None, archive_deadline=None, refresh_metering=None):
         self.broker = broker
         self.modal_provider = modal_provider
         self.archive_deadline = archive_deadline
+        self.refresh_metering = refresh_metering
         self.bindings = []
         if modal_provider is not None:
             self.bindings.append((modal_provider, GPU_KINDS))
@@ -918,6 +989,8 @@ class RavenRuntime:
     def tick_once(self):
         if not self.bindings or self.broker.authorize_spawn is None:
             raise RuntimeError("runtime requires explicitly bound providers and a bounded spend policy")
+        if self.refresh_metering is not None:
+            self.refresh_metering()
         self.broker.expire_unspawned()
         for provider, kinds in self.bindings:
             self.broker.reconcile_one(provider, kinds)

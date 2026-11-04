@@ -63,6 +63,8 @@ class Controller:
             raise DispatchBlocked("study paused or stopped")
         if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
             raise DispatchBlocked("production access gate paused")
+        if self.store.provider_paused(db, kind):
+            raise DispatchBlocked("provider admission paused")
         if type(reserve) is not int or reserve <= 0:
             raise DispatchBlocked("positive job reserve required")
         if deadline <= self.store.clock():
@@ -74,11 +76,14 @@ class Controller:
             raise DispatchBlocked("study budget limit")
         if spent + held + reserve > state["execution_cap"]:
             raise DispatchBlocked("current execution cap")
-        platform = self.store.platform_headroom(state, spent)
-        if platform is None and state["mode"] != "fixture":
-            raise DispatchBlocked("platform budget snapshot required")
-        if platform is not None and held + reserve > platform:
-            raise DispatchBlocked("platform gross usage ceiling")
+        billing = getattr(self.backend, "billing_sources", {}).get(kind)
+        if billing is None or billing[0] == "modal":
+            modal_spent, modal_held = self.store.modal_ledger(db)
+            platform = self.store.platform_headroom(state, modal_spent)
+            if platform is None and state["mode"] != "fixture":
+                raise DispatchBlocked("platform budget snapshot required")
+            if platform is not None and modal_held + reserve > platform:
+                raise DispatchBlocked("platform gross usage ceiling")
         if experiment:
             spec = json.loads(db.execute("SELECT spec FROM experiments WHERE id=?", (experiment,)).fetchone()[0])
             if sum(self.store.ledger(db, experiment)) + reserve > self._experiment_limit(spec):
@@ -90,38 +95,56 @@ class Controller:
         if kind == "research" and hasattr(self.backend, "can_plan_research") and not self.backend.can_plan_research(db, job):
             raise DispatchBlocked("finite research authorization exhausted or event unavailable")
         if kind in {"train", "eval"}:
-            if self.store.external_gpu_active(db):
-                raise DispatchBlocked("another authorized GPU operation is active")
-            if hasattr(self.backend, "gpu_waits_for_research") and self.backend.gpu_waits_for_research(db):
-                raise DispatchBlocked("waiting for research terminal usage reconciliation")
+            if self.store.external_gpu_conflicts(db, experiment):
+                raise DispatchBlocked("external GPU reservation lacks independent scope")
+            if not experiment or db.execute(
+                """SELECT 1 FROM jobs WHERE experiment_id=? AND kind IN ('train','eval')
+                   AND state IN ('intent','running','uncertain') LIMIT 1""", (experiment,),
+            ).fetchone():
+                raise DispatchBlocked("experiment already has active or unresolved GPU work")
+            if hasattr(self.backend, "gpu_waits_for_research") and self.backend.gpu_waits_for_research(db, experiment):
+                raise DispatchBlocked("experiment waiting for research terminal usage reconciliation")
         db.execute(
             """INSERT INTO jobs (id,logical_key,attempt,kind,experiment_id,event_id,payload,reserve,deadline)
                VALUES (?,?,?,?,?,?,?,?,?)""",
             (key, logical, attempt, kind, experiment, event, canonical(payload), reserve, deadline),
         )
+        if billing is not None:
+            self.store.record_job_billing(db, key, *billing)
 
     def _schedule(self, db, state):
         if state["stopped"] or state["analysis_paused"]:
             return
         # Analysis is serialized. Check the persisted intent as well as running jobs.
         analysis = db.execute(
-            "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1",
+            """SELECT 1 FROM jobs WHERE kind='research' AND
+               (state IN ('intent','running') OR (state='uncertain' AND deadline>?)) LIMIT 1""",
+            (self.store.clock() - getattr(self.backend, "kill_grace_seconds", 0),),
         ).fetchone()
         policy = getattr(self.backend, "research_policy", None)
         event_filter = ""
         event_ids = ()
         if policy is not None:
-            event_ids = tuple(policy.allowed_event_ids)
-            event_filter = "AND events.id IN (" + ",".join("?" for _ in event_ids) + ")"
+            if policy.allowed_event_ids is not None:
+                event_ids = tuple(policy.allowed_event_ids)
+                event_filter = "AND events.id IN (" + ",".join("?" for _ in event_ids) + ")"
+            else:
+                event_ids = tuple(policy.allowed_config_hashes)
+                hashes = ",".join("?" for _ in event_ids)
+                event_filter = f"""AND EXISTS (
+                    SELECT 1 FROM research_origins o JOIN experiments x ON x.id=o.experiment_id
+                    WHERE o.event_id=events.id AND x.config_hash IN ({hashes}))"""
         event = db.execute(
             f"""SELECT events.* FROM events WHERE decision_id IS NULL
                AND kind IN ('bootstrap','result','anomaly','sol_result') AND NOT EXISTS (
                SELECT 1 FROM jobs WHERE jobs.event_id=events.id AND kind='research')
+               AND NOT EXISTS (
+                   SELECT 1 FROM research_pauses p WHERE p.event_id=events.id
+                   OR p.experiment_id=json_extract(events.payload,'$.experiment_id'))
                {event_filter} ORDER BY rowid LIMIT 1""", event_ids,
         ).fetchone()
         if event and not analysis:
             self._schedule_analysis(db, state, event)
-            return
         for experiment in db.execute(
             "SELECT * FROM experiments WHERE stage IN ('needs_train','needs_eval') ORDER BY id",
         ).fetchall():
@@ -141,14 +164,15 @@ class Controller:
             )],
             "evidence_refs": [event["id"]],
             "event": {"kind": event["kind"], "evidence": json.loads(event["payload"])},
-            "budget": {
-                "approved_cents": state["approved_budget"],
-                "spent_and_reserved_cents": self.store.ledger(db),
-            },
+            "budget": self.store.budget_evidence(db, state),
             "allowed_experiments": dict(db.execute("SELECT id,config_hash FROM experiments").fetchall()),
             "engineering_task_types": ["diagnose", "implement_frozen_task"] if self.backend.tool_enabled else [],
         }
-        experiment_id = payload["event"]["evidence"].get("experiment_id")
+        origin = db.execute("SELECT job_id,experiment_id FROM research_origins WHERE event_id=?",
+                            (event["id"],)).fetchone()
+        if origin:
+            payload["evidence_origin"] = dict(origin)
+        experiment_id = origin["experiment_id"] if origin else payload["event"]["evidence"].get("experiment_id")
         experiment = db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
         if experiment:
             spec = json.loads(experiment["spec"])
@@ -160,6 +184,8 @@ class Controller:
                 "hypothesis": spec["hypothesis"], "stop_rules": spec["stop_rules"],
                 "promotion_rules": spec["promotion_rules"],
             }
+            if event["kind"] == "result":
+                payload["matched_comparisons"] = self._matched_results(db, experiment, spec)
         try:
             self._create_job(
                 db, f"research-{digest(event['id'])[:32]}", 1, "research", payload,
@@ -167,6 +193,32 @@ class Controller:
             )
         except DispatchBlocked as error:
             db.execute("UPDATE study SET next_wake=?", (str(error),))
+
+    @staticmethod
+    def _matched_results(db, experiment, spec):
+        rows = db.execute(
+            """SELECT o.experiment_id,e.payload FROM events e JOIN research_origins o ON o.event_id=e.id
+               JOIN jobs j ON j.id=o.job_id
+               WHERE e.kind='result' AND j.kind='eval' AND j.state='done' AND o.experiment_id<>?
+               AND json_extract(e.payload,'$.manifest.metadata.decisions')=?
+               AND json_extract(e.payload,'$.manifest.identity.eval_protocol')=?
+               AND json_extract(e.payload,'$.manifest.identity.dev_seed_manifest_hash')=?
+               ORDER BY e.rowid DESC LIMIT 8""",
+            (experiment["id"], experiment["decisions"], spec["eval_protocol"], spec["dev_seed_manifest_hash"]),
+        )
+        summaries = []
+        for row in rows:
+            result = json.loads(row["payload"])
+            headline = result["metrics"]
+            summaries.append({"experiment_id": row["experiment_id"],
+                              "config_hash": result["manifest"]["identity"]["config_hash"],
+                              "decisions": experiment["decisions"],
+                              "eval_protocol": spec["eval_protocol"],
+                              "dev_seed_manifest_hash": spec["dev_seed_manifest_hash"],
+                              "headline": {key: headline[key] for key in
+                                           ("games", "wins", "win_rate_ci95", "progress_mean", "progress_ci95", "results")
+                                           if key in headline}})
+        return summaries
 
     def _schedule_experiment(self, db, experiment):
         spec = json.loads(experiment["spec"])
@@ -249,8 +301,8 @@ class Controller:
                 self._failed(db, row, job, "deadline", None)
                 return
             if not self._can_submit(db, state, job):
-                if not (state["stopped"] or state["analysis_paused"]):
-                    db.execute("UPDATE study SET stopped='budget unavailable before submit'")
+                # Held reserves or a scoped pause can temporarily prevent
+                # this send. Only confirmed overruns set a study STOP.
                 return
             db.execute("UPDATE jobs SET submit_started=1 WHERE id=?", (row["id"],))
             admission = {"study_id": state["id"], "lease_owner": owner, "lease_until": state["lease_until"]}
@@ -271,7 +323,8 @@ class Controller:
         self._attach(owner, row, remote_id)
 
     def _can_submit(self, db, state, job):
-        if state["stopped"] or state["analysis_paused"] or job.deadline <= self.store.clock():
+        if (state["stopped"] or state["analysis_paused"] or job.deadline <= self.store.clock()
+                or self.store.provider_paused(db, job.kind)):
             return False
         if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
             return False
@@ -280,9 +333,13 @@ class Controller:
             if sum(self.store.ledger(db, spec["experiment_id"])) > self._experiment_limit(spec):
                 return False
         spent, held = self.store.ledger(db)
-        platform = self.store.platform_headroom(state, spent)
-        return (spent + held <= min(state["approved_budget"], state["execution_cap"])
-                and (held <= platform if platform is not None else state["mode"] == "fixture"))
+        if state["approved_budget"] is None or spent + held > min(state["approved_budget"], state["execution_cap"]):
+            return False
+        if not self.store.bills_modal(db, job.key):
+            return True
+        modal_spent, modal_held = self.store.modal_ledger(db)
+        platform = self.store.platform_headroom(state, modal_spent)
+        return modal_held <= platform if platform is not None else state["mode"] == "fixture"
 
     def _attach(self, owner, row, remote_id):
         with self.store.transaction() as db:
@@ -293,7 +350,23 @@ class Controller:
         with self.store.transaction() as db:
             self.store.fence(db, owner)
             db.execute("UPDATE jobs SET state='uncertain',error=? WHERE id=?", (reason, row["id"]))
-            db.execute("UPDATE study SET stopped=COALESCE(stopped,?)", (reason,))
+            if row["kind"] == "research" and self._pause_scoped_research(db, row, reason):
+                return
+            if row["kind"] == "sol" and self.store.provider_paused(db, "sol"):
+                return
+            if not (row["kind"] in {"train", "eval"} and row["experiment_id"]
+                    and getattr(self.backend, "isolate_gpu_uncertainty", False)):
+                db.execute("UPDATE study SET stopped=COALESCE(stopped,?)", (reason,))
+
+    def _pause_scoped_research(self, db, row, reason):
+        if getattr(self.backend, "research_policy", None) is None:
+            return False
+        payload = json.loads(row["payload"])
+        experiment = payload.get("current_experiment", {}).get("experiment_id")
+        if experiment is None:
+            experiment = payload.get("event", {}).get("evidence", {}).get("experiment_id")
+        self.store.pause_research_chain(db, row["event_id"], experiment, reason)
+        return True
 
     _identity = staticmethod(artifact_identity)
 
@@ -366,13 +439,19 @@ class Controller:
         estimate = outcome.reserved_estimate_cents
         reservation_only = (job.kind in {"train", "eval"} and actual is None and type(estimate) is int
                             and 0 < estimate <= row["reserve"] and hasattr(self.backend, "conservative_reserved"))
-        if not provisional and not scoped_usage and not reservation_only and (type(actual) is not int or not 0 <= actual <= 10_000_000):
+        scoped_unverified = (job.kind == "research" and actual is None and outcome.status == "failed"
+                             and outcome.error == "research_usage_unverified"
+                             and getattr(self.backend, "research_policy", None) is not None)
+        if not (provisional or scoped_usage or scoped_unverified or reservation_only) and (
+            type(actual) is not int or not 0 <= actual <= 10_000_000
+        ):
             self._quarantine(owner, row, "terminal job cost unresolved")
             return
         error = None
         result = None
         if outcome.status == "failed":
-            error = outcome.error if isinstance(outcome.error, str) and outcome.error in RETRYABLE else "worker"
+            error = outcome.error if (scoped_unverified or isinstance(outcome.error, str)
+                                      and outcome.error in RETRYABLE) else "worker"
         try:
             if job.kind in {"train", "eval"} and (not error or (job.kind == "train" and outcome.output is not None)):
                 result = self._artifact(job, outcome.output)
@@ -400,7 +479,7 @@ class Controller:
             error = "invalid_response" if job.kind in {"research", "sol"} else "missing_artifact"
         with self.store.transaction() as db:
             state = self.store.fence(db, owner)
-            if scoped_usage and not self.backend.research_usage_admitted(db, job.key):
+            if (scoped_usage or scoped_unverified) and not self.backend.research_usage_admitted(db, job.key):
                 raise ValueError("research usage is outside its durable admission")
             if reservation_only and self.backend.conservative_reserved(db, job.key) != estimate:
                 raise ValueError("conservative reservation is outside its durable admission")
@@ -418,7 +497,7 @@ class Controller:
             db.execute("UPDATE jobs SET state=?,actual=?,outcome=?,error=? WHERE id=?",
                        ("failed" if error else "done", actual, canonical(result) if result else
                         diagnostic, error, job.key))
-            if scoped_usage:
+            if scoped_usage or (scoped_unverified and type(usage) is int and usage > 0):
                 db.execute("INSERT INTO research_usage_holds VALUES (?,?,?)", (job.key, usage, self.store.clock()))
             if reservation_only:
                 db.execute("INSERT INTO conservative_holds VALUES (?,?,?)", (job.key, estimate, self.store.clock()))
@@ -431,6 +510,10 @@ class Controller:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,'study budget exhausted')")
             elif self.store.ledger(db)[0] >= state["execution_cap"]:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,'current execution cap exhausted')")
+            if actual is not None and self.store.bills_modal(db, job.key):
+                platform = self.store.platform_headroom(state, self.store.modal_ledger(db)[0])
+                if platform is not None and platform < 0:
+                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'known Modal use exceeded workspace limit')")
             if error:
                 self._failed(db, row, job, error, result)
             elif job.kind == "research":
@@ -438,7 +521,10 @@ class Controller:
             elif job.kind in {"train", "eval"}:
                 self._completed_worker(db, row, job, result)
             else:
-                self.store.append_event(db, f"sol-{digest(job.key)[:32]}", "sol_result", result, self.store.clock())
+                experiment_id = job.payload.get("experiment_id")
+                origin = (job.key, experiment_id) if experiment_id else None
+                self.store.append_event(db, f"sol-{digest(job.key)[:32]}", "sol_result",
+                                        result, self.store.clock(), origin=origin)
 
     def _save_checkpoint(self, db, experiment_id, result):
         metadata = result["manifest"]["metadata"]
@@ -453,7 +539,9 @@ class Controller:
             payload.update(checkpoint=result["checkpoint"], start_decisions=metadata["decisions"],
                            start_cursor=metadata["cursor"])
         reached_target = result and job.kind == "train" and payload["start_decisions"] >= payload["target_decisions"]
-        if job.attempt < 2 and error in RETRYABLE and not reached_target:
+        scoped_research = job.kind == "research" and getattr(self.backend, "research_policy", None) is not None
+        retryable = error == "api" if scoped_research else error in RETRYABLE
+        if job.attempt < 2 and retryable and not reached_target:
             try:
                 self._create_job(db, job.logical_key, job.attempt + 1, job.kind, payload,
                                  job.reserve_cents, job.deadline, row["experiment_id"], row["event_id"])
@@ -461,7 +549,9 @@ class Controller:
             except DispatchBlocked:
                 pass
         if job.kind == "research":
-            db.execute("UPDATE study SET analysis_paused=?", (f"research {error}; inspect {job.key}",))
+            reason = f"research {error}; inspect {job.key}"
+            if not self._pause_scoped_research(db, row, reason):
+                db.execute("UPDATE study SET analysis_paused=?", (reason,))
             return
         if row["experiment_id"]:
             stage = "needs_eval" if reached_target else "failed"
@@ -476,7 +566,8 @@ class Controller:
                 return
         self.store.append_event(db, f"anomaly-{digest(job.key)[:32]}", "anomaly",
                                 {"job_key": job.key, "kind": job.kind, "error": error,
-                                 "experiment_id": row["experiment_id"], "checkpoint": result}, self.store.clock())
+                                 "experiment_id": row["experiment_id"], "checkpoint": result}, self.store.clock(),
+                                origin=(job.key, row["experiment_id"]) if row["experiment_id"] else None)
 
     def _completed_worker(self, db, row, job, result):
         experiment = row["experiment_id"]
@@ -495,11 +586,13 @@ class Controller:
         identity = job.key
         if job.payload["spec"]["eval_protocol"] == "silent-a10-capacity-v1":
             identity = [experiment, job.payload["config_hash"], job.payload["start_decisions"]]
-        self.store.append_event(db, f"result-{digest(identity)[:32]}", "result", evidence, self.store.clock())
+        self.store.append_event(db, f"result-{digest(identity)[:32]}", "result", evidence, self.store.clock(),
+                                origin=(job.key, experiment))
 
     def _accept_decision(self, db, state, row, result):
         if result["expected_state_version"] != state["version"]:
-            db.execute("UPDATE study SET analysis_paused='research decision state is stale'")
+            if not self._pause_scoped_research(db, row, "research decision state is stale"):
+                db.execute("UPDATE study SET analysis_paused='research decision state is stale'")
             return
         action = result["action"]
         dispatch_error = None
@@ -511,6 +604,9 @@ class Controller:
                     raise DispatchBlocked("SOL capability or reserve unavailable")
                 task_id = f"sol-{digest(result['decision_id'])[:32]}"
                 payload = {"task_id": task_id, "decision_id": result["decision_id"], **result["engineering_task"]}
+                experiment = json.loads(row["payload"]).get("current_experiment")
+                if experiment:
+                    payload["experiment_id"] = experiment["experiment_id"]
                 self._create_job(db, task_id, 1, "sol", payload, self.sol_cents, self.store.clock() + 900)
             elif action in {"PAUSE", "STOP"}:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,?)",

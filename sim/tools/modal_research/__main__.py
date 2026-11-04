@@ -22,6 +22,8 @@ def main():
     platform = commands.add_parser("platform-snapshot")
     for name in ("gross-limit", "net-limit", "credit", "gross-used", "net-spent", "reference"):
         platform.add_argument(f"--{name}", required=True)
+    platform.add_argument("--observed-at", type=float)
+    platform.add_argument("--cycle-start")
     probe = commands.add_parser("reserve-access-probe")
     for name in ("key", "decision-id", "category", "reserve-usd"):
         probe.add_argument(f"--{name}", required=True)
@@ -29,6 +31,12 @@ def main():
     probe.add_argument("--prepare-only", action="store_true")
     probe.add_argument("--child-job", action="append")
     probe.add_argument("--research-event")
+    probe.add_argument("--isolated-gpu-namespace")
+    probe.add_argument("--billing-vendor", choices=("modal", "non_modal"))
+    probe.add_argument("--billing-reference")
+    classify = commands.add_parser("classify-billing")
+    classify.add_argument("--mapping-json", type=json.loads, required=True)
+    classify.add_argument("--reference", required=True)
     commands.add_parser("activate-access-probe").add_argument("key")
     finish_probe = commands.add_parser("finish-access-probe")
     finish_probe.add_argument("key")
@@ -42,6 +50,11 @@ def main():
     resume_access = commands.add_parser("resume-access")
     resume_access.add_argument("reason")
     resume_access.add_argument("--verification-reference", required=True)
+    for command in ("resume-provider", "resume-research"):
+        scoped = commands.add_parser(command)
+        scoped.add_argument("scope")
+        scoped.add_argument("reason")
+        scoped.add_argument("--reference", required=True)
     commands.add_parser("stop").add_argument("reason")
     resume = commands.add_parser("resume")
     resume.add_argument("reason")
@@ -52,11 +65,16 @@ def main():
         store.approve(args.amount, args.reference, args.execution_cap)
     elif args.command == "platform-snapshot":
         store.record_platform(gross_limit=args.gross_limit, net_limit=args.net_limit, credit=args.credit,
-                              gross_used=args.gross_used, net_spent=args.net_spent, reference=args.reference)
+                              gross_used=args.gross_used, net_spent=args.net_spent, reference=args.reference,
+                              observed_at=args.observed_at, cycle_start=args.cycle_start)
     elif args.command == "reserve-access-probe":
         store.reserve_access_probe(args.key, args.decision_id, args.category, args.reserve_usd, args.seconds,
                                    prepare_only=args.prepare_only, authorized_jobs=args.child_job,
-                                   authorized_event=args.research_event)
+                                   authorized_event=args.research_event,
+                                   isolated_gpu_namespace=args.isolated_gpu_namespace,
+                                   billing_vendor=args.billing_vendor, billing_reference=args.billing_reference)
+    elif args.command == "classify-billing":
+        store.classify_billing(args.mapping_json, args.reference)
     elif args.command == "activate-access-probe":
         store.activate_access_probe(args.key)
     elif args.command == "finish-access-probe":
@@ -68,6 +86,10 @@ def main():
         store.pause_access(args.reason, args.next_wake)
     elif args.command == "resume-access":
         store.resume_access(args.reason, args.verification_reference)
+    elif args.command == "resume-provider":
+        store.resume_provider(args.scope, args.reason, args.reference)
+    elif args.command == "resume-research":
+        store.resume_research(args.scope, args.reason, args.reference)
     elif args.command == "stop":
         store.stop(args.reason)
     elif args.command == "resume":
