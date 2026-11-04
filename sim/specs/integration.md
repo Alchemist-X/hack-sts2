@@ -1398,7 +1398,7 @@ Follow-ups (integration):
   saw 2 of the required 10 mid-run branches; the assertion depended on thread scheduling).
 
 Gates (macOS M4 Pro, load 6-9 from other agents, `DOTNET_PROCESSOR_COUNT=4`): `scripts/gates.sh --quick` on
-`e877036`, 194 s, logs `tmp/gates/deckbuild-integrate-quick/` (repeated on the final tree, see the end of this entry):
+`e877036`, 194 s, logs `tmp/gates/deckbuild-integrate-quick/` (repeated on the final tree, last bullet below):
 
 | step | status | secs | key numbers |
 | --- | --- | --- | --- |
@@ -1441,3 +1441,6 @@ load 9-10), torch 2.15.0+cpu in a venv on `/data/raven`:
 - raven cleanup: build cache unused for 2.5 h pruned before the AOT build (3.3 GB, on `/data/raven`; the root disk is
   not involved); the venv and checkpoint copies under the validation directory were deleted afterwards.
 - Not verified: CUDA (no GPU run of this bundle); the Colab A100 path is unchanged code.
+- Final tree: `scripts/gates.sh --quick` on `2aa46dd` (code as of `b26a383`; only this line changed after it), 158 s,
+  every step PASS with the same key numbers as above except the timings (tests 142/142 in 41 s, pytest-eval 84,
+  pytest-vec 117, sts2rec 762 + 6 skipped), logs `tmp/gates/deckbuild-integrate-final/`; trainer pytest 97 passed.
