@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+# sts2-testbox: CPU verification image for scripts/test_remote.sh (pytest suites of sim/tools/{train,vec,eval} and
+# short CPU smokes of the sts2train trainer) on an amd64 Docker host (default: raven / Huginn).
+#
+#   .NET 9 SDK (Ubuntu 24.04 "noble") + python3 3.12 + python3-dev and g++ (torch.compile's CPU inductor backend
+#   compiles C++; the trainer's compiled-update tests need it) + uv, and one virtualenv per uv project, pre-populated
+#   from that project's committed uv.lock (dev group included) at the path it has in a checkout mounted at /work:
+#     /work/sim/tools/train/.venv   train lockfile, except torch: the CPU wheel of the SAME version from
+#                                   download.pytorch.org/whl/cpu (the lockfile's linux torch pulls ~3 GB of CUDA libs)
+#     /work/sim/tools/vec/.venv     vec lockfile
+#     /work/sim/tools/eval/.venv    eval lockfile
+#   The local packages (sts2vec, sts2eval, sts2train) are NOT in the image: the runner installs them editable
+#   (--no-deps) from the checkout at run time, so a source or entry-point edit never needs a rebuild. Only a
+#   lockfile / pyproject / Dockerfile change does (scripts/test_remote.sh tags the image by their hash).
+#   The venvs live at their checkout paths on purpose: the pytest plugins of sts2vec / sts2train scope collection by
+#   Path(sys.prefix).resolve().parent, so a symlinked or relocated venv would change which tests are collected.
+#
+# Build context: a directory holding only sim/tools/{train,vec,eval}/{pyproject.toml,uv.lock} (test_remote.sh makes it).
+ARG DOTNET_TAG=9.0-noble
+ARG UV_VERSION=0.11.7
+
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_TAG}
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-dev g++ git \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=uv /uv /uvx /usr/local/bin/
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+    DOTNET_ROOT=/usr/share/dotnet \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON=/usr/bin/python3 \
+    UV_LINK_MODE=copy \
+    UV_NO_PROGRESS=1 \
+    UV_FROZEN=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+WORKDIR /work
+COPY sim/tools/ /work/sim/tools/
+# Third-party dependencies only (--no-emit-local drops the editable path packages). torch and its CUDA-only linux
+# dependencies (triton, nvidia-*, cuda-*) are filtered out of the export and torch is installed from the CPU index at
+# the version the train lockfile pins. The torch layer comes first, so a lockfile edit that leaves torch alone
+# reuses it from the build cache.
+RUN --mount=type=cache,target=/root/.cache/uv set -eux; \
+    TORCH_VERSION="$(uv export --frozen --project sim/tools/train --all-groups --no-hashes --no-header \
+                       --no-annotate --no-emit-local | sed -n 's/^torch==\([^ ;]*\).*/\1/p')"; \
+    test -n "$TORCH_VERSION"; \
+    uv venv --python /usr/bin/python3 /work/sim/tools/train/.venv; \
+    uv pip install --python /work/sim/tools/train/.venv --no-deps \
+      --index-url https://download.pytorch.org/whl/cpu "torch==${TORCH_VERSION}"; \
+    echo "$TORCH_VERSION" > /work/sim/tools/train/.venv/TORCH_LOCK_VERSION
+RUN --mount=type=cache,target=/root/.cache/uv set -eux; \
+    for p in train vec eval; do \
+      uv export --frozen --project sim/tools/$p --all-groups --no-hashes --no-header --no-annotate --no-emit-local \
+        | grep -vE '^(torch|triton|nvidia-|cuda-)' > /tmp/req-$p.txt; \
+      [ -d sim/tools/$p/.venv ] || uv venv --python /usr/bin/python3 sim/tools/$p/.venv; \
+      uv pip install --python sim/tools/$p/.venv -r /tmp/req-$p.txt; \
+    done; \
+    sim/tools/train/.venv/bin/python -c "import torch, numpy; assert not torch.cuda.is_available(); print('torch', torch.__version__, 'numpy', numpy.__version__)"; \
+    rm -f /tmp/req-*.txt; \
+    rm -f sim/tools/*/pyproject.toml sim/tools/*/uv.lock; \
+    chmod -R a+rwX /work
