@@ -210,7 +210,7 @@ Schema: `encoder_version` **`5dbfa09dd9dcb5ed`** (verified: True), schema JSON s
 | 31 | `status` | int32 [] — scalar | - | bit flags | per-slot outcome bits of the last call (table below) |
 | 32 | `episode` | int64 [3] — episode bookkeeping | `episode_id` | >= 1 | unique per env: episodes_started_before_on_slot x N + slot + 1 |
 | | | | `step_index` | >= 0 | decisions taken in this episode |
-| | | | `start_entry` | >= 0 | pool entry the episode started from |
+| | | | `start_entry` | >= -1 | pool entry the episode started from; -1 = none (a `branch` destination, or an empty pool) |
 | 33 | `aux` | float32 [14] — logging / metric helpers (never part of the reward) | `total_floor`, `act_index`, `hp`, `max_hp`, `gold`, `deck_n`, `relic_n`, `is_combat` | float | copies of `global_i` |
 | | | | `bosses_killed`, `combats_won` | >= 0 | boss rooms / combat rooms cleared so far |
 | | | | `act_floor`, `map_row`, `map_col` | float | copies of `global_i` (protocol metric inputs) |
@@ -302,12 +302,15 @@ first 0.193 / 0.102, heuristic 0.221 / 0.104; the LLM track's Sonnet 5.5 scores 
 - A **fresh pool entry** is `(character, seed text, ascension, act1, content)`; the same entry always starts the same
   run (`PoolSpec(count=K)` creates entries with seed `"<seed_prefix>-<character>-<i>"`; `env.pool.add_fresh(...)`
   appends one). A **save entry** imports a real game save (`env.pool.add_save(path)`). `env.snapshot(slot)` appends
-  a clone of a live slot; `env.restore(slot, entry)` restarts one slot from any entry (search / branching).
+  a clone of a live slot; `env.restore(slot, entry)` restarts one slot from any entry. For search, `env.branch(src,
+  dsts)` copies live slots into other slots in one call without a pool entry (determinized by default, or exact) and
+  `env.pool.release(ids)` frees entries (`sim/VEC.md` "Search").
 - Start sequence of slot `i`: `slot_seed = XXH64(seed_text ‖ int32 i)`, entry `(slot_seed + episodes_started) mod
   pool_size` — independent of thread scheduling.
 - **Guarantee**: same library build + same config + same pool entries in the same order + same action sequence ⇒
   byte-identical observation buffers and equal `state_hash` per slot, for any `threads` and across processes
-  (`sts2vec check`, `sts2vec digest`, tests). Snapshots and clones step exactly like their source.
+  (`sts2vec check`, `sts2vec digest`, tests). Snapshots, exact branches and clones step exactly like their source; a
+  determinized branch is a function of (state, seed, position in the call).
 - The simulator RNG is internal; policies get randomness only from their own generators (`ctx.rngs` in `eval`).
 
 ## 9. API summary
@@ -320,18 +323,22 @@ Python (`sim/tools/vec`, package `sts2vec`; full reference `sim/tools/vec/README
 | `env.reset(mask, start_ids)` / `env.step(actions)` | §3 |
 | `env.pool.add_fresh(character, seed=, ascension=, act1=, content=)`, `env.pool.add_save(path)`, `len(env.pool)`, `env.pool.warm()` | pool entries (ids in insertion order); `warm` pre-creates fresh templates (≈ 16 ms each) |
 | `env.snapshot(slot) -> entry`, `env.restore(slot, entry)` | clone a slot into the pool / restart a slot from an entry |
+| `env.branch(src, dsts, determinized=True, seed=0)` | search (ABI 2): copy live slot(s) into `dsts` in one call, no pool entry; `src` = one slot or one per destination; destinations start a new episode (`RESET`, `start_entry` -1) with their observations written |
+| `env.restore_many(slots, entries)`, `env.pool.release(ids)` | batched restore; free pool entries for good (ids never reused) |
 | `env.state_hash(slots)` | 64-bit hash of the full hidden state (tests / debugging) |
 | `env.candidates(i)`, `env.legal_mask()`, `env.last_episode(i)`, `env.slot_errors()` | decoded helpers |
 | `env.schema` | buffers, fields, vocabularies, enums, caps, `encoder_version` |
 
-C ABI (16 `sts2vec_*` exports, any language; the frozen set plus appended optional exports and `config_json` keys such
-as `floor_step_cap`): `sim/VEC.md` "C ABI"; Python calls the same exports via ctypes.
+C ABI (21 `sts2vec_*` exports, any language; the frozen 14 plus appended optional exports, the ABI 2 search set among
+them, and `config_json` keys such as `floor_step_cap`): `sim/VEC.md` "C ABI"; Python calls the same exports via ctypes.
 
 ## 10. Versioning
 
 - `encoder_version` = XXH64 of the schema JSON (buffers, shapes, fields, vocabularies, enums, caps). Any observation
   change changes it; store it with every checkpoint and refuse to mix (`sts2train` warns on mismatch). Columns are only
-  appended; the ABI exports are frozen (new ones are additive and optional).
+  appended; the ABI exports are frozen (new ones are additive and optional). `sts2vec_abi_version` (`lib.abi_version`;
+  1 for a build without it, 2 since the search exports) versions the ABI separately from `encoder_version`, so an ABI
+  addition changes no checkpoint; `lib.supports_branch` and friends say what a build has.
 - Runs record `server_version = sts2vec/<encoder_version>`, `repo_sha`, the seed set's `sha256`, `protocol_version`
   0.2 and a policy hash (`builtin:<name>`, the policy file's sha256, or `weights:<hash>` for checkpoints).
 - Game updates: `docs/version-migration-playbook.md` (`scripts/version_delta.py` maps changed game files to sim files).

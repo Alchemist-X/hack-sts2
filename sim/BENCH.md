@@ -287,3 +287,36 @@ load ≈ 2 just before the series gave **126,522 env-steps/s, 61.0 CPU µs/env-s
 Reading: the fast path saves 5-9 % CPU per env-step and about 3-4x of the gen0/gen1 collections; wall-clock gain is
 within noise at A0 and +9 % at A10. Episode counts are identical on and off (outputs are byte-identical by test). The
 remaining ≈ 60-70 CPU µs per env-step is mostly observation encoding, `LegalActions` and the candidate table.
+
+## Vec search: branch / restore_many / pool release (ABI 2, 2026-11-04, branch `train/vec-branch`)
+
+`uv run --project sim/tools/vec sts2vec bench-branch --envs 1024 --threads 4 --k 8` (113 roots x 8 destinations; roots
+mid-run after 60 random steps, 81 in combat; µs of wall time per branched slot, median of 7 rounds after 3 warm-up
+rounds; operations rotate their order every round). Mac M4 Pro shared with a running game and other agents, every
+process at `nice -n 10` with `DOTNET_PROCESSOR_COUNT=4`, load average 6-9: absolute numbers are pessimistic and vary
+±30 % between runs, so compare rows of one run. Runs 1-4 (two text + two JSON) and 5-6 (interleaved with the ABI 1
+runs) on the ABI 2 library; ABI 1 = the e80ea22 library through `--old-only`.
+
+| Run | `branch_many` exact / det | per-root `branch` exact / det | old path exact / det | `restore_many` | `restore` loop | `reset(mask)` |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 2.84 / 3.96 | 7.50 / 9.24 | 4.72 / 13.96 | 4.13 | 18.30 | 3.81 |
+| 2 | 3.16 / 4.48 | 10.20 / 10.89 | 6.23 / 18.84 | 4.56 | 20.09 | 7.28 |
+| 3 | 3.06 / 4.39 | 7.46 / 9.11 | 6.07 / 20.08 | 5.44 | 22.02 | 5.24 |
+| 4 | 3.38 / 4.62 | 7.53 / 9.07 | 9.38 / 17.67 | 7.29 | 32.14 | 8.02 |
+| 5 | 3.67 / 4.86 | 9.16 / 9.97 | 9.19 / 20.42 | 8.49 | 31.83 | 8.54 |
+| 6 | 3.97 / 4.93 | 8.89 / 9.57 | 10.17 / 20.78 | 8.53 | 33.86 | 8.54 |
+| ABI 1 (a) | | | 9.64 / 16.31 | | 31.69 | 8.15 |
+| ABI 1 (b) | | | 9.92 / 23.97 | | 34.45 | 8.89 |
+
+Old path = `snapshot` per root (exact) or `clone_determinized` per destination (determinized), then one
+`reset(mask, start_ids)`; it leaves 113 + 904 pool entries per round (10,347 entries after an ABI 1 run; ABI 2 releases
+them). `branch_many` is 1.7-2.8x faster than the old path (exact) and 3.5-4.6x (determinized) within each run, and
+creates no entry. Per-root calls (8 destinations on 4 threads) pay a serial clone + encode + copy path each (60-80 µs
+per call). `restore_many` equals `reset(mask, start_ids)` (an isolated A/B: 9.38 vs 9.45 µs median) and is ≈ 4x faster
+than one `restore` call per slot.
+
+Plain stepping, no regression (`sts2vec bench --envs 1024 --threads 4 --steps 500 --json`, interleaved, load ≈ 10):
+ABI 1 library 32,953 / 35,253 / 40,604 env-steps/s (median 35,253), ABI 2 34,672 / 35,537 / 44,275 (median 35,537).
+
+Memory per branched slot (`Test_VecBranch_MemoryPerBranchedSlot`, 90 states of six random runs): `Clone()` allocates a
+median 30.7 KB (p90 47.3, max 89.1; in combat 31.7), `CloneDeterminized()` 31.6 KB, plus the slot's 30.9 KB of buffers.
