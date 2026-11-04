@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS broker_jobs (
 CREATE TABLE IF NOT EXISTS broker_research_usage_admissions (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id)
 );
+CREATE TABLE IF NOT EXISTS broker_conservative_reservations (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
+    estimate_cents INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS broker_cost_envelopes (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
     upper_cents INTEGER NOT NULL
@@ -103,7 +107,7 @@ class RavenBroker:
     fixture = False
     verified_cost_bounds = True
 
-    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, research_policy=None,
+    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None,
                  tool_enabled=False,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
@@ -111,13 +115,14 @@ class RavenBroker:
         self.authorize_spawn = authorize_spawn
         self.verify_cost_bound = verify_cost_bound
         self.reserve_bound = reserve_bound
+        self.conservative_reserve = conservative_reserve
         self.research_policy = research_policy
         self.tool_enabled = bool(tool_enabled)
         self.grant_seconds = integer(grant_seconds, 1)
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
         if self.grant_seconds > 60 or self.kill_grace_seconds > 30:
             raise ValueError("unbounded worker lease settings")
-        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or research_policy else None,
+        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or conservative_reserve or research_policy else None,
                                      research_seconds=180 if research_policy else 600,
                                      research_cents=research_policy.reserve_cents if research_policy else 25)
         with self.store.transaction() as db:
@@ -125,6 +130,12 @@ class RavenBroker:
 
     def research_usage_admitted(self, db, job_key):
         return db.execute("SELECT 1 FROM broker_research_usage_admissions WHERE job_id=?", (job_key,)).fetchone() is not None
+
+    @staticmethod
+    def conservative_reserved(db, job_key):
+        row = db.execute("SELECT estimate_cents FROM broker_conservative_reservations WHERE job_id=?",
+                         (job_key,)).fetchone()
+        return row["estimate_cents"] if row else None
 
     def can_plan_research(self, db, job):
         if self.research_policy is None:
@@ -237,7 +248,7 @@ class RavenBroker:
                 ).fetchone():
                     continue
                 if candidate["kind"] in GPU_KINDS and db.execute(
-                    """SELECT 1 FROM jobs WHERE kind='access_probe' AND json_extract(payload,'$.category')='gpu_smoke'
+                    """SELECT 1 FROM jobs WHERE kind='access_probe' AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
                        AND (state='external_reserved' OR error='gpu_receipt_unknown') LIMIT 1"""
                 ).fetchone():
                     continue
@@ -264,8 +275,12 @@ class RavenBroker:
             usage_admission = job.kind == "research" and self.research_policy is not None
             if usage_admission and not self.can_plan_research(db, job):
                 return None
-            bound = self.reserve_bound(job) if self.reserve_bound is not None else None
-            if not usage_admission and self.reserve_bound is not None and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
+            estimated = job.kind in GPU_KINDS and self.conservative_reserve is not None
+            bound = (self.conservative_reserve(job) if estimated else
+                     self.reserve_bound(job) if self.reserve_bound is not None else None)
+            if not usage_admission and (estimated or self.reserve_bound is not None) and (
+                type(bound) is not int or not 0 < bound <= job.reserve_cents
+            ):
                 return None
             authorized = self.store.clock()
             if job.deadline - authorized <= MAX_SEND_SECONDS:
@@ -280,6 +295,8 @@ class RavenBroker:
                 return None
             if usage_admission:
                 db.execute("INSERT INTO broker_research_usage_admissions VALUES (?)", (job.key,))
+            elif estimated:
+                db.execute("INSERT INTO broker_conservative_reservations VALUES (?,?)", (job.key, bound))
             elif bound is not None:
                 db.execute("INSERT INTO broker_cost_envelopes VALUES (?,?)", (job.key, bound))
             if job.kind in GPU_KINDS and getattr(provider, "detached", False) is True:
@@ -411,9 +428,11 @@ class RavenBroker:
             if job.kind in GPU_KINDS:
                 outcome = self._gpu_outcome(db, current, outcome)
             envelope = db.execute("SELECT upper_cents FROM broker_cost_envelopes WHERE job_id=?", (job.key,)).fetchone()
-            if job.kind == "research" and self.research_usage_admitted(db, job.key) and not actual_known:
+            estimated = self.conservative_reserved(db, job.key)
+            if job.kind == "research" and self.research_usage_admitted(db, job.key):
                 usage = outcome.usage_value_cents
-                if outcome.status != "succeeded" or type(usage) is not int or not 0 < usage <= job.reserve_cents:
+                if (outcome.status != "succeeded" or actual is not None
+                        or type(usage) is not int or not 0 < usage <= job.reserve_cents):
                     db.execute("UPDATE study SET stopped=COALESCE(stopped,'research usage or terminal proof outside policy')")
                     self._finish(db, job.key, Outcome("failed", error="research_usage_unverified"))
                 else:
@@ -436,10 +455,12 @@ class RavenBroker:
                 bound = self.verify_cost_bound(job, outcome)
             except Exception:
                 bound = None
-        if not actual_known and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
+        accepted_estimate = estimated if actual is None else None
+        if not actual_known and accepted_estimate is None and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
             self._note_pending(job.key, "provider terminal cost unknown")
             return True
-        settled = Outcome(outcome.status, actual if actual_known else None, outcome.output, outcome.error, bound)
+        settled = Outcome(outcome.status, actual if actual_known else None, outcome.output, outcome.error,
+                          bound, reserved_estimate_cents=accepted_estimate)
         with self.store.transaction() as db:
             latest = db.execute("SELECT state,provider_id,fence FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
             if (latest["state"] in PROVIDER_PENDING

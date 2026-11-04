@@ -330,7 +330,10 @@ class Controller:
         scoped_usage = (job.kind == "research" and actual is None and outcome.status == "succeeded"
                         and type(usage) is int and 0 < usage <= row["reserve"]
                         and hasattr(self.backend, "research_usage_admitted"))
-        if not provisional and not scoped_usage and (type(actual) is not int or not 0 <= actual <= 10_000_000):
+        estimate = outcome.reserved_estimate_cents
+        reservation_only = (job.kind in {"train", "eval"} and actual is None and type(estimate) is int
+                            and 0 < estimate <= row["reserve"] and hasattr(self.backend, "conservative_reserved"))
+        if not provisional and not scoped_usage and not reservation_only and (type(actual) is not int or not 0 <= actual <= 10_000_000):
             self._quarantine(owner, row, "terminal job cost unresolved")
             return
         error = None
@@ -366,6 +369,8 @@ class Controller:
             state = self.store.fence(db, owner)
             if scoped_usage and not self.backend.research_usage_admitted(db, job.key):
                 raise ValueError("research usage is outside its durable admission")
+            if reservation_only and self.backend.conservative_reserved(db, job.key) != estimate:
+                raise ValueError("conservative reservation is outside its durable admission")
             if provisional:
                 latest = self.backend.authoritative_cost(db, job.key)
                 if latest is not None:
@@ -382,6 +387,8 @@ class Controller:
                         diagnostic, error, job.key))
             if scoped_usage:
                 db.execute("INSERT INTO research_usage_holds VALUES (?,?,?)", (job.key, usage, self.store.clock()))
+            if reservation_only:
+                db.execute("INSERT INTO conservative_holds VALUES (?,?,?)", (job.key, estimate, self.store.clock()))
             if provisional:
                 db.execute("INSERT INTO cost_holds (job_id,reserve,proven_bound,created) VALUES (?,?,?,?)",
                            (job.key, row["reserve"], bound, self.store.clock()))

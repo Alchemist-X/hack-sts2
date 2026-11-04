@@ -33,6 +33,7 @@ CPU = 16
 MEMORY_MIB = 65536
 MAX_RUNTIME = 4500
 SDK_VERSION = "1.6.3"
+LOOP_ACCEPTANCE_EXPERIMENT = "silent-a10-pull-loop-acceptance"
 
 BOOTSTRAP = r"""
 import hashlib, json, signal, sys, time
@@ -71,6 +72,7 @@ class SandboxBinding:
     image_id: str
     volume_id: str
     bundle_hashes: dict[str, str]
+    allowed_job_keys: tuple[str, ...] | None = None
 
     def __post_init__(self):
         identifier(self.app_name)
@@ -81,6 +83,12 @@ class SandboxBinding:
             not _digest(key) or not _digest(value) for key, value in self.bundle_hashes.items()
         ):
             raise ValueError("expected immutable prepared bundle bindings")
+        if self.allowed_job_keys is not None:
+            if (not isinstance(self.allowed_job_keys, (tuple, list)) or len(self.allowed_job_keys) != 4
+                    or len(set(self.allowed_job_keys)) != 4):
+                raise ValueError("GPU loop acceptance requires four fixed job keys")
+            for key in self.allowed_job_keys:
+                identifier(key)
 
 
 def _digest(value):
@@ -121,8 +129,11 @@ class SandboxProvider:
     def supports(self, job):
         try:
             spec = validate_job(job)
+            acceptance = spec["experiment_id"] == LOOP_ACCEPTANCE_EXPERIMENT
+            exact = self.binding.allowed_job_keys
             return (job.payload["config_hash"] in self.binding.bundle_hashes
-                    and spec["checkpoint_policy"]["resume_mode"] == "fresh_episodes")
+                    and spec["checkpoint_policy"]["resume_mode"] == "fresh_episodes"
+                    and (not acceptance if exact is None else acceptance and job.key in exact and job.attempt == 1))
         except (TypeError, ValueError, KeyError, AttributeError):
             return False
 
@@ -245,6 +256,7 @@ def worker(packet, packet_hash, bundle_hash, cutoff):
         raise ValueError("worker deadline or recovery mode differs")
     root = MOUNT / "bundles" / job.payload["config_hash"]
     artifacts = MOUNT / "outputs"
+    artifacts.mkdir(exist_ok=True)
     receipts = MOUNT / "receipts"
     receipts.mkdir(exist_ok=True)
     path = receipts / f"{grant.launch_token}.json"
@@ -289,9 +301,11 @@ def worker(packet, packet_hash, bundle_hash, cutoff):
                     shutil.rmtree(old)
                     volume.commit()
 
+            tiny_segment = (job.kind == "train" and spec["experiment_id"] == LOOP_ACCEPTANCE_EXPERIMENT)
             result = run(job, installation, grant.accepted_checkpoint,
                          checkpoint_ready=checkpoint_ready if job.kind == "train" else None,
-                         seed_range=grant.seed_range, execution_deadline=cutoff, max_threads=CPU)
+                         seed_range=grant.seed_range, execution_deadline=cutoff, max_threads=CPU,
+                         one_update_segment=tiny_segment)
             if job.kind == "train":
                 if not result["last_checkpoint"] or result["env_steps"] <= job.payload["start_decisions"]:
                     raise RuntimeError("training ended without a completed rollout")

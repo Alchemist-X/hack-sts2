@@ -45,7 +45,7 @@ DIAGNOSTICS = {
     "sandbox_setup": r"bwrap|landlock|RTM_NEWADDR|sandbox setup",
     "file_write": r"failed to write file|read.only file system",
     "authentication": r"invalid_grant|unauthorized|not logged in",
-    "rate_limit": r"rate.limit|too many requests|quota",
+    "rate_limit": r"rate.limit|too many requests|quota|usage.limit|credit.limit|insufficient credits",
     "network": r"connection (?:refused|timed out)|could not resolve",
 }
 # The child cannot launch until its identity has been persisted. If the parent
@@ -235,7 +235,7 @@ class AgentRunner:
         if (type(usage) is not dict or set(usage) != keys or evidence["exit_code"] != 0
                 or evidence["terminal"] != ["turn.completed"] or kinds.count("turn.started") != 1
                 or kinds.count("thread.started") != 1 or evidence.get("unrecognized_items", 0)
-                or evidence["commands"] or evidence["diagnostics"]
+                or evidence["commands"] or evidence["diagnostics"] or any(kind in {"warning", "error"} for kind in kinds)
                 or any(event.get("item_type") not in {None, "agent_message", "reasoning"} for event in evidence["events"])
                 or any(type(value) is not int for value in usage.values())):
             raise ValueError("research lacks a valid no-tool terminal usage receipt")

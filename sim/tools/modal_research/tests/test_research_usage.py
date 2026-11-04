@@ -65,6 +65,15 @@ class ResearchUsageTest(unittest.TestCase):
         self.assertEqual(len(self.provider.jobs), 1)
         self.assertEqual(self.store.status()["reserved_usd"], 2)
 
+    def test_claimed_zero_cash_cannot_bypass_usage_proof(self):
+        job = self.start()
+        self.provider.outcome = Outcome("succeeded", actual_cents=0, output=decision(job))
+        self.runtime.tick_once()
+        state = self.store.status()
+        self.assertIsNotNone(state["stop"])
+        self.assertIsNone(state["latest_decision"])
+        self.assertEqual(state["reserved_usd"], 2)
+
     def test_missing_usage_stops_before_decision_or_retry(self):
         job = self.start()
         self.provider.outcome = Outcome("succeeded", output=decision(job))

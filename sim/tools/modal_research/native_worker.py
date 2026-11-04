@@ -116,7 +116,7 @@ def _evaluate_checkpoint(seedset, checkpoint, output, threads):
 
 
 def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, seed_range=None,
-        execution_deadline=None, max_threads=16, batch_probe=None):
+        execution_deadline=None, max_threads=16, batch_probe=None, one_update_segment=False):
     """Execute one bounded job through the guarded path. Call only after worker admission."""
     spec = validate_job(job)
     result_label(spec)
@@ -170,6 +170,10 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
         # the model component. Its verified role, never request text, selects the file.
         checkpoint = admitted.checkpoint_dir / admitted.checkpoint_manifest["files"]["model"]["name"]
 
+    if one_update_segment and (job.kind != "train" or spec["eval_protocol"] != "silent-a10-smoke-v1"
+                               or spec["rollout_shape"] != {"envs": 8, "rollout": 8}
+                               or spec["ppo_config"]["amp"] or spec["ppo_config"].get("tf32") is not False):
+        raise ValueError("one-update segment is limited to the strict FP32 tiny engineering workload")
     if job.kind == "eval":
         return _evaluate_checkpoint(dev_seedset, checkpoint, output, min(max_threads, 8))
 
@@ -190,6 +194,8 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
         "max_env_steps": job.payload["target_decisions"], "max_hours": remaining / 3600,
         "ckpt_every_min": spec["checkpoint_policy"]["interval_seconds"] / 60, "out": str(output),
     }
+    if one_update_segment:
+        options["max_updates"] = job.payload["start_decisions"] // 64 + 1
     if batch_probe is not None:
         if job.payload["checkpoint"] is not None or spec["eval_protocol"] != "silent-a10-smoke-v1":
             raise ValueError("batch probe requires a fresh engineering job")

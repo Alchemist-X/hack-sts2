@@ -27,6 +27,8 @@ def main():
         probe.add_argument(f"--{name}", required=True)
     probe.add_argument("--seconds", type=int, required=True)
     probe.add_argument("--prepare-only", action="store_true")
+    probe.add_argument("--child-job", action="append")
+    probe.add_argument("--research-event")
     commands.add_parser("activate-access-probe").add_argument("key")
     finish_probe = commands.add_parser("finish-access-probe")
     finish_probe.add_argument("key")
@@ -53,7 +55,8 @@ def main():
                               gross_used=args.gross_used, net_spent=args.net_spent, reference=args.reference)
     elif args.command == "reserve-access-probe":
         store.reserve_access_probe(args.key, args.decision_id, args.category, args.reserve_usd, args.seconds,
-                                   prepare_only=args.prepare_only)
+                                   prepare_only=args.prepare_only, authorized_jobs=args.child_job,
+                                   authorized_event=args.research_event)
     elif args.command == "activate-access-probe":
         store.activate_access_probe(args.key)
     elif args.command == "finish-access-probe":

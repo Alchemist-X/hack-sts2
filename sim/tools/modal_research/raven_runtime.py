@@ -23,7 +23,7 @@ GIB = 2**30
 
 @dataclass(frozen=True)
 class SandboxRates:
-    """Operator-reviewed maximum rates and bounded artifact retention."""
+    """Quoted rates, hard requested runtime and a conservative startup allowance."""
 
     reference: str
     valid_until: int
@@ -47,7 +47,7 @@ class SandboxRates:
             if type(value) is not str or not Decimal("0") < Decimal(value) <= Decimal("1"):
                 raise ValueError("rates must be positive decimal strings")
 
-    def bound(self, job, now):
+    def reservation(self, job, now):
         if (job.kind not in GPU_KINDS or job.deadline <= now or job.deadline > self.valid_until
                 or self.storage_verified_until is None or job.deadline > self.storage_verified_until
                 or self.storage_verified_until - now > self.storage_months * 28 * 86400):
@@ -135,9 +135,10 @@ def load_runtime(config, *, clock=time.time):
             system_identity=agent.get("system_identity"), scoped_research=research_policy is not None,
         )
 
+    def estimated(job):
+        return rates.reservation(job, clock()) if sandbox and sandbox.supports(job) else None
+
     def bound(job):
-        if job.kind in GPU_KINDS:
-            return rates.bound(job, clock()) if sandbox and sandbox.supports(job) else None
         if runner and job.kind in runner.bindings:
             return agent["cost_caps"].get(job.kind)
         return None
@@ -145,10 +146,11 @@ def load_runtime(config, *, clock=time.time):
     def authorize(job):
         if job.kind == "research" and research_policy is not None:
             return research_policy.allows(job, clock())
-        ceiling = bound(job)
+        ceiling = estimated(job) if job.kind in GPU_KINDS else bound(job)
         return type(ceiling) is int and 0 < ceiling <= job.reserve_cents
 
-    broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound, research_policy=research_policy,
+    broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
+                         research_policy=research_policy,
                          tool_enabled=bool(runner and "sol" in runner.bindings))
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,

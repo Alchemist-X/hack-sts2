@@ -103,6 +103,22 @@ class DetachedTest(unittest.TestCase):
         self.assertEqual(state["jobs_with_verified_cost_bounds"][0]["proven_upper_bound_usd"], 0.75)
         self.assertEqual(state["experiments"][0]["decisions"], 10)
 
+    def test_conservative_compute_estimate_keeps_full_hold_without_proven_bound(self):
+        self.broker = RavenBroker(self.store, self.artifacts, authorize_spawn=lambda job: True,
+                                  conservative_reserve=lambda job: 75)
+        self.runtime = RavenRuntime(self.broker, modal_provider=self.provider)
+        grant = self.start()
+        self.store.stop("acceptance")
+        self.provider.outcome = Outcome("succeeded")
+        self.provider.report = Outcome("succeeded", output=artifact(self.artifacts, grant.job, 10, "milestone"))
+        self.runtime.tick_once()
+        state = self.store.status()
+        self.assertEqual(state["reserved_usd"], 1)
+        self.assertEqual(state["jobs_with_verified_cost_bounds"], [])
+        self.assertIsNone(state["jobs_with_conservative_reservations"][0]["proven_upper_bound_usd"])
+        self.assertEqual(state["jobs_with_conservative_reservations"][0]["conservative_estimate_usd"], .75)
+        self.assertEqual(state["experiments"][0]["decisions"], 10)
+
     def test_stop_cancels_exact_existing_id_and_no_new_send(self):
         self.start()
         self.store.stop("operator")
@@ -143,8 +159,8 @@ class SandboxContractTest(unittest.TestCase):
         from modal_research.adapters import Job
         rates = SandboxRates("rates-audited", 2000, "0.001097", "0.00003942", "0.00000667", "0.09", 30, 1, storage_verified_until=2000)
         job = Job("attempt:1", "attempt", 1, "train", 1300, 100, {"spec": {"actual_param_count": 2904208}})
-        self.assertEqual(rates.bound(job, 1000), 76)
-        self.assertIsNone(rates.bound(job, 2001))
+        self.assertEqual(rates.reservation(job, 1000), 76)
+        self.assertIsNone(rates.reservation(job, 2001))
 
     def test_ready_checkpoint_survives_receipt_pointer_crash_window(self):
         from dataclasses import asdict

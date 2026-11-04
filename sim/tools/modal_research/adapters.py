@@ -24,6 +24,7 @@ class Outcome:
     output: dict | str | None = None
     error: str | None = None
     cost_bound_cents: int | None = None  # only a trusted broker can authorize a provisional hold
+    reserved_estimate_cents: int | None = None  # conservative reservation, not a proven bill bound
     usage_value_cents: int | None = None  # usage estimate, with actual cash still unknown
 
 

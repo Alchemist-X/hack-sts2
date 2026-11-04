@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     deadline REAL NOT NULL, last_checked REAL, outcome TEXT, error TEXT,
     UNIQUE(logical_key, attempt)
 );
+CREATE TABLE IF NOT EXISTS conservative_holds (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    estimate_cents INTEGER NOT NULL,
+    created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS research_usage_holds (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
     usage_value_cents INTEGER NOT NULL,
@@ -211,18 +216,29 @@ class Store:
                 raise ValueError("operational results require reconciled job evidence")
             self.append_event(db, event_id, kind, evidence, self.clock())
 
-    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False):
+    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False, authorized_jobs=None, authorized_event=None):
         identifier(key)
         identifier(decision_id)
         identifier(category)
         reserve = cents(reserve_usd)
         max_reserve, max_seconds = {
             "env_cpu_validation": (10, 600), "gpu_smoke": (200, 1200),
+            "runtime_gpu_acceptance": (200, 1200), "runtime_research_acceptance": (200, 1200),
         }.get(category, (100, 180))
         if not 0 < reserve <= max_reserve or type(seconds) is not int or not 0 < seconds <= max_seconds:
             raise ValueError("access probe exceeds local authorization envelope")
-        payload = canonical({"decision_id": decision_id, "category": category, "seconds": seconds,
-                             "retry_limit": 0})
+        payload = {"decision_id": decision_id, "category": category, "seconds": seconds, "retry_limit": 0}
+        if category == "runtime_gpu_acceptance":
+            if type(authorized_jobs) is not list or len(authorized_jobs) != 4 or len(set(authorized_jobs)) != 4:
+                raise ValueError("runtime GPU acceptance requires exactly four authorized child jobs")
+            payload["authorized_jobs"] = [identifier(job_key) for job_key in authorized_jobs]
+        elif authorized_jobs is not None:
+            raise ValueError("only runtime GPU acceptance authorizes multiple child jobs")
+        if category == "runtime_research_acceptance":
+            payload["authorized_event"] = identifier(authorized_event)
+        elif authorized_event is not None:
+            raise ValueError("only scoped research acceptance authorizes a separate event")
+        payload = canonical(payload)
         with self.transaction() as db:
             state = db.execute("SELECT * FROM study").fetchone()
             if state["mode"] != "local" or state["stopped"] or state["analysis_paused"]:
@@ -232,9 +248,9 @@ class Store:
                 if tuple(old) != (payload, reserve):
                     raise ValueError("probe key already used with different parameters")
                 return
-            if category == "gpu_smoke" and db.execute(
+            if category in {"gpu_smoke", "runtime_gpu_acceptance"} and db.execute(
                 """SELECT 1 FROM jobs WHERE
-                   (kind='access_probe' AND json_extract(payload,'$.category')='gpu_smoke'
+                   (kind='access_probe' AND json_extract(payload,'$.category') IN ('gpu_smoke','runtime_gpu_acceptance')
                     AND (state IN ('external_prepared','external_reserved') OR error='gpu_receipt_unknown'))
                    OR (kind IN ('train','eval') AND state IN ('intent','running','uncertain'))"""
             ).fetchone():
@@ -329,7 +345,8 @@ class Store:
             raise ValueError("access probe detail exceeds evidence bounds")
         environment = result["status"] in {"blocked_prelaunch", "env_verified", "env_failed"}
         gpu = result["status"] in {"gpu_stage_failed", "gpu_not_launched", "gpu_verified", "gpu_failed", "gpu_receipt_unknown"}
-        if not (environment or gpu) and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
+        runtime_gpu = result["status"] in {"runtime_gpu_verified", "runtime_gpu_failed"}
+        if not (environment or gpu or runtime_gpu) and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
             raise ValueError("unknown access probe status")
         session_ids = result["session_ids"]
         details = result.get("details", {})
@@ -339,7 +356,7 @@ class Store:
         if no_session:
             identifier(details["job_id"])
             identifier(details["invocation_id"])
-        if type(session_ids) is not list or (len(session_ids) != 0 if environment or gpu or no_session
+        if type(session_ids) is not list or (len(session_ids) != 0 if environment or gpu or runtime_gpu or no_session
                                              else not 1 <= len(session_ids) <= 2):
             raise ValueError("access probe session IDs do not match the probe type")
         for session in result["session_ids"]:
@@ -352,8 +369,16 @@ class Store:
             if not old:
                 raise ValueError("unknown access probe reservation")
             category = json.loads(old["payload"])["category"]
-            if environment != (category == "env_cpu_validation") or gpu != (category == "gpu_smoke"):
+            if (environment != (category == "env_cpu_validation") or gpu != (category == "gpu_smoke")
+                    or runtime_gpu != (category == "runtime_gpu_acceptance")):
                 raise ValueError("probe evidence category does not match the reservation")
+            if runtime_gpu:
+                approved = json.loads(old["payload"])["authorized_jobs"]
+                children = details.get("child_job_ids")
+                if (type(children) is not list or len(children) != len(set(children))
+                        or any(child not in approved for child in children)
+                        or (result["status"] == "runtime_gpu_verified" and children != approved)):
+                    raise ValueError("runtime GPU result differs from authorized child jobs")
             if result["status"] in {"gpu_verified", "gpu_failed"}:
                 details = result.get("details", {})
                 if (not old["remote_id"] or not old["submit_started"] or details.get("sandbox_id") != old["remote_id"]
@@ -430,6 +455,10 @@ class Store:
             held = db.execute(
                 "SELECT job_id,reserve,proven_bound FROM cost_holds WHERE settled_at IS NULL ORDER BY job_id",
             ).fetchall()
+            conservative = db.execute(
+                "SELECT h.job_id,j.reserve,h.estimate_cents FROM conservative_holds h "
+                "JOIN jobs j ON j.id=h.job_id WHERE j.actual IS NULL ORDER BY h.created"
+            ).fetchall()
             usage_holds = db.execute(
                 "SELECT h.job_id,j.reserve,h.usage_value_cents FROM research_usage_holds h "
                 "JOIN jobs j ON j.id=h.job_id WHERE j.actual IS NULL ORDER BY h.created"
@@ -456,13 +485,18 @@ class Store:
                     "reference": snapshot["reference"], "observed_at": snapshot["observed_at"],
                 } if snapshot else None,
                 "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - reserved) / 100,
-                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held and not usage_holds,
+                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held and not usage_holds and not conservative,
                 "reserved_usd": reserved / 100,
                 "conservative_budget_held_usd": sum(row["reserve"] for row in held) / 100,
                 "jobs_with_verified_cost_bounds": [
                     {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
                      "proven_upper_bound_usd": row["proven_bound"] / 100}
                     for row in held
+                ],
+                "jobs_with_conservative_reservations": [
+                    {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
+                     "conservative_estimate_usd": row["estimate_cents"] / 100, "bound_kind": "conservative_reservation",
+                     "proven_upper_bound_usd": None} for row in conservative
                 ],
                 "research_usage_cash_unknown": [
                     {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
