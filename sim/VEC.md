@@ -7,11 +7,12 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `dcbee4daff61c155`, 35,062
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `3b73317739c650bd`, 35,062
 bytes/env, 43 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
 appended `EndKind.FloorStall`; the player-view schema append of 2026-11-03 appended 6 buffers, "Appended buffers"
 below; the rewards-screen macros of 2026-11-04 appended `reward_choices` and two candidate kinds, "Rewards-screen
-macros"; the map-routing features of 2026-11-04 appended `map_routes`; integration figures below were measured at
+macros"; the map-routing features of 2026-11-04 appended `map_routes`, and the static card table `card_static` joined
+the schema JSON (not a buffer); integration figures below were measured at
 `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
@@ -335,6 +336,18 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
   convention (`""` 0, `"?"` 1). Rows beyond a table's count are zero; mask by the matching `*_n` (or id ≠ 0).
 - `playable_reason_id` holds the raw `UnplayableReason` bitmask; `playable_reason_bits` maps names to bits.
 - Count vectors: index `card_id * 2 + min(upgrade, 1)`, length `2 × V_cards`.
+- `card_static` (appended 2026-11-04; `CardStatic.cs`): a static table in the schema JSON, `{"fields": [...], "rows":
+  [[...], ...]}`, one int row per `cards` vocab id (rows 0 / 1 zero), published once rather than per observation so a
+  model can embed a card from its numbers: `ported`, energy / star cost and after one upgrade (−1 X, −2 unplayable /
+  star X), type, rarity, target, keyword mask (and upgraded), max upgrade level, `upgrade_known`, damage / block / hits
+  (base and upgraded), and the first four dynamic vars (`card_vars` ids, base and upgraded values; every "magic number"
+  is one of them). Ported cards are read from a probe `CardInstance` (canonical values, then one `Upgrade()` = the
+  def's `OnUpgrade`); catalog-only cards (`ported` 0) carry their catalog cost / type / rarity / target. Per-instance
+  values as in `hand` (MAD_SCIENCE's type is its Tinker Time choice, None on a fresh card). Python:
+  `schema.card_static` (int32 [V_cards, F]), `schema.card_static_fields`, `schema.card_static_cols()`. Test
+  `VecTests.Test_Vec_CardStaticTable`: 595 card constructors (cost, type, rarity, target) and the damage (152), block
+  (65) and cost (55) changes of the game's `OnUpgrade` bodies agree with `knowledge/source/v0.111.0/cards.jsonl`; the
+  table adds ≈ 40 KB to the schema JSON (74 KB in all) and changes `encoder_version` whenever a card's numbers change.
 - `encoder_version` = XXH64 (seed 0, lower-case hex) of the UTF-8 JSON text with the leading
   `"encoder_version":"…",` member removed (Python: `Schema.verify_version()`).
 

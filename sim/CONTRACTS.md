@@ -1371,7 +1371,10 @@ appended after the existing ones, so every earlier buffer keeps its index, shape
 "events": [...], "orbs": [...], "enchantments": [...], "afflictions": [...], "acts": [...], "characters": [...],
 "enums": {"RunPhase": [...], "RunActionKind": [...], "IntentType": [...], "MapPointType": [...], "RewardType": [...],
 "ChoicePromptKind": [...], "CardType": [...], "TargetType": [...], "CardRarity": [...], "RestOption": [...],
-"CardRewardAlt": [...], "ShopCategory": [...]}}, "caps": {...}, "card_vars": [...131 names...], "playable_reasons": [...]}`.
+"CardRewardAlt": [...], "ShopCategory": [...]}}, "caps": {...}, "card_vars": [...131 names...], "playable_reasons": [...],
+"card_static": {"fields": [...], "rows": [[...], ...]}}` (`card_static` appended 2026-11-04: one row of static card
+features per `cards` id — costs, enums, keywords, damage / block / hits and the first four vars, base and after one
+upgrade; `sim/VEC.md` "Schema").
 Vocabularies are the registries' `AllIds` (sorted ordinal) with `""` at 0 and `"?"` at 1; cards additionally list the
 `CardCatalog` ids that the registry lacks (unported) so the catalog is version-stable. `V_cards` = `vocab.cards.length`.
 

@@ -116,6 +116,23 @@ def test_vocab_reverse_maps(schema):
     assert schema.playable_reason_names(0) == ["None"]
 
 
+def test_card_static_table(schema):
+    """The static card table published in the schema JSON (appended 2026-11-04): one row per cards vocab id."""
+    k = schema.card_static_cols()
+    t = schema.card_static
+    assert t.dtype == np.int32 and t.shape == (len(schema.vocab.cards), len(schema.card_static_fields))
+    assert not t[:2].any(), "rows 0 (none) and 1 (unknown) are zero"
+    strike = t[schema.vocab.cards.index_of("STRIKE_IRONCLAD")]
+    assert strike[k.ported] == 1 and strike[k.cost] == 1 and (strike[k.damage], strike[k.damage_upgraded]) == (6, 9)
+    assert schema.vocab.enums["CardType"].name(int(strike[k.type])) == "Attack"
+    assert schema.card_vars[int(strike[k.var_id_0])] == "Damage" and strike[k.var_val_upgraded_0] == 9
+    defend = t[schema.vocab.cards.index_of("DEFEND_SILENT")]
+    assert (defend[k.block], defend[k.block_upgraded]) == (5, 8)
+    assert t[2:, k.ported].sum() == len(t) - 2 - int((t[2:, k.ported] == 0).sum()) > 500
+    with pytest.raises(AttributeError):
+        _ = k.nope
+
+
 def test_status_flags():
     assert STATUS == {s.name: int(s) for s in Status}
     assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128 and STATUS["FLOOR_STALL"] == 256

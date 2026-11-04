@@ -245,6 +245,18 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 }
 
 
+# the static card table (schema JSON "card_static", appended 2026-11-04): [(columns, range, meaning)]
+CARD_STATIC_DESCR: list[tuple[str, str, str]] = [
+    ("ported", "0/1", "1 = in the simulator's content; 0 = known only from the catalog (cost, type, rarity, target; rest 0)"),
+    ("cost, cost_upgraded, star_cost, star_cost_upgraded", "-2/-1/>= 0", "energy / star cost of a fresh card and after one upgrade; energy -1 = X, -2 = unplayable; star -1 = none, -2 = X"),
+    ("type, rarity, target, keyword_mask, keyword_mask_upgraded", "{e:CardType}, {e:CardRarity}, {e:TargetType}, {kw}", "card enums (MAD_SCIENCE: type None until Tinker Time); canonical / upgraded keywords"),
+    ("max_upgrade, upgrade_known", ">= 0, 0/1", "upgrade levels; 1 = the upgraded columns come from a probe upgrade"),
+    ("damage, damage_upgraded, block, block_upgraded, hits, hits_upgraded", "-1/>= 0", "Damage (or Calculated / Osty damage) and Block vars, hits per play (-1 = X); base / upgraded"),
+    ("var_id_0, var_id_1, var_id_2, var_id_3, var_val_0, var_val_1, var_val_2, var_val_3, var_val_upgraded_0, var_val_upgraded_1, var_val_upgraded_2, var_val_upgraded_3",
+     "{cv}, int", "the first 4 dynamic vars as in `hand` (every \"magic number\" is one), base / upgraded values"),
+]
+
+
 def _compress(names: list[str]) -> str:
     """'var_id_0, var_id_1, var_id_2, var_id_3' -> 'var_id_0..3'."""
     m = [re.fullmatch(r"(.*_)(\d+)", n) for n in names]
@@ -328,6 +340,22 @@ def render(schema) -> str:
             dup = sorted({f for f in covered if covered.count(f) > 1})
             if unc or dup:
                 raise SystemExit(f"gen_env_spec: {b.name}: undescribed columns {unc}, described twice {dup}")
+    fields = tuple(getattr(schema, "card_static_fields", ()))
+    if fields:
+        out += ["", f"Static card table (`schema.card_static`, int32 [{schema.card_static.shape[0]}, {len(fields)}]: row = `cards` id; "
+                "published once in the schema JSON as `card_static`, not per observation; rows 0 and 1 are zero; "
+                "`schema.card_static_cols()` names the columns):", "", "| column(s) | range | meaning |", "| --- | --- | --- |"]
+        covered: list[str] = []
+        for spec, rng, meaning in CARD_STATIC_DESCR:
+            fs = [f.strip() for f in spec.split(",")]
+            unknown = [f for f in fs if f not in fields]
+            if unknown:
+                raise SystemExit(f"gen_env_spec: card_static: described columns {unknown} are not in the schema")
+            covered += fs
+            out.append(f"| {_compress(fs)} | {_range(rng, schema)} | {meaning} |")
+        unc = [f for f in fields if f not in covered]
+        if unc:
+            raise SystemExit(f"gen_env_spec: card_static: undescribed columns {unc}")
     out += ["", "Enum values (`schema.vocab.enums[name][value]`):", ""]
     for name, values in schema.vocab.enums.items():
         out.append(f"- `{name}`: " + ", ".join(f"{i} {v or '∅'}" for i, v in enumerate(values)))

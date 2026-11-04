@@ -329,7 +329,7 @@ public static class Schema
         Indented = false,
     };
 
-    /// <summary>The schema JSON without the encoder_version member: <c>{"buffers":…,"vocab":…,"caps":…,"card_vars":…,"playable_reasons":…,"playable_reason_bits":…}</c>.</summary>
+    /// <summary>The schema JSON without the encoder_version member: <c>{"buffers":…,"vocab":…,"caps":…,"card_vars":…,"playable_reasons":…,"playable_reason_bits":…,"card_static":…}</c>.</summary>
     internal static string BuildBody()
     {
         using var ms = new MemoryStream();
@@ -387,6 +387,22 @@ public static class Schema
             {
                 w.WriteNumber(name, bit);
             }
+            w.WriteEndObject();
+
+            // appended 2026-11-04: the static card features, one row per cards vocab id (CardStatic)
+            w.WriteStartObject("card_static");
+            WriteStrings(w, "fields", CardStatic.Fields);
+            w.WriteStartArray("rows");
+            foreach (var row in CardStatic.Rows)
+            {
+                w.WriteStartArray();
+                foreach (int v in row)
+                {
+                    w.WriteNumberValue(v);
+                }
+                w.WriteEndArray();
+            }
+            w.WriteEndArray();
             w.WriteEndObject();
             w.WriteEndObject();
         }
