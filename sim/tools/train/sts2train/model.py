@@ -11,6 +11,10 @@ concatenated into the state MLP; 948,750 parameters at d = 96, s = 256). ``depth
 trunk over 17 table tokens (the pooled tables, typed) plus one token per hand card, enemy and potion row (typed and
 slot-indexed, padding masked): the state is read from the global token and the mean of all live tokens, and the
 contextualised hand / enemy / potion rows feed the candidate pointers. ``PRESETS`` names the standard sizes.
+
+Optional parts (``MODEL_FLAGS``, off by default; with all of them off this is exactly the model above):
+``aux_heads`` adds a win-probability head and a combat-hp head on the state embedding (``sts2train.heads``;
+``forward(x, aux=True)`` also returns their logits).
 """
 
 from __future__ import annotations
@@ -37,6 +41,9 @@ PRESETS = {
 }
 ARCH_KEYS = ("d", "s", "depth", "heads", "ff_mult")
 ARCH_DEFAULTS = PRESETS["smoke"]
+# Optional parts of the architecture (bool, off = the model above): `aux_heads` = win-probability and combat-hp heads
+# on the state (sts2train.heads). A checkpoint's "arch" lists the ones that are on; `arch_of` defaults the rest to off.
+MODEL_FLAGS = ("aux_heads",)
 # (buffer key, table, columns) read together (`Policy._cols`).
 COL_GROUPS = (
     ("relic_num", "relics", ("counter", "used_up", "stack")),
@@ -123,7 +130,8 @@ class Block(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4):
+    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4,
+                 aux_heads: bool = False):
         super().__init__()
         self.spec = spec
         self.d, self.s = d, s
@@ -257,6 +265,14 @@ class Policy(nn.Module):
         self.register_buffer("kind_prompt", is_prompt, persistent=False)
         pik = spec.enum_names["PromptItemKind"]
         self._pik_card, self._pik_relic, self._pik_potion = pik.index("card"), pik.index("relic"), pik.index("potion")
+
+        # MODEL_FLAGS parts come last: with them off this is the model above parameter for parameter, and with them on
+        # every other parameter starts from the same values (the same draws of the init RNG).
+        self.aux_heads = bool(aux_heads)
+        if self.aux_heads:
+            ha = max(s // 4, 16)
+            self.win_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
+            self.combat_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
 
     # ------------------------------------------------------------------------------------------------ tables
 
@@ -486,8 +502,12 @@ class Policy(nn.Module):
         state = self.state_mlp(torch.cat([h[:, 0], masked_mean(h, keep)], -1))
         return state, h[:, o:o + H], h[:, o + H:o + H + E], h[:, o + H + E:]
 
-    def forward(self, x: dict[str, torch.Tensor]):
-        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32)."""
+    def forward(self, x: dict[str, torch.Tensor], aux: bool = False):
+        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32); with `aux` (a model with aux_heads)
+        also the heads' logits {"win_logit": [B], "combat_logit": [B]} float32 (sts2train.heads: win_prob =
+        sigmoid(win_logit), combat_hp_pred = sigmoid(combat_logit))."""
+        if aux and not self.aux_heads:
+            raise ValueError("forward(aux=True) needs a model built with aux_heads=True")
         state, tables = self.encode(x)
         value = self.value_head(state).squeeze(-1)
         cand, cc = x["cand"], self.spec.cols["cand"]
@@ -519,11 +539,17 @@ class Policy(nn.Module):
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)
         valid = torch.arange(Cn, device=cand.device).view(1, -1) < x["cand_n"].view(-1, 1)
         logits = logits.float().masked_fill(~valid, NEG)          # float32 even under autocast
+        if aux:
+            return logits, value.float(), {"win_logit": self.win_head(state).squeeze(-1).float(),
+                                           "combat_logit": self.combat_head(state).squeeze(-1).float()}
         return logits, value.float()
 
     @property
     def arch(self) -> dict:
-        return {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
+        """Size knobs + the MODEL_FLAGS that are on (a model without them reports exactly the five knobs)."""
+        a = {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
+        a.update({k: True for k in MODEL_FLAGS if getattr(self, k)})
+        return a
 
 
 def param_count(m: nn.Module) -> int:
@@ -571,6 +597,17 @@ def activation_bytes_per_sample(model: nn.Module, spec: ModelSpec, rows: int = 6
 
 
 def arch_of(config: dict | None) -> dict:
-    """The architecture kwargs of ``Policy`` from a (checkpoint) config; missing keys = the smoke model."""
+    """The architecture kwargs of ``Policy`` from a (checkpoint) arch / config; missing size keys = the smoke model,
+    missing MODEL_FLAGS = off."""
     config = config or {}
-    return {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}
+    out = {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}
+    out.update({k: bool(config.get(k, False)) for k in MODEL_FLAGS})
+    return out
+
+
+def model_arch(cfg) -> dict:
+    """``Policy`` kwargs of a TrainConfig: the size knobs plus the MODEL_FLAGS that are on (the record config.json and
+    the log line show)."""
+    a = {k: getattr(cfg, k) for k in ARCH_KEYS}
+    a.update({k: True for k in MODEL_FLAGS if getattr(cfg, k, False)})
+    return a

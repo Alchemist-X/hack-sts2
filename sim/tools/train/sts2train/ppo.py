@@ -5,6 +5,10 @@ Objectives (``sts2train.objective``): ``protocol`` (default) = per-step change o
 protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory terminal, else 0; CONTRACTS.md D5);
 ``shaped`` (LEGACY, ``--shaped``) = ``win`` + delta(total_floor) / 48 per step, the 2026-11-02 smoke objective.
 
+``aux_heads`` (``--aux-heads``, off by default) adds a win-probability head and a combat-hp head on the state
+(``sts2train.heads``: targets per rollout window, masked BCE / squared error weighted ``aux_coef``); the policy, value
+head and PPO loss are unchanged, and with the flag off the trainer computes exactly what it computed before.
+
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
 the env restarts from fresh episodes),
@@ -56,7 +60,8 @@ from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
 from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
-from .model import ARCH_KEYS, PRESETS, Policy, activation_bytes_per_sample, arch_of, param_count
+from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
+from .model import PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count
 from .objective import OBJECTIVES, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
@@ -109,6 +114,10 @@ class TrainConfig:
     depth: int = 0                  # transformer trunk blocks (0 = the original pooled-concat model)
     heads: int = 4
     ff_mult: int = 4
+    # auxiliary heads (sts2train.heads; architecture: part of the checkpoint's arch)
+    aux_heads: bool = False         # win-probability + combat-hp heads on the state, trained with the PPO loss
+    aux_coef: float = 0.1           # weight of their losses (masked BCE + masked squared error)
+    aux_bootstrap: bool = True      # episodes / combats still running at the window end: target = the head there
     # runtime
     device: str = "cpu"             # cpu | mps | cuda[:i] | auto
     amp: bool = False               # bf16 autocast (CUDA only)
@@ -164,7 +173,15 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
     if out.compile == "reduce-overhead" and out.static_rows is False:
         raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
+    if not float(out.aux_coef) >= 0.0:
+        raise ValueError(f"aux_coef {out.aux_coef} must be >= 0")
     return out
+
+
+def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
+    """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then AUX_STAT_NAMES with
+    aux_heads."""
+    return STAT_NAMES + (AUX_STAT_NAMES if cfg.aux_heads else ())
 
 
 def use_static_rows(cfg: TrainConfig) -> bool:
@@ -191,8 +208,13 @@ def save_checkpoint(path: Path, model: Policy, spec: ModelSpec, cfg: TrainConfig
     wh = weights_hash(model)
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
     atomic_torch_save({"format": CKPT_FORMAT, "spec": spec.to_json(), "model": state, "config": config_dict(cfg),
-                       "arch": model.arch, "weights_hash": wh, **extra}, path)
+                       "arch": model.arch, "weights_hash": wh, **head_record(model), **extra}, path)
     return wh
+
+
+def head_record(model: Policy) -> dict:
+    """{"heads": {output: definition}} for a model with aux heads (what `sts2train eval` can read out), else {}."""
+    return {"heads": dict(HEAD_OUTPUTS)} if getattr(model, "aux_heads", False) else {}
 
 
 def load_checkpoint(path, device="cpu") -> tuple[Policy, ModelSpec, dict]:
@@ -211,7 +233,8 @@ def make_checkpoint(model: Policy, opt: torch.optim.Optimizer, spec: ModelSpec, 
             "model": {k: v.detach().cpu() for k, v in model.state_dict().items()}, "weights_hash": weights_hash(model),
             "optimizer": opt.state_dict(), "updates": int(counters.get("updates", 0)),
             "env_steps": int(counters.get("env_steps", 0)), "counters": dict(counters), "rng": _rng_state(rng, device),
-            "params": param_count(model), "encoder_version": spec.encoder_version, "saved_at": _now_iso(), **extra}
+            "params": param_count(model), "encoder_version": spec.encoder_version, "saved_at": _now_iso(),
+            **head_record(model), **extra}
 
 
 def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | None, rng: np.random.Generator | None,
@@ -437,11 +460,18 @@ def _autocast(amp: bool):
 
 def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
              madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
-             ent_coef: float, amp: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+             ent_coef: float, amp: bool = False, aux: tuple | None = None,
+             aux_coef: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
     """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
-    and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor."""
+    and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
+    `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
+    losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
+    heads = None
     with _autocast(amp):
-        logits, v = model(xb)
+        if aux is None:
+            logits, v = model(xb)
+        else:
+            logits, v, heads = model(xb, aux=True)
     logp_all = F.log_softmax(logits, -1)
     newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
     ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
@@ -450,9 +480,15 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
     vclip = vold + (v - vold).clamp(-clip, clip)
     vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
     loss = pg + vf_coef * vl - ent_coef * ent
+    if heads is not None:
+        wl, cl, wf, cf_ = aux_losses(heads, *aux)
+        loss = loss + aux_coef * (wl + cl)
     with torch.no_grad():
         kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
         cf = ((ratio - 1).abs() > clip).float().mean()
+    if heads is not None:
+        return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(), wl.detach(),
+                                  cl.detach(), wf, cf_])
     return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()])
 
 
@@ -491,7 +527,10 @@ class MinibatchUpdater:
 
     `compiled=False` runs the eager function (the trainer uses it for a short last minibatch, whose shape would
     otherwise recompile the static-shape graph). Outputs of a CUDA-graph replay are overwritten by the next replay,
-    so the returned statistics are a fresh tensor and gradients are cleared before the forward."""
+    so the returned statistics are a fresh tensor and gradients are cleared before the forward.
+
+    With `cfg.aux_heads` the six PPO tensors are followed by the aux heads' four (win_y, win_m, combat_y, combat_m)
+    and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`)."""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
                  device: torch.device | str):
@@ -499,28 +538,38 @@ class MinibatchUpdater:
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
         self.coefs = (vf_coef, ent_coef)
+        self.aux = bool(getattr(cfg, "aux_heads", False))
+        aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
-        def loss_fn(xb, act, oldlogp, madv, vret, vold):
-            return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
-                            ent_coef=ent_coef, amp=amp)
+        if self.aux:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold, win_y, win_m, combat_y, combat_m):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef)
+        else:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp)
 
         self.eager = loss_fn
         self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
         self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
 
-    def loss(self, xb, act, oldlogp, madv, vret, vold, *, compiled: bool = True):
+    def loss(self, *args, compiled: bool = True):
+        """`args` = (xb, act, oldlogp, madv, vret, vold[, win_y, win_m, combat_y, combat_m])."""
         if compiled and self.compiled is not None:
             if self.cudagraphs:
                 torch.compiler.cudagraph_mark_step_begin()
-            return self.compiled(xb, act, oldlogp, madv, vret, vold)
-        return self.eager(xb, act, oldlogp, madv, vret, vold)
+            return self.compiled(*args)
+        return self.eager(*args)
 
-    def __call__(self, xb, act, oldlogp, madv, vret, vold, *, compiled: bool = True) -> torch.Tensor:
+    def __call__(self, *args, compiled: bool = True) -> torch.Tensor:
         self.opt.zero_grad(set_to_none=True)
-        loss, st = self.loss(xb, act, oldlogp, madv, vret, vold, compiled=compiled)
+        loss, st = self.loss(*args, compiled=compiled)
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
         self.opt.step()
+        if self.aux:
+            return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
 
 
@@ -641,7 +690,7 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
         raise ValueError(f"{ck_path} is a weights-only checkpoint (no optimizer / counters); it cannot be resumed")
     cfg = resolve_config(given, ck.get("config") if ck else None)
     if ck is not None:
-        want, have = arch_of(ck.get("arch") or ck.get("config")), {k: getattr(cfg, k) for k in ARCH_KEYS}
+        want, have = arch_of(ck.get("arch") or ck.get("config")), arch_of(config_dict(cfg))
         if want != have:
             raise ValueError(f"architecture {have} differs from the checkpoint's {want}; drop the model flags to resume")
     elif CheckpointManager(cfg.out).latest() is not None:
@@ -694,7 +743,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                f"{compat['library_encoder_version']}")
         floor_cap = effective_floor_step_cap(env)
         starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
-        arch = {k: getattr(cfg, k) for k in ARCH_KEYS}
+        arch = model_arch(cfg)                             # size knobs + the optional parts that are on
         model = Policy(spec, **arch)                       # on the CPU until the size guard has passed
         model.grad_ckpt = bool(cfg.grad_ckpt)
         n_params = param_count(model)
@@ -720,6 +769,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
+        aux_tg = None
+        if cfg.aux_heads:
+            aux_tg = AuxTargets(spec.aux_fields, env.schema["last_episode"].fields, cfg.rollout, cfg.envs,
+                                bootstrap=cfg.aux_bootstrap)
+            log(f"aux heads: win_prob (BCE to the episode outcome) + combat_hp_pred (squared error), weight "
+                f"{cfg.aux_coef}; running episodes / combats at the window end: "
+                + ("bootstrapped from the heads" if cfg.aux_bootstrap else "masked"))
 
         baseline = None
         if cfg.baseline_steps and resume is None:
@@ -904,6 +960,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             for t in range(cfg.rollout):
                 t0 = time.monotonic()
                 cand_n = obs["cand_n"].copy()
+                if aux_tg is not None:
+                    aux_tg.before(t, obs["aux"])
                 x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
                 if runner.compiled is not None and "forward" not in compile_check:
                     compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
@@ -926,6 +984,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                if aux_tg is not None:
+                    aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -944,8 +1004,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 ep_this += fin
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
-            _, last_v = runner.forward(obs_to_device(obs, device, max_rows=cfg.max_rows, static=static))
+            x_last = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+            _, last_v = runner.forward(x_last)
             last_v = last_v.cpu().numpy()
+            aux_np, aux_st = (), {}
+            if aux_tg is not None:                  # the heads at the state after the window (bootstrap targets)
+                with torch.no_grad(), _autocast(amp):
+                    _, _, hb = model(x_last, aux=True)
+                win_b, cmb_b = (torch.sigmoid(hb[k]).cpu().numpy() for k in ("win_logit", "combat_logit"))
+                *aux_np, aux_st = aux_tg.targets(win_b, cmb_b)
+                in_cmb = obs["aux"][:, spec.aux_fields.index("is_combat")] != 0
+                aux_st.update(aux_win_prob_mean=float(win_b.mean()),
+                              aux_combat_pred_mean=float(cmb_b[in_cmb].mean()) if in_cmb.any() else None)
             infer_s += time.monotonic() - t0
             adv = np.zeros_like(store.rewards)
             gae = np.zeros(cfg.envs, dtype=np.float32)
@@ -971,10 +1041,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             mbs = [np.sort(perm[k:k + cfg.minibatch]) for perm in (rng.permutation(idx_all) for _ in range(cfg.epochs))
                    for k in range(0, len(perm), cfg.minibatch)]
             d_mbs = torch.split(to(np.concatenate(mbs)), [len(m) for m in mbs]) if mbs else ()
+            d_aux = tuple(to(a_.reshape(-1)) for a_ in aux_np)      # win_y, win_m, combat_y, combat_m (aux heads)
 
             def mb_args(mb_h, mb):
                 return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
-                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb])
+                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux))
 
             if updater.compiled is not None and "update" not in compile_check and mbs \
                     and len(mbs[0]) == cfg.minibatch:
@@ -991,7 +1062,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             update_s = time.monotonic() - t_up
             if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
                 raise FloatingPointError(f"non-finite loss at update {upd + 1}")
-            sm = dict(zip(STAT_NAMES, (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
+            sm = dict(zip(stat_names(cfg), (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
             ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
@@ -1044,7 +1115,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   **gpu_memory(device)}
+                   **aux_st, **gpu_memory(device)}
             metrics.write(row)
             last_sps = round(sps, 1)
             write_status(upd, state)
@@ -1057,6 +1128,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")
+                    + (f" | aux win_bce={fmt(sm.get('aux_win_loss'), '.4f')} combat_se="
+                       f"{fmt(sm.get('aux_combat_loss'), '.4f')} p_win={fmt(aux_st.get('aux_win_prob_mean'), '.4f')}"
+                       if aux_tg is not None else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary

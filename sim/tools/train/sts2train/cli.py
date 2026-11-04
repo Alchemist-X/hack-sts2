@@ -164,6 +164,16 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--depth", type=int, help=f"transformer blocks (default {D.depth} = pooled-concat model)")
     g.add_argument("--heads", type=int, help=f"(default {D.heads})")
     g.add_argument("--ff-mult", dest="ff_mult", type=int, help=f"(default {D.ff_mult})")
+    g.add_argument("--aux-heads", dest="aux_heads", action=argparse.BooleanOptionalAction,
+                   help="auxiliary heads on the state: win_prob (BCE to the episode outcome) and combat_hp_pred (hp "
+                        "fraction at the end of the current combat, squared error), trained with the PPO loss; part "
+                        "of the architecture (a checkpoint resumes only with its own setting); `sts2train eval` writes "
+                        "their per-step readouts into the game logs (default off)")
+    g.add_argument("--aux-coef", dest="aux_coef", type=float,
+                   help=f"weight of the aux heads' losses (default {D.aux_coef})")
+    g.add_argument("--aux-bootstrap", dest="aux_bootstrap", action=argparse.BooleanOptionalAction,
+                   help="aux targets of episodes / combats still running at the end of a rollout window: the heads' "
+                        "own prediction there (n-step bootstrap; default on) or masked (--no-aux-bootstrap)")
     g = tr.add_argument_group("objective")
     g.add_argument("--objective", choices=["protocol", "win", "shaped"],
                    help="protocol (default): per-step delta of the protocol v0.2 progress + --win-bonus at a win; "
@@ -313,7 +323,8 @@ def main(argv=None) -> int:
         print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                           "wins": h["wins"], "games": h["games"], "results": h["results"],
                           "floor_mean": h["floor_mean"], "act_reached": h["act_reached"],
-                          "replayable": h["replayable"]}, indent=1))
+                          "replayable": h["replayable"],
+                          **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {})}, indent=1))
         if h["replayable"] != h["games"]:      # the replay audit failed: the score is not reproducible (sts2vec eval)
             print(f"error: replay audit failed: {h['replayable']}/{h['games']} games replayable (report.md lists "
                   f"them)", file=sys.stderr, flush=True)
