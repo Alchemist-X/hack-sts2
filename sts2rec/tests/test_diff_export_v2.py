@@ -23,15 +23,17 @@ from sts2rec.diff_export_v2 import (
     RUN_LAYER_SOURCES,
     ContentRegistry,
     DeckTracker,
+    RoomWindow,
     _event_option_index,
     _shop_slot,
     export_bundles_v2,
+    hoist_combat_starting_event_options,
     prompt_open_state,
     reason_class_v2,
     resolve_card_picks,
     scan_content_registry,
 )
-from sts2rec.session import StateRecord
+from sts2rec.session import ActionRecord, EventRecord, StateRecord
 
 from .test_diff_bundle import BASH, DEFEND, STRIKE, combat_state, enemy, hand_card, pile_card
 from .test_diff_export import REGISTRY, Stream, card_event, ironclad_lineage, silent_lineage, write_part
@@ -491,3 +493,34 @@ def test_event_option_prefers_the_recorded_option_key() -> None:
     assert _event_option_index(params, None) == ("OROBAS.pages.INITIAL.options.SEA_GLASS", 0)
     legacy = {"title_key": "NEOWS_TALISMAN.title"}
     assert _event_option_index(legacy, None)[0] == "NEOWS_TALISMAN"
+
+
+def _act(seq: int, kind: str, state_seq: int | None, source: str = "hook:test", **params: Any) -> ActionRecord:
+    return ActionRecord(seq=seq, t=float(seq), source=source, action={"kind": kind, "params": params}, state_seq=state_seq, status="committed")
+
+
+def _snap(seq: int, state_type: str) -> StateRecord:
+    return StateRecord(seq=seq, t=float(seq), trigger="action", screen=state_type, hash="", state={"state_type": state_type})
+
+
+def test_event_option_that_starts_a_combat_moves_back_to_the_event() -> None:
+    # Farm VSQP6ESN1F f7: PUNCH_OFF FIGHT enters the combat inside its handler (Models.Events/PunchOff.cs:522-535); the
+    # SaveEventOptionToHistory hook logs it after the combat's room_entered, with a battle snapshot as its state.
+    save_option = "hook:EventSynchronizer.SaveEventOptionToHistory"
+    event_room = EventRecord(seq=1144, t=0.0, entry="room_entered", data={"room_type": "Event", "room_model_id": "EVENT.PUNCH_OFF", "act": 0, "floor": 7})
+    combat_room = EventRecord(seq=1152, t=0.0, entry="room_entered", data={"room_type": "Monster", "room_model_id": "ENCOUNTER.PUNCH_OFF_EVENT_ENCOUNTER", "act": 0, "floor": 7})
+    take_them = _act(1146, "event_option", 1145, save_option, text_key="PUNCH_OFF.pages.INITIAL.options.I_CAN_TAKE_THEM")
+    fight = _act(1154, "event_option", 1153, save_option, text_key="PUNCH_OFF.pages.I_CAN_TAKE_THEM.options.FIGHT")
+    play = _act(1167, "play_card", 1166, card_model_id="CARD.DEFEND_REGENT")
+    event = RoomWindow(part_index=0, room=event_room, end_seq=1152, states=[_snap(1145, "event"), _snap(1147, "event"), _snap(1148, "monster")], actions=[take_them], events=[])
+    combat = RoomWindow(part_index=0, room=combat_room, end_seq=None, states=[_snap(1153, "monster"), _snap(1166, "monster")], actions=[fight, play], events=[])
+    notes = hoist_combat_starting_event_options([event, combat])
+    assert [a.seq for a in event.actions] == [1146, 1154]
+    assert event.actions[1].state_seq == 1147, "the event window's last event snapshot (the FIGHT page), not the combat message"
+    assert [a.seq for a in combat.actions] == [1167]
+    assert len(notes) == 1 and "1154" in notes[0]
+    # A combat on another floor, or after a room that is not an event, keeps its records.
+    other = RoomWindow(part_index=0, room=EventRecord(seq=1200, t=0.0, entry="room_entered", data={"room_type": "Monster", "room_model_id": "ENCOUNTER.X", "act": 0, "floor": 8}),
+                       end_seq=None, states=[], actions=[_act(1201, "event_option", 1200)], events=[])
+    assert hoist_combat_starting_event_options([combat, other]) == []
+    assert [a.seq for a in other.actions] == [1201]

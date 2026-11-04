@@ -14,6 +14,7 @@ reasons; ``reasons.json`` indexes every run and segment.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -725,9 +726,10 @@ def room_windows(parts: Sequence[PartStreams]) -> tuple[list[RoomWindow], list[s
                 notes.append(f"{part.path.name}: {len(orphan)} actions before the first room entry")
         elif part.actions:
             notes.append(f"{part.path.name}: {len(part.actions)} actions and no room entry")
+        part_windows: list[RoomWindow] = []
         for position, room in enumerate(rooms):
             end = rooms[position + 1].seq if position + 1 < len(rooms) else None
-            windows.append(
+            part_windows.append(
                 RoomWindow(
                     part_index=part_index,
                     room=room,
@@ -737,7 +739,43 @@ def room_windows(parts: Sequence[PartStreams]) -> tuple[list[RoomWindow], list[s
                     events=_window(part.events, room.seq, end),
                 )
             )
+        notes += hoist_combat_starting_event_options(part_windows)
+        windows += part_windows
     return windows, notes
+
+
+def hoist_combat_starting_event_options(windows: Sequence[RoomWindow]) -> list[str]:
+    """Move an event option that started a combat back into its event's window.
+
+    An event that fights without leaving (``EventModel.EnterCombatWithoutExitingEvent``: PUNCH_OFF FIGHT,
+    Models.Events/PunchOff.cs:522-535; THE_LANTERN_KEY, DENSE_VEGETATION, BATTLEWORN_DUMMY) enters the combat room
+    inside the option's handler, and the recorder's ``EventSynchronizer.SaveEventOptionToHistory`` hook logs the option
+    once the handler returns: after the combat's ``room_entered``, with a battle snapshot as its state. The leading
+    ``event_option`` actions of such a combat window (same act and floor as the event window before it, in the same
+    part) belong to the event; their pre-state is the event window's last event snapshot (the option page; a combat
+    message snapshot can follow it before the room entry).
+    """
+    notes: list[str] = []
+    for prev, window in zip(windows, windows[1:]):
+        if not window.is_combat or not (prev.model_id or "").startswith("EVENT.") or (prev.act, prev.floor) != (window.act, window.floor):
+            continue
+        leading: list[ActionRecord] = []
+        for action in window.actions:
+            if _kind(action) != "event_option":
+                break
+            leading.append(action)
+        if not leading:
+            continue
+        before = [s for s in prev.states if s.seq < window.room.seq]
+        pages = [s for s in before if isinstance(s.state, Mapping) and s.state.get("state_type") == "event"]
+        state_seq = pages[-1].seq if pages else (before[-1].seq if before else None)
+        prev.actions.extend(dataclasses.replace(a, state_seq=state_seq) for a in leading)
+        del window.actions[: len(leading)]
+        notes.append(
+            f"{prev.model_id} f{prev.floor}: event_option seq {', '.join(str(a.seq) for a in leading)} logged after "
+            f"{window.model_id}'s room entry moved to the event (pre-state seq {state_seq})"
+        )
+    return notes
 
 
 # --------------------------------------------------------------------------
