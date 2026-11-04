@@ -7,7 +7,8 @@ protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory ter
 
 ``aux_heads`` (``--aux-heads``, off by default) adds a win-probability head and a combat-hp head on the state
 (``sts2train.heads``: targets per rollout window, masked BCE / squared error weighted ``aux_coef``); the policy, value
-head and PPO loss are unchanged, and with the flag off the trainer computes exactly what it computed before.
+head and PPO loss are unchanged. ``deck_counts`` (``--deck-counts``) switches the deck / pile encoders to count-aware
+pooling (``model.Policy._deck_bag``). With these flags off the trainer computes exactly what it computed before.
 
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
@@ -114,6 +115,7 @@ class TrainConfig:
     depth: int = 0                  # transformer trunk blocks (0 = the original pooled-concat model)
     heads: int = 4
     ff_mult: int = 4
+    deck_counts: bool = False       # count-aware deck / pile pooling + deck count features (architecture)
     # auxiliary heads (sts2train.heads; architecture: part of the checkpoint's arch)
     aux_heads: bool = False         # win-probability + combat-hp heads on the state, trained with the PPO loss
     aux_coef: float = 0.1           # weight of their losses (masked BCE + masked squared error)

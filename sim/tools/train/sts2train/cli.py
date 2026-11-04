@@ -164,6 +164,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--depth", type=int, help=f"transformer blocks (default {D.depth} = pooled-concat model)")
     g.add_argument("--heads", type=int, help=f"(default {D.heads})")
     g.add_argument("--ff-mult", dest="ff_mult", type=int, help=f"(default {D.ff_mult})")
+    g.add_argument("--deck-counts", dest="deck_counts", action=argparse.BooleanOptionalAction,
+                   help="count-aware deck / pile encoders: embedding-bag sum with log(1 + copies) per card instead of "
+                        "the mean embedding, deck size / distinct / upgraded / enchanted / afflicted counts, and the "
+                        "copies of each candidate's card in the deck; part of the architecture (default off)")
     g.add_argument("--aux-heads", dest="aux_heads", action=argparse.BooleanOptionalAction,
                    help="auxiliary heads on the state: win_prob (BCE to the episode outcome) and combat_hp_pred (hp "
                         "fraction at the end of the current combat, squared error), trained with the PPO loss; part "
