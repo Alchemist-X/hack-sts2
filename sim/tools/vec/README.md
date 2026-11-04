@@ -31,7 +31,7 @@ uv run --project sim/tools/vec python sim/tools/vec/tools/gen_env_spec.py       
 ```
 
 `eval` (alias `evaluate`) plays every game of a protocol seed set with one policy (one slot per game, no auto-reset,
-limits step_cap 1200 / 80 non-combat decisions per floor), scores it with the protocol v0.2 progress metric
+limits step_cap 1200 / the env's `floor_step_cap` 80 non-combat decisions per floor → `stuck`), scores it with the protocol v0.2 progress metric
 (`sts2vec/protocol.py`, a vendored copy of `sts2eval.progress` kept equal by `tests/test_protocol.py`) and writes
 `config.json`, `run.json`, `games/<CHAR>-<SEED>.summary.json`, `report.json` and `report.md` in the LLM runner's
 layout; a replay audit re-plays every game's candidate indices on a fresh env (result, act, floor and final state hash
@@ -98,7 +98,7 @@ with VecEnv(1024, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", co
 
 | Member | Meaning |
 | --- | --- |
-| `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(), pool_cache=4096, dll=None)` | creates the native env (`sts2vec_create`); `pool=None` = empty pool |
+| `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(), pool_cache=4096, fast_path=True, floor_step_cap=80, dll=None)` | creates the native env (`sts2vec_create`); `pool=None` = empty pool; `floor_step_cap` (= `sts2vec.FLOOR_STEP_CAP`, 0 = off) truncates an episode after that many non-combat decisions on one floor (status `FLOOR_STALL`, `end_kind` FloorStall; combat decisions never count) |
 | `.reset(mask=None, start_ids=None, *, copy=False) -> obs` | restart masked slots (None = all) from `start_ids[i]` (None / `< 0` = the slot's start sequence) |
 | `.step(actions, *, copy=False) -> (obs, reward, terminated, truncated, status, info)` | `actions` int [N]; `reward` float32, `terminated`/`truncated` uint8, `status` int32 bit flags; `info = {episode_id, step_index, start_entry, last_episode}` |
 | `.restore(slot, entry, *, copy=False) -> obs` / `.snapshot(slot) -> entry` | one-slot restart from a pool entry / clone a live slot into the pool |

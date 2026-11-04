@@ -7,9 +7,10 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `fc2eb34c07bc8513`, 26,726
-bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; integration figures
-below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `5dbfa09dd9dcb5ed`, 30,942
+bytes/env, 41 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
+appended `EndKind.FloorStall`; the player-view schema append of 2026-11-03 appended 6 buffers, "Appended buffers"
+below; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
@@ -51,9 +52,26 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
   all from the sequence.
 - `step(actions)`: `a < 0` → `NOOP`; `a ∉ [0, cand_n)` (or no run / finished) → `ILLEGAL_ACTION`, slot unchanged;
   else `RunSim.StepFast(LegalActions()[a])` (`RunSim.Step` with `fast_path: false`; see "Fast path"). Terminal → `terminated`, reward 1 iff Victory; `step_index >= step_cap` →
-  `truncated`; NotImplemented/NotSupported → `CONTENT_GAP`, other exceptions → `SIM_ERROR` (episode ends with
-  `truncated = 1`, reward 0, run discarded, text in `sts2vec_last_error(h, slot)`). An encoder exception on a live
-  state ends the episode the same way. Then every slot's observation, candidates and signals are written.
+  `truncated`; floor stall (below) → `truncated` + `FLOOR_STALL`; NotImplemented/NotSupported → `CONTENT_GAP`, other
+  exceptions → `SIM_ERROR` (episode ends with `truncated = 1`, reward 0, run discarded, text in
+  `sts2vec_last_error(h, slot)`). An encoder exception on a live state ends the episode the same way. Then every
+  slot's observation, candidates and signals are written.
+- Floor stall cap (`config.floor_step_cap`, default 80 = `VecConfig.DefaultFloorStepCap` = Python
+  `sts2vec.FLOOR_STEP_CAP`; 0 = off): `VecSlot.FloorSteps` counts the decisions (`a >= 0` on a live slot, legal or
+  illegal; no-ops are not decisions) taken at non-combat points (`RunState.Combat.IsInProgress` false, the encoder's
+  `is_combat`) since `RunState.TotalFloor` last changed (`VecSlot.FloorSeen`, set at every start/restore and after
+  every applied action). After a step whose resulting state is a non-combat point with `FloorSteps >= cap`, the
+  episode ends: `truncated = 1`, reward 0, status `FLOOR_STALL` (256), `last_episode.end_kind` = FloorStall (5), run
+  kept (like `step_cap`), auto-reset as for `step_cap`. Precedence: terminal, `step_cap`, stall. This is exactly the
+  protocol evaluator's `stuck` rule moved to the step that produces the state it would refuse to decide on (the
+  evaluator used to count per observation in Python; `sts2vec eval` now passes its cap to the env and maps
+  `FLOOR_STALL` to `stuck`). An illegal index is the one change to the "slot unchanged" rule: the run and the
+  observation are unchanged, but the decision counts toward the cap (as it did in the evaluator), so a policy stuck on
+  illegal indices at a non-combat point is truncated too. Tests: `VecTests.Test_VecEnv_FloorStepCapTruncatesShopStall`
+  (shop BuyEntry(removal) → PromptCancel loop cut at exactly 80 and 7, auto-reset on/off, cap 0, illegal/no-op
+  counting), `Test_VecEnv_FloorStepCapIgnoresCombat`; Python `test_floor_cap.py` (the env against the evaluator rule
+  recomputed from observations over 64 games × 900 steps with a shop-stall policy: 248 stalls, every one at the same
+  step; the C# default through the raw ABI).
 - Auto-reset (default): a finished episode writes `last_episode`, then the slot restarts from its sequence in the same
   call (`RESET` bit, new `episode_id`, the new episode's first observation). A slot whose start failed retries the
   next sequence entry on the following step. With `auto_reset = false` the slot stays terminal (`cand_n = 0`).
@@ -243,8 +261,13 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 - `sts2vec_state_hash` writes 0 for a slot with no run; `sts2vec_snapshot` of an empty slot is an error.
 - `config_json`: `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC",
   "content": "ported_only" | "all", "pool": {"fresh": {"characters": [...], "ascension": 0, "count": 4096,
-  "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096, "fast_path": true}`; `num_envs` required, unknown keys
-  rejected. `fast_path` (default true): clone-free stepping behind the static prompt-site predicate (section "Fast path").
+  "seed_prefix": "TRAIN", "act1": "random"}}, "pool_cache": 4096, "fast_path": true, "floor_step_cap": 80}`; `num_envs`
+  required, unknown keys rejected. `fast_path` (default true): clone-free stepping behind the static prompt-site
+  predicate (section "Fast path"). `floor_step_cap` (appended, default 80, 0 = off, < 0 rejected): the floor stall cap
+  ("Environment model"). Appended config keys are the ABI's additive options: a library built before a key rejects it
+  as unknown, so the Python side sends `floor_step_cap` only when the schema's `EndKind` lists `FloorStall`
+  (`Schema.supports_floor_step_cap`; `loader.CONFIG_ADDITIONS`) and otherwise refuses a non-zero cap with a rebuild hint.
+  The version string `sts2vec/<encoder_version>` changed with it (`fc2eb34c07bc8513` → `0f57a3a225333e34`).
 
 ## Schema (§D3; published by `sts2vec_schema`)
 
@@ -290,13 +313,21 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 | 27 | `cand_n` | int32 | [] | candidates = min(len(LegalActions()), 192); 0 when terminal, finished or empty |
 | 28 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
 | 29 | `terminated` | uint8 | [] | episode ended at Victory/Defeat |
-| 30 | `truncated` | uint8 | [] | step cap, content gap or sim error |
-| 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128 |
+| 30 | `truncated` | uint8 | [] | step cap, floor stall cap, content gap or sim error |
+| 31 | `status` | int32 | [] | OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64, POOL_EMPTY 128, FLOOR_STALL 256 |
 | 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
 | 33 | `aux` | float32 | [14] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms |
 | 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
+| 35 | `global_x` | int32 | [2] | ancient_id, draw_marked_n (appended) |
+| 36 | `hand_x` | int32 | [10, 2] | affliction_amount, dampened (appended; row i = `hand` row i) |
+| 37 | `draw_marked` | int32 | [32, 6] | card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount (appended; sorted by content) |
+| 38–39 | `discard_order`, `exhaust_order` | int32 | [64, 6] | same columns as `draw_marked`, pile order (appended) |
+| 40 | `event_option_values` | int32 | [8, 9] | value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 (appended; row i = `event_options` row i) |
 
-35 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20). ≈ 26.7 KB per env.
+41 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–40 are appended after the
+signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 30.9 KB per env. New caps (`schema.caps`):
+DRAW_MARKED 32, PILE_ORDER 64, EVENT_VALUES 3, EVENT_ITEMS 2; new enum `ItemKind` (vocabulary convention: affliction,
+card, enchantment, potion, relic).
 
 ## Field reference (observation encoder, `ObservationEncoder*.cs`)
 
@@ -312,14 +343,14 @@ integer the game UI shows.
 
 | # | Rule | How the encoder applies it |
 | --- | --- | --- |
-| H1 | The draw pile order is hidden. | Draw, discard and exhaust piles are encoded only as count vectors. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. |
+| H1 | The draw pile order is hidden. | The draw pile is encoded only as a count vector and as `draw_marked`, its enchanted / afflicted cards sorted by their whole row (so the table is a function of the pile's multiset). Discard and exhaust order are not hidden (the pile screens show them in order) and are encoded in `discard_order` / `exhaust_order`. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. It repeats the check with two draw cards enchanted / afflicted first (585 of 600 states). |
 | H2 | No seed, RNG stream or counter. | Nothing under `Rng`, `SeedText` or `Odds` is read. |
 | H3 | No future rooms. | Only the current act's `Boss` and `SecondBoss` appear (`boss_id`, `second_boss_id`); the game shows both on the map and the top bar. The map is the current act's map only. |
 | H4/H5 | No odds and no grab bags. | Neither is read. |
 | H6 | The treasure relic is hidden until the chest opens. | `treasure_relic_id` is 0 until `ChestOpened`. |
 | H7 | Card-reward cards are hidden on the rewards screen. | A card reward appears in `rewards` only as `is_card_reward = 1`. `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase. |
 | H8 | No move ids. | Intents come from `NextMove.Intents` through `PlayerView.Intent` (type, damage, times, card_count). The move's identity and the AI state are never read; `Test_VecEncoder_NoMoveIds` greps the encoder source and checks the rows. |
-| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra`, event fields and event RNG are not read. An event option is identified by `key_hash` and `ordinal` only. |
+| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra` and event RNG are not read. An event option is identified by `key_hash` and `ordinal`; `event_option_values` reads only the event members its option text names (the localisation placeholders, `EventOptionVars`), i.e. what the button shows. |
 | H10 | Powers are shown as the UI shows them. | Visibility uses `PlayerView.IsVisibleToPlayer` and amounts use `PlayerView.DisplayAmountToPlayer` (see below). |
 | H13 | No instance ids. | The only exception is the enemy `uid` (= `CombatId`, stable for the whole combat; the play server uses it as well). Prompt options are identified by (item_id, upgrade, ordinal). |
 | H12/H14/H15 | No profile, history or visited-event set. | None of these is read. |
@@ -591,6 +622,60 @@ auto-reset, score a finished episode from the slot's aux of the previous call pl
 `ObservationEncoder.FillEpisodeSummary(RunSim, Span<int>)` fills floor, act, final_hp, final_max_hp and
 last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv writes win, steps and end_kind.
 
+### Appended buffers (player-view schema append, 2026-11-03)
+
+The human-visible details `docs/parity-audit-2026-11-02.md` §5.2 listed as missing from the Vec channel, appended as
+new buffers after `last_episode` (no existing buffer changes index, shape or meaning). Cost: +4,216 bytes/env (26,726 →
+30,942, +15.8 %); +2.5 % instructions retired per env-step (Python `sts2vec bench`, 512 envs, 1 thread, 300 steps,
+random policy, interleaved with the previous build; wall-clock throughput on the loaded host was within noise).
+
+**global_x**
+
+| Column | Meaning |
+| --- | --- |
+| `ancient_id` | Events vocab id of the current act's Ancient (`RoomSet.AncientId`; its portrait marks its map point, `NAncientMapPoint`, like the bosses in `boss_id`, H3). Seen: act 1 NEOW; act 2 DARV, OROBAS, PAEL, TEZCATARA; act 3 NONUPEIPE, TANX, VAKUU. |
+| `draw_marked_n` | Combat only: draw-pile cards with an enchantment or an affliction (the true count; `draw_marked` holds the first 32). |
+
+**hand_x** (row i = `hand` row i)
+
+| Column | Meaning |
+| --- | --- |
+| `affliction_amount` | `Affliction.Amount` of the card (0 without one); the play server's hand `affliction.amount`. |
+| `dampened` | 1 when a DAMPEN power downgraded the card (`DampenPower.DowngradedCards`; restored when its casters die); the play server's hand `dampened`. The instance-id comparison lives in `CardMarks.cs`, outside the grepped encoder sources (H13: nothing id-like is written). |
+
+**draw_marked / discard_order / exhaust_order** (combat only; columns card_id, upgrade, enchant_id, enchant_amount,
+affliction_id, affliction_amount)
+
+- `draw_marked`: the draw-pile cards that carry an enchantment or an affliction (generated cards, BOUND in draw, ...),
+  sorted by the whole row; the first 32 rows, `global_x.draw_marked_n` = true count, more set `TABLE_OVERFLOW`. Order
+  free by construction (H1); together with `draw_counts` it is the game's sorted draw-pile screen.
+- `discard_order` / `exhaust_order`: row i = `DiscardPile.Cards[i]` / `ExhaustPile.Cards[i]`, the order the pile
+  screens show (oldest first); the first 64 rows (`discard_n` / `exhaust_n` keep the true counts), more set
+  `TABLE_OVERFLOW` (1 of the purity test's 1,000 sampled deep healed-run states: a 74-card discard pile, a 13-card
+  deck plus generated status cards).
+
+**event_option_values** (row i = `event_options` row i, written while the event is not finished)
+
+The numbers and items option i's button text names. Which placeholders an option shows lives only in the game's
+localisation templates, so `sim/tools/vec/tools/gen_event_option_vars.py` extracts them from
+`knowledge/source/<version>/events.jsonl` into `EventOptionVars.g.cs` (131 option keys; `--check` in the vec tests);
+`EventOptionVars.Resolve` reads each name on the live event exactly as the play server's rules text does (`{Relic}` = the
+option's relic; else `<Name>For(RunState)`, a property or a field named `Name`, `NameAmount` or `NameGain`; else the
+event's single const id of that kind), through reflection cached per (event type, name). Event screens are a few % of
+steps; boxing there is the only new allocation.
+
+| Column | Meaning |
+| --- | --- |
+| `value_n` | Numbers the text names (gold, HP loss, damage, costs, counts), true count. |
+| `value_0..2` | The first three, in text order (title, then description), truncated to int. |
+| `item_n` | Cards, relics, potions, enchantments (or afflictions) the text names, true count. |
+| `item_kind_k`, `item_id_k` | The first two items: `ItemKind` and the id in that kind's vocabulary (RELIC_TRADER's `.TOP`: the owned relic, then the new one). |
+
+More than 3 numbers or 2 items set `TABLE_OVERFLOW` (none in the event walk). Flags (`IsMultiplayer`), free texts and
+names that resolve to nothing are skipped, so `value_n + item_n` ≤ the option's placeholders. An accessor that throws
+is skipped too (the server's text shows `?` then) rather than failing the episode: these are display values, and the
+parity test below requires every value the walk reaches to resolve.
+
 ### Encoder tests (`sim/Sts2Sim.Tests/VecTests.Encoder.cs`, class `VecEncoderTests`)
 
 | Test | What it checks |
@@ -603,6 +688,16 @@ last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv 
 | `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
 | `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
 
+Appended-buffer tests (`sim/Sts2Sim.Tests/VecTests.Append.cs`, class `VecTests`; the purity, leak and server-parity
+tests above also cover the appended columns: no `?` id, marked-draw reshuffles, hand `affliction.amount` /
+`dampened` and the `ancient` id equal the server's JSON):
+
+| Test | What it checks |
+| --- | --- |
+| `Test_VecAppend_PileTablesAndHandMarks` | A first combat with marked cards in every pile and a DAMPEN debuff: `hand_x`, sorted `draw_marked` (+ true count), `discard_order` / `exhaust_order` rows equal the kernel's piles; a reshuffled marked draw pile gives identical bytes; 70 exhausted and 43 marked draw cards keep the first CAP rows, the true counts and set TABLE_OVERFLOW. |
+| `Test_VecAppend_AncientId` | `ancient_id` = `RoomSet.AncientId` on sampled states of 12 healed random runs (Ancients of all three acts seen). |
+| `Test_VecAppend_EventOptionValuesMatchServerText` | The event walk of `ParityAuditTests` (every event, pages within three choices, three seeds) plus RELIC_TRADER / STONE_OF_ALL_TIME / WELCOME_TO_WONGOS with setup: every number in `value_k` and every item's title appears in the play server's rendered option text (758 option rows, 103 keys, 343 numbers, 122 items), no overflow, `value_n + item_n` ≤ placeholders. |
+
 ## Python API (§D6)
 
 Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full reference: `sim/tools/vec/README.md`.
@@ -612,8 +707,8 @@ Package `sim/tools/vec` (`sts2vec`, uv project; deps numpy, dev pytest). Full re
 | `loader.py` | `load(dll=None) -> Library` (one per process, cached): library discovery (`dll` arg, `STS2VEC_AOT_LIB`, `STS2VEC_DLL`, Release build dir), libhostfxr discovery (`DOTNET_ROOT`, `DOTNET_INSTALL_DIR`, macOS Homebrew `dotnet@9/libexec`, Linux `$HOME/.dotnet` and distro roots, the `dotnet` on PATH, `dotnet --list-runtimes`; first root with a 9.x runtime), `hostfxr_initialize_for_runtime_config(sts2vec.runtimeconfig.json)` with `dotnet_root` set, hostfxr error writer captured into `LoaderError`, `System.GC.Server` read back (`lib.gc_server`), `load_assembly_and_get_function_pointer(..., UNMANAGEDCALLERSONLY_METHOD = -1)` for each of the 16 exports with ctypes `CFUNCTYPE` signatures (`EXPORTS`, §D5 order); NativeAOT `.dylib`/`.so` through `ctypes.CDLL` with the same symbols. Exports added after the freeze (`OPTIONAL_EXPORTS`: `sts2vec_pool_warm`, `sts2vec_clone_determinized`) may be missing from an older build: the attribute is then None, `lib.missing_exports` names it and `lib.require(name)` raises `Sts2VecError`. `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`. |
 | `schema.py` | `Schema.from_json` (buffers, dtypes, shapes, fields, vocab lists with reverse maps `index_of`, enum lists, caps, card_vars, playable_reason_bits), `schema.col(buf, field)` / `schema.cols(buf).field`, `observation_names`, `verify_version()` (pure-Python XXH64), `Schema.count_index`; `Buffers` (one C-contiguous `(N, *shape)` array per buffer + the `void*` table in schema order, `check()`); `Status` IntFlag / `STATUS`, `status_names`, `status_counts`; `slot_seed(seed_text, slot)`. |
 | `pool.py` | `PoolSpec(characters, ascension, count, seed_prefix, act1, entries)` → `config.pool.fresh` (+ explicit `FreshEntry` / `SaveEntry` added after create, ids `count..`), `make_config(...)` (config_json), `env.pool` (`add_fresh`, `add_save`, `warm(max_entries=None)` → templates created, `len`). |
-| `env.py` | `VecEnv` (§D6): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
-| `cli.py` | `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
+| `env.py` | `VecEnv` (§D6; kwargs mirror `config_json`, incl. `floor_step_cap=FLOOR_STEP_CAP`): `reset(mask, start_ids, copy)`, `step(actions, copy) -> (obs, reward, terminated, truncated, status, info)`, `restore`, `snapshot`, `clone_determinized(slot, seed)`, `state_hash`, `set_threads`, `candidates(i)`, `legal_mask()`, `last_episode(i)`, `slot_errors()`, `status_counts()`, `close()` (idempotent) / context manager; `random_actions(rng, cand_n)`. Non-zero returns raise `Sts2VecError(<last_error>)`; a non-Server-GC CLR raises `ServerGCError`; per-slot outcomes are only status bits. |
+| `cli.py` | every env subcommand takes `--floor-step-cap` (default 80; `eval` passes it to the env); `sts2vec bench` (pool warm time with `--warm`, the default, or cold starts with `--no-warm`; env-steps/s, native-only env-steps/s, ms/batch, obs MB/batch, GC mode, reset ms, resets/s, episodes/wins, status counts; `--json`), `sts2vec check` (schema/buffer consistency, version, determinism: two envs with the same config, threads 1 vs 8, seeded random policy, byte-identical buffers every step + equal state hashes; exit 1 on failure), `sts2vec digest` (JSON digest of a seeded rollout, for cross-process determinism). |
 
 ```python
 from sts2vec import VecEnv, PoolSpec, STATUS, random_actions
@@ -731,7 +826,9 @@ streams; a determinized state is for search, not for export.
   `original.Step(a)`. Snapshot/restore and template clones now step hash-identically to the original
   (`SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep`, `RewardsTests.Test_Rewards_Claimed*` /
   `Test_Rewards_Clone*`).
-- `hand` has no star-cost or affliction-amount column (not in §D3.1).
+- `hand` has no star-cost column (not in §D3.1); the affliction amount is `hand_x.affliction_amount`.
+- Not appended: the master deck's affliction amounts (deck cards carry `affliction_id` only; afflictions are combat
+  marks) and a separate (enchant, affliction) channel for `card_reward` cards.
 - The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
   episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).
 - `rewards` rows are indexed by `RewardsSet.Rewards` index (ClaimReward A), so a claimed reward leaves a zero row inside

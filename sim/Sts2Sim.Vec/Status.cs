@@ -21,6 +21,11 @@ public enum SlotStatus
     Reset = 64,
     /// <summary>A start was requested but the pool has no entries; the slot holds no run.</summary>
     PoolEmpty = 128,
+    /// <summary>
+    /// Appended (floor stall cap): the episode was truncated because it made <c>floor_step_cap</c> non-combat decisions
+    /// on one floor without the floor advancing (truncated, reward 0; <c>last_episode.end_kind</c> = FloorStall).
+    /// </summary>
+    FloorStall = 256,
 }
 
 /// <summary>How an episode ended (<c>last_episode.end_kind</c>; enum list <c>EndKind</c> in the schema).</summary>
@@ -31,6 +36,8 @@ public enum EndKind
     Truncated = 2,
     ContentGap = 3,
     SimError = 4,
+    /// <summary>Appended: truncated by the floor stall cap (<see cref="SlotStatus.FloorStall"/>).</summary>
+    FloorStall = 5,
 }
 
 public static class StatusClassifier

@@ -11,6 +11,8 @@ BUFFER_ORDER = [
     "relics", "potions", "powers_player", "orbs", "enemies", "enemy_intents", "enemy_powers", "allies", "ally_powers",
     "map_nodes", "rewards", "card_reward", "card_reward_alts", "shop", "rest", "event_options", "prompt_options",
     "cand", "cand_n", "reward", "terminated", "truncated", "status", "episode", "aux", "last_episode",
+    # appended (player-view schema append, docs/parity-audit-2026-11-02.md §5.2)
+    "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
 ]
 
 DTYPES = {  # §D3.1
@@ -54,6 +56,14 @@ def test_buffer_order_dtypes_and_fields(schema):
     assert schema["prompt_options"].shape[0] == schema.caps["PROMPT_OPTIONS"] == 128
     assert schema["episode"].fields == ("episode_id", "step_index", "start_entry")
     assert len(schema.vocab.enums["RunActionKind"]) == 21
+    # the appended buffers (shapes from the caps; every pile table shares one column list)
+    assert schema["global_x"].fields == ("ancient_id", "draw_marked_n")
+    assert schema["hand_x"].shape == (schema.caps["HAND"], 2)
+    assert schema["draw_marked"].shape == (schema.caps["DRAW_MARKED"], 6)
+    assert schema["discard_order"].shape == schema["exhaust_order"].shape == (schema.caps["PILE_ORDER"], 6)
+    assert schema["draw_marked"].fields == schema["discard_order"].fields == schema["exhaust_order"].fields
+    assert schema["event_option_values"].shape[0] == schema["event_options"].shape[0]
+    assert schema.vocab.enums["ItemKind"] == ["", "?", "affliction", "card", "enchantment", "potion", "relic"]
 
 
 def test_columns_helpers(schema):
@@ -86,7 +96,7 @@ def test_vocab_reverse_maps(schema):
     assert k.index_of("PlayCard") == 0 and k.index_of("EndTurn") == 1 and k.name(1) == "EndTurn"
     with pytest.raises(KeyError):
         k.index_of("NotAKind")
-    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError"]
+    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError", "FloorStall"]
     assert "Prompt" in schema.vocab.enums["RunPhase"]
     assert len(schema.card_vars) == 133 and schema.card_vars[:2] == ["", "?"]
     assert schema.playable_reason_bits["None"] == 0
@@ -98,7 +108,7 @@ def test_vocab_reverse_maps(schema):
 
 def test_status_flags():
     assert STATUS == {s.name: int(s) for s in Status}
-    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128
+    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128 and STATUS["FLOOR_STALL"] == 256
     assert status_names(0) == ["OK"]
     assert status_names(Status.NOOP | Status.RESET) == ["NOOP", "RESET"]
     c = status_counts(np.array([0, 1, 65, 8], dtype=np.int32))
@@ -129,7 +139,8 @@ def test_buffer_sizes_and_pointer_order(schema):
     raw = (ctypes.c_void_p * len(BUFFER_ORDER)).from_address(bufs.ptr)
     assert [raw[i] for i in range(len(BUFFER_ORDER))] == bufs.pointers()
     assert bufs.nbytes == n * schema.bytes_per_env
-    assert schema.bytes_per_env == 26_726  # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke)
+    # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke + 4,216 for the six appended buffers)
+    assert schema.bytes_per_env == 30_942
     with pytest.raises(ValueError):
         schema.allocate(0)
 

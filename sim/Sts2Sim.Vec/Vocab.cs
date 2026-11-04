@@ -70,6 +70,9 @@ public static class Vocab
     /// <summary>prompt_options.kind_of_item values.</summary>
     public static readonly IReadOnlyList<string> PromptItemKindIds = new[] { "card", "relic", "potion", "bundle", "index" };
 
+    /// <summary>Kinds of the items <c>event_option_values</c> names (appended): the vocabulary <c>item_id_k</c> indexes.</summary>
+    public static readonly IReadOnlyList<string> ItemKindIds = new[] { "card", "relic", "potion", "enchantment", "affliction" };
+
     private static readonly Lazy<VocabList> CardsL = new(() => new VocabList("cards",
         CardRegistry.AllIds.Concat(CardCatalog.All.Select(e => e.Id))));
     private static readonly Lazy<VocabList> RelicsL = new(() => new VocabList("relics", RelicRegistry.AllIds));
@@ -91,6 +94,7 @@ public static class Vocab
     private static readonly Lazy<VocabList> CardRewardAltL = new(() => new VocabList("CardRewardAlt", CardRewardAltIds));
     private static readonly Lazy<VocabList> ShopCategoryL = new(() => new VocabList("ShopCategory", ShopCategoryIds));
     private static readonly Lazy<VocabList> PromptItemKindL = new(() => new VocabList("PromptItemKind", PromptItemKindIds));
+    private static readonly Lazy<VocabList> ItemKindL = new(() => new VocabList("ItemKind", ItemKindIds));
 
     /// <summary>UnplayableReason flag names (hand.playable_reason_id holds the raw bitmask; see <see cref="PlayableReasonBits"/>).</summary>
     public static readonly IReadOnlyList<string> PlayableReasons = Enum.GetValues<UnplayableReason>()
@@ -116,6 +120,7 @@ public static class Vocab
     public static VocabList CardRewardAlts => CardRewardAltL.Value;
     public static VocabList ShopCategories => ShopCategoryL.Value;
     public static VocabList PromptItemKinds => PromptItemKindL.Value;
+    public static VocabList ItemKinds => ItemKindL.Value;
 
     /// <summary>The id vocabularies in schema order (key = JSON name under "vocab").</summary>
     public static IReadOnlyList<VocabList> Lists => new[]
@@ -145,6 +150,7 @@ public static class Vocab
     public static int CardRewardAlt(string? id) => CardRewardAlts.Index(id);
     public static int ShopCategory(string? id) => ShopCategories.Index(id);
     public static int PromptItemKind(string? id) => PromptItemKinds.Index(id);
+    public static int ItemKind(string? id) => ItemKinds.Index(id);
 
     /// <summary>Flat index of a (card_id, upgrade) pair in the count-vector buffers: card_id * 2 + min(upgrade, 1).</summary>
     public static int CountIndex(int cardId, int upgrade) => cardId * 2 + (upgrade > 0 ? 1 : 0);
@@ -169,6 +175,7 @@ public static class Vocab
         ("RelicStatus", EnumNames<RelicStatus>()),
         ("PromptItemKind", PromptItemKinds.Names),
         ("EndKind", EnumNames<EndKind>()),
+        ("ItemKind", ItemKinds.Names),
     };
 
     /// <summary>Names indexed by underlying value; requires values 0..n-1 without gaps.</summary>

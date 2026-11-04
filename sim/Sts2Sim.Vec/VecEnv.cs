@@ -10,7 +10,12 @@ namespace Sts2Sim.Vec;
 /// <summary>config.pool.fresh (CONTRACTS.md §D4): <c>Count</c> entries, character = Characters[i % n], seed "&lt;SeedPrefix&gt;-&lt;character&gt;-&lt;i&gt;".</summary>
 public sealed record FreshPoolSpec(IReadOnlyList<string> Characters, int Ascension = 0, int Count = 4096, string SeedPrefix = "TRAIN", string Act1 = RunConfig.RandomAct1);
 
-/// <summary>Env configuration (§D5 config_json). JSON keys are snake_case; unknown keys are rejected.</summary>
+/// <summary>
+/// Env configuration (§D5 config_json). JSON keys are snake_case; unknown keys are rejected.
+/// <c>FloorStepCap</c> (<c>floor_step_cap</c>, appended): truncate an episode after this many non-combat decisions on one
+/// floor without the floor advancing (status FLOOR_STALL, end_kind FloorStall); 0 disables. Same rule and default as the
+/// protocol evaluator's <c>stuck</c> limit (docs/sts2-bench-protocol-v0.2-2026-11-01.md §5).
+/// </summary>
 public sealed record VecConfig(
     int NumEnvs,
     int Threads = 8,
@@ -20,8 +25,12 @@ public sealed record VecConfig(
     string Content = "ported_only",
     FreshPoolSpec? Pool = null,
     int PoolCache = 4096,
-    bool FastPath = true)
+    bool FastPath = true,
+    int FloorStepCap = VecConfig.DefaultFloorStepCap)
 {
+    /// <summary>Default <c>floor_step_cap</c>: the protocol's 80 non-combat decisions per floor (Python: <c>sts2vec.FLOOR_STEP_CAP</c>).</summary>
+    public const int DefaultFloorStepCap = 80;
+
     public ContentFilter ContentFilter => ParseContent(Content);
 
     public static ContentFilter ParseContent(string content) => content switch
@@ -53,6 +62,7 @@ public sealed record VecConfig(
                 case "content": c = c with { Content = p.Value.GetString() ?? "" }; break;
                 case "pool_cache": c = c with { PoolCache = p.Value.GetInt32() }; break;
                 case "fast_path": c = c with { FastPath = p.Value.GetBoolean() }; break;
+                case "floor_step_cap": c = c with { FloorStepCap = p.Value.GetInt32() }; break;
                 case "pool": c = c with { Pool = p.Value.ValueKind == JsonValueKind.Null ? null : ParsePool(p.Value) }; break;
                 default: throw new ArgumentException($"unknown config key \"{p.Name}\"");
             }
@@ -72,6 +82,7 @@ public sealed record VecConfig(
         if (Threads < 1) throw new ArgumentException($"threads must be >= 1 (got {Threads})");
         if (StepCap < 1) throw new ArgumentException($"step_cap must be >= 1 (got {StepCap})");
         if (PoolCache < 0) throw new ArgumentException($"pool_cache must be >= 0 (got {PoolCache})");
+        if (FloorStepCap < 0) throw new ArgumentException($"floor_step_cap must be >= 0 (0 = off; got {FloorStepCap})");
         _ = ContentFilter;
         if (Pool != null)
         {
@@ -154,6 +165,15 @@ public sealed class VecSlot
 
     /// <summary>Number of selectable candidates published in the last observation.</summary>
     public int CandN { get; internal set; }
+
+    /// <summary>Floor stall cap: <c>RunState.TotalFloor</c> of the slot's current state (-1 = no run).</summary>
+    public int FloorSeen { get; internal set; } = -1;
+
+    /// <summary>
+    /// Floor stall cap: decisions (actions &gt;= 0, legal or illegal) taken at non-combat decision points since the floor
+    /// last changed or the episode started.
+    /// </summary>
+    public int FloorSteps { get; internal set; }
 
     /// <summary>LegalActions() at the last observation; candidate i = Legal[i].</summary>
     internal List<RunAction> Legal { get; } = new(64);
@@ -380,14 +400,31 @@ public sealed unsafe class VecEnv
             {
                 st |= SlotStatus.Noop;
             }
-            else if (s.Sim == null || s.Finished || action >= s.CandN)
+            else if (s.Sim == null || s.Finished)
             {
                 st |= SlotStatus.IllegalAction;
+            }
+            else if (action >= s.CandN)
+            {
+                // The slot is unchanged, but the decision was taken: it counts toward the floor stall cap (as in the
+                // protocol evaluator), so a policy stuck on illegal indices at a non-combat point is truncated too.
+                st |= SlotStatus.IllegalAction;
+                if (!InCombat(s.Sim))
+                {
+                    s.FloorSteps++;
+                }
+                if (FloorStalled(s))
+                {
+                    end = EndKind.FloorStall;
+                    truncated = 1;
+                    st |= SlotStatus.FloorStall;
+                }
             }
             else
             {
                 try
                 {
+                    bool nonCombat = !InCombat(s.Sim);
                     var act = s.Legal[action];
                     if (FaultInjector?.Invoke(i, act) is { } injected)
                     {
@@ -411,6 +448,16 @@ public sealed unsafe class VecEnv
                         s.SlowSteps++;
                     }
                     s.StepIndex++;
+                    if (nonCombat)
+                    {
+                        s.FloorSteps++;
+                    }
+                    int floor = s.Sim.State.TotalFloor;
+                    if (floor != s.FloorSeen)
+                    {
+                        s.FloorSeen = floor;
+                        s.FloorSteps = 0;
+                    }
                     if (s.Sim.IsTerminal)
                     {
                         end = EndKind.Terminal;
@@ -421,6 +468,12 @@ public sealed unsafe class VecEnv
                     {
                         end = EndKind.Truncated;
                         truncated = 1;
+                    }
+                    else if (FloorStalled(s))
+                    {
+                        end = EndKind.FloorStall;
+                        truncated = 1;
+                        st |= SlotStatus.FloorStall;
                     }
                 }
                 catch (Exception e)
@@ -477,6 +530,8 @@ public sealed unsafe class VecEnv
         s.CandN = 0;
         s.Legal.Clear();
         s.StepIndex = 0;
+        s.FloorSeen = -1;
+        s.FloorSteps = 0;
         st |= SlotStatus.Reset;
         int count = Pool.Count;
         if (entry < 0)
@@ -495,6 +550,7 @@ public sealed unsafe class VecEnv
         try
         {
             s.Sim = Pool.Materialize(entry);
+            s.FloorSeen = s.Sim.State.TotalFloor;
         }
         catch (Exception e)
         {
@@ -561,6 +617,17 @@ public sealed unsafe class VecEnv
             return false;
         }
     }
+
+    /// <summary>The encoder's <c>is_combat</c>: a combat is in progress.</summary>
+    private static bool InCombat(RunSim sim) => sim.State.Combat is { IsInProgress: true };
+
+    /// <summary>
+    /// Floor stall cap (<c>floor_step_cap</c> &gt; 0): the slot's current state is a non-combat decision point on the floor
+    /// where it already took <c>floor_step_cap</c> non-combat decisions. This is the protocol evaluator's <c>stuck</c>
+    /// rule moved to the step that produces the state it would refuse to decide on.
+    /// </summary>
+    private bool FloorStalled(VecSlot s)
+        => Config.FloorStepCap > 0 && s.FloorSteps >= Config.FloorStepCap && s.Sim is { } sim && !InCombat(sim);
 
     private static void WriteLastEpisode(VecSlot s, SlotBuffers b, EndKind end, float reward)
     {

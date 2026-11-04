@@ -23,8 +23,13 @@ from .loader import Library, load
 from .pool import ALL_CHARACTERS, Entry, FreshEntry, Pool, PoolSpec, SaveEntry, make_config
 from .schema import SIGNAL_BUFFERS, STATUS, Buffers, Schema, status_counts
 
-__all__ = ["ALL_CHARACTERS", "Entry", "FreshEntry", "PoolSpec", "SaveEntry", "Sts2VecError", "VecEnv",
-           "random_actions", "schema_of"]
+__all__ = ["ALL_CHARACTERS", "Entry", "FLOOR_STEP_CAP", "FreshEntry", "PoolSpec", "SaveEntry", "Sts2VecError",
+           "VecEnv", "random_actions", "schema_of"]
+
+# Default floor stall cap: truncate an episode after this many non-combat decisions on one floor without the floor
+# advancing (status FLOOR_STALL, last_episode.end_kind FloorStall). The protocol's limit (v0.2 §5, `stuck`); the C#
+# default (VecConfig.DefaultFloorStepCap) and the evaluator (`sts2vec eval`) use the same value.
+FLOOR_STEP_CAP = 80
 
 _schema_cache: dict[int, Schema] = {}
 
@@ -58,21 +63,35 @@ class VecEnv:
     Parameters mirror ``config_json`` (§D5): ``threads`` worker threads, ``step_cap`` decisions per episode before
     truncation, ``auto_reset`` (finished slots restart in the same step), ``seed_text`` (per-slot start sequences),
     ``content`` ("ported_only" | "all"), ``pool`` (``PoolSpec``; None = empty pool), ``pool_cache`` (template cache size),
-    ``fast_path`` (clone-free stepping when the static prompt-site predicate proves no prompt can occur; same outputs).
+    ``fast_path`` (clone-free stepping when the static prompt-site predicate proves no prompt can occur; same outputs),
+    ``floor_step_cap`` (truncate an episode after this many non-combat decisions — legal or illegal, no-ops excluded —
+    on one floor without the floor advancing: ``truncated``, status ``FLOOR_STALL``, ``end_kind`` FloorStall; 0 = off;
+    default ``FLOOR_STEP_CAP`` = 80, the protocol evaluator's ``stuck`` rule; combat decisions never count).
     ``dll`` picks the library (default: ``STS2VEC_AOT_LIB`` / ``STS2VEC_DLL`` / the Release build; see ``sts2vec.loader``).
     """
 
     def __init__(self, num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                  seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = PoolSpec(),
-                 pool_cache: int = 4096, fast_path: bool = True, dll: str | os.PathLike | None = None):
+                 pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int = FLOOR_STEP_CAP,
+                 dll: str | os.PathLike | None = None):
         self._h = 0
         self._lib = load(dll)
         self.schema = schema_of(self._lib)
         self.num_envs = int(num_envs)
         self.pool_spec = pool
+        if int(floor_step_cap) < 0:
+            raise ValueError(f"floor_step_cap must be >= 0 (0 = off), got {floor_step_cap}")
+        cap: int | None = int(floor_step_cap)
+        if not self.schema.supports_floor_step_cap:
+            # a library built before floor_step_cap: it has no cap and rejects the config key
+            if cap:
+                raise Sts2VecError(f"floor_step_cap={cap}: {self._lib.path} was built before floor_step_cap existed; "
+                                   "rebuild it (dotnet build sim/Sts2Sim.sln -c Release) or pass floor_step_cap=0")
+            cap = None
+        self.floor_step_cap = int(floor_step_cap)
         self.config = make_config(self.num_envs, threads=threads, step_cap=step_cap, auto_reset=auto_reset,
                                   seed_text=seed_text, content=content, pool=pool, pool_cache=pool_cache,
-                                  fast_path=fast_path)
+                                  fast_path=fast_path, floor_step_cap=cap)
         cfg = json.dumps(self.config).encode("utf-8")
         h = self._lib.sts2vec_create(cfg, len(cfg))
         if h <= 0:

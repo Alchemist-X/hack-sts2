@@ -1248,7 +1248,7 @@ Inputs: the kernel inventory and binding measurements of 2026-11-01 (scratchpad 
 | D2 | **Batch-only, struct-of-arrays, caller-owned buffers.** Every call steps or resets *all* selected slots; observations are written in place into numpy arrays allocated by Python from the schema. No per-env Python work. | Python-driven per-step loops run at 19–30k steps/s against 141k native. |
 | D3 | **Entity tables, fixed capacities, ids + numeric features + counts.** No hashing of ids, no normalising ids into scalars. Vocabularies are built from the Core registries (sorted ordinal) and published in the schema with an `encoder_version` hash. | A10 review §4/§6 (entity encoding), hack-balatro's lesson. |
 | D4 | **Candidate list in `LegalActions()` order** with `(kind, A, B)` and pointer columns into the entity tables; the policy returns a candidate index. No flat action table. | 21 action kinds with variable option sets; prompt option lists are unbounded. |
-| D5 | **Reward = 1 at a Victory terminal, else 0; γ = 1 lives in the learner.** Floor, act, HP, gold, bosses go to `aux`, never into the reward. `terminated` on Victory/Defeat, `truncated` on the step cap. **Status codes are separate from outcomes**: content gaps and simulator errors are never losses, an illegal action never triggers a silent fallback. | Approved plan; fail-closed convention of this repo. |
+| D5 | **Reward = 1 at a Victory terminal, else 0; γ = 1 lives in the learner.** Floor, act, HP, gold, bosses go to `aux`, never into the reward. `terminated` on Victory/Defeat, `truncated` on the step cap or the floor stall cap (`floor_step_cap`, 2026-11-03). **Status codes are separate from outcomes**: content gaps and simulator errors are never losses, an illegal action never triggers a silent fallback. | Approved plan; fail-closed convention of this repo. |
 | D6 | **Starts come from a pool of snapshots.** Fresh runs (character, ascension, seed text) are created once per pool entry and cached as a `RunSim` template; resets `Clone()` the template (15 µs) instead of `NewRun` (16.5 ms, map pruning). Imported saves (`RunImporter.FromSave`, checked) and live snapshots (`Clone()` of a slot) are pool entries too. Per-slot deterministic start sequence, independent of thread scheduling. | `RunExporter.ToSave` of a live run is faithful only at act start, so curriculum snapshots are clones, not saves. |
 | D7 | **Tape engine for stepping** (`RunSim.Step(a)`, one deep clone per step, prompt-safe), **with a clone-free fast path** (2026-11-02): `config.fast_path` (default true) steps with `RunSim.StepFast`, which skips the clone when the static prompt-site predicate `RunSim.MayPrompt` proves no prompt can occur (≈ 82 % of random-policy steps) and fails closed (SIM_ERROR) if one does. Outputs are byte-identical to `fast_path: false`. `StateHash` (14–53 µs) is never called inside the step loop. | Prompts are decision points; the batched policy cannot answer them inline. |
 | D8 | **Player view is filtered in C#** (§D3.3) and verified by a leak test: reshuffling the draw pile of a cloned state must not change the encoded observation. The next move id (`move`/`move_name` in the Server observation) is a leak and is **not** encoded; only intents are. | Hidden-information inventory H1–H15. |
@@ -1287,7 +1287,14 @@ caller, in their own branch, and say so in their report.
 - Threads: `Parallel.For` over slots with `config.threads` (default 8) worker threads; one slot is only ever touched by
   one thread per call; no shared mutable state (verified: 1,000 runs on 1/4/12 threads hash identically).
 - Episode end rules: `terminated = 1` when `RunSim.IsTerminal` (Victory → `reward = 1`, Defeat → `0`);
-  `truncated = 1` when `step_index >= config.step_cap` (default 3,000 decisions) — reward 0; `CONTENT_GAP`
+  `truncated = 1` when `step_index >= config.step_cap` (default 3,000 decisions) — reward 0; **floor stall cap**
+  (appended 2026-11-03, `config.floor_step_cap`, default 80, 0 = off): `truncated = 1`, reward 0, status `FLOOR_STALL`
+  (256), `last_episode.end_kind = FloorStall` (5) on the step that leaves the episode at a non-combat decision point on
+  a floor where it has already taken `floor_step_cap` decisions at non-combat points (decisions = actions `>= 0` on a
+  live slot, legal or illegal — an illegal index leaves the run unchanged but counts here, as in the protocol
+  evaluator; no-ops do not count; the count restarts whenever `RunState.TotalFloor` changes and at every start;
+  combat decisions never count). Precedence terminal → step cap → floor stall; auto-reset as for the step cap. It is
+  the protocol's `stuck` limit (v0.2 §5) and `sts2vec eval` uses it; `CONTENT_GAP`
   (`NotImplementedException`/`NotSupportedException` from the sim) and `SIM_ERROR` (any other exception) end the
   episode with `reward = 0`, `terminated = 0`, `truncated = 1` and the status bit set; the exception text is kept in
   the slot's last error (`sts2vec_last_error(h, slot)`), the step never throws across the ABI.
@@ -1301,7 +1308,8 @@ the table's count are zero-filled; `*_n` holds the count. An id is an index into
 that kind (`0` = none/padding, `1` = unknown, real ids from 2). Card identity is `(card_id, upgrade)` in two columns.
 Capacities (CAP_*): HAND 10 · DECK 96 · RELICS 32 · POTIONS 10 · PLAYER_POWERS 24 · ENEMIES 6 · ENEMY_INTENTS 3 ·
 ENEMY_POWERS 12 · ALLIES 2 · ALLY_POWERS 8 · ORBS 10 · MAP_ROWS 18 · MAP_COLS 7 · REWARDS 8 · CARD_REWARD 4 ·
-CARD_REWARD_ALTS 2 · SHOP 14 · REST 9 · EVENT_OPTIONS 8 · PROMPT_OPTIONS 128 · CANDIDATES 192 · HAND_VARS 4.
+CARD_REWARD_ALTS 2 · SHOP 14 · REST 9 · EVENT_OPTIONS 8 · PROMPT_OPTIONS 128 · CANDIDATES 192 · HAND_VARS 4 · appended
+2026-11-03: DRAW_MARKED 32 · PILE_ORDER 64 · EVENT_VALUES 3 · EVENT_ITEMS 2.
 When a table overflows its capacity the first CAP rows are written and the status bit `TABLE_OVERFLOW`
 (candidates: `CANDIDATE_OVERFLOW`) is set for the slot.
 
@@ -1336,12 +1344,19 @@ When a table overflows its capacity the first CAP rows are written and the statu
 | 26 | `cand_n` | int32 | [] | number of candidates (0 when terminal) |
 | 27 | `reward` | float32 | [] | 1 at a Victory terminal, else 0 |
 | 28 | `terminated`, 29 `truncated` | uint8 | [] | episode-end flags for this step |
-| 30 | `status` | int32 | [] | bit flags: OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64 (slot was reset this call), POOL_EMPTY 128 |
+| 30 | `status` | int32 | [] | bit flags: OK 0, NOOP 1, ILLEGAL_ACTION 2, CONTENT_GAP 4, SIM_ERROR 8, CANDIDATE_OVERFLOW 16, TABLE_OVERFLOW 32, RESET 64 (slot was reset this call), POOL_EMPTY 128, FLOOR_STALL 256 (appended: truncated by `floor_step_cap`) |
 | 31 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
 | 32 | `aux` | float32 | [A] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms (listed in the schema; the last four appended in E3 for the protocol progress metric, A = 14) |
-| 33 | `last_episode` | int32 | [8] | written when an episode ends: win, floor, act, steps, final_hp, final_max_hp, end_kind (terminal/truncated/content_gap/sim_error), last_encounter_id |
+| 33 | `last_episode` | int32 | [8] | written when an episode ends: win, floor, act, steps, final_hp, final_max_hp, end_kind (terminal/truncated/content_gap/sim_error/floor_stall), last_encounter_id |
+| 34 | `global_x` | int32 | [2] | appended 2026-11-03 (player-view schema append, docs/parity-audit-2026-11-02.md §5.2): ancient_id (events vocab; the current act's Ancient), draw_marked_n |
+| 35 | `hand_x` | int32 | [10, 2] | appended: affliction_amount, dampened (row i = `hand` row i) |
+| 36 | `draw_marked` | int32 | [DRAW_MARKED, 6] | appended: card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount of the draw-pile cards with an enchantment or affliction, rows sorted by content (H1) |
+| 37 | `discard_order`, 38 `exhaust_order` | int32 | [PILE_ORDER, 6] | appended: the same columns in pile order (oldest first; the pile screens show it) |
+| 39 | `event_option_values` | int32 | [EVENT_OPTIONS, 9] | appended: value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 — the numbers and items option i's text names (localisation placeholders resolved on the live event; enum `ItemKind`) |
 
-`HC` and the field orders are published in the schema; the Python side never hard-codes offsets.
+`HC` and the field orders are published in the schema; the Python side never hard-codes offsets. Appending rule (as
+for `aux` in E3 and the six buffers of 2026-11-03): new data goes into new buffers (or new last columns of `aux`)
+appended after the existing ones, so every earlier buffer keeps its index, shape and meaning; `encoder_version` changes.
 
 ### D3.2 Schema JSON (`sts2vec_schema`)
 
@@ -1356,11 +1371,13 @@ Vocabularies are the registries' `AllIds` (sorted ordinal) with `""` at 0 and `"
 
 ### D3.3 Player-view rules (the encoder MUST follow; the leak test enforces H1)
 
-H1 draw pile as counts only; H2 no seed, RNG stream or counter anywhere; H3 no future rooms/events/encounters — the
+H1 draw pile as counts only (appended `draw_marked`: its marked cards sorted by content, never in pile order); H2 no
+seed, RNG stream or counter anywhere; H3 no future rooms/events/encounters — the
 current act's boss ids are visible (the map shows them); H4/H5 no odds or grab bags; H6 treasure relic only when
 `ChestOpened`; H7 card-reward cards only in the `CardReward` phase (the rewards list says "card reward"); H8 **no move
 ids** — intents only (type, damage, times, card_count); H9 no monster/encounter extra state; H10 powers through
-`PlayerView.IsVisible` and `DisplayAmount`; H11 no event internals; H13 no instance ids except enemy `uid`
+`PlayerView.IsVisible` and `DisplayAmount`; H11 no event internals (appended `event_option_values` reads only the event
+members an option's text names); H13 no instance ids except enemy `uid`
 (= `CombatId`, which the player can also track); prompt options are identified by `(item_id, upgrade, ordinal)`.
 Effective numbers come from `CardPreview` (pure, measured 0 hash changes) and the intent projection, never from
 re-implemented formulas.
@@ -1415,7 +1432,10 @@ are appended to the export list; a loader treats them as optional for library bu
 `(N, *shape)`. Return values: 0 ok, −1 error (text in last_error); per-slot problems are reported in `status`, never as
 a return code. Every export is wrapped in `try/catch`: an exception never crosses the ABI. `config_json`:
 `{"num_envs": N, "threads": 8, "step_cap": 3000, "auto_reset": true, "seed_text": "VEC", "content": "ported_only",
-"pool": {...}, "pool_cache": 4096, "fast_path": true}`. `fast_path` (additive, default true) steps a slot with
+"pool": {...}, "pool_cache": 4096, "fast_path": true, "floor_step_cap": 80}`. `floor_step_cap` (additive config key,
+2026-11-03; default 80, 0 = off, < 0 rejected): the floor stall cap of §D2. Config keys are appended like exports: a
+library built before a key rejects it as unknown, so a binding sends it only when the schema's `EndKind` enum lists
+`FloorStall` (no new export; the version string `sts2vec/<encoder_version>` changes with the enum). `fast_path` (additive, default true) steps a slot with
 `RunSim.StepFast` (clone-free when `RunSim.MayPrompt` is false); outputs are identical to `fast_path: false`, and a prompt
 on the clone-free path ends the episode as SIM_ERROR (`FastPathPromptException` in the slot's last error), never an answer.
 
@@ -1427,7 +1447,7 @@ on the clone-free path ends the episode as SIM_ERROR (`FastPathPromptException` 
   `UNMANAGEDCALLERSONLY_METHOD` for every export (the working prototype is in the session scratchpad
   `e2-bindings/scripts/raw_bench.py` and `e2-bindings/probe/`), wrap with ctypes. Assert Server GC at create
   (`sts2vec_create` fails with a clear message if `GCSettings.IsServerGC` is false). Optional `.dylib` path for the AOT build.
-- `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(...), dll=None)`:
+- `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(...), floor_step_cap=FLOOR_STEP_CAP (80), dll=None)`:
   `.schema` (parsed JSON, vocab helpers `vocab.cards[i]`, reverse maps), `.reset(mask=None, start_ids=None) -> obs`,
   `.step(actions) -> (obs, reward, terminated, truncated, status, info)` where `obs` is a dict of the env-owned numpy
   arrays (views, valid until the next call; `copy=True` to copy), `info = {"episode_id", "step_index", "start_entry",
@@ -1452,6 +1472,8 @@ C# (`sim/Sts2Sim.Tests/VecTests.cs`; all run in the normal suite):
   the state unchanged and set `ILLEGAL_ACTION`.
 - T5 episodes: reward 1 only at Victory (use a cloned state with boosted HP to reach it), 0 at Defeat; truncation at
   `step_cap`; auto-reset writes the new episode's first observation and bumps `episode_id`; `last_episode` is filled.
+  Floor stall cap (2026-11-03): a shop buy/cancel loop is cut at exactly `floor_step_cap` (FLOOR_STALL, FloorStall),
+  combat decisions never count, and the env agrees step for step with the evaluator's rule recomputed from observations.
 - T6 starts: the fixture save starts at `Rewards` with 3 candidates and hashes equal to `RunImporter.FromSave`;
   `snapshot`/`restore` round-trip hashes equal, also at a pending prompt.
 - T7 threads: 1,024 envs × 200 steps on 1 vs 12 threads ⇒ identical hashes.
