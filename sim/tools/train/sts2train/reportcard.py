@@ -113,14 +113,14 @@ DECK_KEYS = ("deck_n", "deck_size", "final_deck_n")
 RELIC_KEYS = ("relic_n", "relic_count", "relics", "final_relic_n")
 # training flags shown on the card, grouped (the JSON keeps the whole config)
 FLAG_GROUPS = (
-    ("objective", ("objective", "win_bonus", "acq_shaping")),
+    ("objective", ("objective", "win_bonus", "acq_shaping", "cycle_cost")),
     ("starts", ("characters", "ascension", "pool", "start_saves", "save_mix", "save_copies")),
     ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "vf_coef", "ent_coef",
              "max_grad_norm", "max_rows")),
     ("model flags", ("aux_heads", "aux_coef", "deck_counts")),
     ("rollouts", ("rollout_loop_breaker", "step_cap", "floor_step_cap")),
     ("runtime", ("device", "amp", "compile", "seed", "max_hours")),
-    ("training evals", ("eval_seedset", "eval_every", "loop_breaker")),
+    ("training evals", ("eval_seedset", "eval_every", "loop_breaker", "eval_at", "no_best")),
 )
 
 
@@ -781,7 +781,8 @@ def render_md(card: dict) -> str:
         cells = []
         for fl in g["flags"]:
             v = fl["value"]
-            v = (("on" if v else "off") if isinstance(v, bool) else ",".join(v) if isinstance(v, list)
+            v = (("on" if v else "off") if isinstance(v, bool)
+                 else (",".join(map(str, v)) or "none") if isinstance(v, (list, tuple))
                  else "none" if v is None else v)
             cells.append(f"{fl['name']} {v}{'' if fl['recorded'] else '*'}")
         L.append(f"| {g['group']} | {', '.join(cells)} |")
