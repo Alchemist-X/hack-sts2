@@ -1,6 +1,6 @@
 # hack-sts2 接手文档（当前入口）
 
-更新：2026-11-04（Lookahead + report-card 合入：checkpoint 的模型卡 / 权重包（`sts2train report-card` / `pack` / `probe`）与决策时战斗前瞻（`python -m sts2train.lookahead`，ExIt 信号未触发）；Live twin 合入：训练好的网络经孪生 sim 打真游戏（`scripts/live/`）；保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
+更新：2026-11-04（Live twin 真游戏修复合入 `0fa1fa3`：`nn_twin_play --loop-breaker`，事件奖励页退出 / 无 id 遗物奖励 / 升级预览二次取消三处接口差异；s8a `ckpt-0002050` 两局真游戏 0 desync，见 `sim/specs/integration.md` "Live twin real-game fixes integrate"。上一条：Lookahead + report-card 合入：checkpoint 的模型卡 / 权重包（`sts2train report-card` / `pack` / `probe`）与决策时战斗前瞻（`python -m sts2train.lookahead`，ExIt 信号未触发）；Live twin 合入：训练好的网络经孪生 sim 打真游戏（`scripts/live/`）；保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
 给新会话或新同事的唯一入口：先读本页，再按需打开引用的文档。历史交接记录在
 `docs/handoff-2026-11-01.md`（E1/E2 期间逐段追加），波次级状态日志在 `docs/p1-sim-full-port-plan-2026-11-01.md` 末尾。
 

@@ -1725,3 +1725,27 @@ ships. Validated on raven in a plain `python:3.13` container (`--cpus 4`, 4 thre
 - Not verified: CUDA; the lookahead on the 128 / 100-game sets on the merged tree (the owner's numbers in
   `docs/lookahead-2026-11-04.md` predate the loop breaker; nothing on the search path changed); `--record` through the
   bundle.
+
+## Live twin real-game fixes integrate (2026-11-04)
+
+Merged `train/live-twin` `6df51ba`, `c89a0bc`, `39c5b46`, `7df2777` (a linear extension of `e2f7272`) as `0fa1fa3`; only
+`scripts/live/` changes. `nn_twin_play.py --loop-breaker` (default on; `sts2train.loopbreak.LoopBreaker`), and three
+interface differences the first real-game runs of the s8a checkpoint exposed, all in the runner / twin glue, none in the
+library:
+- event reward screen: the game closes the reward screen itself once the rewards are taken; the twin now takes an
+  explicit "leave rewards" step, follow mode no longer borrows the twin's action while the screens differ, and a
+  potion discard is executed only when it is the network's first choice;
+- id-less relic rewards: the MCP reward list carries `("relic", None)` (confirmed in its source); relic rewards without
+  an id are matched and compared by type, so the network's relic pick is executed instead of "leave";
+- upgrade preview cancel: in the game a cancel on the upgrade preview returns to the card grid, in the simulator it
+  closes the whole upgrade; the glue sends a second cancel when the game is still on the grid and never confirms there.
+
+Real game (headless instance `train-live-twin/headless-instances/inst1`, eval API, `ckpt-0002050.pt`, greedy +
+loop breaker, Silent A10, library encoder `3b73317739c650bd`): seed `TW1NA10S02` 233 decisions, 0 desync / 0 resync,
+floor 17 killed by THE_KIN_BOSS (score 442, 453 s); seed `TW1NA10S03` 228 decisions, 0 / 0, floor 17 killed by
+WATERFALL_GIANT_BOSS (score 348, 433 s); each run identical to its dry run decision by decision, one loop-breaker
+intervention each (rest site HEAL instead of a repeated SMITH). Before the fixes: S02 2 desyncs (both resynced), S03
+1 desync and an Act-2 floor-22 death reached through a fallback path (kept under
+`output/nn-twin/…-S03-real-c89a0bc`, not counted). `scripts/live/tests` 59 pass (4 s), ruff clean; the trainer's own
+tests were not rerun (no change under `sim/tools/train`). The headless instance and play server were stopped; the
+user's `mods/` holds only Sts2Recorder; no recorder session was created or changed.
