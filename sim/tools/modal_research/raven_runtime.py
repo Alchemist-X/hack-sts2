@@ -161,7 +161,8 @@ def load_runtime(config, *, clock=time.time):
 
     broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
                          research_policy=research_policy,
-                         tool_enabled=bool(runner and "sol" in runner.bindings))
+                         tool_enabled=bool(runner and "sol" in runner.bindings),
+                         experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None)
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,
                         archive_deadline=rates.storage_verified_until if rates else None), queue

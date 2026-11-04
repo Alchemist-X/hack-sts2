@@ -52,6 +52,11 @@ class Controller:
         finally:
             self.store.release(owner)
 
+    def _experiment_limit(self, spec):
+        static_limit = cents(spec["max_cost"])
+        limits = getattr(self.backend, "experiment_reserve_limits", {})
+        return min(static_limit, limits.get(digest(spec), static_limit))
+
     def _create_job(self, db, logical, attempt, kind, payload, reserve, deadline, experiment=None, event=None):
         state = db.execute("SELECT * FROM study").fetchone()
         if state["stopped"] or state["analysis_paused"]:
@@ -76,7 +81,7 @@ class Controller:
             raise DispatchBlocked("platform gross usage ceiling")
         if experiment:
             spec = json.loads(db.execute("SELECT spec FROM experiments WHERE id=?", (experiment,)).fetchone()[0])
-            if sum(self.store.ledger(db, experiment)) + reserve > cents(spec["max_cost"]):
+            if sum(self.store.ledger(db, experiment)) + reserve > self._experiment_limit(spec):
                 raise DispatchBlocked("experiment budget limit")
         key = f"{logical}:{attempt}"
         job = Job(key, logical, attempt, kind, deadline, reserve, payload)
@@ -267,6 +272,10 @@ class Controller:
             return False
         if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
             return False
+        if job.kind in {"train", "eval"}:
+            spec = job.payload["spec"]
+            if sum(self.store.ledger(db, spec["experiment_id"])) > self._experiment_limit(spec):
+                return False
         spent, held = self.store.ledger(db)
         platform = self.store.platform_headroom(state, spent)
         return (spent + held <= min(state["approved_budget"], state["execution_cap"])

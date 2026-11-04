@@ -74,6 +74,7 @@ class SandboxBinding:
     bundle_hashes: dict[str, str]
     allowed_job_keys: tuple[str, ...] | None = None
     max_target_by_config: dict[str, int] | None = None
+    max_reserved_cents_by_config: dict[str, int] | None = None
 
     def __post_init__(self):
         identifier(self.app_name)
@@ -90,12 +91,13 @@ class SandboxBinding:
                 raise ValueError("GPU loop acceptance requires four fixed job keys")
             for key in self.allowed_job_keys:
                 identifier(key)
-        if self.max_target_by_config is not None:
-            if (type(self.max_target_by_config) is not dict
-                    or self.max_target_by_config.keys() != self.bundle_hashes.keys()):
-                raise ValueError("authorized tranche requires a maximum target per frozen configuration")
-            for target in self.max_target_by_config.values():
-                integer(target, 1)
+        for limits in (self.max_target_by_config, self.max_reserved_cents_by_config):
+            if limits is None:
+                continue
+            if type(limits) is not dict or limits.keys() != self.bundle_hashes.keys():
+                raise ValueError("authorized tranche limits must cover each frozen configuration")
+            for limit in limits.values():
+                integer(limit, 1)
 
 
 def _digest(value):

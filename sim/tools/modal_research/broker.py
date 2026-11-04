@@ -108,7 +108,7 @@ class RavenBroker:
     verified_cost_bounds = True
 
     def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None,
-                 tool_enabled=False,
+                 tool_enabled=False, experiment_reserve_limits=None,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
         self.artifacts = Path(artifacts)
@@ -117,6 +117,7 @@ class RavenBroker:
         self.reserve_bound = reserve_bound
         self.conservative_reserve = conservative_reserve
         self.research_policy = research_policy
+        self.experiment_reserve_limits = experiment_reserve_limits or {}
         self.tool_enabled = bool(tool_enabled)
         self.grant_seconds = integer(grant_seconds, 1)
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
