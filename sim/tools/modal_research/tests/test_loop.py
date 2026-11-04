@@ -172,6 +172,20 @@ class LoopTest(unittest.TestCase):
         self.assertEqual(status["spent_usd"], 0.15)
         self.assertEqual(status["state_version"], 0)
 
+    def test_invalid_unicode_and_deep_model_json_are_bounded_failures(self):
+        self.store.approve(10, "test-authorization")
+        self.ingest()
+        self.tick(2)
+        remote_id, _ = self.last("research")
+        self.backend.complete(remote_id, Outcome("succeeded", 5, chr(0xD800)))
+        self.tick(2)
+        remote_id, retry = self.last("research")
+        self.assertEqual(retry.attempt, 2)
+        self.backend.complete(remote_id, Outcome("succeeded", 5, "[" * 5000 + "]" * 5000))
+        self.tick()
+        self.assertIsNotNone(self.store.status()["analysis_pause"])
+        self.assertEqual(self.store.status()["spent_usd"], 0.10)
+
     def test_missing_and_corrupted_artifacts_never_advance_progress(self):
         self.start()
         remote_id, job = self.last("train")

@@ -319,16 +319,19 @@ class Controller:
                     raise ValueError("SOL must report artifact references")
                 for ref in refs:
                     bounded_text(ref, 256)
-        except (ValueError, TypeError, KeyError, OSError, AttributeError):
+        except (ValueError, TypeError, KeyError, OSError, AttributeError, RecursionError):
             result = None
             error = "invalid_response" if job.kind in {"research", "sol"} else "missing_artifact"
         with self.store.transaction() as db:
             state = self.store.fence(db, owner)
             # The raw research response is bounded diagnostic data; it is never executed.
-            diagnostic = outcome.output if job.kind == "research" and isinstance(outcome.output, str) else None
+            diagnostic = None
+            if job.kind == "research" and isinstance(outcome.output, str):
+                encoded = outcome.output[:16000].encode("utf-8", errors="backslashreplace")
+                diagnostic = encoded[:16000].decode("utf-8", errors="ignore")
             db.execute("UPDATE jobs SET state=?,actual=?,outcome=?,error=? WHERE id=?",
                        ("failed" if error else "done", actual, canonical(result) if result else
-                        (diagnostic[:16000] if diagnostic else None), error, job.key))
+                        diagnostic, error, job.key))
             if actual > row["reserve"]:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,'job exceeded its reserve')")
             elif self.store.ledger(db)[0] >= state["approved_budget"]:

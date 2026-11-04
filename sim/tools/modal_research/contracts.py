@@ -117,11 +117,20 @@ def validate_spec(spec):
         raise ValueError("invalid checkpoint recovery mode or save interval")
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate decision field")
+        result[key] = value
+    return result
+
+
 def validate_decision(raw, payload):
     """A decision may select a registered spec by hash or an allowlisted engineering task."""
     if not isinstance(raw, str) or len(raw.encode()) > 16000:
         raise ValueError("decision output is absent or too large")
-    decision = json.loads(raw)
+    decision = json.loads(raw, object_pairs_hook=_unique_object)
     common = {
         "decision_id", "study_id", "expected_state_version", "consumed_event_ids", "evidence_refs",
         "observed_facts", "comparison", "uncertainty", "action", "action_reason",
