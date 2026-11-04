@@ -510,8 +510,11 @@ class Runner:
         try:
             self.twin.step(row)
         except TwinError as e:
+            row = None
             self.twin_ok = False
             self.enter_follow([{"field": "twin_error", "twin": str(e)[:200], "real": None}], obs.view, "twin_only")
+        if dec is not None:
+            self.policy.commit(row)
         self.stats["twin_only_" + why] += 1
         self.write({"type": "twin_only", "t": _now(), "i": self.i, "why": why, "twin_row": row,
                     "twin_action": act.describe(), "token": token,
@@ -575,20 +578,27 @@ class Runner:
                          f"the twin does '{tacts[alt].describe()}'")
                 self.stats["injected_desyncs"] += 1
                 row_for_twin = alt
+        stepped = None                     # the row the twin took (the loop breaker records it)
         if row is not None and self.twin_ok:
             t_tw = time.perf_counter()
             try:
                 if res.ok:
-                    self.twin.step(row_for_twin if injected else row)
+                    stepped = row_for_twin if injected else row
+                    self.twin.step(stepped)
                 else:
                     self.stats["exec_failures"] += 1
-                    self.step_twin_if_game_moved(row)
+                    stepped = row if self.step_twin_if_game_moved(row) else None
             except TwinError as e:
+                stepped = None
                 self.twin_ok = False
                 self.enter_follow([{"field": "twin_error", "twin": str(e)[:200], "real": None}], real, "step")
             twin_ms = (time.perf_counter() - t_tw) * 1000
         elif not res.ok:
             self.stats["exec_failures"] += 1
+        if dec is not None:
+            self.policy.commit(stepped)
+            if dec.loop_break and stepped == dec.row:
+                self.stats["loop_breaks"] += 1
         if how != "greedy":
             self.stats["decisions_" + how] += 1
         self.stats["decisions"] += 1
@@ -600,6 +610,8 @@ class Runner:
                "screen": real.screen, "twin_screen": tv.screen if tv else None,
                "hp": [real.hp, real.max_hp], "gold": real.gold, "energy": real.energy, "mode": self.mode,
                "policy": how, **({"substituted_for": tacts[dec.row].describe()} if how == "substitute" else {}),
+               **({"loop_break": {"model_argmax": tacts[dec.plain].describe(), "p_argmax": round(float(
+                   dec.probs[dec.plain]), 4)}} if (dec is not None and dec.loop_break and row == dec.row) else {}),
                "twin_action": ({"row": row, **twin_act.to_json(), "token": twin_token}
                                               if twin_act is not None else None),
                "real_action": executed, "ok": res.ok, "error": res.error, "notes": res.notes,
@@ -618,13 +630,13 @@ class Runner:
         self.status(rec, twin_act, ract, dec, row)
         self.i += 1
 
-    def step_twin_if_game_moved(self, row: int) -> None:
+    def step_twin_if_game_moved(self, row: int) -> bool:
         """After a failed / unconfirmed execution: step the twin tentatively and keep the step only if the game shows
         the same state now (the action did happen, its confirmation timed out)."""
         try:
             now = self.game.observe()
         except GameError:
-            return
+            return False
         entry = self.twin.env.snapshot(0)
         before = compare_views(self.twin.view(), now.view)[0]
         self.twin.step(row)
@@ -632,15 +644,18 @@ class Runner:
         if len(after) > len(before) or (after and not before):
             self.twin.env.restore(0, entry)
             self.stats["twin_step_reverted"] += 1
-        else:
-            self.stats["twin_step_kept_after_failure"] += 1
-            self.since_boundary += 1
+            return False
+        self.stats["twin_step_kept_after_failure"] += 1
+        self.since_boundary += 1
+        return True
 
     def status(self, rec: dict, twin_act: Act | None, ract: Act, dec, row) -> None:
         hp = rec["hp"]
         what = (twin_act.describe() if twin_act is not None else f"[fallback] {ract.describe()}")
         if rec.get("substituted_for"):
             what += f" [instead of {rec['substituted_for']}: not offered by the game]"
+        if rec.get("loop_break"):
+            what += f" [loop breaker: instead of {rec['loop_break']['model_argmax']}]"
         p = f" p={rec['p']:.2f}" if rec.get("p") is not None else ""
         if rec.get("win_prob") is not None:
             conf = f"通关把握 {rec['win_prob'] * 100:.0f}%"
@@ -689,6 +704,7 @@ class Runner:
              "twin_final_view": self.twin.view().to_json() if self.twin_ok else None,
              "result": result, "error": self.error, "wall_s": round(wall, 1),
              "s_per_decision": round(wall / decisions, 2) if decisions else None,
+             "loop_breaker": self.policy.loop_totals() if hasattr(self.policy, "loop_totals") else None,
              "win_prob": ({"first": self.win_probs[0], "last": self.win_probs[-1], "min": min(self.win_probs),
                            "max": max(self.win_probs)} if self.win_probs else None)}
         if self.audit_tokens:

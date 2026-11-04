@@ -43,30 +43,46 @@ class TwinError(RuntimeError):
 
 @dataclass
 class Decision:
-    row: int                     # the greedy row (argmax of the masked logits)
-    probs: np.ndarray            # softmax over the cand_n rows
+    row: int                     # the chosen row: the argmax, or with the loop breaker the best row it leaves unmasked
+    probs: np.ndarray            # the model's softmax over the cand_n rows (unmasked)
     value: float                 # critic value (expected protocol return under the policy; not a probability)
     win_prob: float | None       # P(win) of the --aux-heads win head (None: the checkpoint has no aux heads)
     combat_hp: float | None      # predicted hp share at the end of the current combat (aux head), in combat only
     ms: float = 0.0
+    order: np.ndarray | None = None   # the scores the choice ranks by (the loop breaker's masked logits), else probs
+    plain: int | None = None          # the model's own argmax (differs from `row` when the loop breaker broke a loop)
+
+    @property
+    def loop_break(self) -> bool:
+        return self.plain is not None and self.plain != self.row
 
     def ranked(self) -> list[int]:
-        return [int(i) for i in np.argsort(-self.probs, kind="stable")]
+        """Rows in the order a choice is made (the loop breaker's masked rows last)."""
+        score = self.order if self.order is not None else self.probs
+        return [int(i) for i in np.argsort(-score, kind="stable")]
 
     def top(self, k: int = 5) -> list[tuple[int, float]]:
-        return [(i, float(self.probs[i])) for i in self.ranked()[:k]]
+        """The model's own top-k (unmasked probabilities)."""
+        return [(int(i), float(self.probs[i])) for i in np.argsort(-self.probs, kind="stable")[:k]]
 
 
 class Policy:
     """A trained sts2train checkpoint as a greedy policy over the twin's candidate rows (CPU)."""
 
-    def __init__(self, checkpoint: str, *, device: str = "cpu", torch_threads: int = 4):
+    def __init__(self, checkpoint: str, *, device: str = "cpu", torch_threads: int = 4, loop_breaker: bool = True,
+                 loop_breaker_k: int | None = None):
         import torch
         from sts2train.ppo import load_checkpoint
 
         torch.set_num_threads(max(1, int(torch_threads)))
         self.torch = torch
         self.device = device
+        # sts2train.loopbreak.LoopBreaker, as `sts2train eval` plays greedy (on by default): at an observation the twin
+        # was at before, the rows taken there are masked; from the k-th return only leave rows stay (built in bind()).
+        self.loop_breaker_on = bool(loop_breaker)
+        self.loop_breaker_k = loop_breaker_k
+        self.breaker = None
+        self._pending = False
         self.model, self.spec, ck = load_checkpoint(checkpoint, device)
         self.model.eval()
         self.checkpoint = str(checkpoint)
@@ -99,7 +115,29 @@ class Policy:
             self.model.eval()
         bind_spec(self.spec)
         self._combat_col = self.spec.cols["global_i"]["is_combat"]
+        try:
+            from sts2train.loopbreak import DEFAULT_K, LoopBreaker
+        except ImportError:      # a trainer tree without the loop breaker: plain argmax
+            self.breaker = None
+        else:
+            self.breaker = LoopBreaker(library, num_envs=1, k=self.loop_breaker_k or DEFAULT_K,
+                                       enabled=self.loop_breaker_on)
+        self.meta["loop_breaker"] = ({"mode": self.breaker.mode, "k": self.breaker.k, "window": self.breaker.window,
+                                      "leave_kinds": list(self.breaker.leave_kinds)} if self.breaker is not None
+                                     else {"mode": "unavailable"})
         return compat
+
+    def commit(self, row: int | None) -> None:
+        """Record the row the twin actually took at the observation of the last `decide` (None / -1: none), so the
+        loop breaker knows what led back to an observation. A decision that was not followed by a step is not
+        recorded."""
+        if self.breaker is not None and self._pending:
+            r = -1 if row is None else int(row)
+            self.breaker.commit(np.array([r], dtype=np.int64), np.array([self._plain], dtype=np.int64))
+        self._pending = False
+
+    def loop_totals(self) -> dict | None:
+        return self.breaker.totals() if self.breaker is not None else None
 
     def decide(self, obs: dict) -> Decision:
         import time
@@ -119,11 +157,20 @@ class Policy:
                 logits, value = self.model(x)
                 win, chp = None, None
         lg = logits[0, :n].double().cpu().numpy()
+        plain = int(np.argmax(lg))
+        order = None
+        row = plain
+        if self.breaker is not None:
+            masked = self.breaker.apply(obs, logits)
+            self._plain, self._pending = plain, True
+            if masked is not logits:
+                order = masked[0, :n].double().cpu().numpy()
+                row = int(np.argmax(order))
         lg = lg - lg.max()
         p = np.exp(lg)
         p /= p.sum()
-        return Decision(row=int(np.argmax(p)), probs=p, value=float(value[0]), win_prob=win, combat_hp=chp,
-                        ms=(time.perf_counter() - t0) * 1000)
+        return Decision(row=row, probs=p, value=float(value[0]), win_prob=win, combat_hp=chp,
+                        ms=(time.perf_counter() - t0) * 1000, order=order, plain=plain)
 
 
 class RandomPolicy:
@@ -138,6 +185,12 @@ class RandomPolicy:
         self.bias = bias
         self.aux = False
         self.meta = {"checkpoint": None, "policy": f"random(seed={seed}, bias={bias})"}
+
+    def commit(self, row) -> None:
+        pass
+
+    def loop_totals(self) -> dict | None:
+        return None
 
     def bind(self, schema) -> dict:
         self._kind_col = schema.cols("cand")["kind"]
