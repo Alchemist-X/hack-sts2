@@ -20,9 +20,17 @@ from sts2train.runlog import read_jsonl
 KEYS = ("t_env_s", "t_infer_s", "t_update_s", "t_other_s", "t_total_s", "t_overlap_wait_s", "t_rollout_s")
 
 
+def arch(a) -> dict:
+    """--arch d,s,depth,heads,ff_mult (overrides --preset)."""
+    if not a.arch:
+        return {}
+    d, s, depth, heads, ff = (int(v) for v in a.arch.split(","))
+    return {"preset": None, "d": d, "s": s, "depth": depth, "heads": heads, "ff_mult": ff}
+
+
 def run(out: Path, mode: str, a) -> dict:
     given = {"out": str(out / mode), "envs": a.envs, "rollout": a.rollout, "max_updates": a.updates,
-             "threads": a.threads, "torch_threads": a.torch_threads, "device": a.device, "preset": a.preset,
+             "threads": a.threads, "torch_threads": a.torch_threads, "device": a.device, "preset": a.preset, **arch(a),
              "minibatch": a.minibatch, "epochs": a.epochs, "ckpt_every": 0, "ckpt_every_min": 0, "eval_every": 0,
              "max_hours": 0.5, "log_every": 100, "characters": ("SILENT",), "ascension": 10,
              "start_mode": "stream", "seed": a.seed, "init_seed": a.seed, "sample_seed": a.seed, "overlap": mode}
@@ -41,6 +49,7 @@ def main() -> None:
     p.add_argument("--rollout", type=int, default=16)
     p.add_argument("--updates", type=int, default=6)
     p.add_argument("--preset", default="small")
+    p.add_argument("--arch", help="d,s,depth,heads,ff_mult instead of --preset (e.g. 32,64,1,2,2)")
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--torch-threads", type=int, default=2)
     p.add_argument("--minibatch", type=int, default=256)
