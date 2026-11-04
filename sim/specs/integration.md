@@ -1578,3 +1578,47 @@ a lookahead job, load about 8), torch 2.15.0+cpu in a venv on `/data/raven`:
   the venv removed (the validation directory keeps the tarball, logs, digests and the smoke run, 35 MB).
 - Not verified: CUDA (no GPU run of this bundle); the four exporter fixes on a fresh export of the raw farm recordings
   (drive unplugged): the merged tree was checked on the owner's re-exported bundles only.
+
+## Live twin integrate (2026-11-04)
+
+Scope: train/live-twin `87c409f` (2 commits on `ef70ee6`: `ca9cfbd` code + tests + README, `87c409f` README results).
+`scripts/live/nn_twin_play.py` + `scripts/live/nn_twin/` let a trained sts2train checkpoint play the real game: the
+network reads a sim twin (one sts2vec slot from the run's seed or the game's `current_run.save`), its row is matched by
+meaning onto STS2_MCP's candidates (`/api/v1/singleplayer`; `/api/v1/eval` optional) and executed there, and the twin
+takes the same row; per-decision view diffs, follow mode after a desync, resync from the game's save at the next save
+point (a room-entry save's floor = `len(map_point_history) + 1`); `--dry-run-server` stands the sim play server in for
+the game. Owner validation on a headless instance (pre-macro library `5dbfa09dd9dcb5ed`, s3c `best.pt`): 255 decisions,
+0 desync, 0 resync, the dry run's result. Guide: `scripts/live/README-nn-twin.md`. Merged `--no-ff` into the Fidelity
+tree (`1b2f10a`) as `2011f65`.
+
+Conflicts: none (the branch adds `scripts/live/` only).
+
+Seams resolved in `2011f65` (the branch predates env-deckbuild's rewards-screen macros):
+- `Twin._macro` reads its choice from `reward_choices` row `option_index` (card + upgrade, `CardRewardAlt`) and expands
+  as `RewardMacros.Expand`: ClaimReward(A), then PickRewardCard(B) / RewardAlternative(B). TakeRewardAlternative used to
+  decode as `#B`, which matches no game alternative.
+- `Runner.map_row` pairs a macro's open step by card reward A's rank among the twin's unclaimed card rewards (was:
+  always the game's first card reward).
+- Dry-run audit: a macro row's token is its plan's tokens (`reward A; card B`, `reward A; reroll` / `alt B`), compared
+  with the executed wires joined; both dry-run tests failed on this before the fix (no desync).
+- A macro step the game does not offer after the open (its card reward differs: hidden state) enters follow mode
+  (`macro_step`) and benches the twin until the next save point; in follow mode the step is matched relaxed.
+- `Policy.bind` reloads a checkpoint whose embedded enums only widened (`load_checkpoint(library=...)`), as
+  `sts2train eval` does. Pre-macro checkpoints (s3c / s4a / s5b) ran unwidened before: the model clamps kinds 21 / 22
+  to PromptCancel, so no error, but other scores on every rewards screen with a card reward.
+- Tests: `test_mapping` +4 (TakeRewardAlternative plan, open-step rank, stand-in macro tokens, the library's 23
+  `RunActionKind` enumerated through `Twin.acts` / `row_to_token`); `test_dry_run` +2 (the CLI dry run with a pre-macro
+  checkpoint, widened; a widening check); the random runs must cover macros.
+
+Tests: `uv run --project sim/tools/train pytest -q scripts/live/tests` 54 passed (50 unit + 4 integration that start
+their own play server; the 5 random dry runs: 580 decisions, 14 TakeRewardCard, 0 desync, 0 token mismatches);
+`uv run --project sim/tools/train pytest -q` 111 passed (its `testpaths` stops at `sim/tools/train/tests`).
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=4`, nice 10): `scripts/gates.sh --quick` on `2011f65`, 156 s, every step
+PASS (Release / Debug 0 warnings; tests 142/142; selftest 100/100; g0 4/4, 69/69; pytest-eval 84; pytest-vec 117;
+sts2rec 767 + 6 skipped; py-scripts unittest 53, prompt_sites / kernel_map `--check` OK), logs
+`tmp/gates/livetwin-integrate-quick/`.
+
+No Colab bundle: nothing it ships changed (`git diff 1b2f10a 2011f65` is empty on its source paths), so
+`sts2train-9f6608701d` stays current. Not verified: the real game on the merged library (macros through STS2_MCP, a
+widened checkpoint live); TakeRewardAlternative outside unit tests (needs Driftwood / Pael's Wing).

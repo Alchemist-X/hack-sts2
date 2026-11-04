@@ -1,6 +1,6 @@
 # hack-sts2 接手文档（当前入口）
 
-更新：2026-11-04（保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
+更新：2026-11-04（Live twin 合入：训练好的网络经孪生 sim 打真游戏（`scripts/live/`）；保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
 给新会话或新同事的唯一入口：先读本页，再按需打开引用的文档。历史交接记录在
 `docs/handoff-2026-11-01.md`（E1/E2 期间逐段追加），波次级状态日志在 `docs/p1-sim-full-port-plan-2026-11-01.md` 末尾。
 
@@ -107,7 +107,7 @@
 | `sim/specs/` | 规格索引、集成日志 `integration.md`、差分报告 |
 | `sts2rec/` | 录像工具（uv）：`validate`、`export-bundles-v2`（绑定存档锚点、R4 奖励、R5 选项键）、`export-run-oracles`、存档读取 |
 | `mod/` | Sts2Recorder 被动录像 mod（REC 版，带存档锚点） |
-| `scripts/` | `sim_server.sh`、`gates.sh`、`ci_linux.sh`、`linux_validate.sh`、`sts2_cluster.sh`、`cluster_capacity.sh`、`version_delta.py`、`version_stubs.py`、`hook_drift.py`、`version_update.sh`、`install_mod.sh`、`mcp_mod.sh`、`headless_*.sh`（`--recorder-root`）、`farm/`（E3 覆盖农场：`run_farm.py`、`validate_farm.py`、`summarize_farm.py`）、`mcp_build_env.sh` + `build_selection_mcp.sh`（按 `config/sts2mcp.lock.json` 应用带 sha256 的补丁链，含 `sts2mcp-v0111-compat.patch`；只认锁定的游戏版本，DLL 可复现并校验） |
+| `scripts/` | `sim_server.sh`、`gates.sh`、`ci_linux.sh`、`linux_validate.sh`、`sts2_cluster.sh`、`cluster_capacity.sh`、`version_delta.py`、`version_stubs.py`、`hook_drift.py`、`version_update.sh`、`install_mod.sh`、`mcp_mod.sh`、`headless_*.sh`（`--recorder-root`）、`farm/`（E3 覆盖农场：`run_farm.py`、`validate_farm.py`、`summarize_farm.py`）、`live/`（`nn_twin_play.py`：checkpoint 经孪生 sim 打真游戏，`README-nn-twin.md`）、`mcp_build_env.sh` + `build_selection_mcp.sh`（按 `config/sts2mcp.lock.json` 应用带 sha256 的补丁链，含 `sts2mcp-v0111-compat.patch`；只认锁定的游戏版本，DLL 可复现并校验） |
 | `knowledge/source/<版本>/` | 游戏文案（卡/遗物/药水/能力/事件/敌人/关键词）jsonl；`scripts/export_sts2_localization.py` 从 PCK 导出 |
 | `docs/` | 本页、协议、设计、评审、状态日志、试玩报告 |
 
@@ -136,6 +136,10 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 uv run --project sim/tools/train sts2train 
   --envs 256 --minibatch 512 --threads 6 --torch-threads 6 --max-hours 0.05 --floor-step-cap 80 --out tmp/train/mps-smoke
 uv run --project sim/tools/train sts2train train --resume auto --out <run>                     # 续训；旧 encoder 的 checkpoint 要求模型输入一致或只加宽枚举
 uv run --project sim/tools/train sts2train eval --seedset silent-a10-v1 --checkpoint <run>/checkpoints/best.pt
+# 网络打真游戏（twin lockstep：孪生 sim 出动作、按含义映射到 STS2_MCP 执行；旧 checkpoint 自动加宽）。指南 scripts/live/README-nn-twin.md
+nice -n 10 uv run --project sim/tools/train python scripts/live/nn_twin_play.py --checkpoint <best.pt> --character SILENT \
+  --ascension 10 --seed <SEED> --port 15601 --start-run --save-root <实例>/home/Library/Application\ Support/SlayTheSpire2 --out output/nn-twin/<run>
+nice -n 10 uv run --project sim/tools/train pytest -q scripts/live/tests                      # 映射 / resync 单测 + play server dry run
 scripts/train/make_colab_bundle.sh                                # -> tmp/colab/sts2train-<sha>.tar.gz；AOT .so 在 raven 上构建（按源码树哈希缓存）
 docker run --rm -v "$PWD:/w" -w /w python:3.13 bash sts2train-<sha>/smoke_bundle.sh /w/smoke-run 2 8   # raven 上验包（无 dotnet）
 bash /content/sts2train-<sha>/run_train.sh /content/drive/MyDrive/sts2/run1 12 2048 --preset large --device cuda --amp \
