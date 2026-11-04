@@ -1622,3 +1622,106 @@ sts2rec 767 + 6 skipped; py-scripts unittest 53, prompt_sites / kernel_map `--ch
 No Colab bundle: nothing it ships changed (`git diff 1b2f10a 2011f65` is empty on its source paths), so
 `sts2train-9f6608701d` stays current. Not verified: the real game on the merged library (macros through STS2_MCP, a
 widened checkpoint live); TakeRewardAlternative outside unit tests (needs Driftwood / Pael's Wing).
+
+## Lookahead + report-card integrate (2026-11-04)
+
+Scope: train/lookahead `5c6ba5d` (7 commits; `6914040` already merged the integration head `b26a383`) and
+train/report-card `8fd563e` (2 commits on `a8d91cf`), merged `--no-ff` in that order into the Live twin tree
+(`826265f`) as `2ee7e4f` and `c778682`, then `26f1d80` wires the card to the lookahead's run directories.
+- `sts2train/lookahead.py` (`python -m sts2train.lookahead eval | paired`): a checkpoint's greedy policy plus a
+  combat-only search on determinized clones (K candidates, R roots, turn / combat horizon, `value+hp` leaf), an
+  ordinary `sts2vec` policy that the unmodified evaluator plays, scores and replay-audits through a private mirror env;
+  ABI 2 `env.branch` path (no pool growth), pool / rebuild path for older libraries; `--record` ExIt rows; per-seed
+  paired statistics. Measurements: `docs/lookahead-2026-11-04.md` (A10 dev +0.0152 [+0.0080, +0.0223], below the +0.02
+  bar: ExIt go signal not fired). Seed sets `silent-a10-dev-v1` (128), `silent-a10-test-v1` (100), `silent-a0-dev-v1`
+  (100).
+- `sts2train/reportcard.py` + CLI: `sts2train report-card` (greedy protocol evals run or reused per seed set, cached
+  random / first / heuristic baselines, staged tables with Wilson intervals, endings, floor histogram, win-prob
+  readout → `model-card.md` / `.json`), `sts2train pack` (tar.gz weights bundle with README-weights.md and a sha256
+  manifest, re-read and verified), `sts2train probe` (an eval's games replayed, the checkpoint read at every decision).
+
+Conflicts: none. The two seed-set files both branches add are byte-identical (blobs `a768bf3` / `30903be`); `cli.py`
+and the README change on the report-card side only.
+
+`1dfb0c7` (the padded-row cut: 0.71–0.81× the rollout forward time, rounding-level output change) is confined to the
+lookahead's rollout forwards (`trim_padding` in `LookaheadPolicy._forward`); the root greedy forward,
+`sts2train.evaluate` and the trainer are untouched: `test_perf` (eager update = legacy loop, train default path = head
+loop, bit for bit) passes, and K = 1 stays identical to greedy.
+
+Seams resolved:
+- `2ee7e4f`: the lookahead branch predates the loop breaker (`a8d91cf`). Its `--greedy` baseline runs
+  `sts2train.evaluate.evaluate`, whose greedy policy now goes through the breaker by default, while the lookahead's
+  own choices outside the search are the plain argmax. `evaluate_greedy` passes `loop_breaker=False` (config.json
+  `loop_breaker.mode` off, stats.json `loop_breaker` off), so the paired comparison still differs only by the search
+  and K = 1 = `--greedy` (`test_k1_is_greedy` asserts the mode); doc §7 notes it.
+- `26f1d80`: the card's `--lookahead-dir` predates `sts2train.lookahead` on the tree. On real directories a `--greedy`
+  run came out as a second "lookahead, determinized" row, and the only comparison on offer was the lookahead row (no
+  loop breaker) against the card's greedy row (loop breaker on). Now `lookahead_row` classifies a directory by its
+  config.json (search run → "lookahead, determinized: la(K,R,horizon,honest) <score>"; `--greedy` run → kind
+  `greedy-ref`, "NN greedy, loop breaker off"; anything else refused before a game is played); every lookahead row is
+  paired per seed (`lookahead.paired`) against a `greedy-ref` row of the same weights with the breaker off (like for
+  like), else against the card's greedy row (flagged "(loop breaker on)"); `stats.json` counters (searched / changed
+  decisions, ms per searched decision, rollout errors, desyncs, api, code sha) land in `search_stats`; model-card.md
+  gains a "Lookahead: declared search, paired per seed" table and the CLI JSON a `lookahead` list; README-weights.md a
+  lookahead section (and the live twin runner is on this tree now). `reportcard` imports `lookahead.paired` at module
+  level (imported lazily under a test that monkeypatches `sts2vec.evaluate.evaluate`, the module kept the patched
+  function). `scripts/live/README-nn-twin.md`: `sts2train.lookahead` is merged; `nn_twin_play --lookahead` still exits 2
+  (its mirror env cannot follow save resyncs).
+
+Tests: `uv run --project sim/tools/train pytest -q` 137 passed (111 + 16 lookahead + 10 report-card, of which 2 new:
+`test_lookahead_dir_rows`, `test_card_reads_lookahead_eval_dirs`, which runs `lookahead eval` and `--greedy` through
+their CLI on two games, then `report-card --lookahead-dir`); `uv run --project sim/tools/train pytest -q
+scripts/live/tests` 54 passed.
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=4`, nice 10): `scripts/gates.sh --quick` on `26f1d80`, 157 s, every step
+PASS, logs `tmp/gates/lookahead-reportcard-integrate-quick/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 6 | Release: 0 warnings, 0 errors (rc 0) |
+| build-debug | PASS | 6 | Debug: 0 warnings, 0 errors (rc 0) |
+| tests | PASS | 39 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 142/142 passed, 0 failed, PENDING 0 |
+| selftest | PASS | 4 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 5 | 84 passed |
+| pytest-vec | PASS | 15 | 117 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 78 | 767 passed, 6 skipped |
+| py-scripts | PASS | 0 | unittest 53 OK; prompt_sites --check OK; kernel_map --check OK (564 files, mapped 374, no_port 190) |
+
+Lookahead + card on `s7b` (`latest.pt`, A10 update 300, 2.9M parameters, aux heads, encoder `3b73317739c650bd`,
+weights `644755f6b76c9fa6`) on `silent-a10-v1`, Mac, 4 threads, all 20/20 replayable:
+
+| row | progress [95% CI] | results | reached the Act-1 boss | wall |
+| --- | --- | --- | --- | --- |
+| NN greedy (the card's eval, loop breaker on) | 0.240 [0.205, 0.275] | loss 20 | 9/20 | 5 s |
+| lookahead, determinized: la(8,1,turn,honest) value+hp | 0.227 [0.181, 0.272] | loss 17, stuck 3 | 8/20 | 26 s |
+| NN greedy, loop breaker off (`--greedy`) | 0.217 [0.180, 0.253] | loss 17, stuck 3 | 6/20 | 5 s |
+| random / first / heuristic | 0.037 / 0.112 / 0.117 | loss 20 | 0/20 | |
+
+Paired like for like (lookahead − `--greedy`): +0.0101, t [−0.0192, +0.0394], bootstrap [−0.0137, +0.0392], 4 better / 2
+worse / 14 same; 2,775 searched decisions (62 % of live), 20.6 % changed, 7.2 ms per searched decision, 0 rollout
+errors, 0 desyncs, ABI 2 branch path. On this checkpoint the loop breaker is worth more than the search (+0.023 vs
++0.010: the 3 stuck games are prompt / shop cycles, which the breaker breaks: 4 loop breaks in 3 games); the lookahead
+has no loop breaker, so on the card its row sits below the breaker-on greedy row. Composing the two (the breaker on the
+lookahead's root greedy) is a lookahead semantics change (`la-v2`), not done here.
+
+Colab bundle `tmp/colab/sts2train-26f1d805a0.tar.gz` (7,077,176 bytes, sha256
+`9d69c30fc00152f61ffd0d44f05efabb67d4170899a060e17471f69869617f70`; AOT key `5c80f4e6ba70`, cached, not rebuilt: the
+Fidelity library, `Sts2Sim.Vec.so` sha256 `2d035a9b…fa984ce`, newest symbol GLIBC_2.34; 148 Silent A9 start saves;
+the wheel ships `lookahead.py` / `reportcard.py`, the bundle 8 seed sets incl. the three new ones; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-la-rc-20261104/`). The docs commit after `26f1d80` changes nothing the bundle
+ships. Validated on raven in a plain `python:3.13` container (`--cpus 4`, 4 threads), torch 2.15.0+cpu in a venv on
+`/data/raven` (`validate_la_rc.sh`, `validate.log` there):
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5), 163 s: `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; floor cap 80
+  in effect; 4 updates, 32,768 env steps, 698 episodes (384 save-started), 0 sim errors / content gaps; eval u4
+  std-a0-v1 0.088 (20 games); appended buffers, card_static, ABI 2 branch OK; raw bench 53,920 env-steps/s.
+- The bundle's new entry points on `s7b` / `silent-a10-v1`: `python -m sts2train.lookahead eval --greedy` 17 s, `eval`
+  (K 8, turn, value+hp) 66 s (18.0 ms per searched decision, 0 rollout errors, 0 desyncs, branch path), `paired`,
+  `sts2train report-card --lookahead-dir` both (with the three baselines) 21 s, `sts2train pack` (31.4 MB, 8 files,
+  verified): every number equals the Mac's, and both runs replay the Mac's game histories 20/20.
+- raven cleanup: the container ran `--rm`; the venv, the extracted bundle, the checkpoint copy, the weights bundle and
+  the smoke run's checkpoints removed (the validation directory keeps the tarball, logs and run directories, 8 MB).
+- Not verified: CUDA; the lookahead on the 128 / 100-game sets on the merged tree (the owner's numbers in
+  `docs/lookahead-2026-11-04.md` predate the loop breaker; nothing on the search path changed); `--record` through the
+  bundle.

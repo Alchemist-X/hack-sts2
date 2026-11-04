@@ -1,6 +1,6 @@
 # hack-sts2 接手文档（当前入口）
 
-更新：2026-11-04（Live twin 合入：训练好的网络经孪生 sim 打真游戏（`scripts/live/`）；保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
+更新：2026-11-04（Lookahead + report-card 合入：checkpoint 的模型卡 / 权重包（`sts2train report-card` / `pack` / `probe`）与决策时战斗前瞻（`python -m sts2train.lookahead`，ExIt 信号未触发）；Live twin 合入：训练好的网络经孪生 sim 打真游戏（`scripts/live/`）；保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
 给新会话或新同事的唯一入口：先读本页，再按需打开引用的文档。历史交接记录在
 `docs/handoff-2026-11-01.md`（E1/E2 期间逐段追加），波次级状态日志在 `docs/p1-sim-full-port-plan-2026-11-01.md` 末尾。
 
@@ -136,6 +136,10 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 uv run --project sim/tools/train sts2train 
   --envs 256 --minibatch 512 --threads 6 --torch-threads 6 --max-hours 0.05 --floor-step-cap 80 --out tmp/train/mps-smoke
 uv run --project sim/tools/train sts2train train --resume auto --out <run>                     # 续训；旧 encoder 的 checkpoint 要求模型输入一致或只加宽枚举
 uv run --project sim/tools/train sts2train eval --seedset silent-a10-v1 --checkpoint <run>/checkpoints/best.pt
+# 模型卡 / 权重包（sim/tools/train/README.md「Model card and weights bundle」）；决策时战斗前瞻 = 声明的搜索行（docs/lookahead-2026-11-04.md）
+uv run --project sim/tools/train sts2train report-card --checkpoint <best.pt> --out tmp/card/<run> [--lookahead-dir <la> <la-greedy>]   # 默认三个 Silent A10 集 + 规则基线；probe 读逐决策
+uv run --project sim/tools/train sts2train pack --checkpoint <best.pt> --out tmp/release/<run>.tar.gz --card tmp/card/<run>    # 权重包：checkpoint + 卡 + README-weights + sha256
+uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset silent-a10-dev-v1 --checkpoint <best.pt> --out <la> [--greedy]   # --greedy = 配对基线（破环器关）；paired <la-greedy> <la>
 # 网络打真游戏（twin lockstep：孪生 sim 出动作、按含义映射到 STS2_MCP 执行；旧 checkpoint 自动加宽）。指南 scripts/live/README-nn-twin.md
 nice -n 10 uv run --project sim/tools/train python scripts/live/nn_twin_play.py --checkpoint <best.pt> --character SILENT \
   --ascension 10 --seed <SEED> --port 15601 --start-run --save-root <实例>/home/Library/Application\ Support/SlayTheSpire2 --out output/nn-twin/<run>
