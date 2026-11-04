@@ -209,4 +209,26 @@ public static class FidelityTests
         Assert.Equal(0, diffs.Count(d => d.Severity == DiffSeverity.Hard), string.Join("; ", diffs.Select(d => d.Path)));
         Assert.True(new[] { "select.screen_type", "select.can_skip", "select.can_cancel" }.All(p => diffs.Any(d => d.Path == p && d.Severity == DiffSeverity.Soft)));
     }
+
+    public static void Test_Fidelity_RunDriverFinalHpIsBeforeTheVictoryHeal()
+    {
+        // RunLoop.OnCombatVictory clears RunState.Combat in the step that ends the combat, after BURNING_BLOOD healed 6
+        // (Models.Relics/BurningBlood.cs:52, AfterCombatVictory). The recorder's final_hp is the last in-combat snapshot; the
+        // run driver read the healed HP (farm G1: 34 Ironclad combats from a save anchor off by exactly 6).
+        var sim = FirstCombat("FIDHEAL01", "IRONCLAD");
+        var cs = sim.State.Combat!;
+        cs.Player.CurrentHp = cs.Player.MaxHp - 20;
+        foreach (var monster in cs.Monsters.ToArray())
+        {
+            PowerCmd.Apply<DoomPower>(cs, monster, monster.CurrentHp, cs.Player, null);
+        }
+        var driver = new RunCombatDriver(sim);
+        driver.Step(GameAction.EndTurn);
+        Assert.True(driver.IsTerminal);
+        Assert.Null(sim.State.Combat);
+        int beforeHeal = cs.PlayerHpAtCombatEnd!.Value;
+        Assert.Equal(beforeHeal, driver.PlayerHp);
+        Assert.Equal(beforeHeal + 6, sim.State.Players[0].CurrentHp, "BURNING_BLOOD healed after the combat was decided");
+    }
 }
+

@@ -555,7 +555,12 @@ public static class V2Runner
             {
                 finalDiffs.Add(new FieldDiff("outcome", segment.OutcomeResult, result.SimOutcome, DiffSeverity.Hard));
             }
-            if (segment.OutcomeFinalHp is int hp && hp != result.SimFinalHp)
+            // An abandoned combat's recording stops inside the combat (the part ended: a quit or a crashed game), so its
+            // final_hp is the player HP of the last thing recorded (sts2rec diff_export._final_player_hp), not the HP
+            // after the last decision the sim replays (farm 1MQXCR99GX f14, WATLF71NUH f22: the game died during the
+            // last enemy turn). The outcome itself is still compared.
+            bool abandoned = string.Equals(segment.OutcomeResult, DiffBundle.OutcomeAbandoned, StringComparison.Ordinal);
+            if (segment.OutcomeFinalHp is int hp && hp != result.SimFinalHp && !abandoned)
             {
                 finalDiffs.Add(new FieldDiff("final_hp", hp, result.SimFinalHp, DiffSeverity.Hard));
             }
