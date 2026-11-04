@@ -4,6 +4,13 @@ Per table: id embeddings (sizes from the schema vocab) + numeric columns (symlog
 mean pooling. A global head mixes the pooled tables into the state embedding. Each candidate row (kind, A, B and the
 pointers hand_slot / target_slot / potion_slot / option_index / card_id) gathers the row embeddings it points at and is
 scored against the state embedding; logits over cand_n with masking. Value head on the state embedding.
+
+Size knobs: ``d`` (d_model: width of every row encoder, the trunk and the candidate scorer), ``s`` (state width),
+``depth`` / ``heads`` / ``ff_mult`` (trunk). ``depth = 0`` is the original smoke model (the 17 pooled tables are
+concatenated into the state MLP; 948,750 parameters at d = 96, s = 256). ``depth > 0`` adds a pre-LayerNorm transformer
+trunk over 17 table tokens (the pooled tables, typed) plus one token per hand card, enemy and potion row (typed and
+slot-indexed, padding masked): the state is read from the global token and the mean of all live tokens, and the
+contextualised hand / enemy / potion rows feed the candidate pointers. ``PRESETS`` names the standard sizes.
 """
 
 from __future__ import annotations
@@ -13,11 +20,23 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
-from .features import ModelSpec
+from .features import ROW_TRUNCATED, USED_BUFFERS, ModelSpec
 
 NEG = -1e9
 HASH_BUCKETS = 1021
+N_TABLES = 17
+
+# Architecture presets (d_model, state width, trunk depth / heads / FFN multiplier) -> parameter count on the
+# fc2eb34c07bc8513 schema: smoke 948,750 (the 2026-11-02 smoke model), small 1,175,150, large 15,804,270.
+PRESETS = {
+    "smoke": {"d": 96, "s": 256, "depth": 0, "heads": 4, "ff_mult": 4},
+    "small": {"d": 128, "s": 256, "depth": 2, "heads": 4, "ff_mult": 4},
+    "large": {"d": 384, "s": 768, "depth": 6, "heads": 8, "ff_mult": 4},
+}
+ARCH_KEYS = ("d", "s", "depth", "heads", "ff_mult")
+ARCH_DEFAULTS = PRESETS["smoke"]
 
 
 def symlog(x: torch.Tensor) -> torch.Tensor:
@@ -62,11 +81,40 @@ class RowLin(nn.Module):
         return F.relu(self.l1(x))
 
 
+class Block(nn.Module):
+    """Pre-LayerNorm transformer block (multi-head self-attention with a key padding mask + GELU MLP), no dropout.
+
+    Written on ``F.scaled_dot_product_attention`` rather than ``nn.TransformerEncoderLayer`` so training and
+    inference run the same kernel path (the stored rollout log-probs must reproduce in the update)."""
+
+    def __init__(self, d: int, heads: int, ff_mult: int):
+        super().__init__()
+        if d % heads:
+            raise ValueError(f"d_model {d} is not divisible by heads {heads}")
+        self.h = heads
+        self.ln1 = nn.LayerNorm(d)
+        self.qkv = nn.Linear(d, 3 * d)
+        self.proj = nn.Linear(d, d)
+        self.ln2 = nn.LayerNorm(d)
+        self.ff1 = nn.Linear(d, ff_mult * d)
+        self.ff2 = nn.Linear(ff_mult * d, d)
+
+    def forward(self, x: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        """x [B, T, d], keep [B, T] bool (True = a real token; every row must keep at least one)."""
+        B, T, d = x.shape
+        q, k, v = self.qkv(self.ln1(x)).view(B, T, 3, self.h, d // self.h).permute(2, 0, 3, 1, 4)
+        a = F.scaled_dot_product_attention(q, k, v, attn_mask=keep[:, None, None, :])
+        x = x + self.proj(a.transpose(1, 2).reshape(B, T, d))
+        return x + self.ff2(F.gelu(self.ff1(self.ln2(x))))
+
+
 class Policy(nn.Module):
-    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256):
+    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4):
         super().__init__()
         self.spec = spec
         self.d, self.s = d, s
+        self.depth, self.heads, self.ff_mult = depth, heads, ff_mult
+        self.grad_ckpt = False   # runtime switch (not architecture): recompute trunk blocks in backward
         V, E = spec.vocab, spec.enums
         self.card_emb = nn.Embedding(V["cards"], 48, padding_idx=0)
         self.relic_emb = nn.Embedding(V["relics"], 32, padding_idx=0)
@@ -135,8 +183,16 @@ class Policy(nn.Module):
         self.card32 = nn.Linear(48, 32, bias=False)
         self.prompt_mlp = RowLin(32 + 8 + 3, d)
 
-        n_tables = 17
-        self.state_mlp = nn.Sequential(nn.Linear(n_tables * d, s), nn.ReLU(), nn.Linear(s, s), nn.ReLU())
+        if depth > 0:
+            self.tok_type = nn.Parameter(torch.randn(N_TABLES + 3, d) * 0.02)   # 17 tables + hand/enemy/potion rows
+            self.hand_pos = nn.Embedding(spec.shapes["hand"][0], d)
+            self.enemy_pos = nn.Embedding(spec.shapes["enemies"][0], d)
+            self.potion_pos = nn.Embedding(spec.shapes["potions"][0], d)
+            self.blocks = nn.ModuleList(Block(d, heads, ff_mult) for _ in range(depth))
+            self.trunk_ln = nn.LayerNorm(d)
+            self.state_mlp = nn.Sequential(nn.Linear(2 * d, s), nn.ReLU(), nn.Linear(s, s), nn.ReLU())
+        else:
+            self.state_mlp = nn.Sequential(nn.Linear(N_TABLES * d, s), nn.ReLU(), nn.Linear(s, s), nn.ReLU())
         self.value_head = nn.Sequential(nn.Linear(s, s // 2), nn.ReLU(), nn.Linear(s // 2, 1))
         # Candidate encoder, first layer factored per source (projected before the gather, summed after):
         # h1 = relu(Wk kind + Wn num + Wh hand[hs] + Wt enemy[ts] + Wp potion[ps] + Wo bank[oi] + Wc card + Ws state)
@@ -370,16 +426,40 @@ class Policy(nn.Module):
                                           (po[..., poc["picked"]] > 0).float().unsqueeze(-1)], -1))
         prompt = masked_mean(po_e, po_m)
 
-        state = self.state_mlp(torch.cat([glob, hand_e.mul(hand_m.unsqueeze(-1)).sum(1) / hand_m.sum(1, keepdim=True).clamp_min(1),
-                                          deck, piles, rel, pot, pow_, orbs, enemies, allies, map_e, rewards,
-                                          card_reward, alt, shop, rest, events + prompt], -1))
+        pooled = [glob, hand_e.mul(hand_m.unsqueeze(-1)).sum(1) / hand_m.sum(1, keepdim=True).clamp_min(1),
+                  deck, piles, rel, pot, pow_, orbs, enemies, allies, map_e, rewards, card_reward, alt, shop, rest,
+                  events + prompt]
+        if self.depth > 0:
+            state, hand_e, en_e, pot_e = self._trunk(pooled, hand_e, hand_m, en_e, en_m, pot_e, pot_m)
+        else:
+            state = self.state_mlp(torch.cat(pooled, -1))
         tables = {"hand": hand_e, "enemies": en_e, "potions": pot_e,
                   "bank": torch.cat([torch.zeros(B, 1, self.d, device=gi.device, dtype=hand_e.dtype), ranks, rw_e, cr_e,
                                      alt_e, sh_e, rs_e, ev_e, po_e], 1)}
         return state, tables
 
+    def _trunk(self, pooled, hand_e, hand_m, en_e, en_m, pot_e, pot_m):
+        """Transformer over [17 table tokens | hand rows | enemy rows | potion rows] -> state and contextualised rows."""
+        B = hand_e.shape[0]
+        H, E, P = hand_e.shape[1], en_e.shape[1], pot_e.shape[1]
+        dev = hand_e.device
+        tt = self.tok_type
+        seq = torch.cat([torch.stack(pooled, 1) + tt[:N_TABLES],
+                         hand_e + tt[N_TABLES] + self.hand_pos(torch.arange(H, device=dev)),
+                         en_e + tt[N_TABLES + 1] + self.enemy_pos(torch.arange(E, device=dev)),
+                         pot_e + tt[N_TABLES + 2] + self.potion_pos(torch.arange(P, device=dev))], 1)
+        keep = torch.cat([torch.ones(B, N_TABLES, dtype=torch.bool, device=dev), hand_m, en_m, pot_m], 1)
+        h = seq
+        ckpt = self.grad_ckpt and self.training and torch.is_grad_enabled()
+        for blk in self.blocks:
+            h = checkpoint(blk, h, keep, use_reentrant=False) if ckpt else blk(h, keep)
+        h = self.trunk_ln(h)
+        o = N_TABLES
+        state = self.state_mlp(torch.cat([h[:, 0], masked_mean(h, keep)], -1))
+        return state, h[:, o:o + H], h[:, o + H:o + H + E], h[:, o + H + E:]
+
     def forward(self, x: dict[str, torch.Tensor]):
-        """-> (logits [B, C] masked to j < cand_n, value [B])."""
+        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32)."""
         state, tables = self.encode(x)
         value = self.value_head(state).squeeze(-1)
         cand, cc = x["cand"], self.spec.cols["cand"]
@@ -410,9 +490,59 @@ class Policy(nn.Module):
         h2 = F.relu(self.c_l2(h1))
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)
         valid = torch.arange(Cn, device=cand.device).view(1, -1) < x["cand_n"].view(-1, 1)
-        logits = logits.masked_fill(~valid, NEG)
-        return logits, value
+        logits = logits.float().masked_fill(~valid, NEG)          # float32 even under autocast
+        return logits, value.float()
+
+    @property
+    def arch(self) -> dict:
+        return {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
 
 
 def param_count(m: nn.Module) -> int:
     return sum(p.numel() for p in m.parameters())
+
+
+FLOAT_BUFFERS = ("global_f", "hand_f", "hand_dmg")
+
+
+def synthetic_batch(spec: ModelSpec, batch: int, rows: int = 64) -> dict[str, torch.Tensor]:
+    """Zero-filled model inputs of the worst-case width (`rows` candidate and prompt-option rows), CPU."""
+    x = {}
+    for name in USED_BUFFERS:
+        shape = list(spec.shapes[name])
+        if name in ROW_TRUNCATED:
+            shape[0] = min(shape[0], rows)
+        x[name] = torch.zeros((batch, *shape), dtype=torch.float32 if name in FLOAT_BUFFERS else torch.int32)
+    x["cand_n"][:] = x["cand"].shape[1]
+    x["global_i"][:, spec.cols["global_i"]["prompt_option_n"]] = x["prompt_options"].shape[1]
+    return x
+
+
+def activation_bytes_per_sample(model: nn.Module, spec: ModelSpec, rows: int = 64, batch: int = 2) -> float:
+    """Bytes autograd saves for backward per training sample (float32, worst-case candidate / prompt widths),
+    measured with saved-tensor hooks on a tiny synthetic batch on the CPU (each storage counted once, parameters
+    excluded). One minibatch needs about `minibatch x this`; the backward pass peaks somewhat higher."""
+    x = synthetic_batch(spec, batch, rows)
+    params = {p.untyped_storage().data_ptr() for p in model.parameters()}
+    seen: set[int] = set()
+    total = 0
+
+    def pack(t):
+        nonlocal total
+        st = t.untyped_storage()
+        ptr = st.data_ptr()
+        if ptr not in params and ptr not in seen:
+            seen.add(ptr)
+            total += st.nbytes()
+        return t
+
+    dev = next(model.parameters()).device
+    with torch.enable_grad(), torch.autograd.graph.saved_tensors_hooks(pack, lambda t: t):
+        model({k: v.to(dev) for k, v in x.items()})
+    return total / batch
+
+
+def arch_of(config: dict | None) -> dict:
+    """The architecture kwargs of ``Policy`` from a (checkpoint) config; missing keys = the smoke model."""
+    config = config or {}
+    return {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}

@@ -1630,33 +1630,42 @@ dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "sts2train-smoke"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sts2eval" },
     { name = "sts2vec" },
     { name = "torch" },
 ]
 
+[package.optional-dependencies]
+plot = [
+    { name = "matplotlib" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "matplotlib" },
     { name = "pytest" },
+    { name = "sts2eval" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "sts2eval", editable = "../eval" },
     { name = "sts2vec", editable = "../vec" },
     { name = "torch", specifier = ">=2.4" },
 ]
+provides-extras = ["plot"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
+dev = [
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "sts2eval", editable = "../eval" },
+]
 
 [[package]]
 name = "sts2vec"

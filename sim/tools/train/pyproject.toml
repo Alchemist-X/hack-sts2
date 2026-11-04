@@ -1,17 +1,20 @@
 [project]
 name = "sts2train-smoke"
-version = "0.1.0"
-description = "Smoke-test learner on the sts2vec batched interface: entity-encoder policy, PPO, and the NN protocol-eval entry point"
+version = "0.2.0"
+description = "PPO trainer on the sts2vec batched interface: entity-encoder / transformer policy, protocol objective, long-run checkpoints, and the NN protocol-eval entry point"
 requires-python = ">=3.11"
+# Run-time dependencies only (the Colab bundle installs this wheel with --no-deps next to a preinstalled torch).
 dependencies = [
     "numpy>=1.26",
     "torch>=2.4",
-    "matplotlib>=3.8",
     "sts2vec",
-    "sts2eval",
 ]
 
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+
 [project.scripts]
+sts2train = "sts2train.cli:main"
 sts2train-smoke = "sts2train.cli:main"
 
 [project.entry-points.pytest11]
@@ -20,6 +23,8 @@ sts2train = "sts2train._pytest_plugin"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "matplotlib>=3.8",
+    "sts2eval",       # tests cross-check the protocol report / progress against the eval package
 ]
 
 [tool.uv.sources]
