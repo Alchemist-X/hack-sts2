@@ -100,6 +100,10 @@ public sealed class DiffBundle
 
     public IReadOnlyList<string> Relics { get; init; } = Array.Empty<string>();
 
+    // Optional `relic_props`, aligned with `relics`: each relic's saved properties (the save's `props` shape) or null.
+    // The mcr converter writes them from the replay's initial state; the combat start applies them.
+    public IReadOnlyList<Sts2Sim.Core.Run.SavedProperties?> RelicProps { get; init; } = Array.Empty<Sts2Sim.Core.Run.SavedProperties?>();
+
     public IReadOnlyList<KeyValuePair<string, int>> RngOffsets { get; init; } = Array.Empty<KeyValuePair<string, int>>();
 
     public IReadOnlyList<BundleDecision> Decisions { get; init; } = Array.Empty<BundleDecision>();
@@ -124,8 +128,10 @@ public static class BundleJson
     private static readonly string[] TopLevelKeys =
     {
         "bundle_version", "source", "game_version", "seeding", "seed", "character", "ascension", "encounter_id",
-        "player", "deck", "relics", "rng_offsets", "decisions", "outcome", "final_hp", IneligibleReasonsKey
+        "player", "deck", "relics", RelicPropsKey, "rng_offsets", "decisions", "outcome", "final_hp", IneligibleReasonsKey
     };
+
+    public const string RelicPropsKey = "relic_props";
 
     public const string IneligibleReasonsKey = "ineligible_reasons";
 
@@ -282,6 +288,7 @@ public static class BundleJson
             PlayerMaxHp = r.Int(playerEl, "max_hp", "$.player"),
             Deck = deck,
             Relics = relics,
+            RelicProps = root.TryGetProperty(RelicPropsKey, out var propsEl) ? SavedPropsJson.ReadList(propsEl, relics.Count, "$." + RelicPropsKey) : Array.Empty<Sts2Sim.Core.Run.SavedProperties?>(),
             RngOffsets = offsets,
             Decisions = decisions,
             Outcome = outcome,
@@ -343,6 +350,10 @@ public static class BundleJson
             ["outcome"] = b.Outcome,
             ["final_hp"] = b.FinalHp is int hp ? JsonValue.Create(hp) : null
         };
+        if (b.RelicProps.Any(x => x is { IsEmpty: false }))
+        {
+            bundle[RelicPropsKey] = SavedPropsJson.WriteList(b.RelicProps);
+        }
         if (b.IneligibleReasons.Count > 0)
         {
             var reasons = new JsonArray();
@@ -404,6 +415,87 @@ public static class BundleJson
             JsonValueKind.String => v.GetString(),
             JsonValueKind.Null => null,
             _ => v.GetRawText()
+        };
+    }
+}
+
+// The save's `props` shape (Saves: {"ints": [{"name", "value"}], "bools", "strings", "int_arrays", "model_ids"}), the
+// subset relics use; read back by RunImporter.FillProperties (Run/Save/RunImporter.cs).
+public static class SavedPropsJson
+{
+    private static readonly string[] Kinds = { "ints", "bools", "strings", "int_arrays", "model_ids" };
+
+    public static JsonNode? Write(Sts2Sim.Core.Run.SavedProperties? props)
+    {
+        if (props == null || props.IsEmpty)
+        {
+            return null;
+        }
+        if (props.Cards.Count > 0 || props.CardArrays.Count > 0)
+        {
+            throw new NotSupportedException("card-valued saved properties are not written to a combat start");
+        }
+        var o = new JsonObject();
+        static JsonArray Named<T>(IEnumerable<KeyValuePair<string, T>> items, Func<T, JsonNode?> value)
+            => new(items.Select(kv => (JsonNode?)new JsonObject { ["name"] = kv.Key, ["value"] = value(kv.Value) }).ToArray());
+        if (props.Ints.Count > 0) o["ints"] = Named(props.Ints, v => JsonValue.Create(v));
+        if (props.Bools.Count > 0) o["bools"] = Named(props.Bools, v => JsonValue.Create(v));
+        if (props.Strings.Count > 0) o["strings"] = Named(props.Strings, v => JsonValue.Create(v));
+        if (props.IntArrays.Count > 0) o["int_arrays"] = Named(props.IntArrays, v => new JsonArray(v.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()));
+        if (props.ModelIds.Count > 0) o["model_ids"] = Named(props.ModelIds, v => JsonValue.Create(v));
+        return o;
+    }
+
+    public static JsonArray WriteList(IEnumerable<Sts2Sim.Core.Run.SavedProperties?> list) => new(list.Select(Write).ToArray());
+
+    public static IReadOnlyList<Sts2Sim.Core.Run.SavedProperties?> ReadList(JsonElement e, int expected, string path)
+    {
+        if (e.ValueKind != JsonValueKind.Array || e.GetArrayLength() != expected)
+        {
+            throw new BundleFormatException(path, $"must be an array aligned with relics ({expected} entries)");
+        }
+        var list = new List<Sts2Sim.Core.Run.SavedProperties?>(expected);
+        int i = 0;
+        foreach (var x in e.EnumerateArray())
+        {
+            list.Add(x.ValueKind == JsonValueKind.Null ? null : Read(x, $"{path}[{i}]"));
+            i++;
+        }
+        return list;
+    }
+
+    public static Sts2Sim.Core.Run.SavedProperties Read(JsonElement e, string path)
+    {
+        if (e.ValueKind != JsonValueKind.Object)
+        {
+            throw new BundleFormatException(path, "must be an object");
+        }
+        foreach (var prop in e.EnumerateObject())
+        {
+            if (Array.IndexOf(Kinds, prop.Name) < 0)
+            {
+                throw new BundleFormatException($"{path}.{prop.Name}", "unsupported saved-property kind");
+            }
+        }
+        List<KeyValuePair<string, T>> Named<T>(string kind, Func<JsonElement, T> value)
+        {
+            var items = new List<KeyValuePair<string, T>>();
+            if (e.TryGetProperty(kind, out var a))
+            {
+                foreach (var x in a.EnumerateArray())
+                {
+                    items.Add(new KeyValuePair<string, T>(x.GetProperty("name").GetString()!, value(x.GetProperty("value"))));
+                }
+            }
+            return items;
+        }
+        return new Sts2Sim.Core.Run.SavedProperties
+        {
+            Ints = Named("ints", v => v.GetInt32()),
+            Bools = Named("bools", v => v.GetBoolean()),
+            Strings = Named("strings", v => v.GetString() ?? string.Empty),
+            IntArrays = Named("int_arrays", v => v.EnumerateArray().Select(x => x.GetInt32()).ToArray()),
+            ModelIds = Named("model_ids", v => v.GetString() ?? string.Empty)
         };
     }
 }

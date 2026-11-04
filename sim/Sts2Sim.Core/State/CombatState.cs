@@ -56,6 +56,7 @@ public sealed class CombatState : ICanonical
         CurrentSide = source.CurrentSide;
         Outcome = source.Outcome;
         PlayerHpAtCombatEnd = source.PlayerHpAtCombatEnd;
+        TurnsTakenAtCombatEnd = source.TurnsTakenAtCombatEnd;
         IsInProgress = source.IsInProgress;
         IsStarting = source.IsStarting;
         NextCreatureId = source.NextCreatureId;
@@ -102,6 +103,13 @@ public sealed class CombatState : ICanonical
     // AfterCombatVictory hooks (BURNING_BLOOD heals 6 in AfterCombatVictory, Models.Relics/BurningBlood.cs:52). The recorder's
     // last in-combat snapshot (bundle `final_hp`, sim/specs/diff-bundle.md) is taken before those hooks.
     public int? PlayerHpAtCombatEnd { get; set; }
+
+    // The local player's TurnNumber when EndCombatInternal starts (Combat/CombatManager.cs:1650), written to the map-point
+    // history room's TurnsTaken after the end-of-combat hooks (:1737-1739). A win at the end of the enemy turn still runs
+    // SwitchSides afterwards (EndEnemyTurn :1950-1976: IsCombatEnding is false once IsInProgress is false, :6550-6553),
+    // which bumps TurnNumber; the history keeps the captured value. Transient: set and consumed within one Step (not
+    // canonical, like PlayerHpAtCombatEnd).
+    public int? TurnsTakenAtCombatEnd { get; set; }
 
     public bool IsInProgress { get; set; }
 

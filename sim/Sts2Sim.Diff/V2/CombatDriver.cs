@@ -93,7 +93,13 @@ public sealed class RunCombatDriver : CombatDriver
         }
     }
 
-    public override int PlayerHp => Sim.State.Combat is { } cs ? BundleRunner.FinalHp(cs) : Sim.State.Players[0].CurrentHp;
+    // The combat this driver last stepped: RunLoop.OnCombatVictory clears RunState.Combat in the same step that ends the
+    // combat, and the player has been healed by then (BURNING_BLOOD heals in AfterCombatVictory, Models.Relics/BurningBlood.cs:52).
+    // The recorder's final_hp is the last in-combat snapshot, before those hooks: CombatState.PlayerHpAtCombatEnd, as the
+    // standalone driver reads it.
+    private CombatState? _lastCombat;
+
+    public override int PlayerHp => (Sim.State.Combat ?? _lastCombat) is { } cs ? BundleRunner.FinalHp(cs) : Sim.State.Players[0].CurrentHp;
 
     public override ChoicePrompt? PendingChoice => Sim.PendingChoice;
 
@@ -113,7 +119,11 @@ public sealed class RunCombatDriver : CombatDriver
         return false;
     }
 
-    public override void Step(GameAction action) => Sim.Step(RunAction.FromCombat(action));
+    public override void Step(GameAction action)
+    {
+        _lastCombat = Sim.State.Combat ?? _lastCombat;
+        Sim.Step(RunAction.FromCombat(action));
+    }
 
     public override CombatDriver Clone() => new RunCombatDriver(Sim.Clone());
 }

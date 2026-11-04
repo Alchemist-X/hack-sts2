@@ -14,6 +14,7 @@ reasons; ``reasons.json`` indexes every run and segment.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -725,9 +726,10 @@ def room_windows(parts: Sequence[PartStreams]) -> tuple[list[RoomWindow], list[s
                 notes.append(f"{part.path.name}: {len(orphan)} actions before the first room entry")
         elif part.actions:
             notes.append(f"{part.path.name}: {len(part.actions)} actions and no room entry")
+        part_windows: list[RoomWindow] = []
         for position, room in enumerate(rooms):
             end = rooms[position + 1].seq if position + 1 < len(rooms) else None
-            windows.append(
+            part_windows.append(
                 RoomWindow(
                     part_index=part_index,
                     room=room,
@@ -737,7 +739,43 @@ def room_windows(parts: Sequence[PartStreams]) -> tuple[list[RoomWindow], list[s
                     events=_window(part.events, room.seq, end),
                 )
             )
+        notes += hoist_combat_starting_event_options(part_windows)
+        windows += part_windows
     return windows, notes
+
+
+def hoist_combat_starting_event_options(windows: Sequence[RoomWindow]) -> list[str]:
+    """Move an event option that started a combat back into its event's window.
+
+    An event that fights without leaving (``EventModel.EnterCombatWithoutExitingEvent``: PUNCH_OFF FIGHT,
+    Models.Events/PunchOff.cs:522-535; THE_LANTERN_KEY, DENSE_VEGETATION, BATTLEWORN_DUMMY) enters the combat room
+    inside the option's handler, and the recorder's ``EventSynchronizer.SaveEventOptionToHistory`` hook logs the option
+    once the handler returns: after the combat's ``room_entered``, with a battle snapshot as its state. The leading
+    ``event_option`` actions of such a combat window (same act and floor as the event window before it, in the same
+    part) belong to the event; their pre-state is the event window's last event snapshot (the option page; a combat
+    message snapshot can follow it before the room entry).
+    """
+    notes: list[str] = []
+    for prev, window in zip(windows, windows[1:]):
+        if not window.is_combat or not (prev.model_id or "").startswith("EVENT.") or (prev.act, prev.floor) != (window.act, window.floor):
+            continue
+        leading: list[ActionRecord] = []
+        for action in window.actions:
+            if _kind(action) != "event_option":
+                break
+            leading.append(action)
+        if not leading:
+            continue
+        before = [s for s in prev.states if s.seq < window.room.seq]
+        pages = [s for s in before if isinstance(s.state, Mapping) and s.state.get("state_type") == "event"]
+        state_seq = pages[-1].seq if pages else (before[-1].seq if before else None)
+        prev.actions.extend(dataclasses.replace(a, state_seq=state_seq) for a in leading)
+        del window.actions[: len(leading)]
+        notes.append(
+            f"{prev.model_id} f{prev.floor}: event_option seq {', '.join(str(a.seq) for a in leading)} logged after "
+            f"{window.model_id}'s room entry moved to the event (pre-state seq {state_seq})"
+        )
+    return notes
 
 
 # --------------------------------------------------------------------------
@@ -1132,6 +1170,175 @@ def bind_save_anchors(ctx: LineageContext) -> None:
             anchor["floor"] = segment.get("floor")
         reasons = segment["eligibility"]["reasons"]
         segment["eligibility"]["reasons"] = [r for r in reasons if not _is_start_reason(r)]
+
+
+DeckCardKey = tuple[str, int, str | None]
+
+
+def _save_deck(ctx: LineageContext, anchor: Mapping[str, Any], cache: dict[str, list[DeckCardKey] | None]) -> list[DeckCardKey] | None:
+    """The local player's deck in a save anchor, in deck order: (id, upgrade level, enchantment)."""
+    if anchor["id"] in cache:
+        return cache[anchor["id"]]
+    deck: list[DeckCardKey] | None = None
+    part_index = anchor.get("part_index")
+    ref = str(anchor.get("ref") or "")
+    if part_index is not None and "/" in ref:
+        path = ctx.parts[part_index].path / ref.split("/", 1)[1]
+        try:
+            save = json.loads(path.read_text(encoding="utf-8"))
+            players = save.get("players") if isinstance(save, Mapping) else None
+            cards = players[0].get("deck") if isinstance(players, list) and players and isinstance(players[0], Mapping) else None
+            if isinstance(cards, list):
+                deck = [
+                    (
+                        strip_prefix(str(c.get("id")), "CARD."),
+                        _int_or_none(c.get("current_upgrade_level")) or 0,
+                        json.dumps(c.get("enchantment"), sort_keys=True) if c.get("enchantment") else None,
+                    )
+                    for c in cards
+                    if isinstance(c, Mapping)
+                ]
+        except (OSError, ValueError):
+            deck = None
+    cache[anchor["id"]] = deck
+    return deck
+
+
+def deck_edit_positions(before: Sequence[DeckCardKey], after: Sequence[DeckCardKey]) -> dict[int, str] | None:
+    """Positions of ``before`` that a room removed or changed in place, from a minimal alignment with ``after``.
+
+    The master deck keeps its order: an upgrade or an enchantment changes a card in place (same id), a transform removes
+    the original and appends the replacement (Commands/CardCmd.cs:2017-2024, :2061-2064 ``AddInternal`` without an index
+    for the deck pile), a removal removes, a new card is appended. Kept cards cost 0, a removal or an in-place change 1,
+    each appended card 1; None when no alignment exists.
+    """
+    n, m = len(before), len(after)
+    inf = n + m + 1
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    move: list[list[str | None]] = [[None] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            c = cost[i][j]
+            if c >= inf:
+                continue
+            if i < n and j < m and before[i][0] == after[j][0]:
+                step, kind = (0, "kept") if before[i] == after[j] else (1, "modified")
+                if c + step < cost[i + 1][j + 1]:
+                    cost[i + 1][j + 1] = c + step
+                    move[i + 1][j + 1] = kind
+            if i < n and c + 1 < cost[i + 1][j]:
+                cost[i + 1][j] = c + 1
+                move[i + 1][j] = "removed"
+    best = min(range(m + 1), key=lambda j: (cost[n][j] + (m - j), -j))
+    if cost[n][best] >= inf:
+        return None
+    edits: dict[int, str] = {}
+    i, j = n, best
+    while i > 0:
+        kind = move[i][j]
+        if kind == "removed":
+            edits[i - 1] = kind
+            i -= 1
+        elif kind in ("kept", "modified"):
+            if kind == "modified":
+                edits[i - 1] = kind
+            i -= 1
+            j -= 1
+        else:
+            return None
+    return edits
+
+
+def resolve_deck_picks_from_saves(ctx: LineageContext) -> None:
+    """Name the deck card of an ambiguous DeckCard pick from the R1 saves around its room.
+
+    The recorder logs a deck pick by card id only (recorder_gap:choice_identity), so among copies the exporter took the
+    first candidate; but the copy decides the deck order, and the deck order decides the opening shuffle of every later
+    combat (farm K4P3FWUZYN f12: SMITH upgraded the second Strike, the sim the first, and the f13 opening hand differed;
+    545XJP726S f7 AROMA_OF_CHAOS transformed the upgraded Strike, the exporter's pick was a plain one). The save written
+    before the room and the next save after its last decision bracket the room's deck changes; ``deck_edit_positions``
+    finds the cards it removed or changed, and each ambiguous pick (its id held by more than one deck card) takes the
+    changed position with its id: ``deck_index`` (index in the deck when the prompt opened), ``upgraded`` from the save,
+    ``index`` cleared (the harness resolves the card by ``deck_index``). Skipped when another segment's decisions fall
+    between the saves, or the picks and the changed cards of an id do not pair up one to one.
+    """
+    saves_by_part: dict[int, list[Mapping[str, Any]]] = {}
+    for anchor in ctx.anchors:
+        if anchor.get("kind") in SAVE_ANCHOR_KINDS and anchor.get("seq") is not None and anchor.get("part_index") is not None:
+            saves_by_part.setdefault(anchor["part_index"], []).append(anchor)
+    for saves in saves_by_part.values():
+        saves.sort(key=lambda a: a["seq"])
+    part_of = {ctx.part_name(i): i for i in range(len(ctx.parts))}
+    decision_seqs: dict[int, list[tuple[int, str, str | None]]] = {}
+    for segment in ctx.segments:
+        part_index = part_of.get(segment.get("part"))
+        for d in segment["decisions"]:
+            seq = (d.get("oracle") or {}).get("action_seq")
+            if part_index is not None and isinstance(seq, int):
+                decision_seqs.setdefault(part_index, []).append((seq, segment["id"], (d.get("action") or {}).get("type")))
+    cache: dict[str, list[DeckCardKey] | None] = {}
+    for segment in ctx.segments:
+        if segment["kind"] != "room":
+            continue
+        picks_by_decision = [
+            (d, [p for p in d["action"].get("picks") or () if isinstance(p, dict) and p.get("card_id")])
+            for d in segment["decisions"]
+            if (d.get("action") or {}).get("type") == "choose" and d["action"].get("choice_type") == "DeckCard"
+        ]
+        picks_by_decision = [(d, picks) for d, picks in picks_by_decision if picks]
+        part_index = part_of.get(segment.get("part"))
+        seqs = [(d.get("oracle") or {}).get("action_seq") for d in segment["decisions"]]
+        seqs = [x for x in seqs if isinstance(x, int)]
+        if not picks_by_decision or part_index is None or not seqs:
+            continue
+        saves = saves_by_part.get(part_index, [])
+        before_save = next((a for a in reversed(saves) if a["seq"] < min(seqs)), None)
+        after_save = next((a for a in saves if a["seq"] > max(seqs)), None)
+        if before_save is None or after_save is None:
+            continue
+        foreign = [
+            (seq, sid) for seq, sid, kind in decision_seqs.get(part_index, ())
+            if before_save["seq"] < seq < after_save["seq"] and sid != segment["id"] and kind not in ("map_move", "next_act")
+        ]
+        if foreign:
+            continue
+        before = _save_deck(ctx, before_save, cache)
+        after = _save_deck(ctx, after_save, cache)
+        edits = deck_edit_positions(before, after) if before is not None and after is not None else None
+        if edits is None:
+            continue
+        ids_before = Counter(card[0] for card in before)
+        ambiguous = [p for _, picks in picks_by_decision for p in picks if ids_before.get(p["card_id"], 0) > 1]
+        if not ambiguous:
+            continue
+        wanted = Counter(p["card_id"] for _, picks in picks_by_decision for p in picks)
+        changed: dict[str, list[int]] = {}
+        for position in sorted(edits):
+            changed.setdefault(before[position][0], []).append(position)
+        resolved: list[str] = []
+        removed_earlier: list[int] = []
+        for _, picks in picks_by_decision:
+            removed_now: list[int] = []
+            for pick in picks:
+                card_id = pick["card_id"]
+                positions = changed.get(card_id) or []
+                if ids_before.get(card_id, 0) <= 1 or len(positions) != wanted[card_id]:
+                    continue
+                position = positions.pop(0)
+                pick["deck_index"] = position - sum(1 for r in removed_earlier if r < position)
+                pick["upgraded"] = before[position][1] > 0
+                pick["index"] = None
+                pick["resolved_by"] = "save_deck_diff"
+                resolved.append(f"{card_id}@{position}")
+                if edits[position] == "removed":
+                    removed_now.append(position)
+            removed_earlier += removed_now
+        if resolved:
+            segment["notes"].append(f"deck picks resolved from saves {before_save['id']}..{after_save['id']}: {', '.join(resolved)}")
+            if all(p.get("resolved_by") == "save_deck_diff" for p in ambiguous):
+                reasons = segment["eligibility"]["reasons"]
+                segment["eligibility"]["reasons"] = [r for r in reasons if r != "recorder_gap:choice_identity"]
 
 
 def _floor_summary(window: RoomWindow) -> dict[str, Any] | None:
@@ -1533,6 +1740,7 @@ def build_run_decisions(
     ]
     card_choice_ids = [strip_prefix((c.get("card") or {}).get("id"), "CARD.") for c in offered_groups]
     pending_choice: dict[str, Any] | None = None
+    backed_out: list[int] = []
     items = [a for a in actions if _kind(a) not in FOLLOW_UP_KINDS and a.status != "cancelled"]
     position = 0
     while position < len(items):
@@ -1586,6 +1794,22 @@ def build_run_decisions(
             emit({"type": "event_option", "text_key": text_key, "index": index}, "event")
         elif kind == "event_proceed":
             emit({"type": "event_proceed", "text_key": params.get("text_key"), "index": _int_or_none(params.get("index"))}, "event")
+        elif kind == "player_choice" and screen in ("rewards", "card_reward", "event", "monster", "elite", "boss") and (
+            closed := card_reward_closed_by_skip(action, items[position:])
+        ) is not None:
+            # A card-reward selection closed through Skip: the reward stays on the screen and a later Index pick completes
+            # it (card_reward_closed_by_skip). Opened, then skipped; the later pick opens it again.
+            reward = _params(closed)
+            emit(
+                {"type": "reward_take", "set_index": _int_or_none(reward.get("set_index")), "reward_type": reward.get("reward_type"), "item_id": None},
+                "rewards",
+                oracle_extra={"recorded_order": "skipped_selection", "completed_by_seq": closed.seq},
+            )
+            emit(
+                {"type": "card_reward_skip", "index": _int_or_none(params.get("index")), "card_id": None},
+                "card_reward",
+                oracle_extra={"offered": card_choice_ids or None},
+            )
         # The last snapshot before a card pick can still be the combat room's (``monster``/``elite``/``boss``) when the
         # rewards screen opened without a new snapshot (E3 farm: GREMLIN_MERC_NORMAL after the gold steal).
         elif kind == "player_choice" and params.get("choice_type") == "Index" and screen in ("rewards", "card_reward", "event", "monster", "elite", "boss") and (
@@ -1624,6 +1848,14 @@ def build_run_decisions(
             if not (isinstance(state, Mapping) and state.get("state_type") == "card_reward"):
                 reasons.append("recorder_gap:card_reward_offer")
             emit({"type": "card_reward_skip", "index": index, "card_id": None}, "card_reward", oracle_extra={"offered": card_choice_ids or None})
+        elif kind == "player_choice" and nxt is not None and _kind(nxt) in ("rest_site_option", "shop_card_removal") and _picked_nothing(params):
+            # A deck selection backed out of (nothing picked) completes no option: SMITH returns false without a card
+            # (Entities.RestSite/SmithRestSiteOption.cs:263-266), the synchronizer then records no choice
+            # (Multiplayer.Game/RestSiteSynchronizer.cs:640-647) and the recorder logs only successful options and
+            # purchases (mod/src/HumanFunnels.cs OnRestSiteOptionChosen). The next opener is another, completed option
+            # (human EC039PTFQWV5 f12, PLRUV49CRFQW f12: SMITH backed out, then HEAL); the game state did not change.
+            backed_out.append(action.seq)
+            continue
         elif kind == "player_choice" and nxt is not None and _kind(nxt) in ("rest_site_option", "shop_card_removal"):
             pending_choice = {"action": action, "state": state}
             continue
@@ -1635,6 +1867,9 @@ def build_run_decisions(
             if select_screen != "select":
                 out[-1]["oracle"]["select_state"] = select_screen
         elif kind in ("rest_site_option", "shop_card_removal"):
+            if backed_out:
+                oracle["backed_out_selection_seqs"] = list(backed_out)
+                backed_out.clear()
             if pending_choice is not None and isinstance(pending_choice["state"], Mapping):
                 # The opener is recorded after its deck choice resolved (MerchantCardRemovalEntry.OnTryPurchaseWrapper
                 # pays first, so its own pre_state is post-payment); the state before the choice is the opener's
@@ -1727,6 +1962,49 @@ def build_run_decisions(
     if pending_choice is not None:
         reasons.append("choice_without_opener")
     return decisions, list(dict.fromkeys(reasons)), screens
+
+
+def _picked_nothing(params: Mapping[str, Any]) -> bool:
+    """A player choice that selected nothing (a cancelled or empty selection), as build_choose reads it."""
+    if params.get("choice_type") == "Index":
+        indexes = [i for i in params.get("indexes") or () if isinstance(i, int) and i >= 0]
+        index = params.get("index")
+        return not indexes and not (isinstance(index, int) and index >= 0)
+    return not [c for c in params.get("cards") or () if c is not None]
+
+
+def card_reward_closed_by_skip(action: ActionRecord, later: Sequence[ActionRecord]) -> ActionRecord | None:
+    """The ``reward_taken`` of the card reward whose selection ``action`` closed through its Skip alternative.
+
+    CardReward.OnSelect syncs one Index per selection (Rewards/CardReward.cs:604-634): 0..N-1 take an offered card, N..
+    pick an alternative (:646-658), generated as Skip when the reward can be skipped, then REROLL when it can be rerolled
+    (Entities.CardRewardAlternatives/CardRewardAlternative.cs Generate). Skip is EndSelectionAndDoNotCompleteReward: the
+    selection ends and the reward stays on the rewards screen, so only a later pick that completes it is followed by a
+    ``reward_taken`` (whose R4 offer gives N, can_skip and can_reroll). ``later`` are the window's actions after
+    ``action``; the completing pick must follow it with only Index choices in between (farm UUR25UNBL5 f5 BRAIN_LEECH:
+    Index 3 of 3 cards, then Index 2 and its reward_taken). None when ``action`` is not such a choice.
+    """
+    params = _params(action)
+    index = _int_or_none(params.get("index"))
+    if params.get("choice_type") != "Index" or index is None or index < 0:
+        return None
+    for position, nxt in enumerate(later):
+        if _kind(nxt) == "reward_taken":
+            return None
+        if _kind(nxt) != "player_choice" or _params(nxt).get("choice_type") != "Index":
+            return None
+        taken = later[position + 1] if position + 1 < len(later) else None
+        if taken is None or _kind(taken) != "reward_taken" or _params(taken).get("reward_type") not in CARD_REWARD_TYPES:
+            continue
+        offer = _params(taken).get("offer")
+        if not isinstance(offer, Mapping) or not isinstance(offer.get("cards"), list):
+            return None
+        alternatives = (["Skip"] if offer.get("can_skip") else []) + (["REROLL"] if offer.get("can_reroll") else [])
+        alternative = index - len(offer["cards"])
+        if 0 <= alternative < len(alternatives) and alternatives[alternative] == "Skip":
+            return taken
+        return None
+    return None
 
 
 def _room_area(window: RoomWindow) -> str | None:
@@ -1902,6 +2180,7 @@ def build_lineage_bundle(
 
     attach_mcr_anchors(ctx, combat_parts)
     bind_save_anchors(ctx)
+    resolve_deck_picks_from_saves(ctx)
     for segment in ctx.segments:
         segment.pop("room_seq", None)
         reasons = segment["eligibility"]["reasons"]

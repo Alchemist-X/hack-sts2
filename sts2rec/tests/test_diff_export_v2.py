@@ -18,20 +18,27 @@ import pytest
 
 from sts2rec.cli import main
 from sts2rec.diff_bundle import CardNameMap, SimRegistry
-from sts2rec.diff_export import ExportError, export_bundles
+from sts2rec.diff_export import ExportError, PartStreams, export_bundles
 from sts2rec.diff_export_v2 import (
     RUN_LAYER_SOURCES,
     ContentRegistry,
     DeckTracker,
+    RoomWindow,
     _event_option_index,
     _shop_slot,
+    LineageContext,
+    build_run_decisions,
+    card_reward_closed_by_skip,
+    deck_edit_positions,
     export_bundles_v2,
+    hoist_combat_starting_event_options,
+    resolve_deck_picks_from_saves,
     prompt_open_state,
     reason_class_v2,
     resolve_card_picks,
     scan_content_registry,
 )
-from sts2rec.session import StateRecord
+from sts2rec.session import ActionRecord, EventRecord, StateRecord
 
 from .test_diff_bundle import BASH, DEFEND, STRIKE, combat_state, enemy, hand_card, pile_card
 from .test_diff_export import REGISTRY, Stream, card_event, ironclad_lineage, silent_lineage, write_part
@@ -491,3 +498,128 @@ def test_event_option_prefers_the_recorded_option_key() -> None:
     assert _event_option_index(params, None) == ("OROBAS.pages.INITIAL.options.SEA_GLASS", 0)
     legacy = {"title_key": "NEOWS_TALISMAN.title"}
     assert _event_option_index(legacy, None)[0] == "NEOWS_TALISMAN"
+
+
+def _act(seq: int, kind: str, state_seq: int | None, source: str = "hook:test", **params: Any) -> ActionRecord:
+    return ActionRecord(seq=seq, t=float(seq), source=source, action={"kind": kind, "params": params}, state_seq=state_seq, status="committed")
+
+
+def _snap(seq: int, state_type: str) -> StateRecord:
+    return StateRecord(seq=seq, t=float(seq), trigger="action", screen=state_type, hash="", state={"state_type": state_type})
+
+
+def test_event_option_that_starts_a_combat_moves_back_to_the_event() -> None:
+    # Farm VSQP6ESN1F f7: PUNCH_OFF FIGHT enters the combat inside its handler (Models.Events/PunchOff.cs:522-535); the
+    # SaveEventOptionToHistory hook logs it after the combat's room_entered, with a battle snapshot as its state.
+    save_option = "hook:EventSynchronizer.SaveEventOptionToHistory"
+    event_room = EventRecord(seq=1144, t=0.0, entry="room_entered", data={"room_type": "Event", "room_model_id": "EVENT.PUNCH_OFF", "act": 0, "floor": 7})
+    combat_room = EventRecord(seq=1152, t=0.0, entry="room_entered", data={"room_type": "Monster", "room_model_id": "ENCOUNTER.PUNCH_OFF_EVENT_ENCOUNTER", "act": 0, "floor": 7})
+    take_them = _act(1146, "event_option", 1145, save_option, text_key="PUNCH_OFF.pages.INITIAL.options.I_CAN_TAKE_THEM")
+    fight = _act(1154, "event_option", 1153, save_option, text_key="PUNCH_OFF.pages.I_CAN_TAKE_THEM.options.FIGHT")
+    play = _act(1167, "play_card", 1166, card_model_id="CARD.DEFEND_REGENT")
+    event = RoomWindow(part_index=0, room=event_room, end_seq=1152, states=[_snap(1145, "event"), _snap(1147, "event"), _snap(1148, "monster")], actions=[take_them], events=[])
+    combat = RoomWindow(part_index=0, room=combat_room, end_seq=None, states=[_snap(1153, "monster"), _snap(1166, "monster")], actions=[fight, play], events=[])
+    notes = hoist_combat_starting_event_options([event, combat])
+    assert [a.seq for a in event.actions] == [1146, 1154]
+    assert event.actions[1].state_seq == 1147, "the event window's last event snapshot (the FIGHT page), not the combat message"
+    assert [a.seq for a in combat.actions] == [1167]
+    assert len(notes) == 1 and "1154" in notes[0]
+    # A combat on another floor, or after a room that is not an event, keeps its records.
+    other = RoomWindow(part_index=0, room=EventRecord(seq=1200, t=0.0, entry="room_entered", data={"room_type": "Monster", "room_model_id": "ENCOUNTER.X", "act": 0, "floor": 8}),
+                       end_seq=None, states=[], actions=[_act(1201, "event_option", 1200)], events=[])
+    assert hoist_combat_starting_event_options([combat, other]) == []
+    assert [a.seq for a in other.actions] == [1201]
+
+
+def test_card_reward_selection_closed_by_skip_before_the_pick() -> None:
+    # Farm UUR25UNBL5 f5 BRAIN_LEECH RIP: Index 3 on a 3-card reward is the Skip alternative (Rewards/CardReward.cs:646-658,
+    # Entities.CardRewardAlternatives/CardRewardAlternative.cs Generate), which ends the selection without completing the
+    # reward; the later Index 2 completes it and has the reward_taken.
+    def offer(can_skip: bool = True, can_reroll: bool = False) -> dict[str, Any]:
+        return {"reward_type": "card_reward", "cards": [{"id": "CARD.DISCOVERY"}, {"id": "CARD.FLASH_OF_STEEL"}, {"id": "CARD.FISTICUFFS"}], "can_skip": can_skip, "can_reroll": can_reroll}
+
+    def pick(seq: int, index: int) -> ActionRecord:
+        return _act(seq, "player_choice", seq - 1, choice_type="Index", indexes=[index], index=index, picked=True)
+
+    def taken(seq: int, **kw: Any) -> ActionRecord:
+        return _act(seq, "reward_taken", seq - 1, reward_type="card_reward", set_index=5, offer=offer(**kw))
+
+    proceed = _act(600, "event_proceed", 598, index=0, text_key="PROCEED")
+    reward = taken(599)
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(597, 2), reward, proceed]) is reward
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(596, 3), pick(597, 2), reward]) is reward, "several closes before the pick"
+    assert card_reward_closed_by_skip(pick(597, 2), [reward, proceed]) is None, "the completing pick itself"
+    assert card_reward_closed_by_skip(pick(595, 1), [pick(597, 2), reward]) is None, "an offered card, not an alternative"
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(597, 2), taken(599, can_skip=False, can_reroll=True)]) is None, "REROLL"
+    assert card_reward_closed_by_skip(pick(595, 3), [proceed, pick(597, 2), reward]) is None, "only Index choices in between"
+
+
+def test_deck_edit_positions_follow_the_deck_operations() -> None:
+    S, S1, D, J = ("STRIKE_IRONCLAD", 0, None), ("STRIKE_IRONCLAD", 1, None), ("DEFEND_IRONCLAD", 0, None), ("JUGGLING", 0, None)
+    # An upgrade changes its card in place (farm K4P3FWUZYN f12 SMITH: the second Strike).
+    assert deck_edit_positions([S, S, S, D], [S, S1, S, D]) == {1: "modified"}
+    # A transform removes the original and appends the replacement (Commands/CardCmd.cs:2061-2064; 545XJP726S f7
+    # AROMA_OF_CHAOS transformed the upgraded Strike).
+    assert deck_edit_positions([S, S, S1, S, D], [S, S, S, D, J]) == {2: "removed"}
+    # Removing one of identical copies: any copy gives the same deck.
+    assert list(deck_edit_positions([S, S, D], [S, D]).values()) == ["removed"]
+    assert deck_edit_positions([S, D], [S, D, J]) == {}
+    assert deck_edit_positions([S], [D]) == {0: "removed"}
+
+
+def _deck_save(path: Path, deck: list[tuple[str, int]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cards = [{"id": f"CARD.{cid}", "floor_added_to_deck": 1, **({"current_upgrade_level": up} if up else {})} for cid, up in deck]
+    path.write_text(json.dumps({"players": [{"deck": cards}]}), encoding="utf-8")
+
+
+def test_ambiguous_deck_picks_are_resolved_from_the_saves_around_the_room(tmp_path: Path) -> None:
+    part = tmp_path / "1793604345-K4P3FWUZYN"
+    _deck_save(part / "native" / "saves" / "001544.save", [("STRIKE_IRONCLAD", 0)] * 3 + [("DEFEND_IRONCLAD", 0)])
+    _deck_save(part / "native" / "saves" / "001556.save", [("STRIKE_IRONCLAD", 0), ("STRIKE_IRONCLAD", 1), ("STRIKE_IRONCLAD", 0), ("DEFEND_IRONCLAD", 0)])
+    ctx = LineageContext(lineage="L", parts=[PartStreams(path=part, manifest=None)], raw_manifests=[], vocabulary=None, registry=None,  # type: ignore[arg-type]
+                         options=None, character="IRONCLAD", ascension=0, game_version="v0.111.0")  # type: ignore[arg-type]
+    for seq in (1544, 1556):
+        ctx.anchors.append({"id": f"a{seq}", "kind": "room_entry", "seq": seq, "ref": f"{part.name}/native/saves/{seq:06d}.save", "part_index": 0})
+    smith = {"index": None, "card_id": "STRIKE_IRONCLAD", "upgraded": False, "resolved_by": "deck_multiset", "deck_index": None}
+    rest = {"id": "s27", "kind": "room", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []}, "decisions": [
+        {"oracle": {"action_seq": 1548}, "action": {"type": "rest_option", "option_id": "SMITH"}},
+        {"oracle": {"action_seq": 1547}, "action": {"type": "choose", "context": "rest", "choice_type": "DeckCard", "picks": [smith]}},
+    ]}
+    walk = {"id": "s28", "kind": "map", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []},
+            "decisions": [{"oracle": {"action_seq": 1550}, "action": {"type": "map_move"}}]}
+    ctx.segments += [rest, walk]
+    resolve_deck_picks_from_saves(ctx)
+    assert smith["deck_index"] == 1 and smith["upgraded"] is False and smith["resolved_by"] == "save_deck_diff"
+    assert rest["notes"] and "STRIKE_IRONCLAD@1" in rest["notes"][0]
+    # Another room's decision between the saves: the diff is not this room's alone.
+    other = dict(smith, deck_index=None, resolved_by="deck_multiset")
+    rest["decisions"][1]["action"]["picks"] = [other]
+    ctx.segments.insert(1, {"id": "sX", "kind": "room", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []},
+                            "decisions": [{"oracle": {"action_seq": 1549}, "action": {"type": "shop_buy"}}]})
+    resolve_deck_picks_from_saves(ctx)
+    assert other["deck_index"] is None
+
+
+def test_a_backed_out_deck_selection_is_not_paired_with_the_next_option(tmp_path: Path) -> None:
+    # Human EC039PTFQWV5 f12: SMITH opened, the deck select closed with nothing picked (SmithRestSiteOption.cs:263-266 returns
+    # false, no rest_site_option is logged), then HEAL. The empty choice must not become HEAL's deck choice.
+    part = tmp_path / "1793384475-EC039PTFQWV5-part3"
+    ctx = LineageContext(lineage="L", parts=[PartStreams(path=part, manifest=None)], raw_manifests=[], vocabulary=None, registry=None,  # type: ignore[arg-type]
+                         options=None, character="SILENT", ascension=7, game_version="v0.111.0")  # type: ignore[arg-type]
+    room = EventRecord(seq=700, t=0.0, entry="room_entered", data={"room_type": "RestSite", "room_model_id": None, "act": 0, "floor": 12})
+    rest = StateRecord(seq=708, t=0.0, trigger="action", screen="rest_site", hash="",
+                       state={"state_type": "rest_site", "rest_site": {"options": [{"index": 0, "id": "HEAL", "is_enabled": True}, {"index": 1, "id": "SMITH", "is_enabled": True}]}, "player": player_block()})
+    cancel = _act(709, "player_choice", 708, choice_type="DeckCard", cards=[], picked=False)
+    heal = _act(710, "rest_site_option", 708, option_id="HEAL")
+    window = RoomWindow(part_index=0, room=room, end_seq=None, states=[rest], actions=[cancel, heal], events=[])
+    decisions, reasons, _ = build_run_decisions(ctx, window, [cancel, heal], phase=None, summary=None)
+    assert [d["action"] for d in decisions] == [{"type": "rest_option", "option_id": "HEAL"}]
+    assert decisions[0]["oracle"]["backed_out_selection_seqs"] == [709]
+    assert "choice_without_opener" not in reasons
+    # A real deck choice still pairs with its opener.
+    smith = _act(711, "player_choice", 708, choice_type="DeckCard", cards=["CARD.STRIKE_SILENT"], picked=True)
+    opener = _act(712, "rest_site_option", 708, option_id="SMITH")
+    decisions, _, _ = build_run_decisions(ctx, window, [smith, opener], phase=None, summary=None)
+    assert [d["action"]["type"] for d in decisions] == ["rest_option", "choose"]
+

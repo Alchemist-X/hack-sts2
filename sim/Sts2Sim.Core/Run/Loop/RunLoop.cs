@@ -435,7 +435,9 @@ public static class RunLoop
             rs.Combat = null;
             return;
         }
-        int turnsTaken = cs.Player.TurnNumber;
+        // Combat/CombatManager.cs:1650, :1737-1739: the TurnNumber captured when EndCombatInternal started, not the live one
+        // (a win at the end of the enemy turn is followed by SwitchSides, which increments it).
+        int turnsTaken = cs.TurnsTakenAtCombatEnd ?? cs.Player.TurnNumber;
         if (CurrentMapPointHistoryEntry(rs) is { Rooms.Count: > 0 } entry)
         {
             entry.Rooms[^1] = entry.Rooms[^1] with { TurnsTaken = turnsTaken };

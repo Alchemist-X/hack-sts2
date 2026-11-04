@@ -616,6 +616,10 @@ public static class RunBundleJson
             ["decisions"] = new JsonArray(),
             ["outcome"] = DiffBundle.OutcomeAbandoned
         };
+        if (start[BundleJson.RelicPropsKey] is JsonArray relicProps)
+        {
+            shell[BundleJson.RelicPropsKey] = relicProps.DeepClone();
+        }
         if (eligibilityReasons.Count > 0 || markedIneligible)
         {
             var reasons = new JsonArray();

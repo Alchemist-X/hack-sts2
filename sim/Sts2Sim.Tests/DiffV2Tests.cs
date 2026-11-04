@@ -453,6 +453,20 @@ public static class DiffV2Tests
         Assert.Equal(DivergenceClass.OutOfScope, Run(modifiers).Single().Class);
     }
 
+    public static void Test_DiffV2_AbandonedCombatComparesTheOutcomeNotTheFinalHp()
+    {
+        // A recording that stops inside the combat (a quit or a crashed game: farm 1MQXCR99GX f14, WATLF71NUH f22) has as
+        // final_hp the last HP recorded, not the HP after the last decision the sim replays.
+        var bundle = RecordCombatSegment(StartingDecks.IroncladAtRunStart(0), maxDecisions: 3);
+        var outcome = bundle["segments"]![0]!["outcome"]!.AsObject();
+        Assert.Equal(DiffBundle.OutcomeAbandoned, outcome["result"]!.GetValue<string>());
+        outcome["final_hp"] = 999;
+        var r = Run(bundle).Single();
+        Assert.Equal(BundleStatus.Agree, r.Status, r.Reason);
+        outcome["result"] = DiffBundle.OutcomeWin;
+        Assert.Equal(V2DivergenceKind.Final, Run(bundle).Single().Divergence!.Kind, "a finished combat still compares its final HP");
+    }
+
     public static void Test_DiffV2_RunSegmentsFromSeedAgreeAndChain()
     {
         var bundle = RecordRunSegments(25, 2, out var final);

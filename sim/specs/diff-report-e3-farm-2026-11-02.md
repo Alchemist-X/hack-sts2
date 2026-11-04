@@ -193,3 +193,42 @@ when every room starts from its save.
   soak 10⁴ runs × 5 characters, 687,175 steps (687,034 before: the encounter tags and grab-bag removals change some
   runs), 0 failures, 0 content-gap stops; content soak green; `-- Server Vec Parity EndToEnd SelfConsistency E3`
   109/109; sts2rec 705 passed, 4 skipped.
+
+## 7. Follow-up 2026-11-04 (branch `train/fidelity`): the 7 open divergences closed
+
+Base `ef70ee6`. Each row: the rule, what was wrong, the fix (commit). Farm inputs: the farm re-exported by this
+branch's exporter (`export-bundles-v2 --root <farm>/sessions-all`, 39 runs, 787 segments; bundles and save copies kept
+under the worktree's git-ignored `tmp/fid/`, because the farm sessions now live on the external drive). Human: the
+W4.1 inputs, plus the 10 v0.111.0 human lineages re-exported (no saves: recorder 0.2.0).
+
+| divergence | rule (decompile) | was wrong | fix | class |
+| --- | --- | --- | --- | --- |
+| SDR1TFEZ2U f15 `turns_taken` 4 vs 5 | Combat/CombatManager.cs:1650 captures TurnNumber when EndCombatInternal starts; a win at the enemy turn's end still runs SwitchSides (:1950-1976, :6550-6553) | `RunLoop.OnCombatVictory` read the live TurnNumber, after that switch | `CombatState.TurnsTakenAtCombatEnd` (`37c6ac3`) | port_bug |
+| UF51XE6ZV1 f11 `turn.phase` | the recorder keeps side + `Phase == Play` only (mod/src/StateBuilder/PassiveStateBuilder.Combat.cs:37, :40; diff_bundle.py:574-581); GAMBLING_CHIP prompts in PlayerTurnPhase.Start (:5293) | the projector spelled out `player_start` | phase projected as `player_play` / `player_not_play` / `<side>_turn` (`8ddab4e`) | projection_gap |
+| 3ZGJFKTD64 f9 STRATAGEM order | rules: rarity then ModelId (Commands/CardSelectCmd.cs:897); screen: rarity then localized title (Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-430, Nodes.Cards/NCardGrid.cs:619) | ordered comparison of a language-dependent order | draw-pile grids compare as a multiset, picks by identity (`fc44296`) | projection_gap |
+| VSQP6ESN1F f7 PUNCH_OFF (and human G0G2 f14, GM28 THE_LANTERN_KEY) | EnterCombatWithoutExitingEvent inside the option handler (Models.Events/PunchOff.cs:522-535); SaveEventOptionToHistory logs after the combat's `room_entered` | the FIGHT option fell into the combat window and was dropped | leading `event_option` of such a combat window moved back to the event (`97b2904`) | exporter_bug |
+| UUR25UNBL5 f5 BRAIN_LEECH | Index N.. of a card reward = alternatives; Skip = EndSelectionAndDoNotCompleteReward (Rewards/CardReward.cs:604-658, CardRewardAlternative.cs Generate) | the closing Index was an event `choose` | open + `card_reward_skip`, then the completing pick (`6d74951`) | exporter_bug |
+| K4P3FWUZYN f13, 545XJP726S f8 (chained only) | deck order: upgrade in place, transform = remove + append (Commands/CardCmd.cs:2017-2024, :2061-2064) | an ambiguous DeckCard pick took the first copy | `deck_index` from the saves around the room (deck alignment), resolved through the prompt option's card instance (`668fbe4`) | recorder_gap (choice identity) |
+
+Also closed: human EC039PTFQWV5 / PLRUV49CRFQW f12 (a backed-out SMITH selection paired with the next HEAL:
+SmithRestSiteOption.cs:263-266, RestSiteSynchronizer.cs:640-647; `02b3e1f`); the human combat gate's GM28D28DX794
+s26/s54/s65 (relic run-time state: the mcr join carried relic ids only; `b9426db`, then `select.screen_type` /
+`can_skip` / `can_cancel` soft like `mode`, `9bd09d2`); G1 `final_hp` read after BURNING_BLOOD's victory heal by the
+run driver, and compared for abandoned combats (`dbcd128`).
+
+| gate | before (`ef70ee6`) | after |
+| --- | --- | --- |
+| G3 farm, from the seed | 30/39 runs at the recorded end, 3,320/3,324 | 36/39 (the other 3 stop at a `decision_unresolved` truncation), 3,522/3,522 |
+| G3 farm `--anchors` | 778/785 segments, 3,578/3,582, 7 divergences | 787/787, 3,690/3,690, 0 |
+| G3 farm `--anchors-every` (G2 from the saves) | 3,601/3,603 (99.94 %) | 3,676/3,676; only the 4 out_of_scope `extra_rewards` imports remain |
+| G3 farm `--save-check` | 258 segments equal except unlock_state / map history | the same, 0 other differences |
+| G1/G2 farm (`--v2`, ratchet) | 2,664/2,919 decisions, 126/177 combats agree | 2,810/3,059, 168/177 (outcome 168/168; 9 exporter-ineligible); baseline re-written (`18f2dc9`) |
+| human combat gate (G1) | 1,599/1,607 (99.50 %), 8 rows | 1,666/1,671 (99.70 %), 5 rows: 4 v0.107.1 exporter_ineligible (version drift) and Q3X6PF8S37GA s5 |
+| human G3 (W4.1 bundles) | 1,921/1,924 | unchanged (old exporter's bundles) |
+| human G3 (re-exported) | 1,921/1,924 | 2,348/2,352 (99.83 %); G0G2 floors 13 -> 35, EC03 11 -> 15, PLRU 11 -> 17 |
+
+Still open: human Q3X6PF8S37GA s5 (HIDDEN_DAGGERS+ not yet in the discard pile at the next play: snapshot timing, R8),
+GM28D28DX794 s74 (MUMMIFIED_HAND made a different card free), P2UZ19X1GGNQ s31 (opening hand order after a f13 SMITH
+whose copy is unknown: no saves in recorder 0.2.0), NBNDT3S61AUM s81 (shop, card-pack rewards with repeated skips),
+PLRUV49CRFQW f18 OROBAS (GLASS_EYE not obtained in the sim; GlassEye.cs is an LdMemberToken decompile gap), the
+FAKE_MERCHANT stub (G0G2 f36, DSB3 f36), and the 4 `extra_rewards` combat_exit imports (out of scope).

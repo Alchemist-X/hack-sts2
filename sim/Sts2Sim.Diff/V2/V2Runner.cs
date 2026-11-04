@@ -555,7 +555,12 @@ public static class V2Runner
             {
                 finalDiffs.Add(new FieldDiff("outcome", segment.OutcomeResult, result.SimOutcome, DiffSeverity.Hard));
             }
-            if (segment.OutcomeFinalHp is int hp && hp != result.SimFinalHp)
+            // An abandoned combat's recording stops inside the combat (the part ended: a quit or a crashed game), so its
+            // final_hp is the player HP of the last thing recorded (sts2rec diff_export._final_player_hp), not the HP
+            // after the last decision the sim replays (farm 1MQXCR99GX f14, WATLF71NUH f22: the game died during the
+            // last enemy turn). The outcome itself is still compared.
+            bool abandoned = string.Equals(segment.OutcomeResult, DiffBundle.OutcomeAbandoned, StringComparison.Ordinal);
+            if (segment.OutcomeFinalHp is int hp && hp != result.SimFinalHp && !abandoned)
             {
                 finalDiffs.Add(new FieldDiff("final_hp", hp, result.SimFinalHp, DiffSeverity.Hard));
             }
@@ -796,11 +801,18 @@ public static class V2Runner
         }
     }
 
-    public static readonly string[] UnprojectedSelectFields = { "mode", "can_confirm" };
+    public static readonly string[] UnprojectedSelectFields = { "mode", "can_confirm", "screen_type", "can_skip", "can_cancel" };
 
     // Combat selection screens. `mode` / `can_confirm` and the candidates' `index` are recorder UI fields without a
-    // sim projection (soft). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
-    // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded).
+    // sim projection (soft); so are the screen's class and button states: `screen_type` (the overlay type,
+    // mod/src/StateBuilder/PassiveStateBuilder.Selections.cs:161-167, :278), `can_cancel` (the close / preview-cancel
+    // button enabled, :221-245, :300) and `can_skip` (the skip button visible, :297). Whether a prompt can be skipped or
+    // cancelled is checked by replaying the recorded answer (ApplyChoose). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
+    // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded). Draw-pile
+    // grids too: the rules order is rarity, then ModelId (Commands/CardSelectCmd.cs:897, :915), but the screen the recorder
+    // reads sorts by rarity, then the localized title in the game's culture
+    // (Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-430, Nodes.Cards/NCardGrid.cs:619), an order that
+    // depends on the game's language (farm 3ZGJFKTD64 f9 STRATAGEM_POWER, a zh-CN game: same cards, other order).
     public static List<FieldDiff> CompareCombatSelect(JsonObject oracleSelect, JsonObject simSelect)
     {
         var o = (JsonObject)oracleSelect.DeepClone();
@@ -814,7 +826,8 @@ public static class V2Runner
                 o.Remove(name);
             }
         }
-        bool hand = string.Equals(o["kind"]?.GetValue<string>(), "hand_select", StringComparison.Ordinal);
+        bool hand = string.Equals(o["kind"]?.GetValue<string>(), "hand_select", StringComparison.Ordinal)
+            || string.Equals(s["pile"]?.GetValue<string>(), "draw", StringComparison.Ordinal);
         foreach (var obj in new[] { o, s })
         {
             if (obj["candidates"] is not JsonArray arr)
