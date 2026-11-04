@@ -866,11 +866,23 @@ public static unsafe partial class VecTests
             ulong source = env.StateHash(8);
             var log = new List<int[]>();
             int stepFailures = 0, branchFailures = 0, branches = 0, stepsDone = 0, overlapped = 0;
+            // The two threads must really overlap, also on a loaded machine where one could otherwise run to the end
+            // before the other is scheduled: the brancher starts once the stepper has stepped, and the stepper holds
+            // its second half until 10 branches were issued (each with 0 < stepsDone < 250). Bounded waits: a stuck
+            // thread fails the overlap assertion below instead of hanging the suite.
             var stepper = new Thread(() =>
             {
                 var rng = SlotRngs(16, 3);
                 for (int t = 0; t < 250; t++)
                 {
+                    if (t == 125)
+                    {
+                        long until = Environment.TickCount64 + 10_000;
+                        while (Volatile.Read(ref branches) < 10 && Environment.TickCount64 < until)
+                        {
+                            Thread.Yield();
+                        }
+                    }
                     var acts = new int[16];
                     for (int i = 0; i < 16; i++)
                     {
@@ -889,6 +901,11 @@ public static unsafe partial class VecTests
             {
                 int[] dsts = { 9, 10, 11, 12, 13, 14, 15 };
                 int[] srcs = { 8, 8, 8, 8, 8, 8, 8 };
+                long until = Environment.TickCount64 + 10_000;
+                while (Volatile.Read(ref stepsDone) == 0 && Environment.TickCount64 < until)
+                {
+                    Thread.Yield();
+                }
                 for (int r = 0; r < 250; r++)
                 {
                     int done = Volatile.Read(ref stepsDone);
@@ -902,7 +919,7 @@ public static unsafe partial class VecTests
                         int rc = r % 3 == 2 ? branchMany(h, s, d, dsts.Length, r % 2, (ulong)r, nb.Table) : branch(h, 8, d, dsts.Length, r % 2, (ulong)r, nb.Table);
                         if (rc != 0) Interlocked.Increment(ref branchFailures);
                     }
-                    branches++;
+                    Interlocked.Increment(ref branches);
                 }
             });
             stepper.Start();
