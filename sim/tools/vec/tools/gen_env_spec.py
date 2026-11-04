@@ -192,7 +192,7 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
     "episode": ("episode bookkeeping", [
         ("episode_id", ">= 1", "unique per env: episodes_started_before_on_slot x N + slot + 1"),
         ("step_index", ">= 0", "decisions taken in this episode"),
-        ("start_entry", ">= 0", "pool entry the episode started from"),
+        ("start_entry", ">= -1", "pool entry the episode started from; -1 = none (a `branch` destination, or an empty pool)"),
     ]),
     "aux": ("logging / metric helpers (never part of the reward)", [
         ("total_floor, act_index, hp, max_hp, gold, deck_n, relic_n, is_combat", "float", "copies of `global_i`"),

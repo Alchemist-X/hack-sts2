@@ -1274,8 +1274,15 @@ caller, in their own branch, and say so in their report.
   (int64, unique per env instance, increasing), `step_index`, `start_entry`, `rng_slot_seed`.
 - `reset(mask, start_ids)`: every slot with `mask[i] != 0` is (re)started from pool entry `start_ids[i]`, or from the
   slot's deterministic start sequence when `start_ids[i] < 0`: `entry = order[(slot_seed + episode_count) mod pool_count]`
-  where `order` is the pool in insertion order and `slot_seed = XXH64(config.seed_text ‖ slot)`. Observations of the
-  reset slots are written; other slots are left untouched (their buffers are not rewritten).
+  where `order` is the pool's live entries in insertion order (all entries unless some were released, ABI 2) and
+  `slot_seed = XXH64(config.seed_text ‖ slot)`. Observations of the reset slots are written; other slots are left
+  untouched (their buffers are not rewritten). A masked-in start id that is not a live entry fails the call.
+- **Branch** (ABI 2, decision-time search; `sim/VEC.md` "Search"): `branch(src, dsts, mode, seed)` /
+  `branch_many(srcs, dsts, mode, seed)` give every destination slot its own copy of a live source slot's state (mode 0:
+  `RunSim.Clone()`; mode 1: `RunSim.CloneDeterminized(BranchSeed(seed, j))`, j = the destination's position in the call)
+  without a pool entry. Each destination starts a new episode (status `RESET`, episode counter +1, `step_index` 0,
+  `start_entry` -1, floor stall count 0, `last_episode` untouched) and its observation is written in the call; the
+  sources and all other slots are untouched. `restore_many(slots, entries)` = `restore` for many slots in one call.
 - `step(actions)`: for every slot with `actions[i] >= 0` apply `candidates[i][actions[i]]` (an index outside
   `[0, cand_n[i])` → status `ILLEGAL_ACTION`, slot unchanged, nothing else happens to it); then write *every* slot's
   observation, candidates and signals. Slots with `actions[i] < 0` are no-ops (status bit `NOOP`).
@@ -1394,6 +1401,10 @@ re-implemented formulas.
   beyond it, fresh entries are created on demand without caching.
 - `sts2vec_restore(slot, entry)` = reset one slot from one entry (E4 search). `sts2vec_snapshot(slot)` returns a new
   entry id holding a `Clone()` of the slot's current state (works at prompts too: the clone carries the tape).
+- Release (ABI 2, `sts2vec_pool_release`): entries can be removed for good, all or nothing. Ids are still issued in
+  insertion order and are never reused; `pool_count` counts live entries; the start sequence runs over the live entries;
+  using a released id (reset, restore, restore_many, release) is an error naming it. Template creation is serialised per
+  entry; the clone a start takes is not (a template is never stepped; `RunSim.Clone` only reads its source).
 
 ## D5. C ABI (frozen by the scaffold; names exactly as below)
 
@@ -1415,7 +1426,22 @@ int32_t sts2vec_last_error(int64_t h, int32_t slot, uint8_t* buf, int32_t cap); 
 // additive exports (appended after the freeze; the frozen signatures above are unchanged)
 int32_t sts2vec_pool_warm(int64_t h, int32_t max_entries);                // E2c: fresh templates created now → count, or -1
 int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // pool entry id of RunSim.CloneDeterminized(seed) of the slot, or -1
+// ABI 2 (search, 2026-11-04), appended:
+int32_t sts2vec_abi_version(void);                                          // 2; a library without the export is ABI 1
+int32_t sts2vec_branch(int64_t h, int32_t src_slot, const int32_t* dst_slots, int32_t n, int32_t mode, uint64_t seed, void** buffers);
+int32_t sts2vec_branch_many(int64_t h, const int32_t* src_slots, const int32_t* dst_slots, int32_t n, int32_t mode, uint64_t seed, void** buffers);
+int32_t sts2vec_restore_many(int64_t h, const int32_t* slots, const int32_t* entries, int32_t n, void** buffers);
+int32_t sts2vec_pool_release(int64_t h, const int32_t* entries, int32_t n);   // n released, or -1 (nothing released)
 ```
+
+ABI 2 (§D2 "Branch"): `sts2vec_branch` copies `src_slot` into each `dst_slots[j]` (mode 0 exact, 1 determinized with
+`BranchSeed(seed, j)` = SplitMix64 finaliser of `seed + (j + 1) · 0x9E3779B97F4A7C15`); `sts2vec_branch_many` takes one
+source per destination (many roots in one call). Destinations must be in range, distinct and not a source of the call;
+sources must hold a run; mode 0 or 1. The destinations' observations, candidates and signals are written in the call.
+`sts2vec_restore_many` = `sts2vec_restore` for n distinct slots under one lock, in parallel. `sts2vec_pool_release`
+releases n live entries, all or nothing. Every call on one env holds the env's lock for its whole duration, so calls
+from several threads serialise. `sts2vec_abi_version` versions the exports separately from `encoder_version` (ABI 2
+changes no buffer).
 
 `sts2vec_clone_determinized` appends a pool entry holding a determinized clone of the slot's current state (prompts
 included): identical player view, hidden state (draw-pile order, every RNG stream and the hashed run seed, relic
@@ -1453,7 +1479,10 @@ on the clone-free path ends the episode as SIM_ERROR (`FastPathPromptException` 
   arrays (views, valid until the next call; `copy=True` to copy), `info = {"episode_id", "step_index", "start_entry",
   "last_episode"}`; `.pool.add_fresh(...)`, `.pool.add_save(path)`, `.pool.warm(max_entries=None)` (E2c), `.snapshot(slot)`,
   `.restore(slot, entry)`, `.state_hash(slots)`, `.close()`, context manager. `.candidates(i)` returns the slot's
-  candidate rows decoded to `RunActionKind` names for debugging.
+  candidate rows decoded to `RunActionKind` names for debugging. ABI 2: `.branch(src, dsts, determinized=True,
+  seed=0)` (`src` one slot or one per destination), `.restore_many(slots, entries)`, `.pool.release(ids)`,
+  `sts2vec.branch_seed(seed, j)`, `lib.abi_version` and `lib.supports_branch` / `supports_restore_many` /
+  `supports_pool_release` (an ABI 1 library: False, and the wrappers raise `Sts2VecError` "... not supported; rebuild").
 - CLIs: `sts2vec bench [--envs 1024 --threads 8 --steps 500 --policy random --warm/--no-warm]` (env-steps/s, ms per
   batch, MB obs per batch, GC mode; the pool is warmed before timing by default and the warm time is printed separately)
   and `sts2vec check` (determinism across two envs and two thread counts; leak test via the C# export when present;
@@ -1479,6 +1508,12 @@ C# (`sim/Sts2Sim.Tests/VecTests.cs`; all run in the normal suite):
 - T7 threads: 1,024 envs × 200 steps on 1 vs 12 threads ⇒ identical hashes.
 - T8 ABI: invalid handle/slot/entry → −1 + last_error, never a crash; a slot whose sim throws gets `SIM_ERROR` and is reset.
 - T9 PlayerView move: Server and Diff tests unchanged; G0 4/4 · 69/69.
+- T10 search (ABI 2, `VecTests.Branch.cs`): exact branch = source (hash, view, 282 replayed steps, a 250-option prompt);
+  determinized branch: every destination's copied view = its own encoding, hashes resampled, position j =
+  `clone_determinized(BranchSeed(seed, j))`; branch_many over interleaved sources; restore_many ≡ sequential restores;
+  release drops entries for good (garbage collected, ids never reused, all-or-nothing); 64 parallel clones of one
+  source = serial clones; a thread branching while another steps serialises with no effect on the stepped slots;
+  invalid arguments through the ABI change nothing.
 Python (`uv run --project sim/tools/vec pytest -q`): loader + Server GC assert; schema ↔ buffer consistency; random soak
 (1,024 envs × 300 steps, 0 `SIM_ERROR`/`CONTENT_GAP` with `ported_only`); determinism across two processes; `bench`
 smoke; `add_save` on the fixture.

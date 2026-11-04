@@ -11,6 +11,10 @@ created with:
 At run time ``env.pool.add_fresh(...)`` / ``env.pool.add_save(path)`` append more, and ``env.snapshot(slot)`` appends a
 clone of a live slot. Fresh templates are created lazily on first use (``RunSim.NewRun``, ~10–20 ms) and cached up to
 ``config.pool_cache``; every reset clones a template (~15 µs). ``env.pool.warm()`` creates them ahead of time.
+
+``env.pool.release(ids)`` (ABI 2) drops entries for good: ``len(env.pool)`` counts live entries, the start sequence runs
+over the live entries in id order, and a released id is never issued again (reset / restore / release with it raise).
+Without releases the live ids are ``0 .. len-1`` as before. Search loops that branch with ``env.branch`` need no entries.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Union
+
+import numpy as np
 
 if TYPE_CHECKING:
     from .env import VecEnv
@@ -149,8 +155,24 @@ def make_config(num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_r
     return cfg
 
 
+def int32_list(values, name: str) -> np.ndarray:
+    """A C-contiguous 1-D int32 copy of ``values`` (an int or a sequence/array of integers) for a pointer argument."""
+    a = np.asarray(values)
+    if a.ndim == 0:
+        a = a.reshape(1)
+    if a.ndim != 1:
+        raise ValueError(f"{name} must be 1-D, got shape {a.shape}")
+    if a.size == 0:
+        return np.zeros(0, dtype=np.int32)
+    if a.dtype.kind not in "iu":
+        raise TypeError(f"{name} must hold integers, got dtype {a.dtype}")
+    if int(a.min()) < -2**31 or int(a.max()) >= 2**31:
+        raise ValueError(f"{name} holds values outside int32")
+    return np.ascontiguousarray(a, dtype=np.int32)
+
+
 class Pool:
-    """``env.pool``: the env's start entries (ids ``0 .. len-1`` in insertion order)."""
+    """``env.pool``: the env's start entries (ids in insertion order; released ids are gone for good)."""
 
     def __init__(self, env: "VecEnv"):
         self._env = env
@@ -198,7 +220,23 @@ class Pool:
         fn = env._lib.require("sts2vec_pool_warm")
         return env._check(fn(h, -1 if max_entries is None else int(max_entries)), "pool_warm")
 
+    def release(self, ids) -> int:
+        """Release pool entries (``sts2vec_pool_release``, ABI 2); returns how many were released.
+
+        ``ids`` is an entry id or a sequence of them. All or nothing: an id that is not live (never issued, or released
+        already) or listed twice raises ``Sts2VecError`` and releases nothing. A released entry's template is dropped (a
+        snapshot's RunSim, ~20-90 KB, becomes garbage; a cached fresh template frees its ``pool_cache`` slot), ``len(pool)`` and the
+        start sequence no longer include it, and its id is never reused: ``reset`` / ``restore`` / ``restore_many`` /
+        ``release`` with it raise. Slots that started from it keep running. Use it to keep a search's snapshot /
+        ``clone_determinized`` entries bounded; ``env.branch`` needs no entries at all."""
+        env = self._env
+        h = env._live_handle()
+        fn = env._lib.require("sts2vec_pool_release")
+        a = int32_list(ids, "ids")
+        return env._check(fn(h, a.ctypes.data if len(a) else None, len(a)), "pool_release")
+
     def __len__(self) -> int:
+        """Number of live entries (released entries are not counted)."""
         env = self._env
         return env._check(env._lib.sts2vec_pool_count(env._live_handle()), "pool_count")
 

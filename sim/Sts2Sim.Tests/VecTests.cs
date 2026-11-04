@@ -109,6 +109,11 @@ public static unsafe partial class VecTests
         delegate* unmanaged<long, int*, void**, int> step = &Exports.Step;
         delegate* unmanaged<long, int*, int, ulong*, int> stateHash = &Exports.StateHash;
         delegate* unmanaged<long, int, byte*, int, int> lastError = &Exports.LastError;
+        delegate* unmanaged<int> abiVersion = &Exports.AbiVersion;
+        delegate* unmanaged<long, int, int*, int, int, ulong, void**, int> branch = &Exports.Branch;
+        delegate* unmanaged<long, int*, int*, int, int, ulong, void**, int> branchMany = &Exports.BranchMany;
+        delegate* unmanaged<long, int*, int*, int, void**, int> restoreMany = &Exports.RestoreMany;
+        delegate* unmanaged<long, int*, int, int> poolRelease = &Exports.PoolRelease;
 
         string LastGlobal()
         {
@@ -149,6 +154,12 @@ public static unsafe partial class VecTests
         Assert.Equal(-1, stateHash(bad, &one, 1, &h64));
         Assert.Equal(-1, lastError(bad, -1, null, 0));
         Assert.True(LastGlobal().Contains("invalid handle", StringComparison.Ordinal), LastGlobal());
+        Assert.Equal(-1, branch(bad, 0, &one, 1, 0, 0, null));
+        Assert.Equal(-1, branchMany(bad, &one, &one, 1, 0, 0, null));
+        Assert.Equal(-1, restoreMany(bad, &one, &one, 1, null));
+        Assert.Equal(-1, poolRelease(bad, &one, 1));
+        Assert.True(LastGlobal().Contains("invalid handle", StringComparison.Ordinal), LastGlobal());
+        Assert.Equal(Exports.CurrentAbiVersion, abiVersion());
 
         // malformed config
         long Create(string cfg)
@@ -310,8 +321,10 @@ public static unsafe partial class VecTests
                 .Cast<System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute>().Single();
             Assert.Equal(name, attr.EntryPoint);
         }
-        Assert.Equal(16, Exports.ExportNames.Count);
-        Assert.Equal("sts2vec_pool_warm", Exports.ExportNames[^2], "exports added after the scaffold freeze are appended");
-        Assert.Equal("sts2vec_clone_determinized", Exports.ExportNames[^1], "exports added after the scaffold freeze are appended");
+        Assert.Equal(21, Exports.ExportNames.Count);
+        Assert.SequenceEqual(new[] { "sts2vec_pool_warm", "sts2vec_clone_determinized", "sts2vec_abi_version", "sts2vec_branch",
+            "sts2vec_branch_many", "sts2vec_restore_many", "sts2vec_pool_release" }, Exports.ExportNames.Skip(14),
+            "exports added after the scaffold freeze are appended");
+        Assert.Equal(2, Exports.CurrentAbiVersion);
     }
 }
