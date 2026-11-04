@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS approvals (
     reference TEXT PRIMARY KEY, approved_budget INTEGER NOT NULL, execution_cap INTEGER NOT NULL,
     created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS access_status (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    pause_reason TEXT NOT NULL, next_wake TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS experiments (
     id TEXT PRIMARY KEY, spec TEXT NOT NULL, config_hash TEXT NOT NULL,
     decisions INTEGER NOT NULL DEFAULT 0, cursor INTEGER NOT NULL,
@@ -191,7 +195,7 @@ class Store:
                 raise ValueError("operational results require reconciled job evidence")
             self.append_event(db, event_id, kind, evidence, self.clock())
 
-    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds):
+    def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False):
         identifier(key)
         identifier(decision_id)
         identifier(category)
@@ -217,8 +221,63 @@ class Store:
                 raise ValueError("probe requires sufficient authorized headroom")
             db.execute(
                 """INSERT INTO jobs (id,logical_key,attempt,kind,payload,reserve,state,deadline)
-                   VALUES (?,?,1,'access_probe',?,?,'external_reserved',?)""",
-                (key, key, payload, reserve, self.clock() + seconds),
+                   VALUES (?,?,1,'access_probe',?,?,?,?)""",
+                (key, key, payload, reserve, "external_prepared" if prepare_only else "external_reserved",
+                 0 if prepare_only else self.clock() + seconds),
+            )
+
+    def activate_access_probe(self, key):
+        identifier(key)
+        with self.transaction() as db:
+            row = db.execute("SELECT payload,state FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
+            if not row or row["state"] != "external_prepared":
+                raise ValueError("probe is not prepared for activation")
+            state = db.execute("SELECT * FROM study").fetchone()
+            spent, reserved = self.ledger(db)
+            platform = self.platform_headroom(state, spent)
+            if (state["stopped"] or state["analysis_paused"] or platform is None
+                    or spent + reserved > min(state["approved_budget"], state["execution_cap"])
+                    or reserved > platform):
+                raise ValueError("probe lacks current authorized headroom")
+            seconds = json.loads(row["payload"])["seconds"]
+            db.execute("UPDATE jobs SET state='external_reserved',deadline=? WHERE id=?",
+                       (self.clock() + seconds, key))
+
+    def finish_access_probe(self, key, result):
+        identifier(key)
+        if type(result) is not dict or set(result) != {"status", "session_ids", "report_ref"}:
+            raise ValueError("invalid access probe evidence")
+        environment = result["status"] in {"blocked_prelaunch", "env_verified", "env_failed"}
+        if not environment and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed"}:
+            raise ValueError("unknown access probe status")
+        session_ids = result["session_ids"]
+        if type(session_ids) is not list or (len(session_ids) != 0 if environment else not 1 <= len(session_ids) <= 2):
+            raise ValueError("access probe session IDs do not match the probe type")
+        for session in result["session_ids"]:
+            identifier(session)
+        if not isinstance(result["report_ref"], str) or not 1 <= len(result["report_ref"]) <= 256:
+            raise ValueError("invalid access probe report reference")
+        outcome = canonical(result)
+        with self.transaction() as db:
+            old = db.execute("SELECT state,outcome,payload FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
+            if not old:
+                raise ValueError("unknown access probe reservation")
+            if environment != (json.loads(old["payload"])["category"] == "env_cpu_validation"):
+                raise ValueError("probe evidence category does not match the reservation")
+            if old["state"] == "external_finished_cost_unknown" and old["outcome"] == outcome:
+                return
+            if old["state"] != "external_reserved":
+                raise ValueError("access probe result already finalized")
+            db.execute("UPDATE jobs SET state='external_finished_cost_unknown',outcome=? WHERE id=?", (outcome, key))
+
+    def pause_access(self, reason, next_wake):
+        from .contracts import bounded_text
+
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO access_status VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET "
+                "pause_reason=excluded.pause_reason,next_wake=excluded.next_wake",
+                (bounded_text(reason), bounded_text(next_wake)),
             )
 
     @staticmethod
@@ -234,7 +293,8 @@ class Store:
             state = db.execute("SELECT * FROM study").fetchone()
             spent, reserved = self.ledger(db)
             active = db.execute(
-                "SELECT id,kind,state,remote_id,deadline FROM jobs WHERE actual IS NULL ORDER BY id",
+                "SELECT id,kind,state,remote_id,deadline FROM jobs WHERE actual IS NULL "
+                "AND state NOT IN ('external_finished_cost_unknown','external_prepared') ORDER BY id",
             ).fetchall()
             last = db.execute("SELECT id,kind,created FROM events ORDER BY rowid DESC LIMIT 1").fetchone()
             decision = db.execute(
@@ -244,6 +304,11 @@ class Store:
                 "SELECT id,stage,decisions,target,cursor,config_hash,checkpoint FROM experiments ORDER BY id",
             ).fetchall()
             approved = state["approved_budget"]
+            access = db.execute("SELECT pause_reason,next_wake FROM access_status").fetchone()
+            unsettled = db.execute(
+                "SELECT id,reserve,outcome FROM jobs WHERE state='external_finished_cost_unknown' ORDER BY id"
+            ).fetchall()
+            prepared = db.execute("SELECT id,reserve,payload FROM jobs WHERE state='external_prepared' ORDER BY id").fetchall()
             snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
             platform_remaining = self.platform_headroom(state, spent)
             return {
@@ -260,7 +325,17 @@ class Store:
                     "reference": snapshot["reference"], "observed_at": snapshot["observed_at"],
                 } if snapshot else None,
                 "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - reserved) / 100,
-                "spent_usd": spent / 100, "reserved_usd": reserved / 100,
+                "spent_usd": spent / 100, "spend_complete": not unsettled and not active,
+                "reserved_usd": reserved / 100,
+                "access_gate": dict(access) if access else None,
+                "prepared_probes": [
+                    {"id": row["id"], "reserved_usd": row["reserve"] / 100, **json.loads(row["payload"])}
+                    for row in prepared
+                ],
+                "finished_probes_cost_unknown": [
+                    {"id": row["id"], "reserved_usd": row["reserve"] / 100, **json.loads(row["outcome"])}
+                    for row in unsettled
+                ],
                 "remaining_usd": None if approved is None else (approved - spent - reserved) / 100,
                 "stop": state["stopped"], "analysis_pause": state["analysis_paused"],
                 "next_wake": state["next_wake"], "active_jobs": [dict(row) for row in active],

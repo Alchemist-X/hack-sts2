@@ -26,6 +26,16 @@ def main():
     for name in ("key", "decision-id", "category", "reserve-usd"):
         probe.add_argument(f"--{name}", required=True)
     probe.add_argument("--seconds", type=int, required=True)
+    probe.add_argument("--prepare-only", action="store_true")
+    commands.add_parser("activate-access-probe").add_argument("key")
+    finish_probe = commands.add_parser("finish-access-probe")
+    finish_probe.add_argument("key")
+    finish_probe.add_argument("--status", required=True)
+    finish_probe.add_argument("--session-id", action="append", default=[])
+    finish_probe.add_argument("--report-ref", required=True)
+    pause_access = commands.add_parser("pause-access")
+    pause_access.add_argument("reason")
+    pause_access.add_argument("--next-wake", required=True)
     commands.add_parser("stop").add_argument("reason")
     resume = commands.add_parser("resume")
     resume.add_argument("reason")
@@ -38,7 +48,15 @@ def main():
         store.record_platform(gross_limit=args.gross_limit, net_limit=args.net_limit, credit=args.credit,
                               gross_used=args.gross_used, net_spent=args.net_spent, reference=args.reference)
     elif args.command == "reserve-access-probe":
-        store.reserve_access_probe(args.key, args.decision_id, args.category, args.reserve_usd, args.seconds)
+        store.reserve_access_probe(args.key, args.decision_id, args.category, args.reserve_usd, args.seconds,
+                                   prepare_only=args.prepare_only)
+    elif args.command == "activate-access-probe":
+        store.activate_access_probe(args.key)
+    elif args.command == "finish-access-probe":
+        store.finish_access_probe(args.key, {"status": args.status, "session_ids": args.session_id,
+                                             "report_ref": args.report_ref})
+    elif args.command == "pause-access":
+        store.pause_access(args.reason, args.next_wake)
     elif args.command == "stop":
         store.stop(args.reason)
     elif args.command == "resume":

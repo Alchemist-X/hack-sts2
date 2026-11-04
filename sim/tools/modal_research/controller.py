@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .adapters import Job, Outcome
 from .contracts import TRAIN, bounded_text, canonical, cents, digest, identifier, validate_decision
+from .lineage import AcceptedCheckpoint, artifact_identity, validate_job
 from .manifests import verify
 
 RETRYABLE = {"api", "oom", "missing_artifact", "reclaimed", "invalid_response"}
@@ -53,6 +54,8 @@ class Controller:
         state = db.execute("SELECT * FROM study").fetchone()
         if state["stopped"] or state["analysis_paused"]:
             raise DispatchBlocked("study paused or stopped")
+        if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
+            raise DispatchBlocked("production access gate paused")
         if type(reserve) is not int or reserve <= 0:
             raise DispatchBlocked("positive job reserve required")
         if deadline <= self.store.clock():
@@ -134,8 +137,9 @@ class Controller:
         segment = experiment["segment"] + 1
         logical = f"{kind}-{digest([experiment['id'], segment])[:32]}"
         checkpoint = json.loads(experiment["checkpoint"]) if experiment["checkpoint"] else None
+        study_id = db.execute("SELECT id FROM study").fetchone()[0]
         payload = {
-            "spec": spec, "config_hash": experiment["config_hash"], "checkpoint": checkpoint,
+            "study_id": study_id, "spec": spec, "config_hash": experiment["config_hash"], "checkpoint": checkpoint,
             "start_decisions": experiment["decisions"], "target_decisions": experiment["target"],
             "start_cursor": experiment["cursor"],
         }
@@ -181,15 +185,18 @@ class Controller:
             # Never loop submissions on the same persisted attempt.
             self._settle(owner, row, Outcome("failed", 0, error="api"))
             return
-        reference = job.payload.get("checkpoint") if job.kind in {"train", "eval"} else None
-        if reference:
-            with self.store.transaction() as db:
-                self.store.fence(db, owner)
-                source = db.execute("SELECT * FROM jobs WHERE id=?", (reference["job_key"],)).fetchone()
+        if job.kind in {"train", "eval"}:
             try:
-                self._artifact(self._job(source), {
-                    "manifest_hash": reference["manifest_hash"], "generation": reference["generation"],
-                })
+                validate_job(job)
+                reference = job.payload["checkpoint"]
+                if reference:
+                    with self.store.transaction() as db:
+                        self.store.fence(db, owner)
+                        accepted = self._accepted_checkpoint(db, job)
+                    # Revalidate the saved proof and local file content before asking the provider.
+                    self._artifact(self._job(accepted[1]), {
+                        "manifest_hash": reference["manifest_hash"], "generation": reference["generation"],
+                    })
             except (ValueError, TypeError, KeyError, OSError, AttributeError):
                 self._settle(owner, row, Outcome("failed", 0, error="missing_artifact"))
                 return
@@ -224,6 +231,8 @@ class Controller:
     def _can_submit(self, db, state, job):
         if state["stopped"] or state["analysis_paused"] or job.deadline <= self.store.clock():
             return False
+        if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
+            return False
         spent, held = self.store.ledger(db)
         platform = self.store.platform_headroom(state, spent)
         return (spent + held <= min(state["approved_budget"], state["execution_cap"])
@@ -240,17 +249,25 @@ class Controller:
             db.execute("UPDATE jobs SET state='uncertain',error=? WHERE id=?", (reason, row["id"]))
             db.execute("UPDATE study SET stopped=COALESCE(stopped,?)", (reason,))
 
-    @staticmethod
-    def _identity(job):
-        spec = job.payload["spec"]
-        return {
-            "kind": job.kind, "job_key": job.key, "experiment_id": spec["experiment_id"],
-            "config_hash": job.payload["config_hash"], "code_commit": spec["code_commit"],
-            "image_digest": spec["image_digest"], "engine_hash": spec["engine_hash"], "schema_hash": spec["schema_hash"],
-            "train_seed_manifest_hash": spec["train_seed_manifest_hash"],
-            "dev_seed_manifest_hash": spec["dev_seed_manifest_hash"], "eval_protocol": spec["eval_protocol"],
-            "input_checkpoint": job.payload["checkpoint"]["manifest_hash"] if job.payload["checkpoint"] else None,
-        }
+    _identity = staticmethod(artifact_identity)
+
+    def _accepted_checkpoint(self, db, job):
+        reference = job.payload["checkpoint"]
+        experiment_id = job.payload["spec"]["experiment_id"]
+        experiment = db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
+        if not experiment or json.loads(experiment["checkpoint"] or "null") != reference:
+            raise ValueError("checkpoint is not the accepted experiment head")
+        source = db.execute("SELECT * FROM jobs WHERE id=?", (reference["job_key"],)).fetchone()
+        if (not source or source["kind"] != "train" or source["state"] not in {"done", "failed"}
+                or source["experiment_id"] != experiment_id or not source["outcome"]):
+            raise ValueError("checkpoint origin job was not accepted")
+        source_job = self._job(source)
+        source_identity = artifact_identity(source_job)
+        outcome = json.loads(source["outcome"])
+        if outcome["checkpoint"] != reference or outcome["manifest"]["identity"] != source_identity:
+            raise ValueError("checkpoint is absent from accepted origin outcome")
+        return AcceptedCheckpoint(job.payload["study_id"], experiment_id, experiment["config_hash"],
+                                  reference, source_identity), source
 
     def _artifact(self, job, output):
         if type(output) is not dict or set(output) != {"manifest_hash", "generation"}:
@@ -264,6 +281,9 @@ class Controller:
         metadata = document["metadata"]
         reason = metadata["termination"]
         decisions = metadata["decisions"]
+        stride = spec["rollout_shape"]["envs"] * spec["rollout_shape"]["rollout"]
+        if decisions % stride:
+            raise ValueError("worker progress must report a full rollout")
         if job.kind == "train":
             if metadata["resume_mode"] != spec["checkpoint_policy"]["resume_mode"]:
                 raise ValueError("checkpoint recovery policy changed")

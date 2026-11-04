@@ -965,10 +965,14 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
 
 
 def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None,
-          given: dict | None = None, episode_hooks=()) -> dict:
+          given: dict | None = None, episode_hooks=(), isolation_seedsets=(), strict_resume=False,
+          checkpoint_ready=None) -> dict:
     """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`;
     `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
     callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
+    ``isolation_seedsets`` are pinned holdouts even when local periodic evaluation is disabled.
+    ``strict_resume`` requires complete restoration on the selected device.
+    ``checkpoint_ready``, when supplied, receives the path after each completed atomic save.
 
     Before anything is created: an eval seed set with games of a frozen blind set is refused unless
     ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
@@ -979,7 +983,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     run = Path(cfg.out)
     blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
                   if cfg.eval_every else None)
-    eval_holdouts = [cfg.eval_seedset] if cfg.eval_every else []
+    eval_holdouts = list(isolation_seedsets)
+    if cfg.eval_every:
+        eval_holdouts.append(cfg.eval_seedset)
     if cfg.eval_at:
         check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
         eval_holdouts.append(cfg.eval_at_seedset)
@@ -1130,6 +1136,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             rng_restored = restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr,
                                               widened=compat["widened_enums"])
             ck_cfg = resume.get("config") or {}
+            if strict_resume:
+                required_rng = {"numpy", "torch"} | ({device.type} if device.type in {"cuda", "mps"} else set())
+                if not resume.get("optimizer") or not rng_restored or any(
+                    rng_restored.get(key) != "ok" for key in required_rng
+                ):
+                    raise ValueError("required optimizer and RNG state could not be restored")
             ck_sample = ck_cfg.get("sample_seed")
             ck_sample = int(ck_cfg.get("seed", 0) or 0) if ck_sample is None else int(ck_sample)
             if int(cfg.sample_seed) != ck_sample:          # a fork with a new sampling seed: re-seed, not restore
@@ -1240,6 +1252,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                     last_eval=last_eval, inflight=track.inflight(), **extra)
             last_ckpt_path = ckpts.save(state, upd)
             last_ckpt_upd = upd
+            if checkpoint_ready is not None:
+                checkpoint_ready(last_ckpt_path)
             return last_ckpt_path
 
         def run_eval(upd: int) -> dict | None:

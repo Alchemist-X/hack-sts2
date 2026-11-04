@@ -19,6 +19,10 @@ Ready manifests are published with data checksums and identities. The publisher 
 
 `gateway.GatewayBackend` is an authenticated HTTPS transport contract for a verified service with durable job IDs and idempotent submission. That service must implement authoritative lookup, cost settlement, and scoped access to tools for SOL. It needs separate verified research and engineering bindings. It is not a standalone service or an authentication check.
 
+For the first deployment, use the Raven single-host route in [the deployment plan](RAVEN_DEPLOYMENT.md).
+
+The autonomous worker entry is `native_worker.run`. It accepts only a frozen worker request and deployment-owned installation paths. It resolves a resumed checkpoint from the current accepted ledger lineage, verifies its checksum before loading, and gives the trainer the exact protected dev/blind holdouts even when periodic evaluation is disabled. The general-purpose local trainer CLI is outside this guarded entry point.
+
 The deployment remains gated until the shared store, service bindings, actual trainer/evaluator runtime and image, platform enforcement and Volume behavior are integrated and tested. Run the separately budgeted real GPU acceptance before enabling the schedule. Fixture results provide no GPU, gameplay, model API, or deployed availability evidence.
 
 Modal reference material for [schedules](https://modal.com/docs/guide/cron), [preemption](https://modal.com/docs/guide/preemption), [timeouts](https://modal.com/docs/guide/timeouts), and [Volume v2](https://modal.com/docs/guide/volumes).

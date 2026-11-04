@@ -8,7 +8,7 @@ from contextlib import closing
 from pathlib import Path
 
 from .adapters import Job, Outcome
-from .contracts import canonical, digest
+from .contracts import MAIN_EVAL, PURE_TRAINING, canonical, digest
 from .controller import Controller
 from .manifests import EVAL_FILES, TRAIN_FILES, publish
 
@@ -61,10 +61,19 @@ def spec(now, experiment_id="silent-fixture"):
         "experiment_id": experiment_id, "parent_id": None, "hypothesis": "Fixture",
         "control_id": None, "changed_factor": "fixture", "character": "SILENT", "ascension": 10,
         "data_lineage": "autonomous-fresh", "code_commit": "1" * 40, "image_digest": "2" * 64,
-        "engine_hash": "3" * 64, "schema_hash": "4" * 64, "model_config": {"fixture": True},
+        "engine_hash": "3" * 64, "schema_hash": "4" * 64, "dependency_hash": "7" * 64,
+        "model_config": {"d": 1, "s": 1, "depth": 0, "heads": 1, "ff_mult": 1,
+                         "deck_counts": False, "aux_heads": False},
+        "training_protocol": dict(PURE_TRAINING), "evaluation_policy": dict(MAIN_EVAL),
+        "rollout_shape": {"envs": 1, "rollout": 1},
+        "ppo_config": {"epochs": 1, "minibatch": 1, "max_rows": 192, "step_cap": 3000, "floor_step_cap": 80,
+                       "lr": 0.0003, "gamma": 1, "lam": 0.99, "clip": 0.2, "vf_coef": 0.5, "ent_coef": 0.02,
+                       "max_grad_norm": 0.5, "win_bonus": 1, "acq_deck_coef": 0, "acq_relic_coef": 0,
+                       "acq_upgrade_coef": 0, "cycle_cost": 0, "aux_coef": 0, "amp": False, "grad_ckpt": False,
+                       "acq_shaping": False, "aux_bootstrap": False, "objective": "protocol", "compile": "off"},
         "actual_param_count": 1, "reward_version": "fixture", "action_protocol": "fixture",
-        "init_seed": 1, "policy_seed": 2, "env_seed_namespace": "fixture-train", "cursor": 0,
-        "train_seed_manifest_hash": "5" * 64, "dev_seed_manifest_hash": "6" * 64,
+        "init_seed": 1, "policy_seed": 2, "env_seed": 3, "env_seed_namespace": "FIXTURETRAIN", "cursor": 0,
+        "train_seed_manifest_hash": "5" * 64, "dev_seed_manifest_hash": "6" * 64, "blind_seed_manifest_hash": "8" * 64,
         "cumulative_decision_target": 20, "evaluation_milestones": [10, 20],
         "resource_request": {"train_cost": "1.00", "eval_cost": "0.20", "segment_seconds": 60,
                              "eval_seconds": 60},

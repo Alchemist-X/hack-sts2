@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from decimal import Decimal
 
@@ -12,6 +13,21 @@ TRAIN = {"CONTINUE", "REPLICATE", "NEW_EXPERIMENT"}
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 COMMIT = re.compile(r"[0-9a-f]{40}")
+STREAM_NAMESPACE = re.compile(r"[A-Z][A-Z0-9_]{0,23}")
+PURE_TRAINING = {
+    "initialization": "random", "start_mode": "stream", "save_mix": 0,
+    "start_saves": None, "harvest": 0, "teacher": None, "action_labels": None,
+    "pretrained": None, "trajectory_data": None, "rollout_loop_breaker": False,
+}
+MAIN_EVAL = {
+    "start_mode": "fresh", "policy": "greedy", "loop_breaker": False,
+    "search": False, "human_intervention": False,
+}
+PPO_INTEGERS = {"epochs", "minibatch", "max_rows", "step_cap", "floor_step_cap"}
+PPO_NUMBERS = {"lr", "gamma", "lam", "clip", "vf_coef", "ent_coef", "max_grad_norm", "win_bonus",
+               "acq_deck_coef", "acq_relic_coef", "acq_upgrade_coef", "cycle_cost", "aux_coef"}
+PPO_FLAGS = {"amp", "grad_ckpt", "acq_shaping", "aux_bootstrap"}
+PPO_CHOICES = {"objective": {"protocol", "win"}, "compile": {"off", "default", "reduce-overhead"}}
 
 
 def canonical(value):
@@ -60,10 +76,11 @@ def validate_spec(spec):
         "experiment_id", "parent_id", "hypothesis", "control_id", "changed_factor",
         "code_commit", "image_digest", "engine_hash", "schema_hash", "model_config",
         "actual_param_count", "reward_version", "action_protocol", "init_seed", "policy_seed",
-        "env_seed_namespace", "cursor", "train_seed_manifest_hash", "dev_seed_manifest_hash",
+        "env_seed_namespace", "cursor", "train_seed_manifest_hash", "dev_seed_manifest_hash", "blind_seed_manifest_hash",
         "cumulative_decision_target", "evaluation_milestones", "resource_request", "max_cost",
         "absolute_deadline", "checkpoint_policy", "stop_rules", "promotion_rules", "character",
-        "ascension", "eval_protocol", "data_lineage",
+        "ascension", "eval_protocol", "data_lineage", "training_protocol", "evaluation_policy",
+        "rollout_shape", "env_seed", "dependency_hash", "ppo_config",
     }
     if type(spec) is not dict or set(spec) != required:
         raise ValueError("experiment fields must match the frozen contract")
@@ -71,6 +88,10 @@ def validate_spec(spec):
         raise ValueError("experiment spec exceeds size bound")
     if (spec["character"], spec["ascension"], spec["data_lineage"]) != ("SILENT", 10, "autonomous-fresh"):
         raise ValueError("requires autonomous fresh starts with Silent A10")
+    if canonical(spec["training_protocol"]) != canonical(PURE_TRAINING):
+        raise ValueError("pure training requires random initialization and environment-only fresh starts")
+    if canonical(spec["evaluation_policy"]) != canonical(MAIN_EVAL):
+        raise ValueError("primary evaluation requires full fresh greedy runs with no interventions")
     identifier(spec["experiment_id"])
     for key in ("parent_id", "control_id"):
         if spec[key] is not None:
@@ -80,25 +101,54 @@ def validate_spec(spec):
         bounded_text(spec[key])
     if not isinstance(spec["code_commit"], str) or not COMMIT.fullmatch(spec["code_commit"]):
         raise ValueError("expected full code commit")
-    for key in ("image_digest", "engine_hash", "schema_hash", "train_seed_manifest_hash", "dev_seed_manifest_hash"):
+    for key in ("image_digest", "engine_hash", "schema_hash", "dependency_hash",
+                "train_seed_manifest_hash", "dev_seed_manifest_hash", "blind_seed_manifest_hash"):
         if not isinstance(spec[key], str) or not DIGEST.fullmatch(spec[key]):
             raise ValueError(f"invalid {key}")
-    if spec["train_seed_manifest_hash"] == spec["dev_seed_manifest_hash"]:
-        raise ValueError("identical training and dev seed manifests")
-    for key in ("init_seed", "policy_seed", "cursor"):
+    if len({spec[key] for key in ("train_seed_manifest_hash", "dev_seed_manifest_hash", "blind_seed_manifest_hash")}) != 3:
+        raise ValueError("train, dev and blind seed manifests must be distinct")
+    for key in ("init_seed", "policy_seed", "env_seed"):
         integer(spec[key])
+    if len({spec["init_seed"], spec["policy_seed"], spec["env_seed"]}) != 3:
+        raise ValueError("initialization, policy and environment seeds must be independent")
+    if integer(spec["cursor"]) != 0:
+        raise ValueError("a registered experiment starts with seed cursor zero")
+    namespace = spec["env_seed_namespace"]
+    if not STREAM_NAMESPACE.fullmatch(namespace) or namespace.startswith("TRAIN"):
+        raise ValueError("training seed namespace must be a new stream prefix")
     for key in ("actual_param_count", "absolute_deadline", "cumulative_decision_target"):
         integer(spec[key], 1)
     model = spec["model_config"]
-    if type(model) is not dict or not model:
-        raise ValueError("invalid model configuration")
-    if any(not isinstance(key, str) or type(value) not in (int, float, str, bool) for key, value in model.items()):
-        raise ValueError("model configuration must contain scalar fields")
+    if type(model) is not dict or set(model) != {"d", "s", "depth", "heads", "ff_mult", "deck_counts", "aux_heads"}:
+        raise ValueError("only frozen model architecture fields are allowed")
+    for key in ("d", "s", "heads", "ff_mult"):
+        integer(model[key], 1)
+    integer(model["depth"])
+    if any(type(model[key]) is not bool for key in ("deck_counts", "aux_heads")):
+        raise ValueError("model feature flags must be booleans")
+    shape = spec["rollout_shape"]
+    if type(shape) is not dict or set(shape) != {"envs", "rollout"}:
+        raise ValueError("missing fixed rollout shape")
+    stride = integer(shape["envs"], 1) * integer(shape["rollout"], 1)
+    ppo = spec["ppo_config"]
+    if type(ppo) is not dict or set(ppo) != PPO_INTEGERS | PPO_NUMBERS | PPO_FLAGS | PPO_CHOICES.keys():
+        raise ValueError("only frozen trainer recipe fields are allowed")
+    for key in PPO_INTEGERS:
+        integer(ppo[key], 1)
+    for key in PPO_NUMBERS:
+        if type(ppo[key]) not in (int, float) or not math.isfinite(ppo[key]) or ppo[key] < 0:
+            raise ValueError("invalid numeric trainer recipe value")
+    if any(type(ppo[key]) is not bool for key in PPO_FLAGS):
+        raise ValueError("trainer recipe flags must be booleans")
+    for key, choices in PPO_CHOICES.items():
+        if type(ppo[key]) is not str or ppo[key] not in choices:
+            raise ValueError("invalid trainer recipe choice")
     milestones = spec["evaluation_milestones"]
     if type(milestones) is not list or not milestones:
         raise ValueError("evaluation milestones required")
     for step in milestones:
-        integer(step, 1)
+        if integer(step, 1) % stride:
+            raise ValueError("milestone must align to a full rollout")
     if milestones != sorted(set(milestones)) or milestones[-1] != spec["cumulative_decision_target"]:
         raise ValueError("evaluation milestones must increase and end at the decision target")
     resources = spec["resource_request"]
@@ -177,7 +227,7 @@ def validate_decision(raw, payload):
 def verify_seed_isolation(seed_sets):
     """Validate sets of (normalized seed, actual environment key) with explicit splits."""
     seen_seeds, seen_keys = {}, {}
-    if set(seed_sets) - {"train", "dev", "blind"} or not {"train", "dev"} <= set(seed_sets):
+    if set(seed_sets) - {"train", "dev", "blind"} or "dev" not in seed_sets or len(seed_sets) < 2:
         raise ValueError("invalid seed splits")
     for split, pairs in seed_sets.items():
         if not pairs:
