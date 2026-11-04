@@ -33,6 +33,10 @@ uv run --project sim/tools/train sts2train eval --seedset std-a0-v1 --loop-break
     --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/eval/nn-run1-a0-plain
 uv run --project sim/tools/eval sts2eval report tmp/eval/nn-run1-a0      # recomputes the same report
 uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve.png from metrics.jsonl / evals.jsonl
+# model card (staged results with Wilson intervals, baselines) and the weights bundle; see "Model card and weights bundle"
+uv run --project sim/tools/train sts2train report-card --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/card/run1
+uv run --project sim/tools/train sts2train pack --checkpoint tmp/train/run1/checkpoints/best.pt \
+    --out tmp/release/run1.tar.gz --card tmp/card/run1
 ```
 
 (`eval` also answers to `evaluate`; `sts2train train --help` lists every flag with its default.)
@@ -158,6 +162,7 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
 | `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; the loop breaker's counts in the game summaries / report.json (`write_loop_stats`); with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
 | `loopbreak.py` | `LoopBreaker` (the greedy eval policy's no-op / cycle breaker, optionally the rollout sampling's) and `ObsDigest` (vectorised 64-bit digest of the model-read buffers per slot) |
+| `reportcard.py` | `sts2train report-card` / `pack` / `probe`: the model card of a checkpoint (evals run or reused, baselines cached, `stages` / `endings_table` / Wilson rows), the weights bundle (`pack`, `verify_bundle`), the per-decision readout of an eval's games (`probe`) |
 
 Objective (`objective.py`, `--objective`): the default `protocol` rewards each step with the change of the protocol
 v0.2 progress metric (§4.2 of `docs/sts2-bench-protocol-v0.2-2026-11-01.md`: per-act normalised, `sts2vec.protocol.compute`,
@@ -306,6 +311,50 @@ taken in one `TakeRewardCard` decision); illegal indices and the shop removal �
 
 (4 cpu threads, library `5dbfa09dd9dcb5ed`; the remaining s5b-on non-loss is one game `capped` by the 1200-step limit
 in act 3, floor 48.)
+
+## Model card and weights bundle (`report-card`, `pack`, `probe`)
+
+```bash
+# per seed set: the greedy eval (run, or reused when CARD/evals/<seed set> already holds one of these weights on this
+# library), the random / first / heuristic baselines (sts2vec eval, cached by policy, seed set and library), then
+# CARD/model-card.md + model-card.json
+uv run --project sim/tools/train sts2train report-card --checkpoint best.pt --out tmp/card/s3c \
+    [--seedsets silent-a10-v1,silent-a10-dev-v1,silent-a10-test-v1] [--threads 4] [--device cpu] \
+    [--lookahead-dir LA_RUN ...] [--baselines random,first,heuristic | none] [--baseline-cache tmp/eval/baselines]
+# FILE.tar.gz (top directory FILE), re-read and checked after writing; the card comes from --card (default FILE.card
+# next to the archive) when it is this checkpoint's (sha256), else it is made there with the report-card options
+uv run --project sim/tools/train sts2train pack --checkpoint best.pt --out tmp/release/s3c-u160.tar.gz --card tmp/card/s3c
+# replay an eval's games and read the checkpoint at every decision: action taken, top candidates with probabilities,
+# value head (+ win_prob / combat_hp_pred with aux heads); JSON lines with --out
+uv run --project sim/tools/train sts2train probe --checkpoint best.pt --eval-dir tmp/card/s3c/evals/silent-a10-v1 \
+    --game SILENT-C1A10SI01 --top 3 --out tmp/card/s3c/probe.jsonl
+```
+
+- **Card** (`sts2train/reportcard.py`): checkpoint identity (file sha256, weights_hash recomputed from the stored
+  weights, update, env steps, both encoder versions and whether the model's inputs are identical or widened,
+  architecture and preset, aux heads, parameter count, the training flags of the checkpoint's config, `*` marking a
+  flag the config predates) and per seed set and policy (NN greedy, lookahead rows, baselines): the protocol headline
+  (progress mean [95% CI], win rate [Wilson 95%], floor, results, replay audit), the staged table (reached / beat the
+  Act-1 boss, reached Act 2, reached / beat the Act-2 boss, reached Act 3, cleared; each count / N [Wilson 95%]), the
+  floor histogram, how the games ended (deaths by the encounter id's type: boss / elite / normal / event fight; stuck,
+  capped, crashed; the most common encounters), deck size and relics at death when the summaries carry them
+  (`sts2vec eval` records neither today, so the section is omitted), and the aux win-probability head at each game's
+  first and last decision (a calibration hint). "Beat the Act-N boss" = left act N, or ended `stuck` in its boss room
+  (the floor step cap counts only non-combat decisions, which a boss room offers only after the fight is won; `capped`
+  there does not count). Exit 1 when a greedy eval fails the replay audit, 2 when the checkpoint cannot drive the
+  library (`features.check_spec_compat`).
+- **Reuse.** `CARD/evals/<seed set>` is reused when its `config.json` matches the weights, seed set content, library
+  (`server_version`), protocol limits and loop breaker (on, k 3) and every game has a summary; otherwise it is moved
+  to `*.stale-<time>` and played again. Baselines are cached the same way (policy, seed set content, library; policy
+  seed 0). `--lookahead-dir` run directories (`sts2train.lookahead`) are read only, labelled "lookahead,
+  determinized"; a differing weights hash or library is noted on the row.
+- **Bundle**: `checkpoint/<file>` (as trained, optimizer state included when it has one), `checkpoint/spec.json`,
+  `checkpoint/config.json` (config, arch, heads, counters, training-time evals), `model-card.md` / `.json`,
+  `library.json` (encoder_version, ABI version, spec compatibility), `README-weights.md` (verify, evaluate, re-make
+  the card, probe, and the live twin runner `scripts/live/nn_twin_play.py` between `scripts/mcp_mod.sh on` / `off`),
+  `manifest.json` and `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS`).
+- **Seed sets**: `silent-a10-dev-v1` (`silent-a10-dev-s128`, D1A10SI001..128) and `silent-a10-test-v1`
+  (`silent-a10-test-s100`, H1A10SI001..100, held out), THE SILENT A10, next to the 20-game `silent-a10-v1`.
 
 ## Colab bundle (a box without .NET: the Colab A100 runtime)
 
