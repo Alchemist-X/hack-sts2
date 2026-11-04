@@ -7,9 +7,10 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `0f57a3a225333e34`, 26,726
-bytes/env, 35 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
-appended `EndKind.FloorStall`; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `5dbfa09dd9dcb5ed`, 30,942
+bytes/env, 41 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
+appended `EndKind.FloorStall`; the player-view schema append of 2026-11-03 appended 6 buffers, "Appended buffers"
+below; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
@@ -317,8 +318,16 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 | 32 | `episode` | int64 | [3] | episode_id, step_index, start_entry |
 | 33 | `aux` | float32 | [14] | total_floor, act_index, hp, max_hp, gold, bosses_killed, combats_won, deck_n, relic_n, is_combat, act_floor, map_row, map_col, act_rooms |
 | 34 | `last_episode` | int32 | [8] | win, floor, act, steps, final_hp, final_max_hp, end_kind (EndKind), last_encounter_id |
+| 35 | `global_x` | int32 | [2] | ancient_id, draw_marked_n (appended) |
+| 36 | `hand_x` | int32 | [10, 2] | affliction_amount, dampened (appended; row i = `hand` row i) |
+| 37 | `draw_marked` | int32 | [32, 6] | card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount (appended; sorted by content) |
+| 38–39 | `discard_order`, `exhaust_order` | int32 | [64, 6] | same columns as `draw_marked`, pile order (appended) |
+| 40 | `event_option_values` | int32 | [8, 9] | value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 (appended; row i = `event_options` row i) |
 
-35 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20). ≈ 26.7 KB per env.
+41 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–40 are appended after the
+signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 30.9 KB per env. New caps (`schema.caps`):
+DRAW_MARKED 32, PILE_ORDER 64, EVENT_VALUES 3, EVENT_ITEMS 2; new enum `ItemKind` (vocabulary convention: affliction,
+card, enchantment, potion, relic).
 
 ## Field reference (observation encoder, `ObservationEncoder*.cs`)
 
@@ -334,14 +343,14 @@ integer the game UI shows.
 
 | # | Rule | How the encoder applies it |
 | --- | --- | --- |
-| H1 | The draw pile order is hidden. | Draw, discard and exhaust piles are encoded only as count vectors. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. |
+| H1 | The draw pile order is hidden. | The draw pile is encoded only as a count vector and as `draw_marked`, its enchanted / afflicted cards sorted by their whole row (so the table is a function of the pile's multiset). Discard and exhaust order are not hidden (the pile screens show them in order) and are encoded in `discard_order` / `exhaust_order`. `Test_VecEncoder_LeakTest_DrawOrder` takes ≥ 500 combat decision points, encodes each next to a clone whose draw pile was reshuffled, and requires identical bytes; each clone's hash differs, which proves the shuffle happened. It repeats the check with two draw cards enchanted / afflicted first (585 of 600 states). |
 | H2 | No seed, RNG stream or counter. | Nothing under `Rng`, `SeedText` or `Odds` is read. |
 | H3 | No future rooms. | Only the current act's `Boss` and `SecondBoss` appear (`boss_id`, `second_boss_id`); the game shows both on the map and the top bar. The map is the current act's map only. |
 | H4/H5 | No odds and no grab bags. | Neither is read. |
 | H6 | The treasure relic is hidden until the chest opens. | `treasure_relic_id` is 0 until `ChestOpened`. |
 | H7 | Card-reward cards are hidden on the rewards screen. | A card reward appears in `rewards` only as `is_card_reward = 1`. `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase. |
 | H8 | No move ids. | Intents come from `NextMove.Intents` through `PlayerView.Intent` (type, damage, times, card_count). The move's identity and the AI state are never read; `Test_VecEncoder_NoMoveIds` greps the encoder source and checks the rows. |
-| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra`, event fields and event RNG are not read. An event option is identified by `key_hash` and `ordinal` only. |
+| H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra` and event RNG are not read. An event option is identified by `key_hash` and `ordinal`; `event_option_values` reads only the event members its option text names (the localisation placeholders, `EventOptionVars`), i.e. what the button shows. |
 | H10 | Powers are shown as the UI shows them. | Visibility uses `PlayerView.IsVisibleToPlayer` and amounts use `PlayerView.DisplayAmountToPlayer` (see below). |
 | H13 | No instance ids. | The only exception is the enemy `uid` (= `CombatId`, stable for the whole combat; the play server uses it as well). Prompt options are identified by (item_id, upgrade, ordinal). |
 | H12/H14/H15 | No profile, history or visited-event set. | None of these is read. |
@@ -613,6 +622,60 @@ auto-reset, score a finished episode from the slot's aux of the previous call pl
 `ObservationEncoder.FillEpisodeSummary(RunSim, Span<int>)` fills floor, act, final_hp, final_max_hp and
 last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv writes win, steps and end_kind.
 
+### Appended buffers (player-view schema append, 2026-11-03)
+
+The human-visible details `docs/parity-audit-2026-11-02.md` §5.2 listed as missing from the Vec channel, appended as
+new buffers after `last_episode` (no existing buffer changes index, shape or meaning). Cost: +4,216 bytes/env (26,726 →
+30,942, +15.8 %); +2.5 % instructions retired per env-step (Python `sts2vec bench`, 512 envs, 1 thread, 300 steps,
+random policy, interleaved with the previous build; wall-clock throughput on the loaded host was within noise).
+
+**global_x**
+
+| Column | Meaning |
+| --- | --- |
+| `ancient_id` | Events vocab id of the current act's Ancient (`RoomSet.AncientId`; its portrait marks its map point, `NAncientMapPoint`, like the bosses in `boss_id`, H3). Seen: act 1 NEOW; act 2 DARV, OROBAS, PAEL, TEZCATARA; act 3 NONUPEIPE, TANX, VAKUU. |
+| `draw_marked_n` | Combat only: draw-pile cards with an enchantment or an affliction (the true count; `draw_marked` holds the first 32). |
+
+**hand_x** (row i = `hand` row i)
+
+| Column | Meaning |
+| --- | --- |
+| `affliction_amount` | `Affliction.Amount` of the card (0 without one); the play server's hand `affliction.amount`. |
+| `dampened` | 1 when a DAMPEN power downgraded the card (`DampenPower.DowngradedCards`; restored when its casters die); the play server's hand `dampened`. The instance-id comparison lives in `CardMarks.cs`, outside the grepped encoder sources (H13: nothing id-like is written). |
+
+**draw_marked / discard_order / exhaust_order** (combat only; columns card_id, upgrade, enchant_id, enchant_amount,
+affliction_id, affliction_amount)
+
+- `draw_marked`: the draw-pile cards that carry an enchantment or an affliction (generated cards, BOUND in draw, ...),
+  sorted by the whole row; the first 32 rows, `global_x.draw_marked_n` = true count, more set `TABLE_OVERFLOW`. Order
+  free by construction (H1); together with `draw_counts` it is the game's sorted draw-pile screen.
+- `discard_order` / `exhaust_order`: row i = `DiscardPile.Cards[i]` / `ExhaustPile.Cards[i]`, the order the pile
+  screens show (oldest first); the first 64 rows (`discard_n` / `exhaust_n` keep the true counts), more set
+  `TABLE_OVERFLOW` (1 of the purity test's 1,000 sampled deep healed-run states: a 74-card discard pile, a 13-card
+  deck plus generated status cards).
+
+**event_option_values** (row i = `event_options` row i, written while the event is not finished)
+
+The numbers and items option i's button text names. Which placeholders an option shows lives only in the game's
+localisation templates, so `sim/tools/vec/tools/gen_event_option_vars.py` extracts them from
+`knowledge/source/<version>/events.jsonl` into `EventOptionVars.g.cs` (131 option keys; `--check` in the vec tests);
+`EventOptionVars.Resolve` reads each name on the live event exactly as the play server's rules text does (`{Relic}` = the
+option's relic; else `<Name>For(RunState)`, a property or a field named `Name`, `NameAmount` or `NameGain`; else the
+event's single const id of that kind), through reflection cached per (event type, name). Event screens are a few % of
+steps; boxing there is the only new allocation.
+
+| Column | Meaning |
+| --- | --- |
+| `value_n` | Numbers the text names (gold, HP loss, damage, costs, counts), true count. |
+| `value_0..2` | The first three, in text order (title, then description), truncated to int. |
+| `item_n` | Cards, relics, potions, enchantments (or afflictions) the text names, true count. |
+| `item_kind_k`, `item_id_k` | The first two items: `ItemKind` and the id in that kind's vocabulary (RELIC_TRADER's `.TOP`: the owned relic, then the new one). |
+
+More than 3 numbers or 2 items set `TABLE_OVERFLOW` (none in the event walk). Flags (`IsMultiplayer`), free texts and
+names that resolve to nothing are skipped, so `value_n + item_n` ≤ the option's placeholders. An accessor that throws
+is skipped too (the server's text shows `?` then) rather than failing the episode: these are display values, and the
+parity test below requires every value the walk reaches to resolve.
+
 ### Encoder tests (`sim/Sts2Sim.Tests/VecTests.Encoder.cs`, class `VecEncoderTests`)
 
 | Test | What it checks |
@@ -624,6 +687,16 @@ last_encounter_id (the last Monster, Elite or Boss room in the history). VecEnv 
 | `TreasureAndCardRewardHidden` | 5 closed and then opened chests, and 74 card rewards that are hidden on the Rewards screen and shown in the CardReward phase. |
 | `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
 | `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
+
+Appended-buffer tests (`sim/Sts2Sim.Tests/VecTests.Append.cs`, class `VecTests`; the purity, leak and server-parity
+tests above also cover the appended columns: no `?` id, marked-draw reshuffles, hand `affliction.amount` /
+`dampened` and the `ancient` id equal the server's JSON):
+
+| Test | What it checks |
+| --- | --- |
+| `Test_VecAppend_PileTablesAndHandMarks` | A first combat with marked cards in every pile and a DAMPEN debuff: `hand_x`, sorted `draw_marked` (+ true count), `discard_order` / `exhaust_order` rows equal the kernel's piles; a reshuffled marked draw pile gives identical bytes; 70 exhausted and 43 marked draw cards keep the first CAP rows, the true counts and set TABLE_OVERFLOW. |
+| `Test_VecAppend_AncientId` | `ancient_id` = `RoomSet.AncientId` on sampled states of 12 healed random runs (Ancients of all three acts seen). |
+| `Test_VecAppend_EventOptionValuesMatchServerText` | The event walk of `ParityAuditTests` (every event, pages within three choices, three seeds) plus RELIC_TRADER / STONE_OF_ALL_TIME / WELCOME_TO_WONGOS with setup: every number in `value_k` and every item's title appears in the play server's rendered option text (758 option rows, 103 keys, 343 numbers, 122 items), no overflow, `value_n + item_n` ≤ placeholders. |
 
 ## Python API (§D6)
 
@@ -753,7 +826,9 @@ streams; a determinized state is for search, not for export.
   `original.Step(a)`. Snapshot/restore and template clones now step hash-identically to the original
   (`SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep`, `RewardsTests.Test_Rewards_Claimed*` /
   `Test_Rewards_Clone*`).
-- `hand` has no star-cost or affliction-amount column (not in §D3.1).
+- `hand` has no star-cost column (not in §D3.1); the affliction amount is `hand_x.affliction_amount`.
+- Not appended: the master deck's affliction amounts (deck cards carry `affliction_id` only; afflictions are combat
+  marks) and a separate (enchant, affliction) channel for `card_reward` cards.
 - The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the
   episode as `SIM_ERROR`/`CONTENT_GAP` instead of encoding a fallback (the play server falls back to the intent type).
 - `rewards` rows are indexed by `RewardsSet.Rewards` index (ClaimReward A), so a claimed reward leaves a zero row inside

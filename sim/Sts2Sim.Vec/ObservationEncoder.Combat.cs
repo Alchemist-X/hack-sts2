@@ -13,19 +13,24 @@ public static partial class ObservationEncoder
     private static void EncodeCombat(CombatState cs, in SlotBuffers b, Span<int> gi, ref bool overflow)
     {
         var player = cs.Player;
-        EncodeHand(cs, b.Hand, b.HandF, b.HandDmg, ref overflow);
+        EncodeHand(cs, b.Hand, b.HandF, b.HandDmg, b.HandX, ref overflow);
         CountPile(player.DrawPile.Cards, b.DrawCounts);
         CountPile(player.DiscardPile.Cards, b.DiscardCounts);
         CountPile(player.ExhaustPile.Cards, b.ExhaustCounts);
+        b.GlobalX[GX.DrawMarkedN] = EncodeDrawMarked(player.DrawPile.Cards, b.DrawMarked, ref overflow);
+        EncodePileOrder(player.DiscardPile.Cards, b.DiscardOrder, ref overflow);
+        EncodePileOrder(player.ExhaustPile.Cards, b.ExhaustOrder, ref overflow);
         EncodePlayerPowers(cs, player, b.PowersPlayer, ref overflow);
         EncodeOrbs(cs, player, b.Orbs, ref overflow);
         EncodeEnemies(cs, b.Enemies, b.EnemyIntents, b.EnemyPowers, gi, ref overflow);
         EncodeAllies(cs, b.Allies, b.AllyPowers, gi, ref overflow);
     }
 
-    private static void EncodeHand(CombatState cs, Span<int> hand, Span<float> handF, Span<float> handDmg, ref bool overflow)
+    private static void EncodeHand(CombatState cs, Span<int> hand, Span<float> handF, Span<float> handDmg, Span<int> handX, ref bool overflow)
     {
         int hc = Schema.HC;
+        int hxw = Schema.HandXFields.Length;
+        var dampen = cs.Player.GetPower<DampenPower>();
         var cards = cs.Player.Hand.Cards;
         int n = cards.Count;
         if (n > Caps.Hand)
@@ -40,6 +45,9 @@ public static partial class ObservationEncoder
             var card = cards[i];
             var row = hand.Slice(i * hc, hc);
             WriteCard(row, card, cs);
+            var hx = handX.Slice(i * hxw, hxw);
+            hx[HX.AfflictionAmount] = card.Affliction?.Amount ?? 0;
+            hx[HX.Dampened] = dampen != null && CardMarks.IsDampened(dampen, card) ? 1 : 0;
             // Effective numbers: CardPreview (the game's DynamicVar.UpdateCardPreview), truncated to the shown integer.
             var f = handF.Slice(i * 2, 2);
             if (CardPreview.Block(cs, card, null) is { } block)
@@ -65,6 +73,87 @@ public static partial class ObservationEncoder
                 }
             }
         }
+    }
+
+    // A combat-pile card with its marks (PileCardFields): identity, enchantment and affliction with their amounts.
+    private static void WritePileCard(Span<int> row, CardInstance card)
+    {
+        row[PileCol.CardId] = Vocab.Card(card.Id);
+        row[PileCol.Upgrade] = card.UpgradeLevel;
+        if (card.Enchantment is { } ench)
+        {
+            row[PileCol.EnchantId] = Vocab.Enchantment(ench.Id);
+            row[PileCol.EnchantAmount] = ench.Amount;
+        }
+        if (card.Affliction is { } aff)
+        {
+            row[PileCol.AfflictionId] = Vocab.Affliction(aff.Id);
+            row[PileCol.AfflictionAmount] = aff.Amount;
+        }
+    }
+
+    // discard_order / exhaust_order: row i = Cards[i], the order the pile screens show (oldest first; the game keeps
+    // these piles in order, NCardPileScreen). Neither order is hidden information.
+    private static void EncodePileOrder(IReadOnlyList<CardInstance> cards, Span<int> table, ref bool overflow)
+    {
+        int w = Schema.PileCardFields.Length;
+        int n = cards.Count;
+        if (n > Caps.PileOrder)
+        {
+            overflow = true;
+            n = Caps.PileOrder;
+        }
+        for (int i = 0; i < n; i++)
+        {
+            WritePileCard(table.Slice(i * w, w), cards[i]);
+        }
+    }
+
+    // draw_marked: the draw-pile cards that carry an enchantment or an affliction, as the (sorted) draw-pile screen
+    // shows them. H1: rows are sorted by their whole content, so the table depends on the pile's multiset only, never
+    // on its order. Returns the true count (global_x.draw_marked_n).
+    private static int EncodeDrawMarked(IReadOnlyList<CardInstance> cards, Span<int> table, ref bool overflow)
+    {
+        var marked = S.Marked;
+        marked.Clear();
+        for (int i = 0; i < cards.Count; i++)
+        {
+            var card = cards[i];
+            var ench = card.Enchantment;
+            var aff = card.Affliction;
+            if (ench == null && aff == null)
+            {
+                continue;
+            }
+            marked.Add((Vocab.Card(card.Id), card.UpgradeLevel, ench != null ? Vocab.Enchantment(ench.Id) : 0, ench?.Amount ?? 0,
+                aff != null ? Vocab.Affliction(aff.Id) : 0, aff?.Amount ?? 0));
+        }
+        int count = marked.Count;
+        if (count == 0)
+        {
+            return 0;
+        }
+        marked.Sort();
+        int n = count;
+        if (n > Caps.DrawMarked)
+        {
+            overflow = true;
+            n = Caps.DrawMarked;
+        }
+        int w = Schema.PileCardFields.Length;
+        for (int i = 0; i < n; i++)
+        {
+            var (id, up, ench, enchAmount, aff, affAmount) = marked[i];
+            var row = table.Slice(i * w, w);
+            row[PileCol.CardId] = id;
+            row[PileCol.Upgrade] = up;
+            row[PileCol.EnchantId] = ench;
+            row[PileCol.EnchantAmount] = enchAmount;
+            row[PileCol.AfflictionId] = aff;
+            row[PileCol.AfflictionAmount] = affAmount;
+        }
+        marked.Clear();
+        return count;
     }
 
     // H1: multiset counts per (card_id, upgrade); the pile order is never written.

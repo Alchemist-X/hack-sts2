@@ -19,6 +19,8 @@ public static unsafe partial class VecTests
         "relics", "potions", "powers_player", "orbs", "enemies", "enemy_intents", "enemy_powers", "allies", "ally_powers",
         "map_nodes", "rewards", "card_reward", "card_reward_alts", "shop", "rest", "event_options", "prompt_options",
         "cand", "cand_n", "reward", "terminated", "truncated", "status", "episode", "aux", "last_episode",
+        // appended (player-view schema append, docs/parity-audit-2026-11-02.md §5.2)
+        "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
     };
 
     public static void Test_Vec_SchemaJsonRoundTrips()
@@ -39,7 +41,7 @@ public static unsafe partial class VecTests
 
         var buffers = root.GetProperty("buffers").EnumerateArray().ToList();
         Assert.Equal(Buf.Count, buffers.Count);
-        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts)");
+        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts + 6 appended)");
         int vCards = root.GetProperty("vocab").GetProperty("cards").GetArrayLength();
         for (int k = 0; k < buffers.Count; k++)
         {
@@ -289,6 +291,17 @@ public static unsafe partial class VecTests
         Assert.Equal(7, LastEpCol.LastEncounterId);
         Assert.Equal(9, AuxCol.IsCombat);
         Assert.Equal(13, AuxCol.ActRooms);
+        Assert.Equal(Buf.Count - 6, Buf.GlobalX);
+        Assert.Equal(Buf.Count - 1, Buf.EventOptionValues);
+        Assert.Equal(Schema.HC, Schema.Buffers[Buf.Hand].Shape[1]);
+        Assert.Equal(Caps.Hand, Schema.Buffers[Buf.HandX].Shape[0]);
+        Assert.Equal(Caps.EventOptions, Schema.Buffers[Buf.EventOptionValues].Shape[0]);
+        Assert.Equal(EvValCol.Value0 + Caps.EventValues, EvValCol.ItemN);
+        Assert.Equal(Schema.EventOptionValueFields.Length, EvValCol.ItemKind0 + Caps.EventItems * EvValCol.ItemStride);
+        foreach (int k in new[] { Buf.GlobalX, Buf.HandX, Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder, Buf.EventOptionValues })
+        {
+            Assert.True(Buf.Observation.Contains(k), $"{Schema.Buffers[k].Name} is an observation buffer");
+        }
         foreach (var name in Exports.ExportNames)
         {
             var m = typeof(Exports).GetMethod(Exports.ManagedNameOf(name));

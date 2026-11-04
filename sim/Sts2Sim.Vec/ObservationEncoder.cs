@@ -29,6 +29,9 @@ public static partial class ObservationEncoder
         public readonly List<MapPoint> MapPoints = new(8);
 
         public readonly CreatureState[] Targets = new CreatureState[1];
+
+        /// <summary>draw_marked rows before sorting (card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount).</summary>
+        public readonly List<(int, int, int, int, int, int)> Marked = new(16);
     }
 
     [ThreadStatic]
@@ -56,6 +59,11 @@ public static partial class ObservationEncoder
         bool overflow = false;
 
         EncodeHeader(rs, p, cs, gi);
+        if (rs.Acts.Count > 0)
+        {
+            // The act's Ancient: its portrait marks its map point (NAncientMapPoint), like the bosses (H3).
+            b.GlobalX[GX.AncientId] = Vocab.Event(rs.Act.Rooms.AncientId);
+        }
         EncodeDeck(p, b.Deck, ref overflow);
         gi[GI.RelicN] = p.Relics.Count;
         EncodeRelics(p, b.Relics, ref overflow);

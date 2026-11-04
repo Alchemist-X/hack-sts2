@@ -121,7 +121,7 @@ public static partial class ObservationEncoder
                 gi[GI.TreasureClaimed] = treasure.RelicClaimed ? 1 : treasure.SingleplayerSkipped ? 2 : 0;
                 break;
             case RunPhase.Event:
-                EncodeEvent(rs, b.EventOptions, gi, ref overflow);
+                EncodeEvent(rs, b.EventOptions, b.EventOptionValues, gi, ref overflow);
                 break;
         }
     }
@@ -284,7 +284,7 @@ public static partial class ObservationEncoder
 
     // Row i = EventModel.CurrentOptions[i] (= ChooseEventOption A), while the event is not finished. H11: no event
     // internals; an option is identified by the hash of "<eventId>:<TextKey>".
-    private static void EncodeEvent(RunState rs, Span<int> table, Span<int> gi, ref bool overflow)
+    private static void EncodeEvent(RunState rs, Span<int> table, Span<int> values, Span<int> gi, ref bool overflow)
     {
         const int w = 6;
         var ev = RunLegalActionGenerator.CurrentEvent(rs);
@@ -316,6 +316,64 @@ public static partial class ObservationEncoder
             row[3] = opt.IsLocked ? 1 : 0;
             row[4] = opt.IsProceed ? 1 : 0;
             row[5] = Vocab.Relic(opt.RelicId);
+        }
+        EncodeEventOptionValues(ev, rs, values, ref overflow);
+    }
+
+    /// <summary>
+    /// <c>event_option_values</c> row i = the numbers and items option i's text names (EventOptionVars: the game's
+    /// localisation placeholders, resolved on the live event like the play server's option text), in the text's order:
+    /// value_n numbers (first CAP_EVENT_VALUES in value_k), item_n items (first CAP_EVENT_ITEMS as (ItemKind, id) in
+    /// item_kind_k / item_id_k). Written while the event is not finished; more values or items than the caps set
+    /// TABLE_OVERFLOW (value_n / item_n keep the true counts).
+    /// </summary>
+    public static void EncodeEventOptionValues(EventModel ev, RunState rs, Span<int> table, ref bool overflow)
+    {
+        if (ev.IsFinished)
+        {
+            return;
+        }
+        int w = Schema.EventOptionValueFields.Length;
+        var options = ev.CurrentOptions;
+        int n = Math.Min(options.Count, Caps.EventOptions);
+        for (int i = 0; i < n; i++)
+        {
+            var opt = options[i];
+            var names = EventOptionVars.NamesOf(opt.TextKey);
+            if (names == null)
+            {
+                continue;
+            }
+            var row = table.Slice(i * w, w);
+            int nv = 0;
+            int ni = 0;
+            foreach (string name in names)
+            {
+                switch (EventOptionVars.Resolve(ev, opt, rs, name, out int number, out string? kind, out int id))
+                {
+                    case EventOptionVars.ValueKind.Number:
+                        if (nv < Caps.EventValues)
+                        {
+                            row[EvValCol.Value0 + nv] = number;
+                        }
+                        nv++;
+                        break;
+                    case EventOptionVars.ValueKind.Item:
+                        if (ni < Caps.EventItems)
+                        {
+                            row[EvValCol.ItemKind0 + ni * EvValCol.ItemStride] = Vocab.ItemKind(kind);
+                            row[EvValCol.ItemId0 + ni * EvValCol.ItemStride] = id;
+                        }
+                        ni++;
+                        break;
+                }
+            }
+            row[EvValCol.ValueN] = nv;
+            row[EvValCol.ItemN] = ni;
+            if (nv > Caps.EventValues || ni > Caps.EventItems)
+            {
+                overflow = true;
+            }
         }
     }
 
