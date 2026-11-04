@@ -275,6 +275,8 @@ class Store:
             if (not row or json.loads(row["payload"])["category"] != "gpu_smoke"
                     or row["state"] not in {"external_reserved", "external_finished_cost_unknown"}):
                 raise ValueError("GPU smoke requires its own operational reservation")
+            if binding.get("task") != json.loads(row["payload"])["decision_id"]:
+                raise ValueError("GPU packet is outside its authorized decision")
             previous = db.execute("SELECT payload FROM events WHERE id=?", (f"{key}-stage",)).fetchone()
             if previous and json.loads(previous["payload"]) != binding:
                 raise ValueError("GPU smoke packet differs from durable intent")
@@ -321,7 +323,7 @@ class Store:
         if "details" in result and (type(result["details"]) is not dict or len(canonical(result["details"])) > 4000):
             raise ValueError("access probe detail exceeds evidence bounds")
         environment = result["status"] in {"blocked_prelaunch", "env_verified", "env_failed"}
-        gpu = result["status"] in {"gpu_stage_failed", "gpu_verified", "gpu_failed", "gpu_receipt_unknown"}
+        gpu = result["status"] in {"gpu_stage_failed", "gpu_not_launched", "gpu_verified", "gpu_failed", "gpu_receipt_unknown"}
         if not (environment or gpu) and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
             raise ValueError("unknown access probe status")
         session_ids = result["session_ids"]
@@ -339,8 +341,14 @@ class Store:
             category = json.loads(old["payload"])["category"]
             if environment != (category == "env_cpu_validation") or gpu != (category == "gpu_smoke"):
                 raise ValueError("probe evidence category does not match the reservation")
-            if result["status"] == "gpu_verified" and not (old["remote_id"] and old["submit_started"]):
-                raise ValueError("verified GPU evidence requires a durable Sandbox receipt")
+            if result["status"] in {"gpu_verified", "gpu_failed"}:
+                details = result.get("details", {})
+                if (not old["remote_id"] or not old["submit_started"] or details.get("sandbox_id") != old["remote_id"]
+                        or type(details.get("provider_exit_code")) is not int
+                        or (result["status"] == "gpu_verified" and details["provider_exit_code"] != 0)):
+                    raise ValueError("terminal GPU evidence requires the durable receipt and matching Sandbox exit")
+            if result["status"] in {"gpu_stage_failed", "gpu_not_launched"} and old["submit_started"]:
+                raise ValueError("a submitted GPU run requires terminal or unknown-receipt evidence")
             if old["state"] == "external_finished_cost_unknown":
                 previous = json.loads(old["outcome"])
                 if previous == result:

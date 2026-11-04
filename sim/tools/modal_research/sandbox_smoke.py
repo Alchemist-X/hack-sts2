@@ -399,6 +399,27 @@ def _read_volume_json(volume, name):
     return json.loads(data)
 
 
+def _find_finished_v1(binding, app_id):
+    """The pinned SDK public name/list helpers only return running V1 Sandboxes."""
+    import asyncio
+
+    from modal.client import _Client
+    from modal_proto import api_pb2
+
+    async def lookup():
+        client = await _Client.from_env()
+        response = await client._stub.SandboxList(api_pb2.SandboxListRequest(
+            app_id=app_id, environment_name=binding["environment"], include_finished=True,
+            tags=[api_pb2.SandboxTag(tag_name="sts2-task", tag_value=TASK)],
+        ))
+        ids = {item.id for item in response.sandboxes}
+        if len(ids) > 1:
+            raise ValueError("multiple provider receipts for the single bound launch")
+        return next(iter(ids), None)
+
+    return asyncio.run(lookup())
+
+
 def reconcile(store, directory, packet, binding, modal):
     from .adapters import Job
     from .artifact_adapter import ArtifactMirror
@@ -413,8 +434,10 @@ def reconcile(store, directory, packet, binding, modal):
             sandbox = (modal.Sandbox.from_id(row["remote_id"]) if row["remote_id"] else
                        modal.Sandbox.from_name(binding["app"], binding["name"], environment_name=binding["environment"]))
         except modal.exception.NotFoundError:
-            pass
-        else:
+            recovered = _find_finished_v1(binding, cloud["app_id"]) if cloud.get("app_id") else None
+            if recovered:
+                sandbox = modal.Sandbox.from_id(recovered)
+        if sandbox:
             store.gpu_smoke_receipt(packet["reservation"], sandbox.object_id)
     exit_code = sandbox.poll() if sandbox else None
     report = {"status": "no_worker_report", "packet_hash": binding["packet_hash"],
@@ -437,14 +460,18 @@ def reconcile(store, directory, packet, binding, modal):
     status = None
     if row["submit_started"] and sandbox is not None and exit_code is not None:
         complete = report["status"] == "passed" and exit_code == 0 and len(report.get("evidence", ())) == 3
-        status = "gpu_verified" if complete else "gpu_failed"
-    elif time.time() >= row["deadline"] and not cloud.get("stage_complete"):
-        status = "gpu_stage_failed"
+        if complete or report["status"] == "failed" or time.time() >= row["deadline"]:
+            status = "gpu_verified" if complete else "gpu_failed"
+    elif not row["submit_started"] and time.time() >= row["deadline"]:
+        status = "gpu_not_launched" if cloud.get("stage_complete") else "gpu_stage_failed"
     elif row["submit_started"] and not row["remote_id"] and sandbox is None and time.time() >= row["deadline"]:
         status = "gpu_receipt_unknown"
     if status:
-        store.finish_access_probe(packet["reservation"], {"status": status, "session_ids": [],
-                                  "report_ref": str(directory / "result.json")})
+        evidence = {"status": status, "session_ids": [], "report_ref": str(directory / "result.json")}
+        if status in {"gpu_verified", "gpu_failed"}:
+            evidence["details"] = {"sandbox_id": sandbox.object_id, "provider_exit_code": exit_code,
+                                   "report_sha256": file_digest(directory / "result.json")}
+        store.finish_access_probe(packet["reservation"], evidence)
     return report
 
 
