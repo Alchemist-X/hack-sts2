@@ -191,4 +191,22 @@ public static class FidelityTests
         var unknown = new SavedProperties { Ints = { new KeyValuePair<string, int>("NoSuchProperty", 1) } };
         Assert.Throws<ArgumentException>(() => BundleRunner.CreateSim(TeaBundle(new SavedProperties?[] { null, unknown })));
     }
+
+    public static void Test_Fidelity_RecorderSelectScreenStatesAreNotProjected()
+    {
+        // The recorder's combat select carries the overlay class and button states (mod/src/StateBuilder/
+        // PassiveStateBuilder.Selections.cs:161-167, :227-245, :278, :297-300); the sim prompt has no such fields. Farm G1:
+        // 8 combats stopped on select.screen_type (NCombatPileCardSelectScreen, choose); human GM28D28DX794 s26/s54/s65 too.
+        JsonObject Cand(string id) => new() { ["id"] = id, ["upgraded"] = false };
+        var oracle = new JsonObject
+        {
+            ["kind"] = "card_select", ["screen_type"] = "choose", ["can_skip"] = false, ["can_cancel"] = false,
+            ["candidates"] = new JsonArray(Cand("BLADE_DANCE"), Cand("FLYING_KNEE"), Cand("POUNCE"))
+        };
+        var options = new[] { "BLADE_DANCE", "FLYING_KNEE", "POUNCE" }.Select((id, i) => new ChoiceOption(10 + i, id, 0)).ToList();
+        var prompt = new ChoicePrompt(ChoicePromptKind.ChooseCard, "X:OnPlay", "X", 1, null, options, 1, 1, false, false, false, false, ChoiceResultType.Index);
+        var diffs = V2Runner.CompareCombatSelect(oracle, RunScreenProjector.Select(prompt, Array.Empty<int>()));
+        Assert.Equal(0, diffs.Count(d => d.Severity == DiffSeverity.Hard), string.Join("; ", diffs.Select(d => d.Path)));
+        Assert.True(new[] { "select.screen_type", "select.can_skip", "select.can_cancel" }.All(p => diffs.Any(d => d.Path == p && d.Severity == DiffSeverity.Soft)));
+    }
 }

@@ -796,10 +796,13 @@ public static class V2Runner
         }
     }
 
-    public static readonly string[] UnprojectedSelectFields = { "mode", "can_confirm" };
+    public static readonly string[] UnprojectedSelectFields = { "mode", "can_confirm", "screen_type", "can_skip", "can_cancel" };
 
     // Combat selection screens. `mode` / `can_confirm` and the candidates' `index` are recorder UI fields without a
-    // sim projection (soft). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
+    // sim projection (soft); so are the screen's class and button states: `screen_type` (the overlay type,
+    // mod/src/StateBuilder/PassiveStateBuilder.Selections.cs:161-167, :278), `can_cancel` (the close / preview-cancel
+    // button enabled, :221-245, :300) and `can_skip` (the skip button visible, :297). Whether a prompt can be skipped or
+    // cancelled is checked by replaying the recorded answer (ApplyChoose). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
     // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded). Draw-pile
     // grids too: the rules order is rarity, then ModelId (Commands/CardSelectCmd.cs:897, :915), but the screen the recorder
     // reads sorts by rarity, then the localized title in the game's culture
