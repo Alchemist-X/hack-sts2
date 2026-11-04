@@ -443,7 +443,11 @@ class Policy(nn.Module):
         card32 = self.card32(self.card_emb.weight)                      # [V_cards, 32]
         item = torch.where(other.unsqueeze(-1), self.hash_emb(torch.remainder(iid, HASH_BUCKETS)),
                            self.item_emb(iid.clamp(0, self.item_emb.num_embeddings - 1)))
-        item = torch.where(is_card.unsqueeze(-1), card32[iid.clamp(0, card32.shape[0] - 1).long()], item)
+        # F.embedding, not card32[...]: the gradient of an advanced-indexing read is an index_put_ with accumulate,
+        # which CUDA runs as a sort + one serial pass per run of equal indices (indexing_backward_kernel): with
+        # most rows at id 0 (no prompt / not a card) that pass was ~half of the A100 update. The embedding backward
+        # (embedding_dense_backward: segmented reduction, float accumulation) computes the same gradient.
+        item = torch.where(is_card.unsqueeze(-1), F.embedding(iid.clamp(0, card32.shape[0] - 1).long(), card32), item)
         po_e = self.prompt_mlp(torch.cat([item, self.pitem_emb(kind), symlog(self._cols("prompt_num", po).float()),
                                           (po[..., poc["picked"]] > 0).float().unsqueeze(-1)], -1))
         prompt = masked_mean(po_e, po_m)
@@ -506,10 +510,10 @@ class Policy(nn.Module):
         opt_ok = (off > 0) & (oi >= 0) & (oi < size)
         opt_p = gather_rows(bank, torch.where(opt_ok, off + oi, torch.zeros_like(oi))) * opt_ok.unsqueeze(-1).to(bank.dtype)
         cid = cand[..., cc["card_id"]].clamp(0, self.card_emb.num_embeddings - 1).long()
-        card_t = self.c_card(self.card_emb.weight)                       # [V_cards, d]
+        card_t = self.c_card(self.card_emb.weight)                       # [V_cards, d] (F.embedding read: see card32)
         num = torch.stack([symlog(cand[..., cc["A"]].float()), symlog(cand[..., cc["B"]].float()),
                            hand_ok.float(), tgt_ok.float(), pot_ok.float(), opt_ok.float()], -1)
-        h1 = F.relu(self.c_kind(kind) + self.c_num(num) + hand_p + tgt_p + pot_p + opt_p + card_t[cid]
+        h1 = F.relu(self.c_kind(kind) + self.c_num(num) + hand_p + tgt_p + pot_p + opt_p + F.embedding(cid, card_t)
                     + self.c_state(state).unsqueeze(1))
         h2 = F.relu(self.c_l2(h1))
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)

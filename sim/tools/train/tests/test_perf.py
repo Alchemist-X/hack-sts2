@@ -79,6 +79,44 @@ def test_col_groups_match_list_indexing(schema_spec):
     assert not any(k.startswith("_ix_") for k in m.state_dict()), "index buffers must stay out of checkpoints"
 
 
+@pytest.mark.parametrize("arch", [{}, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_card_reads_match_indexing_and_skip_index_put(schema_spec, one_thread, monkeypatch, arch):
+    """The candidate / prompt-option card reads go through F.embedding (embedding_dense_backward) instead of advanced
+    indexing, whose backward is an index_put_ with accumulate (on CUDA a serial pass per run of equal ids: ~47 % of
+    the A100 large-preset update): the PPO loss and every gradient are bit-identical to the indexing reads of
+    bf005c7 (cpu, one thread), and the backward runs no aten::_index_put_impl_."""
+    import types
+
+    from torch.profiler import ProfilerActivity, profile
+
+    import sts2train.model as M
+
+    spec, dtypes = schema_spec
+    store = _store(spec, dtypes, 1, 48, seed=11, max_cand=40, max_prompt=30)
+    idx = np.arange(48)
+    args = (store.batch(idx), *[a_[torch.from_numpy(idx)] for a_ in _targets(store)])
+    torch.manual_seed(0)
+    m = Policy(spec, **arch)
+
+    def run():
+        m.zero_grad(set_to_none=True)
+        loss, _ = ppo_loss(m, *args, clip=0.2, vf_coef=0.5, ent_coef=0.01)
+        loss.backward()
+        return loss.detach(), {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None}
+
+    with profile(activities=[ProfilerActivity.CPU]) as prof:
+        loss_e, grads_e = run()
+    ops = {e.key for e in prof.key_averages()}
+    assert "aten::embedding_dense_backward" in ops and "aten::_index_put_impl_" not in ops
+    indexing = types.SimpleNamespace(**{k: getattr(F, k) for k in dir(F) if not k.startswith("__")})
+    indexing.embedding = lambda i, table: table[i]               # the bf005c7 reads: card_t[cid], card32[iid]
+    monkeypatch.setattr(M, "F", indexing)
+    loss_i, grads_i = run()
+    assert torch.equal(loss_e, loss_i)
+    assert sorted(grads_e) == sorted(grads_i) and {"card_emb.weight", "c_card.weight", "card32.weight"} <= set(grads_e)
+    assert all(torch.equal(grads_e[k], grads_i[k]) for k in grads_e)
+
+
 def _legacy_update(model, opt, store, targets, rng, cfg):
     """The trainer's PPO update loop as of ef35697 and unchanged up to e80ea22 (per-minibatch row cuts from .item(),
     stats copied back per minibatch), kept verbatim as the reference for the eager path."""

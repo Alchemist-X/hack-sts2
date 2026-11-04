@@ -95,6 +95,16 @@ device index buffers (a Python-list index uploads the list, a stream sync per ca
 go up in one copy, the statistics come back once per update, the sampling distribution skips its argument validation
 and CUDA uploads go through pinned memory.
 
+The candidate scorer's card read (`card_t[cid]`, a [V_cards, d] table projected from the card embeddings) and the
+prompt options' card read (`card32[iid]`) are `F.embedding` lookups. As advanced-indexing reads their backward was an
+`index_put_` with accumulate, which CUDA runs as a sort plus one serial pass over each run of equal indices
+(`indexing_backward_kernel`); most rows carry id 0 (non-card candidates, padding, samples without a prompt), so on the
+A100 profile of 2026-11-03 (large preset, minibatch 2048, bf16) those two calls took 114 of the update's 244 ms. The
+embedding backward (`embedding_dense_backward`: sorted segments reduced in parallel, float accumulation) computes the
+same gradient: on the cpu with one thread the loss and every gradient are bit-identical to the indexing reads
+(`tests/test_perf.py`, which also asserts that the backward runs no `_index_put_impl_`); on several cpu threads only
+the summation order of the old atomic accumulation differs (< 2e-9).
+
 `--compile default` wraps the minibatch forward + PPO loss (backward through AOTAutograd) and the rollout forward in
 `torch.compile` (inductor: fused elementwise / reduction kernels); `--compile reduce-overhead` adds CUDA graphs (no
 per-kernel launch cost). Both imply `--static-rows`: `cand` / `prompt_options` are always `--max-rows` wide (masked
