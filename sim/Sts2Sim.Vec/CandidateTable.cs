@@ -16,8 +16,9 @@ namespace Sts2Sim.Vec;
 /// potion_slot = A for UsePotion/DiscardPotion; option_index = A for Travel, ClaimReward, PickRewardCard,
 /// RewardAlternative, BuyEntry, ChooseRestOption, ChooseEventOption and PromptSelect, and the <c>reward_choices</c> row
 /// for the macro kinds TakeRewardCard / TakeRewardAlternative (A = rewards row, B = card / alternative index). card_id
-/// (0 = none) is the cards vocab id of the played hand card, of a card-reward pick (PickRewardCard, TakeRewardCard), or of
-/// a prompt option that is a card. target_uid (0 = none) is the target monster's CombatId (= enemies.uid). Rows at or
+/// (0 = none) is the cards vocab id of the played hand card, of a card-reward pick (PickRewardCard, TakeRewardCard), of
+/// a prompt option that is a card, or of the deck card B of a room macro row (ChooseRestOption / BuyEntry with B &gt;= 0,
+/// <see cref="RoomMacros"/>; only with config <c>macros</c>). target_uid (0 = none) is the target monster's CombatId (= enemies.uid). Rows at or
 /// beyond the returned count are zero.
 /// </para>
 /// </summary>
@@ -89,11 +90,18 @@ public static class CandidateTable
                         cardId = PromptCardId(prompt, prompt.Options[a.A]);
                     }
                     break;
+                case RunActionKind.BuyEntry:
+                case RunActionKind.ChooseRestOption:
+                    option = a.A;
+                    if (a.B >= 0)
+                    {
+                        // a room macro row (RoomMacros): B = the deck card it upgrades / removes
+                        cardId = DeckCardId(rs, a.B);
+                    }
+                    break;
                 case RunActionKind.Travel:
                 case RunActionKind.ClaimReward:
                 case RunActionKind.RewardAlternative:
-                case RunActionKind.BuyEntry:
-                case RunActionKind.ChooseRestOption:
                 case RunActionKind.ChooseEventOption:
                     option = a.A;
                     break;
@@ -151,6 +159,13 @@ public static class CandidateTable
             return 0;
         }
         return Vocab.Card(cr.Cards[card].Card.Id);
+    }
+
+    /// <summary>The cards vocab id of master-deck card <paramref name="index"/> (0 when out of range).</summary>
+    private static int DeckCardId(RunState rs, int index)
+    {
+        var deck = rs.Players.Count > 0 ? rs.Players[0].Deck : null;
+        return deck != null && (uint)index < (uint)deck.Count ? Vocab.Card(deck[index].Id) : 0;
     }
 
     private static int RewardCardId(RunSim sim, int index)

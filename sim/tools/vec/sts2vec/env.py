@@ -29,7 +29,7 @@ import numpy as np
 
 from .errors import SERVER_GC_MARKER, ServerGCError, Sts2VecError
 from .loader import Library, load
-from .pool import ALL_CHARACTERS, Entry, FreshEntry, Pool, PoolSpec, SaveEntry, int32_list, make_config
+from .pool import ALL_CHARACTERS, Entry, FreshEntry, Pool, PoolSpec, SaveEntry, int32_list, make_config, parse_macros
 from .schema import SIGNAL_BUFFERS, STATUS, Buffers, Schema, status_counts
 
 __all__ = ["ALL_CHARACTERS", "Entry", "FLOOR_STEP_CAP", "FreshEntry", "PoolSpec", "SaveEntry", "Sts2VecError",
@@ -89,13 +89,18 @@ class VecEnv:
     ``floor_step_cap`` (truncate an episode after this many non-combat decisions — legal or illegal, no-ops excluded —
     on one floor without the floor advancing: ``truncated``, status ``FLOOR_STALL``, ``end_kind`` FloorStall; 0 = off;
     default ``FLOOR_STEP_CAP`` = 80, the protocol evaluator's ``stuck`` rule; combat decisions never count).
+    ``macros`` (None / "rest,shop" / ("rest", "shop"); default off): room macro candidates — at a rest site one
+    ``ChooseRestOption(A, B=deck card)`` row per upgradable card in place of SMITH, in a shop one ``BuyEntry(A, B=deck
+    card)`` row per removable card in place of the card removal, each running open → select → confirm in one step
+    (sim/VEC.md "Room macros"; ``self.macros`` = the normalised names). Off, the config and every output are those of
+    a build without the option.
     ``dll`` picks the library (default: ``STS2VEC_AOT_LIB`` / ``STS2VEC_DLL`` / the Release build; see ``sts2vec.loader``).
     """
 
     def __init__(self, num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                  seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = PoolSpec(),
                  pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int = FLOOR_STEP_CAP,
-                 dll: str | os.PathLike | None = None):
+                 macros=None, dll: str | os.PathLike | None = None):
         self._h = 0
         self._lib = load(dll)
         self.schema = schema_of(self._lib)
@@ -111,9 +116,10 @@ class VecEnv:
                                    "rebuild it (dotnet build sim/Sts2Sim.sln -c Release) or pass floor_step_cap=0")
             cap = None
         self.floor_step_cap = int(floor_step_cap)
+        self.macros = parse_macros(macros)
         self.config = make_config(self.num_envs, threads=threads, step_cap=step_cap, auto_reset=auto_reset,
                                   seed_text=seed_text, content=content, pool=pool, pool_cache=pool_cache,
-                                  fast_path=fast_path, floor_step_cap=cap)
+                                  fast_path=fast_path, floor_step_cap=cap, macros=self.macros)
         cfg = json.dumps(self.config).encode("utf-8")
         h = self._lib.sts2vec_create(cfg, len(cfg))
         if h <= 0:
@@ -124,6 +130,9 @@ class VecEnv:
                 raise ServerGCError(f"sts2vec_create: {text} [loader: {self._lib.mode}, {self._lib.gc_mode}, "
                                     f"runtimeconfig {self._lib.runtimeconfig}"
                                     + (f"; environment overrides {overrides}" if overrides else "") + "]")
+            if self.macros and "macros" in text:
+                text += (f" [{self._lib.path} was built before the room macros (config key 'macros'); rebuild it "
+                         "(dotnet build sim/Sts2Sim.sln -c Release) or drop macros]")
             raise Sts2VecError(f"sts2vec_create: {text}")
         self._h = int(h)
         self.pool = Pool(self)

@@ -39,7 +39,7 @@ def _pool(args) -> PoolSpec:
 
 def _env(args, threads: int) -> VecEnv:
     return VecEnv(args.envs, threads=threads, step_cap=args.step_cap, floor_step_cap=args.floor_step_cap,
-                  seed_text=args.seed_text, content=args.content, pool=_pool(args), dll=args.dll)
+                  seed_text=args.seed_text, content=args.content, pool=_pool(args), macros=args.macros, dll=args.dll)
 
 
 def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int | None, pool: int) -> None:
@@ -55,6 +55,9 @@ def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int | None, p
     p.add_argument("--step-cap", type=int, default=3000)
     p.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
                    help=f"non-combat decisions on one floor before truncation (FLOOR_STALL; default {FLOOR_STEP_CAP}; 0 = off)")
+    p.add_argument("--macros", default=None,
+                   help="room macro candidates, comma-separated: rest (SMITH = one row per upgradable card), shop (card "
+                        "removal = one row per removable card); default off")
     p.add_argument("--seed", type=int, default=0, help="random policy seed")
 
 
@@ -406,7 +409,8 @@ def cmd_eval(args) -> int:
     try:
         rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
                        floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
-                       log=lambda m: print(m, flush=True), allow_blind=args.allow_blind, purpose=args.purpose)
+                       log=lambda m: print(m, flush=True), allow_blind=args.allow_blind, purpose=args.purpose,
+                       macros=args.macros)
     except BlindSetError as e:
         print(f"error: {e}", file=sys.stderr, flush=True)
         return 2
@@ -469,6 +473,9 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
                    help=f"non-combat decisions on one floor before 'stuck' (env floor_step_cap; protocol default "
                         f"{FLOOR_STEP_CAP}; 0 = off)")
+    e.add_argument("--macros", default=None,
+                   help="room macro candidates of the env (rest, shop; comma-separated; default off): must match the "
+                        "policy's training env")
     e.add_argument("--allow-blind", action="store_true",
                    help="allow a seed set with games of a frozen blind set (role blind; refused otherwise); needs "
                         "--purpose, logged to OUT/blind-access.jsonl")

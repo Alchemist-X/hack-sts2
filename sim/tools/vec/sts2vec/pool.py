@@ -137,16 +137,39 @@ class PoolSpec:
                 for i in range(self.count)]
 
 
+# Room macro names of config_json ``macros`` (sim/Sts2Sim.Vec/RoomMacros.cs; W3 2026-11-04).
+MACRO_NAMES = ("rest", "shop")
+
+
+def parse_macros(macros) -> tuple[str, ...]:
+    """Normalised room macro names (``MACRO_NAMES`` order, no duplicates) of ``macros``: None / "" / "none" = (),
+    a comma-separated string ("rest,shop") or an iterable of names. ValueError for an unknown name."""
+    if macros is None:
+        return ()
+    items = macros.split(",") if isinstance(macros, str) else list(macros)
+    names = {str(m).strip().lower() for m in items} - {"", "none", "off"}
+    bad = sorted(names - set(MACRO_NAMES))
+    if bad:
+        raise ValueError(f"unknown macro(s) {', '.join(bad)} (known: {', '.join(MACRO_NAMES)})")
+    return tuple(m for m in MACRO_NAMES if m in names)
+
+
 def make_config(num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                 seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = None,
-                pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int | None = None) -> dict:
+                pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int | None = None,
+                macros=None) -> dict:
     """The ``config_json`` object of ``sts2vec_create`` (§D5); snake_case keys. Values are validated natively (unknown
     content / num_envs < 1 … make ``sts2vec_create`` fail with the reason). ``floor_step_cap=None`` leaves the key out
-    (the library's default, 80; a library built before the key existed rejects it as unknown)."""
+    (the library's default, 80; a library built before the key existed rejects it as unknown). ``macros``
+    (``parse_macros``): the room macro candidates to list; the key is written only when some are on, so the default
+    config is the one every earlier build accepts."""
     cfg = {"num_envs": int(num_envs), "threads": int(threads), "step_cap": int(step_cap), "auto_reset": bool(auto_reset),
            "seed_text": str(seed_text), "content": content, "pool_cache": int(pool_cache), "fast_path": bool(fast_path)}
     if floor_step_cap is not None:
         cfg["floor_step_cap"] = int(floor_step_cap)
+    m = parse_macros(macros)
+    if m:
+        cfg["macros"] = list(m)
     if pool is not None:
         pool.validate()
         p = pool.to_json()

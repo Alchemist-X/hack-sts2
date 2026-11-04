@@ -128,6 +128,7 @@ class TrainConfig:
     threads: int = 0                # env worker threads (0 = os.cpu_count())
     step_cap: int = 3000
     floor_step_cap: int | None = None   # VecEnv pass-through (stall truncation) when set and supported
+    macros: str = ""                # VecEnv room macros, "rest,shop" (sim/VEC.md "Room macros"; "" = off); also the evals
     ascension: int = 0
     pool: int = 2048
     characters: tuple = ALL_CHARACTERS
@@ -553,6 +554,11 @@ def env_kwargs(cfg: TrainConfig, seed_text: str, env_cls=VecEnv) -> dict:
             raise ValueError("floor_step_cap is set but this sts2vec VecEnv has no floor_step_cap parameter "
                              "(install an sts2vec with the stall truncation, or drop --floor-step-cap)")
         kw["floor_step_cap"] = int(cfg.floor_step_cap)
+    if getattr(cfg, "macros", ""):
+        if "macros" not in inspect.signature(env_cls.__init__).parameters:
+            raise ValueError("macros is set but this sts2vec VecEnv has no macros parameter (install an sts2vec with "
+                             "the room macros, or drop --macros)")
+        kw["macros"] = cfg.macros
     return kw
 
 
@@ -1216,7 +1222,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "resume_compat": compat,
             "library": {"path": str(env.lib.path), "mode": env.lib.mode, "version": env.lib.version()},
             "env": {"step_cap": cfg.step_cap, "floor_step_cap": floor_cap,
-                    "floor_step_cap_supported": bool(getattr(env.schema, "supports_floor_step_cap", False))},
+                    "floor_step_cap_supported": bool(getattr(env.schema, "supports_floor_step_cap", False)),
+                    **({"macros": list(env.macros)} if getattr(env, "macros", ()) else {})},
             "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None,
             "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
             "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
@@ -1264,7 +1271,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                      checkpoint=str(last_ckpt_path), threads=cfg.eval_threads or min(os.cpu_count() or 4, 8),
                                      device=str(device), loop_breaker=cfg.loop_breaker,
                                      loop_breaker_k=cfg.loop_breaker_k, log=lambda m: None,
-                                     allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose)
+                                     allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose,
+                                     macros=cfg.macros or None)
             except Exception as e:  # an eval failure must not end a multi-hour run
                 log(f"eval at update {upd} failed: {type(e).__name__}: {e}")
                 row = {"update": upd, "env_steps": c["env_steps"], "seedset": cfg.eval_seedset,
@@ -1328,7 +1336,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                          threads=cfg.eval_threads or min(os.cpu_count() or 4, 8), device=str(device),
                                          loop_breaker=br, loop_breaker_k=cfg.loop_breaker_k, policy=pol,
                                          sample_seed=cfg.eval_at_sample_seed, repeat=0, log=lambda m: None,
-                                         allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose)
+                                         allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose,
+                                         macros=cfg.macros or None)
                 except Exception as e:  # an eval failure must not end a multi-hour run
                     log(f"eval-at u{upd} {mode} failed: {type(e).__name__}: {e}")
                     row = {**base, "error": f"{type(e).__name__}: {e}", "seconds": round(time.monotonic() - t, 2)}

@@ -547,7 +547,7 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
     from sts2vec.evaluate import evaluate as vec_evaluate
     from sts2vec.evaluate import repo_sha
 
-    from .evaluate import evaluate_model, parse_mode
+    from .evaluate import checkpoint_macros, evaluate_model, parse_mode
     from .features import ModelSpec
     from .ppo import load_checkpoint
 
@@ -616,7 +616,8 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             _set_aside(d, log)
             evaluate_model(model, spec, ss, str(d), weights_hash=wh, checkpoint=str(checkpoint), threads=threads,
                            device=device, spec_compat=ck.get("spec_compat"), loop_breaker=True,
-                           loop_breaker_k=DEFAULT_K, log=log, allow_blind=allow_blind, blind_purpose=blind_purpose)
+                           loop_breaker_k=DEFAULT_K, log=log, allow_blind=allow_blind, blind_purpose=blind_purpose,
+                           macros=checkpoint_macros(ck) or None)
         runs.append(run_entry(d, "nn", GREEDY_LABEL, asc, reused=reason is None, weights_hash=wh,
                               library_version=lib["version"]))
         for m in extra_modes:               # execution modes: paired per seed against the NN greedy row
@@ -632,7 +633,8 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
                 evaluate_model(model, spec, ss, str(md), weights_hash=wh, checkpoint=str(checkpoint), threads=threads,
                                device=device, spec_compat=ck.get("spec_compat"), loop_breaker=br,
                                loop_breaker_k=DEFAULT_K, policy=pol, sample_seed=int(sample_seed), log=log,
-                               allow_blind=allow_blind, blind_purpose=blind_purpose)
+                               allow_blind=allow_blind, blind_purpose=blind_purpose,
+                               macros=checkpoint_macros(ck) or None)
             row = run_entry(md, "nn-mode", mode_label(m, sample_seed), asc, reused=mr is None, weights_hash=wh,
                             library_version=lib["version"])
             try:

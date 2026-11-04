@@ -28,6 +28,9 @@ public enum BranchMode
 /// <c>FloorStepCap</c> (<c>floor_step_cap</c>, appended): truncate an episode after this many non-combat decisions on one
 /// floor without the floor advancing (status FLOOR_STALL, end_kind FloorStall); 0 disables. Same rule and default as the
 /// protocol evaluator's <c>stuck</c> limit (docs/sts2-bench-protocol-v0.2-2026-11-01.md §5).
+/// <c>Macros</c> (<c>macros</c>, appended W3 2026-11-04): the room macro candidates to list (<see cref="RoomMacros"/>), a JSON
+/// array of names (<c>["rest", "shop"]</c>) or one comma-separated string; absent / empty = none (the candidate lists of
+/// every earlier build).
 /// </summary>
 public sealed record VecConfig(
     int NumEnvs,
@@ -39,7 +42,8 @@ public sealed record VecConfig(
     FreshPoolSpec? Pool = null,
     int PoolCache = 4096,
     bool FastPath = true,
-    int FloorStepCap = VecConfig.DefaultFloorStepCap)
+    int FloorStepCap = VecConfig.DefaultFloorStepCap,
+    RoomMacroSet Macros = RoomMacroSet.None)
 {
     /// <summary>Default <c>floor_step_cap</c>: the protocol's 80 non-combat decisions per floor (Python: <c>sts2vec.FLOOR_STEP_CAP</c>).</summary>
     public const int DefaultFloorStepCap = 80;
@@ -76,6 +80,7 @@ public sealed record VecConfig(
                 case "pool_cache": c = c with { PoolCache = p.Value.GetInt32() }; break;
                 case "fast_path": c = c with { FastPath = p.Value.GetBoolean() }; break;
                 case "floor_step_cap": c = c with { FloorStepCap = p.Value.GetInt32() }; break;
+                case "macros": c = c with { Macros = ParseMacros(p.Value) }; break;
                 case "pool": c = c with { Pool = p.Value.ValueKind == JsonValueKind.Null ? null : ParsePool(p.Value) }; break;
                 default: throw new ArgumentException($"unknown config key \"{p.Name}\"");
             }
@@ -103,6 +108,15 @@ public sealed record VecConfig(
             if (Pool.Count < 0) throw new ArgumentException("pool.fresh.count must be >= 0");
         }
     }
+
+    private static RoomMacroSet ParseMacros(JsonElement v) => v.ValueKind switch
+    {
+        JsonValueKind.Null => RoomMacroSet.None,
+        JsonValueKind.String => RoomMacros.Parse((v.GetString() ?? "").Split(',')),
+        JsonValueKind.Array => RoomMacros.Parse(v.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String
+            ? e.GetString() ?? "" : throw new ArgumentException("config.macros entries must be strings"))),
+        _ => throw new ArgumentException("config.macros must be an array of names (\"rest\", \"shop\") or a comma-separated string"),
+    };
 
     private static FreshPoolSpec ParsePool(JsonElement pool)
     {
@@ -725,7 +739,12 @@ public sealed unsafe class VecEnv
                 {
                     bool nonCombat = !InCombat(s.Sim);
                     var act = s.Legal[action];
-                    if (RewardMacros.IsMacro(act.Kind))
+                    if (Config.Macros != RoomMacroSet.None && RoomMacros.IsMacro(act))
+                    {
+                        // one decision, the game's three clicks: open the SMITH / removal prompt, pick the card, confirm
+                        RoomMacros.Execute(s.Sim, act, a => Apply(s, i, a));
+                    }
+                    else if (RewardMacros.IsMacro(act.Kind))
                     {
                         // one decision, the game's two clicks: open the card reward, then take the card / alternative
                         var (open, choose) = RewardMacros.Expand(act);
@@ -914,6 +933,10 @@ public sealed unsafe class VecEnv
             {
                 s.Sim.LegalActions(s.Raw);
                 RewardMacros.Fill(s.Sim, s.Raw, s.Legal);
+                if (Config.Macros != RoomMacroSet.None)
+                {
+                    RoomMacros.Apply(s.Sim, s.Legal, Config.Macros);
+                }
             }
             s.CandN = CandidateTable.Fill(s.Sim, s.Legal, b.Cand, out bool overflow);
             if (overflow)
