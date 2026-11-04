@@ -221,7 +221,7 @@ def main(argv=None) -> int:
 
         try:
             bench_update(a)
-        except BenchSizeError as e:
+        except (BenchSizeError, ValueError) as e:
             print(f"error: {e}", flush=True)
             return 2
         return 0

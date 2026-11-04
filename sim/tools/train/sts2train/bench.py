@@ -2,13 +2,15 @@
 
 Builds the policy of a preset (or explicit size flags), fills a ``RolloutStore`` with random observations of the
 schema's shapes and valid value ranges (``random_obs``), then times K PPO minibatch updates through the trainer's own
-code path (``ppo.MinibatchUpdater``: device gather, forward + loss, backward, grad clip, Adam) and K rollout inference
-forwards (``ppo.InferenceRunner``: forward + sampling + the host copies the env needs). ``--profile`` adds a
-``torch.profiler`` table of the top ops by self device time (CUDA) or self CPU time (cpu / mps), with % shares.
+code path (``ppo.MinibatchUpdater``: device gather, forward + loss, backward, grad clip, Adam) and K rollout steps
+(``ppo.InferenceRunner``: upload, forward, sampling, store write, the host copies the env needs). Compile modes run
+the trainer's eager-vs-compiled check first (``ppo.check_compiled``; it also triggers the compile). ``--modes``
+runs several compile modes in one process with a speed-up summary; ``--profile`` adds ``torch.profiler`` tables:
+top aten ops by self device time (CUDA) or self CPU time (cpu / mps) and, on CUDA, the top kernels with the summed
+kernel time per minibatch (GPU busy share of the wall time).
 
 The numbers that matter come from the training GPU (an A100 in the Colab runtime); cpu / mps runs are only for
-validating the code paths with small settings (the trainer's local-size guard applies: a cpu / mps bench refuses an
-estimated > 3 GiB of activations).
+validating the code paths with small settings (a cpu / mps bench refuses an estimated > 3 GiB of activations).
 """
 
 from __future__ import annotations
@@ -365,7 +367,10 @@ def bench_update(a, log=print) -> list[dict]:
     results = []
     for mode in modes:
         with contextlib.suppress(Exception):
+            from torch._dynamo.utils import counters
+
             torch._dynamo.reset()
+            counters.clear()
         results.append(_bench_mode(a, mode, spec, dtypes, device, log))
         gc.collect()
         if device.type == "cuda":

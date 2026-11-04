@@ -255,6 +255,30 @@ def test_compiled_update_matches_eager(schema_spec, inductor_cpu):
     assert fchk["ok"] and fchk["logits_rel"] <= 1e-4, fchk
 
 
+def test_compiled_check_flags_wrong_gradients(schema_spec):
+    """The startup check fails a "compiled" function whose loss is right but whose gradient is not (the signature of
+    the MPS inductor bug: slot-embedding gradients x batch size, identical loss), and passes the eager function."""
+    spec, dtypes = schema_spec
+    cfg = resolve_config({**TINY_TRUNK, "minibatch": 32})
+    store = _store(spec, dtypes, 1, 32, seed=9)
+    idx = torch.arange(32)
+    args = (store.batch(idx, static=True), *[a_[idx] for a_ in _targets(store)])
+    torch.manual_seed(0)
+    m = Policy(spec, **TINY_TRUNK)
+    upd = MinibatchUpdater(m, torch.optim.Adam(m.parameters()), cfg, False, "cpu")
+    upd.compiled = upd.eager
+    assert check_compiled(upd, args, amp=False)["ok"]
+
+    def wrong_grad(*a):
+        loss, st = upd.eager(*a)
+        extra = (m.hand_pos.weight * 3.0).sum()
+        return loss + extra - extra.detach(), st                # same value, gradient of hand_pos shifted by 3
+
+    upd.compiled = wrong_grad
+    chk = check_compiled(upd, args, amp=True)                   # even with the loose bf16 tolerances
+    assert not chk["ok"] and chk["worst_param"] == "hand_pos.weight" and chk["loss_rel"] == 0.0, chk
+
+
 def test_train_compiled_run(tmp_path, inductor_cpu):
     """A tiny real run with --compile default: the eager-vs-compiled checks pass, the run finishes and logs."""
     run = tmp_path / "run"

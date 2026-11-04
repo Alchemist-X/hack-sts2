@@ -429,6 +429,7 @@ class MinibatchUpdater:
         self.model, self.opt = model, opt
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
+        self.coefs = (vf_coef, ent_coef)
 
         def loss_fn(xb, act, oldlogp, madv, vret, vold):
             return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
@@ -458,7 +459,13 @@ def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: b
     """Eager vs compiled forward + backward of one minibatch `args` (no optimizer step; gradients are cleared after):
     the loss and every parameter's gradient norm. With CUDA graphs the compiled side runs three times (warm-up,
     record, replay) and the replay is compared. `ok` is False when the compiled path computes something else (beyond
-    bf16 / TF32 rounding): a backend bug must stop a run rather than train it on wrong gradients."""
+    bf16 / TF32 rounding): a backend bug must stop a run rather than train it on wrong gradients.
+
+    The loss difference is measured against the magnitude of its terms (|policy| + vf * |value| + ent * |entropy|; the
+    total can cancel to ~0), a parameter's gradient-norm difference against its norm floored at a fraction of the
+    global norm (1e-3 fp32, 3e-3 TF32, 1e-2 bf16): gradients that are rounding noise (c_bias.bias: the loss is
+    invariant to a per-sample logit shift) must not fail the check, while a wrong gradient anywhere above that floor
+    does."""
     model, opt = updater.model, updater.opt
     names, params = zip(*model.named_parameters())
     res = {}
@@ -472,14 +479,18 @@ def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: b
             res[kind] = (st.detach().cpu().numpy().astype(np.float64), gn.cpu().numpy().astype(np.float64))
     opt.zero_grad(set_to_none=True)
     (se, ge), (sc, gc) = res["eager"], res["compiled"]
-    i_loss = STAT_NAMES.index("loss")
-    loss_rel = float(abs(sc[i_loss] - se[i_loss]) / max(abs(se[i_loss]), 1e-6))
+    i = {k: STAT_NAMES.index(k) for k in ("entropy", "value_loss", "policy_loss", "loss")}
+    vf_coef, ent_coef = updater.coefs
+    scale = max(abs(se[i["loss"]]), abs(se[i["policy_loss"]]) + vf_coef * abs(se[i["value_loss"]])
+                + ent_coef * abs(se[i["entropy"]]), 1e-6)
+    loss_rel = float(abs(sc[i["loss"]] - se[i["loss"]]) / scale)
     g_e, g_c = float(np.sqrt((ge ** 2).sum())), float(np.sqrt((gc ** 2).sum()))
-    grel = np.abs(gc - ge) / np.maximum(ge, max(1e-3 * g_e, 1e-12))   # floor: analytically ~0 gradients are noise
+    floor = (1e-2 if amp else 3e-3 if tf32 else 1e-3) * g_e
+    grel = np.abs(gc - ge) / np.maximum(ge, max(floor, 1e-12))
     worst = int(np.argmax(grel)) if len(grel) else 0
     tol_loss = 1e-2 if (amp or tf32) else 1e-4
     tol_grad = 0.25 if amp else 0.05 if tf32 else 1e-3
-    out = {"loss_eager": float(se[i_loss]), "loss_compiled": float(sc[i_loss]), "loss_rel": loss_rel,
+    out = {"loss_eager": float(se[i["loss"]]), "loss_compiled": float(sc[i["loss"]]), "loss_rel": loss_rel,
            "grad_norm_eager": g_e, "grad_norm_compiled": g_c, "worst_param": names[worst],
            "worst_param_grad_rel": float(grel[worst]) if len(grel) else 0.0, "tol_loss": tol_loss,
            "tol_grad": tol_grad, "replayed": updater.cudagraphs}
