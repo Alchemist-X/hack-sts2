@@ -114,6 +114,8 @@ class Controller:
 
     def _schedule(self, db, state):
         if state["stopped"] or state["analysis_paused"]:
+            self.store.set_plan_status(db, state["stopped"] or state["analysis_paused"],
+                                       "resolve stop or analysis pause")
             return
         # Analysis is serialized. Check the persisted intent as well as running jobs.
         analysis = db.execute(
@@ -143,8 +145,9 @@ class Controller:
                    OR p.experiment_id=json_extract(events.payload,'$.experiment_id'))
                {event_filter} ORDER BY rowid LIMIT 1""", event_ids,
         ).fetchone()
+        blocked = None
         if event and not analysis:
-            self._schedule_analysis(db, state, event)
+            blocked = self._schedule_analysis(db, state, event)
         for experiment in db.execute(
             "SELECT * FROM experiments WHERE stage IN ('needs_train','needs_eval') ORDER BY id",
         ).fetchall():
@@ -152,8 +155,52 @@ class Controller:
                 self._schedule_experiment(db, experiment)
             except DispatchBlocked as error:
                 db.execute("UPDATE study SET next_wake=?", (str(error),))
+                blocked = str(error)
+
+        # Match Store.status active_jobs exactly. An external reservation is in
+        # flight; a finished job with unknown cost is a hold, not active work.
+        active = db.execute("""SELECT 1 FROM jobs WHERE actual IS NULL
+                               AND state IN ('intent','running','uncertain','external_reserved') LIMIT 1""").fetchone()
+        if active:
+            self.store.set_plan_status(db, None, "reconcile active job")
+        elif blocked:
+            self.store.set_plan_status(db, blocked, "resolve admission or budget block, then retry tick")
+        elif event:
+            self.store.set_plan_status(db, "research event pending without an active job",
+                                       "inspect research admission")
+        else:
+            unknown_cost = db.execute("SELECT 1 FROM jobs WHERE state='external_finished_cost_unknown' LIMIT 1").fetchone()
+            pending = db.execute("""SELECT 1 FROM events WHERE decision_id IS NULL AND kind IN
+                                  ('bootstrap','result','anomaly','sol_result') AND NOT EXISTS
+                                  (SELECT 1 FROM jobs WHERE jobs.event_id=events.id AND jobs.kind='research')
+                                  LIMIT 1""").fetchone()
+            stages = {row[0] for row in db.execute("SELECT stage FROM experiments")}
+            if pending:
+                reason, action = "pending evidence outside current research admission", "inspect event policy and holds"
+            elif "await_decision" in stages:
+                reason, action = "no new verified evidence after decision", "await result or anomaly"
+            elif "idle" in stages:
+                reason, action = "registered experiment is idle", "activate an approved plan explicitly"
+            elif unknown_cost:
+                reason, action = "external job finished with unknown cost", "reconcile cost hold"
+            else:
+                reason, action = "no ready work", "await verified evidence or registered plan"
+            self.store.set_plan_status(db, reason, action)
 
     def _schedule_analysis(self, db, state, event):
+        registered = db.execute("SELECT * FROM experiments ORDER BY id").fetchall()
+        experiment_options = []
+        for candidate in registered[:16]:
+            frozen = json.loads(candidate["spec"])
+            experiment_options.append({
+                "experiment_id": candidate["id"], "config_hash": candidate["config_hash"],
+                "stage": candidate["stage"], "completed_decisions": candidate["decisions"],
+                "next_milestone": next((n for n in frozen["evaluation_milestones"]
+                                        if n > candidate["decisions"]), None),
+                "next_train_reserve_usd": frozen["resource_request"]["train_cost"],
+                "actual_param_count": frozen["actual_param_count"],
+                "model_config": frozen["model_config"],
+            })
         payload = {
             "decision_id": f"decision-{digest([state['id'], event['id']])[:32]}",
             "study_id": state["id"],
@@ -165,9 +212,14 @@ class Controller:
             "evidence_refs": [event["id"]],
             "event": {"kind": event["kind"], "evidence": json.loads(event["payload"])},
             "budget": self.store.budget_evidence(db, state),
-            "allowed_experiments": dict(db.execute("SELECT id,config_hash FROM experiments").fetchall()),
+            "allowed_experiments": {row["id"]: row["config_hash"] for row in registered},
+            "experiment_options": experiment_options,
+            "experiment_options_omitted": len(registered) - len(experiment_options),
             "engineering_task_types": ["diagnose", "implement_frozen_task"] if self.backend.tool_enabled else [],
         }
+        goal = db.execute("SELECT goal_json FROM study_goal WHERE singleton=1").fetchone()
+        if goal:
+            payload["research_goal"] = json.loads(goal["goal_json"])
         origin = db.execute("SELECT job_id,experiment_id FROM research_origins WHERE event_id=?",
                             (event["id"],)).fetchone()
         if origin:
@@ -193,6 +245,7 @@ class Controller:
             )
         except DispatchBlocked as error:
             db.execute("UPDATE study SET next_wake=?", (str(error),))
+            return str(error)
 
     @staticmethod
     def _matched_results(db, experiment, spec):
@@ -564,10 +617,15 @@ class Controller:
             if reached_target:
                 # Analysis gets the recovered checkpoint incident together with its evaluation.
                 return
+        experiment_id = row["experiment_id"]
+        if job.kind == "sol" and experiment_id is None:
+            candidate = payload.get("experiment_id")
+            if type(candidate) is str and db.execute("SELECT 1 FROM experiments WHERE id=?", (candidate,)).fetchone():
+                experiment_id = candidate
         self.store.append_event(db, f"anomaly-{digest(job.key)[:32]}", "anomaly",
                                 {"job_key": job.key, "kind": job.kind, "error": error,
-                                 "experiment_id": row["experiment_id"], "checkpoint": result}, self.store.clock(),
-                                origin=(job.key, row["experiment_id"]) if row["experiment_id"] else None)
+                                 "experiment_id": experiment_id, "checkpoint": result}, self.store.clock(),
+                                origin=(job.key, experiment_id) if experiment_id else None)
 
     def _completed_worker(self, db, row, job, result):
         experiment = row["experiment_id"]

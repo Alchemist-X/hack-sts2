@@ -159,6 +159,7 @@ class RavenBroker:
                     or (origin["kind"], origin["job_kind"], origin["state"]) not in {
                         ("result", "eval", "done"), ("sol_result", "sol", "done"),
                         ("anomaly", "train", "failed"), ("anomaly", "eval", "failed"),
+                        ("anomaly", "sol", "failed"),
                     }):
                 return False
         count = db.execute(

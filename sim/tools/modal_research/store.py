@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import sqlite3
+import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -18,6 +21,14 @@ CREATE TABLE IF NOT EXISTS study (
     approved_budget INTEGER, approval_ref TEXT, execution_cap INTEGER, platform_snapshot TEXT,
     stopped TEXT, analysis_paused TEXT, next_wake TEXT,
     lease_owner TEXT, lease_until REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS study_goal (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    goal_json TEXT NOT NULL, source_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS study_plan_status (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    blocked_reason TEXT, next_action TEXT
 );
 CREATE TABLE IF NOT EXISTS approvals (
     reference TEXT PRIMARY KEY, approved_budget INTEGER NOT NULL, execution_cap INTEGER NOT NULL,
@@ -106,6 +117,66 @@ class Store:
             row = db.execute("SELECT id, mode FROM study").fetchone()
             if tuple(row) != (study_id, mode):
                 raise ValueError("database belongs to another study or execution mode")
+
+    @staticmethod
+    def _validate_goal(goal, study_id):
+        if (type(goal) is not dict or set(goal) != {"version", "study_id", "character", "ascension",
+               "evaluation", "dev_seed_count", "blind_seed_count", "min_progress_mean", "min_win_rate",
+               "freeze_before_blind", "report_confidence_intervals"}
+                or type(goal["version"]) is not int or goal["version"] != 1
+                or goal["study_id"] != study_id or goal["character"] != "SILENT"
+                or type(goal["ascension"]) is not int or goal["ascension"] != 10
+                or type(goal["evaluation"]) is not dict
+                or set(goal["evaluation"]) != {"start_mode", "policy", "loop_breaker", "search", "human_intervention"}
+                or goal["evaluation"]["start_mode"] != "fresh" or goal["evaluation"]["policy"] != "greedy"
+                or any(goal["evaluation"][key] is not False for key in
+                       ("loop_breaker", "search", "human_intervention"))
+                or type(goal["dev_seed_count"]) is not int or goal["dev_seed_count"] != 256
+                or type(goal["blind_seed_count"]) is not int or goal["blind_seed_count"] != 1000
+                or type(goal["min_progress_mean"]) not in (int, float) or goal["min_progress_mean"] != 0.6
+                or type(goal["min_win_rate"]) not in (int, float) or goal["min_win_rate"] != 0.1
+                or goal["freeze_before_blind"] is not True
+                or goal["report_confidence_intervals"] is not True):
+            raise ValueError("invalid versioned research goal")
+        return goal
+
+    def install_goal_file(self, path):
+        """Bind one reviewed goal.json into durable state without altering a frozen experiment."""
+        path = Path(path)
+        if (not path.is_absolute() or path.name != "goal.json" or path.parent.name != "research"
+                or path.parent.is_symlink()):
+            raise ValueError("research goal must be an absolute research/goal.json path")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 4096:
+                raise ValueError("invalid research goal file")
+            raw = handle.read(4097)
+        if len(raw) != info.st_size:
+            raise ValueError("research goal changed while reading")
+        with self.transaction() as db:
+            study_id = db.execute("SELECT id FROM study").fetchone()[0]
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate research goal field")
+                    result[key] = value
+                return result
+
+            goal = self._validate_goal(json.loads(raw, object_pairs_hook=unique), study_id)
+            encoded = canonical(goal)
+            sha = hashlib.sha256(raw).hexdigest()
+            db.execute("INSERT OR IGNORE INTO study_goal VALUES (1,?,?)", (encoded, sha))
+            prior = db.execute("SELECT goal_json,source_sha256 FROM study_goal WHERE singleton=1").fetchone()
+            if tuple(prior) != (encoded, sha):
+                raise ValueError("research goal is immutable; use a reviewed migration")
+
+    @staticmethod
+    def set_plan_status(db, blocked_reason, next_action):
+        db.execute("INSERT OR IGNORE INTO study_plan_status VALUES (1,NULL,NULL)")
+        db.execute("UPDATE study_plan_status SET blocked_reason=?,next_action=? WHERE singleton=1",
+                   (blocked_reason, next_action))
 
     @contextmanager
     def transaction(self):
@@ -689,6 +760,8 @@ class Store:
     def status(self):
         with self.transaction() as db:
             state = db.execute("SELECT * FROM study").fetchone()
+            goal = db.execute("SELECT goal_json,source_sha256 FROM study_goal WHERE singleton=1").fetchone()
+            plan_status = db.execute("SELECT blocked_reason,next_action FROM study_plan_status WHERE singleton=1").fetchone()
             spent, reserved = self.ledger(db)
             active = db.execute(
                 "SELECT id,kind,state,remote_id,deadline FROM jobs WHERE actual IS NULL "
@@ -731,6 +804,10 @@ class Store:
                 ).fetchall()
             return {
                 "study_id": state["id"], "mode": state["mode"], "state_version": state["version"],
+                "research_goal": json.loads(goal["goal_json"]) if goal else None,
+                "research_goal_source_sha256": goal["source_sha256"] if goal else None,
+                "blocked_reason": plan_status["blocked_reason"] if plan_status else None,
+                "next_action": plan_status["next_action"] if plan_status else None,
                 "approved_budget": None if approved is None else approved / 100,
                 "approval_ref": state["approval_ref"],
                 "execution_cap_usd": None if approved is None else state["execution_cap"] / 100,

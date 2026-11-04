@@ -174,7 +174,7 @@ def load_runtime(config, *, clock=time.time):
     """Build a runtime only from a trusted on-host file with reviewed bindings."""
     required = {"study_id", "state", "artifacts", "sandbox", "sandbox_identity_verification",
                 "sandbox_rates", "agent"}
-    if type(config) is not dict or not required <= set(config) <= required | {"modal_metering"}:
+    if type(config) is not dict or not required <= set(config) <= required | {"modal_metering", "research_goal"}:
         raise ValueError("runtime requires the complete deployment binding")
     state = Path(config["state"])
     artifacts = Path(config["artifacts"])
@@ -182,6 +182,8 @@ def load_runtime(config, *, clock=time.time):
         raise ValueError("bind existing local durable state and artifact directories")
     study_id = identifier(config["study_id"])
     store = Store(state, study_id, clock=clock)
+    if config.get("research_goal") is not None:
+        store.install_goal_file(config["research_goal"])
     sandbox = None
     rates = None
     metering = None
