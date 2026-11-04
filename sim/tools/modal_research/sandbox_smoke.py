@@ -375,7 +375,7 @@ def launch(store, directory, packet, binding, modal):
     app = modal.App.lookup(binding["app"], environment_name=binding["environment"])
     if app.app_id != cloud["app_id"]:
         raise ValueError("staged Modal app identity changed")
-    image = modal.Image.from_id(cloud["image_id"]).hydrate()
+    image = modal.Image.from_id(cloud["image_id"])
     volume = modal.Volume.from_id(cloud["volume_id"]).hydrate()
     row = store.gpu_smoke_step(packet["reservation"], "launch", binding)
     cutoff = row["worker_deadline"]
