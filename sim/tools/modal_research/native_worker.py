@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,6 +78,43 @@ def _validate_seed_manifests(train_path, dev_path, blind_path, spec):
     return guard
 
 
+@contextmanager
+def _evaluation_precision(torch):
+    """Run the frozen CUDA evaluation with full FP32 arithmetic."""
+    if os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1":
+        raise ValueError("CUDA TF32 override conflicts with the frozen evaluation precision")
+    backends = torch.backends
+    if hasattr(backends, "fp32_precision"):
+        settings = [(backend, "fp32_precision", "ieee") for backend in (
+            backends, backends.cuda.matmul, backends.cudnn, backends.cudnn.conv, backends.cudnn.rnn,
+        )]
+    else:
+        settings = [(backends.cuda.matmul, "allow_tf32", False), (backends.cudnn, "allow_tf32", False)]
+    previous = [(backend, key, getattr(backend, key)) for backend, key, _ in settings]
+    dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(torch.float32)
+        for backend, key, value in settings:
+            setattr(backend, key, value)
+        with torch.autocast(device_type="cuda", enabled=False):
+            yield
+    finally:
+        for backend, key, value in reversed(previous):
+            setattr(backend, key, value)
+        torch.set_default_dtype(dtype)
+
+
+def _evaluate_checkpoint(seedset, checkpoint, output, threads):
+    import torch
+
+    with _evaluation_precision(torch):
+        from sts2train.evaluate import evaluate
+
+        return evaluate(str(seedset), str(checkpoint), str(output), device="cuda", policy="greedy",
+                        threads=threads, step_cap=1200, floor_step_cap=80,
+                        loop_breaker=False, repeats=1, allow_blind=False)
+
+
 def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, seed_range=None,
         execution_deadline=None, max_threads=16):
     """Execute one bounded job through the guarded path. Call only after worker admission."""
@@ -132,11 +171,7 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
         checkpoint = admitted.checkpoint_dir / admitted.checkpoint_manifest["files"]["model"]["name"]
 
     if job.kind == "eval":
-        from sts2train.evaluate import evaluate
-
-        return evaluate(str(dev_seedset), str(checkpoint), str(output), device="cuda", policy="greedy",
-                        threads=min(max_threads, 8),
-                        loop_breaker=False, repeats=1, allow_blind=False)
+        return _evaluate_checkpoint(dev_seedset, checkpoint, output, min(max_threads, 8))
 
     remaining = deadline - time.time() - 30  # leave room for final checkpoint/publish
     if remaining <= 0:

@@ -279,8 +279,8 @@ class SystemdExecutionTest(unittest.TestCase):
         self.group = f"/test.slice/{self.unit}"
         self.domain = self.root / self.group.lstrip("/")
         self.domain.mkdir(parents=True)
-        for name, content in {"cpu.max": "100000 100000\n", "memory.max": "805306368\n",
-                              "pids.max": "64\n", "cgroup.kill": "", "cgroup.events": "populated 1\n"}.items():
+        for name, content in {"cpu.max": "100000 100000\n", "memory.max": "536870912\n",
+                              "memory.swap.max": "0\n", "pids.max": "32\n", "cgroup.kill": "", "cgroup.events": "populated 1\n"}.items():
             (self.domain / name).write_text(content)
         self.props = {
             "Id": self.unit, "InvocationID": "a" * 32, "MainPID": "600",
@@ -316,8 +316,9 @@ class SystemdExecutionTest(unittest.TestCase):
         self.assertIn("--property=KillMode=control-group", command)
         self.assertIn("--property=KillSignal=SIGKILL", command)
         self.assertIn("--property=CPUQuota=100%", command)
-        self.assertIn("--property=MemoryMax=805306368", command)
-        self.assertIn("--property=TasksMax=64", command)
+        self.assertIn("--property=MemoryMax=536870912", command)
+        self.assertIn("--property=MemorySwapMax=0", command)
+        self.assertIn("--property=TasksMax=32", command)
         self.assertIn("--property=ProtectControlGroups=yes", command)
         self.assertIn("--property=TimeoutStopSec=2s", command)
         self.assertTrue(any(arg.startswith("--property=RuntimeMaxSec=") for arg in command))
@@ -328,13 +329,24 @@ class SystemdExecutionTest(unittest.TestCase):
         self.assertEqual(receipt["domain"]["inode"], self.domain.stat().st_ino)
         with self.assertRaisesRegex(ValueError, "control-group properties"):
             self.transport._receipt({**self.props, "KillMode": "process"}, self.unit)
-        (self.domain / "pids.max").write_text("65")
+        (self.domain / "pids.max").write_text("33")
         with self.assertRaisesRegex(ValueError, "resource limits"):
             self.transport._receipt(self.props, self.unit)
-        (self.domain / "pids.max").write_text("64")
+        (self.domain / "pids.max").write_text("32")
         (self.domain / "cgroup.kill").unlink()
         with self.assertRaises(FileNotFoundError):
             self.transport._receipt(self.props, self.unit)
+
+    def test_receipt_refuses_missing_nonzero_or_unlimited_swap(self):
+        swap = self.domain / "memory.swap.max"
+        for value in ("1", "max"):
+            with self.subTest(value=value):
+                swap.write_text(value)
+                with self.assertRaisesRegex(ValueError, "resource limits"):
+                    self.receipt()
+        swap.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.receipt()
 
     def test_recovery_never_signals_replaced_invocation_and_requires_quiescence(self):
         receipt = self.receipt()

@@ -12,7 +12,7 @@ ARTIFACT_MOUNT = "/modal-research-artifacts"
 
 
 def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, deployment_ref,
-                schedule_controller=False):
+                schedule_controller=False, engineering_smoke=False):
     """Bind the production runtime after admission and provider verification.
 
     runtime must provide an external transactional tick, an admission-aware
@@ -20,8 +20,15 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
     tokens against the ledger, claim each invocation atomically and enforce
     the remaining absolute deadline and spend before any trainer import or
     initialization. It owns preemption recovery, heartbeat, and cost settlement.
+
+    Engineering smoke uses a separate app with short worker timeouts. The
+    runtime ledger controls the number of authorized launches.
     """
     identifier(deployment_ref)
+    if type(engineering_smoke) is not bool:
+        raise ValueError("engineering_smoke must be a boolean")
+    if engineering_smoke and schedule_controller:
+        raise ValueError("engineering smoke cannot schedule the controller")
     capabilities = runtime.verified_capabilities()
     required = {
         "external_transactional_store", "provider_idempotency", "verified_research_agent",
@@ -35,7 +42,8 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
             or Path(supervisor.installation.artifacts) != Path(ARTIFACT_MOUNT)
             or supervisor.publisher.root != Path(ARTIFACT_MOUNT) or supervisor.publisher.volume is not volume_v2):
         raise RuntimeError("Modal deployment requires a bound worker supervisor and artifact volume")
-    app = modal.App("sts2-modal-research")
+    app_name = "sts2-modal-research-smoke" if engineering_smoke else "sts2-modal-research"
+    app = modal.App(app_name)
 
     @app.function(image=cpu_image, secrets=secrets,
                   schedule=modal.Period(minutes=5) if schedule_controller else None,
@@ -46,7 +54,8 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
     worker_options = {
         "image": worker_image, "gpu": "H100!", "cpu": (16, 16), "memory": (65536, 65536),
         "volumes": {ARTIFACT_MOUNT: volume_v2}, "secrets": secrets,
-        "timeout": 4500, "startup_timeout": 600, "retries": 0,
+        "timeout": 120 if engineering_smoke else 4500,
+        "startup_timeout": 60 if engineering_smoke else 600, "retries": 0,
     }
 
     def worker(kind, job_token):

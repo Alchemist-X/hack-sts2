@@ -665,8 +665,8 @@ class SystemdExecution:
     SYSTEMCTL = "/usr/bin/systemctl"
     CGROUP = Path("/sys/fs/cgroup")
     CPU_PERCENT = 100
-    MEMORY = 768 * 1024 * 1024
-    TASKS = 64
+    MEMORY = 512 * 1024 * 1024
+    TASKS = 32
 
     @classmethod
     def _unit(cls, folder):
@@ -684,7 +684,7 @@ class SystemdExecution:
             "Type": "exec", "Restart": "no", "KillMode": "control-group",
             "KillSignal": "SIGKILL", "SendSIGKILL": "yes", "RuntimeMaxSec": f"{runtime:.6f}s",
             "TimeoutStopSec": "2s", "CPUQuota": f"{cls.CPU_PERCENT}%", "MemoryMax": str(cls.MEMORY),
-            "TasksMax": str(cls.TASKS), "ProtectControlGroups": "yes", "Delegate": "no",
+            "MemorySwapMax": "0", "TasksMax": str(cls.TASKS), "ProtectControlGroups": "yes", "Delegate": "no",
             "NoNewPrivileges": "yes",
             "InaccessiblePaths": " ".join(f"-{path}" for path in sorted(cls._manager_sockets())),
         }
@@ -739,6 +739,7 @@ class SystemdExecution:
             cpu, period = map(int, _cgroup_read(directory, "cpu.max").split())
             if (cpu <= 0 or period <= 0 or cpu * 100 > period * cls.CPU_PERCENT
                     or not 0 < int(_cgroup_read(directory, "memory.max")) <= cls.MEMORY
+                    or _cgroup_read(directory, "memory.swap.max").strip() != "0"
                     or not 0 < int(_cgroup_read(directory, "pids.max")) <= cls.TASKS):
                 raise ValueError("unit cgroup resource limits were not applied")
             metadata = os.fstat(directory)
