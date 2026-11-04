@@ -234,9 +234,22 @@ public static class BundleRunner
             card.FloorAddedToDeck = 1;
             player.Deck.Add(card);
         }
-        foreach (var relic in b.Relics)
+        for (int i = 0; i < b.Relics.Count; i++)
         {
-            player.AddRelicInternal(RelicRegistry.Create(relic));
+            var relic = RelicRegistry.Create(b.Relics[i]);
+            // The relic's run-time state from the replay's initial state (relic_props), as a save import fills it
+            // (Run/Save/RunImporter.cs FillProperties): e.g. TEA_OF_DISCOURTESY CombatsLeft, VENERABLE_TEA_SET
+            // GainEnergyInNextCombat. Without it every relic starts fresh.
+            if (i < b.RelicProps.Count && b.RelicProps[i] is { IsEmpty: false } props)
+            {
+                var missing = RunImporter.MissingProperties(relic.GetType(), props);
+                if (missing.Count > 0)
+                {
+                    throw new ArgumentException($"relic {b.Relics[i]} saved properties {string.Join(", ", missing)} are not mapped");
+                }
+                RunImporter.FillProperties(relic, props);
+            }
+            player.AddRelicInternal(relic);
         }
         if (extras != null)
         {

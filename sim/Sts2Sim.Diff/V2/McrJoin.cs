@@ -74,6 +74,10 @@ public static class McrJoin
         start["rng_offsets"] = m["rng_offsets"]?.DeepClone() ?? new JsonObject();
         start["deck"] = m["deck"]?.DeepClone();
         start["relics"] = m["relics"]?.DeepClone() ?? new JsonArray();
+        if (m[BundleJson.RelicPropsKey] is JsonArray relicProps)
+        {
+            start[BundleJson.RelicPropsKey] = relicProps.DeepClone();
+        }
         start.Remove("anchor");
         var reasons = segment.EligibilityReasons
             .Where(r => !r.StartsWith("anchor_", StringComparison.Ordinal) && !string.Equals(r, DeckOrderGap, StringComparison.Ordinal))

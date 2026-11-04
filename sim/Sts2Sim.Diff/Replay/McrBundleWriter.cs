@@ -262,6 +262,18 @@ public static partial class McrBundleConverter
         }
         var deck = new JsonArray((p?.Deck ?? new()).Select(c => (JsonNode?)new JsonObject { ["id"] = c.Id, ["upgraded"] = c.CurrentUpgradeLevel > 0 }).ToArray());
         var relics = new JsonArray((p?.Relics ?? new()).Select(r => (JsonNode?)JsonValue.Create(r.Id)).ToArray());
+        // The relics' run-time state (SavedRelic.Props from the initial SerializableRun), aligned with `relics`. Card-valued
+        // properties (a relic holding a card) are not carried: that relic starts fresh and the bundle says so.
+        var relicProps = new List<SavedProperties?>();
+        foreach (var r in p?.Relics ?? new())
+        {
+            bool cardValued = r.Props is { } rp && (rp.Cards.Count > 0 || rp.CardArrays.Count > 0);
+            relicProps.Add(cardValued ? null : r.Props);
+            if (cardValued)
+            {
+                reasons.Add("relic_props_card_valued:" + r.Id);
+            }
+        }
         var distinct = reasons.Distinct(StringComparer.Ordinal).ToList();
         var bundle = new JsonObject
         {
@@ -291,6 +303,10 @@ public static partial class McrBundleConverter
             ["outcome"] = outcome,
             ["final_hp"] = finalHp
         };
+        if (relicProps.Any(x => x is { IsEmpty: false }))
+        {
+            bundle[BundleJson.RelicPropsKey] = SavedPropsJson.WriteList(relicProps);
+        }
         if (distinct.Count > 0)
         {
             bundle[BundleJson.IneligibleReasonsKey] = new JsonArray(distinct.Select(r => (JsonNode?)JsonValue.Create(r)).ToArray());

@@ -1,10 +1,13 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sts2Sim.Core;
+using Sts2Sim.Core.Cards;
 using Sts2Sim.Core.Combat.Loop;
 using Sts2Sim.Core.Choice;
 using Sts2Sim.Core.Combat.Pipeline;
 using Sts2Sim.Core.Powers;
 using Sts2Sim.Core.Relics;
+using Sts2Sim.Core.Random;
 using Sts2Sim.Core.Run;
 using Sts2Sim.Core.State;
 using Sts2Sim.Diff;
@@ -149,5 +152,43 @@ public static class FidelityTests
         ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second with { DeckIndex = deck.Count }, out var outside, deck);
         Assert.Equal("action.picks.deck_index", outside?.Path);
     }
-}
 
+    private static DiffBundle TeaBundle(IReadOnlyList<SavedProperties?> relicProps) => new()
+    {
+        Source = new BundleSource("FID", "fid-part", 1, 1, 12),
+        GameVersion = "v0.111.0",
+        Seeding = RngSetup.SeedingXxh64,
+        Seed = "GM28D28DX794",
+        Character = StartingDecks.IroncladCharacterId,
+        Ascension = 6,
+        EncounterId = "NIBBITS_WEAK",
+        PlayerHp = 39,
+        PlayerMaxHp = 70,
+        Deck = StartingDecks.IroncladAtRunStart(6).Select(id => new BundleCard(id, false)).ToList(),
+        Relics = new[] { "BURNING_BLOOD", TeaOfDiscourtesy.RelicId },
+        RelicProps = relicProps,
+        Outcome = DiffBundle.OutcomeAbandoned
+    };
+
+    public static void Test_Fidelity_McrRelicPropsReachTheCombatStart()
+    {
+        // Human combat gate GM28D28DX794 s26 (f12 TERROR_EEL_ELITE), started from the replay's initial state (mcr join): the
+        // replay holds TEA_OF_DISCOURTESY CombatsLeft 0, but the join carried relic ids only, so the relic started fresh and
+        // shuffled two Dazed into the sim's draw pile (s54 likewise; s65 VENERABLE_TEA_SET GainEnergyInNextCombat true:
+        // +2 energy in the game only). The converter now writes relic_props in the save's props shape and the combat
+        // start fills them as a save import does (Run/Save/RunImporter.cs FillProperties).
+        var props = new SavedProperties { Ints = { new KeyValuePair<string, int>("CombatsLeft", 0) } };
+        var written = BundleJson.Write(TeaBundle(new SavedProperties?[] { null, props }));
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(written[BundleJson.RelicPropsKey]!.ToJsonString()).RootElement[0].ValueKind);
+        var parsed = BundleJson.Parse(written.ToJsonString());
+        Assert.Equal(0, parsed.RelicProps[1]!.Ints.Single().Value);
+        int Dazed(CombatSim sim) => sim.State.Player.AllPiles.Sum(p => p.Cards.Count(c => c.Id == TeaOfDiscourtesy.DazedCardId));
+        var fresh = BundleRunner.CreateSim(TeaBundle(Array.Empty<SavedProperties?>()));
+        Assert.True(Dazed(fresh) > 0, "a fresh TEA_OF_DISCOURTESY adds Dazed at combat start");
+        var used = BundleRunner.CreateSim(parsed);
+        Assert.Equal(0, Dazed(used), "CombatsLeft 0 from the replay: no Dazed");
+        Assert.Equal(0, used.State.Player.Relics.OfType<TeaOfDiscourtesy>().Single().CombatsLeft);
+        var unknown = new SavedProperties { Ints = { new KeyValuePair<string, int>("NoSuchProperty", 1) } };
+        Assert.Throws<ArgumentException>(() => BundleRunner.CreateSim(TeaBundle(new SavedProperties?[] { null, unknown })));
+    }
+}
