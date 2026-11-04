@@ -1,6 +1,6 @@
 # hack-sts2 接手文档（当前入口）
 
-更新：2026-11-04（Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
+更新：2026-11-04（保真集成：E3 的 7 处开放分歧关闭，农场 G3 / G2 全一致、人类战斗闸 99.70%；循环破除器合入；Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
 给新会话或新同事的唯一入口：先读本页，再按需打开引用的文档。历史交接记录在
 `docs/handoff-2026-11-01.md`（E1/E2 期间逐段追加），波次级状态日志在 `docs/p1-sim-full-port-plan-2026-11-01.md` 末尾。
 
@@ -30,20 +30,27 @@
 | 1.3 按平均通关进度评分（A0/A10） | **9** | 协议 v0.2 定版，官方种子集带 sha256；LLM 赛道（`sts2eval`）与 NN 赛道（`sts2vec eval`）同一计分、同一运行目录格式、逐局重放审计；榜单 12 行（`docs/sts2-bench-protocol-v0.2-2026-11-01.md` §8） | 环境层面无缺口。Sonnet 行（0.499 / 0.310）测于对等审计之前的观测，需注明口径；full/compact A/B 与对照模型属评测，不在本阶段 |
 | 1.4 容器化、并行、高吞吐 | **8** | `scripts/sts2_cluster.sh up N [--host raven]` 一条命令起 N 个服务器并等健康，`sts2eval run --urls` 轮转；镜像内 NativeAOT `Sts2Sim.Vec.so` 默认启用；Huginn 实测：整机 26–28 局/秒随机对局、每服务器 110–150 MiB、容器内 Vec 6.2–6.3 万 env-steps/s（`docs/capacity-2026-11-02.md`）；Mac 1024 局×8 线程 Vec 10.8–12.1 万 env-steps/s（负载 5–14 下中位数；轻载单次 12.7 万，每步 61 CPU µs；`sim/BENCH.md` "J integrate"）；arm64/amd64 镜像均验证 | arm64 的 AOT 镜像未构建验证；`sts2eval` 单进程约 7 局/秒封顶，没有内置多进程模式（只影响快速脚本策略走 HTTP 的情形，NN 走 `sts2vec eval` 不受影响）；Huginn 的 containerd 快照与构建缓存在 2.7 GB 根盘上（需管理员迁到 `/data`）；客户端与服务器分机的纯服务器容量未测 |
 | 1.5 版本更新能快速定位 | **8** | `scripts/version_update.sh` 一条命令：版本差分（10 秒）→ 逐模型工作包（`version_stubs.py`，新模型带可编译骨架，546 包 2 秒）→ 录像钩子漂移检查（`hook_drift.py`，合成版本上恰好抓到 1 处签名变化）→ 构建 → 受影响测试 → selftest → G0，末尾输出人工清单；内核映射 564 文件 0 unmapped；快路径提示点表 `gen_prompt_sites.py --check` 进门；Linux 容器门 `scripts/ci_linux.sh`（Huginn PASS） | 规则移植本身仍是人工（工作包只定位不改写）；GitHub workflow 只是骨架未启用；`ci_linux.sh` 改过的启动行未完整跑一次；STS2_MCP mod 的钩子目标不在 hook-map 里，漂移检查覆盖不到；默认只跑受影响测试（`--full-tests` 才全量） |
-| 保真（E3，五条的共同前提） | **7** | 对账闭环已通并合入：REC recorder（真游戏存档锚点）→ 4 进程无头覆盖农场 39 局（`scripts/farm/`）→ `export-bundles-v2` 绑定存档锚点 → G1/G2/G3 → 分诊与 6 处 Core 修复 → 棘轮基线 `sim/specs/diff-baseline-e3-farm.json`。合并后的树（`sim/specs/integration.md` "E3 integrate"）：农场 G3 种子整局 3,320/3,324 决策（99.88%），39 局 30 局到录像终点；`--anchors` 3,578/3,582，7 处分歧；`--anchors-every`（每段从游戏存档起，即 G2）3,601/3,603（99.94%）；存档对照：可导出的 258 段除解锁档与地图历史外全等（另 179 段在战斗内或带未决提示，不可导出）；G1/G2 棘轮 787 段、2,664 决策 0 回退；人类语料 G3 1,532/1,537 → 1,921/1,924（99.84%），人类战斗闸 117 段 1,599/1,607 不变 | 7 处开放分歧（PUNCH_OFF 事件转战斗、GAMBLING_CHIP 阶段名、导出器把放弃的卡牌奖励当事件选项、STRATAGEM 选牌顺序、3 处只在链式重放出现的隐藏状态/回合计数）；人类战斗闸 G1 99.50%，未到 99.9%；农场覆盖薄：1 局到第 2 幕、0 局到第 3 幕，A10 最高 14 层；导出器未索引 R2 逐战斗回放；8 次真游戏 worker 崩溃（5 次 Defect）未分诊；2 个事件仍是占位 |
+| 保真（E3，五条的共同前提） | **7** | 对账闭环已通并合入：REC recorder（真游戏存档锚点）→ 4 进程无头覆盖农场 39 局（`scripts/farm/`）→ `export-bundles-v2` 绑定存档锚点 → G1/G2/G3 → 分诊与 Core 修复 → 棘轮基线 `sim/specs/diff-baseline-e3-farm.json`。保真集成后（`sim/specs/integration.md` "Fidelity integrate"；农场与人类语料用新导出器重导出）：农场 G3 种子整局 3,522/3,522 决策（100%），39 局 36 局到录像终点（另 3 局停在 `decision_unresolved` 截断）；`--anchors` 787/787 段、3,690/3,690，0 分歧；`--anchors-every`（每段从游戏存档起，即 G2）3,676/3,676（只剩 4 个超出范围的 `extra_rewards` 导入）；存档对照：可导出的 259 段除解锁档与地图历史外全等（另 180 段在战斗内、带未决提示或是 `extra_rewards` 导入，不可导出）；G1/G2 棘轮 787 段、2,810/3,059 决策、战斗段 168/177 一致（结局 168/168，其余 9 段导出器不可用），对旧基线 0 回退；人类语料 G3（重导出）2,348/2,352（99.83%），人类战斗闸 1,666/1,671（99.70%） | 人类战斗闸 G1 99.70%，未到 99.9%（剩 5 行：4 行 v0.107.1 版本漂移、Q3X6PF8S37GA s5 快照时序）；人类 G3（重导出）5 局停在 port_bug 分歧、2 局停在 FAKE_MERCHANT 占位（`sim/specs/diff-report-e3-farm-2026-11-02.md` §7 "Still open"）；导出器修复只对重导出的 bundle 生效（农场原始录像在外接盘上）；农场覆盖薄：1 局到第 2 幕、0 局到第 3 幕，A10 最高 14 层；导出器未索引 R2 逐战斗回放；8 次真游戏 worker 崩溃（5 次 Defect）未分诊；2 个事件仍是占位 |
 
-规则保真是环境"对不对"的总前提，五条评分都以它为底（上表最后一行）。目标 G1/G2 ≥ 99.9%：G2（从存档起）99.94% 已达；G3 农场 99.88%、人类 99.84%；G1 人类战斗闸 99.50% 未达。
+规则保真是环境"对不对"的总前提，五条评分都以它为底（上表最后一行）。目标 G1/G2 ≥ 99.9%：农场 G2（从存档起）与 G3 均 100% 已达；人类 G3（重导出）99.83%；G1 人类战斗闸 99.70% 未达。
 
 ### 1.6 环境还差什么（按优先级；不含评测与训练）
 
-1. **保真收尾（P0，闭环已通）**：农场 → 导出 → G1/G2/G3 → 分诊已能一条线跑完（§3 命令）。剩：7 处开放分歧
-   （`sim/specs/diff-report-e3-farm-2026-11-02.md` §4：PUNCH_OFF 事件→战斗转换，人类 G0G2 同病；GAMBLING_CHIP 回合开始选牌的
-   `turn.phase`；导出器把放弃的卡牌奖励（Index ≥ 选项数）当事件 `choose`；STRATAGEM 牌堆选择顺序；K4P3/545X/SDR1 三处只在
-   链式重放出现的隐藏抽牌堆状态与回合计数）；导出器未索引 R2 逐战斗回放 `native/replays/*.mcr`（存档已覆盖每个战斗起点，
-   不阻塞），ancient_exit 存档未绑定；农场第 2/3 幕覆盖薄（1 局到第 2 幕、0 局到第 3 幕、A10 最高 14 层，需要更强的驱动：
-   sim 训练策略或 LLM）；8 次真游戏 worker 崩溃（5 次 Defect；有崩溃报告的 2 次是未处理托管异常，文本已丢；`run_farm.py` 现在重启前把 `game.log`
-   复制到 `<farm>/crashlogs/`）待分诊；V2Runner 房间段缺 G3Schema 适配（房间级 G2 以 `g3 --anchors-every` 为准）；
-   人类战斗闸 8 行（GM28 战斗开始时遗物运行时状态等）。目标不变：G1/G2 ≥ 99.9%、G3 整局一致。
+1. **保真收尾（P0，闭环已通；E3 的 7 处开放分歧已于 2026-11-04 关闭）**：农场 → 导出 → G1/G2/G3 → 分诊已能一条线跑完（§3 命令）。
+   `train/fidelity`（`sim/specs/integration.md` "Fidelity integrate"，报告 `sim/specs/diff-report-e3-farm-2026-11-02.md` §7）关掉了
+   §4 的 7 处：唯一的 Core 规则改动是 SDR1 回合计数（`CombatState.TurnsTakenAtCombatEnd`：EndCombatInternal 开始时记下
+   TurnNumber，写进地图历史）；其余在差分闸（GAMBLING_CHIP 的 `turn.phase` 按录像分辨率投影、STRATAGEM 抽牌堆网格按多重集比对、
+   mcr 连接带上遗物运行时状态、G1 `final_hp` 取胜利回血之前）与导出器（放弃的卡牌奖励导出为打开 + `card_reward_skip`；PUNCH_OFF
+   的 FIGHT 选项归回事件段；同名卡按存档对齐 `deck_index`；退回的 SMITH 选择不再和下一个选项配对）。导出器修复只对重导出的
+   bundle 生效：农场原始录像在外接盘（当前未接），重导出的自足 bundle 在 `train-fidelity` worktree 的 `tmp/fid/`（农场
+   `bundles-x56`、人类 `hbundles-x8`、战斗闸输入 `w41i-in`）。剩：人类战斗闸 5 行（4 行 v0.107.1 版本漂移的 exporter_ineligible，
+   Q3X6PF8S37GA s5 是快照时序 R8）；人类 G3（重导出）5 局的首个分歧（Q3X6PF8S37GA s5 同上、GM28D28DX794 s74 MUMMIFIED_HAND、
+   P2UZ19X1GGNQ s31 无存档的开局手牌顺序、NBNDT3S61AUM s81 商店卡包奖励、PLRUV49CRFQW f18 OROBAS 的 GLASS_EYE 反编译缺口），
+   另 2 局停在 FAKE_MERCHANT 占位；4 个 `extra_rewards` combat_exit 导入（超出范围）；导出器未索引 R2 逐战斗回放
+   `native/replays/*.mcr`（存档已覆盖每个战斗起点，不阻塞），ancient_exit 存档未绑定；农场第 2/3 幕覆盖薄（1 局到第 2 幕、0 局到第 3 幕、A10 最高 14 层，需要更强的驱动：sim 训练策略或
+   LLM）；8 次真游戏 worker 崩溃（5 次 Defect；有崩溃报告的 2 次是未处理托管异常，文本已丢；`run_farm.py` 现在重启前把 `game.log`
+   复制到 `<farm>/crashlogs/`）待分诊；V2Runner 房间段缺 G3Schema 适配（房间级 G2 以 `g3 --anchors-every` 为准）。
+   目标不变：G1/G2 ≥ 99.9%、G3 整局一致。
 2. **Vec 停滞上限（已完成 2026-11-03，`5fd17d6`）**：VecEnv `floor_step_cap`（`config_json` 追加键，C ABI 不变；默认 80，
    0 = 关）。一局在同一层（`total_floor` 不变）的非战斗决策点累计 80 个决策（合法或非法索引都算，no-op 不算，战斗内决策
    不算）后，在仍停在该层非战斗点的那一步截断：`truncated = 1`、reward 0、状态位 `FLOOR_STALL = 256`、
@@ -72,7 +79,9 @@
    `card_static`（598×30）；商店在药水栏满或有 Sozu 时不再列出买药水。encoder `3b73317739c650bd`，43 个缓冲，每 env
    35,062 字节。`RunActionKind` 是模型输入，所以旧库的 checkpoint 改走"加宽"：嵌入枚举只在末尾追加成员（按成员名校验）时
    保留旧嵌入行、新行与其 Adam 矩置零，`config.json` 记 `resume_compat.model_inputs = widened` 与 `widened_enums`；
-   `sts2train eval` 同规则。其余模型输入差异仍然拒绝。Colab 包 `sts2train-e877036880.tar.gz`（AOT key `8f89eba48d17`）。
+   `sts2train eval` 同规则。其余模型输入差异仍然拒绝。Colab 包 `sts2train-e877036880.tar.gz`（AOT key `8f89eba48d17`）；
+   循环破除器合入后 `sts2train-a8d91cf636`（同一 AOT 库）；保真集成后当前包是 `sts2train-9f6608701d.tar.gz`（AOT key
+   `5c80f4e6ba70`：Core 的回合计数改动只进地图历史，encoder 与观测不变；`sim/specs/integration.md` "Fidelity integrate"）。
 4. **游戏原文补齐（P1）**：`scripts/export_sts2_localization.py` 导出 characters / rest_site_ui / 附魔表，替换 sim 措辞；
    移植 CRYSTAL_SPHERE、FAKE_MERCHANT 两个事件。
 5. **信息集克隆补全（P1，搜索要用时再做）**：重采样遭遇队列、后续 Boss/Ancient、未开宝箱与未开卡牌奖励（生成器有约束，不是简单洗牌）。
@@ -216,7 +225,7 @@ dotnet run -c Release --project sim/Sts2Sim.Diff -- g3 <bundles> --report <r>.js
 
 | 级别 | 内容 |
 | --- | --- |
-| P00 | 保真收尾：7 处开放分歧、Defect 崩溃分诊、第 2/3 幕覆盖（更强驱动）（§1.6 第 1 条）（Vec 停滞上限已完成） |
+| P00 | 保真收尾：人类战斗闸 5 行与人类 G3 的 5 处分歧、Defect 崩溃分诊、第 2/3 幕覆盖（更强驱动）（§1.6 第 1 条；E3 的 7 处开放分歧已关闭，Vec 停滞上限已完成） |
 | P0 | 游戏原文补齐与两个未移植事件（Vec 信息补齐 schema 追加已完成；环境已交给训练） |
 | P1 | 信息集克隆补全预生成内容；`sts2eval` 多进程；arm64 AOT 镜像；观测编码提速（Vec 每步 CPU 的大头） |
 | P2 | 论文材料；跨游戏迁移实验（hack-balatro）；人类语料统计并入报表；GitHub workflow 启用 |
