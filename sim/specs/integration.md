@@ -1351,3 +1351,93 @@ container, no dotnet:
   `checkpoint_encoder_version` fc2eb34c07bc8513, `encoder_version` 5dbfa09dd9dcb5ed, `resume_compat.model_inputs`
   identical (other differences: encoder_version, EndKind 5 -> 6, ItemKind new), `env.floor_step_cap` 80. `sts2train
   eval` of the old checkpoint on silent-a10-v1 (seed set from the bundle): 20 games, 20/20 replayable.
+
+## Deckbuild integrate (2026-11-04)
+
+Scope: the two simulator-side branches of the Silent A10 cycle and one trainer follow-up. Base:
+`claude/recorder-performance-lag-0f9d6d` at `ef70ee6` (PR #30); both owner branches are cut from `e80ea22`.
+
+Merged, in order (both `--no-ff`): train/vec-branch `9fad18f` (merge `568710c`), train/env-deckbuild
+`810eae7`+`874ce2f`+`f2430c6`+`5be2376` (merge `4ba5de4`). Textual conflicts: none (git merged `sim/ENV_SPEC.md`,
+`VEC.md`, `CONTRACTS.md`, `VecEnv.cs`, `VecTests.cs`, the trainer README and `gen_env_spec.py` on disjoint hunks).
+
+Seams resolved in `4ba5de4`:
+- `sim/ENV_SPEC.md`: the generated §5 block was already right for the merged library (`gen_env_spec.py --check`:
+  `3b73317739c650bd`, 43 buffers, 35,062 bytes/env, `start_entry >= -1`); the two branches' prose came to 410 lines, so
+  it is condensed back to the 400-line budget without dropping a rule (the rewards-screen paragraph folded into the
+  `TakeRewardCard` row; §6 rewrapped; §3 / §7 / §8 / §10 sentences shortened); §9 keeps 21 exports; §11 35.1 KB.
+- `VecEnv.BeginBranchEpisode` also clears the `Raw` legal-action scratch, as `StartSlot` does since the macros.
+  Branch destinations copy `reward_choices` / `map_routes` with the rest of the view (`BranchCopy` = every buffer but
+  the signals); the branch tests (determinized copied view = each destination's own encoding) pass on the merged tree.
+
+Merged library: ABI 2, 21 exports, encoder_version `3b73317739c650bd` (branch: `5dbfa09dd9dcb5ed` →
+`e9baaefc39811631` macros → `dcbee4daff61c155` map_routes → `3b73317739c650bd` card_static), 43 buffers, 35,062
+bytes/env. NN track (`sts2vec eval`, 20 games each, every row 20/20 replayable; std rows equal the branch's):
+
+| seed set | random | first | heuristic |
+| --- | --- | --- | --- |
+| `silent-a0-v1` | 0.074 | 0.141 | 0.183 |
+| `silent-a10-v1` | 0.037 | 0.112 | 0.117 |
+| `std-a0-v1` | 0.082 | 0.194 | 0.221 |
+| `std-a10-v1` | 0.044 | 0.103 | 0.110 |
+
+Follow-ups (integration):
+- `b86167e` enum-widening resume / eval: `features.spec_diff` → (block, widened, other); an embedded enum that only
+  gained members appended at its end (checked by member names; `ModelSpec` now records them for all 15 embedded enums)
+  is "widened", not refused. `model.ENUM_EMBEDDINGS` names the tables each enum sizes (`RunActionKind`: `kind_emb`,
+  `c_kind`); `widen_state_dict` keeps the checkpoint's rows and zeroes the new ones, `restore_checkpoint` does the same
+  for their Adam moments; config.json `resume_compat.model_inputs` = `widened` + `widened_enums` (also per session);
+  `sts2train eval` builds a widened checkpoint's model with `load_checkpoint(library=...)` and records `spec_compat`.
+  Everything else refused before is still refused. `tests/test_resume_compat.py` 25 tests: real Stage-1
+  (`fc2eb34c07bc8513`) and pre-macro (`5dbfa09dd9dcb5ed`, new `tests/data` copy from the s4a checkpoint) specs widen
+  `RunActionKind` 21 → 23; widened logits of kinds < 21 and values equal the checkpoint model's bit for bit on real
+  observations with macro rows; preset pins 948,974 / 1,175,438 / 15,805,070.
+- `e877036` `smoke_bundle.sh`: also checks `reward_choices` rows = rewards-screen macro candidates, `map_routes` only at
+  map nodes, `card_static`, ABI ≥ 2 and an exact branch; `--torch-threads THREADS`.
+- `b26a383` `Test_VecBranch_ConcurrentWithStepSerialises` waits for real overlap (one `-- Vec` run on the loaded box
+  saw 2 of the required 10 mid-run branches; the assertion depended on thread scheduling).
+
+Gates (macOS M4 Pro, load 6-9 from other agents, `DOTNET_PROCESSOR_COUNT=4`): `scripts/gates.sh --quick` on
+`e877036`, 194 s, logs `tmp/gates/deckbuild-integrate-quick/` (repeated on the final tree, see the end of this entry):
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 4 | Release: 0 warnings, 0 errors (rc 0) |
+| build-debug | PASS | 4 | Debug: 0 warnings, 0 errors (rc 0) |
+| tests | PASS | 44 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 142/142 passed, 0 failed, PENDING 0, 42 s in runner (rc 0) |
+| selftest | PASS | 5 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps (rc 0) |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 (rc 0) |
+| pytest-eval | PASS | 40 | 84 passed in 39.66s |
+| pytest-vec | PASS | 16 | 117 passed in 15.59s |
+| sts2rec | PASS | 77 | 762 passed, 6 skipped in 76.64s (0:01:16) |
+| py-scripts | PASS | 0 | unittest 53 tests OK; prompt_sites --check OK; kernel_map --check OK: 564 kernel files; mapped 374, no_port 190; lines mapped 104637, no_port 34344 |
+
+Also: full C# suite 1,162/1,162 passed, 0 failed, PENDING 0 (481 s in the runner); `-- Vec` 67/67 (after `b26a383`);
+`-- Parity Server` 45/45; `uv run --project sim/tools/train pytest -q` 97 passed; `gen_env_spec.py --check` up to date.
+
+Colab bundle `tmp/colab/sts2train-e877036880.tar.gz` (7,029,564 bytes, sha256
+`ead2435b9ebb732d85f5bd9fadbe84c66c865f3c6dc8cf832f0d2b3a3e027fba`; AOT key `8f89eba48d17`, built on raven in 236 s,
+`Sts2Sim.Vec.so` sha256 `254efb10…f9fd6cc`, newest symbol GLIBC_2.34; 148 Silent A9 start saves; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-deckbuild-20261104/`). `b26a383` and the docs commit change nothing the bundle
+ships. Validated on raven in plain `python:3.13` containers (`--cpus 4`, 4 threads; box shared with a lookahead job,
+load 9-10), torch 2.15.0+cpu in a venv on `/data/raven`:
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5): `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; floor cap 80 in
+  effect; 1 update (31 s per update on the contended box), eval u1 std-a0-v1 0.078 (20 games); under the NativeAOT
+  library the appended-buffer counts equal the managed macOS build's on the same rollout (`reward_choice_rows` 12,777
+  = `macro_candidates` 12,777, `map_route_cells` 6,155,123, `event_option_rows` 9,574, ...), card_static 598 × 30, exact
+  branch = source; raw bench 32,961 env-steps/s (1024 envs × 4 threads).
+- Signal flags (`--aux-heads --deck-counts --acq-shaping --start-saves <bundle>/saves --save-mix 0.35 --floor-step-cap
+  80`, small preset, 2 min): 1,210,256 parameters, 4 updates, 16,384 env steps, 0 sim errors / content gaps,
+  `aux_win_loss` 0.6939 → 0.6789; final eval on silent-a0-v1 progress 0.162, 20/20 replayable.
+- Widening with a real checkpoint: s4a `best.pt` (large preset, update 120, encoder `5dbfa09dd9dcb5ed`, 21 kinds;
+  sha256 `f3a10db4…3088fc8ad`) resumed for one update on the new library (cpu, `--allow-big-local`, 32 envs, rollout
+  4, minibatch 128, `--max-updates 121`): config.json `resume_compat.model_inputs` widened, `widened_enums`
+  RunActionKind 21 → 23 (+TakeRewardCard, +TakeRewardAlternative); checkpoint u121 on `3b73317739c650bd`, 15,805,070
+  parameters. `sts2train eval` on silent-a0-v1 (greedy, 20/20 replayable each): `best.pt` on the old library
+  (`sts2train-ef70ee6273`) 0.272 [0.244, 0.299]; `best.pt` widened on the new library 0.302 [0.268, 0.336]; u121
+  0.291 [0.254, 0.328]. The policy carries over (the new library also differs in the shop potion rule and in how card
+  rewards are taken, so the scores need not match).
+- raven cleanup: build cache unused for 2.5 h pruned before the AOT build (3.3 GB, on `/data/raven`; the root disk is
+  not involved); the venv and checkpoint copies under the validation directory were deleted afterwards.
+- Not verified: CUDA (no GPU run of this bundle); the Colab A100 path is unchanged code.

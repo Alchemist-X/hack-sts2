@@ -1,6 +1,6 @@
 # hack-sts2 接手文档（当前入口）
 
-更新：2026-11-03（训练周期集成：Vec 停滞上限 + schema 追加、长程训练器 + Colab 包、Silent 种子集；此前 2026-11-02 04:50 E3 合入）。
+更新：2026-11-04（Deckbuild 集成：Vec ABI 2 搜索导出、奖励页宏动作 + `reward_choices` / `map_routes` / `card_static`、旧 checkpoint 加宽续训；此前 2026-11-03 训练周期集成、2026-11-02 E3 合入）。
 给新会话或新同事的唯一入口：先读本页，再按需打开引用的文档。历史交接记录在
 `docs/handoff-2026-11-01.md`（E1/E2 期间逐段追加），波次级状态日志在 `docs/p1-sim-full-port-plan-2026-11-01.md` 末尾。
 
@@ -64,13 +64,22 @@
    `64d964770dd0`）在 raven 的 python:3.13 容器里验过：`sts2vec check` 报 `5dbfa09dd9dcb5ed`，`--floor-step-cap 80` 在
    `config.json` 里生效，NativeAOT 库的 41 个缓冲在 256 envs × 400 步随机对局上与托管构建逐字节相同（含反射解析的
    `event_option_values`）；旧包 `ef356974fa` 的 checkpoint 用新包续训、评测都通过（`sim/specs/integration.md` "Train-cycle integrate"）。
+   2026-11-04 Deckbuild 集成（`sim/specs/integration.md` "Deckbuild integrate"）在此之上又追加：ABI 2 搜索导出
+   （`sts2vec_branch` / `branch_many` / `restore_many` / `pool_release` / `abi_version`，共 21 个导出，`sim/VEC.md` "Search"）；
+   奖励页宏动作（`RunActionKind` 追加 `TakeRewardCard` 21 / `TakeRewardAlternative` 22：一次决策 = 游戏的"打开卡牌奖励 + 选牌"
+   两次点击，没有 Skip 行，放弃用 `ProceedRewards`）；缓冲 `reward_choices [16,25]`（宏动作行对应的卡牌全列）、
+   `map_routes [18,7,5]`（每个地图节点到本幕 Boss 的最少/最多精英、休息点、商店、距离）、schema JSON 内静态卡表
+   `card_static`（598×30）；商店在药水栏满或有 Sozu 时不再列出买药水。encoder `3b73317739c650bd`，43 个缓冲，每 env
+   35,062 字节。`RunActionKind` 是模型输入，所以旧库的 checkpoint 改走"加宽"：嵌入枚举只在末尾追加成员（按成员名校验）时
+   保留旧嵌入行、新行与其 Adam 矩置零，`config.json` 记 `resume_compat.model_inputs = widened` 与 `widened_enums`；
+   `sts2train eval` 同规则。其余模型输入差异仍然拒绝。Colab 包 `sts2train-e877036880.tar.gz`（AOT key `8f89eba48d17`）。
 4. **游戏原文补齐（P1）**：`scripts/export_sts2_localization.py` 导出 characters / rest_site_ui / 附魔表，替换 sim 措辞；
    移植 CRYSTAL_SPHERE、FAKE_MERCHANT 两个事件。
 5. **信息集克隆补全（P1，搜索要用时再做）**：重采样遭遇队列、后续 Boss/Ancient、未开宝箱与未开卡牌奖励（生成器有约束，不是简单洗牌）。
 6. **运维收尾（P2）**：arm64 AOT 镜像、`sts2eval` 多进程模式、GitHub workflow 启用、Huginn containerd 迁盘（管理员）、
    STS2_MCP 钩子纳入 hook-map。
 
-做完 1–3，环境就可以交给训练（2、3 已于 2026-11-03 完成，1 仍在进行）；4–6 不阻塞训练。
+做完 1–3，环境就可以交给训练（2、3 已于 2026-11-03 完成，2026-11-04 又补了奖励页宏动作与路线特征；1 仍在进行）；4–6 不阻塞训练。
 
 ## 2. 仓库地图
 
@@ -78,12 +87,12 @@
 | --- | --- |
 | `sim/Sts2Sim.Core` | 规则内核 + 1,400+ 内容模型（逐模型单文件，规则引用反编译 `文件:行`，见 `sim/specs/<area>.md`） |
 | `sim/Sts2Sim.Server` | HTTP 对局服务器（LLM 用）：观测 JSON + 文本、token 动作、步骤日志、规则文案、`--reveal-moves`、`--bind` |
-| `sim/Sts2Sim.Vec` + `sim/tools/vec` | 批量训练接口：C ABI（16 个 `sts2vec_*`）、实体表观测、候选动作、快照起点池、去克隆快路径、信息集克隆；Python `sts2vec`（AOT 或 hostfxr + ctypes + numpy）、`sts2vec eval` 协议评测器、示例策略 |
+| `sim/Sts2Sim.Vec` + `sim/tools/vec` | 批量训练接口：C ABI（21 个 `sts2vec_*`，ABI 2 含搜索分支）、实体表观测、候选动作、快照起点池、去克隆快路径、信息集克隆；Python `sts2vec`（AOT 或 hostfxr + ctypes + numpy）、`sts2vec eval` 协议评测器、示例策略 |
 | `sim/Sts2Sim.Diff` | 差分闸：G0 首战 bundle、v2 bundle（G1/G2，`--baseline` 棘轮）、G3 种子整局重放（`--anchors` / `--anchors-every` / `--save-check` 用游戏存档锚点）、`.mcr` 解码 |
 | `sim/Sts2Sim.Tests` / `Sts2Sim.Bench` | 自定义测试运行器（`-- <过滤子串>`），基准（combat 行、`vec` 子命令、run-soak） |
 | `sim/tools/eval` | LLM 评测器 `sts2eval`（Anthropic SDK、并发、转录、计费、循环守卫、协议 v0.2 指标） |
 | `sim/tools/play` | `sim_play.py` 命令行客户端 + 代理手册 |
-| `sim/tools/train` | PPO 训练器 `sts2train`：协议目标（v0.2 进度增量 + 胜利奖励）、`smoke` / `small` / `large` 预设（0.95M / 1.18M / 15.8M 参数）、checkpoint 与 `--resume`（跨 encoder 版本要求模型输入一致）、`metrics.jsonl` / `status.json`、周期协议评测；`sts2train eval` 是 NN 赛道入口（`sts2vec eval` 的薄包装）。`scripts/train/`：Colab 包（NativeAOT `.so` + wheels + `run_train.sh` / `smoke_bundle.sh`） |
+| `sim/tools/train` | PPO 训练器 `sts2train`：协议目标（v0.2 进度增量 + 胜利奖励）、`smoke` / `small` / `large` 预设（0.95M / 1.18M / 15.8M 参数）、checkpoint 与 `--resume`（跨 encoder 版本要求模型输入一致，或只在嵌入枚举末尾追加了成员：加宽）、`metrics.jsonl` / `status.json`、周期协议评测；`sts2train eval` 是 NN 赛道入口（`sts2vec eval` 的薄包装）。`scripts/train/`：Colab 包（NativeAOT `.so` + wheels + `run_train.sh` / `smoke_bundle.sh`） |
 | `sim/ENV_SPEC.md` | NN / 程序化策略的一页环境说明（§5 由 schema 生成） |
 | `sim/CONTRACTS.md` | Part A 内核 / B 决策 API / C run 层 / D 训练接口 的合同 |
 | `sim/specs/` | 规格索引、集成日志 `integration.md`、差分报告 |
@@ -116,7 +125,7 @@ dotnet run -c Release --project sim/Sts2Sim.Bench -- vec 1024 8 500 0 1024 0    
 uv run --project sim/tools/train pytest -q                                                    # 训练器测试
 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 uv run --project sim/tools/train sts2train train --device mps --preset small \
   --envs 256 --minibatch 512 --threads 6 --torch-threads 6 --max-hours 0.05 --floor-step-cap 80 --out tmp/train/mps-smoke
-uv run --project sim/tools/train sts2train train --resume auto --out <run>                     # 续训；旧 encoder 的 checkpoint 只要模型输入一致即可
+uv run --project sim/tools/train sts2train train --resume auto --out <run>                     # 续训；旧 encoder 的 checkpoint 要求模型输入一致或只加宽枚举
 uv run --project sim/tools/train sts2train eval --seedset silent-a10-v1 --checkpoint <run>/checkpoints/best.pt
 scripts/train/make_colab_bundle.sh                                # -> tmp/colab/sts2train-<sha>.tar.gz；AOT .so 在 raven 上构建（按源码树哈希缓存）
 docker run --rm -v "$PWD:/w" -w /w python:3.13 bash sts2train-<sha>/smoke_bundle.sh /w/smoke-run 2 8   # raven 上验包（无 dotnet）
@@ -157,6 +166,8 @@ dotnet run -c Release --project sim/Sts2Sim.Diff -- g3 <bundles> --report <r>.js
   这两行测于波次 J 对等审计之前的观测（服务器文本/紧凑 compact-v1）；之后的观测多了 Boss/Ancient、三堆牌等行（compact-v2），新跑的行需注明口径。
 - NN 赛道（`sts2vec eval`，同一计分）：random 0.087 / 0.045、first 0.193 / 0.102、heuristic 0.221 / 0.104（A0 / A10；协议 §8，测于 E3 规则修复之前）。
   E3 合入后重测：random 0.087 / 0.045、first 0.194 / 0.103、heuristic 0.221 / 0.110（协议行未改）。
+  奖励页宏动作后（Deckbuild 集成，encoder `3b73317739c650bd`）：std random 0.082 / 0.044，first / heuristic 不变；Silent 目标集
+  silent-a0-v1 / silent-a10-v1：random 0.074 / 0.037、first 0.141 / 0.112、heuristic 0.183 / 0.117（均 20/20 可重放）。
 - 费用口径：A0 约 $1.8–2.5/局，A10 约 $1.1/局；缓存命中率约 58–61%。
 
 ## 5. 流程与约定
