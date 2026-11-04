@@ -35,6 +35,11 @@ Search (``LookaheadConfig``). Only where a game is live, in combat (``global_i.i
   frees: when the pool exceeds ``pool_budget`` the search env is rebuilt and every game's history replayed (state hash
   and observation of every shadow checked against the old env).
 
+ExIt hook: ``record`` (a callable, or ``evaluate_lookahead(record=True)`` -> ``searches.jsonl`` in the run directory)
+receives one dict per searched decision: game ``key``, decision index ``n`` (the state is the game's start replayed
+through ``history_actions[:n]`` of its summary), the candidate indices, their mean Q (None = no valid rollout), the
+valid rollout count, the choice and the greedy choice. Recording never changes a decision.
+
 Entry points: ``evaluate_lookahead`` (a normal protocol run directory, policy name ``nn:<ckpt>+la(K,R,horizon,honest)``,
 ``stats.json`` next to it), ``evaluate_greedy`` (the plain greedy baseline under the same torch thread count),
 ``paired`` (per-seed progress differences of two run directories), and the CLI:
@@ -175,7 +180,8 @@ class LookaheadPolicy:
     """
 
     def __init__(self, model, spec: ModelSpec, cfg: LookaheadConfig | None = None, *, content: str = "ported_only",
-                 win_bonus: float = 1.0, dll=None, log: Callable[[str], None] | None = None):
+                 win_bonus: float = 1.0, dll=None, log: Callable[[str], None] | None = None,
+                 record: Callable[[dict], None] | None = None):
         self.model = model
         self.spec = spec
         self.cfg = cfg or LookaheadConfig()
@@ -183,6 +189,7 @@ class LookaheadPolicy:
         self.win_bonus = float(win_bonus)
         self.dll = dll
         self.log = log or (lambda m: None)
+        self.record = record
         self.device = torch.device(self.cfg.device)
         self.env: VecEnv | None = None
         self.stats = _new_stats()
@@ -455,6 +462,10 @@ class LookaheadPolicy:
             mean = np.where(cnt > 0, np.where(valid, block, 0.0).sum(0) / np.maximum(cnt, 1), -np.inf)
             p = int(np.flatnonzero(mean >= mean.max() - TIE_EPS)[0])
             a[g] = cands[p]
+            if self.record is not None:
+                self.record({"key": self.keys[g], "n": len(self.hist[g]), "cands": list(cands),
+                             "q": [round(float(x), 6) if c else None for x, c in zip(mean, cnt)],
+                             "valid": cnt.tolist(), "choice": int(cands[p]), "greedy": int(cands[0])})
             if p != 0:
                 st["changed"] += 1
                 kn = self.kind_names[int(obs["cand"][g, cands[p], self.CC.kind])]
@@ -562,21 +573,32 @@ def _load(checkpoint, cfg: LookaheadConfig, dll=None, log=print):
     return model, spec, ck, compat
 
 
+def _repo_sha() -> str | None:
+    from sts2vec.evaluate import repo_sha
+
+    return repo_sha()
+
+
 def _win_bonus(ck: dict) -> float:
     return float((ck.get("config") or {}).get("win_bonus", 1.0))
 
 
 def evaluate_lookahead(seedset, checkpoint, out, cfg: LookaheadConfig | None = None, *, dll=None,
-                       step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP,
+                       step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, record: bool = False,
                        log: Callable[[str], None] = print) -> dict:
     """Play `seedset` with the checkpoint's lookahead policy and write the protocol run directory `out` (plus
-    `stats.json`). Torch runs on `cfg.threads` threads; the evaluator's env uses the same count."""
+    `stats.json`, and `searches.jsonl` with `record`). Torch runs on `cfg.threads` threads; the evaluator's env uses
+    the same count."""
     cfg = cfg or LookaheadConfig()
     torch.set_num_threads(cfg.threads)
     ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(str(seedset))
     model, spec, ck, compat = _load(checkpoint, cfg, dll, log)
     wh = ck.get("weights_hash") or "?"
-    pol = LookaheadPolicy(model, spec, cfg, content=ss["content"], win_bonus=_win_bonus(ck), dll=dll, log=log)
+    Path(out).mkdir(parents=True, exist_ok=True)
+    rec_f = open(Path(out) / "searches.jsonl", "w", encoding="utf-8") if record else None
+    hook = (lambda d: rec_f.write(json.dumps(d, separators=(",", ":")) + "\n")) if rec_f else None
+    pol = LookaheadPolicy(model, spec, cfg, content=ss["content"], win_bonus=_win_bonus(ck), dll=dll, log=log,
+                          record=hook)
     name = f"nn:{Path(checkpoint).name}+{cfg.label}"
     search = dict(cfg.search(), threads=cfg.threads, pool_budget=cfg.pool_budget, device=cfg.device,
                   win_bonus=pol.win_bonus, tie_eps=TIE_EPS, hp_w=HP_W, enemy_w=ENEMY_W, sha8=cfg.sha8)
@@ -593,9 +615,13 @@ def evaluate_lookahead(seedset, checkpoint, out, cfg: LookaheadConfig | None = N
                           "mirror_env": True})
     finally:
         pol.close()
+        if rec_f:
+            rec_f.close()
     stats = pol.summary()
     h = rep["headline"]
     stats.update(config=asdict(cfg), search=search, policy_name=name, weights_hash=wh, checkpoint=str(checkpoint),
+                 code={"lookahead_py_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:16],
+                       "repo_sha": rep.get("repo_sha") or _repo_sha()},
                  seedset=ss.get("id") or ss.get("name"), games=h["games"], replayable=h["replayable"],
                  progress_mean=h["progress_mean"], wall_seconds=round(time.monotonic() - t0, 2),
                  torch_threads=torch.get_num_threads(), torch=torch.__version__, host=platform.node(),
@@ -768,6 +794,7 @@ def main(argv=None) -> int:
     ev.add_argument("--seed", type=int, default=D.seed)
     ev.add_argument("--pool-budget", dest="pool_budget", type=int, default=D.pool_budget)
     ev.add_argument("--device", default=D.device)
+    ev.add_argument("--record", action="store_true", help="write searches.jsonl (per-search Q values; ExIt targets)")
     pa = sub.add_parser("paired", help="per-seed progress difference B - A of two run directories")
     pa.add_argument("a")
     pa.add_argument("b")
@@ -786,7 +813,7 @@ def main(argv=None) -> int:
         cfg = LookaheadConfig(K=a.K, R=a.R, H=a.H or (12 if a.horizon == "turn" else MAX_H), horizon=a.horizon,
                               score=a.score, threads=a.threads, seed=a.seed, pool_budget=a.pool_budget,
                               device=a.device)
-        rep = evaluate_lookahead(a.seedset, a.checkpoint, a.out, cfg, log=log)
+        rep = evaluate_lookahead(a.seedset, a.checkpoint, a.out, cfg, record=a.record, log=log)
     h = rep["headline"]
     print(json.dumps({"out": a.out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                       "wins": h["wins"], "games": h["games"], "results": {k: v for k, v in h["results"].items() if v},

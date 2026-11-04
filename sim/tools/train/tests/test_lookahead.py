@@ -335,3 +335,22 @@ def test_trim_padding_keeps_the_model_outputs(spec):
             seen += 1
     env.close()
     assert seen >= 9
+
+
+def test_exit_record_hook(runs, ckpt, tmp_path):
+    """record=True writes one searches.jsonl row per searched decision and changes no decision; each row's choice is
+    the action the game took at its decision index."""
+    L.evaluate_lookahead(SS4, ckpt, tmp_path / "rec", TURN, record=True, log=quiet)
+    assert histories(tmp_path / "rec") == histories(runs / "la")
+    rows = [json.loads(x) for x in (tmp_path / "rec" / "searches.jsonl").read_text().splitlines()]
+    assert len(rows) == stats(tmp_path / "rec")["searched"] > 0
+    hist = {json.loads(p.read_text())["key"]: json.loads(p.read_text())["history_actions"]
+            for p in (tmp_path / "rec" / "games").glob("*.summary.json")}
+    changed = 0
+    for r in rows:
+        assert r["choice"] in r["cands"] and r["greedy"] == r["cands"][0] and len(r["q"]) == len(r["cands"])
+        assert hist[r["key"]][r["n"]] == r["choice"]
+        best = max(q for q in r["q"] if q is not None)
+        assert r["q"][r["cands"].index(r["choice"])] >= best - 1e-5
+        changed += r["choice"] != r["greedy"]
+    assert changed == stats(tmp_path / "rec")["changed"]
