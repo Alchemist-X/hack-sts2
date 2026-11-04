@@ -76,6 +76,7 @@ def artifact_identity(job):
         "experiment_id": spec["experiment_id"], "config_hash": payload["config_hash"],
         **{key: spec[key] for key in FROZEN_HASHES},
         "eval_protocol": spec["eval_protocol"], "data_lineage": spec["data_lineage"],
+        "dev_seed_count": spec["dev_seed_count"], "blind_seed_count": spec["blind_seed_count"],
         "root_initialization": {"kind": "random", "init_seed": spec["init_seed"]},
         "ancestor_checkpoint": reference,
     }

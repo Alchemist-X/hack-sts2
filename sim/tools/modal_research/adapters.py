@@ -23,6 +23,7 @@ class Outcome:
     actual_cents: int | None = None
     output: dict | str | None = None
     error: str | None = None
+    cost_bound_cents: int | None = None  # only a trusted broker can authorize a provisional hold
 
 
 class Backend(Protocol):
@@ -30,7 +31,8 @@ class Backend(Protocol):
 
     lookup returns None only for authoritative absence, and raises on ambiguity.
     Status/lookup requests must honor bounded I/O timeouts. Results must include
-    final cost and complete evidence. Exception messages are never recorded.
+    complete evidence and verified actual cost, or a Raven-attested cost bound
+    with the full original reservation retained. Exception messages are never recorded.
     """
     fixture: bool
     tool_enabled: bool

@@ -88,7 +88,7 @@ class Controller:
             return
         # Analysis is serialized. Check the persisted intent as well as running jobs.
         analysis = db.execute(
-            "SELECT 1 FROM jobs WHERE kind='research' AND actual IS NULL LIMIT 1",
+            "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1",
         ).fetchone()
         event = db.execute(
             """SELECT events.* FROM events WHERE decision_id IS NULL AND NOT EXISTS (
@@ -310,7 +310,10 @@ class Controller:
     def _settle(self, owner, row, outcome):
         job = self._job(row)
         actual = outcome.actual_cents
-        if type(actual) is not int or not 0 <= actual <= 10_000_000:
+        bound = outcome.cost_bound_cents
+        provisional = (actual is None and getattr(self.backend, "verified_cost_bounds", False)
+                       and type(bound) is int and 0 < bound <= row["reserve"])
+        if not provisional and (type(actual) is not int or not 0 <= actual <= 10_000_000):
             self._quarantine(owner, row, "terminal job cost unresolved")
             return
         error = None
@@ -344,6 +347,12 @@ class Controller:
             error = "invalid_response" if job.kind in {"research", "sol"} else "missing_artifact"
         with self.store.transaction() as db:
             state = self.store.fence(db, owner)
+            if provisional:
+                latest = self.backend.authoritative_cost(db, job.key)
+                if latest is not None:
+                    actual, provisional = latest, False
+                    if actual > bound:
+                        db.execute("UPDATE study SET stopped=COALESCE(stopped,'billing exceeded verified cost bound')")
             # The raw research response is bounded diagnostic data; it is never executed.
             diagnostic = None
             if job.kind == "research" and isinstance(outcome.output, str):
@@ -352,7 +361,10 @@ class Controller:
             db.execute("UPDATE jobs SET state=?,actual=?,outcome=?,error=? WHERE id=?",
                        ("failed" if error else "done", actual, canonical(result) if result else
                         diagnostic, error, job.key))
-            if actual > row["reserve"]:
+            if provisional:
+                db.execute("INSERT INTO cost_holds (job_id,reserve,proven_bound,created) VALUES (?,?,?,?)",
+                           (job.key, row["reserve"], bound, self.store.clock()))
+            if actual is not None and actual > row["reserve"]:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,'job exceeded its reserve')")
             elif self.store.ledger(db)[0] >= state["approved_budget"]:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,'study budget exhausted')")

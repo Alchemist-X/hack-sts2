@@ -37,6 +37,9 @@ def main():
     pause_access = commands.add_parser("pause-access")
     pause_access.add_argument("reason")
     pause_access.add_argument("--next-wake", required=True)
+    resume_access = commands.add_parser("resume-access")
+    resume_access.add_argument("reason")
+    resume_access.add_argument("--verification-reference", required=True)
     commands.add_parser("stop").add_argument("reason")
     resume = commands.add_parser("resume")
     resume.add_argument("reason")
@@ -60,6 +63,8 @@ def main():
         store.finish_access_probe(args.key, evidence)
     elif args.command == "pause-access":
         store.pause_access(args.reason, args.next_wake)
+    elif args.command == "resume-access":
+        store.resume_access(args.reason, args.verification_reference)
     elif args.command == "stop":
         store.stop(args.reason)
     elif args.command == "resume":

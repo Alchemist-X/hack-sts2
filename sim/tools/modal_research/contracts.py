@@ -80,6 +80,7 @@ def validate_spec(spec):
         "cumulative_decision_target", "evaluation_milestones", "resource_request", "max_cost",
         "absolute_deadline", "checkpoint_policy", "stop_rules", "promotion_rules", "character",
         "ascension", "eval_protocol", "data_lineage", "training_protocol", "evaluation_policy",
+        "dev_seed_count", "blind_seed_count",
         "rollout_shape", "env_seed", "dependency_hash", "ppo_config",
     }
     if type(spec) is not dict or set(spec) != required:
@@ -92,6 +93,16 @@ def validate_spec(spec):
         raise ValueError("pure training requires random initialization and environment-only fresh starts")
     if canonical(spec["evaluation_policy"]) != canonical(MAIN_EVAL):
         raise ValueError("primary evaluation requires full fresh greedy runs with no interventions")
+    counts = (integer(spec["dev_seed_count"], 1), integer(spec["blind_seed_count"], 1))
+    protocol = spec["eval_protocol"]
+    if protocol == "silent-a10-capacity-v1":
+        if counts != (256, 1000):
+            raise ValueError("capacity evaluation requires exactly 256 dev and 1000 blind games")
+    elif protocol == "silent-a10-smoke-v1":
+        if max(counts) > 16:
+            raise ValueError("engineering smoke holdouts are limited to 16 games per set")
+    elif protocol != "fixture-greedy-no-intervention" or counts != (1, 1):
+        raise ValueError("unknown evaluation protocol or fixture seed counts")
     identifier(spec["experiment_id"])
     for key in ("parent_id", "control_id"):
         if spec[key] is not None:

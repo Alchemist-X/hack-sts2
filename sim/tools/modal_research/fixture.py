@@ -79,7 +79,8 @@ def spec(now, experiment_id="silent-fixture"):
                              "eval_seconds": 60},
         "max_cost": "5.00", "absolute_deadline": int(now) + 1000,
         "checkpoint_policy": {"interval_seconds": 10, "resume_mode": "fresh_episodes"},
-        "eval_protocol": "fixture-greedy-no-intervention", "stop_rules": "fixture", "promotion_rules": "fixture",
+        "eval_protocol": "fixture-greedy-no-intervention", "dev_seed_count": 1, "blind_seed_count": 1,
+        "stop_rules": "fixture", "promotion_rules": "fixture",
     }
 
 
@@ -94,7 +95,7 @@ def decision(job, action="WAIT", **fields):
     })
 
 
-def artifact(root, job, decisions, termination, generation="generation-1"):
+def artifact(root, job, decisions, termination, generation="generation-1", *, issued_until=None):
     path = Path(root) / job.key / generation
     path.mkdir(parents=True, exist_ok=False)
     metadata = {"decisions": decisions, "termination": termination}
@@ -102,7 +103,9 @@ def artifact(root, job, decisions, termination, generation="generation-1"):
     if job.kind == "train":
         roles = TRAIN_FILES
         mode = job.payload["spec"]["checkpoint_policy"]["resume_mode"]
-        metadata.update(cursor=job.payload["start_cursor"] + 1, updates=1, resume_mode=mode)
+        cursor = job.payload["start_cursor"] + 1
+        metadata.update(cursor=cursor, seed_issued_until=issued_until if issued_until is not None else cursor,
+                        updates=1, resume_mode=mode)
         if mode == "exact":
             roles = roles | {"environment"}
     files = {role: f"{role}.json" for role in roles}

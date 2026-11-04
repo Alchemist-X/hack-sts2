@@ -35,3 +35,15 @@ class ExternalProbeLedgerTest(unittest.TestCase):
             self.assertFalse(status["spend_complete"])
             with self.assertRaises(ValueError):
                 store.finish_access_probe("probe", {**evidence, "report_ref": "audit/replacement.json"})
+
+    def test_access_pause_requires_explicit_new_verification_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite3", "study")
+            store.pause_access("sandbox blocked", "isolated command proof")
+            with self.assertRaises(ValueError):
+                store.resume_access("older pause", "approval")
+            store.resume_access("sandbox blocked", "approval")
+            self.assertIsNone(store.status()["access_gate"])
+            with store.transaction() as db:
+                self.assertEqual(db.execute("SELECT previous_pause FROM access_verifications").fetchone()[0],
+                                 "sandbox blocked")

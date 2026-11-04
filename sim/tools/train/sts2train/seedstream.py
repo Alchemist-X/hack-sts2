@@ -129,12 +129,16 @@ class StreamState:
                    failed=int(d.get("failed", 0)), skipped=int(d.get("skipped", 0)))
 
 
+class SeedGrantExhausted(RuntimeError):
+    """No new seed may be issued outside this worker's reserved range."""
+
+
 class SeedStream:
     """The seed generator: ``generate()`` issues the next usable index (skipping holdout collisions), ``consume(n)``
     accounts a start of index n (in issuance order)."""
 
     def __init__(self, prefix: str, characters, ascension: int, *, guard=None, state: dict | None = None,
-                 act1: str = "random"):
+                 act1: str = "random", seed_range: tuple[int, int] | None = None):
         self.prefix = check_prefix(prefix)
         self.characters = tuple(characters)
         if not self.characters:
@@ -144,6 +148,19 @@ class SeedStream:
         self.guard = guard
         self.state = StreamState.from_dict(state, self.prefix)
         self.resumed_prefix = (state or {}).get("prefix")
+        self.seed_range = seed_range
+        self.grant_gap = None
+        self.reserved_skipped = int((state or {}).get("reserved_skipped", 0))
+        if seed_range is not None:
+            begin, end = seed_range
+            old = self.state.next
+            if (type(begin) is not int or type(end) is not int or not old <= begin < end
+                    or (self.resumed_prefix is not None and self.resumed_prefix != self.prefix)):
+                raise ValueError("seed grant differs from the accepted stream")
+            self.state.next = begin
+            self.state.skipped += begin - old
+            self.reserved_skipped += begin - old
+            self.grant_gap = (old, begin)
         self.issued = self.state.next           # session-local issuance cursor (>= state.next)
         self.session_skips: list[dict] = []     # isolation skips issued this session (index, text, reason)
 
@@ -157,6 +174,8 @@ class SeedStream:
         """(n, character, seed text) of the next issued index whose seed is no holdout game."""
         while True:
             n = self.issued
+            if self.seed_range is not None and n >= self.seed_range[1]:
+                raise SeedGrantExhausted("worker seed range exhausted")
             self.issued += 1
             ch = self.character(n)
             text = stream_text(self.prefix, ch, n)
@@ -168,14 +187,24 @@ class SeedStream:
 
     def consume(self, n: int) -> None:
         st = self.state
+        if self.seed_range is not None and not self.seed_range[0] <= n < self.seed_range[1]:
+            raise SeedGrantExhausted("seed lies outside the worker reservation")
         if n < st.next:
             raise RuntimeError(f"seed stream: index {n} consumed after {st.next - 1} (out of order or reused)")
         st.skipped += n - st.next               # every index in [next, n) was skipped by the guard (FIFO order)
         st.next = n + 1
         st.started += 1
 
+    def grant_record(self) -> dict:
+        if self.seed_range is None:
+            return {}
+        return {"seed_range": list(self.seed_range), "reserved_skip_interval": list(self.grant_gap),
+                "issued_until": self.issued,
+                "reserved_skipped": self.reserved_skipped}
+
     def state_dict(self) -> dict:
-        return {**asdict(self.state), "characters": list(self.characters), "ascension": self.ascension}
+        return {**asdict(self.state), "characters": list(self.characters), "ascension": self.ascension,
+                **self.grant_record()}
 
 
 class _Tracker:
@@ -437,7 +466,7 @@ class StreamEnv(_Tracker):
                 "ascension": self.stream.ascension, **{k: v for k, v in asdict(self.stream.state).items()
                                                         if k != "prefix"},
                 "lookahead": self.lookahead, "lookahead_adaptive": self.adaptive, "prefetch": self.prefetch_enabled,
-                "resumed_prefix": self.stream.resumed_prefix,
+                "resumed_prefix": self.stream.resumed_prefix, **self.stream.grant_record(),
                 "isolation_skips_this_session": self.stream.session_skips[:20]}
 
 

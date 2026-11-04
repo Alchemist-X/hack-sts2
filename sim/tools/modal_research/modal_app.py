@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 from .contracts import identifier
-from .lineage import artifact_identity
-from .manifests import publish
-from .native_worker import run as run_native
+from .supervisor import WorkerSupervisor
 
 ARTIFACT_MOUNT = "/modal-research-artifacts"
 
@@ -31,6 +30,11 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
     }
     if capabilities != required:
         raise RuntimeError("Modal deployment gate is closed; verified production bindings are required")
+    supervisor = getattr(runtime, "worker_supervisor", None)
+    if (not isinstance(supervisor, WorkerSupervisor) or not callable(getattr(modal, "current_input_id", None))
+            or Path(supervisor.installation.artifacts) != Path(ARTIFACT_MOUNT)
+            or supervisor.publisher.root != Path(ARTIFACT_MOUNT) or supervisor.publisher.volume is not volume_v2):
+        raise RuntimeError("Modal deployment requires a bound worker supervisor and artifact volume")
     app = modal.App("sts2-modal-research")
 
     @app.function(image=cpu_image, secrets=secrets,
@@ -46,34 +50,7 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
     }
 
     def worker(kind, job_token):
-        identifier(job_token)
-        # No trainer work before a fresh atomic admission. Volume is the artifact
-        # store only. Write unique generation paths across containers and attempts.
-        claim = runtime.claim_worker(kind, job_token)
-        if claim is None:
-            return {"status": "not_admitted"}
-        job = claim.job
-        if job.kind != kind:
-            raise ValueError("worker claim kind mismatch")
-        identity = artifact_identity(job)
-        volume_v2.reload()
-
-        def publish_generation(generation, metadata, files):
-            generation = identifier(generation)
-            root = Path(ARTIFACT_MOUNT) / identity["job_key"] / generation
-            manifest_hash = publish(root, identity, metadata, files, commit=volume_v2.commit)
-            reference = {"generation": generation, "manifest_hash": manifest_hash}
-            runtime.record_generation(claim, reference)
-            return reference
-
-        def checkpoint_ready(path):
-            runtime.publish_training_checkpoint(claim, path, publish_generation)
-
-        with runtime.supervise_worker(claim) as installation:
-            if Path(installation.artifacts) != Path(ARTIFACT_MOUNT):
-                raise ValueError("worker artifact root differs from deployment mount")
-            result = run_native(job, installation, claim.accepted_checkpoint, checkpoint_ready=checkpoint_ready)
-            return runtime.finish_worker(claim, result, publish_generation)
+        return supervisor.execute(kind, job_token, modal.current_input_id(), uuid4().hex)
 
     @app.function(**worker_options)
     def train_segment(job_token):

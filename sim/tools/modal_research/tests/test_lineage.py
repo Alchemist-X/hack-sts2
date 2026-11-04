@@ -115,6 +115,16 @@ class PureLineageTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checksum"):
             admit_worker(resumed, controller.artifacts, self.facts(), accepted)
 
+    def test_capacity_holdout_sizes_and_fixture_gate(self):
+        operational = Store(self.root / "operation.db", "pure-study")
+        with self.assertRaisesRegex(ValueError, "fixture evaluation"):
+            operational.register(self.frozen)
+        formal = {**self.frozen, "eval_protocol": "silent-a10-capacity-v1"}
+        with self.assertRaisesRegex(ValueError, "256 dev and 1000 blind"):
+            operational.register(formal)
+        formal.update(dev_seed_count=256, blind_seed_count=1000)
+        operational.register(formal)
+
     def test_capacity_specs_can_share_comparison_seed_schedule(self):
         store = Store(self.root / "state.db", "pure-study", "fixture")
         first = store.register(self.frozen)

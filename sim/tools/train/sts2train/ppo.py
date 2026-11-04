@@ -966,17 +966,21 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
 
 def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None,
           given: dict | None = None, episode_hooks=(), isolation_seedsets=(), strict_resume=False,
-          checkpoint_ready=None) -> dict:
+          checkpoint_ready=None, seed_range=None, isolation_guard=None) -> dict:
     """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`;
     `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
     callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
     ``isolation_seedsets`` are pinned holdouts even when local periodic evaluation is disabled.
     ``strict_resume`` requires complete restoration on the selected device.
     ``checkpoint_ready``, when supplied, receives the path after each completed atomic save.
+    ``seed_range`` limits stream seed issuance to an externally reserved half-open interval.
+    ``isolation_guard`` supplies already verified, explicitly bound holdouts for a standalone worker image.
 
     Before anything is created: an eval seed set with games of a frozen blind set is refused unless
     ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
     game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
+    if seed_range is not None and cfg.start_mode != "stream":
+        raise ValueError("a seed reservation requires --start-mode stream")
     if cfg.bootstrap_time_limits and cfg.start_mode != "stream":
         raise ValueError("--bootstrap-time-limits requires --start-mode stream")
     session_start = time.monotonic()
@@ -989,7 +993,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     if cfg.eval_at:
         check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
         eval_holdouts.append(cfg.eval_at_seedset)
-    guard = IsolationGuard.from_seedsets(extra=eval_holdouts)
+    if isolation_guard is None:
+        guard = IsolationGuard.from_seedsets(extra=eval_holdouts)
+    else:
+        if (not isinstance(isolation_guard, IsolationGuard) or not isolation_guard.sets
+                or eval_holdouts or cfg.start_mode != "stream"):
+            raise ValueError("an explicit holdout guard requires the isolated stream worker")
+        guard = isolation_guard
     if cfg.start_mode == "pool":
         isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
     else:
@@ -1030,7 +1040,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     try:
         if cfg.start_mode == "stream":
             stream = SeedStream(stream_prefix(cfg), cfg.characters, cfg.ascension, guard=guard,
-                                state=(resume or {}).get("seed_stream"))
+                                state=(resume or {}).get("seed_stream"), seed_range=seed_range)
             env = StreamEnv(env, stream, lookahead=lookahead_of(cfg), prefetch=cfg.stream_prefetch,
                             adaptive=cfg.stream_lookahead is None)
             if stream.resumed_prefix and stream.resumed_prefix != stream.prefix:
@@ -1245,6 +1255,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         def save(upd: int) -> Path:
             nonlocal last_ckpt_path, last_ckpt_upd
             if cfg.start_mode == "stream":
+                if seed_range is not None:
+                    track.wait_prefetch()
                 extra = {"seed_stream": track.state_dict()}
             else:                       # a pool session keeps a stream's counter for a later stream session
                 extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))

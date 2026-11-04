@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS access_status (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     pause_reason TEXT NOT NULL, next_wake TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS access_verifications (
+    reference TEXT PRIMARY KEY, previous_pause TEXT NOT NULL, created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS experiments (
     id TEXT PRIMARY KEY, spec TEXT NOT NULL, config_hash TEXT NOT NULL,
     decisions INTEGER NOT NULL DEFAULT 0, cursor INTEGER NOT NULL,
@@ -49,6 +52,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     state TEXT NOT NULL DEFAULT 'intent', remote_id TEXT, submit_started INTEGER NOT NULL DEFAULT 0,
     deadline REAL NOT NULL, last_checked REAL, outcome TEXT, error TEXT,
     UNIQUE(logical_key, attempt)
+);
+CREATE TABLE IF NOT EXISTS cost_holds (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    reserve INTEGER NOT NULL, proven_bound INTEGER NOT NULL,
+    created REAL NOT NULL, settled_at REAL, actual INTEGER
 );
 """
 
@@ -166,6 +174,9 @@ class Store:
         payload = canonical(spec)
         config_hash = digest(spec)
         with self.transaction() as db:
+            mode = db.execute("SELECT mode FROM study").fetchone()[0]
+            if mode != "fixture" and spec["eval_protocol"] == "fixture-greedy-no-intervention":
+                raise ValueError("fixture evaluation is forbidden in the operational ledger")
             db.execute(
                 "INSERT OR IGNORE INTO experiments (id,spec,config_hash,cursor) VALUES (?,?,?,?)",
                 (spec["experiment_id"], payload, config_hash, spec["cursor"]),
@@ -288,6 +299,17 @@ class Store:
                 (bounded_text(reason), bounded_text(next_wake)),
             )
 
+    def resume_access(self, reason, verification_reference):
+        """Operator acknowledgement after reviewing externally verified bindings."""
+        identifier(verification_reference)
+        with self.transaction() as db:
+            row = db.execute("SELECT pause_reason FROM access_status").fetchone()
+            if not row or row["pause_reason"] != reason:
+                raise ValueError("access pause changed; review current evidence")
+            db.execute("INSERT INTO access_verifications VALUES(?,?,?)",
+                       (verification_reference, reason, self.clock()))
+            db.execute("DELETE FROM access_status")
+
     @staticmethod
     def ledger(db, experiment_id=None):
         where = " WHERE experiment_id=?" if experiment_id else ""
@@ -302,7 +324,7 @@ class Store:
             spent, reserved = self.ledger(db)
             active = db.execute(
                 "SELECT id,kind,state,remote_id,deadline FROM jobs WHERE actual IS NULL "
-                "AND state NOT IN ('external_finished_cost_unknown','external_prepared') ORDER BY id",
+                "AND state IN ('intent','running','uncertain','external_reserved') ORDER BY id",
             ).fetchall()
             last = db.execute("SELECT id,kind,created FROM events ORDER BY rowid DESC LIMIT 1").fetchone()
             decision = db.execute(
@@ -319,6 +341,17 @@ class Store:
             prepared = db.execute("SELECT id,reserve,payload FROM jobs WHERE state='external_prepared' ORDER BY id").fetchall()
             snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
             platform_remaining = self.platform_headroom(state, spent)
+            held = db.execute(
+                "SELECT job_id,reserve,proven_bound FROM cost_holds WHERE settled_at IS NULL ORDER BY job_id",
+            ).fetchall()
+            broker = []
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='broker_jobs'").fetchone():
+                broker = db.execute(
+                    """SELECT b.job_id,b.receipt,b.provider_id,b.state,b.input_id,b.lease_until,b.safe_after,
+                       b.seed_begin,b.seed_end,b.reusable_tail,b.send_authorized_at,b.send_not_after,
+                       b.send_finished_at,b.cancel_attempts,b.error
+                       FROM broker_jobs b WHERE b.state!='finished' ORDER BY b.rowid""",
+                ).fetchall()
             return {
                 "study_id": state["id"], "mode": state["mode"], "state_version": state["version"],
                 "approved_budget": None if approved is None else approved / 100,
@@ -333,8 +366,14 @@ class Store:
                     "reference": snapshot["reference"], "observed_at": snapshot["observed_at"],
                 } if snapshot else None,
                 "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - reserved) / 100,
-                "spent_usd": spent / 100, "spend_complete": not unsettled and not active,
+                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held,
                 "reserved_usd": reserved / 100,
+                "conservative_budget_held_usd": sum(row["reserve"] for row in held) / 100,
+                "jobs_with_verified_cost_bounds": [
+                    {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
+                     "proven_upper_bound_usd": row["proven_bound"] / 100}
+                    for row in held
+                ],
                 "access_gate": dict(access) if access else None,
                 "prepared_probes": [
                     {"id": row["id"], "reserved_usd": row["reserve"] / 100, **json.loads(row["payload"])}
@@ -347,6 +386,7 @@ class Store:
                 "remaining_usd": None if approved is None else (approved - spent - reserved) / 100,
                 "stop": state["stopped"], "analysis_pause": state["analysis_paused"],
                 "next_wake": state["next_wake"], "active_jobs": [dict(row) for row in active],
+                "broker_in_flight": [dict(row) for row in broker],
                 "experiments": [dict(row) for row in experiments],
                 "latest_event": dict(last) if last else None,
                 "latest_decision": (
