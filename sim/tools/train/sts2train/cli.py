@@ -261,6 +261,11 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "env's default (80 with a library that implements the cap); the cap in effect is recorded "
                         "in config.json env.floor_step_cap")
     g.add_argument("--ascension", type=int, help=f"(default {D.ascension})")
+    g.add_argument("--overlap", choices=["off", "double"],
+                   help="off (default): the rollout steps all slots, then runs the forward. double: two lane envs "
+                        "of envs/2 slots; one lane's env step runs in a worker thread while the other lane's forward "
+                        "runs (sts2train.overlap; same batch, GAE and update; t_overlap_wait_s / t_rollout_s in "
+                        "metrics); --start-saves refused")
     g.add_argument("--start-mode", dest="start_mode", choices=["pool", "stream"],
                    help="pool (default): episodes start from a fixed pool of --pool fresh seeds "
                         "TRAIN<env_seed>-<C>-<i> (+ --start-saves); refused when it holds a frozen eval seed set's "
