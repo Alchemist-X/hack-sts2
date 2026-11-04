@@ -21,8 +21,8 @@ def declare_app(modal, *, runtime, cpu_image, worker_image, volume_v2, secrets, 
     the remaining absolute deadline and spend before any trainer import or
     initialization. It owns preemption recovery, heartbeat, and cost settlement.
 
-    Engineering smoke uses a separate app with short worker timeouts. The
-    runtime ledger controls the number of authorized launches.
+    Engineering smoke uses a separate app with short worker timeouts. Deployment
+    requires a verified smoke-only admission policy with a durable launch cap.
     """
     identifier(deployment_ref)
     if type(engineering_smoke) is not bool:
