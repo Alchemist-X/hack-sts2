@@ -19,6 +19,8 @@ from .contracts import MAIN_EVAL, PURE_TRAINING, canonical, digest, identifier, 
 from .manifests import file_digest
 
 TASK = "modal-gpu-engineering-smoke-20261104-020"
+TASKS = {1: TASK, 2: "modal-gpu-engineering-smoke-20261104-021"}
+REUSED_IMAGE_ID = "im-SiAUSyA568b1WIQLQ1Uljr"
 REGISTRY_DIGEST = "c16f4c749e2d9e96878875cdf6cc45cddda1d1a36fddd371dd6f2360f1b6e2a2"
 REGISTRY = f"pytorch/pytorch@sha256:{REGISTRY_DIGEST}"
 ENGINE_HASH = "2d035a9be243fd40b9cef407d31fb46c12b6ca42ff8e39a6f95f15042fa984ce"
@@ -99,7 +101,7 @@ def _write_member(bundle, destination, content):
     target.write_bytes(content)
 
 
-def prepare(root, inputs, engine, out, reservation):
+def prepare(root, inputs, engine, out, reservation, attempt=1):
     root, inputs, out = Path(root), Path(inputs), Path(out)
     index_path = inputs / "seed-inputs" / "manifest-index.json"
     if file_digest(index_path) != INDEX_HASH or file_digest(engine) != ENGINE_HASH:
@@ -145,7 +147,8 @@ def prepare(root, inputs, engine, out, reservation):
         "files": {path.relative_to(bundle).as_posix(): file_digest(path)
                   for path in sorted(bundle.rglob("*")) if path.is_file()},
     })
-    packet = {"task": TASK, "reservation": identifier(reservation), "code_commit": commit,
+    packet = {"task": TASKS[attempt], "attempt": attempt, "family": TASK,
+              "reservation": identifier(reservation), "code_commit": commit,
               "bundle_hash": file_digest(bundle / "bundle.json"), "seed_index_hash": INDEX_HASH,
               "seeds": index["registration_fields"], "image_digest": REGISTRY_DIGEST,
               "dependency_hash": file_digest(bundle / "dependencies.lock")}
@@ -164,7 +167,10 @@ def _installation(root, packet, artifacts, scratch):
 def validate_package(out, packet):
     from .artifact_adapter import verify_bundle
 
-    if (packet["task"], packet["image_digest"], packet["seed_index_hash"]) != (TASK, REGISTRY_DIGEST, INDEX_HASH):
+    attempt = packet.get("attempt", 1)
+    if (type(attempt) is not int or packet["task"] != TASKS.get(attempt)
+            or packet.get("family", TASK) != TASK
+            or (packet["image_digest"], packet["seed_index_hash"]) != (REGISTRY_DIGEST, INDEX_HASH)):
         raise ValueError("unknown engineering smoke packet")
     root = out / "bundle"
     install = _installation(root, packet, out / "output", out / "scratch")
@@ -202,7 +208,7 @@ def _worker_job(packet, spec, suffix, kind, start, target, cursor, checkpoint, d
 
     key = f"{packet['reservation']}-{suffix}"
     return Job(key, key, 1, kind, deadline, 200, {
-        "study_id": TASK, "spec": spec, "config_hash": digest(spec), "checkpoint": checkpoint,
+        "study_id": packet["task"], "spec": spec, "config_hash": digest(spec), "checkpoint": checkpoint,
         "start_decisions": start, "target_decisions": target, "start_cursor": cursor,
     })
 
@@ -258,10 +264,11 @@ def worker(packet, cutoff, packet_hash):
     output = MOUNT / "output"
     output.mkdir(exist_ok=False)
     volume = _VolumeSync()
-    report = {"task": TASK, "reservation": packet["reservation"], "packet_hash": packet_hash,
+    report = {"task": packet["task"], "attempt": packet.get("attempt", 1), "family": TASK,
+              "reservation": packet["reservation"], "packet_hash": packet_hash,
               "result_label": "engineering_smoke", "status": "running", "stage": "runtime",
               "blind_evaluation_count": 0, "actual_cost_usd": None,
-              "gpu_lifetime_seconds": GPU_SECONDS, "worker_deadline": cutoff, "evidence": []}
+              "gpu_lifetime_seconds": GPU_SECONDS, "worker_deadline": cutoff, "evidence": [], "training": []}
 
     def save():
         _atomic(output / "result.json", report)
@@ -288,6 +295,11 @@ def worker(packet, cutoff, packet_hash):
                 grant = (issued, issued + 1024)
                 result = run(job, installation, accepted, checkpoint_ready=lambda path: None,
                              seed_range=grant, execution_deadline=deadline, max_threads=8)
+                report["training"].append({
+                    key: result[key] for key in ("env_steps", "session_env_steps", "session_updates",
+                                                "time_split_s", "stop_reason", "weights_hash", "episodes",
+                                                "sim_error", "content_gap", "illegal") if key in result
+                })
                 if result["env_steps"] != target or result["session_updates"] != 1 or not result["last_checkpoint"]:
                     raise RuntimeError("required engineering PPO update did not complete")
                 final = artifacts.training(SimpleNamespace(job=job, seed_range=grant),
@@ -295,7 +307,8 @@ def worker(packet, cutoff, packet_hash):
                 if final.decisions != target:
                     raise ValueError("published checkpoint decision count disagrees with PPO")
                 reference = {"job_key": job.key, **final.reference}
-                accepted = AcceptedCheckpoint(TASK, spec["experiment_id"], digest(spec), reference, artifact_identity(job))
+                accepted = AcceptedCheckpoint(packet["task"], spec["experiment_id"], digest(spec), reference,
+                                              artifact_identity(job))
                 cursor, issued = final.cursor, final.issued_until
                 report["evidence"].append({"job": asdict(job), "generation": asdict(final),
                                            "weights_hash": result["weights_hash"], "session_updates": 1})
@@ -316,7 +329,7 @@ def worker(packet, cutoff, packet_hash):
 
 def _binding(directory, packet):
     suffix = digest(packet["reservation"])[:12]
-    return {"task": TASK, "packet_hash": file_digest(directory / "packet.json"), "image": REGISTRY,
+    return {"task": packet["task"], "packet_hash": file_digest(directory / "packet.json"), "image": REGISTRY,
             "app": f"sts2-a10-smoke-{suffix}", "volume": f"sts2-a10-smoke-{suffix}", "name": f"smoke-{suffix}",
             "profile": PROFILE, "environment": "main"}
 
@@ -351,9 +364,13 @@ def stage(store, directory, packet, binding, modal):
     app = modal.App.lookup(binding["app"], create_if_missing=True, environment_name=binding["environment"])
     cloud["app_id"] = app.app_id
     _atomic(cloud_path, cloud)
-    # An immutable registry import is the sole preparation build. No apt, pip or GPU builder steps.
-    image = modal.Image.from_registry(REGISTRY).build(app)
-    cloud["image_id"] = image.object_id
+    if packet.get("attempt", 1) == 2:
+        cloud["image_id"] = REUSED_IMAGE_ID
+        cloud["image_reused"] = True
+    else:
+        # Initial immutable registry import. No apt, pip or GPU builder steps.
+        image = modal.Image.from_registry(REGISTRY).build(app)
+        cloud["image_id"] = image.object_id
     _atomic(cloud_path, cloud)
     volume = modal.Volume.from_name(binding["volume"], create_if_missing=True, version=2,
                                     environment_name=binding["environment"]).hydrate()
@@ -381,7 +398,7 @@ def launch(store, directory, packet, binding, modal):
     cutoff = row["worker_deadline"]
     sandbox = modal.Sandbox.create(
         "/opt/conda/bin/python", "-I", "-B", "-u", "-c", BOOTSTRAP, binding["packet_hash"], str(cutoff),
-        app=app, name=binding["name"], tags={"sts2-task": TASK}, image=image,
+        app=app, name=binding["name"], tags={"sts2-task": binding["task"]}, image=image,
         timeout=GPU_SECONDS, gpu="H100!", cpu=(16, 16), memory=(65536, 65536),
         runtime="gvisor", block_network=True, volumes={str(MOUNT): volume},
         env={"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"},
@@ -410,7 +427,7 @@ def _find_finished_v1(binding, app_id):
         client = await _Client.from_env()
         response = await client._stub.SandboxList(api_pb2.SandboxListRequest(
             app_id=app_id, environment_name=binding["environment"], include_finished=True,
-            tags=[api_pb2.SandboxTag(tag_name="sts2-task", tag_value=TASK)],
+            tags=[api_pb2.SandboxTag(tag_name="sts2-task", tag_value=binding["task"])],
         ))
         ids = {item.id for item in response.sandboxes}
         if len(ids) > 1:
@@ -482,6 +499,7 @@ def main():
     for key in ("repo", "inputs", "engine", "directory"):
         prepare_parser.add_argument(f"--{key}", required=True, type=Path)
     prepare_parser.add_argument("--reservation", required=True)
+    prepare_parser.add_argument("--attempt", type=int, choices=TASKS, default=1)
     for name in ("stage", "launch", "reconcile"):
         command = commands.add_parser(name)
         command.add_argument("--directory", required=True, type=Path)
@@ -489,7 +507,7 @@ def main():
         command.add_argument("--study-id", default="silent-a10-modal")
     args = parser.parse_args()
     if args.command == "prepare":
-        result = prepare(args.repo, args.inputs, args.engine, args.directory, args.reservation)
+        result = prepare(args.repo, args.inputs, args.engine, args.directory, args.reservation, args.attempt)
     else:
         from .store import Store
 
