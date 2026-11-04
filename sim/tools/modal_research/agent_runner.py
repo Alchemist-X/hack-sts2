@@ -123,16 +123,25 @@ class AgentRunner:
     def __init__(
         self, root: Path, workspaces: Path, study_id: str, launcher: Path,
         bindings: dict[str, AgentBinding], *, sol_tasks: dict[str, SolTask] | None = None,
-        fixture=False, process_identity=linux_process_identity,
+        fixture=False, process_identity=linux_process_identity, system_identity=None,
     ):
+        system_execution = SystemServiceExecution(**system_identity) if system_identity is not None else None
+        if system_execution is not None and (fixture or Path(root) != system_execution.STATE):
+            raise ValueError("system member execution requires its approved root-owned state")
         self.root = _private_directory(root)
-        self.workspaces = _private_directory(workspaces)
+        self.workspaces = (system_execution.workspace_root(workspaces) if system_execution is not None
+                           else _private_directory(workspaces))
         if self.root == self.workspaces or self.root in self.workspaces.parents or self.workspaces in self.root.parents:
             raise ValueError("runner state and workspaces must be separate")
         self.study_id = identifier(study_id)
         self.launcher = Path(launcher)
         if not self.launcher.is_absolute() or not self.launcher.is_file() or not os.access(self.launcher, os.X_OK):
             raise ValueError("launcher must be a trusted executable path")
+        if system_execution is not None:
+            metadata = self.launcher.stat()
+            if (self.launcher.resolve() != self.launcher or metadata.st_uid != 0
+                    or metadata.st_mode & 0o022 or not stat.S_ISREG(metadata.st_mode)):
+                raise ValueError("system member launcher must be a root-owned immutable executable")
         if not bindings or not bindings.keys() <= SCOPES.keys():
             raise ValueError("unrecognized agent binding")
         for role, binding in bindings.items():
@@ -149,7 +158,8 @@ class AgentRunner:
         if type(fixture) is not bool or (not fixture and process_identity is not linux_process_identity):
             raise ValueError("custom process identity is limited to subprocess fixtures")
         self.process_identity = process_identity
-        self.execution = None if fixture else SystemdExecution()
+        self.execution = None if fixture else (system_execution or SystemdExecution())
+        self.git = system_execution.git if system_execution else _git
 
     def _fingerprint(self, job: Job):
         identifier(job.key)
@@ -259,6 +269,8 @@ class AgentRunner:
             if task is None:
                 workspace = self.workspaces / folder.name
                 workspace.mkdir(mode=0o700)
+                if isinstance(self.execution, SystemServiceExecution):
+                    os.chown(workspace, self.execution.WORKER_UID, self.execution.WORKER_GID)
                 prompt, schema = _research_input(job.payload)
             else:
                 workspace = self.workspaces / task.workspace
@@ -268,7 +280,7 @@ class AgentRunner:
                 # worktree; an old crash may still own the prior one.
                 (self.root / f"workspace-{digest(task.workspace)}").mkdir(mode=0o700)
                 _sync_directory(self.root)
-                if _git(workspace, "rev-parse", "HEAD").strip().decode() != task.base_commit or _changes(workspace):
+                if self.git(workspace, "rev-parse", "HEAD").strip().decode() != task.base_commit or _changes(workspace, self.git):
                     raise ValueError("SOL workspace is not at its clean base")
                 prompt, schema = _sol_input(job.payload, task)
             _save(folder, "schema.json", schema)
@@ -300,7 +312,7 @@ class AgentRunner:
                 _save(folder, "state.json", record)
             return Outcome("running", error=error)
         try:
-            outcome = _accept(job, binding, task, workspace, final_text, exit_code, error, evidence)
+            outcome = _accept(job, binding, task, workspace, final_text, exit_code, error, evidence, git=self.git)
         except (ValueError, OSError, KeyError, TypeError, RecursionError, subprocess.SubprocessError):
             outcome = Outcome("failed", error="invalid_response")
         _save(folder, "evidence.json", evidence)
@@ -506,8 +518,8 @@ def _git(workspace, *args):
     ).stdout
 
 
-def _changes(workspace):
-    raw = _git(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
+def _changes(workspace, git=_git):
+    raw = git(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
     if len(raw) > ARTIFACT_LIMIT:
         raise ValueError("SOL worktree changed too many files")
     return {item[3:].decode("utf-8") for item in raw.split(b"\0") if item}
@@ -578,7 +590,7 @@ def _unique(pairs):
     return result
 
 
-def _accept(job, binding, task, workspace, final_text, exit_code, error, evidence):
+def _accept(job, binding, task, workspace, final_text, exit_code, error, evidence, *, git=_git):
     if error:
         return Outcome("failed", error=error)
     if exit_code != 0 or evidence["terminal"] != ["turn.completed"]:
@@ -601,8 +613,8 @@ def _accept(job, binding, task, workspace, final_text, exit_code, error, evidenc
     if value["task_id"] != job.payload["task_id"] or value["artifact_refs"] != list(task.artifact_paths):
         raise ValueError("SOL result does not match the approved task")
     bounded_text(value["summary"], 8000)
-    if (_git(workspace, "rev-parse", "HEAD").strip().decode() != task.base_commit
-            or _changes(workspace) != set(task.artifact_paths)):
+    if (git(workspace, "rev-parse", "HEAD").strip().decode() != task.base_commit
+            or _changes(workspace, git) != set(task.artifact_paths)):
         raise ValueError("SOL worktree differs from the approved artifact set")
     if evidence["commands"] != [{"argv_hash": digest(task.test_argv), "exit_code": 0}]:
         raise ValueError("SOL did not complete the single approved test")
@@ -667,6 +679,8 @@ class SystemdExecution:
     CPU_PERCENT = 100
     MEMORY = 512 * 1024 * 1024
     TASKS = 32
+    MANAGER_OPTIONS = ("--user",)
+    EXTRA_PROPERTIES = {}
 
     @classmethod
     def _unit(cls, folder):
@@ -687,8 +701,9 @@ class SystemdExecution:
             "MemorySwapMax": "0", "TasksMax": str(cls.TASKS), "ProtectControlGroups": "yes", "Delegate": "no",
             "NoNewPrivileges": "yes",
             "InaccessiblePaths": " ".join(f"-{path}" for path in sorted(cls._manager_sockets())),
+            **cls.EXTRA_PROPERTIES,
         }
-        return [cls.SYSTEMD_RUN, "--user", "--quiet", "--pipe", "--wait", "--collect",
+        return [cls.SYSTEMD_RUN, *cls.MANAGER_OPTIONS, "--quiet", "--pipe", "--wait", "--collect",
                 "--expand-environment=no", f"--unit={unit}", f"--working-directory={workspace}",
                 *(f"--property={key}={value}" for key, value in properties.items()), "--",
                 sys.executable, "-I", "-c", _SYSTEMD_GUARD, str(runner_state), str(deadline), *argv]
@@ -697,10 +712,10 @@ class SystemdExecution:
     def _show(cls, unit, timeout):
         props = ("Id", "InvocationID", "MainPID", "ControlGroup", "ActiveState", "KillMode",
                  "KillSignal", "SendSIGKILL", "RuntimeMaxUSec", "TimeoutStopUSec", "Restart",
-                 "ProtectControlGroups", "Delegate", "NoNewPrivileges", "InaccessiblePaths")
+                 "ProtectControlGroups", "Delegate", "NoNewPrivileges", "InaccessiblePaths", *cls.EXTRA_PROPERTIES)
         env = {**os.environ, "LC_ALL": "C"}
         result = subprocess.run(
-            [cls.SYSTEMCTL, "--user", "show", *(f"--property={p}" for p in props), "--", unit],
+            [cls.SYSTEMCTL, *cls.MANAGER_OPTIONS, "show", *(f"--property={p}" for p in props), "--", unit],
             check=False, capture_output=True, timeout=timeout, env=env,
         )
         return dict(line.split("=", 1) for line in result.stdout.decode().splitlines() if "=" in line)
@@ -854,6 +869,64 @@ class SystemdExecution:
                 proc.stdout.close()
                 proc.stderr.close()
         return exit_code, error, evidence
+
+
+class SystemServiceExecution(SystemdExecution):
+    """A root-owned project guard launches a fixed privilege-dropping helper."""
+
+    MANAGER_OPTIONS = ("--system",)
+    WORKER_UID = 1001
+    WORKER_GID = 1002
+    PROJECT_GROUP = 985
+    STATE = Path("/var/lib/sts2-modal-member-runner/agent-state")
+    WORKSPACES = Path("/var/lib/sts2-modal-member-runner/workspaces")
+    EXTRA_PROPERTIES = {"CapabilityBoundingSet": "CAP_SETUID CAP_SETGID CAP_SETPCAP", "AllowedCPUs": "0"}
+
+    def __init__(self, uid, gid, group):
+        if (os.geteuid() != 0 or (uid, gid, group) != (self.WORKER_UID, self.WORKER_GID, self.PROJECT_GROUP)):
+            raise ValueError("system member identity differs from the approved Raven binding")
+
+    @classmethod
+    def _manager_sockets(cls):
+        run = f"/run/user/{cls.WORKER_UID}"
+        return super()._manager_sockets() | {"/run/systemd/private", "/run/docker.sock", f"{run}/bus", f"{run}/systemd/private"}
+
+    @classmethod
+    def _receipt(cls, props, unit):
+        if (set(props.get("CapabilityBoundingSet", "").upper().split())
+                != set(cls.EXTRA_PROPERTIES["CapabilityBoundingSet"].split())
+                or props.get("AllowedCPUs") != cls.EXTRA_PROPERTIES["AllowedCPUs"]):
+            raise ValueError("unexpected system-agent CPU affinity or capabilities")
+        return super()._receipt(props, unit)
+
+    @classmethod
+    def _directory(cls, group, unit):
+        if group != f"/system.slice/{unit}":
+            raise ValueError("system agent must run in its dedicated system.slice unit")
+        return super()._directory(group, unit)
+
+    @classmethod
+    def workspace_root(cls, path):
+        path = Path(path).absolute()
+        metadata = path.stat()
+        if (path != cls.WORKSPACES or path != path.resolve() or not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0
+                or metadata.st_gid != cls.PROJECT_GROUP or stat.S_IMODE(metadata.st_mode) != 0o750):
+            raise ValueError("system agent workspace anchor must be root:project 0750")
+        return path
+
+    @classmethod
+    def git(cls, workspace, *args):
+        # Even a hostile working tree never asks a root Git process to read
+        # its config. Drop every unrelated group and capability before Git.
+        return subprocess.run(
+            ["/usr/bin/setpriv", "--reuid", str(cls.WORKER_UID), "--regid", str(cls.WORKER_GID),
+             "--groups", str(cls.PROJECT_GROUP), "--no-new-privs", "--inh-caps=-all",
+             "--ambient-caps=-all", "--bounding-set=-all", "--", "/usr/bin/git",
+             "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", str(workspace), *args],
+            check=True, capture_output=True, timeout=3,
+            env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+                 "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"},
+        ).stdout
 
 
 def _evidence():

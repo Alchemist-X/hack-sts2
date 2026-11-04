@@ -16,6 +16,7 @@ class FakeDetached:
     def __init__(self):
         self.grants = []
         self.cancelled = []
+        self.pruned = []
         self.lost = False
         self.visible = False
         self.outcome = Outcome("running")
@@ -42,6 +43,10 @@ class FakeDetached:
         return self.report
 
     def materialize(self, job, reference):
+        return True
+
+    def prune(self, job_key, keep):
+        self.pruned.append((job_key, keep))
         return True
 
 
@@ -106,6 +111,19 @@ class DetachedTest(unittest.TestCase):
         self.assertEqual(len(self.provider.grants), 1)
         self.assertEqual(self.store.status()["reserved_usd"], 1)
 
+    def test_archive_preserves_verified_head_until_retention_expiry_even_while_stopped(self):
+        grant = self.start()
+        self.provider.outcome = Outcome("succeeded")
+        self.provider.report = Outcome("succeeded", output=artifact(self.artifacts, grant.job, 10, "milestone"))
+        self.store.stop("operator")
+        self.runtime = RavenRuntime(self.broker, modal_provider=self.provider, archive_deadline=1020)
+        self.runtime.tick_once()
+        self.assertEqual(self.provider.pruned, [(grant.job.key, "generation-1")])
+        self.now = 1021
+        self.runtime.tick_once()
+        self.assertEqual(self.provider.pruned[-1], (grant.job.key, None))
+        self.assertTrue((self.artifacts / grant.job.key / "generation-1" / "ready.json").is_file())
+
     def test_failed_worker_only_accepts_verified_partial_and_advances_grant(self):
         grant = self.start()
         self.provider.outcome = Outcome("failed", error="reclaimed")
@@ -123,10 +141,38 @@ class DetachedTest(unittest.TestCase):
 class SandboxContractTest(unittest.TestCase):
     def test_cost_includes_lifetime_resources_and_storage_without_credit(self):
         from modal_research.adapters import Job
-        rates = SandboxRates("rates-audited", 2000, "0.001097", "0.00003942", "0.00000667", "0.09", 30, 1)
+        rates = SandboxRates("rates-audited", 2000, "0.001097", "0.00003942", "0.00000667", "0.09", 30, 1, storage_verified_until=2000)
         job = Job("attempt:1", "attempt", 1, "train", 1300, 100, {"spec": {"actual_param_count": 2904208}})
         self.assertEqual(rates.bound(job, 1000), 76)
         self.assertIsNone(rates.bound(job, 2001))
+
+    def test_ready_checkpoint_survives_receipt_pointer_crash_window(self):
+        from dataclasses import asdict
+        from modal_research.adapters import Job
+        from modal_research.broker import DetachedGrant
+        from modal_research.contracts import digest
+
+        grant = DetachedGrant(Job("job", "job", 1, "train", 1000, 100, {}), None,
+                              "raven-a", "launch-ab", 1, (0, 2))
+        old = {"generation": "old", "manifest_hash": "a" * 64}
+        new = {"generation": "new", "manifest_hash": "b" * 64}
+        remote = {"packet_hash": digest(asdict(grant)), "job_key": "job", "launch_token": "launch-ab", "fence": 1,
+                  "status": "running", "partial": old, "result": None,
+                  "candidate": {"reference": new, "partial": True}}
+        visible = False
+
+        def request(message, seconds):
+            if message["operation"] == "ready":
+                self.assertEqual(message["reference"], new)
+                return {"ready": visible}
+            return {"report": remote}
+
+        with tempfile.TemporaryDirectory() as path:
+            provider = SandboxProvider(SandboxBinding("app", "ap-1", "main", "im-1", "vo-1", {"a"*64: "b"*64}),
+                                       path, transport=type("Transport", (), {"request": staticmethod(request)})())
+            self.assertEqual(provider.collect_detached(grant, "sb-Found", Outcome("failed")).output, old)
+            visible = True
+            self.assertEqual(provider.collect_detached(grant, "sb-Found", Outcome("failed")).output, new)
 
     def test_transport_reconciles_only_original_name_and_rejects_wrong_report(self):
         calls = []

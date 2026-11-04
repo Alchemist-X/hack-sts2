@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS broker_cost_envelopes (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
     upper_cents INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS broker_cloud_archive (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
+    kept_generation TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS broker_detached (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
     grant_json TEXT NOT NULL
@@ -325,9 +329,10 @@ class RavenBroker:
             rows = db.execute(
                 """SELECT b.*, j.kind FROM broker_jobs b JOIN jobs j ON j.id=b.job_id
                    WHERE b.state IN ('sending','ambiguous','submitted') OR (b.state='finished' AND b.cost_pending=1)
-                   ORDER BY b.last_checked,b.rowid""",
+                   ORDER BY CASE WHEN b.state='finished' THEN 1 ELSE 0 END,b.last_checked,b.rowid""",
             ).fetchall()
-            row = next((item for item in rows if item["kind"] in kinds), None)
+            has_cost = getattr(provider, "tracks_late_cost", True) is not False
+            row = next((item for item in rows if item["kind"] in kinds and (item["state"] != "finished" or has_cost)), None)
             if row is None:
                 return False
             job = Controller._job(self._job_row(db, row["job_id"]))
@@ -442,6 +447,49 @@ class RavenBroker:
         except Exception:
             self._note_pending(job.key, "detached terminal evidence or mirror pending")
             return False
+
+    def archive_one(self, provider, retention_deadline):
+        """Prune one finished provider's cloud copies after local hash verification."""
+        if retention_deadline is None or not callable(getattr(provider, "prune", None)):
+            return False
+        with self.store.transaction() as db:
+            if db.execute("""SELECT 1 FROM broker_jobs b JOIN jobs j ON j.id=b.job_id
+                           WHERE j.kind IN ('train','eval') AND b.state IN ('sending','ambiguous','submitted')"""
+                         ).fetchone():
+                return False
+            expired = self.store.clock() >= retention_deadline
+            protected = {} if expired else {
+                ref["job_key"]: ref["generation"]
+                for (raw,) in db.execute("SELECT checkpoint FROM experiments WHERE checkpoint IS NOT NULL")
+                if (ref := json.loads(raw))
+            }
+            candidates = db.execute(
+                """SELECT j.*,a.kept_generation FROM broker_detached d JOIN broker_jobs b ON b.job_id=d.job_id
+                   JOIN jobs j ON j.id=d.job_id LEFT JOIN broker_cloud_archive a ON a.job_id=d.job_id
+                   WHERE b.state='finished' AND b.provider_id IS NOT NULL AND j.state IN ('done','failed')
+                   ORDER BY b.rowid"""
+            ).fetchall()
+            row = next((item for item in candidates
+                        if item["kept_generation"] != protected.get(item["id"], "")), None)
+        if row is None:
+            return False
+        job = Controller._job(row)
+        keep = protected.get(job.key)
+        try:
+            accepted = json.loads(row["outcome"]) if row["outcome"] else None
+            if accepted and accepted.get("checkpoint"):
+                ref = accepted["checkpoint"]
+                self.controller._artifact(job, {key: ref[key] for key in ("generation", "manifest_hash")})
+            elif keep:
+                return False
+            if provider.prune(job.key, keep) is not True:
+                return False
+        except Exception:
+            return False
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO broker_cloud_archive VALUES (?,?) ON CONFLICT(job_id) "
+                       "DO UPDATE SET kept_generation=excluded.kept_generation", (job.key, keep or ""))
+        return True
 
     def _note_pending(self, job_key, reason):
         with self.store.transaction() as db:
@@ -793,8 +841,10 @@ class AgentQueueProvider:
 class RavenRuntime:
     """One bounded scheduler tick; supervisor services own long-running work."""
 
-    def __init__(self, broker, *, modal_provider=None, agent_provider=None):
+    def __init__(self, broker, *, modal_provider=None, agent_provider=None, archive_deadline=None):
         self.broker = broker
+        self.modal_provider = modal_provider
+        self.archive_deadline = archive_deadline
         self.bindings = []
         if modal_provider is not None:
             self.bindings.append((modal_provider, GPU_KINDS))
@@ -808,6 +858,7 @@ class RavenRuntime:
         for provider, kinds in self.bindings:
             self.broker.reconcile_one(provider, kinds)
         advanced = self.broker.controller.tick()
+        self.broker.archive_one(self.modal_provider, self.archive_deadline)
         if advanced:
             for provider, kinds in self.bindings:
                 self.broker.spawn_one(provider, kinds)

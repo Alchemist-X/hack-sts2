@@ -15,7 +15,7 @@ from .agent_runner import AgentRunner, SolTask
 from .broker import AgentQueueProvider, GPU_KINDS, RavenBroker, RavenRuntime
 from .contracts import identifier
 from .gateway import AgentBinding
-from .sandbox_provider import CPU, MEMORY_MIB, SandboxBinding, SandboxProvider
+from .sandbox_provider import CPU, MEMORY_MIB, SandboxBinding, SandboxProvider, generation_bytes
 from .store import Store
 
 GIB = 2**30
@@ -33,12 +33,14 @@ class SandboxRates:
     volume_per_gib_month: str
     startup_seconds: int
     storage_months: int
+    storage_verified_until: int | None = None
 
     def __post_init__(self):
         identifier(self.reference)
         if (type(self.valid_until) is not int or type(self.startup_seconds) is not int
                 or not 0 <= self.startup_seconds <= 300 or type(self.storage_months) is not int
-                or not 1 <= self.storage_months <= 2):
+                or not 1 <= self.storage_months <= 2
+                or (self.storage_verified_until is not None and type(self.storage_verified_until) is not int)):
             raise ValueError("invalid verified Sandbox rates or bounded retention")
         for key in ("gpu_per_second", "cpu_per_core_second", "memory_per_gib_second", "volume_per_gib_month"):
             value = getattr(self, key)
@@ -46,16 +48,19 @@ class SandboxRates:
                 raise ValueError("rates must be positive decimal strings")
 
     def bound(self, job, now):
-        if job.kind not in GPU_KINDS or now >= self.valid_until or job.deadline <= now:
+        if (job.kind not in GPU_KINDS or job.deadline <= now or job.deadline > self.valid_until
+                or self.storage_verified_until is None or job.deadline > self.storage_verified_until
+                or self.storage_verified_until - now > self.storage_months * 28 * 86400):
             return None
         rate = (Decimal(self.gpu_per_second) + CPU * Decimal(self.cpu_per_core_second)
                 + Decimal(MEMORY_MIB) / 1024 * Decimal(self.memory_per_gib_second))
         seconds = Decimal(str(job.deadline - now)).to_integral_value(rounding=ROUND_CEILING) + self.startup_seconds
         # Two retained generations and one in flight. Treat three full copies
         # as stored for the whole authorized retention window.
-        params = job.payload["spec"]["actual_param_count"]
-        gib = Decimal(3 * (params * 32 + 65 * 1024**2)) / GIB
-        volume = gib * Decimal(self.volume_per_gib_month) * self.storage_months
+        gib = Decimal(3 * generation_bytes(job)) / GIB
+        # Modal can retain metered bytes for four days after removal. The
+        # reviewed retention binding must cover deletion and this tail.
+        volume = gib * Decimal(self.volume_per_gib_month) * (Decimal(self.storage_months) + Decimal(4) / 28)
         return int(((seconds * rate + volume) * 100).to_integral_value(rounding=ROUND_CEILING))
 
 
@@ -81,7 +86,7 @@ def load_runtime(config, *, clock=time.time):
     runner = None
     if agent is not None:
         required_agent = {"state", "workspaces", "launcher", "bindings", "sol_tasks", "cost_caps", "cost_verification"}
-        if type(agent) is not dict or set(agent) != required_agent:
+        if type(agent) is not dict or set(agent) not in (required_agent, required_agent | {"system_identity"}):
             raise ValueError("runtime agent requires verified role and spending bindings")
         identifier(agent["cost_verification"])
         if not agent["cost_caps"].keys() <= agent["bindings"].keys():
@@ -90,6 +95,7 @@ def load_runtime(config, *, clock=time.time):
             Path(agent["state"]), Path(agent["workspaces"]), study_id, Path(agent["launcher"]),
             {name: AgentBinding(**value) for name, value in agent["bindings"].items()},
             sol_tasks={name: SolTask(**value) for name, value in agent["sol_tasks"].items()},
+            system_identity=agent.get("system_identity"),
         )
 
     def bound(job):
@@ -106,7 +112,8 @@ def load_runtime(config, *, clock=time.time):
     broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound,
                          tool_enabled=bool(runner and "sol" in runner.bindings))
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
-    return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue), queue
+    return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,
+                        archive_deadline=rates.storage_verified_until if rates else None), queue
 
 
 def main():

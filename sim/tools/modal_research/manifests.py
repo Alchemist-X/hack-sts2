@@ -49,7 +49,7 @@ def _sync_dir(path):
         os.close(fd)
 
 
-def publish(root, identity, metadata, files, commit=None):
+def publish(root, identity, metadata, files, commit=None, before_ready=None):
     root = Path(root)
     if set(files) != _required(identity, metadata):
         raise ValueError("incomplete artifact role set")
@@ -66,9 +66,12 @@ def publish(root, identity, metadata, files, commit=None):
     if len(data) > 32000:
         raise ValueError("ready manifest too large")
     ready = root / MANIFEST_NAME
+    checksum = hashlib.sha256(data).hexdigest()
     _sync_dir(root)
     if commit:
         commit()  # commit payload files before making the marker visible
+    if before_ready:
+        before_ready(checksum)
     with NamedTemporaryFile(dir=root, prefix=".ready-", delete=False) as handle:
         temporary = Path(handle.name)
         handle.write(data)
@@ -85,7 +88,7 @@ def publish(root, identity, metadata, files, commit=None):
     _sync_dir(root)
     if commit:
         commit()
-    return hashlib.sha256(data).hexdigest()
+    return checksum
 
 
 def verify(root, reference, identity):

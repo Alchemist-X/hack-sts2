@@ -218,13 +218,16 @@ class Generation:
 class ArtifactAdapter:
     """Publish local worker output. Recording a reference belongs to the broker."""
 
-    def __init__(self, root, volume, *, checkpoint_loader=load_checkpoint, generation_id=lambda: uuid4().hex):
+    def __init__(self, root, volume, *, checkpoint_loader=load_checkpoint, generation_id=lambda: uuid4().hex,
+                 before_ready=None, max_generation_bytes=None):
         if not callable(getattr(volume, "commit", None)) or not callable(getattr(volume, "reload", None)):
             raise ValueError("a bound Volume V2 client is required")
         self.root = Path(root)
         self.volume = volume
         self.load = checkpoint_loader
         self.generation_id = generation_id
+        self.before_ready = before_ready
+        self.max_generation_bytes = max_generation_bytes
 
     def refresh(self):
         self.volume.reload()
@@ -241,7 +244,16 @@ class ArtifactAdapter:
         return identity, generation, directory
 
     def _finish(self, identity, generation, directory, metadata, files):
-        sha = publish(directory, identity, metadata, files, commit=self.volume.commit)
+        if (self.max_generation_bytes is not None
+                and sum((directory / name).stat().st_size for name in files.values()) + 32_000
+                > self.max_generation_bytes):
+            raise ValueError("generation exceeds the detached storage cap")
+
+        def announce(sha):
+            self.before_ready({"generation": generation, "manifest_hash": sha}, metadata)
+
+        sha = publish(directory, identity, metadata, files, commit=self.volume.commit,
+                      before_ready=announce if self.before_ready is not None else None)
         verify(directory, sha, identity)
         return Generation({"generation": generation, "manifest_hash": sha}, metadata["decisions"],
                           metadata.get("cursor"), metadata["termination"] == "checkpoint", metadata.get("seed_issued_until"))

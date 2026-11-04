@@ -1,0 +1,89 @@
+"""Prepare a single immutable Sandbox input bundle from reviewed local bytes."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+from .artifact_adapter import verify_bundle
+from .contracts import canonical, digest, validate_spec
+from .manifests import file_digest
+from .native_worker import Installation
+
+SOURCES = {
+    "sts2train": ("train", ("__init__", "cycles", "episodes", "evaluate", "features", "gae", "heads",
+                            "isolation", "loopbreak", "model", "objective", "ppo", "progress",
+                            "runlog", "seedstream", "startpool")),
+    "sts2vec": ("vec", ("__init__", "env", "errors", "evaluate", "loader", "policies", "pool", "protocol", "schema")),
+    "modal_research": (None, ("__init__", "adapters", "artifact_adapter", "broker", "contracts", "controller",
+                              "lineage", "manifests", "modal_provider", "native_worker", "sandbox_provider")),
+}
+
+
+def prepare(repo, spec, seed_index, engine, dependencies, destination):
+    validate_spec(spec)
+    seed_index, engine, dependencies, destination = map(Path, (seed_index, engine, dependencies, destination))
+    if file_digest(engine) != spec["engine_hash"] or file_digest(dependencies) != spec["dependency_hash"]:
+        raise ValueError("native engine or dependencies differ from the freeze")
+    index = json.loads(seed_index.read_bytes())
+    if index["registration_fields"]["eval_protocol"] != spec["eval_protocol"]:
+        raise ValueError("seed isolation protocol differs from the frozen experiment")
+    seeds = {}
+    for role in ("train", "dev", "blind"):
+        entry = index["manifests"][role]
+        sha = spec[f"{role}_seed_manifest_hash"]
+        relative = Path("sealed" if role == "blind" else role) / f"{sha}.json"
+        path = seed_index.parent / relative
+        if entry["file"] != relative.as_posix() or entry["file_sha256"] != sha or file_digest(path) != sha:
+            raise ValueError("seed input differs from the frozen experiment")
+        seeds[sha] = path
+    if set(seeds) != {spec[f"{role}_seed_manifest_hash"] for role in ("train", "dev", "blind")}:
+        raise ValueError("expected three distinct frozen seed roles")
+
+    destination.mkdir(parents=False, mode=0o700, exist_ok=False)
+    code = destination / "code"
+    for package, (group, files) in SOURCES.items():
+        source = Path("sim/tools") / group / package if group else Path("sim/tools") / package
+        target = code / package
+        target.mkdir(parents=True)
+        for name in files:
+            path = source / f"{name}.py"
+            data = subprocess.check_output(
+                ["git", "-C", str(repo), "show", f"{spec['code_commit']}:{path.as_posix()}"], timeout=10)
+            (target / f"{name}.py").write_bytes(data)
+    lib = destination / "lib"
+    lib.mkdir()
+    shutil.copyfile(engine, lib / "Sts2Sim.Vec.so")
+    shutil.copyfile(dependencies, destination / "dependencies.lock")
+    target_seeds = destination / "seeds"
+    target_seeds.mkdir()
+    for sha, path in seeds.items():
+        shutil.copyfile(path, target_seeds / f"{sha}.json")
+    manifest = destination / "bundle.json"
+    manifest.write_text(canonical({
+        "version": 1, "code_commit": spec["code_commit"], "image_digest": spec["image_digest"],
+        "files": {path.relative_to(destination).as_posix(): file_digest(path)
+                  for path in sorted(destination.rglob("*")) if path.is_file()},
+    }), encoding="utf-8")
+    checksum = file_digest(manifest)
+    installation = Installation(spec["code_commit"], spec["image_digest"], lib / "Sts2Sim.Vec.so",
+                                destination / "dependencies.lock", target_seeds, destination, destination)
+    verify_bundle(installation, spec, destination, checksum)
+    return {"config_hash": digest(spec), "bundle_hash": checksum, "volume_path": f"/bundles/{digest(spec)}"}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for key in ("repo", "spec", "seed-index", "engine", "dependencies", "destination"):
+        parser.add_argument(f"--{key}", type=Path, required=True)
+    args = parser.parse_args()
+    result = prepare(args.repo, json.loads(args.spec.read_bytes()), args.seed_index,
+                     args.engine, args.dependencies, args.destination)
+    print(canonical(result))
+
+
+if __name__ == "__main__":
+    main()

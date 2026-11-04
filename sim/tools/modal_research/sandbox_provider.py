@@ -13,8 +13,8 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
+from pathlib import Path, PurePosixPath
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from types import SimpleNamespace
 
 from .adapters import Outcome
@@ -93,6 +93,10 @@ def _object_id(value, prefix):
     return value
 
 
+def generation_bytes(job):
+    return integer(job.payload["spec"]["actual_param_count"], 1) * 32 + 65 * 1024**2
+
+
 def _attempt_name(launch_token):
     return "sts2-" + identifier(launch_token)
 
@@ -101,6 +105,7 @@ class SandboxProvider:
     """Bound transport for one named, network-blocked Sandbox per broker grant."""
 
     detached = True
+    tracks_late_cost = False  # The starter binding lacks a per-Sandbox invoice resolver.
 
     def __init__(self, binding, artifacts, *, verified_identity=False, transport=None, clock=time.time):
         if not isinstance(binding, SandboxBinding):
@@ -170,15 +175,31 @@ class SandboxProvider:
             if self.clock() < grant.job.deadline + 30:
                 raise ProviderUncertain("Sandbox terminal report not visible")
             return Outcome("failed", error="missing_artifact")
-        required = {"packet_hash", "job_key", "launch_token", "fence", "status", "partial", "result"}
+        required = {"packet_hash", "job_key", "launch_token", "fence", "status", "partial", "result", "candidate"}
         if (type(report) is not dict or set(report) != required
                 or (report["packet_hash"], report["job_key"], report["launch_token"], report["fence"])
                 != (packet_hash, grant.job.key, grant.launch_token, grant.fence)
                 or report["status"] not in {"running", "succeeded", "failed"}):
             raise ValueError("report differs from the frozen one-shot grant")
+        local = self.artifacts / "_receipts"
+        local.mkdir(mode=0o700, exist_ok=True)
+        if local.is_symlink():
+            raise ValueError("local receipt storage must not be a symlink")
+        _write_report(local / f"{grant.launch_token}.json", report)
         if report["status"] == "succeeded" and provider_outcome.status == "succeeded":
             return Outcome("succeeded", output=report["result"])
-        return Outcome("failed", output=report["partial"], error="reclaimed")
+        partial = report["partial"]
+        candidate = report["candidate"]
+        if candidate and candidate["partial"]:
+            reference = candidate["reference"]
+            if self._request("ready", 15, job_key=grant.job.key, reference=reference) == {"ready": True}:
+                partial = reference
+        return Outcome("failed", output=partial, error="worker" if report["status"] == "failed" else "reclaimed")
+
+    def prune(self, job_key, keep):
+        response = self._request("prune", 15, job_key=identifier(job_key),
+                                 keep=identifier(keep) if keep else None)
+        return response == {"pruned": True}
 
     def materialize(self, job, reference):
         response = self._request("mirror", 100, job=asdict(job), reference=reference, destination=str(self.artifacts))
@@ -195,15 +216,18 @@ class _VolumeSync:
 
 
 def _write_report(path, report):
-    temp = path.with_suffix(".pending")
     data = canonical(report).encode()
     if len(data) > REPORT_LIMIT:
         raise ValueError("detached worker report exceeds its byte bound")
-    with temp.open("wb") as handle:
+    with NamedTemporaryFile(dir=path.parent, prefix=".receipt-", delete=False) as handle:
+        temp = Path(handle.name)
         handle.write(data)
         handle.flush()
         os.fsync(handle.fileno())
-    temp.replace(path)
+    try:
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def worker(packet, packet_hash, bundle_hash, cutoff):
@@ -226,7 +250,7 @@ def worker(packet, packet_hash, bundle_hash, cutoff):
     path = receipts / f"{grant.launch_token}.json"
     volume = _VolumeSync()
     report = {"packet_hash": packet_hash, "job_key": job.key, "launch_token": grant.launch_token,
-              "fence": grant.fence, "status": "running", "partial": None, "result": None}
+              "fence": grant.fence, "status": "running", "partial": None, "result": None, "candidate": None}
 
     def save():
         _write_report(path, report)
@@ -246,12 +270,17 @@ def worker(packet, packet_hash, bundle_hash, cutoff):
             verify_bundle(installation, spec, root, bundle_hash)
             os.environ.update(STS2VEC_AOT_LIB=str(installation.engine), DOTNET_gcServer="1",
                               DOTNET_gcConcurrent="0", DOTNET_PROCESSOR_COUNT="2")
-            writer = ArtifactAdapter(artifacts, volume)
+            def announce(reference, metadata):
+                report["candidate"] = {"reference": reference, "partial": metadata["termination"] == "checkpoint"}
+                save()
+
+            writer = ArtifactAdapter(artifacts, volume, before_ready=announce,
+                                     max_generation_bytes=generation_bytes(job))
 
             def checkpoint_ready(checkpoint):
                 previous = report["partial"]
                 generation = writer.training(grant, checkpoint, installation.scratch, partial=True)
-                report["partial"] = generation.reference
+                report.update(partial=generation.reference, candidate=None)
                 save()
                 if previous:
                     # This path only owns its own obsolete temporary partials.
@@ -269,7 +298,7 @@ def worker(packet, packet_hash, bundle_hash, cutoff):
                 generation = writer.training(grant, result["last_checkpoint"], installation.scratch, partial=False)
             else:
                 generation = writer.evaluation(grant, result, installation)
-            report.update(status="succeeded", result=generation.reference)
+            report.update(status="succeeded", result=generation.reference, candidate=None)
             save()
     except BaseException:
         report["status"] = "failed"
@@ -330,11 +359,7 @@ def _sdk_request(message, modal):
         return {"sandbox_id": _object_id(sandbox.object_id, "sb")}
     if operation == "find":
         name = identifier(message["name"])
-        try:
-            sandbox = modal.Sandbox.from_name(binding.app_name, name, environment_name=binding.environment)
-        except modal.exception.NotFoundError:
-            return {"sandbox_id": _find_finished(binding, name)}
-        return {"sandbox_id": _object_id(sandbox.object_id, "sb")}
+        return {"sandbox_id": _find_finished(binding, name)}
     if operation in {"poll", "cancel"}:
         sandbox = modal.Sandbox.from_id(_object_id(message["sandbox_id"], "sb"))
         if operation == "poll":
@@ -347,6 +372,40 @@ def _sdk_request(message, modal):
             return {"report": _report(volume, message["token"])}
         except (FileNotFoundError, modal.exception.NotFoundError):
             return {"report": None}
+    if operation == "ready":
+        reference = message["reference"]
+        generation = identifier(reference["generation"])
+        if not _digest(reference["manifest_hash"]):
+            raise ValueError("invalid pending manifest digest")
+        path = f"/outputs/{identifier(message['job_key'])}/{generation}/ready.json"
+        checksum = hashlib.sha256()
+        size = 0
+        try:
+            for part in volume.read_file(path):
+                size += len(part)
+                if size > 32_000:
+                    raise ValueError("ready manifest exceeds bound")
+                checksum.update(part)
+        except (FileNotFoundError, modal.exception.NotFoundError):
+            return {"ready": False}
+        return {"ready": checksum.hexdigest() == reference["manifest_hash"]}
+    if operation == "prune":
+        job_path = PurePosixPath("/outputs") / identifier(message["job_key"])
+        keep = identifier(message["keep"]) if message["keep"] else None
+        try:
+            if keep is None:
+                volume.remove_file(str(job_path), recursive=True)
+            else:
+                for entry in volume.iterdir(str(job_path), recursive=False):
+                    path = PurePosixPath("/") / entry.path.lstrip("/")
+                    if path.parent != job_path:
+                        raise ValueError("unexpected job directory listing")
+                    generation = identifier(path.name)
+                    if generation != keep:
+                        volume.remove_file(str(path), recursive=True)
+        except (FileNotFoundError, modal.exception.NotFoundError):
+            pass
+        return {"pruned": True}
     if operation == "mirror":
         from .adapters import Job
 
