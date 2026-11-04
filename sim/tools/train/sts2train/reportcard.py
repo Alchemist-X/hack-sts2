@@ -5,9 +5,12 @@
 protocol limits) in ``OUT/evals/<seed set>/``, reused when that directory already holds a finished evaluation of the
 same weights, seed set, library, limits and loop breaker (else set aside as ``*.stale-<time>`` and re-run); the rule
 baselines ``random`` / ``first`` / ``heuristic`` (``sts2vec eval``, policy seed 0) in a cache shared by every card
-(``baseline_cache``, default ``tmp/eval/baselines``, one directory per policy, seed set and library); the lookahead
-run directories given (``sts2train.lookahead``; read only, labelled "lookahead, determinized"; a lookahead seed set
-outside ``seedsets`` gets its own section with the greedy row and the baselines). Writes ``OUT/model-card.md`` and
+(``baseline_cache``, default ``tmp/eval/baselines``, one directory per policy, seed set and library); the run
+directories of ``python -m sts2train.lookahead eval`` given (``lookahead_dirs``, read only; ``lookahead_row``): a search
+run is a "lookahead, determinized" row with its search declaration and counters (``stats.json``), paired per seed
+(``lookahead.paired``) against a ``--greedy`` run of the same weights (loop breaker off, like the lookahead outside
+its search), else against the card's greedy row; a ``--greedy`` run is an "NN greedy, loop breaker off" row; a seed
+set outside ``seedsets`` gets its own section with the greedy row and the baselines. Writes ``OUT/model-card.md`` and
 ``OUT/model-card.json``:
 
 - checkpoint: file, sha256, weights_hash (recomputed from the stored weights and checked against the record), update,
@@ -55,6 +58,7 @@ import torch
 from sts2vec import protocol as PG
 from sts2vec.evaluate import FLOOR_STEP_CAP, STEP_CAP
 
+from .lookahead import paired as paired_runs
 from .loopbreak import DEFAULT_K
 from .model import ARCH_KEYS, PRESETS, arch_of, param_count
 from .runlog import atomic_write_bytes, atomic_write_json
@@ -67,6 +71,12 @@ LIMITS = {"step_cap": STEP_CAP, "floor_step_cap": FLOOR_STEP_CAP}
 LIVE_TWIN = "scripts/live/nn_twin_play.py"
 GREEDY_LABEL = "NN greedy"
 LOOKAHEAD_LABEL = "lookahead, determinized"
+DETAIL_KINDS = ("nn", "greedy-ref", "lookahead")    # rows with the per-game tables (floor, endings, deck, win_prob)
+SEARCH_STAT_KEYS = ("searched", "live_decisions", "changed", "rollout_errors", "no_valid_candidate", "desyncs",
+                    "rebuilds", "api", "wall_seconds", "torch_threads")
+SEARCH_DERIVED_KEYS = ("changed_rate", "searched_share_of_live", "ms_per_searched_decision")
+PAIRED_KEYS = ("games", "delta_mean", "delta_sd", "t_ci95", "bootstrap_ci95", "bootstrap_resamples", "better", "worse",
+               "same")
 
 STAGES = (
     ("act1_boss", "reached the Act-1 boss"),
@@ -378,8 +388,46 @@ def run_entry(run_dir, kind: str, label: str, ascension: int, *, reused: bool, w
          "repo_sha": cfg.get("repo_sha"), "wall_seconds": (_read_json(d / "run.json") or {}).get("wall_seconds"),
          "loop_breaker": rep.get("loop_breaker"), "notes": notes, **run_stats(summaries, ascension)}
     if kind == "lookahead":
-        e.update(search=cfg.get("search"), information=cfg.get("information"))
+        st = _read_json(d / "stats.json") or {}
+        dv = st.get("derived") or {}
+        e.update(search=cfg.get("search"), information=cfg.get("information"),
+                 search_stats={**{k: st.get(k) for k in SEARCH_STAT_KEYS},
+                               **{k: dv.get(k) for k in SEARCH_DERIVED_KEYS}, "code": st.get("code")} if st else None)
     return e
+
+
+def lookahead_row(cfg: dict, run_dir) -> tuple[str, str]:
+    """(kind, label) of a ``python -m sts2train.lookahead eval`` run directory from its config.json: a search run
+    (``search`` declared) -> ``lookahead``, "lookahead, determinized: la(K,R,horizon,honest) <score>"; a ``--greedy``
+    run (an ``sts2train eval`` directory: ``greedy``, policy ``nn:...``) -> ``greedy-ref``, "NN greedy, loop breaker
+    <mode>" (a run that predates the loop breaker records none: the plain argmax, off). Anything else: ValueError."""
+    pol = str(cfg.get("policy") or "")
+    if cfg.get("search"):
+        sc = cfg["search"].get("score") if isinstance(cfg["search"], dict) else None
+        label = f"{LOOKAHEAD_LABEL}: {pol.split('+', 1)[1]}" if "+" in pol else LOOKAHEAD_LABEL
+        return "lookahead", f"{label} {sc}" if sc else label
+    if cfg.get("greedy") is True and pol.startswith("nn:"):
+        return "greedy-ref", f"{GREEDY_LABEL}, loop breaker {(cfg.get('loop_breaker') or {}).get('mode') or 'off'}"
+    raise ValueError(f"{run_dir}: not a `python -m sts2train.lookahead eval` run directory (policy {pol or '?'}: "
+                     "neither a search run nor a --greedy run)")
+
+
+def paired_against(la: dict, runs: list[dict]) -> dict | None:
+    """Per-seed progress difference of the lookahead row `la` against its like-for-like greedy row of `runs`: a
+    ``greedy-ref`` row of the same weights with the loop breaker off (the lookahead's choices outside the search are
+    the plain argmax), else the card's greedy row (loop breaker on: the difference then mixes the search with the loop
+    breaker; ``like_for_like`` False)."""
+    same = [r for r in runs if r["kind"] == "greedy-ref" and r["weights_hash"] == la["weights_hash"]
+            and ((r.get("loop_breaker") or {}).get("mode") or "off") == "off"]
+    ref = same[0] if same else next((r for r in runs if r["kind"] == "nn"), None)
+    if ref is None:
+        return None
+    out = {"vs": ref["label"], "vs_kind": ref["kind"], "like_for_like": bool(same)}
+    try:
+        p = paired_runs(ref["dir"], la["dir"])
+    except (OSError, ValueError, KeyError) as e:
+        return {**out, "error": str(e)}
+    return {**out, **{k: p[k] for k in PAIRED_KEYS}}
 
 
 # ------------------------------------------------------------------------------------------------ checkpoint identity
@@ -512,8 +560,9 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
         cfg = _read_json(Path(d) / "config.json")
         if not cfg or not cfg.get("seedset"):
             raise ValueError(f"{d}: not a protocol run directory (no config.json with a seed set)")
+        kind, label = lookahead_row(cfg, d)
         ss = PG.validate_seedset(dict(cfg["seedset"]), str(d))
-        lookahead.append((Path(d), cfg, ss))
+        lookahead.append((Path(d), kind, label, ss))
         refs.setdefault(PG.checksum(ss), ref_of(ss, None))
         add_set(ss)
 
@@ -536,12 +585,15 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
                            loop_breaker_k=DEFAULT_K, log=log)
         runs.append(run_entry(d, "nn", GREEDY_LABEL, asc, reused=reason is None, weights_hash=wh,
                               library_version=lib["version"]))
-        for ld, cfg, lss in lookahead:
+        for ld, kind, label, lss in lookahead:
             if PG.checksum(lss) == sha:
-                pol = str(cfg.get("policy") or "")
-                label = f"{LOOKAHEAD_LABEL}: {pol.split('+', 1)[1]}" if "+" in pol else LOOKAHEAD_LABEL
-                runs.append(run_entry(ld, "lookahead", label, asc, reused=True, weights_hash=wh,
+                if any(r["label"] == label for r in runs):
+                    label = f"{label} ({ld.name})"
+                runs.append(run_entry(ld, kind, label, asc, reused=True, weights_hash=wh,
                                       library_version=lib["version"]))
+        for r in runs:
+            if r["kind"] == "lookahead":
+                r["paired"] = paired_against(r, runs)
         for pol in baselines:
             bd = Path(baseline_cache) / _dirname(f"{pol}-{sid}-{sha[:12]}-{lib['encoder_version']}")
             reason = stale_reason(bd, ss, library_version=lib["version"], policy=pol)
@@ -689,7 +741,7 @@ def render_md(card: dict) -> str:
 
     for sec in card["seedsets"]:
         runs = sec["runs"]
-        nn = [r for r in runs if r["kind"] in ("nn", "lookahead")]
+        nn = [r for r in runs if r["kind"] in DETAIL_KINDS]
         L += ["", f"## {sec['id']}: A{sec['ascension']}, {sec['games']} games",
               "", f"Seed set `{sec['id']}` (`{sec['name']}`, role {sec.get('role') or '-'}, sha256 "
                   f"`{(sec['sha256'] or '?')[:16]}`, {'frozen' if sec['frozen'] else 'not a frozen set'}).", "",
@@ -713,9 +765,34 @@ def render_md(card: dict) -> str:
                              f"{lb.get('no_op_actions')} no-op actions, {lb.get('cycle_revisits')} cycle revisits")
             if r["kind"] == "lookahead" and r.get("search"):
                 notes.append(f"{r['label']}: search {json.dumps(r['search'], sort_keys=True)}; information: "
-                             f"{r.get('information') or '-'}")
+                             f"{r.get('information') or '-'}; no loop breaker (outside the search: the plain argmax)")
         if notes:
             L += [""] + [f"- {x}" for x in notes]
+        las = [r for r in runs if r["kind"] == "lookahead"]
+        if las:
+            L += ["", "### Lookahead: declared search, paired per seed", "",
+                  "| row | paired against | Δ progress | t 95% CI | bootstrap 95% CI | better / worse / same | "
+                  "searched decisions (share of live) | changed | ms / searched decision | rollout errors / desyncs |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+            for r in las:
+                p, st = r.get("paired") or {}, r.get("search_stats") or {}
+                if p and "delta_mean" in p:
+                    (t0, t1), (b0, b1) = p["t_ci95"], p["bootstrap_ci95"]
+                    vs = p["vs"] + ("" if p["like_for_like"] else " (loop breaker on)")
+                    pc = [vs, f"{p['delta_mean']:+.4f}", f"[{t0:+.4f}, {t1:+.4f}]", f"[{b0:+.4f}, {b1:+.4f}]",
+                          f"{p['better']} / {p['worse']} / {p['same']}"]
+                else:
+                    pc = [p.get("vs") or "-", f"- ({p['error']})" if p.get("error") else "-", "-", "-", "-"]
+                sc = ([f"{_n(st.get('searched'))} ({_pct(st.get('searched_share_of_live'), 0)})",
+                       _pct(st.get("changed_rate")), _f(st.get("ms_per_searched_decision"), 1),
+                       f"{_f(st.get('rollout_errors'))} / {_f(st.get('desyncs'))}"] if st else ["-"] * 4)
+                L.append("| " + " | ".join([r["label"], *pc, *sc]) + " |")
+            L += ["", "Δ = per-seed protocol progress of the row minus the row it is paired against "
+                      "(`sts2train.lookahead.paired`: Student t interval on the per-seed differences, percentile "
+                      "bootstrap of the mean, 10,000 resamples). Like for like is a `--greedy` run of the same weights "
+                      "(loop breaker off, as the lookahead plays outside its search); paired against the card's NN "
+                      "greedy row (loop breaker on), Δ mixes the search with the loop breaker. Counters from the run's "
+                      "`stats.json`."]
         L += ["", "### Staged results (count / N [Wilson 95%])", "",
               "| stage | " + " | ".join(r["label"] for r in runs) + " |", "| --- |" + " --- |" * len(runs)]
         for key, label in STAGES:
@@ -813,6 +890,7 @@ def readme_weights(card: dict, name: str, ck_file: str) -> str:
     game = (secs[0].get("first_game") if secs else None) or f"{character}-<SEED>"
     ck = f'"$B/checkpoint/{ck_file}"'
     ev = f"tmp/eval/{name}-{_dirname(ids[0] if ids else first)}"
+    la, gr = f"{ev}-la", f"{ev}-greedy-plain"
     sc = card.get("spec_compat") or {}
     compat = ""
     if sc.get("widened_enums"):
@@ -869,7 +947,19 @@ def readme_weights(card: dict, name: str, ck_file: str) -> str:
           f"uv run --project sim/tools/train sts2train report-card --checkpoint {ck} \\",
           f"    --out tmp/card/{name} --seedsets {','.join(refs)} --threads 4", "```", "",
           "Reuses the evaluations already in `--out` and the cached baselines (`tmp/eval/baselines`); "
-          "`--lookahead-dir DIR` adds a `sts2train.lookahead` run as a \"lookahead, determinized\" row.", "",
+          "`--lookahead-dir DIR ...` adds `python -m sts2train.lookahead eval` runs (next section).", "",
+          "## Lookahead (a declared search row)", "", "```bash",
+          f"uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset {first} --checkpoint {ck} \\",
+          f"    --out {la} --threads 4            # K 8, R 1, turn horizon, value+hp leaf",
+          f"uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset {first} --checkpoint {ck} \\",
+          f"    --out {gr} --threads 4 --greedy   # its paired baseline: loop breaker off",
+          f"uv run --project sim/tools/train sts2train report-card --checkpoint {ck} \\",
+          f"    --out tmp/card/{name} --seedsets {','.join(refs)} --threads 4 --lookahead-dir {la} {gr}", "```", "",
+          "The lookahead searches combat decisions on determinized copies of the game (the player's view; draw order "
+          "and RNG resampled, never the true hidden state), declared in the run's `config.json` (`search`, "
+          "`information`). The card shows it as a \"lookahead, determinized\" row, paired per seed against the "
+          "`--greedy` run, which plays as the lookahead does outside its search (the plain argmax, no loop breaker). "
+          "Guide: `docs/lookahead-2026-11-04.md`.", "",
           "## Probe", "", "```bash",
           f"uv run --project sim/tools/train sts2train probe --checkpoint {ck} \\",
           f"    --eval-dir {ev} --game {game} --top 3 --out {ev}/probe-{game}.jsonl", "```", "",
@@ -877,8 +967,8 @@ def readme_weights(card: dict, name: str, ck_file: str) -> str:
           "model's top candidates with probabilities and the value head (and win_prob / combat_hp_pred with aux "
           "heads); `--out` keeps them as JSON lines. Without `--game` every game of the run is probed.", "",
           "## Real game (live twin runner)", "",
-          f"`{LIVE_TWIN}` (guide `scripts/live/README-nn-twin.md`; built on branch `train/live-twin`, use a tree that "
-          "has it) plays the real game through a simulator twin: the network reads the twin's observation, the "
+          f"`{LIVE_TWIN}` (guide `scripts/live/README-nn-twin.md`) plays the real game through a simulator twin: "
+          "the network reads the twin's observation, the "
           "chosen candidate is mapped onto the game's actions through STS2_MCP. STS2_MCP is installed only while "
           "such a session runs (repository rule):", "", "```bash",
           "scripts/mcp_mod.sh on       # install STS2_MCP for this session",

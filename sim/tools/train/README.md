@@ -37,6 +37,9 @@ uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve
 uv run --project sim/tools/train sts2train report-card --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/card/run1
 uv run --project sim/tools/train sts2train pack --checkpoint tmp/train/run1/checkpoints/best.pt \
     --out tmp/release/run1.tar.gz --card tmp/card/run1
+# decision-time combat lookahead (a declared search row) and its paired greedy baseline; see "Combat lookahead"
+uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset silent-a10-dev-v1 \
+    --checkpoint tmp/train/run1/checkpoints/best.pt --out tmp/eval/la-run1 --threads 4
 ```
 
 (`eval` also answers to `evaluate`; `sts2train train --help` lists every flag with its default.)
@@ -162,7 +165,8 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
 | `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; the loop breaker's counts in the game summaries / report.json (`write_loop_stats`); with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
 | `loopbreak.py` | `LoopBreaker` (the greedy eval policy's no-op / cycle breaker, optionally the rollout sampling's) and `ObsDigest` (vectorised 64-bit digest of the model-read buffers per slot) |
-| `reportcard.py` | `sts2train report-card` / `pack` / `probe`: the model card of a checkpoint (evals run or reused, baselines cached, `stages` / `endings_table` / Wilson rows), the weights bundle (`pack`, `verify_bundle`), the per-decision readout of an eval's games (`probe`) |
+| `reportcard.py` | `sts2train report-card` / `pack` / `probe`: the model card of a checkpoint (evals run or reused, baselines cached, `stages` / `endings_table` / Wilson rows, `--lookahead-dir` rows paired per seed), the weights bundle (`pack`, `verify_bundle`), the per-decision readout of an eval's games (`probe`) |
+| `lookahead.py` | `python -m sts2train.lookahead eval / paired`: decision-time combat lookahead on determinized clones as an `sts2vec` policy (`LookaheadPolicy`: private mirror env, K candidates × R roots, turn / combat horizon, `value+hp` leaf; ABI 2 `env.branch` path, pool + rebuild path before it), `--record` ExIt rows, `evaluate_greedy` (the paired baseline, loop breaker off), `paired` (per-seed differences, t and bootstrap intervals); `docs/lookahead-2026-11-04.md` |
 
 Objective (`objective.py`, `--objective`): the default `protocol` rewards each step with the change of the protocol
 v0.2 progress metric (§4.2 of `docs/sts2-bench-protocol-v0.2-2026-11-01.md`: per-act normalised, `sts2vec.protocol.compute`,
@@ -346,15 +350,44 @@ uv run --project sim/tools/train sts2train probe --checkpoint best.pt --eval-dir
 - **Reuse.** `CARD/evals/<seed set>` is reused when its `config.json` matches the weights, seed set content, library
   (`server_version`), protocol limits and loop breaker (on, k 3) and every game has a summary; otherwise it is moved
   to `*.stale-<time>` and played again. Baselines are cached the same way (policy, seed set content, library; policy
-  seed 0). `--lookahead-dir` run directories (`sts2train.lookahead`) are read only, labelled "lookahead,
-  determinized"; a differing weights hash or library is noted on the row.
+  seed 0). `--lookahead-dir` run directories (`python -m sts2train.lookahead eval`) are read only: a search run is a
+  "lookahead, determinized: la(K,R,horizon,honest) <score>" row with its search declaration and `stats.json`
+  counters, paired per seed (`lookahead.paired`) against a `--greedy` run of the same weights (loop breaker off, as
+  the lookahead plays outside its search), else against the card's greedy row (loop breaker on: flagged, Δ then
+  mixes the search with the loop breaker); a `--greedy` run is an "NN greedy, loop breaker off" row; any other run
+  directory is refused. A differing weights hash or library is noted on the row.
 - **Bundle**: `checkpoint/<file>` (as trained, optimizer state included when it has one), `checkpoint/spec.json`,
   `checkpoint/config.json` (config, arch, heads, counters, training-time evals), `model-card.md` / `.json`,
   `library.json` (encoder_version, ABI version, spec compatibility), `README-weights.md` (verify, evaluate, re-make
   the card, probe, and the live twin runner `scripts/live/nn_twin_play.py` between `scripts/mcp_mod.sh on` / `off`),
   `manifest.json` and `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS`).
 - **Seed sets**: `silent-a10-dev-v1` (`silent-a10-dev-s128`, D1A10SI001..128) and `silent-a10-test-v1`
-  (`silent-a10-test-s100`, H1A10SI001..100, held out), THE SILENT A10, next to the 20-game `silent-a10-v1`.
+  (`silent-a10-test-s100`, H1A10SI001..100, held out), THE SILENT A10, next to the 20-game `silent-a10-v1`; and
+  `silent-a0-dev-v1` (`silent-a0-dev-s100`, D1A0SI001..100) for A0.
+
+## Combat lookahead (`python -m sts2train.lookahead`)
+
+```bash
+# the checkpoint's greedy policy plus a search at combat decisions on determinized clones (never the true hidden
+# state): K 8 candidates, R 1 root, turn horizon (H 12; --horizon combat: H 40), value+hp leaf score
+uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset silent-a10-dev-v1 --checkpoint best.pt \
+    --out tmp/eval/la --threads 4 [--K 8 --R 1 --horizon turn --score value+hp --record]
+# the paired baseline: the sts2train eval path with the loop breaker off (the lookahead's own choices outside the
+# search are the plain argmax), so the two runs differ only by the search; K = 1 is identical to it
+uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset silent-a10-dev-v1 --checkpoint best.pt \
+    --out tmp/eval/la-greedy --threads 4 --greedy
+uv run --project sim/tools/train python -m sts2train.lookahead paired tmp/eval/la-greedy tmp/eval/la
+# both as rows of the model card
+uv run --project sim/tools/train sts2train report-card --checkpoint best.pt --out tmp/card/x \
+    --seedsets silent-a10-dev-v1 --lookahead-dir tmp/eval/la tmp/eval/la-greedy
+```
+
+The run directory is a normal protocol run (`sts2vec.evaluate` plays, scores and replay-audits it) with the search
+declared in `config.json` (`search`, `information: "determinized, combat-only"`, `mirror_env`; policy
+`nn:<ckpt>+la(K,R,horizon,honest)`) and the search counters in `stats.json` (searched / changed decisions, ms per
+searched decision, rollout errors, desyncs, the code's sha256); `--record` adds `searches.jsonl` (per searched
+decision: candidates, mean Q, choice; ExIt targets). The lookahead has no loop breaker. Measurements and the ExIt
+go / no-go: `docs/lookahead-2026-11-04.md` (A10 dev +0.0152 [+0.0080, +0.0223], below the +0.02 bar).
 
 ## Colab bundle (a box without .NET: the Colab A100 runtime)
 

@@ -292,8 +292,10 @@ def _card_parsers(sub) -> None:
         p.add_argument("--threads", type=int, default=4, help="env worker threads and torch threads (default 4)")
         p.add_argument("--device", default="cpu", help="device of the model: cpu | cuda[:i] | mps (default cpu)")
         p.add_argument("--lookahead-dir", dest="lookahead_dirs", nargs="+", action="extend", default=[],
-                       metavar="DIR", help="protocol run directories of sts2train.lookahead evaluations: extra rows "
-                                           "labelled 'lookahead, determinized' (read only)")
+                       metavar="DIR", help="run directories of `python -m sts2train.lookahead eval` (read only): a "
+                                           "search run is a 'lookahead, determinized' row, paired per seed against a "
+                                           "--greedy run of the same weights (else the card's greedy row); a --greedy "
+                                           "run is an 'NN greedy, loop breaker off' row")
         p.add_argument("--baselines", default=",".join(BASELINES),
                        help="rule policies run with sts2vec eval on the same seed sets for context, or 'none' "
                             "(default %(default)s)")
@@ -366,8 +368,16 @@ def _card_cmd(a) -> int:
         return 2
     res["seedsets"] = []
     failed = []
+    looks = []
     for sec in card["seedsets"]:
         for r in sec["runs"]:
+            if r["kind"] == "lookahead":
+                p = r.get("paired") or {}
+                looks.append({"seedset": sec["id"], "label": r["label"], "games": r["headline"]["games"],
+                              "progress_mean": r["headline"]["progress_mean"],
+                              "replayable": r["headline"]["replayable"],
+                              "paired": {k: p[k] for k in ("vs", "like_for_like", "delta_mean", "t_ci95", "better",
+                                                           "worse", "same", "error") if k in p} or None})
             if r["kind"] != "nn":
                 continue
             h = r["headline"]
@@ -377,6 +387,8 @@ def _card_cmd(a) -> int:
                                     "replayable": h["replayable"], "reused": r["reused"]})
             if h["replayable"] != h["games"]:
                 failed.append(f"{sec['id']} {h['replayable']}/{h['games']}")
+    if looks:
+        res["lookahead"] = looks
     print(json.dumps(res, indent=1))
     if failed:
         print(f"error: replay audit failed: {', '.join(failed)} games replayable (model-card.md lists the runs)",

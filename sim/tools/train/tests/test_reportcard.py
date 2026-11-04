@@ -1,6 +1,7 @@
 """`sts2train report-card` / `pack` / `probe` (sts2train.reportcard): stages, endings and Wilson intervals on synthetic
 game summaries; a card built from existing run directories (reused, nothing re-played; a stale one re-run); a real
-two-game card through the CLI, its weights bundle (round trip, tamper check) and the probe on its eval."""
+two-game card through the CLI, its weights bundle (round trip, tamper check) and the probe on its eval; a card over
+the run directories `python -m sts2train.lookahead eval` writes (search run, --greedy run, paired per seed)."""
 
 from __future__ import annotations
 
@@ -200,6 +201,14 @@ def test_card_from_existing_run_dirs(tmp_path, monkeypatch):
     assert nn["staged"]["act2"]["count"] == 5 and nn["staged"]["cleared"]["count"] == 1
     assert nn["staged"]["act2"]["ci95"] == pytest.approx(list(_wilson_ref(5, 14)))
     assert look["staged"] == nn["staged"] and look["search"] == {"K": 8, "R": 1} and not look["notes"]
+    assert look["search_stats"] is None                                  # no stats.json next to it
+    # no --greedy run given: paired against the card's greedy row (loop breaker on), flagged as not like for like
+    p = look["paired"]
+    assert p["vs"] == RC.GREEDY_LABEL and p["vs_kind"] == "nn" and not p["like_for_like"] and p["games"] == 14
+    d = sorted(b["progress"] - a["progress"] for a, b in zip(rich, GAMES[::-1]))
+    assert p["delta_mean"] == pytest.approx(sum(d) / 14, abs=1e-6)
+    assert (p["better"], p["worse"], p["same"]) == (sum(x > 1e-9 for x in d), sum(x < -1e-9 for x in d),
+                                                    sum(abs(x) <= 1e-9 for x in d))
     assert nn["win_prob"]["first_mean"] == pytest.approx(0.1) and look["win_prob"] is None
     assert nn["at_death"]["deaths"] == 9 and look["at_death"] is None
     assert base["staged"]["act1_boss"]["count"] == 0 and base["headline"]["floor_mean"] == 2.0
@@ -230,6 +239,21 @@ def test_card_from_existing_run_dirs(tmp_path, monkeypatch):
     assert played == [wh] and [p.name.startswith("rc-14.stale-") for p in (out / "evals").iterdir()].count(True) == 1
     nn = card["seedsets"][0]["runs"][0]
     assert not nn["reused"] and nn["staged"]["act1_boss"]["count"] == 0 and nn["headline"]["games"] == 14
+
+
+def test_lookahead_dir_rows():
+    ss = {"name": "x", "ascension": A10, "content": "ported_only", "games": []}
+    search = {"algo": "la-v1", "K": 8, "R": 1, "H": 12, "horizon": "turn", "score": "value+hp"}
+    assert RC.lookahead_row({"seedset": ss, "policy": "nn:best.pt+la(8,1,turn,honest)", "search": search}, "d") == (
+        "lookahead", f"{RC.LOOKAHEAD_LABEL}: la(8,1,turn,honest) value+hp")
+    assert RC.lookahead_row({"policy": "nn:best.pt", "greedy": True, "loop_breaker": {"mode": "off"}}, "d") == (
+        "greedy-ref", "NN greedy, loop breaker off")
+    assert RC.lookahead_row({"policy": "nn:best.pt", "greedy": True}, "d")[1] == "NN greedy, loop breaker off"
+    assert RC.lookahead_row({"policy": "nn:best.pt", "greedy": True, "loop_breaker": {"mode": "on"}}, "d")[1] == (
+        "NN greedy, loop breaker on")
+    for cfg in ({"policy": "random"}, {"policy": "nn:best.pt"}, {"policy": "claude-x", "greedy": True}):
+        with pytest.raises(ValueError, match="not a `python -m sts2train.lookahead eval` run directory"):
+            RC.lookahead_row(cfg, "d")
 
 
 def test_cli_exit_code_when_the_replay_audit_fails(tmp_path, monkeypatch, capsys):
@@ -369,3 +393,73 @@ def test_probe_replays_the_eval(real_card, tmp_path):
     assert all(0.0 <= r["taken"]["prob"] <= 1.0 for r in rows)
     assert len((tmp_path / "p.jsonl").read_text().splitlines()) == len(rows)
     assert not any("WARNING" in m for m in logs)                   # the replay reached the recorded end state
+
+
+# ------------------------------------------------------------------------------------------------ lookahead run dirs
+
+
+def test_card_reads_lookahead_eval_dirs(tmp_path, capsys):
+    """The run directories `python -m sts2train.lookahead eval` writes, on two games through both CLIs: the search run
+    is a "lookahead, determinized" row with its declaration and stats.json counters, paired per seed against the
+    --greedy run (like for like: loop breaker off), itself an "NN greedy, loop breaker off" row; the card's own greedy
+    eval keeps the loop breaker on. Without the --greedy run the pairing falls back to the card's greedy row (flagged);
+    a directory that is neither (a baseline run) is refused before any game is played."""
+    from sts2train import lookahead as L
+    from sts2train.cli import main
+
+    ck = tmp_path / "ck.pt"
+    wh = _checkpoint(ck)
+    ss = tmp_path / "rc-two.json"
+    ss.write_text(json.dumps(TWO))
+    la, gr, out = tmp_path / "la", tmp_path / "greedy", tmp_path / "card"
+    common = ["--seedset", str(ss), "--checkpoint", str(ck), "--threads", "2"]
+    n = torch.get_num_threads()
+    try:
+        assert L.main(["eval", *common, "--out", str(la), "--K", "4"]) == 0
+        assert L.main(["eval", *common, "--out", str(gr), "--greedy"]) == 0
+        capsys.readouterr()
+        assert main(["report-card", "--checkpoint", str(ck), "--out", str(out), "--seedsets", str(ss), "--baselines",
+                     "none", "--threads", "2", "--lookahead-dir", str(la), str(gr)]) == 0
+        res = _cli_json(capsys.readouterr().out)
+        card = json.loads((out / "model-card.json").read_text())
+        sec, = card["seedsets"]
+        assert [(r["kind"], r["label"]) for r in sec["runs"]] == [
+            ("nn", RC.GREEDY_LABEL), ("lookahead", f"{RC.LOOKAHEAD_LABEL}: la(4,1,turn,honest) value+hp"),
+            ("greedy-ref", f"{RC.GREEDY_LABEL}, loop breaker off")]
+        nn, look, g = sec["runs"]
+        assert nn["loop_breaker"]["mode"] == "on" and g["loop_breaker"]["mode"] == "off"
+        assert look["loop_breaker"] is None
+        assert look["weights_hash"] == g["weights_hash"] == wh and not look["notes"] and not g["notes"]
+        assert look["search"]["K"] == 4 and look["search"]["score"] == "value+hp"
+        assert look["information"] == "determinized, combat-only" and look["headline"]["replayable"] == 2
+        st = json.loads((la / "stats.json").read_text())
+        ls = look["search_stats"]
+        assert ls["searched"] == st["searched"] > 0 and ls["desyncs"] == 0 and ls["api"] in ("branch", "pool")
+        assert ls["changed_rate"] == st["derived"]["changed_rate"] and ls["code"] == st["code"]
+        want = L.paired(gr, la)
+        p = look["paired"]
+        assert p["vs"] == g["label"] and p["vs_kind"] == "greedy-ref" and p["like_for_like"] and p["games"] == 2
+        assert {k: p[k] for k in RC.PAIRED_KEYS} == {k: want[k] for k in RC.PAIRED_KEYS}
+        assert res["lookahead"] == [{"seedset": sec["id"], "label": look["label"], "games": 2,
+                                     "progress_mean": look["headline"]["progress_mean"], "replayable": 2,
+                                     "paired": {k: p[k] for k in ("vs", "like_for_like", "delta_mean", "t_ci95",
+                                                                  "better", "worse", "same")}}]
+        md = (out / "model-card.md").read_text()
+        for text in ("### Lookahead: declared search, paired per seed",
+                     f"| {look['label']} | {g['label']} | {p['delta_mean']:+.4f} |",
+                     "no loop breaker (outside the search: the plain argmax)", "| NN greedy, loop breaker off |"):
+            assert text in md, text
+
+        card = RC.report_card(ck, out, seedsets=[str(ss)], threads=2, baselines=(), lookahead_dirs=[la],
+                              log=lambda m: None)
+        nn, look = card["seedsets"][0]["runs"]
+        assert nn["reused"] and look["paired"]["vs"] == RC.GREEDY_LABEL and not look["paired"]["like_for_like"]
+        assert "(loop breaker on)" in (out / "model-card.md").read_text()
+    finally:
+        torch.set_num_threads(n)
+
+    rnd = tmp_path / "random"
+    _write_run(rnd, TWO, [_game("x", "loss", 1, 2)] * 2, policy="random")
+    with pytest.raises(ValueError, match="not a `python -m sts2train.lookahead eval` run directory"):
+        RC.report_card(ck, tmp_path / "card2", seedsets=(), baselines=(), lookahead_dirs=[rnd], log=_no_play)
+    assert not (tmp_path / "card2" / "model-card.json").exists()

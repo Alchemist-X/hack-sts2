@@ -166,8 +166,8 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
 
 - 战斗内不能重新同步（游戏只在房间边界写存档）；follow 模式下的映射是“同一张牌 + 同一个目标”，手牌不同就可能退到
   兜底动作。
-- `--lookahead`：`sts2train.lookahead` 不在这棵树上（`train/lookahead` 分支未合并），而且它的镜像环境只会从新种子重放，
-  跟不上存档 resync，所以本 runner 只做贪心。
+- `--lookahead`：`sts2train.lookahead` 已合并进这棵树，但它的镜像环境只会从新种子重放，跟不上存档 resync，所以本
+  runner 只做贪心（`--lookahead` 打印原因后退出 2）。
 - 奖励页宏动作（`TakeRewardCard` / `TakeRewardAlternative`，合并后的库才有）在游戏里是两步：先点开第 k 个卡牌奖励
   （按孪生未领卡牌奖励里的名次配对），再选那张牌 / REROLL（Driftwood）/ SACRIFICE（Pael's Wing）。dry run 覆盖
   `TakeRewardCard`，`TakeRewardAlternative` 只有单元测试，两者都没在真实游戏里跑过。点开后游戏里的卡和孪生的不一样
