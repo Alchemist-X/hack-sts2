@@ -8,6 +8,8 @@ weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard`
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
                                                          # (also across encoder versions: model inputs must match)
     sts2train train --characters SILENT --start-saves SAVES_DIR --save-mix 0.5 ...   # half the starts from saves
+    sts2train train ... --harvest boss:1536,elite:512,act2:1024 --harvest-prob 0.25  # self-anchor starts
+    sts2train train --start-mode stream ... --harvest boss:1536,elite:512,act2:1024 --harvest-start-share 0.33
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
     sts2train eval ... --loop-breaker off                # the plain argmax (no-op loops run into the floor cap)
     sts2train report-card --checkpoint CKPT --out CARD_DIR [--seedsets silent-a10-v1,...] [--lookahead-dir DIR ...]
@@ -90,6 +92,9 @@ def _plot(out: Path) -> None:
                    label="save starts: progress at the end")
         ax[0].plot(x, series("save_progress_gain_mean"), color="#8a4f0e", lw=1.4,
                    label="save starts: progress gained")
+        if any("harvest_episodes" in r for r in rows):
+            ax[0].plot(x, series("harvest_progress_gain_mean"), color="#5b3a8c", lw=1.2, ls=":",
+                       label="self-anchor starts: progress gained")
     else:
         p = [r["progress_mean"] for r in rows]
         ax[0].plot(x, p, color="#9db4d6", lw=0.6, label="per update (training episodes)")
@@ -288,6 +293,22 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="further pool copies of a save: determinized = same player view, hidden state (draw order, "
                         f"RNG streams) resampled per copy; exact = every start replays the save's RNG (default "
                         f"{D.save_copies})")
+    g = tr.add_argument_group("self-anchor starts (sts2train.harvest)")
+    g.add_argument("--harvest", metavar="SPEC",
+                   help="ring sizes kind:N,... with kind boss / elite / act2 / any (e.g. "
+                        "boss:1536,elite:512,act2:1024): at a combat's first decision in a fresh-started training "
+                        "episode, keep a determinized clone "
+                        "(same player view, hidden state resampled) as a live pool entry in that kind's FIFO ring; the "
+                        "env's auto-reset start sequence starts episodes from them. any = every other combat "
+                        "(tests / smoke). 'off' turns it off on --resume (default off)")
+    g.add_argument("--harvest-prob", dest="harvest_prob", type=float,
+                   help=f"probability of keeping a detected combat entry (default {D.harvest_prob})")
+    g.add_argument("--harvest-max-per-step", dest="harvest_max_per_step", type=int,
+                   help=f"anchors captured per env step at most (default {D.harvest_max_per_step})")
+    g.add_argument("--harvest-start-share", dest="harvest_start_share", type=float,
+                   help="--start-mode stream: probability that a finished slot starts from a uniformly drawn live "
+                        "anchor instead of the next stream seed (default 0.33 with --harvest; pool mode: not used, "
+                        "the anchors take the auto-reset sequence's share)")
     g = tr.add_argument_group("PPO")
     for flag, dest, typ in (("--rollout", "rollout", int), ("--epochs", "epochs", int),
                             ("--minibatch", "minibatch", int), ("--lr", "lr", float), ("--gamma", "gamma", float),
@@ -532,6 +553,9 @@ def main(argv=None) -> int:
         if "start_saves" in given:      # absolute, so a resume from another working directory finds it
             v = given["start_saves"]
             given["start_saves"] = None if v.lower() in ("", "none") else os.path.abspath(os.path.expanduser(v))
+        if "harvest" in given:          # "off" / "none" turn it off (on --resume)
+            v = str(given["harvest"]).strip()
+            given["harvest"] = "" if v.lower() in ("", "off", "none") else v
         if "out" not in given and resume in (None, "auto"):
             if resume == "auto":
                 ap.error("--resume auto needs --out RUN_DIR")

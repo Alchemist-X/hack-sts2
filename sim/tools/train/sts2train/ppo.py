@@ -13,9 +13,12 @@ relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``rew
 progress stay the objective's, the shaping is logged apart). ``rollout_loop_breaker`` (``--rollout-loop-breaker``)
 applies the evaluation's loop breaker (``sts2train.loopbreak``) to the rollout sampling: back at an observation of its
 last 64 decisions (a no-op or a cycle) a slot gives probability 0 to the candidates it took there (the stored
-log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled). With these
-flags off the trainer computes exactly what it computed before. The periodic eval's greedy policy runs with the loop
-breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
+log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled).
+``harvest`` (``--harvest boss:N,elite:N,act2:N``) adds self-anchor starts (``sts2train.harvest``): determinized clones
+of the policy's own boss / elite / act-2 combat entries in fresh-started episodes, kept as live pool entries in FIFO
+rings, which the env's auto-reset start sequence then starts episodes from (``harvest_*`` metrics; ``fresh_*`` counts
+fresh-entry starts only). With these flags off the trainer computes exactly what it computed before. The periodic
+eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
 ``TRAIN<env_seed>`` pool, bit for bit the earlier trainer) or ``stream`` (``sts2train.seedstream``: every episode from a
@@ -96,6 +99,7 @@ from .cycles import update_stats as cycle_update_stats
 from .episodes import EPISODE_HOOKS, EpisodeLog
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
                        obs_to_device, widen_spec)
+from .harvest import Harvester, format_harvest, parse_harvest
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
 from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
 from .loopbreak import LoopBreaker
@@ -121,6 +125,9 @@ NOT_INHERITED = ("allow_big_local", "allow_blind", "blind_purpose")   # never ta
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
 
 
+DEFAULT_HARVEST_START_SHARE = 0.33     # --harvest in --start-mode stream without --harvest-start-share
+
+
 @dataclass
 class TrainConfig:
     # env
@@ -140,6 +147,11 @@ class TrainConfig:
     start_saves: str | None = None  # directory of game .save files (recursive) to start episodes from (startpool.py)
     save_mix: float = 0.5           # fraction of episode starts from start_saves (pool entry multiplicities)
     save_copies: str = "determinized"   # further copies of a save: determinized (hidden state resampled) | exact
+    harvest: str = ""               # self-anchor rings "boss:N,elite:N,act2:N[,any:N]" ("" = off; sts2train.harvest)
+    harvest_prob: float = 0.25      # probability of keeping a detected combat entry as an anchor
+    harvest_max_per_step: int = 64  # anchors captured per env step at most
+    harvest_start_share: float | None = None    # stream mode: share of finished slots started from a live anchor
+                                                # (None = 0.33 with --harvest in stream mode; pool mode: not used)
     # objective
     objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
@@ -245,6 +257,19 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
                          "determinized / exact")
     if out.compile not in COMPILE_MODES:
         raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
+    out.harvest = format_harvest(parse_harvest(out.harvest))      # canonical spec, "" = off; raises on a bad spec
+    if not 0.0 < float(out.harvest_prob) <= 1.0:
+        raise ValueError(f"harvest_prob {out.harvest_prob} must be in (0, 1]")
+    if int(out.harvest_max_per_step) < 1:
+        raise ValueError(f"harvest_max_per_step {out.harvest_max_per_step} must be >= 1")
+    if out.harvest_start_share is not None:
+        if not 0.0 <= float(out.harvest_start_share) <= 1.0:
+            raise ValueError(f"harvest_start_share {out.harvest_start_share} must be in [0, 1]")
+        if out.start_mode != "stream" and given.get("harvest_start_share") is not None:
+            raise ValueError("--harvest-start-share applies to --start-mode stream only (pool mode: anchors take the "
+                             "env's auto-reset start sequence)")
+    if out.harvest and out.start_mode == "stream" and out.harvest_start_share is None:
+        out.harvest_start_share = DEFAULT_HARVEST_START_SHARE
     if out.compile == "reduce-overhead" and out.static_rows is False:
         raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
     if not float(out.aux_coef) >= 0.0:
@@ -1044,6 +1069,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
         track = env if cfg.start_mode == "stream" else PoolStarts(env, starts, (resume or {}).get("start_counts"))
         carried_stream = (resume or {}).get("seed_stream") if cfg.start_mode == "pool" else None
+        harvester = None                                   # self-anchor starts (--harvest; rings start empty)
+        if cfg.harvest:
+            harvester = Harvester(env, parse_harvest(cfg.harvest), prob=cfg.harvest_prob,
+                                  max_per_step=cfg.harvest_max_per_step, seed=cfg.seed, starts=starts, log=log,
+                                  stream=cfg.start_mode == "stream", state=(resume or {}).get("harvest"))
+            if cfg.start_mode == "stream":                 # finished slots start from a live anchor at this share
+                env.attach_anchors(harvester, cfg.harvest_start_share, seed=cfg.seed)
+            log(harvester.describe())
         arch = model_arch(cfg)                             # size knobs + the optional parts that are on
         with init_rng(cfg):                                # decoupled: the init has its own generator (init_seed)
             model = Policy(spec, **arch)                   # on the CPU until the size guard has passed
@@ -1173,6 +1206,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if infl is not None:
                 rows = [{"slot": a, "n": b, "seed_text": t, "steps": k} for a, b, t, k in
                         zip(infl["slot"], infl["n"], infl["seed_text"], infl["steps"])]
+                for r_, sk in zip(rows, infl.get("start_kind") or ()):      # --harvest in stream mode
+                    r_["start_kind"] = sk
                 episodes_log.write_special(upd0, c["sessions"], rows, "dropped")
                 dropped_now = len(rows)
             else:                       # a checkpoint from before the in-flight record: every slot was running
@@ -1221,7 +1256,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
             "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
             else isolation, "seed_stream": track.record(), "blind_eval": blind_eval,
-            "blind_eval_at": blind_eval_at})
+            "blind_eval_at": blind_eval_at,
+            "harvest": harvester.record() if harvester is not None else None})
 
         stop = {"signal": None}
 
@@ -1241,6 +1277,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 extra = {"seed_stream": track.state_dict()}
             else:                       # a pool session keeps a stream's counter for a later stream session
                 extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))
+            if harvester is not None:   # the run's harvest counters (the rings are not kept: a resume starts empty)
+                extra["harvest"] = harvester.state_dict()
             state = make_checkpoint(model, opt, spec, cfg, dict(c, updates=upd), rng, device, best_eval=best_eval,
                                     last_eval=last_eval, inflight=track.inflight(), **extra)
             last_ckpt_path = ckpts.save(state, upd)
@@ -1375,6 +1413,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                            "win_rate": (sum(x["wins"] for x in recent) / r_eps) if r_eps else None,
                            "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None,
                            **recent_view(recent)},
+                **({"harvest_live": harvester.live()} if harvester is not None else {}),
                 "best_eval": best_eval, "last_eval": last_eval,
                 "last_checkpoint": _rel(last_ckpt_path, run),
                 "last_checkpoint_update": last_ckpt_upd if last_ckpt_upd >= 0 else None,
@@ -1387,6 +1426,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         obs = env.reset()
         track.count_starts(None, env.info())           # pool mode: the reset's starts (stream: counted itself)
         rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        if harvester is not None:
+            harvester.reset(obs, env.info()["start_entry"])
         r_obj = None
         if shaper is not None:
             shaper.reset(obs["aux"], obs["deck"])
@@ -1455,6 +1496,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 obs, rew, term, trunc, status, info = env.step(a_np)
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
+                if harvester is not None:           # combat entries of fresh-started episodes -> anchors
+                    harvester.step(obs, done, info["start_entry"], status, upd + 1, t)
                 if breaker is not None:             # auto-reset slots start new episodes
                     breaker.reset(done)
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
@@ -1581,7 +1624,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             tu = track.pop_update()
             c["starts"] += tu["starts"]
             es = _episode_stats(ep_this)
-            ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
+            ss = split_stats(ep_this, starts, harvester)  # fresh_* / save_* / harvest_* ({} without saves / anchors)
+            hs = harvester.pop_stats() if harvester is not None else {}
             lb_st = {}
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
@@ -1593,7 +1637,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 cycle_log.write({"update": upd, **ev})
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
-                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
+                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts, harvester)})
 
             # checkpoint / eval
             t_ck = time.monotonic()
@@ -1621,7 +1665,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
-                   "episodes_total": c["episodes"], **es, **ss,
+                   "episodes_total": c["episodes"], **es, **ss, **hs,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
                    if len(idx_all) else None,
                    **sm, "explained_variance": ev,
@@ -1636,6 +1680,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
                        "t_prefetch_s": round(tu["t_prefetch"], 3), "t_prefetch_wait_s": round(tu["t_prefetch_wait"], 3)}
                       if cfg.start_mode == "stream" else {}),
+                   **({"anchor_starts_update": tu["anchor_starts"], "anchor_start_failed": tu["anchor_start_failed"]}
+                      if "anchor_starts" in tu else {}),
                    **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
                                              ep_this, shaper), **lb_st, **cy_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
@@ -1666,6 +1712,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
                     + f" | ui cycles={cy_st['cycles_total']} eps={cy_st['episodes_with_cycle']}"
                     + (f" cost={cy_st['cycle_cost_total']:.3f}" if cyc_cost else "")
+                    + (f" | harvest +{hs['harvest_captured']} -{hs['harvest_released']} live "
+                       + ",".join(f"{k}:{hs[f'harvest_live_{k}']}" for k in harvester.kinds)
+                       + f" eps={ss['harvest_episodes']} gain={fmt(ss['harvest_progress_gain_mean'], '.4f')} share "
+                       f"step={fmt(hs['harvest_step_share'], '.3f')} ep={fmt(ss['harvest_start_share'], '.3f')}"
+                       if harvester is not None else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -1714,6 +1765,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "episodes_log_rows": episodes_log.rows,
             "cycles": {**cycles.totals_dict(), "cost": cyc_cost, "run_total": c["cycles"]},
         }
+        if harvester is not None:
+            summary["harvest"] = harvester.totals()
         if breaker is not None:
             t_lb = breaker.totals()
             summary["rollout_loop_breaker"] = {k: t_lb[k] for k in ("k", "window", "loop_breaks", "no_op_actions",
