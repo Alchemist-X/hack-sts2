@@ -85,6 +85,15 @@ def _plot(out: Path) -> None:
     fig.savefig(out / "curve.png", dpi=130)
 
 
+def _speed_flags(g, compile_default: str = "off") -> None:
+    g.add_argument("--compile", choices=["off", "default", "reduce-overhead"],
+                   help="torch.compile the PPO minibatch forward + loss and the rollout forward: default (fused "
+                        "kernels) or reduce-overhead (+ CUDA graphs); implies --static-rows; the first update "
+                        f"compiles (default {compile_default})")
+    g.add_argument("--static-rows", dest="static_rows", action=argparse.BooleanOptionalAction,
+                   help="cand / prompt_options always --max-rows wide (fixed shapes; default: on with --compile)")
+
+
 def _train_parser(sub) -> argparse.ArgumentParser:
     from .ppo import TrainConfig
 
@@ -96,6 +105,7 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--resume", help="checkpoint path, or 'auto' = the newest checkpoint under --out (fresh if none)")
     g.add_argument("--device", help=f"cpu | mps | cuda[:i] | auto (default {D.device})")
     g.add_argument("--amp", action=argparse.BooleanOptionalAction, help="bf16 autocast on CUDA (default off)")
+    _speed_flags(g, compile_default=D.compile)
     g.add_argument("--grad-checkpoint", dest="grad_ckpt", action=argparse.BooleanOptionalAction,
                    help="recompute the transformer blocks in backward: ~4x less activation memory for the large "
                         "preset, more compute (default off)")
@@ -154,6 +164,43 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     return tr
 
 
+def _bench_parser(sub) -> argparse.ArgumentParser:
+    b = sub.add_parser("bench-update", help="time the PPO minibatch update and the rollout forward on random inputs",
+                       description="Synthetic benchmark of the trainer's PPO minibatch update (gather, forward + loss, "
+                                   "backward, clip, Adam) and rollout inference step on random observations of the "
+                                   "schema's shapes. The numbers that matter come from the training GPU (A100); "
+                                   "cpu / mps runs only validate the code paths with small settings.")
+    b.add_argument("--preset", choices=sorted(PRESETS), help="architecture preset (default smoke)")
+    b.add_argument("--d-model", dest="d", type=int)
+    b.add_argument("--state-dim", dest="s", type=int)
+    b.add_argument("--depth", type=int)
+    b.add_argument("--heads", type=int)
+    b.add_argument("--ff-mult", dest="ff_mult", type=int)
+    b.add_argument("--device", default="auto", help="cpu | mps | cuda[:i] | auto (default auto)")
+    b.add_argument("--amp", action=argparse.BooleanOptionalAction, default=False, help="bf16 autocast (CUDA only)")
+    _speed_flags(b)
+    b.add_argument("--modes", help="comma-separated compile modes to run one after another in this process (e.g. "
+                                   "off,default,reduce-overhead) with a speed-up summary; overrides --compile")
+    b.add_argument("--grad-checkpoint", dest="grad_ckpt", action="store_true", help="trunk activation checkpointing")
+    b.add_argument("--minibatch", type=int, default=2048, help="(default 2048)")
+    b.add_argument("--envs", type=int, default=None, help="rollout inference batch (default = --minibatch)")
+    b.add_argument("--max-rows", dest="max_rows", type=int, default=64, help="(default 64)")
+    b.add_argument("--steps", type=int, default=20, help="timed minibatch updates (default 20)")
+    b.add_argument("--warmup", type=int, default=5, help="untimed minibatch updates first (default 5)")
+    b.add_argument("--infer-steps", dest="infer_steps", type=int, default=20, help="timed rollout steps (default 20)")
+    b.add_argument("--no-check", dest="check", action="store_false",
+                   help="skip the compiled-vs-eager numerics check on one minibatch")
+    b.add_argument("--profile", action="store_true", help="torch.profiler table of the top ops after the timing")
+    b.add_argument("--profile-steps", dest="profile_steps", type=int, default=3)
+    b.add_argument("--top", type=int, default=15, help="profile rows (default 15)")
+    b.add_argument("--torch-threads", dest="torch_threads", type=int, default=0)
+    b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--spec", help="checkpoint (.pt) or spec JSON for the shapes (default: the sts2vec library schema)")
+    b.add_argument("--json", help="also write the results to this JSON file")
+    b.set_defaults(compile=None, static_rows=None)
+    return b
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sts2train")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -167,7 +214,17 @@ def main(argv=None) -> int:
     ev.add_argument("--device", default="cpu")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
+    _bench_parser(sub)
     a = ap.parse_args(argv)
+    if a.cmd == "bench-update":
+        from .bench import BenchSizeError, bench_update
+
+        try:
+            bench_update(a)
+        except BenchSizeError as e:
+            print(f"error: {e}", flush=True)
+            return 2
+        return 0
     if a.cmd == "train":
         from .ppo import plan_run, train
 
