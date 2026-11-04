@@ -7,6 +7,9 @@ Run directory layout (``sts2train train --out RUN_DIR``)::
     metrics.jsonl          one JSON object per PPO update (append-only; a resume drops rows past the checkpoint)
     evals.jsonl            one row per protocol evaluation; the run directories live in evals/u<update>/
     checkpoints/ckpt-<update>.pt   the last K checkpoints (tmp file + rename); best.pt = best eval progress so far
+                                   (unless --no-best); pinned-<update>.pt = the weights of a --eval-at evaluation
+    cycles.jsonl           one row per UI revisit cycle closed in a rollout (sts2train.cycles)
+    cycle_episodes.jsonl   per update: the finished episodes' slot, start entry and cycle count (aligned lists)
     summary.json           written when a session ends
     train.log              the CLI's log lines with timestamps (all sessions)
 """
@@ -169,3 +172,13 @@ class CheckpointManager:
         shutil.copyfile(path, tmp)
         os.replace(tmp, best)
         return best
+
+    def pin(self, path: Path, update: int) -> Path:
+        """Copy checkpoint `path` to ``pinned-<update:07d>.pt`` (a fixed-endpoint eval's weights): never pruned,
+        never taken by `latest`."""
+        dst = self.dir / f"pinned-{int(update):07d}.pt"
+        if Path(path).resolve() != dst.resolve():
+            tmp = dst.with_name(dst.name + ".tmp")
+            shutil.copyfile(path, tmp)
+            os.replace(tmp, dst)
+        return dst
