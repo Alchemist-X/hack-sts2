@@ -495,3 +495,9 @@ def test_bench_update_cli(tmp_path, capsys):
     assert r["mode"] == "off" and r["update_ms"] > 0 and r["update_loss_finite"] and len(r["profile"]["ops"]) == 5
     rc = main(["bench-update", "--preset", "large", "--device", "cpu", "--minibatch", "4096", "--steps", "1"])
     assert rc == 2 and "GiB" in capsys.readouterr().out
+    rc = main(["bench-update", "--d-model", "32", "--state-dim", "64", "--depth", "1", "--heads", "2", "--ff-mult", "2",
+               "--device", "cpu", "--minibatch", "32", "--envs", "16", "--steps", "1", "--warmup", "1",
+               "--infer-steps", "1", "--torch-threads", "2", "--deck-counts", "--aux-heads", "--json", str(out)])
+    assert rc == 0 and "deck-counts aux-heads" in capsys.readouterr().out
+    r = json.loads(out.read_text())["results"][0]
+    assert r["arch"]["deck_counts"] and r["arch"]["aux_heads"] and r["update_loss_finite"]

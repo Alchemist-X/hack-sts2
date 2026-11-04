@@ -5,7 +5,8 @@ schema's shapes and valid value ranges (``random_obs``), then times K PPO miniba
 code path (``ppo.MinibatchUpdater``: device gather, forward + loss, backward, grad clip, Adam) and K rollout steps
 (``ppo.InferenceRunner``: upload, forward, sampling, store write, the host copies the env needs). Compile modes run
 the trainer's eager-vs-compiled check first (``ppo.check_compiled``; it also triggers the compile). ``--modes``
-runs several compile modes in one process with a speed-up summary; ``--profile`` adds ``torch.profiler`` tables:
+runs several compile modes in one process with a speed-up summary; ``--deck-counts`` / ``--aux-heads`` time the
+model with those parts (the aux heads' loss on random targets and masks); ``--profile`` adds ``torch.profiler`` tables:
 top aten ops by self device time (CUDA) or self CPU time (cpu / mps) and, on CUDA, the top kernels with the summed
 kernel time per minibatch (GPU busy share of the wall time).
 
@@ -192,18 +193,19 @@ def _profile_table(prof, device: torch.device, steps: int, top: int) -> dict:
 
 
 def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.device, log) -> dict:
-    from .model import Policy, activation_bytes_per_sample, param_count
+    from .model import Policy, activation_bytes_per_sample, model_arch, param_count
     from .ppo import (InferenceRunner, MinibatchUpdater, check_compiled, check_compiled_forward, resolve_config,
                       use_static_rows)
 
     given = {k: getattr(a, k) for k in ("d", "s", "depth", "heads", "ff_mult") if getattr(a, k, None) is not None}
     if a.preset:
         given["preset"] = a.preset
-    given.update(minibatch=a.minibatch, max_rows=a.max_rows, compile=mode, amp=bool(a.amp), grad_ckpt=bool(a.grad_ckpt))
+    given.update(minibatch=a.minibatch, max_rows=a.max_rows, compile=mode, amp=bool(a.amp), grad_ckpt=bool(a.grad_ckpt),
+                 deck_counts=bool(getattr(a, "deck_counts", False)), aux_heads=bool(getattr(a, "aux_heads", False)))
     if a.static_rows is not None:
         given["static_rows"] = a.static_rows
     cfg = resolve_config(given)
-    arch = {k: getattr(cfg, k) for k in ("d", "s", "depth", "heads", "ff_mult")}
+    arch = model_arch(cfg)
     static = use_static_rows(cfg)
     amp = cfg.amp and device.type == "cuda"
     B, R = cfg.minibatch, cfg.max_rows
@@ -223,7 +225,8 @@ def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.devic
     updater = MinibatchUpdater(model, opt, cfg, amp, device)
     runner = InferenceRunner(model, amp, mode, device, static=static)
     label = f"compile={mode}" + (" static-rows" if static else " dynamic-rows") + (" amp" if amp else "") + \
-        (" grad-ckpt" if cfg.grad_ckpt else "")
+        (" grad-ckpt" if cfg.grad_ckpt else "") + (" deck-counts" if cfg.deck_counts else "") + \
+        (" aux-heads" if cfg.aux_heads else "")
     log(f"== {label}: {n_params:,} parameters ({', '.join(f'{k}={v}' for k, v in arch.items())}), minibatch {B}, "
         f"max_rows {R}, device {device}")
 
@@ -237,13 +240,17 @@ def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.devic
     d_act = to(np.floor(rng.random(n) * legal).astype(np.int64))
     d_logp = to((-np.log(legal)).astype(np.float32))
     d_adv, d_ret, d_val = (to(rng.standard_normal(n).astype(np.float32)) for _ in range(3))
+    d_aux = ()             # --aux-heads: random targets in [0, 1] and masks (90 % win targets, 50 % combat targets)
+    if cfg.aux_heads:
+        d_aux = tuple(to(x.astype(np.float32)) for x in (rng.random(n), rng.random(n) < 0.9, rng.random(n),
+                                                          rng.random(n) < 0.5))
 
     def minibatches(k):
         return [np.sort(rng.choice(n, B, replace=False)) for _ in range(k)]
 
     def inputs(mb_h, mb):
         return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb], d_logp[mb],
-                d_adv[mb], d_ret[mb], d_val[mb])
+                d_adv[mb], d_ret[mb], d_val[mb], *(x[mb] for x in d_aux))
 
     def run_updates(k):
         mbs = minibatches(k)

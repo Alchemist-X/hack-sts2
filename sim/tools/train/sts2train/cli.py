@@ -243,6 +243,10 @@ def _bench_parser(sub) -> argparse.ArgumentParser:
     b.add_argument("--modes", help="comma-separated compile modes to run one after another in this process (e.g. "
                                    "off,default,reduce-overhead) with a speed-up summary; overrides --compile")
     b.add_argument("--grad-checkpoint", dest="grad_ckpt", action="store_true", help="trunk activation checkpointing")
+    b.add_argument("--deck-counts", dest="deck_counts", action="store_true",
+                   help="the --deck-counts model (count-aware deck / pile pooling)")
+    b.add_argument("--aux-heads", dest="aux_heads", action="store_true",
+                   help="the --aux-heads model and loss (random aux targets and masks)")
     b.add_argument("--minibatch", type=int, default=2048, help="(default 2048)")
     b.add_argument("--envs", type=int, default=None, help="rollout inference batch (default = --minibatch)")
     b.add_argument("--max-rows", dest="max_rows", type=int, default=64, help="(default 64)")

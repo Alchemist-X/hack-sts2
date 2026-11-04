@@ -291,6 +291,8 @@ Output = the LLM runner's layout (`config.json`, `run.json`, `games/<CHAR>-<SEED
 `report.md`), so NN and LLM rows are directly comparable (`sts2eval report DIR` re-renders it). Each summary keeps
 `history_actions` (candidate indices); the **replay audit** replays them on a fresh env and requires the same result,
 act, floor and final `StateHash` (`replayable` must be n/n). Python: `sts2vec.evaluate.evaluate(seedset, policy, out)`.
+Extra summary keys are ignored by the report and the audit: `sts2train eval` of a checkpoint trained with
+`--aux-heads` adds per-decision `win_prob` (P(win) under the policy) and `combat_hp_pred` (hp share at combat end).
 
 Reference rows (protocol doc §8, "sim NN track", this evaluator; `std-a0-v1` / `std-a10-v1`): random 0.087 / 0.045,
 first 0.193 / 0.102, heuristic 0.221 / 0.104; the LLM track's Sonnet 5.5 scores 0.499 / 0.310. No policy has won yet.
@@ -355,7 +357,7 @@ as `floor_step_cap`): `sim/VEC.md` "C ABI"; Python calls the same exports via ct
 | `sim/tools/vec/tools/gen_env_spec.py` | regenerates §5 of this page (`--check` in the tests) |
 | `sim/tools/vec/tools/gen_event_option_vars.py` | regenerates `EventOptionVars.g.cs` (which numbers / items each event option's text names) from `knowledge/source` |
 | `sim/tools/eval/seedsets` | frozen protocol seed sets (sha256 in each file) |
-| `sim/tools/train` | PPO smoke learner (example consumer; its `eval` wraps `sts2vec eval`) |
+| `sim/tools/train` | PPO learner (example consumer; its `eval` wraps `sts2vec eval`; `--aux-heads`, `--deck-counts`, `--acq-shaping`: its README) |
 | `tmp/eval/<run>/` | evaluation outputs (git-ignored) |
 
 ## 13. FAQ
@@ -364,7 +366,8 @@ as `floor_step_cap`): `sim/VEC.md` "C ABI"; Python calls the same exports via ct
   nodes, shop rows). Score each candidate row (pointer networks / attention over `cand` joined to the tables its
   pointer columns name) and take a softmax over rows `< cand_n`.
 - **Is there reward shaping?** No; the env reward is win = 1. `aux` (floor, act, bosses killed, combats won, act rooms)
-  is for logging or your own shaping; the benchmark scores protocol progress only.
+  is for logging or your own shaping; the benchmark scores protocol progress only. (`sts2train --acq-shaping` shapes
+  inside the trainer: potential-based on deck size / relics / upgrades, it telescopes and is logged apart.)
 - **What if my policy outputs an illegal index?** The slot does not move and `status` has `ILLEGAL_ACTION`; at a
   non-combat point it still counts toward `floor_step_cap`, so the evaluator counts it (`illegal`) and the game ends
   `stuck` (in combat only `step_cap` bounds applied actions).
