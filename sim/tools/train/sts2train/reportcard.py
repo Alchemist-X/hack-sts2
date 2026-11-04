@@ -29,6 +29,12 @@ act N (reached act N + 1 or won), or ended ``stuck`` in its boss room (the floor
 decisions, which a boss room offers only after the fight is won; a ``capped`` game there is not counted); *reached
 Act N* = final act >= N or won; *cleared* = won.
 
+Execution modes (``modes``, ``sts2train report-card --modes greedy-on,greedy-off,sample-off``; default greedy-on
+alone, the card as before): every further mode of ``sts2train.evaluate`` (greedy / sampled one play per game with
+``sample_seed``, loop breaker on / off) is an "NN <mode>" row computed or reused in ``OUT/evals/<seed set>@<mode>/``,
+paired per seed (``lookahead.paired``) against the card's NN greedy row (loop breaker on), with its stalls, UI revisit
+cycles (``sts2train.cycles``) and loop breaks.
+
 ``pack`` (``sts2train pack``): a tar.gz ``<name>/`` with the checkpoint file as is, its spec and config, the model
 card (``card_dir``: reused when its checkpoint sha256 matches, else made there), the library's encoder_version / ABI
 version, ``README-weights.md`` (commands: verify, evaluate, re-make the card, probe, run it in the real game through
@@ -71,7 +77,8 @@ LIMITS = {"step_cap": STEP_CAP, "floor_step_cap": FLOOR_STEP_CAP}
 LIVE_TWIN = "scripts/live/nn_twin_play.py"
 GREEDY_LABEL = "NN greedy"
 LOOKAHEAD_LABEL = "lookahead, determinized"
-DETAIL_KINDS = ("nn", "greedy-ref", "lookahead")    # rows with the per-game tables (floor, endings, deck, win_prob)
+DETAIL_KINDS = ("nn", "nn-mode", "greedy-ref", "lookahead")  # rows with the per-game tables (floor, endings, ...)
+DEFAULT_MODES = ("greedy-on",)
 SEARCH_STAT_KEYS = ("searched", "live_decisions", "changed", "rollout_errors", "no_valid_candidate", "desyncs",
                     "rebuilds", "api", "wall_seconds", "torch_threads")
 SEARCH_DERIVED_KEYS = ("changed_rate", "searched_share_of_live", "ms_per_searched_decision")
@@ -106,15 +113,22 @@ DECK_KEYS = ("deck_n", "deck_size", "final_deck_n")
 RELIC_KEYS = ("relic_n", "relic_count", "relics", "final_relic_n")
 # training flags shown on the card, grouped (the JSON keeps the whole config)
 FLAG_GROUPS = (
-    ("objective", ("objective", "win_bonus", "acq_shaping")),
+    ("objective", ("objective", "win_bonus", "acq_shaping", "cycle_cost")),
     ("starts", ("characters", "ascension", "pool", "start_saves", "save_mix", "save_copies")),
     ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "vf_coef", "ent_coef",
              "max_grad_norm", "max_rows")),
     ("model flags", ("aux_heads", "aux_coef", "deck_counts")),
     ("rollouts", ("rollout_loop_breaker", "step_cap", "floor_step_cap")),
     ("runtime", ("device", "amp", "compile", "seed", "max_hours")),
-    ("training evals", ("eval_seedset", "eval_every", "loop_breaker")),
+    ("training evals", ("eval_seedset", "eval_every", "loop_breaker", "eval_at", "no_best")),
 )
+
+
+def mode_label(mode: str, sample_seed: int) -> str:
+    """Row label of an execution mode (``sts2train.evaluate.parse_mode`` names)."""
+    pol, _, br = mode.partition("-")
+    what = GREEDY_LABEL if pol == "greedy" else f"NN sampled (seed {int(sample_seed)}, 1 play)"
+    return f"{what}, loop breaker {br}"
 
 
 class BundleError(ValueError):
@@ -320,7 +334,8 @@ def read_run(run_dir) -> tuple[dict, list[dict], dict]:
 
 
 def stale_reason(run_dir, ss: dict, *, library_version: str, weights_hash: str | None = None,
-                 policy: str | None = None, loop_breaker: str | None = None) -> str | None:
+                 policy: str | None = None, loop_breaker: str | None = None, eval_mode: str | None = None,
+                 sample_seed: int | None = None) -> str | None:
     """None when `run_dir` holds a finished protocol evaluation of `ss` (same content) on `library_version` with the
     protocol limits (and these weights / this policy with eval seed 0 / this loop breaker mode), every game
     summarised; else why it cannot be reused."""
@@ -348,6 +363,12 @@ def stale_reason(run_dir, ss: dict, *, library_version: str, weights_hash: str |
         lb = cfg.get("loop_breaker") or {}
         if lb.get("mode") != loop_breaker or (loop_breaker == "on" and lb.get("k") != DEFAULT_K):
             return f"loop breaker {lb.get('mode')} k {lb.get('k')}"
+    if eval_mode is not None:            # an execution-mode row (sts2train.evaluate): the same mode, seed and play
+        m = cfg.get("eval_mode") or {}
+        if m.get("name") != eval_mode:
+            return f"eval mode {m.get('name')}, not {eval_mode}"
+        if m.get("policy") == "sample" and (m.get("sample_seed") != sample_seed or m.get("repeat") != 0):
+            return f"sample seed {m.get('sample_seed')} repeat {m.get('repeat')}, not {sample_seed} / 0"
     missing = sum(not (d / "games" / f"{PG.game_key(g)}.summary.json").exists() for g in ss["games"])
     if missing:
         return f"{missing} game summaries missing"
@@ -386,7 +407,8 @@ def run_entry(run_dir, kind: str, label: str, ascension: int, *, reused: bool, w
     e = {"label": label, "kind": kind, "policy": cfg.get("policy"), "dir": str(d.resolve()), "reused": reused,
          "weights_hash": cfg.get("weights_hash"), "server_version": cfg.get("server_version"),
          "repo_sha": cfg.get("repo_sha"), "wall_seconds": (_read_json(d / "run.json") or {}).get("wall_seconds"),
-         "loop_breaker": rep.get("loop_breaker"), "notes": notes, **run_stats(summaries, ascension)}
+         "loop_breaker": rep.get("loop_breaker"), "cycles": rep.get("cycles"), "eval_mode": rep.get("eval_mode"),
+         "notes": notes, **run_stats(summaries, ascension)}
     if kind == "lookahead":
         st = _read_json(d / "stats.json") or {}
         dv = st.get("derived") or {}
@@ -513,18 +535,25 @@ def _now() -> str:
 
 def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4, device: str = "cpu",
                 lookahead_dirs=(), baselines=BASELINES, baseline_cache=DEFAULT_BASELINE_CACHE,
-                log: Callable[[str], None] = print) -> dict:
+                modes=DEFAULT_MODES, sample_seed: int = 1, log: Callable[[str], None] = print,
+                allow_blind: bool = False, blind_purpose: str | None = None) -> dict:
     """Run or reuse the evaluations and write ``out/model-card.json`` + ``out/model-card.md``; -> the card.
 
-    Raises `features.SpecMismatch` (before any game) when the checkpoint cannot drive this library."""
+    Raises `features.SpecMismatch` (before any game) when the checkpoint cannot drive this library, and
+    `sts2vec.protocol.BlindSetError` (before any game) when a seed set (given, or embedded in a lookahead run) holds
+    games of a frozen blind set unless `allow_blind` and `blind_purpose` are given; each allowed blind set is then
+    logged to ``out/blind-access.jsonl`` (and by every evaluation into its own directory)."""
     from sts2vec import load, schema_of
     from sts2vec.evaluate import evaluate as vec_evaluate
     from sts2vec.evaluate import repo_sha
 
-    from .evaluate import evaluate_model
+    from .evaluate import evaluate_model, parse_mode
     from .features import ModelSpec
     from .ppo import load_checkpoint
 
+    extra_modes = [m for m in dict.fromkeys(modes or ()) if m != "greedy-on"]
+    for m in extra_modes:
+        parse_mode(m)                       # ValueError before any game on an unknown mode
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     lib = library_info()
@@ -566,6 +595,11 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
         refs.setdefault(PG.checksum(ss), ref_of(ss, None))
         add_set(ss)
 
+    from .isolation import check_blind_eval
+
+    blind = [ss for ss in sets if PG.blind_overlap(ss)]
+    for ss in blind:                    # refuse (or log) before any game, the cached / reused runs included
+        check_blind_eval(ss, allow_blind=allow_blind, purpose=blind_purpose, log_dir=out, weights_hash=wh)
     sections = []
     used: set[str] = set()
     for ss in sets:
@@ -582,9 +616,31 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             _set_aside(d, log)
             evaluate_model(model, spec, ss, str(d), weights_hash=wh, checkpoint=str(checkpoint), threads=threads,
                            device=device, spec_compat=ck.get("spec_compat"), loop_breaker=True,
-                           loop_breaker_k=DEFAULT_K, log=log)
+                           loop_breaker_k=DEFAULT_K, log=log, allow_blind=allow_blind, blind_purpose=blind_purpose)
         runs.append(run_entry(d, "nn", GREEDY_LABEL, asc, reused=reason is None, weights_hash=wh,
                               library_version=lib["version"]))
+        for m in extra_modes:               # execution modes: paired per seed against the NN greedy row
+            pol, br = parse_mode(m)
+            md = out / "evals" / f"{name}@{m}"
+            mr = stale_reason(md, ss, library_version=lib["version"], weights_hash=wh,
+                              loop_breaker="on" if br else "off", eval_mode=m, sample_seed=int(sample_seed))
+            if mr is None:
+                log(f"[{sid}] {m} eval: reusing {md}")
+            else:
+                log(f"[{sid}] {m} eval -> {md} ({mr})")
+                _set_aside(md, log)
+                evaluate_model(model, spec, ss, str(md), weights_hash=wh, checkpoint=str(checkpoint), threads=threads,
+                               device=device, spec_compat=ck.get("spec_compat"), loop_breaker=br,
+                               loop_breaker_k=DEFAULT_K, policy=pol, sample_seed=int(sample_seed), log=log,
+                               allow_blind=allow_blind, blind_purpose=blind_purpose)
+            row = run_entry(md, "nn-mode", mode_label(m, sample_seed), asc, reused=mr is None, weights_hash=wh,
+                            library_version=lib["version"])
+            try:
+                p = paired_runs(d, md)
+                row["paired"] = {"vs": GREEDY_LABEL, **{k: p[k] for k in PAIRED_KEYS}}
+            except (OSError, ValueError, KeyError) as e:
+                row["paired"] = {"vs": GREEDY_LABEL, "error": str(e)}
+            runs.append(row)
         for ld, kind, label, lss in lookahead:
             if PG.checksum(lss) == sha:
                 if any(r["label"] == label for r in runs):
@@ -602,7 +658,8 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             else:
                 log(f"[{sid}] baseline {pol} -> {bd} ({reason})")
                 _set_aside(bd, log)
-                vec_evaluate(ss, pol, str(bd), threads=threads, seed=0, log=log)
+                vec_evaluate(ss, pol, str(bd), threads=threads, seed=0, log=log, allow_blind=allow_blind,
+                             purpose=blind_purpose)
             runs.append(run_entry(bd, "baseline", pol, asc, reused=reason is None, library_version=lib["version"]))
         ident_ss = PG.seedset_identity(ss)
         sections.append({"id": sid, "name": ss.get("name"), "role": ss.get("role"), "ascension": asc,
@@ -615,6 +672,7 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             "track": "sim: sts2vec simulator, not the real engine", "checkpoint": ident, "library": lib,
             "spec_compat": ck.get("spec_compat"),
             "settings": {"threads": threads, "device": str(device), "greedy": True,
+                         "modes": ["greedy-on", *extra_modes], "sample_seed": int(sample_seed),
                          "loop_breaker": {"mode": "on", "k": DEFAULT_K}, "limits": LIMITS,
                          "baselines": list(baselines), "baseline_seed": 0,
                          "baseline_cache": str(Path(baseline_cache).resolve())},
@@ -734,7 +792,8 @@ def render_md(card: dict) -> str:
         cells = []
         for fl in g["flags"]:
             v = fl["value"]
-            v = (("on" if v else "off") if isinstance(v, bool) else ",".join(v) if isinstance(v, list)
+            v = (("on" if v else "off") if isinstance(v, bool)
+                 else (",".join(map(str, v)) or "none") if isinstance(v, (list, tuple))
                  else "none" if v is None else v)
             cells.append(f"{fl['name']} {v}{'' if fl['recorded'] else '*'}")
         L.append(f"| {g['group']} | {', '.join(cells)} |")
@@ -793,6 +852,25 @@ def render_md(card: dict) -> str:
                       "(loop breaker off, as the lookahead plays outside its search); paired against the card's NN "
                       "greedy row (loop breaker on), Δ mixes the search with the loop breaker. Counters from the run's "
                       "`stats.json`."]
+        mrows = [r for r in runs if r["kind"] == "nn-mode"]
+        if mrows:
+            L += ["", "### Execution modes, paired per seed against the NN greedy row (loop breaker on)", "",
+                  "| row | Δ progress | t 95% CI | bootstrap 95% CI | better / worse / same | stuck | games with a UI "
+                  "cycle | UI cycles | loop breaks |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+            for r in [x for x in runs if x["kind"] == "nn"] + mrows:
+                p, cy, lb = r.get("paired") or {}, r.get("cycles") or {}, r.get("loop_breaker") or {}
+                if "delta_mean" in p:
+                    (t0, t1), (b0, b1) = p["t_ci95"], p["bootstrap_ci95"]
+                    pc = [f"{p['delta_mean']:+.4f}", f"[{t0:+.4f}, {t1:+.4f}]", f"[{b0:+.4f}, {b1:+.4f}]",
+                          f"{p['better']} / {p['worse']} / {p['same']}"]
+                else:
+                    pc = ["(reference)" if r["kind"] == "nn" else f"- ({p.get('error')})", "-", "-", "-"]
+                L.append("| " + " | ".join([r["label"], *pc, str(r["headline"]["results"].get("stuck", 0)),
+                                            _f(cy.get("games_with_cycle")), _f(cy.get("cycles")),
+                                            _f(lb.get("loop_breaks"))]) + " |")
+            L += ["", "UI cycles: verified zero-progress RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> cancel "
+                      "loops back to the same observation (`sts2train.cycles`, counted, never masked). A sampled row "
+                      "is one play per game (the play RNG from the sample seed and the game key)."]
         L += ["", "### Staged results (count / N [Wilson 95%])", "",
               "| stage | " + " | ".join(r["label"] for r in runs) + " |", "| --- |" + " --- |" * len(runs)]
         for key, label in STAGES:

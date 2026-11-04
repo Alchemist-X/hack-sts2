@@ -7,8 +7,10 @@ CardReward -> skip -> the same Rewards view, or shop -> card removal -> prompt -
 the model sees the same input again and a greedy policy repeats itself until the env's ``floor_step_cap`` ends the
 game ``stuck`` (2026-11-04 evals, library 5dbfa09dd9dcb5ed: up to 15 of 20 games on silent-a0-v1 / silent-a10-v1).
 Library 3b73317739c650bd removes the potion no-op and the card-reward cycle at the source (a potion purchase or claim
-the game would refuse is not listed; a card reward is taken in one ``TakeRewardCard`` decision); illegal indices and
-the shop removal / cancel cycle remain.
+the game would refuse is not listed; a card reward is taken in one ``TakeRewardCard`` decision); illegal indices, the
+shop removal / cancel cycle and the rest-site SMITH -> select -> cancel cycle remain (the last is 176 of u2225's 177
+silent-a10-dev-v1 interventions, 2026-11-04; ``sts2train.cycles`` counts both cycles, unmasked, in training rollouts
+and in every evaluation).
 
 Per env slot `LoopBreaker` keeps a 64-bit digest of the model-read buffers (`ObsDigest`) for each of its last
 ``window`` decisions (default 64) and the action taken there. At an observation whose digest is in the window, every

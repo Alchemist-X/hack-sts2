@@ -27,6 +27,20 @@ replays the actions actually sent. Every game summary gets ``loop_breaks`` (deci
 model's argmax), ``no_op_actions`` (actions that left the observation unchanged) and ``cycle_revisits`` (returns to an
 observation through others; both counted with the breaker off too); config.json records ``loop_breaker`` (mode, k,
 window, leave kinds) and report.json / the returned report carry the totals under ``loop_breaker``.
+
+Execution modes (2026-11-04 diagnosis: separate "the policy's own distribution is bad" from "greedy extraction
+loops"): ``policy`` greedy (argmax) or sample (``sts2train eval --policy sample``: one categorical draw per decision
+from the model's distribution over the legal candidates, float64 inverse CDF, the action RNG of each play seeded from
+(``sample_seed``, game key, ``repeat``) by ``cycles.sample_rng``, so a play does not depend on the batch), crossed with
+the loop breaker on / off (``--breaker`` = ``--loop-breaker``; sampled with the breaker on, the rows taken at a
+revisited observation get probability 0, and ``loop_breaks`` counts the decisions taken under such a mask). All modes
+use the same protocol limits. ``--repeats R`` plays the seed set R times (``OUT/r<k>/``, k = 0..R-1, each a protocol
+run directory; ``OUT/repeats.json`` lists them); ``--chunk i/n`` plays only the i-th of n equal slices of the seed set
+(config.json ``parent_seedset`` records the full set's identity and the slice, so ``sts2train compare`` can merge
+slices). Every game summary gets ``eval_mode`` (policy, breaker, sample seed, repeat) and the UI revisit cycles of the
+detector ``sts2train.cycles`` (counting only, the same one the trainer runs): ``cycles``, ``cycles_rest``,
+``cycles_shop`` and ``cycle_events`` (decision index ``step``, room, floor, length, action path); report.json gets the
+totals under ``cycles`` and ``eval_mode``.
 """
 
 from __future__ import annotations
@@ -36,11 +50,15 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from sts2vec import protocol as PG
 from sts2vec.evaluate import FLOOR_STEP_CAP, STEP_CAP, replay  # noqa: F401  (re-exported)
 from sts2vec.evaluate import evaluate as vec_evaluate
 
+from .cycles import CycleDetector, sample_rng
 from .features import ModelSpec, bind_spec, check_spec_compat, describe_widened, obs_to_torch
 from .loopbreak import DEFAULT_K, LoopBreaker
+
+POLICIES = ("greedy", "sample")
 
 
 def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, breaker: LoopBreaker | None = None):
@@ -62,6 +80,103 @@ def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, br
         return breaker.greedy(obs, logits, ctx.live)
 
     return act
+
+
+def sample_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, breaker: LoopBreaker | None = None, *,
+                  seed: int = 0, repeat: int = 0):
+    """The model's sampling policy as an ``sts2vec`` policy callable: per live slot one draw from the softmax of its
+    legal candidates' logits (float64 inverse CDF on one uniform of the play's own RNG, ``cycles.sample_rng(seed,
+    game key, repeat)``, drawn only when the slot acts, so a play does not depend on which games share the batch).
+    With `breaker` the logits go through ``LoopBreaker.apply`` first (rows taken at a revisited observation get
+    probability 0) and ``commit`` records the actions (a loop break = a decision under a mask)."""
+    rngs: list = []
+
+    def act(obs: dict, ctx) -> np.ndarray:
+        if not rngs:
+            rngs.extend(sample_rng(seed, k, repeat) for k in ctx.keys)
+        with torch.no_grad():
+            if heads is None:
+                logits, _ = model(obs_to_torch(obs, device))
+            else:
+                logits, _, h = model(obs_to_torch(obs, device), aux=True)
+                heads.record(obs, ctx, h)
+        if breaker is not None:
+            if breaker.keys is None:
+                breaker.keys = list(ctx.keys)
+            logits = breaker.apply(obs, logits, ctx.live)
+        z = logits.double().cpu().numpy()
+        cand_n = np.asarray(obs["cand_n"])
+        a = np.full(len(cand_n), -1, dtype=np.int32)
+        for i in np.flatnonzero(np.asarray(ctx.live, dtype=bool) & (cand_n > 0)).tolist():
+            zi = z[i, : int(cand_n[i])]
+            c = np.cumsum(np.exp(zi - zi.max()))
+            a[i] = min(int(np.searchsorted(c, rngs[i].random() * c[-1], side="right")), len(zi) - 1)
+        if breaker is not None:
+            breaker.commit(a)
+        return a
+
+    return act
+
+
+def with_cycles(act, det: CycleDetector):
+    """`act` with the cycle detector watching: it observes every call's observation for the live slots and records
+    the actions sent (counting only; the actions are `act`'s)."""
+
+    def f(obs: dict, ctx) -> np.ndarray:
+        det.observe(obs, ctx.live)
+        a = act(obs, ctx)
+        det.commit(a, obs)
+        return a
+
+    return f
+
+
+def mode_name(policy: str, loop_breaker: bool) -> str:
+    """``greedy-on`` / ``greedy-off`` / ``sample-on`` / ``sample-off``."""
+    return f"{policy}-{'on' if loop_breaker else 'off'}"
+
+
+def parse_mode(mode: str) -> tuple[str, bool]:
+    """(policy, loop breaker on) of a mode name (`mode_name`); ValueError otherwise."""
+    pol, _, br = str(mode).partition("-")
+    if pol not in POLICIES or br not in ("on", "off"):
+        raise ValueError(f"eval mode {mode!r}: expected one of greedy-on, greedy-off, sample-on, sample-off")
+    return pol, br == "on"
+
+
+def write_cycle_stats(det: CycleDetector, keys: list[str], out_dir: str | Path, mode: dict) -> dict:
+    """Add ``eval_mode``, the per-game row aliases ``decisions`` (= ``steps``), ``wall_s`` (= ``seconds``: from the
+    evaluation's start to the game's end, games run batched) and ``stalled`` (ended ``stuck``), and the cycle counts /
+    events to every game summary, and the totals (``cycles``) and ``eval_mode`` to report.json; -> the totals."""
+    out = Path(out_dir)
+    per = det.slot_totals()
+    stuck = 0
+    for i, key in enumerate(keys):
+        p = out / "games" / f"{key}.summary.json"
+        s = json.loads(p.read_text(encoding="utf-8"))
+        c = per[i] if i < len(per) else {"cycles": 0, "cycles_rest": 0, "cycles_shop": 0, "cycle_events": []}
+        s.update(eval_mode=mode, decisions=s.get("steps"), wall_s=s.get("seconds"),
+                 stalled=s.get("result") == "stuck", cycles=c["cycles"], cycles_rest=c["cycles_rest"],
+                 cycles_shop=c["cycles_shop"],
+                 cycle_events=[{k: e[k] for k in ("step", "phase", "prompt", "act", "floor", "len", "path")}
+                               for e in c["cycle_events"]])
+        stuck += s.get("result") == "stuck"
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(s, f, ensure_ascii=False, indent=1)
+    t = det.totals_dict()
+    games_with = sum(1 for c in per if c["cycles"] > 0)
+    stats = {"cycles": t["cycles"], "cycles_rest": t["cycles_rest"], "cycles_shop": t["cycles_shop"],
+             "cycle_steps": t["cycle_steps"], "games_with_cycle": games_with, "games": len(keys),
+             "cycles_per_game": t["cycles"] / len(keys) if keys else None, "stuck": stuck,
+             "rejected": {k[len("rejected_"):]: v for k, v in t.items() if k.startswith("rejected_")}}
+    rp = out / "report.json"
+    if rp.exists():
+        r = json.loads(rp.read_text(encoding="utf-8"))
+        r["cycles"] = stats
+        r["eval_mode"] = mode
+        with open(rp, "w", encoding="utf-8") as f:
+            json.dump(r, f, ensure_ascii=False, indent=1)
+    return stats
 
 
 def write_loop_stats(breaker: LoopBreaker, out_dir: str | Path) -> dict:
@@ -136,9 +251,15 @@ class HeadLog:
 def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str, checkpoint: str | None = None,
                    threads: int = 8, device: str = "cpu", step_cap: int = STEP_CAP,
                    floor_step_cap: int = FLOOR_STEP_CAP, spec_compat: dict | None = None, loop_breaker: bool = True,
-                   loop_breaker_k: int = DEFAULT_K, log=print) -> dict:
-    """Play `seedset` greedily with `model` and write the protocol run directory `out_dir`; returns the report (with
-    the loop breaker's totals under ``loop_breaker``).
+                   loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeat: int = 0,
+                   parent_seedset: dict | None = None, log=print, allow_blind: bool = False,
+                   blind_purpose: str | None = None) -> dict:
+    """Play `seedset` with `model` (`policy` greedy, or sample with the play RNG of (`sample_seed`, game, `repeat`))
+    and write the protocol run directory `out_dir`; returns the report (with the loop breaker's totals under
+    ``loop_breaker``, the cycle detector's under ``cycles``). `parent_seedset` (a slice's full set: identity and the
+    slice) goes into config.json. A seed set with games of a frozen blind set is refused
+    (``sts2vec.protocol.BlindSetError``, before any game) unless `allow_blind` and `blind_purpose` are given; the
+    access is then logged to ``out_dir/blind-access.jsonl``.
 
     Raises `features.SpecMismatch` (before any game is played) when `spec` (the model's) differs from the library's in
     the model's inputs; an encoder_version change outside them is accepted and noted. `spec_compat` = the record of a
@@ -146,7 +267,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
     sizes; the record says which enums were widened): it is logged and kept in config.json instead of this check's."""
     from sts2vec import load, schema_of
 
-    library = ModelSpec.from_schema(schema_of(load()))
+    schema = schema_of(load())
+    library = ModelSpec.from_schema(schema)
     compat = check_spec_compat(spec, library, what="evaluate")
     if spec_compat is not None:
         compat = spec_compat
@@ -158,25 +280,46 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
         log(f"note: checkpoint encoder_version {compat['checkpoint_encoder_version']}, library "
             f"{compat['library_encoder_version']}: the model's inputs are {inputs} (other differences: "
             f"{'; '.join(compat['other_differences']) or 'none'})")
+    if policy not in POLICIES:
+        raise ValueError(f"policy {policy!r}: expected one of {POLICIES}")
     bind_spec(spec)
     was_training = model.training
     model.eval()
     name = f"nn:{Path(checkpoint).name}" if checkpoint else "nn:live"
+    if policy == "sample":
+        name += f":sample:s{int(sample_seed)}:r{int(repeat)}"
     heads = HeadLog(spec.cols["global_i"]["is_combat"]) if getattr(model, "aux_heads", False) else None
     breaker = LoopBreaker(library, k=loop_breaker_k, enabled=loop_breaker)     # leave kinds: the library's ids
-    act = greedy_policy(model, device, heads, breaker)
+    if policy == "greedy":
+        act = greedy_policy(model, device, heads, breaker)
+    else:       # the breaker off still counts no-ops / cycle revisits and returns the logits unchanged
+        act = sample_policy(model, device, heads, breaker, seed=sample_seed, repeat=repeat)
+    ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(seedset)
+    keys = [PG.game_key(g) for g in ss["games"]]
+    det = CycleDetector(library, card_name=schema.vocab.cards.name, keep_events=True)
+    act = with_cycles(act, det)
+    mode = {"policy": policy, "breaker": breaker.mode, "name": mode_name(policy, loop_breaker),
+            "sample_seed": int(sample_seed) if policy == "sample" else None,
+            "repeat": int(repeat) if policy == "sample" else None}
     extra = {"heads": ["win_prob", "combat_hp_pred"]} if heads is not None else {}
     extra["loop_breaker"] = {"mode": breaker.mode, "k": breaker.k, "window": breaker.window,
                              "leave_kinds": list(breaker.leave_kinds)}
+    extra["eval_mode"] = mode
+    extra["cycle_detector"] = {"window": det.window, "anchors": ["RestSite", "Shop"],
+                               "prompt_kinds": [det.pkind_names[int(k)] for k in det.prompt_kind_ids]}
+    if parent_seedset is not None:
+        extra["parent_seedset"] = parent_seedset
 
     try:
         rep = vec_evaluate(
-            seedset, act, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
-            policy_name=name, policy_hash=f"weights:{weights_hash}", log=log,
-            summary_extra={"weights_hash": weights_hash},
-            config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint) if checkpoint else None,
+            ss, act, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
+            seed=int(sample_seed) if policy == "sample" else 0,
+            policy_name=name, policy_hash=f"weights:{weights_hash}", log=log, allow_blind=allow_blind,
+            purpose=blind_purpose, summary_extra={"weights_hash": weights_hash},
+            config_extra={"model": "sts2train entity-encoder PPO",
+                          "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
-                          "arch": getattr(model, "arch", None), "device": str(device), "greedy": True,
+                          "arch": getattr(model, "arch", None), "device": str(device), "greedy": policy == "greedy",
                           "checkpoint_encoder_version": spec.encoder_version, **extra,
                           **({"spec_compat": compat} if compat["other_differences"] or compat.get("widened_enums")
                              else {})})
@@ -189,23 +332,80 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
         log(f"loop breaker {lb['mode']} (k {lb['k']}): {lb['loop_breaks']} loop breaks in "
             f"{lb['games_with_loop_breaks']} games, {lb['no_op_actions']} no-op actions in {lb['games_with_no_ops']} "
             f"games, {lb['cycle_revisits']} cycle revisits in {lb['games_with_cycles']} games")
+        cy = rep["cycles"] = write_cycle_stats(det, keys, out_dir, mode)
+        rep["eval_mode"] = mode
+        log(f"UI revisit cycles ({mode['name']}): {cy['cycles']} (rest {cy['cycles_rest']}, shop "
+            f"{cy['cycles_shop']}) in {cy['games_with_cycle']}/{cy['games']} games; stuck {cy['stuck']}")
         return rep
     finally:
         model.train(was_training)
 
 
+def slice_seedset(seedset, chunk: str | None) -> tuple[dict, dict | None]:
+    """(the seed set, or its `chunk` = "i/n" slice: the i-th of n equal parts, named ``<name>-slice<i>of<n>``;
+    parent record {name, id, sha256, games, chunk} or None)."""
+    ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(str(seedset))
+    if not chunk:
+        return ss, None
+    ci, cn = (int(x) for x in str(chunk).split("/"))
+    if not 0 <= ci < cn:
+        raise ValueError(f"chunk {chunk!r}: expected i/n with 0 <= i < n")
+    per = -(-len(ss["games"]) // cn)
+    games = ss["games"][ci * per:(ci + 1) * per]
+    if not games:
+        raise ValueError(f"chunk {chunk}: no games ({len(ss['games'])} games in {cn} slices)")
+    parent = {"name": ss.get("name"), "id": ss.get("id"), "sha256": PG.checksum(ss), "games": len(ss["games"]),
+              "chunk": f"{ci}/{cn}"}
+    sub = {k: v for k, v in ss.items() if k not in ("games", "sha256", "id", "frozen", "version")}
+    sub.update(name=f"{ss.get('name') or ss.get('id')}-slice{ci}of{cn}", games=games)
+    return PG.validate_seedset(sub), parent
+
+
 def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, device: str = "cpu",
              step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, loop_breaker: bool = True,
-             loop_breaker_k: int = DEFAULT_K, log=print) -> dict:
+             loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeats: int = 1,
+             chunk: str | None = None, log=print, allow_blind: bool = False,
+             blind_purpose: str | None = None) -> dict:
     """`sts2train eval`: load `checkpoint` for the library sts2vec loads (`load_checkpoint(library=...)`: refused with
     `SpecMismatch` before any game, widened when its embedded enums only gained members) and evaluate it. The weights
-    hash is the checkpoint's (a widened model adds only zero rows)."""
+    hash is the checkpoint's (a widened model adds only zero rows). `repeats` > 1 (sample mode): ``out_dir/r<k>``
+    per repeat and ``out_dir/repeats.json``; the returned report is the first repeat's with ``repeats`` (one row per
+    repeat, the pooled progress mean)."""
     from sts2vec import load, schema_of
 
+    from .isolation import check_blind_eval
     from .ppo import load_checkpoint
 
+    repeats = int(repeats)
+    if repeats < 1 or (repeats > 1 and policy != "sample"):
+        raise ValueError(f"repeats {repeats}: >= 1, and > 1 only with --policy sample (greedy plays are identical)")
+    check_blind_eval(seedset, allow_blind=allow_blind, purpose=blind_purpose)     # refuse before loading anything
+    ss, parent = slice_seedset(seedset, chunk)
     model, spec, ck = load_checkpoint(checkpoint, device, library=ModelSpec.from_schema(schema_of(load())))
-    return evaluate_model(model, spec, seedset, out_dir, weights_hash=ck.get("weights_hash") or "?",
-                          checkpoint=checkpoint, threads=threads, device=device, step_cap=step_cap,
-                          floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"), loop_breaker=loop_breaker,
-                          loop_breaker_k=loop_breaker_k, log=log)
+    reps = []
+    for r in range(repeats):
+        out = Path(out_dir) / f"r{r}" if repeats > 1 else Path(out_dir)
+        reps.append(evaluate_model(model, spec, ss, str(out), weights_hash=ck.get("weights_hash") or "?",
+                                   checkpoint=checkpoint, threads=threads, device=device, step_cap=step_cap,
+                                   floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"),
+                                   loop_breaker=loop_breaker, loop_breaker_k=loop_breaker_k, policy=policy,
+                                   sample_seed=sample_seed, repeat=r, parent_seedset=parent, log=log,
+                                   allow_blind=allow_blind, blind_purpose=blind_purpose))
+    if repeats == 1:
+        return reps[0]
+    rows = [{"repeat": r, "dir": f"r{r}", "games": x["headline"]["games"],
+             "progress_mean": x["headline"]["progress_mean"], "replayable": x["headline"]["replayable"],
+             "results": x["headline"]["results"], "cycles": x["cycles"]["cycles"],
+             "games_with_cycle": x["cycles"]["games_with_cycle"],
+             "loop_breaks": (x.get("loop_breaker") or {}).get("loop_breaks")} for r, x in enumerate(reps)]
+    games = sum(x["games"] for x in rows)
+    pooled = sum(x["progress_mean"] * x["games"] for x in rows) / games if games else None
+    summary = {"policy": policy, "breaker": "on" if loop_breaker else "off", "sample_seed": int(sample_seed),
+               "repeats": repeats, "checkpoint": str(checkpoint), "weights_hash": ck.get("weights_hash"),
+               "seedset": ss.get("name"), "parent_seedset": parent, "runs": rows, "plays": games,
+               "progress_mean_pooled": pooled}
+    with open(Path(out_dir) / "repeats.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=1)
+    rep = dict(reps[0])
+    rep["repeats"] = summary
+    return rep

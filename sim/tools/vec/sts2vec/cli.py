@@ -401,9 +401,15 @@ def cmd_eval(args) -> int:
 
     stem = Path(args.policy.split(":")[0]).stem if ":" in args.policy else args.policy
     out = args.out or f"tmp/eval/vec-{stem}-{Path(args.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
-    rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
-                   floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
-                   log=lambda m: print(m, flush=True))
+    from .protocol import BlindSetError
+
+    try:
+        rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
+                       floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
+                       log=lambda m: print(m, flush=True), allow_blind=args.allow_blind, purpose=args.purpose)
+    except BlindSetError as e:
+        print(f"error: {e}", file=sys.stderr, flush=True)
+        return 2
     h = rep["headline"]
     print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                       "wins": h["wins"], "games": h["games"], "results": {k: v for k, v in h["results"].items() if v},
@@ -463,6 +469,10 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
                    help=f"non-combat decisions on one floor before 'stuck' (env floor_step_cap; protocol default "
                         f"{FLOOR_STEP_CAP}; 0 = off)")
+    e.add_argument("--allow-blind", action="store_true",
+                   help="allow a seed set with games of a frozen blind set (role blind; refused otherwise); needs "
+                        "--purpose, logged to OUT/blind-access.jsonl")
+    e.add_argument("--purpose", default=None, help="why a blind set is evaluated (with --allow-blind)")
     e.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)
