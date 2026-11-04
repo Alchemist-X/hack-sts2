@@ -194,6 +194,7 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
         if job.payload["checkpoint"] is not None or spec["eval_protocol"] != "silent-a10-smoke-v1":
             raise ValueError("batch probe requires a fresh engineering job")
         options.update(max_updates=1, ckpt_every=1)
+        options.setdefault("tf32", options["amp"])
     config = resolve_config(options)
     resume = None
     if checkpoint is not None:

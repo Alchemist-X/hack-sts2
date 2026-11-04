@@ -142,14 +142,15 @@ def validate_spec(spec):
         raise ValueError("missing fixed rollout shape")
     stride = integer(shape["envs"], 1) * integer(shape["rollout"], 1)
     ppo = spec["ppo_config"]
-    if type(ppo) is not dict or set(ppo) != PPO_INTEGERS | PPO_NUMBERS | PPO_FLAGS | PPO_CHOICES.keys():
+    required_ppo = PPO_INTEGERS | PPO_NUMBERS | PPO_FLAGS | PPO_CHOICES.keys()
+    if type(ppo) is not dict or set(ppo) not in (required_ppo, required_ppo | {"tf32"}):
         raise ValueError("only frozen trainer recipe fields are allowed")
     for key in PPO_INTEGERS:
         integer(ppo[key], 1)
     for key in PPO_NUMBERS:
         if type(ppo[key]) not in (int, float) or not math.isfinite(ppo[key]) or ppo[key] < 0:
             raise ValueError("invalid numeric trainer recipe value")
-    if any(type(ppo[key]) is not bool for key in PPO_FLAGS):
+    if any(type(ppo[key]) is not bool for key in PPO_FLAGS) or ("tf32" in ppo and type(ppo["tf32"]) is not bool):
         raise ValueError("trainer recipe flags must be booleans")
     for key, choices in PPO_CHOICES.items():
         if type(ppo[key]) is not str or ppo[key] not in choices:

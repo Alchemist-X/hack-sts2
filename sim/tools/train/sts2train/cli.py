@@ -139,6 +139,7 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--resume", help="checkpoint path, or 'auto' = the newest checkpoint under --out (fresh if none)")
     g.add_argument("--device", help=f"cpu | mps | cuda[:i] | auto (default {D.device})")
     g.add_argument("--amp", action=argparse.BooleanOptionalAction, help="bf16 autocast on CUDA (default off)")
+    g.add_argument("--tf32", action=argparse.BooleanOptionalAction, help="CUDA matmul and cuDNN TF32 (default on)")
     _speed_flags(g, compile_default=D.compile)
     g.add_argument("--grad-checkpoint", dest="grad_ckpt", action=argparse.BooleanOptionalAction,
                    help="recompute the transformer blocks in backward: ~4x less activation memory for the large "

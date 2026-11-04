@@ -182,6 +182,9 @@ class ArtifactTest(unittest.TestCase):
         self.claim = SimpleNamespace(job=self.job, seed_range=(0, 9))
 
     def test_checkpoint_copy_verified_then_committed_ready_last(self):
+        self.frozen["ppo_config"]["tf32"] = False
+        self.job = job_for(self.frozen, time.time())
+        self.claim = SimpleNamespace(job=self.job, seed_range=(0, 9))
         artifact_root = self.root / "artifacts"
         artifact_root.mkdir()
         scratch = self.root / "scratch"
@@ -201,6 +204,9 @@ class ArtifactTest(unittest.TestCase):
         frozen_config["cycle_cost"] = float(recipe["cycle_cost"])
         record = {
             "format": 2, "env_steps": 1, "updates": 1, "params": 1, "config": frozen_config,
+            "training_precision": {"bf16_autocast": False, "cuda_matmul_tf32": False, "cudnn_tf32": False,
+                                   "default_dtype": "torch.float32", "float32_matmul_precision": "highest",
+                                   "ambient_cuda_autocast": False},
             "spec": {"encoder_version": "enc"}, "encoder_version": "enc", "arch": model,
             "counters": {"updates": 1, "env_steps": 1, "episodes": 0, "wins": 0, "sim_error": 0,
                          "content_gap": 0, "illegal": 0, "overflow_cand": 0},
@@ -215,7 +221,7 @@ class ArtifactTest(unittest.TestCase):
             "inflight": {"slot": [0], "n": [0], "seed_text": ["FIXTURETRAIN-SILENT-0"], "steps": [1]},
         }
         volume = Volume(artifact_root)
-        names = iter(["gen-valid", "gen-changed-recipe", "gen-bool-recipe", "gen-invalid"])
+        names = iter(["gen-valid", "gen-changed-recipe", "gen-bool-recipe", "gen-tf32-enabled", "gen-invalid"])
 
         def load(path):
             self.assertNotEqual(path, cp)
@@ -231,6 +237,7 @@ class ArtifactTest(unittest.TestCase):
         self.assertEqual(manifest["metadata"]["termination"], "checkpoint")
         self.assertEqual(manifest["metadata"]["seed_issued_until"], 3)
         self.assertEqual(manifest["metadata"]["result_label"], "engineering_smoke")
+        self.assertEqual(manifest["metadata"]["training_precision"], record["training_precision"])
         mirror_root = self.root / "raven"
         mirror_root.mkdir()
         mirror = ArtifactMirror(mirror_root, SimpleNamespace(
@@ -246,6 +253,10 @@ class ArtifactTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "config differs"):
                 adapter.training(self.claim, cp, scratch, partial=False)
         record["config"]["cycle_cost"] = 0.0
+        record["training_precision"]["cuda_matmul_tf32"] = True
+        with self.assertRaisesRegex(ValueError, "effective CUDA precision"):
+            adapter.training(self.claim, cp, scratch, partial=False)
+        record["training_precision"]["cuda_matmul_tf32"] = False
         record["rng"]["cuda"] = []
         with self.assertRaisesRegex(ValueError, "RNG"):
             adapter.training(self.claim, cp, scratch, partial=False)

@@ -177,6 +177,7 @@ class TrainConfig:
     # runtime
     device: str = "cpu"             # cpu | mps | cuda[:i] | auto
     amp: bool = False               # bf16 autocast (CUDA only)
+    tf32: bool = True                # CUDA matmul and cuDNN TF32 (legacy default on)
     compile: str = "off"            # off | default | reduce-overhead: torch.compile of the update + rollout forwards
     static_rows: bool | None = None  # cand / prompt_options always max_rows wide (None = on iff compile != off)
     grad_ckpt: bool = False         # recompute the trunk blocks in backward (less activation memory, more compute)
@@ -244,6 +245,8 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     if not 0.0 <= float(out.save_mix) <= 1.0 or out.save_copies not in ("determinized", "exact"):
         raise ValueError(f"save_mix {out.save_mix} must be in [0, 1] and save_copies {out.save_copies!r} one of "
                          "determinized / exact")
+    if type(out.tf32) is not bool:
+        raise ValueError("tf32 must be a boolean")
     if out.compile not in COMPILE_MODES:
         raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
     if out.compile == "reduce-overhead" and out.static_rows is False:
@@ -1048,25 +1051,27 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     amp = bool(cfg.amp) and device.type == "cuda"
     if cfg.amp and not amp:
         log(f"note: --amp only applies on CUDA; running {device} in float32")
+    precision = None
     if device.type == "cuda":
-        strict_fp32 = batch_probe is not None and not amp
-        if strict_fp32 and os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1":
-            raise ValueError("strict FP32 probe cannot run with the CUDA TF32 override")
-        torch.backends.cuda.matmul.allow_tf32 = not strict_fp32
-        torch.backends.cudnn.allow_tf32 = not strict_fp32
+        if not cfg.tf32 and os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1":
+            raise ValueError("the frozen CUDA precision forbids the TF32 override")
+        torch.backends.cuda.matmul.allow_tf32 = cfg.tf32
+        torch.backends.cudnn.allow_tf32 = cfg.tf32
+        precision = {
+            "bf16_autocast": amp,
+            "cuda_matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
+            "cudnn_tf32": torch.backends.cudnn.allow_tf32,
+            "default_dtype": str(torch.get_default_dtype()),
+            "float32_matmul_precision": torch.get_float32_matmul_precision(),
+            "ambient_cuda_autocast": torch.is_autocast_enabled(),
+        }
+        if not cfg.tf32 and (precision["cuda_matmul_tf32"] or precision["cudnn_tf32"]
+                             or precision["float32_matmul_precision"] != "highest"):
+            raise RuntimeError("the frozen CUDA TF32 flags did not take effect")
+        if not cfg.tf32 and not amp and (torch.get_default_dtype() != torch.float32
+                                        or precision["ambient_cuda_autocast"]):
+            raise RuntimeError("strict FP32 requires float32 and CUDA autocast disabled")
         if batch_probe is not None:
-            precision = {
-                "bf16_autocast": amp,
-                "cuda_matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
-                "cudnn_tf32": torch.backends.cudnn.allow_tf32,
-                "default_dtype": str(torch.get_default_dtype()),
-                "float32_matmul_precision": torch.get_float32_matmul_precision(),
-                "ambient_cuda_autocast": torch.is_autocast_enabled("cuda"),
-            }
-            if strict_fp32 and (precision["cuda_matmul_tf32"] or precision["cudnn_tf32"]
-                                or precision["float32_matmul_precision"] != "highest"
-                                or torch.get_default_dtype() != torch.float32 or precision["ambient_cuda_autocast"]):
-                raise RuntimeError("strict FP32 probe flags did not take effect")
             batch_probe("precision", precision)
     static = use_static_rows(cfg)
     rng = seed_rngs(cfg)                # legacy: torch.manual_seed(seed) + default_rng(seed), as before
@@ -1267,6 +1272,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         sessions.append({"session": c["sessions"], "started_at": _now_iso(), "update_start": upd0,
                          "resumed_from": str(resume_path) if resume_path else None, "host": socket.gethostname(),
                          "pid": os.getpid(), "device": str(device), "amp": amp, "compile": cfg.compile,
+                         "training_precision": precision,
                          "static_rows": static, "torch": torch.__version__,
                          "cuda_device": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
                          "python": platform.python_version(), "cpu_count": os.cpu_count(), "env_threads": env.threads,
@@ -1314,7 +1320,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             else:                       # a pool session keeps a stream's counter for a later stream session
                 extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))
             state = make_checkpoint(model, opt, spec, cfg, dict(c, updates=upd), rng, device, best_eval=best_eval,
-                                    last_eval=last_eval, inflight=track.inflight(), **extra)
+                                    last_eval=last_eval, inflight=track.inflight(), training_precision=precision,
+                                    **extra)
             last_ckpt_path = ckpts.save(state, upd)
             last_ckpt_upd = upd
             if checkpoint_ready is not None:
@@ -1699,7 +1706,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             sm = dict(zip(stat_names(cfg), (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
-            ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
+            explained_variance = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
             upd += 1
             c["updates"] = upd
             c["env_steps"] += n_steps
@@ -1764,7 +1771,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "episodes_total": c["episodes"], **es, **ss,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
                    if len(idx_all) else None,
-                   **sm, "explained_variance": ev,
+                   **sm, "explained_variance": explained_variance,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),

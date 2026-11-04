@@ -68,6 +68,16 @@ class PureLineageTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             admit_worker(self.job, self.root, {**self.facts(), "engine_hash": "b" * 64})
 
+    def test_explicit_tf32_freezes_the_recipe_and_legacy_specs_remain_valid(self):
+        validate_spec(self.frozen)
+        frozen = deepcopy(self.frozen)
+        frozen["ppo_config"]["tf32"] = False
+        validate_spec(frozen)
+        self.assertNotEqual(digest(self.frozen), digest(frozen))
+        frozen["ppo_config"]["tf32"] = 0
+        with self.assertRaisesRegex(ValueError, "booleans"):
+            validate_spec(frozen)
+
     def test_milestones_must_be_whole_rollouts(self):
         frozen = deepcopy(self.frozen)
         frozen["rollout_shape"] = {"envs": 2048, "rollout": 64}

@@ -369,6 +369,7 @@ def test_train_cycle_cost_charges_exactly_once_per_cycle(tmp_path, monkeypatch):
                 self.totals["cycles"] += 1
                 self.totals["cycles_rest"] += 1
                 self.totals["cycle_steps"] += 3
+                self.events.append({"slot": 0, "phase": "Shop", "len": 3})
             return m
 
     monkeypatch.setattr(P, "CycleDetector", Forced)
@@ -380,6 +381,7 @@ def test_train_cycle_cost_charges_exactly_once_per_cycle(tmp_path, monkeypatch):
         assert (run / "cycles.jsonl").exists() and len(read_jsonl(run / "cycle_episodes.jsonl")) == 2
     for a, b in zip(rows[0.0], rows[0.25]):
         assert a["cycles_total"] == b["cycles_total"] > 0
+        assert all(r["explained_variance"] is None or isinstance(r["explained_variance"], float) for r in (a, b))
         assert b["cycle_cost_total"] == pytest.approx(0.25 * b["cycles_total"]) and a["cycle_cost_total"] == 0
         assert a["reward_sum_trained"] - b["reward_sum_trained"] == pytest.approx(0.25 * b["cycles_total"], abs=1e-5)
         for k in ("reward_mean", "shaping_mean", "episodes", "progress_mean", "reward_mean_shaped"):

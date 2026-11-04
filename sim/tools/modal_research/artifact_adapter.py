@@ -112,6 +112,18 @@ def _check_checkpoint(data, is_tensor, job, seed_range):
     }
     if not trainer_config_matches(config, frozen):
         raise ValueError("checkpoint config differs from frozen experiment")
+    recipe = spec["ppo_config"]
+    if "tf32" in recipe:
+        precision = data.get("training_precision")
+        expected = {"bf16_autocast": recipe["amp"], "cuda_matmul_tf32": recipe["tf32"],
+                    "cudnn_tf32": recipe["tf32"]}
+        if not isinstance(precision, dict) or any(precision.get(key) is not value for key, value in expected.items()):
+            raise ValueError("checkpoint lacks matching effective CUDA precision")
+        if not recipe["tf32"] and not recipe["amp"] and (
+            precision.get("default_dtype") != "torch.float32" or precision.get("float32_matmul_precision") != "highest"
+            or precision.get("ambient_cuda_autocast") is not False
+        ):
+            raise ValueError("checkpoint lacks strict FP32 runtime evidence")
     architecture = data["arch"]
     if any(architecture.get(key, False) != value for key, value in spec["model_config"].items()):
         raise ValueError("checkpoint architecture differs from freeze")
@@ -270,6 +282,8 @@ class ArtifactAdapter:
         metadata = {"decisions": decisions, "updates": updates, "cursor": cursor, "termination": termination,
                     "resume_mode": "fresh_episodes", "result_label": result_label(job.payload["spec"]),
                     "seed_issued_until": issued_until}
+        if "tf32" in job.payload["spec"]["ppo_config"]:
+            metadata["training_precision"] = data["training_precision"]
         return self._finish(identity, generation, directory, metadata, files)
 
     def evaluation(self, claim, result, installation):
