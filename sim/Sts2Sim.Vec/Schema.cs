@@ -115,7 +115,9 @@ public static class Buf
     public const int EventOptionValues = 40;
     // Appended with the rewards-screen macro candidates (2026-11-04).
     public const int RewardChoices = 41;
-    public const int Count = 42;
+    // Appended with the map-routing features (2026-11-04).
+    public const int MapRoutes = 42;
+    public const int Count = 43;
 
     /// <summary>Buffers the observation encoder owns (zero-filled + written per encode). The rest are env signals.</summary>
     public static readonly int[] Observation =
@@ -123,7 +125,7 @@ public static class Buf
         GlobalI, GlobalF, Hand, HandF, HandDmg, Deck, DrawCounts, DiscardCounts, ExhaustCounts, Relics, Potions,
         PowersPlayer, Orbs, Enemies, EnemyIntents, EnemyPowers, Allies, AllyPowers, MapNodes, Rewards, CardReward,
         CardRewardAlts, Shop, Rest, EventOptions, PromptOptions, Aux,
-        GlobalX, HandX, DrawMarked, DiscardOrder, ExhaustOrder, EventOptionValues, RewardChoices,
+        GlobalX, HandX, DrawMarked, DiscardOrder, ExhaustOrder, EventOptionValues, RewardChoices, MapRoutes,
     };
 }
 
@@ -198,6 +200,13 @@ public static class Schema
     /// alternative, 0 for a card), then the <c>hand</c> columns of the card (0 for an alternative).
     /// </summary>
     public static readonly string[] RewardChoiceFields = new[] { "reward_index", "option", "alt_id" }.Concat(HandFields).ToArray();
+
+    /// <summary>
+    /// <c>map_routes</c> (appended 2026-11-04): per <c>map_nodes</c> cell, routing features of the visible map graph (child
+    /// edges): fewest / most Elite rooms on a path from the node to the act's boss (node included; -1 = boss unreachable),
+    /// distinct rest sites / shops reachable (node included), moves to the boss (-1 = unreachable).
+    /// </summary>
+    public static readonly string[] MapRouteFields = { "elites_min", "elites_max", "rests", "shops", "boss_dist" };
 
     public static int GI => GlobalIFields.Length;
     public static int GF => GlobalFFields.Length;
@@ -305,6 +314,7 @@ public static class Schema
             new BufferSpec("exhaust_order", "int32", new[] { Caps.PileOrder, PileCardFields.Length }, PileCardFields),
             new BufferSpec("event_option_values", "int32", new[] { Caps.EventOptions, EventOptionValueFields.Length }, EventOptionValueFields),
             new BufferSpec("reward_choices", "int32", new[] { Caps.RewardChoices, RewardChoiceFields.Length }, RewardChoiceFields),
+            new BufferSpec("map_routes", "int32", new[] { Caps.MapRows, Caps.MapCols, MapRouteFields.Length }, MapRouteFields),
         };
         if (list.Length != Buf.Count)
         {
@@ -528,4 +538,12 @@ public static class RcCol
 {
     private static int C(string n) => Schema.Col(Schema.RewardChoiceFields, n);
     public static readonly int RewardIndex = C("reward_index"), Option = C("option"), AltId = C("alt_id"), Card = C("card_id");
+}
+
+/// <summary>map_routes columns (appended 2026-11-04; cell [row][col] = <c>map_nodes</c> cell).</summary>
+public static class MrCol
+{
+    private static int C(string n) => Schema.Col(Schema.MapRouteFields, n);
+    public static readonly int ElitesMin = C("elites_min"), ElitesMax = C("elites_max"), Rests = C("rests"), Shops = C("shops"),
+        BossDist = C("boss_dist");
 }

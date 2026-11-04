@@ -15,6 +15,8 @@ BUFFER_ORDER = [
     "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
     # appended with the rewards-screen macro candidates (2026-11-04)
     "reward_choices",
+    # appended with the map-routing features (2026-11-04)
+    "map_routes",
 ]
 
 DTYPES = {  # §D3.1
@@ -62,6 +64,8 @@ def test_buffer_order_dtypes_and_fields(schema):
     assert list(schema.vocab.enums["RunActionKind"])[21:] == ["TakeRewardCard", "TakeRewardAlternative"]
     assert schema["reward_choices"].shape == (schema.caps["REWARD_CHOICES"], 3 + len(schema["hand"].fields))
     assert schema["reward_choices"].fields == ("reward_index", "option", "alt_id") + tuple(schema["hand"].fields)
+    assert schema["map_routes"].shape == schema["map_nodes"].shape[:2] + (5,)
+    assert schema["map_routes"].fields == ("elites_min", "elites_max", "rests", "shops", "boss_dist")
     # the appended buffers (shapes from the caps; every pile table shares one column list)
     assert schema["global_x"].fields == ("ancient_id", "draw_marked_n")
     assert schema["hand_x"].shape == (schema.caps["HAND"], 2)
@@ -146,8 +150,8 @@ def test_buffer_sizes_and_pointer_order(schema):
     assert [raw[i] for i in range(len(BUFFER_ORDER))] == bufs.pointers()
     assert bufs.nbytes == n * schema.bytes_per_env
     # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke + 4,216 for the six appended buffers
-    # + 1,600 for reward_choices)
-    assert schema.bytes_per_env == 32_542
+    # + 1,600 for reward_choices + 2,520 for map_routes)
+    assert schema.bytes_per_env == 35_062
     with pytest.raises(ValueError):
         schema.allocate(0)
 

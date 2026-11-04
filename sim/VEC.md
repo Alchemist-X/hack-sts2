@@ -7,11 +7,12 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `e9baaefc39811631`, 32,542
-bytes/env, 42 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `dcbee4daff61c155`, 35,062
+bytes/env, 43 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
 appended `EndKind.FloorStall`; the player-view schema append of 2026-11-03 appended 6 buffers, "Appended buffers"
 below; the rewards-screen macros of 2026-11-04 appended `reward_choices` and two candidate kinds, "Rewards-screen
-macros"; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+macros"; the map-routing features of 2026-11-04 appended `map_routes`; integration figures below were measured at
+`dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ## Build and load
@@ -378,10 +379,11 @@ int32_t sts2vec_clone_determinized(int64_t h, int32_t slot, uint64_t seed); // p
 | 38–39 | `discard_order`, `exhaust_order` | int32 | [64, 6] | same columns as `draw_marked`, pile order (appended) |
 | 40 | `event_option_values` | int32 | [8, 9] | value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 (appended; row i = `event_options` row i) |
 | 41 | `reward_choices` | int32 | [16, 25] | reward_index, option, alt_id, then the 22 `hand` columns (appended 2026-11-04; row k = the k-th rewards-screen macro's target, "Rewards-screen macros") |
+| 42 | `map_routes` | int32 | [18, 7, 5] | elites_min, elites_max, rests, shops, boss_dist (appended 2026-11-04; cell [row][col] = `map_nodes` cell, "map_routes" below) |
 
-42 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–41 are appended after the
-signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 32.5 KB per env (`reward_choices` +1,600 B).
-Caps appended with `reward_choices`: REWARD_CHOICES 16. New caps (`schema.caps`):
+43 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–42 are appended after the
+signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 35.1 KB per env (`reward_choices` +1,600 B,
+`map_routes` +2,520 B). Caps appended with `reward_choices`: REWARD_CHOICES 16. New caps (`schema.caps`):
 DRAW_MARKED 32, PILE_ORDER 64, EVENT_VALUES 3, EVENT_ITEMS 2; new enum `ItemKind` (vocabulary convention: affliction,
 card, enchantment, potion, relic).
 
@@ -648,6 +650,27 @@ Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative
 | `enabled`, `locked`, `proceed` | Option flags. |
 | `relic_id` | Relic vocab id of the option's relic. |
 
+**map_routes** [row][col] (appended 2026-11-04; the `map_nodes` cell; a cell without a node is a zero row)
+
+Routing features of the drawn map graph, computed from the published `map_nodes` columns themselves (`point_type`,
+`child_mask`; an edge always leads to the next row), so they cannot disagree with them. The act's boss is
+`ActMap.BossMapPoint` (the first Boss row; the A10 second boss follows it). Motivation: the PPO policy of 2026-11-03
+avoided elites when it had a choice but walked into nodes where every option was an elite (0.65 forced elites per Act 1
+on maps where 19 of 20 had an elite-free path): it saw only the next row.
+
+| Column | Meaning |
+| --- | --- |
+| `elites_min`, `elites_max` | Fewest / most Elite rooms on any path from this node to the boss, this node included (0 at the boss; −1 when the boss is not reachable from the node, i.e. the second boss). For a `legal_next` node: the elites the route through it must face / can collect. |
+| `rests`, `shops` | Distinct RestSite / Shop nodes reachable from this node, this node included. |
+| `boss_dist` | Moves from this node to the boss (0 at the boss, −1 when not reachable); every path has this length. |
+
+One pass over the 126 cells from the last row up (children first) with 128-bit reachability sets, allocation-free; the
+purity test's mean encode time stayed at ≈ 44 µs per call (within its run-to-run noise). Not modelled: free travel (`Hook.ShouldAllowFreeTravel`, any node of the next row) — the features
+describe the drawn edges; Unknown (?) rooms are not counted as possible elites. Test:
+`VecEncoderTests.Test_VecEncoder_MapRoutesMatchTheDrawnGraph` (80 distinct maps of all characters at A0 / A10, 14 in act 3:
+every node against a memoised recursion over `map_nodes`, the start node's min / max against an enumeration of all
+6,899 start-to-boss paths); Python `tests/test_map_routes.py` recomputes the table from `map_nodes` over random rollouts.
+
 **prompt_options** (row i = `Options[i]` = PromptSelect A)
 
 | Column | Meaning |
@@ -743,6 +766,7 @@ parity test below requires every value the walk reaches to resolve.
 | `TreasureAndCardRewardHidden` | 5 closed and then opened chests (relic hidden until opened), and 74 card rewards: on the Rewards screen `rewards` names no card, `card_reward` is empty and `reward_choices` lists exactly the reward's cards; once opened, `card_reward` shows them and `reward_choices` is empty. |
 | `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
 | `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
+| `MapRoutesMatchTheDrawnGraph` | `map_routes` on 80 distinct maps (all characters, A0 / A10, acts 1–3) equals a memoised recursion over `map_nodes`' point types and child masks at every node; the start node's elite min / max equal those of an explicit enumeration of every start-to-boss path. |
 
 Appended-buffer tests (`sim/Sts2Sim.Tests/VecTests.Append.cs`, class `VecTests`; the purity, leak and server-parity
 tests above also cover the appended columns: no `?` id, marked-draw reshuffles, hand `affliction.amount` /

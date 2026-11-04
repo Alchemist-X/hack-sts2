@@ -1,3 +1,4 @@
+using System.Numerics;
 using Sts2Sim.Core;
 using Sts2Sim.Core.Choice;
 using Sts2Sim.Core.Run;
@@ -69,6 +70,115 @@ public static partial class ObservationEncoder
             {
                 cell[5]++;
             }
+        }
+    }
+
+    private const int MapCells = Caps.MapRows * Caps.MapCols;
+
+    private static void SetBit(ref ulong lo, ref ulong hi, int k)
+    {
+        if (k < 64)
+        {
+            lo |= 1UL << k;
+        }
+        else
+        {
+            hi |= 1UL << (k - 64);
+        }
+    }
+
+    // map_routes[row][col] (appended 2026-11-04): routing features of the drawn map graph exactly as map_nodes publishes it
+    // (point_type, child_mask: an edge always leads to the next row), for every node of the current act's map: the fewest /
+    // most Elite rooms on a path from the node to the act's boss (the node included; -1 when the boss is not reachable
+    // from it, e.g. the A10 second boss), the distinct rest sites / shops reachable from it (the node included), and its
+    // distance in moves to the boss (0 at the boss). One pass over the cells from the last row up computes every node from
+    // its children (18 x 7 = 126 cells: reachability is a 128-bit set). Computed from the published columns, so the features
+    // cannot disagree with map_nodes. A free-travel hook (Hook.ShouldAllowFreeTravel) is not modelled: the features describe
+    // the drawn edges. Pure and allocation-free.
+    private static void EncodeMapRoutes(ActMap map, ReadOnlySpan<int> nodes, Span<int> routes)
+    {
+        int w = Schema.MapRouteFields.Length;
+        var bossPoint = map.BossMapPoint;
+        int boss = (uint)bossPoint.coord.row < Caps.MapRows && (uint)bossPoint.coord.col < Caps.MapCols
+            ? bossPoint.coord.row * Caps.MapCols + bossPoint.coord.col : -1;
+        Span<int> dist = stackalloc int[MapCells];
+        Span<int> emin = stackalloc int[MapCells];
+        Span<int> emax = stackalloc int[MapCells];
+        Span<ulong> lo = stackalloc ulong[MapCells];
+        Span<ulong> hi = stackalloc ulong[MapCells];
+        ulong restLo = 0, restHi = 0, shopLo = 0, shopHi = 0;
+        for (int k = 0; k < MapCells; k++)
+        {
+            switch ((MapPointType)nodes[k * MapW])
+            {
+                case MapPointType.RestSite:
+                    SetBit(ref restLo, ref restHi, k);
+                    break;
+                case MapPointType.Shop:
+                    SetBit(ref shopLo, ref shopHi, k);
+                    break;
+            }
+        }
+        const int colMask = (1 << Caps.MapCols) - 1;
+        for (int k = MapCells - 1; k >= 0; k--)
+        {
+            int type = nodes[k * MapW];
+            if (type == 0)
+            {
+                continue;
+            }
+            ulong rl = 0, rh = 0;
+            SetBit(ref rl, ref rh, k);
+            int d = -1, mn = int.MaxValue, mx = -1;
+            int next = (k / Caps.MapCols + 1) * Caps.MapCols;
+            if (k == boss)
+            {
+                d = 0;
+                mn = 0;
+                mx = 0;
+            }
+            else if (next < MapCells)
+            {
+                int mask = nodes[k * MapW + 4] & colMask;
+                while (mask != 0)
+                {
+                    int ci = next + BitOperations.TrailingZeroCount(mask);
+                    mask &= mask - 1;
+                    if (nodes[ci * MapW] == 0)
+                    {
+                        continue;
+                    }
+                    rl |= lo[ci];
+                    rh |= hi[ci];
+                    if (dist[ci] >= 0)
+                    {
+                        d = d < 0 ? dist[ci] + 1 : Math.Min(d, dist[ci] + 1);
+                        mn = Math.Min(mn, emin[ci]);
+                        mx = Math.Max(mx, emax[ci]);
+                    }
+                }
+                if (d >= 0 && type == (int)MapPointType.Elite)
+                {
+                    mn++;
+                    mx++;
+                }
+            }
+            if (d < 0)
+            {
+                mn = -1;
+                mx = -1;
+            }
+            dist[k] = d;
+            emin[k] = mn;
+            emax[k] = mx;
+            lo[k] = rl;
+            hi[k] = rh;
+            var row = routes.Slice(k * w, w);
+            row[MrCol.ElitesMin] = mn;
+            row[MrCol.ElitesMax] = mx;
+            row[MrCol.Rests] = BitOperations.PopCount(rl & restLo) + BitOperations.PopCount(rh & restHi);
+            row[MrCol.Shops] = BitOperations.PopCount(rl & shopLo) + BitOperations.PopCount(rh & shopHi);
+            row[MrCol.BossDist] = d;
         }
     }
 

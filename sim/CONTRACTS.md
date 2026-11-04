@@ -1358,6 +1358,7 @@ When a table overflows its capacity the first CAP rows are written and the statu
 | 37 | `discard_order`, 38 `exhaust_order` | int32 | [PILE_ORDER, 6] | appended: the same columns in pile order (oldest first; the pile screens show it) |
 | 39 | `event_option_values` | int32 | [EVENT_OPTIONS, 9] | appended: value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 — the numbers and items option i's text names (localisation placeholders resolved on the live event; enum `ItemKind`) |
 | 40 | `reward_choices` | int32 | [REWARD_CHOICES, 3 + HC] | appended 2026-11-04: reward_index, option, alt_id, then the `hand` columns — row k = the target of the k-th rewards-screen macro candidate (the cards of the unopened card rewards, then their REROLL / SACRIFICE) |
+| 41 | `map_routes` | int32 | [MAP_ROWS, MAP_COLS, 5] | appended 2026-11-04: per `map_nodes` cell, elites_min, elites_max (Elite rooms on a path from the node to the act's boss, node included; −1 = unreachable), rests, shops (distinct nodes reachable), boss_dist (moves to the boss) — computed from `map_nodes`' point_type / child_mask |
 
 `HC` and the field orders are published in the schema; the Python side never hard-codes offsets. Appending rule (as
 for `aux` in E3 and the six buffers of 2026-11-03): new data goes into new buffers (or new last columns of `aux`)

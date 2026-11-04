@@ -12,7 +12,7 @@ namespace Sts2Sim.Tests;
 /// Player-view observation encoder tests (CONTRACTS.md §D7 T2/T3, owner V1): purity, the draw-order leak test, parity
 /// with the play server's observation, no move ids, hidden treasure / card-reward contents, table capacities.
 /// </summary>
-public static class VecEncoderTests
+public static partial class VecEncoderTests
 {
     private static readonly string[] Characters = { "IRONCLAD", "SILENT", "DEFECT", "REGENT", "NECROBINDER" };
 

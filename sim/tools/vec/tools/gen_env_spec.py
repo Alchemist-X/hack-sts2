@@ -236,6 +236,12 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("alt_id", "{e:CardRewardAlt}", "the alternative (0 for a card row)"),
         ("+hand", "as hand", "the offered card, as `card_reward` shows it once opened (0 for an alternative)"),
     ]),
+    # appended with the map-routing features (2026-11-04)
+    "map_routes": ("[row][col] = the `map_nodes` cell: routing features of the drawn map graph (child edges); 0 where no node", [
+        ("elites_min, elites_max", "-1/>= 0", "fewest / most Elite rooms on a path from this node to the act's boss (this node included; -1 = boss not reachable)"),
+        ("rests, shops", ">= 0", "rest sites / shops reachable from this node (distinct nodes, this node included)"),
+        ("boss_dist", "-1/>= 0", "moves from this node to the act's boss (0 at the boss; -1 = not reachable, e.g. the second boss)"),
+    ]),
 }
 
 

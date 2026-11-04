@@ -23,6 +23,8 @@ public static unsafe partial class VecTests
         "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
         // appended with the rewards-screen macro candidates (2026-11-04)
         "reward_choices",
+        // appended with the map-routing features (2026-11-04)
+        "map_routes",
     };
 
     public static void Test_Vec_SchemaJsonRoundTrips()
@@ -43,7 +45,7 @@ public static unsafe partial class VecTests
 
         var buffers = root.GetProperty("buffers").EnumerateArray().ToList();
         Assert.Equal(Buf.Count, buffers.Count);
-        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts + 6 + 1 appended)");
+        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts + 6 + 2 appended)");
         int vCards = root.GetProperty("vocab").GetProperty("cards").GetArrayLength();
         for (int k = 0; k < buffers.Count; k++)
         {
@@ -299,9 +301,11 @@ public static unsafe partial class VecTests
         Assert.Equal(7, LastEpCol.LastEncounterId);
         Assert.Equal(9, AuxCol.IsCombat);
         Assert.Equal(13, AuxCol.ActRooms);
-        Assert.Equal(Buf.Count - 7, Buf.GlobalX);
-        Assert.Equal(Buf.Count - 2, Buf.EventOptionValues);
-        Assert.Equal(Buf.Count - 1, Buf.RewardChoices);
+        Assert.Equal(Buf.Count - 8, Buf.GlobalX);
+        Assert.Equal(Buf.Count - 3, Buf.EventOptionValues);
+        Assert.Equal(Buf.Count - 2, Buf.RewardChoices);
+        Assert.Equal(Buf.Count - 1, Buf.MapRoutes);
+        Assert.SequenceEqual(Schema.Buffers[Buf.MapNodes].Shape[..2], Schema.Buffers[Buf.MapRoutes].Shape[..2], "map_routes cells = map_nodes cells");
         Assert.Equal(3 + Schema.HC, Schema.Buffers[Buf.RewardChoices].Shape[1]);
         Assert.Equal(Caps.RewardChoices, Schema.Buffers[Buf.RewardChoices].Shape[0]);
         Assert.SequenceEqual(Schema.HandFields, Schema.RewardChoiceFields.Skip(RcCol.Card));
@@ -310,7 +314,7 @@ public static unsafe partial class VecTests
         Assert.Equal(Caps.EventOptions, Schema.Buffers[Buf.EventOptionValues].Shape[0]);
         Assert.Equal(EvValCol.Value0 + Caps.EventValues, EvValCol.ItemN);
         Assert.Equal(Schema.EventOptionValueFields.Length, EvValCol.ItemKind0 + Caps.EventItems * EvValCol.ItemStride);
-        foreach (int k in new[] { Buf.GlobalX, Buf.HandX, Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder, Buf.EventOptionValues, Buf.RewardChoices })
+        foreach (int k in new[] { Buf.GlobalX, Buf.HandX, Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder, Buf.EventOptionValues, Buf.RewardChoices, Buf.MapRoutes })
         {
             Assert.True(Buf.Observation.Contains(k), $"{Schema.Buffers[k].Name} is an observation buffer");
         }

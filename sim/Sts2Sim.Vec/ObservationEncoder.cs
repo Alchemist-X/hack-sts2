@@ -76,6 +76,10 @@ public static partial class ObservationEncoder
             EncodeCombat(cs, b, gi, ref overflow);
         }
         EncodeMap(sim, rs, b.MapNodes, ref overflow);
+        if (rs.Map is { } map)
+        {
+            EncodeMapRoutes(map, b.MapNodes, b.MapRoutes);
+        }
         EncodeScreens(sim, rs, p, b, gi, ref overflow);
         if (prompt != null)
         {
