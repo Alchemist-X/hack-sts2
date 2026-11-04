@@ -389,7 +389,8 @@ class Store:
             platform = self.platform_headroom(state, modal_spent)
             if (state["approved_budget"] is None
                     or spent + reserved + reserve > min(state["approved_budget"], state["execution_cap"])
-                    or (billing_vendor != "non_modal" and (platform is None or modal_reserved + reserve > platform))):
+                    or (billing_vendor != "non_modal" and (
+                        self.provider_paused(db, "train") or platform is None or modal_reserved + reserve > platform))):
                 raise ValueError("probe requires sufficient authorized headroom")
             db.execute(
                 """INSERT INTO jobs (id,logical_key,attempt,kind,payload,reserve,state,deadline)
@@ -412,7 +413,8 @@ class Store:
             platform = self.platform_headroom(state, modal_spent)
             if (state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
                     or spent + reserved > min(state["approved_budget"], state["execution_cap"])
-                    or (self.bills_modal(db, key) and (platform is None or modal_reserved > platform))):
+                    or (self.bills_modal(db, key) and (
+                        self.provider_paused(db, "train") or platform is None or modal_reserved > platform))):
                 raise ValueError("probe lacks current authorized headroom")
             payload = json.loads(row["payload"])
             scope = payload.get("isolated_gpu_namespace")
@@ -453,7 +455,8 @@ class Store:
             minimum_time = 320 if step == "launch" else 380
             if (row["state"] != "external_reserved" or row["deadline"] - now < minimum_time
                     or state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
-                    or platform is None or spent + reserved > min(state["approved_budget"], state["execution_cap"])
+                    or self.provider_paused(db, "train") or platform is None
+                    or spent + reserved > min(state["approved_budget"], state["execution_cap"])
                     or modal_reserved > platform):
                 raise ValueError("GPU smoke lacks current authorization, budget or time")
             if step == "stage":

@@ -231,6 +231,10 @@ class DetachedTest(unittest.TestCase):
         self.assertIsNone(status["stop"])
         self.assertEqual(status["provider_pauses"][0]["provider"], "modal")
         self.assertEqual(len(self.provider.grants), 1)
+        scope = self.store.isolated_smoke_namespace("external-probe")
+        with self.assertRaisesRegex(ValueError, "authorized headroom"):
+            self.store.reserve_access_probe("external-probe", "external-op", "gpu_smoke", 1, 1200,
+                                            isolated_gpu_namespace=scope)
 
         def conflicting_receipts(job, launch_token, input_id):
             raise ProviderIntegrityError("duplicate")
