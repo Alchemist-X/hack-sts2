@@ -307,3 +307,31 @@ def test_silent_dev_and_test_seedsets(sid):
     others = {(g["character"], g["seed"]) for p in PG.seedset_dirs()[-1].glob("*.json") if p.stem != name
               for g in json.loads(p.read_text())["games"]}
     assert not others & {(g["character"], g["seed"]) for g in d["games"]}
+
+
+def test_trim_padding_keeps_the_model_outputs(spec):
+    """Rollout forwards cut unoccupied trailing hand / enemy / potion rows: same argmax, values within rounding."""
+    from sts2train.features import obs_to_torch
+
+    torch.manual_seed(3)
+    model = Policy(spec, **TINY).eval()
+    env = VecEnv(64, threads=2, pool=PoolSpec(count=16, seed_prefix="LKTRIM", ascension=10), seed_text="LKTRIM")
+    pol = HeuristicPolicy()
+    ctx = PolicyContext(schema=env.schema, num_envs=64, live=np.ones(64, bool))
+    obs = env.reset()
+    seen = 0
+    with torch.no_grad():
+        for t in range(60):
+            obs, *_ = env.step(pol(obs, ctx))
+            if t % 6:
+                continue
+            x = obs_to_torch(obs, "cpu")
+            y = L.trim_padding(x, spec)
+            assert y["potions"].shape[1] < x["potions"].shape[1]          # Silent never fills 10 potion slots
+            l1, v1 = model(x)
+            l2, v2 = model(y)
+            assert torch.equal(l1.argmax(-1), l2.argmax(-1))
+            assert torch.allclose(l1, l2, atol=1e-4) and torch.allclose(v1, v2, atol=1e-4)
+            seen += 1
+    env.close()
+    assert seen >= 9

@@ -20,7 +20,8 @@ Search (``LookaheadConfig``). Only where a game is live, in combat (``global_i.i
   read the true draw order;
 - one batched ``reset(mask, start_ids)`` restores every rollout slot of the round; step 0 applies the candidate, then
   the model's greedy action on the rows still running (one batched forward per step over all games; byte-identical
-  model inputs are evaluated once);
+  model inputs are evaluated once; trailing hand / enemy / potion rows that no row of the batch occupies or points
+  at are cut (``trim_padding``): the model masks them, so only float rounding changes, as with any batch change);
 - latch per slot (checked after every step, in this order): a SIM_ERROR / CONTENT_GAP / illegal-action status or a
   truncation -> invalid (logged); terminated -> victory / defeat; ``is_combat`` 1 -> 0 -> combat won (leaf); turn
   horizon: ``turn`` above the root's or ``cand_n == 0`` -> leaf; H steps -> leaf. A rollout never continues past the
@@ -140,6 +141,31 @@ def _new_stats() -> dict:
             "rebuilds": 0, "sync_checks": 0, "desyncs": 0,
             "t": {k: 0.0 for k in ("policy", "sync", "greedy", "search", "clone", "restore", "env", "forward",
                                    "dedup", "to_torch", "model", "classify", "shadow", "rebuild", "init")}}
+
+
+TRIM_TABLES = (("hand", "card_id", "hand_slot", ("hand", "hand_f", "hand_dmg")),
+               ("enemies", "present", "target_slot", ("enemies", "enemy_intents", "enemy_powers")),
+               ("potions", "potion_id", "potion_slot", ("potions",)))
+
+
+def trim_padding(x: dict[str, torch.Tensor], spec: ModelSpec) -> dict[str, torch.Tensor]:
+    """Model inputs with the hand / enemy / potion row axes cut after the last row any sample of the batch occupies
+    or a candidate points at (at least one row). The model masks unoccupied rows (attention keys, pooling) and every
+    pointer stays in range, so the outputs equal the untrimmed ones up to float rounding; the trunk runs on fewer
+    tokens (43 -> ~30 in combat)."""
+    C = spec.cols
+    cand, cc = x["cand"], C["cand"]
+    y = dict(x)
+    for table, occ_col, ptr_col, names in TRIM_TABLES:
+        occ = (x[table][..., C[table][occ_col]] != 0).any(0)
+        n = int(torch.nonzero(occ).max()) + 1 if bool(occ.any()) else 0
+        ptr = cand[..., cc[ptr_col]]
+        if ptr.numel() and bool((ptr >= 0).any()):
+            n = max(n, int(ptr.max()) + 1)
+        n = max(1, min(n, x[table].shape[1]))
+        for name in names:
+            y[name] = x[name][:, :n]
+    return y
 
 
 class LookaheadPolicy:
@@ -355,7 +381,7 @@ class LookaheadPolicy:
             for c in range(0, len(uniq), FWD_CHUNK):
                 part = uniq[c:c + FWD_CHUNK]
                 t0 = time.perf_counter()
-                x = obs_to_torch(o, self.device, index=part)
+                x = trim_padding(obs_to_torch(o, self.device, index=part), self.spec)
                 t1 = time.perf_counter()
                 logits, value = self.model(x)
                 acts[c:c + len(part)] = logits.argmax(-1).cpu().numpy()
