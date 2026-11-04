@@ -32,7 +32,8 @@ PILE_COLS = [
 ]
 
 # buffer -> (what a row is, [(columns, range, meaning)]). Columns: comma-separated schema field names; "*" = the
-# buffer has no fields (scalar or count vector); "=hand" = exactly the fields of `hand`.
+# buffer has no fields (scalar or count vector); "=hand" = exactly the fields of `hand`; "+hand" = the buffer's last
+# columns are the fields of `hand`.
 # Range tokens: {v:kind} vocabulary id, {e:Enum} enum value, {cv} card_vars id, {prb} playable-reason bitmask,
 # {kw} keyword bitmask, {st} status bits.
 DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
@@ -147,7 +148,7 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("reward_type", "{e:RewardType}", "reward kind"),
         ("amount", ">= 0", "gold amount"),
         ("item_id", "id", "potion / relic / special-card id (vocabulary by reward_type)"),
-        ("is_card_reward", "0/1", "a card reward (its cards stay hidden until opened)"),
+        ("is_card_reward", "0/1", "a card reward (its offered cards: `reward_choices`)"),
     ]),
     "card_reward": ("row i = offered card i (CardReward phase only)", [
         ("=hand", "as hand", "same columns as `hand`; playable, playable_reason_id, hits are 0"),
@@ -175,13 +176,13 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("ordinal", ">= 0", "i"),
     ]),
     "cand": ("THE ACTION SPACE: row r < cand_n = legal action r; rows >= cand_n are 0", [
-        ("kind", "{e:RunActionKind}", "action kind"),
-        ("A, B", "-1/>= 0", "the action's raw arguments (see the Action section)"),
+        ("kind", "{e:RunActionKind}", "action kind (21, 22: the rewards-screen macros TakeRewardCard, TakeRewardAlternative)"),
+        ("A, B", "-1/>= 0", "the action's raw arguments (see the Action section; macros: `rewards` row, card / alternative index)"),
         ("hand_slot", "-1/0..9", "PlayCard: `hand` row"),
         ("target_slot", "-1/0..5", "PlayCard / UsePotion: `enemies` row (-1 = no enemy target)"),
         ("potion_slot", "-1/0..9", "UsePotion / DiscardPotion: `potions` row"),
-        ("option_index", "-1/>= 0", "row in the phase's table: Travel rank, rewards, card_reward, shop, rest, event_options, prompt_options"),
-        ("card_id", "{v:cards}", "card played / picked / selected (0 = none)"),
+        ("option_index", "-1/>= 0", "row in the phase's table: Travel rank, rewards, card_reward, shop, rest, event_options, prompt_options; reward_choices for the macros"),
+        ("card_id", "{v:cards}", "card played / picked / taken / selected (0 = none)"),
         ("target_uid", ">= 0", "`enemies.uid` of the target (0 = none)"),
     ]),
     "cand_n": ("scalar", [("*", "0..192", "number of legal candidates (0 when finished)")]),
@@ -226,6 +227,14 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("item_n", ">= 0", "cards / relics / potions / enchantments the text names (true count)"),
         ("item_kind_0, item_kind_1", "{e:ItemKind}", "vocabulary of `item_id_k` (0 = none)"),
         ("item_id_0, item_id_1", "id", "the items in text order (first 2; RELIC_TRADER: owned, then new relic)"),
+    ]),
+    # appended with the rewards-screen macro candidates (2026-11-04)
+    "reward_choices": ("rewards screen: row k = choice k of the unopened card rewards (each reward's cards, then its REROLL / "
+                       "SACRIFICE), the `option_index` of the k-th TakeRewardCard / TakeRewardAlternative candidate", [
+        ("reward_index", ">= 0", "`rewards` row of the card reward (= the macro's A)"),
+        ("option", ">= 0", "card index or alternative index (= the macro's B)"),
+        ("alt_id", "{e:CardRewardAlt}", "the alternative (0 for a card row)"),
+        ("+hand", "as hand", "the offered card, as `card_reward` shows it once opened (0 for an alternative)"),
     ]),
 }
 
@@ -291,6 +300,12 @@ def render(schema) -> str:
                     raise SystemExit(f"gen_env_spec: {b.name} fields differ from hand")
                 covered += list(b.fields)
                 col = f"{len(b.fields)} columns of `hand`"
+            elif spec == "+hand":
+                hand = tuple(schema["hand"].fields)
+                if tuple(b.fields or ())[-len(hand):] != hand:
+                    raise SystemExit(f"gen_env_spec: {b.name} does not end with the fields of hand")
+                covered += list(hand)
+                col = f"{len(hand)} columns of `hand`"
             else:
                 fs = [f.strip() for f in spec.split(",")]
                 unknown = [f for f in fs if f not in (b.fields or ())]

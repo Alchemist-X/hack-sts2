@@ -13,6 +13,8 @@ BUFFER_ORDER = [
     "cand", "cand_n", "reward", "terminated", "truncated", "status", "episode", "aux", "last_episode",
     # appended (player-view schema append, docs/parity-audit-2026-11-02.md §5.2)
     "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
+    # appended with the rewards-screen macro candidates (2026-11-04)
+    "reward_choices",
 ]
 
 DTYPES = {  # §D3.1
@@ -55,7 +57,11 @@ def test_buffer_order_dtypes_and_fields(schema):
     assert schema["cand"].shape == (schema.caps["CANDIDATES"], 9)
     assert schema["prompt_options"].shape[0] == schema.caps["PROMPT_OPTIONS"] == 128
     assert schema["episode"].fields == ("episode_id", "step_index", "start_entry")
-    assert len(schema.vocab.enums["RunActionKind"]) == 21
+    # 21 RunSim action kinds, then the Vec-only rewards-screen macro kinds
+    assert len(schema.vocab.enums["RunActionKind"]) == 23
+    assert list(schema.vocab.enums["RunActionKind"])[21:] == ["TakeRewardCard", "TakeRewardAlternative"]
+    assert schema["reward_choices"].shape == (schema.caps["REWARD_CHOICES"], 3 + len(schema["hand"].fields))
+    assert schema["reward_choices"].fields == ("reward_index", "option", "alt_id") + tuple(schema["hand"].fields)
     # the appended buffers (shapes from the caps; every pile table shares one column list)
     assert schema["global_x"].fields == ("ancient_id", "draw_marked_n")
     assert schema["hand_x"].shape == (schema.caps["HAND"], 2)
@@ -139,8 +145,9 @@ def test_buffer_sizes_and_pointer_order(schema):
     raw = (ctypes.c_void_p * len(BUFFER_ORDER)).from_address(bufs.ptr)
     assert [raw[i] for i in range(len(BUFFER_ORDER))] == bufs.pointers()
     assert bufs.nbytes == n * schema.bytes_per_env
-    # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke + 4,216 for the six appended buffers)
-    assert schema.bytes_per_env == 30_942
+    # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke + 4,216 for the six appended buffers
+    # + 1,600 for reward_choices)
+    assert schema.bytes_per_env == 32_542
     with pytest.raises(ValueError):
         schema.allocate(0)
 

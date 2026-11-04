@@ -175,8 +175,14 @@ public sealed class VecSlot
     /// </summary>
     public int FloorSteps { get; internal set; }
 
-    /// <summary>LegalActions() at the last observation; candidate i = Legal[i].</summary>
+    /// <summary>
+    /// The Vec candidate list at the last observation; candidate i = Legal[i]: <see cref="Raw"/> with the rewards-screen
+    /// macro substitutions (<see cref="RewardMacros.Fill"/>), elsewhere equal to it.
+    /// </summary>
     internal List<RunAction> Legal { get; } = new(64);
+
+    /// <summary>RunSim.LegalActions() at the last observation (scratch for <see cref="Legal"/>).</summary>
+    internal List<RunAction> Raw { get; } = new(64);
 }
 
 /// <summary>
@@ -426,26 +432,17 @@ public sealed unsafe class VecEnv
                 {
                     bool nonCombat = !InCombat(s.Sim);
                     var act = s.Legal[action];
-                    if (FaultInjector?.Invoke(i, act) is { } injected)
+                    if (RewardMacros.IsMacro(act.Kind))
                     {
-                        throw injected;
-                    }
-                    if (ForceFastPath?.Invoke(i, act) == true)
-                    {
-                        s.FastSteps++;
-                        s.Sim.StepFastUnchecked(act);
-                    }
-                    else if (Config.FastPath && s.Sim.StepFast(act))
-                    {
-                        s.FastSteps++;
+                        // one decision, the game's two clicks: open the card reward, then take the card / alternative
+                        var (open, choose) = RewardMacros.Expand(act);
+                        Apply(s, i, open);
+                        RewardMacros.RequireOpened(s.Sim, act);
+                        Apply(s, i, choose);
                     }
                     else
                     {
-                        if (!Config.FastPath)
-                        {
-                            s.Sim.Step(act);
-                        }
-                        s.SlowSteps++;
+                        Apply(s, i, act);
                     }
                     s.StepIndex++;
                     if (nonCombat)
@@ -522,6 +519,33 @@ public sealed unsafe class VecEnv
         WriteSignals(s, b, reward, terminated, truncated, st);
     }
 
+    /// <summary>Runs one RunSim action on the slot (fault injection, fast path or the cloning tape path; counts the path).</summary>
+    private void Apply(VecSlot s, int i, RunAction act)
+    {
+        var sim = s.Sim!;
+        if (FaultInjector?.Invoke(i, act) is { } injected)
+        {
+            throw injected;
+        }
+        if (ForceFastPath?.Invoke(i, act) == true)
+        {
+            s.FastSteps++;
+            sim.StepFastUnchecked(act);
+        }
+        else if (Config.FastPath && sim.StepFast(act))
+        {
+            s.FastSteps++;
+        }
+        else
+        {
+            if (!Config.FastPath)
+            {
+                sim.Step(act);
+            }
+            s.SlowSteps++;
+        }
+    }
+
     /// <summary>Starts a new episode on the slot from <paramref name="entry"/> or (entry &lt; 0) the slot's start sequence.</summary>
     private void StartSlot(VecSlot s, int entry, ref SlotStatus st)
     {
@@ -529,6 +553,7 @@ public sealed unsafe class VecEnv
         s.Finished = false;
         s.CandN = 0;
         s.Legal.Clear();
+        s.Raw.Clear();
         s.StepIndex = 0;
         s.FloorSeen = -1;
         s.FloorSteps = 0;
@@ -595,7 +620,8 @@ public sealed unsafe class VecEnv
             ObservationEncoder.Encode(s.Sim, b, ref st);
             if (!s.Finished)
             {
-                s.Sim.LegalActions(s.Legal);
+                s.Sim.LegalActions(s.Raw);
+                RewardMacros.Fill(s.Sim, s.Raw, s.Legal);
             }
             s.CandN = CandidateTable.Fill(s.Sim, s.Legal, b.Cand, out bool overflow);
             if (overflow)

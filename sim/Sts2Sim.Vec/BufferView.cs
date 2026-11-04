@@ -103,6 +103,8 @@ public readonly unsafe struct SlotBuffers
     public Span<int> DiscardOrder => Get<int>(Buf.DiscardOrder);
     public Span<int> ExhaustOrder => Get<int>(Buf.ExhaustOrder);
     public Span<int> EventOptionValues => Get<int>(Buf.EventOptionValues);
+    /// <summary>[CAP_REWARD_CHOICES * (3 + HC)], row k = rewards-screen choice k (appended 2026-11-04).</summary>
+    public Span<int> RewardChoices => Get<int>(Buf.RewardChoices);
 
     public ref int CandN => ref Get<int>(Buf.CandN)[0];
     public ref float Reward => ref Get<float>(Buf.Reward)[0];

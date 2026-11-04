@@ -103,6 +103,7 @@ public static partial class ObservationEncoder
         {
             case RunPhase.Rewards:
                 EncodeRewards(rs, b.Rewards, gi, ref overflow);
+                EncodeRewardChoices(rs, b.RewardChoices, ref overflow);
                 break;
             case RunPhase.CardReward:
                 EncodeRewards(rs, b.Rewards, gi, ref overflow);
@@ -173,6 +174,40 @@ public static partial class ObservationEncoder
             }
         }
         gi[GI.RewardN] = unclaimed;
+    }
+
+    // reward_choices row k = RewardMacros choice k: the cards of every unopened card reward on the rewards screen, then
+    // its alternatives other than Skip (rewards ascending). Row k is the option_index of the k-th TakeRewardCard /
+    // TakeRewardAlternative candidate. Written in the Rewards loop phase (the cards are one free click away: opening a card
+    // reward and closing it leaves the reward unclaimed, game Rewards/CardReward.cs:660, :738).
+    private static void EncodeRewardChoices(RunState rs, Span<int> table, ref bool overflow)
+    {
+        var choices = S.RewardChoices;
+        RewardMacros.Choices(rs, choices);
+        int w = Schema.RewardChoiceFields.Length;
+        int hc = Schema.HC;
+        int n = choices.Count;
+        if (n > Caps.RewardChoices)
+        {
+            overflow = true;
+            n = Caps.RewardChoices;
+        }
+        for (int k = 0; k < n; k++)
+        {
+            var c = choices[k];
+            var row = table.Slice(k * w, w);
+            row[RcCol.RewardIndex] = c.Reward;
+            row[RcCol.Option] = c.Option;
+            if (c.Card != null)
+            {
+                WriteCard(row.Slice(RcCol.Card, hc), c.Card, null);
+            }
+            else
+            {
+                row[RcCol.AltId] = Vocab.CardRewardAlt(c.AltId);
+            }
+        }
+        choices.Clear();
     }
 
     private static void EncodeCardReward(RunState rs, RunLoopState loop, Span<int> table, Span<int> alts, Span<int> gi, ref bool overflow)

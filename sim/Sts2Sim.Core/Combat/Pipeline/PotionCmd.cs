@@ -27,18 +27,27 @@ public static class PotionCmd
     }
 
     /// <summary>
-    /// True when <see cref="TryToProcure(RunState, PotionModel, PlayerState, int)"/> with no slot index would add
-    /// <paramref name="potion"/> to <paramref name="player"/>'s belt: the procure hooks allow it (game
-    /// Commands/PotionCmd.cs:258-266, NotAllowed otherwise, e.g. Models.Relics/Sozu.cs:17-20) and the belt has an empty
-    /// slot (Entities.Players/Player.cs:1027-1031 and :1056-1068, TooFull otherwise). Pure: no hook side effect, no RNG.
+    /// The outcome <see cref="TryToProcure(RunState, PotionModel, PlayerState, int)"/> with no slot index would have, without
+    /// procuring: <see cref="PotionProcureFailureReason.NotAllowed"/> when a procure hook vetoes it (game
+    /// Commands/PotionCmd.cs:258-266, e.g. Models.Relics/Sozu.cs:17-20), else <see cref="PotionProcureFailureReason.TooFull"/>
+    /// when the belt has no empty slot (Entities.Players/Player.cs:1027-1031 and :1056-1068), else None (it would succeed).
+    /// Pure: no hook side effect, no RNG.
     /// </summary>
-    public static bool CanProcure(RunState rs, PotionModel potion, PlayerState player)
+    public static PotionProcureFailureReason ProcureCheck(RunState rs, PotionModel potion, PlayerState player)
     {
         ArgumentNullException.ThrowIfNull(rs);
         ArgumentNullException.ThrowIfNull(potion);
         ArgumentNullException.ThrowIfNull(player);
-        return player.HasOpenPotionSlot && Hook.ShouldProcurePotion(rs, CombatOf(rs, player), potion, player);
+        if (!Hook.ShouldProcurePotion(rs, CombatOf(rs, player), potion, player))
+        {
+            return PotionProcureFailureReason.NotAllowed;
+        }
+        return player.HasOpenPotionSlot ? PotionProcureFailureReason.None : PotionProcureFailureReason.TooFull;
     }
+
+    /// <summary>True when <see cref="TryToProcure(RunState, PotionModel, PlayerState, int)"/> would add the potion (<see cref="ProcureCheck"/> is None).</summary>
+    public static bool CanProcure(RunState rs, PotionModel potion, PlayerState player)
+        => ProcureCheck(rs, potion, player) == PotionProcureFailureReason.None;
 
     public static void Discard(RunState rs, PotionModel potion)
     {

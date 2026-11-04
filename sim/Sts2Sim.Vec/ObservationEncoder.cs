@@ -32,6 +32,9 @@ public static partial class ObservationEncoder
 
         /// <summary>draw_marked rows before sorting (card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount).</summary>
         public readonly List<(int, int, int, int, int, int)> Marked = new(16);
+
+        /// <summary>reward_choices rows (RewardMacros.Choices).</summary>
+        public readonly List<RewardMacros.Choice> RewardChoices = new(16);
     }
 
     [ThreadStatic]
