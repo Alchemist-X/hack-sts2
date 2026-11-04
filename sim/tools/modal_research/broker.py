@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS broker_jobs (
     seed_begin INTEGER, seed_end INTEGER, reusable_tail INTEGER,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS broker_cost_envelopes (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
+    upper_cents INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS broker_detached (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
+    grant_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS broker_generations (
     job_id TEXT NOT NULL REFERENCES broker_jobs(job_id),
     fence INTEGER NOT NULL,
@@ -60,24 +68,48 @@ class Claim:
     seed_range: tuple[int, int] | None
 
 
+@dataclass(frozen=True)
+class DetachedGrant:
+    """One offline invocation whose authority expires at the frozen job deadline."""
+
+    job: Job
+    accepted_checkpoint: AcceptedCheckpoint | None
+    receipt: str
+    launch_token: str
+    fence: int
+    seed_range: tuple[int, int] | None
+
+    @classmethod
+    def from_json(cls, encoded):
+        raw = json.loads(encoded)
+        raw["job"] = Job(**raw["job"])
+        if raw["accepted_checkpoint"] is not None:
+            raw["accepted_checkpoint"] = AcceptedCheckpoint(**raw["accepted_checkpoint"])
+        if raw["seed_range"] is not None:
+            raw["seed_range"] = tuple(raw["seed_range"])
+        return cls(**raw)
+
+
 class RavenBroker:
     """Transactional in-process API. A network wrapper must authenticate worker callers."""
 
     fixture = False
     verified_cost_bounds = True
 
-    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, tool_enabled=False,
+    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None,
+                 tool_enabled=False,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
         self.artifacts = Path(artifacts)
         self.authorize_spawn = authorize_spawn
         self.verify_cost_bound = verify_cost_bound
+        self.reserve_bound = reserve_bound
         self.tool_enabled = bool(tool_enabled)
         self.grant_seconds = integer(grant_seconds, 1)
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
         if self.grant_seconds > 60 or self.kill_grace_seconds > 30:
             raise ValueError("unbounded worker lease settings")
-        self.controller = Controller(store, self, artifacts)
+        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound else None)
         with self.store.transaction() as db:
             db.executescript(SCHEMA)
 
@@ -130,6 +162,11 @@ class RavenBroker:
             row = db.execute("SELECT receipt FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
             return row["receipt"] if row else None
 
+    def reconciliation_deadline(self, job):
+        with self.store.transaction() as db:
+            # This is a bounded read/mirror grace. It grants no provider runtime.
+            return job.deadline + (180 if self._detached(db, job.key) else 0)
+
     def poll(self, receipt):
         with self.store.transaction() as db:
             row = db.execute("SELECT state,outcome FROM broker_jobs WHERE receipt=?", (identifier(receipt),)).fetchone()
@@ -173,6 +210,11 @@ class RavenBroker:
                          AND j.kind IN ('train','eval') LIMIT 1""", (candidate["job_id"],),
                 ).fetchone():
                     continue
+                if candidate["kind"] in GPU_KINDS and db.execute(
+                    """SELECT 1 FROM jobs WHERE kind='access_probe' AND json_extract(payload,'$.category')='gpu_smoke'
+                       AND (state='external_reserved' OR error='gpu_receipt_unknown') LIMIT 1"""
+                ).fetchone():
+                    continue
                 job = Controller._job(row)
                 if not self.authorize_spawn(job):
                     continue
@@ -183,6 +225,7 @@ class RavenBroker:
                 break
             else:
                 return None
+        detached = None
         with self.store.transaction() as db:
             row = self._job_row(db, job.key)
             if not self._dispatch_allowed(db, row) or not self.authorize_spawn(job):
@@ -191,6 +234,9 @@ class RavenBroker:
                     current = db.execute("SELECT state FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
                     if current["state"] == "spawning":
                         self._finish(db, job.key, Outcome("failed", 0, error="cancelled_before_spawn"))
+                return None
+            bound = self.reserve_bound(job) if self.reserve_bound is not None else None
+            if self.reserve_bound is not None and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
                 return None
             authorized = self.store.clock()
             if job.deadline - authorized <= MAX_SEND_SECONDS:
@@ -203,6 +249,10 @@ class RavenBroker:
             )
             if marked.rowcount != 1:
                 return None
+            if bound is not None:
+                db.execute("INSERT INTO broker_cost_envelopes VALUES (?,?)", (job.key, bound))
+            if job.kind in GPU_KINDS and getattr(provider, "detached", False) is True:
+                detached = self._prepare_detached(db, job, row, launch_token)
         with self.store.transaction() as db:
             row = self._job_row(db, job.key)
             if not self._dispatch_allowed(db, row) or self.store.clock() >= send_not_after:
@@ -215,7 +265,9 @@ class RavenBroker:
                 self._finish(db, job.key, Outcome("failed", 0, error="cancelled_before_spawn"))
             return None
         try:
-            provider_id = identifier(provider.spawn(job, launch_token, send_not_after=send_not_after))
+            receipt = (provider.spawn_detached(detached, send_not_after=send_not_after) if detached else
+                       provider.spawn(job, launch_token, send_not_after=send_not_after))
+            provider_id = identifier(receipt)
         except Exception:
             with self.store.transaction() as db:
                 db.execute("UPDATE broker_jobs SET state='ambiguous',error='provider receipt unknown',send_finished_at=? "
@@ -223,6 +275,27 @@ class RavenBroker:
             return launch_token
         self.attach_provider_receipt(launch_token, provider_id)
         return launch_token
+
+    def _prepare_detached(self, db, job, job_row, launch_token):
+        validate_job(job)
+        row = db.execute("SELECT * FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
+        if row["invocation_id"] is not None:
+            raise ValueError("detached invocation already authorized")
+        proof = self.controller._accepted_checkpoint(db, job)[0] if job.payload["checkpoint"] else None
+        seed_range = self._allocate_seeds(db, job, job_row) if job.kind == "train" else None
+        grant = DetachedGrant(job, proof, row["receipt"], launch_token, row["fence"] + 1, seed_range)
+        db.execute("INSERT INTO broker_detached VALUES (?,?)", (job.key, canonical(asdict(grant))))
+        db.execute(
+            """UPDATE broker_jobs SET invocation_id=?,fence=?,lease_until=?,safe_after=?,
+               seed_begin=?,seed_end=? WHERE job_id=?""",
+            (launch_token, grant.fence, job.deadline, job.deadline, *(seed_range or (None, None)), job.key),
+        )
+        return grant
+
+    @staticmethod
+    def _detached(db, job_key):
+        row = db.execute("SELECT grant_json FROM broker_detached WHERE job_id=?", (job_key,)).fetchone()
+        return DetachedGrant.from_json(row["grant_json"]) if row else None
 
     @staticmethod
     def _kinds(kinds):
@@ -258,6 +331,7 @@ class RavenBroker:
             if row is None:
                 return False
             job = Controller._job(self._job_row(db, row["job_id"]))
+            detached = self._detached(db, job.key)
             db.execute("UPDATE broker_jobs SET last_checked=? WHERE job_id=?", (self.store.clock(), job.key))
         if not row["provider_id"]:
             # Optional provider lookup is positive-only. An absent receipt might be
@@ -279,6 +353,9 @@ class RavenBroker:
         if not isinstance(outcome, Outcome) or outcome.status not in TERMINAL:
             self._request_cancel(provider, row, job)
             return True
+        if detached and row["state"] != "finished":
+            if not self._collect_detached(provider, row, detached, outcome):
+                return True
         actual = outcome.actual_cents
         cost = getattr(provider, "cost", None)
         if actual is None and cost is not None:
@@ -301,8 +378,9 @@ class RavenBroker:
                 return True
             if job.kind in GPU_KINDS:
                 outcome = self._gpu_outcome(db, current, outcome)
+            envelope = db.execute("SELECT upper_cents FROM broker_cost_envelopes WHERE job_id=?", (job.key,)).fetchone()
         materialize = getattr(provider, "materialize", None)
-        if job.kind in GPU_KINDS and outcome.output is not None and materialize is not None:
+        if job.kind in GPU_KINDS and not detached and outcome.output is not None and materialize is not None:
             try:
                 ready = materialize(job, outcome.output) is True
             except Exception:
@@ -310,8 +388,8 @@ class RavenBroker:
             if not ready:
                 self._note_pending(job.key, "verified artifact mirror pending")
                 return True
-        bound = None
-        if not actual_known and actual is None and self.verify_cost_bound is not None:
+        bound = envelope["upper_cents"] if envelope and not actual_known and actual is None else None
+        if bound is None and not actual_known and actual is None and self.verify_cost_bound is not None:
             # Only trusted local policy can prove a hard maximum from verified
             # identity, resource/usage limits and rate evidence.
             try:
@@ -328,6 +406,42 @@ class RavenBroker:
                     and (latest["provider_id"], latest["fence"]) == (current["provider_id"], current["fence"])):
                 self._finish(db, job.key, self._bounded_outcome(settled))
         return True
+
+    def _collect_detached(self, provider, row, grant, provider_outcome):
+        """Accept bytes from the exact terminated one-shot grant, never a live callback."""
+        job = grant.job
+        if row["worker_outcome"]:
+            return True
+        try:
+            worker = provider.collect_detached(grant, row["provider_id"], provider_outcome)
+            if (not isinstance(worker, Outcome) or worker.status not in TERMINAL
+                    or worker.actual_cents is not None or worker.cost_bound_cents is not None
+                    or (worker.status == "succeeded" and (provider_outcome.status != "succeeded" or not worker.output))):
+                raise ValueError("invalid detached terminal proof")
+            metadata = None
+            if worker.output:
+                if provider.materialize(job, worker.output) is not True:
+                    raise ValueError("artifact mirror pending")
+                metadata = self.controller._artifact(job, worker.output)["manifest"]["metadata"]
+                if (metadata["termination"] == "checkpoint") != (worker.status == "failed"):
+                    raise ValueError("detached result phase differs from checkpoint")
+            with self.store.transaction() as db:
+                current = db.execute("SELECT * FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
+                if (current["state"] not in PROVIDER_PENDING
+                        or (current["provider_id"], current["fence"]) != (row["provider_id"], grant.fence)):
+                    return False
+                if current["worker_outcome"]:
+                    return True
+                if metadata:
+                    self._insert_generation(db, current, job, grant.fence, worker.output,
+                                            metadata["decisions"], metadata["cursor"],
+                                            worker.status == "failed", metadata.get("seed_issued_until"))
+                db.execute("UPDATE broker_jobs SET worker_outcome=? WHERE job_id=?",
+                           (canonical(asdict(self._bounded_outcome(worker))), job.key))
+            return True
+        except Exception:
+            self._note_pending(job.key, "detached terminal evidence or mirror pending")
+            return False
 
     def _note_pending(self, job_key, reason):
         with self.store.transaction() as db:
@@ -450,7 +564,7 @@ class RavenBroker:
             raise ValueError("worker admission is reserved for GPU job kinds")
         with self.store.transaction() as db:
             row = db.execute("SELECT * FROM broker_jobs WHERE launch_token=?", (job_token,)).fetchone()
-            if row is None or row["state"] not in PROVIDER_PENDING:
+            if row is None or row["state"] not in PROVIDER_PENDING or self._detached(db, row["job_id"]):
                 return None
             job_row = self._job_row(db, row["job_id"])
             job = Controller._job(job_row)
@@ -487,6 +601,7 @@ class RavenBroker:
     def _live_claim(self, db, claim):
         row = db.execute("SELECT * FROM broker_jobs WHERE receipt=?", (claim.receipt,)).fetchone()
         if (row is None or row["state"] not in PROVIDER_PENDING or row["worker_outcome"]
+                or self._detached(db, row["job_id"])
                 or row["lease_until"] <= self.store.clock()
                 or (row["job_id"], row["input_id"], row["invocation_id"], row["fence"]) != (
                     claim.job.key, claim.input_id, claim.invocation_id, claim.fence,
@@ -520,39 +635,41 @@ class RavenBroker:
         return name, hash_value
 
     def record_generation(self, claim, reference, *, decisions, cursor, partial=True, issued_until=None):
+        with self.store.transaction() as db:
+            row = self._live_claim(db, claim)
+            self._insert_generation(db, row, claim.job, claim.fence, reference, decisions, cursor, partial, issued_until)
+
+    def _insert_generation(self, db, row, job, fence, reference, decisions, cursor, partial, issued_until):
         name, hash_value = self._generation_ref(reference)
         integer(decisions, 1)
         integer(cursor)
         if type(partial) is not bool:
             raise ValueError("generation phase must be explicit")
-        with self.store.transaction() as db:
-            row = self._live_claim(db, claim)
-            job = claim.job
-            if job.kind == "train":
-                if not job.payload["start_decisions"] < decisions <= job.payload["target_decisions"]:
-                    raise ValueError("generation decisions outside admitted range")
-                if not row["seed_begin"] < cursor <= row["seed_end"]:
-                    raise ValueError("checkpoint cursor outside admitted seed range")
-                if issued_until is not None and not cursor <= integer(issued_until) <= row["seed_end"]:
-                    raise ValueError("issued seed upper cursor outside admitted range")
-            elif (partial or decisions != job.payload["target_decisions"]
-                  or cursor != job.payload["start_cursor"] or issued_until is not None):
-                raise ValueError("invalid evaluation generation progress")
-            old = db.execute("SELECT manifest_hash,decisions,cursor,issued_until,partial FROM broker_generations "
-                             "WHERE job_id=? AND generation=?", (job.key, name)).fetchone()
-            if old:
-                if tuple(old) != (hash_value, decisions, cursor, issued_until, int(partial)):
-                    raise ValueError("immutable generation reference changed")
-                return
-            latest = db.execute("SELECT decisions,cursor,issued_until,partial FROM broker_generations WHERE job_id=? "
-                                "ORDER BY decisions DESC, partial ASC LIMIT 1", (job.key,)).fetchone()
-            if latest and (not latest["partial"] or decisions < latest["decisions"] or cursor < latest["cursor"]
-                           or (decisions == latest["decisions"] and partial)
-                           or (issued_until is not None and latest["issued_until"] is not None
-                               and issued_until < latest["issued_until"])):
-                raise ValueError("generation arrived behind the latest accepted progress")
-            db.execute("INSERT INTO broker_generations VALUES (?,?,?,?,?,?,?,?)",
-                       (job.key, claim.fence, name, hash_value, decisions, cursor, issued_until, int(partial)))
+        if job.kind == "train":
+            if not job.payload["start_decisions"] < decisions <= job.payload["target_decisions"]:
+                raise ValueError("generation decisions outside admitted range")
+            if not row["seed_begin"] < cursor <= row["seed_end"]:
+                raise ValueError("checkpoint cursor outside admitted seed range")
+            if issued_until is not None and not cursor <= integer(issued_until) <= row["seed_end"]:
+                raise ValueError("issued seed upper cursor outside admitted range")
+        elif (partial or decisions != job.payload["target_decisions"]
+              or cursor != job.payload["start_cursor"] or issued_until is not None):
+            raise ValueError("invalid evaluation generation progress")
+        old = db.execute("SELECT manifest_hash,decisions,cursor,issued_until,partial FROM broker_generations "
+                         "WHERE job_id=? AND generation=?", (job.key, name)).fetchone()
+        if old:
+            if tuple(old) != (hash_value, decisions, cursor, issued_until, int(partial)):
+                raise ValueError("immutable generation reference changed")
+            return
+        latest = db.execute("SELECT decisions,cursor,issued_until,partial FROM broker_generations WHERE job_id=? "
+                            "ORDER BY decisions DESC, partial ASC LIMIT 1", (job.key,)).fetchone()
+        if latest and (not latest["partial"] or decisions < latest["decisions"] or cursor < latest["cursor"]
+                       or (decisions == latest["decisions"] and partial)
+                       or (issued_until is not None and latest["issued_until"] is not None
+                           and issued_until < latest["issued_until"])):
+            raise ValueError("generation arrived behind the latest accepted progress")
+        db.execute("INSERT INTO broker_generations VALUES (?,?,?,?,?,?,?,?)",
+                   (job.key, fence, name, hash_value, decisions, cursor, issued_until, int(partial)))
 
     def complete(self, claim, outcome):
         if (not isinstance(outcome, Outcome) or outcome.status not in TERMINAL or outcome.actual_cents is not None

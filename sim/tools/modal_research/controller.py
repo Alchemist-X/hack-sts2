@@ -21,12 +21,13 @@ class DispatchBlocked(ValueError):
 
 
 class Controller:
-    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50):
+    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50, admission_policy=None):
         self.store = store
         self.backend = backend
         self.artifacts = Path(artifacts)
         self.research_cents = research_cents
         self.sol_cents = sol_cents
+        self.admission_policy = admission_policy
 
     def tick(self):
         owner = uuid4().hex
@@ -77,6 +78,10 @@ class Controller:
             if sum(self.store.ledger(db, experiment)) + reserve > cents(spec["max_cost"]):
                 raise DispatchBlocked("experiment budget limit")
         key = f"{logical}:{attempt}"
+        if self.admission_policy is not None and not self.admission_policy(
+            Job(key, logical, attempt, kind, deadline, reserve, payload)
+        ):
+            raise DispatchBlocked(f"{kind} requires a verified provider and job cost envelope")
         db.execute(
             """INSERT INTO jobs (id,logical_key,attempt,kind,experiment_id,event_id,payload,reserve,deadline)
                VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -91,7 +96,8 @@ class Controller:
             "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1",
         ).fetchone()
         event = db.execute(
-            """SELECT events.* FROM events WHERE decision_id IS NULL AND NOT EXISTS (
+            """SELECT events.* FROM events WHERE decision_id IS NULL
+               AND kind IN ('bootstrap','result','anomaly','sol_result') AND NOT EXISTS (
                SELECT 1 FROM jobs WHERE jobs.event_id=events.id AND kind='research')
                ORDER BY rowid LIMIT 1""",
         ).fetchone()
@@ -166,8 +172,11 @@ class Controller:
                 outcome = Outcome("running")
             if outcome.status in TERMINAL:
                 self._settle(owner, row, outcome)
-            elif job.deadline <= self.store.clock():
-                self._quarantine(owner, row, "remote completion or spend unresolved at deadline")
+            else:
+                reconcile_until = getattr(self.backend, "reconciliation_deadline", None)
+                deadline = reconcile_until(job) if reconcile_until else job.deadline
+                if deadline <= self.store.clock():
+                    self._quarantine(owner, row, "remote completion or spend unresolved at deadline")
             return
         try:
             remote_id = self.backend.lookup(job) if row["submit_started"] else None

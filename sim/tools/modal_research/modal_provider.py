@@ -49,15 +49,16 @@ class ModalFunctions:
 class SdkProcessTransport:
     """Use the deployment's Modal credentials in a short-lived SDK process."""
 
-    def __init__(self, *, verified_binding):
+    def __init__(self, *, verified_binding, worker_module=__name__):
         if verified_binding is not True or os.name != "posix":
             raise ValueError("verified Modal authentication and POSIX process isolation required")
+        self.worker_module = worker_module
 
     def request(self, message, seconds):
         if seconds <= 0.15:
             raise TimeoutError("provider operation has no safe send window")
         operation_end = time.monotonic() + seconds
-        command = [sys.executable, "-s", "-m", __name__, "--sdk-request"]
+        command = [sys.executable, "-s", "-m", self.worker_module, "--sdk-request"]
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, start_new_session=True)
         try:
