@@ -6,15 +6,17 @@ import argparse
 import fcntl
 import json
 import os
+import stat
 import time
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
 from .agent_runner import AgentRunner, SolTask, _research_input
-from .broker import AgentQueueProvider, GPU_KINDS, RavenBroker, RavenRuntime
-from .contracts import identifier
+from .broker import AgentQueueProvider, DetachedGrant, GPU_KINDS, RavenBroker, RavenRuntime
+from .contracts import digest, identifier
 from .gateway import AgentBinding
+from .lineage import artifact_identity
 from .manifests import file_digest
 from .sandbox_provider import CPU, MEMORY_MIB, SandboxBinding, SandboxProvider, generation_bytes
 from .store import Store
@@ -165,9 +167,43 @@ def load_runtime(config, *, clock=time.time):
                         archive_deadline=rates.storage_verified_until if rates else None), queue
 
 
+MONITOR_GRANT = Path("/var/lib/sts2-modal-production/monitor/active-grants.json")
+
+
+def active_grant(runtime):
+    if runtime.modal_provider is None:
+        return {"schema_version": 1, "active": False}
+    with runtime.broker.store.transaction() as db:
+        rows = db.execute(
+            """SELECT d.grant_json FROM broker_detached d JOIN broker_jobs b ON b.job_id=d.job_id
+               WHERE b.state IN ('sending','ambiguous','submitted') LIMIT 2"""
+        ).fetchall()
+    if not rows:
+        return {"schema_version": 1, "active": False}
+    if len(rows) != 1:
+        raise ValueError("multiple active GPU grants")
+    raw = rows[0]["grant_json"]
+    grant = DetachedGrant.from_json(raw)
+    return {"schema_version": 1, "volume_id": runtime.modal_provider.binding.volume_id,
+            "job_key": grant.job.key, "launch_token": grant.launch_token, "packet_hash": digest(json.loads(raw)),
+            "fence": grant.fence, "identity": artifact_identity(grant.job), "deadline": grant.job.deadline}
+
+
+def _write_status(path, data):
+    pending = path.with_suffix(".pending")
+    fd = os.open(pending, os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        json.dump(data, output, indent=2, sort_keys=True)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    pending.replace(path)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--export-monitor-grant", action="store_true")
     parser.add_argument("command", choices=("tick", "agent"))
     args = parser.parse_args()
     path = args.config.resolve()
@@ -176,6 +212,11 @@ def main():
         if handle.read(1):
             raise ValueError("runtime config exceeds its byte bound")
     config = json.loads(data)
+    if args.export_monitor_grant:
+        metadata = MONITOR_GRANT.parent.stat()
+        if (args.command != "tick" or os.geteuid() != 0 or MONITOR_GRANT.parent.resolve() != MONITOR_GRANT.parent
+                or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o700):
+            raise ValueError("monitor grant output requires its root-only production directory")
     lock = Path(config["state"]).with_suffix(f".{args.command}.lock")
     with lock.open("a") as handle:
         try:
@@ -188,13 +229,9 @@ def main():
                 runtime.tick_once()
             finally:
                 status = Path(config["state"]).with_name("status.json")
-                pending = status.with_suffix(".pending")
-                with pending.open("w", encoding="utf-8") as output:
-                    json.dump(runtime.broker.store.status(), output, indent=2, sort_keys=True)
-                    output.write("\n")
-                    output.flush()
-                    os.fsync(output.fileno())
-                pending.replace(status)
+                _write_status(status, runtime.broker.store.status())
+                if args.export_monitor_grant:
+                    _write_status(MONITOR_GRANT, active_grant(runtime))
         elif queue is None:
             raise RuntimeError("agent executor requires a verified binding")
         else:

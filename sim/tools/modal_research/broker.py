@@ -485,7 +485,8 @@ class RavenBroker:
                 if provider.materialize(job, worker.output) is not True:
                     raise ValueError("artifact mirror pending")
                 metadata = self.controller._artifact(job, worker.output)["manifest"]["metadata"]
-                if (metadata["termination"] == "checkpoint") != (worker.status == "failed"):
+                if (worker.status == "succeeded" and metadata["termination"] == "checkpoint"
+                        or worker.status == "failed" and job.kind != "train"):
                     raise ValueError("detached result phase differs from checkpoint")
             with self.store.transaction() as db:
                 current = db.execute("SELECT * FROM broker_jobs WHERE job_id=?", (job.key,)).fetchone()
@@ -497,7 +498,7 @@ class RavenBroker:
                 if metadata:
                     self._insert_generation(db, current, job, grant.fence, worker.output,
                                             metadata["decisions"], metadata["cursor"],
-                                            worker.status == "failed", metadata.get("seed_issued_until"))
+                                            metadata["termination"] == "checkpoint", metadata.get("seed_issued_until"))
                 db.execute("UPDATE broker_jobs SET worker_outcome=? WHERE job_id=?",
                            (canonical(asdict(self._bounded_outcome(worker))), job.key))
             return True

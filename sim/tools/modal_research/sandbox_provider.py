@@ -73,6 +73,7 @@ class SandboxBinding:
     volume_id: str
     bundle_hashes: dict[str, str]
     allowed_job_keys: tuple[str, ...] | None = None
+    max_target_by_config: dict[str, int] | None = None
 
     def __post_init__(self):
         identifier(self.app_name)
@@ -89,6 +90,12 @@ class SandboxBinding:
                 raise ValueError("GPU loop acceptance requires four fixed job keys")
             for key in self.allowed_job_keys:
                 identifier(key)
+        if self.max_target_by_config is not None:
+            if (type(self.max_target_by_config) is not dict
+                    or self.max_target_by_config.keys() != self.bundle_hashes.keys()):
+                raise ValueError("authorized tranche requires a maximum target per frozen configuration")
+            for target in self.max_target_by_config.values():
+                integer(target, 1)
 
 
 def _digest(value):
@@ -131,7 +138,10 @@ class SandboxProvider:
             spec = validate_job(job)
             acceptance = spec["experiment_id"] == LOOP_ACCEPTANCE_EXPERIMENT
             exact = self.binding.allowed_job_keys
-            return (job.payload["config_hash"] in self.binding.bundle_hashes
+            config_hash = job.payload["config_hash"]
+            targets = self.binding.max_target_by_config
+            return (config_hash in self.binding.bundle_hashes
+                    and (targets is None or job.payload["target_decisions"] <= targets[config_hash])
                     and spec["checkpoint_policy"]["resume_mode"] == "fresh_episodes"
                     and (not acceptance if exact is None else acceptance and job.key in exact and job.attempt == 1))
         except (TypeError, ValueError, KeyError, AttributeError):
@@ -170,7 +180,7 @@ class SandboxProvider:
             return Outcome("running")
         if type(code) is not int:
             raise ProviderUncertain("invalid Sandbox exit code")
-        return Outcome("succeeded" if code == 0 else "failed", error=None if code == 0 else "reclaimed")
+        return Outcome("succeeded" if code == 0 else "failed", error=None if code == 0 else "sandbox_nonzero_exit")
 
     def cancel(self, provider_id):
         if self._request("cancel", 8, sandbox_id=_object_id(provider_id, "sb")) != {"cancelled": True}:
@@ -201,10 +211,12 @@ class SandboxProvider:
             return Outcome("succeeded", output=report["result"])
         partial = report["partial"]
         candidate = report["candidate"]
-        if candidate and candidate["partial"]:
-            reference = candidate["reference"]
-            if self._request("ready", 15, job_key=grant.job.key, reference=reference) == {"ready": True}:
-                partial = reference
+        if grant.job.kind == "train":
+            latest = report["result"] if report["status"] == "succeeded" else None
+            if candidate:
+                latest = candidate["reference"]
+            if latest and self._request("ready", 15, job_key=grant.job.key, reference=latest) == {"ready": True}:
+                partial = latest
         return Outcome("failed", output=partial, error="worker" if report["status"] == "failed" else "reclaimed")
 
     def prune(self, job_key, keep):

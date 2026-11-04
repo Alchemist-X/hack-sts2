@@ -453,6 +453,11 @@ class Controller:
             return
         if row["experiment_id"]:
             stage = "needs_eval" if reached_target else "failed"
+            if (stage == "failed" and error == "reclaimed" and result and job.kind == "train"
+                    and job.payload["spec"]["eval_protocol"] == "silent-a10-capacity-v1"):
+                # The provider is terminal and the complete same-lineage head
+                # is verified. A later segment still needs its own admission.
+                stage = "needs_train"
             db.execute("UPDATE experiments SET stage=? WHERE id=?", (stage, row["experiment_id"]))
             if reached_target:
                 # Analysis gets the recovered checkpoint incident together with its evaluation.
@@ -475,7 +480,10 @@ class Controller:
         evidence = {**result, "experiment_id": experiment}
         if origin:
             evidence["checkpoint_recovery_incident"] = dict(origin)
-        self.store.append_event(db, f"result-{digest(job.key)[:32]}", "result", evidence, self.store.clock())
+        identity = job.key
+        if job.payload["spec"]["eval_protocol"] == "silent-a10-capacity-v1":
+            identity = [experiment, job.payload["config_hash"], job.payload["start_decisions"]]
+        self.store.append_event(db, f"result-{digest(identity)[:32]}", "result", evidence, self.store.clock())
 
     def _accept_decision(self, db, state, row, result):
         if result["expected_state_version"] != state["version"]:
