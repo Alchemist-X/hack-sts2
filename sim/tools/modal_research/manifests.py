@@ -14,6 +14,7 @@ from .contracts import canonical, integer
 TRAIN_FILES = {"model", "optimizer", "scheduler", "rng", "seed_cursor", "metrics"}
 EVAL_FILES = {"metrics", "per_seed"}
 MANIFEST_NAME = "ready.json"
+HISTORY_MAX_BYTES = 128 * 1024
 
 
 def file_digest(path):
@@ -41,6 +42,11 @@ def _required(identity, metadata):
     raise ValueError("unknown artifact kind")
 
 
+def _valid_roles(identity, metadata, roles):
+    required = _required(identity, metadata)
+    return roles == required or (identity["kind"] == "train" and roles == required | {"history"})
+
+
 def _sync_dir(path):
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -51,16 +57,19 @@ def _sync_dir(path):
 
 def publish(root, identity, metadata, files, commit=None, before_ready=None):
     root = Path(root)
-    if set(files) != _required(identity, metadata):
+    if not _valid_roles(identity, metadata, set(files)):
         raise ValueError("incomplete artifact role set")
     if len(set(files.values())) != len(files):
         raise ValueError("each role requires a distinct artifact")
     entries = {}
     for role, name in files.items():
         path = _file(root, name)
+        size = path.stat().st_size
+        if role == "history" and size > HISTORY_MAX_BYTES:
+            raise ValueError("history artifact exceeds its byte bound")
         with path.open("rb") as handle:
             os.fsync(handle.fileno())
-        entries[role] = {"name": name, "size": path.stat().st_size, "sha256": file_digest(path)}
+        entries[role] = {"name": name, "size": size, "sha256": file_digest(path)}
     document = {"version": 1, "identity": identity, "metadata": metadata, "files": entries}
     data = canonical(document).encode()
     if len(data) > 32000:
@@ -106,13 +115,17 @@ def verify(root, reference, identity):
         raise ValueError("artifact identity mismatch")
     metadata = document["metadata"]
     entries = document["files"]
-    if set(entries) != _required(identity, metadata):
+    if not _valid_roles(identity, metadata, set(entries)):
         raise ValueError("incomplete artifact role set")
     if len({entry["name"] for entry in entries.values()}) != len(entries):
         raise ValueError("duplicate artifact path")
-    for entry in entries.values():
+    for role, entry in entries.items():
         path = _file(root, entry["name"])
-        if path.stat().st_size != entry["size"] or file_digest(path) != entry["sha256"]:
+        size = path.stat().st_size
+        declared_size = integer(entry["size"])
+        if role == "history" and (size > HISTORY_MAX_BYTES or declared_size > HISTORY_MAX_BYTES):
+            raise ValueError("history artifact exceeds its byte bound")
+        if size != declared_size or file_digest(path) != entry["sha256"]:
             raise ValueError("artifact checksum mismatch")
     integer(metadata["decisions"], 1)
     if identity["kind"] == "train":

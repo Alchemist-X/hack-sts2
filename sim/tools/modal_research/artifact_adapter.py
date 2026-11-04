@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from .contracts import DIGEST, canonical, identifier, integer
 from .lineage import artifact_identity, trainer_config_matches, validate_job
-from .manifests import file_digest, publish, verify
+from .manifests import HISTORY_MAX_BYTES, file_digest, publish, verify
 from .native_worker import result_label
 
 CODE_FILE = re.compile(r"code/(?:sts2train|sts2vec|modal_research)/(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z_][A-Za-z0-9_]*\.py")
@@ -189,6 +191,56 @@ METRIC_FIELDS = {
     "bootstrap_step_caps", "gpu_mem_peak_mb",
 }
 
+HISTORY_LIMIT = HISTORY_MAX_BYTES
+
+
+def _utc_time(value):
+    if type(value) is not str or len(value) > 64:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
+    return value
+
+
+def _metric_history(path, maximum_update, maximum_decisions):
+    """Project completed JSONL records only; never infer missing updates or timestamps."""
+    path = Path(path)
+    history = {"version": 1, "series": "train", "omitted_rows": 0, "rows": []}
+    if not path.exists():
+        return history
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("invalid local metric log")
+    previous_update = previous_steps = 0
+    with path.open("rb") as handle:
+        for line in handle:
+            if not line.endswith(b"\n") or len(line) > 64 * 1024:
+                continue  # an interrupted append or an implausibly large record
+            try:
+                raw = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if type(raw) is not dict:
+                continue
+            update, steps = raw.get("update"), raw.get("env_steps")
+            if (type(update) is not int or type(steps) is not int
+                    or not previous_update < update <= maximum_update
+                    or not previous_steps < steps <= maximum_decisions):
+                continue
+            row = {"update": update, "env_steps": steps, "at": _utc_time(raw.get("time"))}
+            row.update({key: value for key, value in raw.items()
+                        if key in METRIC_FIELDS - {"update", "env_steps"}
+                        and type(value) in (int, float) and math.isfinite(value)})
+            history["rows"].append(row)
+            previous_update, previous_steps = update, steps
+            while len(canonical(history).encode("utf-8")) > HISTORY_LIMIT:
+                history["rows"].pop(0)
+                history["omitted_rows"] += 1
+    return history
+
 
 def _latest_metrics(path, maximum_update):
     if not path.exists():
@@ -277,14 +329,18 @@ class ArtifactAdapter:
             raise ValueError("checkpoint update differs from its file name")
         packed_hash = file_digest(packed)
         files = {"model": packed.name}
+        history = _metric_history(expected_parent.parent / "metrics.jsonl", updates, decisions)
         sidecars = {
             "optimizer": {"embedded": "optimizer", "checkpoint_sha256": packed_hash},
             "scheduler": {"kind": "constant_lr", "lr": data["config"]["lr"], "checkpoint_sha256": packed_hash},
             "rng": {"embedded": "rng", "streams": ["numpy", "torch", "cuda"], "checkpoint_sha256": packed_hash},
             "seed_cursor": {"stream": data["seed_stream"], "grant": list(claim.seed_range),
                             "checkpoint_sha256": packed_hash},
-            "metrics": {**counters, **_latest_metrics(expected_parent.parent / "metrics.jsonl", updates),
+            "metrics": {**counters, **({"last_completed_update": {
+                key: value for key, value in history["rows"][-1].items() if key != "at"}}
+                if history["rows"] else {}),
                         "result_label": result_label(job.payload["spec"])},
+            "history": history,
         }
         for role, body in sidecars.items():
             name = f"{role}.json"
@@ -384,15 +440,16 @@ class ArtifactMirror:
             if document.get("identity") != identity or document.get("version") != 1:
                 raise ValueError("remote ready manifest does not belong to this job")
             entries = document["files"]
-            if type(entries) is not dict or not 2 <= len(entries) <= 7:
+            if type(entries) is not dict or not 2 <= len(entries) <= 8:
                 raise ValueError("invalid remote artifact roles")
-            for entry in entries.values():
+            for role, entry in entries.items():
                 name = entry["name"]
                 if (type(name) is not str or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", name)
                         or name == "ready.json"):
                     raise ValueError("invalid remote artifact path")
                 expected = integer(entry["size"], 1)
-                limit = size_cap if name == "checkpoint.pt" else 16 * 1024**2
+                limit = (HISTORY_LIMIT if role == "history" else
+                         size_cap if name == "checkpoint.pt" else 16 * 1024**2)
                 if expected > limit:
                     raise ValueError("remote artifact exceeds its byte bound")
                 self._copy_file(f"{remote}/{name}", staging / name, expected)
