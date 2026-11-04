@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 import tempfile
 import unittest
-from .export_snapshot import export, formal_arm, training_metric_points, merge_metric_point
+from .export_snapshot import export, formal_arm, training_metric_points, merge_metric_point, cumulative_act_reach
 
 
 class SnapshotTests(unittest.TestCase):
@@ -129,11 +129,63 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(arm['points'],[])
             self.assertEqual(len(arm['evaluations']),1)
             values=arm['evaluations'][0]['values']
-            self.assertEqual(values['act1_reach'],232/256)
+            self.assertEqual(values['act1_reach'],1.0)
             self.assertEqual(values['act2_reach'],24/256)
-            self.assertIsNone(values['act3_reach'])
+            self.assertEqual(values['act3_reach'],0.0)
             self.assertEqual(values['win_rate'],0.0)
             self.assertIsNone(arm['evaluations'][0]['at'])
+            projection['items'][0]['metrics']['act_reached']={'1':232,'2':23}
+            path.write_text(json.dumps(projection))
+            incomplete=export(root,root/'snapshot.json',accepted_evaluations=path)
+            unknown=incomplete['streams']['formal']['arms']['S']['evaluations'][0]['values']
+            self.assertTrue(all(unknown[f'act{i}_reach'] is None for i in (1,2,3)))
+            self.assertEqual(unknown['progress'],0.258338875)
+            self.assertEqual(unknown['win_rate'],0.0)
+
+    def test_terminal_act_histogram_requires_complete_fresh_games(self):
+        self.assertEqual(cumulative_act_reach({'1':242,'2':14},256),
+                         {'act1_reach':1.0,'act2_reach':14/256,'act3_reach':0.0})
+        self.assertEqual(cumulative_act_reach({'1':200,'2':40,'3':15,'4':1},256),
+                         {'act1_reach':1.0,'act2_reach':56/256,'act3_reach':16/256})
+        self.assertIsNone(cumulative_act_reach({'1':242,'2':13},256))
+        self.assertIsNone(cumulative_act_reach({'1':242,'unknown':14},256))
+        self.assertIsNone(cumulative_act_reach(None,256))
+
+    def test_budget_stop_is_allowlisted_and_keeps_meter_time_distinct(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self.fixture(root)
+            status=json.loads((root/'status.json').read_text())
+            status['stop']='PAUSE: 暂停新增付费工作：平台预留后仅余1.60美元。SECRET_DO_NOT_COPY'
+            status['platform_reserved_usd']=35.22
+            status['non_modal_reserved_usd']=11.70
+            status['platform_snapshot']={'gross_used_usd':5.68,'metered_observed_at':1793835186,
+                                         'observed_at':1793831000,'time_source':'verified_observation',
+                                         'token':'SECRET_DO_NOT_COPY'}
+            (root/'status.json').write_text(json.dumps(status))
+            result=export(root,root/'snapshot.json')
+            task=result['streams']['formal']['current_task']
+            self.assertIn('付费任务暂停 · 预算或费用边界触发',task)
+            self.assertIn('Modal预留$35.22／其他$11.70',task)
+            self.assertIn('毛额计量2026-11-04 23:33 UTC',task)
+            self.assertLessEqual(len(task),80)
+            self.assertEqual(result['budget']['platform_gross_observed_usd'],5.68)
+            self.assertNotIn('SECRET_DO_NOT_COPY',(root/'snapshot.json').read_text())
+            status['platform_snapshot']['time_source']='ledger_entry_only'
+            (root/'status.json').write_text(json.dumps(status))
+            result=export(root,root/'snapshot.json')
+            self.assertNotIn('毛额计量',result['streams']['formal']['current_task'])
+            status['platform_snapshot'].pop('time_source')
+            (root/'status.json').write_text(json.dumps(status))
+            result=export(root,root/'snapshot.json')
+            self.assertNotIn('毛额计量',result['streams']['formal']['current_task'])
+            status['platform_snapshot']['time_source']='unrecognized'
+            (root/'status.json').write_text(json.dumps(status))
+            result=export(root,root/'snapshot.json')
+            self.assertNotIn('毛额计量',result['streams']['formal']['current_task'])
+            status['stop']='STOP: 预算边界；SECRET_DO_NOT_COPY'
+            (root/'status.json').write_text(json.dumps(status))
+            result=export(root,root/'snapshot.json')
+            self.assertTrue(result['streams']['formal']['current_task'].startswith('已停止 · 预算或费用边界触发'))
 
     def test_sparse_stdout_history_only_real_points(self):
         with tempfile.TemporaryDirectory() as d:

@@ -59,6 +59,41 @@ def safe_text(value, allowed):
     return value if isinstance(value, str) and value in allowed else None
 
 
+def cumulative_act_reach(terminal_acts, games):
+    """A complete fresh-run terminal-act histogram implies cumulative reach."""
+    if not isinstance(terminal_acts, dict) or not terminal_acts or games is None or games < 1:
+        return None
+    counts = {}
+    for key, raw_count in terminal_acts.items():
+        if not isinstance(key, str) or key not in {"1", "2", "3", "4"}:
+            return None
+        count = integer(raw_count)
+        if count is None:
+            return None
+        counts[int(key)] = count
+    if sum(counts.values()) != games:
+        return None
+    return {f"act{act}_reach": sum(count for terminal_act, count in counts.items()
+                                 if terminal_act >= act) / games for act in (1, 2, 3)}
+
+
+def budget_halt_context(status, now):
+    """Display only allowlisted hold totals and a genuine metering observation time."""
+    parts = []
+    modal_hold = number(status.get("platform_reserved_usd"))
+    other_hold = number(status.get("non_modal_reserved_usd"))
+    if modal_hold is not None and other_hold is not None and modal_hold >= 0 and other_hold >= 0:
+        parts.append(f"Modal预留${modal_hold:.2f}／其他${other_hold:.2f}")
+    platform = status.get("platform_snapshot")
+    if isinstance(platform, dict) and platform.get("time_source") == "verified_observation":
+        observed = number(platform.get("metered_observed_at"))
+        if observed is None:
+            observed = number(platform.get("observed_at"))
+        if observed is not None and 0 < observed <= now + 300:
+            parts.append("毛额计量" + dt.datetime.fromtimestamp(observed, dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    return "；".join(parts)
+
+
 def metric_point(raw):
     if not isinstance(raw, dict):
         return None
@@ -414,9 +449,6 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
                 except (AttributeError, TypeError, ValueError):
                     raise ValueError("invalid evaluation time") from None
                 at = stamp.astimezone(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-            reached = metrics.get("act_reached")
-            if not isinstance(reached, dict):
-                raise ValueError("invalid act reached counts")
             values = {name: None for name in METRICS}
             progress = number(metrics.get("progress_mean"))
             win_rate = number(metrics.get("win_rate"))
@@ -426,13 +458,10 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
                 raise ValueError("invalid evaluation win rate")
             values["progress"] = progress
             values["win_rate"] = win_rate
-            for index in (1, 2, 3):
-                count = reached.get(str(index))
-                if count is not None:
-                    count = integer(count)
-                    if count is None or count > games:
-                        raise ValueError("invalid act reach count")
-                    values[f"act{index}_reach"] = count / games
+            # act_reached is a histogram of terminal act, not cumulative reach.
+            # The accepted capacity eval uses one full fresh run per frozen seed;
+            # only a complete histogram can be converted to reach >= act n.
+            values.update(cumulative_act_reach(metrics.get("act_reached"), games) or {})
             arms[arm]["evaluations"].append({"decisions": decisions, "at": at, "values": values})
     if manifest:
         config = read_json(Path(manifest))
@@ -496,7 +525,8 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
         if not raw:
             return None
         reason = str(raw).lower()
-        if any(word in reason for word in ("budget", "reserve", "billing", "cost", "headroom")):
+        if any(word in reason for word in ("budget", "reserve", "billing", "cost", "headroom",
+                                            "预算", "预留", "费用", "计费", "额度", "毛额")):
             return "预算或费用边界触发"
         if any(word in reason for word in ("deadline", "timeout", "time limit")):
             return "任务时限触发"
@@ -508,7 +538,16 @@ def export(root, output, manifest=None, include_engineering=True, telemetry_inpu
 
     stop_reason = halt_reason(status.get("stop"))
     pause_reason = halt_reason(status.get("analysis_pause"), paused=True)
-    halt_message = ("已停止 · " + stop_reason) if stop_reason else (("分析暂停 · " + pause_reason) if pause_reason else None)
+    if stop_reason:
+        budget_pause = (stop_reason == "预算或费用边界触发" and isinstance(status.get("stop"), str)
+                        and status["stop"].lstrip().upper().startswith("PAUSE:"))
+        halt_message = ("付费任务暂停 · " if budget_pause else "已停止 · ") + stop_reason
+    else:
+        halt_message = ("分析暂停 · " + pause_reason) if pause_reason else None
+    if halt_message and (stop_reason == "预算或费用边界触发" or pause_reason == "预算或费用边界触发"):
+        context = budget_halt_context(status, now)
+        if context and len(halt_message) + len(context) + 1 <= 80:
+            halt_message += "；" + context
     if halt_message:
         for view in (formal, engineering):
             view["status"] = "pending"
