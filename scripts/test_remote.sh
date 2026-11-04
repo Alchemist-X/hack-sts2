@@ -88,7 +88,7 @@ remote_driver() {
   local dir="$1" suites="$2"; shift 2
   local root box key ctx log img t0
   root="$(dirname "$dir")"; box="$dir/box"
-  local cpus="${TESTBOX_CPUS:-6}" mem="${TESTBOX_MEM:-24g}"
+  local cpus="${TESTBOX_CPUS:-6}" mem="${TESTBOX_MEM:-12g}"
   exec 9> "$dir/.lock"
   flock -n 9 || { echo "another test_remote run holds $dir/.lock" >&2; exit 75; }
   mkdir -p "$root/cache/uv" "$root/cache/nuget" "$root/cache/pip" "$root/cache/home" "$dir/tmp" "$root/images"
