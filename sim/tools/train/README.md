@@ -348,9 +348,9 @@ is a deck card.
   `--loop-breaker`), same protocol limits for all. Sample = one draw per decision from the softmax over the legal
   candidates (float64 inverse CDF), the play's RNG `cycles.sample_rng(--sample-seed, game key, repeat)` (batch
   independent); `--repeats R` writes `OUT/r<k>/` + `OUT/repeats.json`; `--chunk i/n` plays one slice (config.json
-  `parent_seedset`). Every game summary gets `eval_mode`, `cycles`, `cycles_rest` / `cycles_shop`, `cycle_events`
-  (decision index, room, floor, length, path) next to `loop_breaks`, `steps`, `seconds`, `stuck`; report.json the
-  totals under `cycles`.
+  `parent_seedset`). Every game summary gets `eval_mode`, `decisions`, `wall_s` (from the run's start to the game's end;
+  games run batched), `stalled`, `cycles`, `cycles_rest` / `cycles_shop`, `cycle_events` (decision index, room,
+  floor, length, path) next to `loop_breaks` and `stuck`; report.json the totals under `cycles`.
 - **`sts2train compare ARM ARM ...`**: an arm = comma-separated run directories (slices, repeat parents) of one seed
   set; per arm progress [95 % t over per-seed means], clear rate, stalls (count, phase@floor), plays with a cycle,
   cycles per play, loop-breaker plays, decisions, wall seconds, the stage funnel (`reportcard.stages`); per pair the

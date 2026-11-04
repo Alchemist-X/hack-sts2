@@ -145,8 +145,9 @@ def parse_mode(mode: str) -> tuple[str, bool]:
 
 
 def write_cycle_stats(det: CycleDetector, keys: list[str], out_dir: str | Path, mode: dict) -> dict:
-    """Add ``eval_mode`` and the cycle counts / events to every game summary and the totals (``cycles``) and
-    ``eval_mode`` to report.json; -> the totals."""
+    """Add ``eval_mode``, the per-game row aliases ``decisions`` (= ``steps``), ``wall_s`` (= ``seconds``: from the
+    evaluation's start to the game's end, games run batched) and ``stalled`` (ended ``stuck``), and the cycle counts /
+    events to every game summary, and the totals (``cycles``) and ``eval_mode`` to report.json; -> the totals."""
     out = Path(out_dir)
     per = det.slot_totals()
     stuck = 0
@@ -154,7 +155,9 @@ def write_cycle_stats(det: CycleDetector, keys: list[str], out_dir: str | Path, 
         p = out / "games" / f"{key}.summary.json"
         s = json.loads(p.read_text(encoding="utf-8"))
         c = per[i] if i < len(per) else {"cycles": 0, "cycles_rest": 0, "cycles_shop": 0, "cycle_events": []}
-        s.update(eval_mode=mode, cycles=c["cycles"], cycles_rest=c["cycles_rest"], cycles_shop=c["cycles_shop"],
+        s.update(eval_mode=mode, decisions=s.get("steps"), wall_s=s.get("seconds"),
+                 stalled=s.get("result") == "stuck", cycles=c["cycles"], cycles_rest=c["cycles_rest"],
+                 cycles_shop=c["cycles_shop"],
                  cycle_events=[{k: e[k] for k in ("step", "phase", "prompt", "act", "floor", "len", "path")}
                                for e in c["cycle_events"]])
         stuck += s.get("result") == "stuck"

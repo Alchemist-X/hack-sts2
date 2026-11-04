@@ -270,7 +270,9 @@ def test_eval_modes_write_cycles_and_sample_is_batch_independent(tmp_path, lib, 
     s = runs["s2"][key]
     assert s["eval_mode"] == {"policy": "sample", "breaker": "off", "name": "sample-off", "sample_seed": 7,
                               "repeat": 0}
-    assert {"cycles", "cycles_rest", "cycles_shop", "cycle_events", "loop_breaks"} <= set(s)
+    assert {"cycles", "cycles_rest", "cycles_shop", "cycle_events", "loop_breaks", "decisions", "wall_s",
+            "stalled"} <= set(s)
+    assert s["decisions"] == len(s["history_actions"]) and s["stalled"] == (s["result"] == "stuck")
     rep = json.loads((tmp_path / "s2" / "report.json").read_text())
     assert rep["cycles"]["games"] == 2 and rep["eval_mode"]["name"] == "sample-off"
     assert json.loads((tmp_path / "s2" / "config.json").read_text())["greedy"] is False
