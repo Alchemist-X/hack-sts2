@@ -1740,6 +1740,7 @@ def build_run_decisions(
     ]
     card_choice_ids = [strip_prefix((c.get("card") or {}).get("id"), "CARD.") for c in offered_groups]
     pending_choice: dict[str, Any] | None = None
+    backed_out: list[int] = []
     items = [a for a in actions if _kind(a) not in FOLLOW_UP_KINDS and a.status != "cancelled"]
     position = 0
     while position < len(items):
@@ -1847,6 +1848,14 @@ def build_run_decisions(
             if not (isinstance(state, Mapping) and state.get("state_type") == "card_reward"):
                 reasons.append("recorder_gap:card_reward_offer")
             emit({"type": "card_reward_skip", "index": index, "card_id": None}, "card_reward", oracle_extra={"offered": card_choice_ids or None})
+        elif kind == "player_choice" and nxt is not None and _kind(nxt) in ("rest_site_option", "shop_card_removal") and _picked_nothing(params):
+            # A deck selection backed out of (nothing picked) completes no option: SMITH returns false without a card
+            # (Entities.RestSite/SmithRestSiteOption.cs:263-266), the synchronizer then records no choice
+            # (Multiplayer.Game/RestSiteSynchronizer.cs:640-647) and the recorder logs only successful options and
+            # purchases (mod/src/HumanFunnels.cs OnRestSiteOptionChosen). The next opener is another, completed option
+            # (human EC039PTFQWV5 f12, PLRUV49CRFQW f12: SMITH backed out, then HEAL); the game state did not change.
+            backed_out.append(action.seq)
+            continue
         elif kind == "player_choice" and nxt is not None and _kind(nxt) in ("rest_site_option", "shop_card_removal"):
             pending_choice = {"action": action, "state": state}
             continue
@@ -1858,6 +1867,9 @@ def build_run_decisions(
             if select_screen != "select":
                 out[-1]["oracle"]["select_state"] = select_screen
         elif kind in ("rest_site_option", "shop_card_removal"):
+            if backed_out:
+                oracle["backed_out_selection_seqs"] = list(backed_out)
+                backed_out.clear()
             if pending_choice is not None and isinstance(pending_choice["state"], Mapping):
                 # The opener is recorded after its deck choice resolved (MerchantCardRemovalEntry.OnTryPurchaseWrapper
                 # pays first, so its own pre_state is post-payment); the state before the choice is the opener's
@@ -1950,6 +1962,15 @@ def build_run_decisions(
     if pending_choice is not None:
         reasons.append("choice_without_opener")
     return decisions, list(dict.fromkeys(reasons)), screens
+
+
+def _picked_nothing(params: Mapping[str, Any]) -> bool:
+    """A player choice that selected nothing (a cancelled or empty selection), as build_choose reads it."""
+    if params.get("choice_type") == "Index":
+        indexes = [i for i in params.get("indexes") or () if isinstance(i, int) and i >= 0]
+        index = params.get("index")
+        return not indexes and not (isinstance(index, int) and index >= 0)
+    return not [c for c in params.get("cards") or () if c is not None]
 
 
 def card_reward_closed_by_skip(action: ActionRecord, later: Sequence[ActionRecord]) -> ActionRecord | None:

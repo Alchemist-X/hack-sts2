@@ -27,6 +27,7 @@ from sts2rec.diff_export_v2 import (
     _event_option_index,
     _shop_slot,
     LineageContext,
+    build_run_decisions,
     card_reward_closed_by_skip,
     deck_edit_positions,
     export_bundles_v2,
@@ -598,4 +599,27 @@ def test_ambiguous_deck_picks_are_resolved_from_the_saves_around_the_room(tmp_pa
                             "decisions": [{"oracle": {"action_seq": 1549}, "action": {"type": "shop_buy"}}]})
     resolve_deck_picks_from_saves(ctx)
     assert other["deck_index"] is None
+
+
+def test_a_backed_out_deck_selection_is_not_paired_with_the_next_option(tmp_path: Path) -> None:
+    # Human EC039PTFQWV5 f12: SMITH opened, the deck select closed with nothing picked (SmithRestSiteOption.cs:263-266 returns
+    # false, no rest_site_option is logged), then HEAL. The empty choice must not become HEAL's deck choice.
+    part = tmp_path / "1793384475-EC039PTFQWV5-part3"
+    ctx = LineageContext(lineage="L", parts=[PartStreams(path=part, manifest=None)], raw_manifests=[], vocabulary=None, registry=None,  # type: ignore[arg-type]
+                         options=None, character="SILENT", ascension=7, game_version="v0.111.0")  # type: ignore[arg-type]
+    room = EventRecord(seq=700, t=0.0, entry="room_entered", data={"room_type": "RestSite", "room_model_id": None, "act": 0, "floor": 12})
+    rest = StateRecord(seq=708, t=0.0, trigger="action", screen="rest_site", hash="",
+                       state={"state_type": "rest_site", "rest_site": {"options": [{"index": 0, "id": "HEAL", "is_enabled": True}, {"index": 1, "id": "SMITH", "is_enabled": True}]}, "player": player_block()})
+    cancel = _act(709, "player_choice", 708, choice_type="DeckCard", cards=[], picked=False)
+    heal = _act(710, "rest_site_option", 708, option_id="HEAL")
+    window = RoomWindow(part_index=0, room=room, end_seq=None, states=[rest], actions=[cancel, heal], events=[])
+    decisions, reasons, _ = build_run_decisions(ctx, window, [cancel, heal], phase=None, summary=None)
+    assert [d["action"] for d in decisions] == [{"type": "rest_option", "option_id": "HEAL"}]
+    assert decisions[0]["oracle"]["backed_out_selection_seqs"] == [709]
+    assert "choice_without_opener" not in reasons
+    # A real deck choice still pairs with its opener.
+    smith = _act(711, "player_choice", 708, choice_type="DeckCard", cards=["CARD.STRIKE_SILENT"], picked=True)
+    opener = _act(712, "rest_site_option", 708, option_id="SMITH")
+    decisions, _, _ = build_run_decisions(ctx, window, [smith, opener], phase=None, summary=None)
+    assert [d["action"]["type"] for d in decisions] == ["rest_option", "choose"]
 
