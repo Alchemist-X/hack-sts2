@@ -24,6 +24,8 @@ FROZEN = {  # protocol v0.2 (docs/sts2-bench-protocol-v0.2-2026-11-01.md): never
     "std-a0-v1": ("a0-s20", "22bb774255260efb9fbab6dea0df41d26de9d3da49364f37f3fab88bf0d81e01"),
     "std-a10-v1": ("a10-s20", "f072b6dd171cc16da26a053b01a0ec87b7a28028542ca44cfd6108e68bcbee16"),
     "smoke-a0-v1": ("a0-s10", "ef6f0ac92552406ad00cf9a9cb8c15d290a5e255cf1870ff6b458422ad570ebb"),
+    "silent-a0-v1": ("silent-a0-s20", "1c0bf087e2b28e986484b412b64c705706996f79dac261de3d80abc8e7c15206"),
+    "silent-a10-v1": ("silent-a10-s20", "e82165b0a2e86c5700d87eba86b17c4b8e657393d4fb6c4498b661983d322199"),
 }
 
 
@@ -48,6 +50,24 @@ def test_checksum_guards_frozen_content(tmp_path):
     with pytest.raises(S.SeedSetError, match="sha256"):
         S.load(str(p))
     assert not S.identity({k: d[k] for k in ("name", "ascension", "content", "games")})["seedset_frozen"]
+
+
+# Single-character target sets (role "target"; Silent A10 training cycle, 2026-11-03). Not official: leaderboard
+# rows use std-*, rows on these are labelled. Seeds are a fixed prefix + 01..20, disjoint from std/smoke so the
+# official sets stay held out from target-set model selection; ascension/content/protocol equal the std counterpart.
+SILENT_TARGET = {"silent-a0-v1": ("std-a0-v1", "C1A0SI"), "silent-a10-v1": ("std-a10-v1", "C1A10SI")}
+
+
+@pytest.mark.parametrize("sid", sorted(SILENT_TARGET))
+def test_silent_target_seedsets(sid):
+    std_id, prefix = SILENT_TARGET[sid]
+    d, std = S.load(sid), S.load(std_id)
+    assert d["role"] == "target" and std["role"] == "official"
+    assert (d["ascension"], d["content"], d["protocol"]) == (std["ascension"], std["content"], std["protocol"])
+    assert d["games"] == [{"seed": f"{prefix}{i:02d}", "character": "SILENT"} for i in range(1, 21)]
+    official = {(g["character"], g["seed"])
+                for x in ("std-a0-v1", "std-a10-v1", "smoke-a0-v1") for g in S.load(x)["games"]}
+    assert not official & {(g["character"], g["seed"]) for g in d["games"]}
 
 
 def test_a0_s20_extends_a0_s10():

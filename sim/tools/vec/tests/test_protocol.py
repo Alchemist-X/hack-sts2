@@ -64,7 +64,7 @@ def test_compute_values(result, act, floor, asc, expected):
 
 
 @pytest.mark.parametrize("name,asc,n", [("std-a0-v1", 0, 20), ("std-a10-v1", 10, 20), ("smoke-a0-v1", 0, 10),
-                                         ("a0-s20", 0, 20)])
+                                         ("a0-s20", 0, 20), ("silent-a0-v1", 0, 20), ("silent-a10-v1", 10, 20)])
 def test_committed_seedsets_load(name, asc, n):
     ss = PG.load_seedset(name)
     assert ss["ascension"] == asc and len(ss["games"]) == n
