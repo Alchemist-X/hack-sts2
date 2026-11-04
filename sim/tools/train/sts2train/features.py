@@ -7,10 +7,14 @@ Tables are always indexed by the schema's field names (never hard-coded offsets)
 `check_spec_compat` decides whether a checkpoint's spec can drive this library (``--resume``, ``sts2train eval``): the
 model's inputs must be identical, while ``encoder_version`` and anything the model does not read may differ (a schema
 append such as fc2eb34c07bc8513 -> 5dbfa09dd9dcb5ed adds buffers and enum members but leaves the 27 inputs unchanged).
+One model-input change is accepted as well: an embedded enum that gained members appended at its end ("widened", e.g.
+RunActionKind 21 -> 23 with the rewards-screen macros of e9baaefc39811631). Every old value keeps its meaning, so the
+checkpoint's embedding rows are kept and the new members' rows start at zero (``model.widen_state_dict``).
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 
 import numpy as np
@@ -39,7 +43,9 @@ class ModelSpec:
     encoder_version: str
     vocab: dict[str, int]                     # list name -> size (cards, relics, potions, ...)
     enums: dict[str, int]                     # enum name -> size
-    enum_names: dict[str, list[str]]          # RunActionKind / PromptItemKind names (pointer wiring)
+    enum_names: dict[str, list[str]]          # member names of the embedded enums (ENUMS): pointer wiring
+                                              # (RunActionKind / PromptItemKind) and widening checks; specs written
+                                              # before 2026-11-04 hold RunActionKind / PromptItemKind / RewardType only
     cols: dict[str, dict[str, int]]           # buffer -> field -> column
     shapes: dict[str, list[int]]              # buffer -> per-env shape
     card_vars: int
@@ -49,8 +55,7 @@ class ModelSpec:
     def from_schema(cls, schema) -> "ModelSpec":
         vocab = {k: len(v) for k, v in schema.vocab.lists.items()}
         enums = {k: len(v) for k, v in schema.vocab.enums.items()}
-        names = {k: [schema.vocab.enums[k].name(i) for i in range(len(schema.vocab.enums[k]))]
-                 for k in ("RunActionKind", "PromptItemKind", "RewardType")}
+        names = {k: [schema.vocab.enums[k].name(i) for i in range(len(schema.vocab.enums[k]))] for k in ENUMS}
         cols, shapes = {}, {}
         for name in USED_BUFFERS + ("aux", "last_episode"):
             b = schema[name]
@@ -80,20 +85,45 @@ def _cols_delta(old: dict | None, new: dict | None) -> str:
     return ", ".join(parts[:8]) + (f" (+{len(parts) - 8} more)" if len(parts) > 8 else "")
 
 
-def spec_diff(old: "ModelSpec | dict", new: "ModelSpec | dict") -> tuple[list[str], list[str]]:
-    """(model-input differences, other differences) between a checkpoint's spec `old` and the library's `new`.
+def _widening(o_size, n_size, o_names, n_names) -> dict | None:
+    """{"from", "to", "added"} when an embedded enum grew only by members appended at its end, else None. Verified by
+    member names: both specs must record them (`ModelSpec.enum_names`) and the checkpoint's must be the library's
+    first members, so an inserted, renamed or reordered member (every later value shifts) is never taken for one."""
+    if not (isinstance(o_size, int) and isinstance(n_size, int) and 0 < o_size < n_size):
+        return None
+    if o_names is None or n_names is None or len(o_names) != o_size or len(n_names) != n_size:
+        return None
+    if list(n_names[:o_size]) != list(o_names):
+        return None
+    return {"from": o_size, "to": n_size, "added": list(n_names[o_size:])}
+
+
+def describe_widened(widened: dict) -> str:
+    """'RunActionKind 21 -> 23 (+TakeRewardCard, +TakeRewardAlternative)' for each widened enum, '; '-joined."""
+    return "; ".join(f"{k} {w['from']} -> {w['to']} (" + ", ".join(f"+{x}" for x in w["added"]) + ")"
+                     for k, w in sorted(widened.items()))
+
+
+def spec_diff(old: "ModelSpec | dict", new: "ModelSpec | dict") -> tuple[list[str], dict[str, dict], list[str]]:
+    """(model-input differences, widened enums, other differences) between a checkpoint's spec `old` and the
+    library's `new`.
 
     Model inputs (what the weights, the column lookups and the pointer wiring depend on; compared exactly): shape and
     column map of every buffer in USED_BUFFERS, the size of every vocabulary list the model embeds (MODEL_VOCABS) and
-    of every enum it embeds (ENUMS), the member names recorded in `enum_names` (RunActionKind / PromptItemKind pointer
-    wiring, RewardType), `card_vars`. Anything else may differ and is only reported: `encoder_version` (it changes with
-    every schema edit; appended buffers are not part of a spec at all), other enums (EndKind, ItemKind, ...) and
-    vocabulary lists, and the aux / last_episode blocks (the trainer reads those by field name from the live schema,
-    never through the checkpoint)."""
+    of every enum it embeds (ENUMS), the member names recorded in `enum_names`, `card_vars`. The one exception is an
+    embedded enum that only gained members appended at its end, checked by member names (`_widening`): it is listed
+    in `widened` ({enum: {"from", "to", "added"}}), not as a difference, because the checkpoint can drive the library
+    once that enum's embedding tables are widened (old rows kept, new rows zero: `model.widen_state_dict`). Shrunk,
+    reordered or renamed members, and growth of an enum whose member names the checkpoint does not record, stay
+    model-input differences. Anything else may differ and is only reported: `encoder_version` (it changes with every
+    schema edit; appended buffers are not part of a spec at all), other enums (EndKind, ItemKind, ...) and vocabulary
+    lists, and the aux / last_episode blocks (the trainer reads those by field name from the live schema, never
+    through the checkpoint)."""
     o = old.to_json() if isinstance(old, ModelSpec) else dict(old)
     n = new.to_json() if isinstance(new, ModelSpec) else dict(new)
     block: list[str] = []
     other: list[str] = []
+    widened: dict[str, dict] = {}
     if o.get("encoder_version") != n.get("encoder_version"):
         other.append(f"encoder_version {o.get('encoder_version')} -> {n.get('encoder_version')}")
     oshp, nshp, ocol, ncol = o.get("shapes", {}), n.get("shapes", {}), o.get("cols", {}), n.get("cols", {})
@@ -115,31 +145,40 @@ def spec_diff(old: "ModelSpec | dict", new: "ModelSpec | dict") -> tuple[list[st
         else:
             other.append(txt + " (not read by the model)")
     oe, ne = o.get("enums", {}), n.get("enums", {})
+    on, nn_ = o.get("enum_names", {}), n.get("enum_names", {})
     for k in sorted(set(oe) | set(ne)):
         if oe.get(k) == ne.get(k):
             continue
         txt = f"enum {k}: {oe.get(k, 'absent')} -> {ne.get(k, 'absent')}"
-        if k in ENUMS:
-            block.append(txt)
-        else:
+        if k not in ENUMS:
             other.append(txt + " (not read by the model)")
-    on, nn_ = o.get("enum_names", {}), n.get("enum_names", {})
+            continue
+        w = _widening(oe.get(k), ne.get(k), on.get(k), nn_.get(k))
+        if w is not None:
+            widened[k] = w
+        elif isinstance(oe.get(k), int) and isinstance(ne.get(k), int) and oe[k] < ne[k] and k not in on:
+            block.append(txt + " (the checkpoint records no member names, so appended members cannot be told from "
+                               "inserted ones)")
+        else:
+            block.append(txt)
     for k in sorted(set(on) | set(nn_)):
-        if k in on and on.get(k) != nn_.get(k):
+        if k in on and k not in widened and on.get(k) != nn_.get(k):
             a, b = on.get(k) or [], nn_.get(k) or []
             moved = [x for x in a if x in b and a.index(x) != b.index(x)]
             block.append(f"enum {k} members: -{[x for x in a if x not in b]} +{[x for x in b if x not in a]}"
                          + (f" moved {moved[:6]}" if moved else ""))
     if o.get("card_vars") != n.get("card_vars"):
         block.append(f"card_vars {o.get('card_vars')} -> {n.get('card_vars')}")
-    return block, other
+    return block, widened, other
 
 
 def check_spec_compat(old: "ModelSpec | dict", new: "ModelSpec | dict", *, what: str = "resume") -> dict:
-    """Accept a checkpoint spec `old` for the library spec `new` when the model's inputs are identical
+    """Accept a checkpoint spec `old` for the library spec `new` when the model's inputs are identical or only widened
     (`spec_diff`), else raise `SpecMismatch` listing every difference. Returns the record kept in config.json:
-    ``{"checkpoint_encoder_version", "library_encoder_version", "model_inputs": "identical", "other_differences"}``."""
-    block, other = spec_diff(old, new)
+    ``{"checkpoint_encoder_version", "library_encoder_version", "model_inputs": "identical" | "widened",
+    "widened_enums": {enum: {"from", "to", "added"}}, "other_differences"}``; with "widened" the model is built from
+    `widen_spec(old, new, ...)` (= the library's sizes) and loads the checkpoint through `model.widen_state_dict`."""
+    block, widened, other = spec_diff(old, new)
     o = old.to_json() if isinstance(old, ModelSpec) else old
     n = new.to_json() if isinstance(new, ModelSpec) else new
     ov, nv = o.get("encoder_version"), n.get("encoder_version")
@@ -149,10 +188,24 @@ def check_spec_compat(old: "ModelSpec | dict", new: "ModelSpec | dict", *, what:
         raise SpecMismatch(
             f"cannot {what}: the checkpoint's model inputs differ from this library's (checkpoint encoder_version "
             f"{ov}, library {nv}):\n  - " + "\n  - ".join(block)
-            + "\nOnly an encoder_version change and changes outside the model's inputs (appended buffers, enums the "
-            f"model does not embed, aux / last_episode columns) are accepted; {hint}.")
-    return {"checkpoint_encoder_version": ov, "library_encoder_version": nv, "model_inputs": "identical",
+            + "\nOnly an encoder_version change, embedded enums that gained members at their end (widened: the "
+            "checkpoint's embedding rows are kept, the new rows start at zero) and changes outside the model's inputs "
+            f"(appended buffers, enums the model does not embed, aux / last_episode columns) are accepted; {hint}.")
+    return {"checkpoint_encoder_version": ov, "library_encoder_version": nv,
+            "model_inputs": "widened" if widened else "identical", "widened_enums": widened,
             "other_differences": other}
+
+
+def widen_spec(old: "ModelSpec | dict", new: "ModelSpec | dict", widened: dict) -> ModelSpec:
+    """The checkpoint spec `old` with the sizes and member names of the `widened` enums taken from `new` (everything
+    else, encoder_version included, stays the checkpoint's): the spec of the model that runs a widened checkpoint on
+    `new`. Its model inputs equal `new`'s (`spec_diff` reports only differences outside them)."""
+    d = copy.deepcopy(old.to_json() if isinstance(old, ModelSpec) else dict(old))
+    n = new.to_json() if isinstance(new, ModelSpec) else new
+    for k in widened:
+        d["enums"][k] = n["enums"][k]
+        d.setdefault("enum_names", {})[k] = list(n["enum_names"][k])
+    return ModelSpec.from_json(d)
 
 
 TORCH_DTYPES = {np.dtype(np.int8): torch.int8, np.dtype(np.int16): torch.int16, np.dtype(np.int32): torch.int32,

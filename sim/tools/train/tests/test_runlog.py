@@ -191,12 +191,12 @@ def test_local_size_guard():
     cpu, mps, cuda = torch.device("cpu"), torch.device("mps"), torch.device("cuda")
     large = resolve_config({"preset": "large", "minibatch": 4096})
     with pytest.raises(BigLocalRunError, match=r"29\.6 GiB"):
-        check_local_size(large, 15_804_270, 7.39 * 2 ** 20, mps)
+        check_local_size(large, 15_805_070, 7.39 * 2 ** 20, mps)
     with pytest.raises(BigLocalRunError, match="--allow-big-local"):
         check_local_size(resolve_config({"d": 256, "depth": 4}), LOCAL_PARAM_LIMIT + 1, 2 ** 20, cpu)
-    check_local_size(large, 15_804_270, 7.39 * 2 ** 20, cuda)
-    check_local_size(resolve_config({"preset": "large", "allow_big_local": True}), 15_804_270, 1.0, cpu)
-    check_local_size(resolve_config({"preset": "small"}), 1_175_150, 1.2 * 2 ** 20, mps)
+    check_local_size(large, 15_805_070, 7.39 * 2 ** 20, cuda)
+    check_local_size(resolve_config({"preset": "large", "allow_big_local": True}), 15_805_070, 1.0, cpu)
+    check_local_size(resolve_config({"preset": "small"}), 1_175_438, 1.2 * 2 ** 20, mps)
     # the override is never inherited from a checkpoint's config
     assert resolve_config({}, {"allow_big_local": True, "preset": "large"}).allow_big_local is False
 

@@ -8,8 +8,10 @@ audit — is ``sts2vec.evaluate.evaluate``. ``sts2eval report DIR`` re-renders t
 
 ``evaluate_model`` is what the trainer calls in-process every ``eval_every`` updates (the live model, no reload);
 ``evaluate`` loads a checkpoint first (``sts2train eval``). A model whose spec differs from the library's is evaluated
-only when the model's inputs are identical (``features.check_spec_compat``, the rule ``--resume`` uses); the run
-directory's config.json records the checkpoint's encoder_version next to the library's.
+only when the model's inputs are identical or widened (``features.check_spec_compat``, the rule ``--resume`` uses: a
+checkpoint whose embedded enums gained members at their end runs with those tables widened, the new rows zero); the
+run directory's config.json records the checkpoint's encoder_version next to the library's, and ``spec_compat`` when
+the specs differ.
 
 A model with aux heads (``--aux-heads``, ``sts2train.heads``) also reads them out at every decision: each game's
 ``games/<KEY>.summary.json`` gets ``win_prob`` (P(win) under the policy, one value per entry of ``history_actions``)
@@ -27,7 +29,7 @@ import torch
 from sts2vec.evaluate import FLOOR_STEP_CAP, STEP_CAP, replay  # noqa: F401  (re-exported)
 from sts2vec.evaluate import evaluate as vec_evaluate
 
-from .features import ModelSpec, bind_spec, check_spec_compat, obs_to_torch
+from .features import ModelSpec, bind_spec, check_spec_compat, describe_widened, obs_to_torch
 
 
 def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None):
@@ -91,18 +93,26 @@ class HeadLog:
 
 def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str, checkpoint: str | None = None,
                    threads: int = 8, device: str = "cpu", step_cap: int = STEP_CAP,
-                   floor_step_cap: int = FLOOR_STEP_CAP, log=print) -> dict:
+                   floor_step_cap: int = FLOOR_STEP_CAP, spec_compat: dict | None = None, log=print) -> dict:
     """Play `seedset` greedily with `model` and write the protocol run directory `out_dir`; returns the report.
 
-    Raises `features.SpecMismatch` (before any game is played) when `spec` differs from the library's in the model's
-    inputs; an encoder_version change outside them is accepted and noted."""
+    Raises `features.SpecMismatch` (before any game is played) when `spec` (the model's) differs from the library's in
+    the model's inputs; an encoder_version change outside them is accepted and noted. `spec_compat` = the record of a
+    checkpoint loaded with `load_checkpoint(..., library=...)` (a widened model's `spec` already has the library's
+    sizes; the record says which enums were widened): it is logged and kept in config.json instead of this check's."""
     from sts2vec import load, schema_of
 
     compat = check_spec_compat(spec, ModelSpec.from_schema(schema_of(load())), what="evaluate")
-    if compat["other_differences"]:
+    if spec_compat is not None:
+        compat = spec_compat
+    if compat["other_differences"] or compat.get("widened_enums"):
+        inputs = "identical"
+        if compat.get("widened_enums"):
+            inputs = (f"identical except for widened enums: {describe_widened(compat['widened_enums'])} (new rows "
+                      "zero)")
         log(f"note: checkpoint encoder_version {compat['checkpoint_encoder_version']}, library "
-            f"{compat['library_encoder_version']}: the model's inputs are identical (other differences: "
-            f"{'; '.join(compat['other_differences'])})")
+            f"{compat['library_encoder_version']}: the model's inputs are {inputs} (other differences: "
+            f"{'; '.join(compat['other_differences']) or 'none'})")
     bind_spec(spec)
     was_training = model.training
     model.eval()
@@ -119,7 +129,9 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
             config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
                           "arch": getattr(model, "arch", None), "device": str(device), "greedy": True,
-                          "checkpoint_encoder_version": spec.encoder_version, **extra})
+                          "checkpoint_encoder_version": spec.encoder_version, **extra,
+                          **({"spec_compat": compat} if compat["other_differences"] or compat.get("widened_enums")
+                             else {})})
         if heads is not None:
             rep["head_readout"] = heads.write(out_dir)
             r = rep["head_readout"]
@@ -132,9 +144,14 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
 
 def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, device: str = "cpu",
              step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, log=print) -> dict:
+    """`sts2train eval`: load `checkpoint` for the library sts2vec loads (`load_checkpoint(library=...)`: refused with
+    `SpecMismatch` before any game, widened when its embedded enums only gained members) and evaluate it. The weights
+    hash is the checkpoint's (a widened model adds only zero rows)."""
+    from sts2vec import load, schema_of
+
     from .ppo import load_checkpoint
 
-    model, spec, ck = load_checkpoint(checkpoint, device)
+    model, spec, ck = load_checkpoint(checkpoint, device, library=ModelSpec.from_schema(schema_of(load())))
     return evaluate_model(model, spec, seedset, out_dir, weights_hash=ck.get("weights_hash") or "?",
                           checkpoint=checkpoint, threads=threads, device=device, step_cap=step_cap,
-                          floor_step_cap=floor_step_cap, log=log)
+                          floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"), log=log)

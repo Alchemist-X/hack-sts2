@@ -7,7 +7,7 @@ scored against the state embedding; logits over cand_n with masking. Value head 
 
 Size knobs: ``d`` (d_model: width of every row encoder, the trunk and the candidate scorer), ``s`` (state width),
 ``depth`` / ``heads`` / ``ff_mult`` (trunk). ``depth = 0`` is the original smoke model (the 17 pooled tables are
-concatenated into the state MLP; 948,750 parameters at d = 96, s = 256). ``depth > 0`` adds a pre-LayerNorm transformer
+concatenated into the state MLP; 948,974 parameters at d = 96, s = 256). ``depth > 0`` adds a pre-LayerNorm transformer
 trunk over 17 table tokens (the pooled tables, typed) plus one token per hand card, enemy and potion row (typed and
 slot-indexed, padding masked): the state is read from the global token and the mean of all live tokens, and the
 contextualised hand / enemy / potion rows feed the candidate pointers. ``PRESETS`` names the standard sizes.
@@ -36,7 +36,9 @@ HASH_BUCKETS = 1021
 N_TABLES = 17
 
 # Architecture presets (d_model, state width, trunk depth / heads / FFN multiplier) -> parameter count on the
-# fc2eb34c07bc8513 schema: smoke 948,750 (the 2026-11-02 smoke model), small 1,175,150, large 15,804,270.
+# 3b73317739c650bd schema (RunActionKind with the two rewards-screen macro kinds, 23 members): smoke 948,974 (the
+# 2026-11-02 smoke model), small 1,175,438, large 15,805,070; with 21 kinds (fc2eb34c07bc8513 / 5dbfa09dd9dcb5ed)
+# 948,750 / 1,175,150 / 15,804,270.
 PRESETS = {
     "smoke": {"d": 96, "s": 256, "depth": 0, "heads": 4, "ff_mult": 4},
     "small": {"d": 128, "s": 256, "depth": 2, "heads": 4, "ff_mult": 4},
@@ -50,6 +52,17 @@ ARCH_DEFAULTS = PRESETS["smoke"]
 MODEL_FLAGS = ("aux_heads", "deck_counts")
 DECK_STATS = 7      # deck_counts: size / distinct / upgraded / enchanted / afflicted counts of the deck (_deck_stats)
 PILE_STATS = 6      # deck_counts: distinct ids and upgraded copies of each combat pile (_piles)
+# Embedding tables sized by an enum the model embeds (features.ENUMS) -> their modules in `Policy`. A checkpoint whose
+# enum gained members appended at its end ("widened", features.check_spec_compat) keeps its rows in these tables and
+# the new members' rows start at zero (`widen_state_dict`). tests/test_resume_compat.py checks that growing an enum
+# resizes exactly these tables (a new enum-sized parameter must be listed here, or widening refuses to load).
+ENUM_EMBEDDINGS = {
+    "RunPhase": ("phase_emb",), "RunActionKind": ("kind_emb", "c_kind"), "IntentType": ("intent_emb",),
+    "MapPointType": ("point_emb",), "RewardType": ("reward_type_emb",), "ChoicePromptKind": ("prompt_kind_emb",),
+    "CardType": ("ctype_emb",), "TargetType": ("target_emb",), "CardRarity": ("rarity_emb",),
+    "RestOption": ("rest_emb",), "CardRewardAlt": ("alt_emb",), "ShopCategory": ("shop_cat_emb",),
+    "PileType": ("pile_emb",), "RelicStatus": ("relic_status_emb",), "PromptItemKind": ("pitem_emb",),
+}
 # (buffer key, table, columns) read together (`Policy._cols`).
 COL_GROUPS = (
     ("relic_num", "relics", ("counter", "used_up", "stack")),
@@ -613,6 +626,28 @@ class Policy(nn.Module):
 
 def param_count(m: nn.Module) -> int:
     return sum(p.numel() for p in m.parameters())
+
+
+def widened_tensors(widened) -> list[str]:
+    """state_dict keys of the embedding tables of the `widened` enums (names, taken in sorted order)."""
+    return [f"{m}.weight" for k in sorted(widened) for m in ENUM_EMBEDDINGS[k]]
+
+
+def widen_state_dict(state: dict, model: nn.Module, widened) -> dict:
+    """A checkpoint's model `state` for `model`, whose embedded enums `widened` (names; features.check_spec_compat
+    "widened") gained members at their end: each of their embedding tables keeps the checkpoint's rows and gets zero
+    rows for the new members. Every other tensor is passed through unchanged, so a strict load_state_dict still fails
+    on any other shape difference."""
+    out = dict(state)
+    want = model.state_dict()
+    for key in widened_tensors(widened):
+        old, new = state[key], want[key]
+        if old.dim() != 2 or old.shape[1] != new.shape[1] or old.shape[0] > new.shape[0]:
+            raise ValueError(f"{key}: the checkpoint's {tuple(old.shape)} table cannot widen to {tuple(new.shape)}")
+        w = old.new_zeros(new.shape)
+        w[: old.shape[0]] = old
+        out[key] = w
+    return out
 
 
 FLOAT_BUFFERS = ("global_f", "hand_f", "hand_dmg")

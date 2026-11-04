@@ -42,7 +42,7 @@ uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve
 | `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags") |
 | `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
-| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save) |
+| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save) |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
 
@@ -54,17 +54,23 @@ into a directory that already holds checkpoints is refused.
 
 Resume across library versions: a checkpoint resumes on a library with another `encoder_version` when the model's
 inputs are identical (`features.check_spec_compat`): shape and column map of each of the 27 buffers it reads, the sizes
-of the vocabularies and enums it embeds, the RunActionKind / PromptItemKind / RewardType members, `card_vars`. Appended
-buffers, enums the model does not embed (EndKind, ItemKind) and the aux / last_episode columns (read by name from the
-live schema) may differ; the differences are logged and kept in `config.json` (`resume_compat`), and the next
-checkpoint carries the new spec. Anything else is refused before the env is built (exit 2, every difference listed,
-the run directory untouched). So the Stage-1 checkpoints of `fc2eb34c07bc8513` resumed on `5dbfa09dd9dcb5ed` (the
-schema append only added buffers and enum members). The rewards-screen macros (`e9baaefc39811631`, 2026-11-04,
-`sim/VEC.md` "Rewards-screen macros") added two `RunActionKind` members (`TakeRewardCard`, `TakeRewardAlternative`), a
-model input, so checkpoints of earlier libraries no longer resume on later ones; `tests/test_resume_compat.py` pins
-that refusal with the Stage-1 spec and tests resuming across versions with a synthetic older spec. The model does not
-read the appended `reward_choices` yet: a macro row reaches it through its kind, A/B and `card_id`.
-`sts2train eval` applies the same rule to a checkpoint.
+of the vocabularies and enums it embeds, those enums' members (recorded by name), `card_vars`. Appended buffers, enums
+the model does not embed (EndKind, ItemKind) and the aux / last_episode columns (read by name from the live schema) may
+differ; the differences are logged and kept in `config.json` (`resume_compat`), and the next checkpoint carries the
+new spec. One change of the inputs is accepted as well: an embedded enum that gained members appended at its end,
+verified by member names (`resume_compat.model_inputs` = `widened`, `widened_enums` = {enum: from, to, added}). The
+model is built with the library's sizes; that enum's embedding tables (`model.ENUM_EMBEDDINGS`) keep the checkpoint's
+rows, the new members' rows and their Adam moments start at zero, so every candidate of a kind the checkpoint knew is
+scored exactly as before. Anything else is refused before the env is built (exit 2, every difference listed, the run
+directory untouched): a vocabulary of another size, an enum that shrank, was reordered or had a member inserted, or
+grew without member names to check (specs written before 2026-11-04 name only the RunActionKind / PromptItemKind /
+RewardType members). So the Stage-1 checkpoints of `fc2eb34c07bc8513` resumed on `5dbfa09dd9dcb5ed` (that append only
+added buffers and enum members the model does not embed), and the checkpoints of both resume on `3b73317739c650bd` by
+widening `RunActionKind` 21 -> 23: the rewards-screen macros (`e9baaefc39811631` onward, `sim/VEC.md` "Rewards-screen
+macros") appended `TakeRewardCard` / `TakeRewardAlternative`. `tests/test_resume_compat.py` pins both real specs.
+The model does not read the appended `reward_choices` yet: a macro row reaches it through its kind (a zero embedding
+in a widened checkpoint until trained), A/B and `card_id`. `sts2train eval` applies the same rule to a checkpoint
+(the eval's `config.json` records `spec_compat` when the specs differ).
 
 ## Model sizes (`--preset`, or `--d-model --state-dim --depth --heads --ff-mult`)
 
@@ -91,8 +97,8 @@ defaults `PYTORCH_MPS_HIGH_WATERMARK_RATIO` to 0.3 (and the low watermark below 
 `depth > 0` adds a pre-LayerNorm transformer trunk (`F.scaled_dot_product_attention`, key padding mask) over 17
 typed table tokens plus one token per hand card, enemy and potion row; the state is read from the global token and the
 mean of the live tokens, and the contextualised hand / enemy / potion rows feed the candidate pointers. Counts are on
-the `e9baaefc39811631` schema (two more `RunActionKind` members than `fc2eb34c07bc8513` / `5dbfa09dd9dcb5ed`, whose
-counts were 948,750 / 1,175,150 / 15,804,270); every size, vocabulary and column index is
+the `3b73317739c650bd` schema (since `e9baaefc39811631` two more `RunActionKind` members than `fc2eb34c07bc8513` /
+`5dbfa09dd9dcb5ed`, whose counts were 948,750 / 1,175,150 / 15,804,270); every size, vocabulary and column index is
 read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
 buffers are ignored).
 

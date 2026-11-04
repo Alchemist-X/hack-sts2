@@ -26,10 +26,13 @@ The model reads every shape, vocabulary size and column index from the env's pub
 ``encoder_version``) trains unchanged. ``--resume`` accepts a checkpoint whose spec differs from the library's only
 outside the model's inputs (``features.check_spec_compat``: the 27 input buffers' shapes and column maps, the vocabulary
 and embedded-enum sizes, the pointer enums' members and card_vars must be identical; encoder_version, appended buffers
-and enums the model does not embed may differ) and refuses any other checkpoint before the env is built; config.json
-records both encoder versions. ``floor_step_cap`` is passed to ``VecEnv`` only when set, and only if this sts2vec's
-``VecEnv`` accepts it (unset = the env's default: 80 with a library that implements the cap); the cap in effect is
-recorded in config.json (``env.floor_step_cap``) and FLOOR_STALL truncations are counted per update.
+and enums the model does not embed may differ) or, among the inputs, only by embedded enums that gained members at
+their end ("widened": their embedding tables keep the checkpoint's rows, the new rows and their Adam moments start at
+zero), and refuses any other checkpoint before the env is built; config.json records both encoder versions and the
+compat record (``resume_compat.model_inputs`` identical / widened, ``widened_enums``). ``floor_step_cap`` is passed to
+``VecEnv`` only when set, and only if this sts2vec's ``VecEnv`` accepts it (unset = the env's default: 80 with a
+library that implements the cap); the cap in effect is recorded in config.json (``env.floor_step_cap``) and
+FLOOR_STALL truncations are counted per update.
 
 Speed (``sts2train bench-update`` measures it): the update and the rollout run without host<->device syncs inside a
 minibatch / step (row cuts from host-side counts, minibatch indices uploaded once per epoch, statistics copied back
@@ -63,9 +66,11 @@ import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
-from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
+from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
+                       obs_to_device, widen_spec)
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
-from .model import PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count
+from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
+                    widened_tensors)
 from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
@@ -226,11 +231,23 @@ def head_record(model: Policy) -> dict:
     return {"heads": dict(HEAD_OUTPUTS)} if getattr(model, "aux_heads", False) else {}
 
 
-def load_checkpoint(path, device="cpu") -> tuple[Policy, ModelSpec, dict]:
+def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tuple[Policy, ModelSpec, dict]:
+    """A checkpoint's model on `device` (eval mode), its spec and the checkpoint dict.
+
+    With `library` (the spec of the library the model will run on) the checkpoint must pass
+    `features.check_spec_compat` (raises `SpecMismatch` otherwise) and ``ck["spec_compat"]`` holds the record; when it
+    widens embedded enums, the model is built from `features.widen_spec` (the checkpoint's spec with the library's
+    sizes of those enums) and loads the checkpoint through `model.widen_state_dict` (old rows kept, new rows zero)."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
     spec = ModelSpec.from_json(ck["spec"])
+    widened: dict = {}
+    if library is not None:
+        ck["spec_compat"] = check_spec_compat(spec, library, what="evaluate")
+        widened = ck["spec_compat"]["widened_enums"]
+        if widened:
+            spec = widen_spec(spec, library, widened)
     model = Policy(spec, **arch_of(ck.get("arch") or ck.get("config")))
-    model.load_state_dict(ck["model"])
+    model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     model.to(device).eval()
     return model, spec, ck
 
@@ -247,17 +264,44 @@ def make_checkpoint(model: Policy, opt: torch.optim.Optimizer, spec: ModelSpec, 
 
 
 def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | None, rng: np.random.Generator | None,
-                       device: torch.device, lr: float | None = None) -> None:
+                       device: torch.device, lr: float | None = None, widened=None) -> None:
     """Load weights (strict: parameter shapes must match), optimizer state (moved to the parameters' device) and RNG
-    states from a `make_checkpoint` dict."""
-    model.load_state_dict(ck["model"])
+    states from a `make_checkpoint` dict. `widened` (enum names, `features.check_spec_compat`'s "widened_enums"): the
+    model was built with those enums grown by appended members; their embedding tables take the checkpoint's rows and
+    zero rows for the new members (`model.widen_state_dict`), and so do those tables' Adam moments (steps kept)."""
+    widened = sorted(widened or ())
+    model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     if opt is not None and ck.get("optimizer"):
-        opt.load_state_dict(ck["optimizer"])
+        opt.load_state_dict(widen_optimizer_state(ck["optimizer"], ck["model"], model, widened) if widened
+                            else ck["optimizer"])
         if lr is not None:
             for g in opt.param_groups:
                 g["lr"] = lr
     if rng is not None:
         _set_rng_state(rng, ck.get("rng"), device)
+
+
+def widen_optimizer_state(opt_state: dict, ck_model: dict, model: Policy, widened) -> dict:
+    """A checkpoint's optimizer state_dict (one parameter group over ``model.parameters()``, as `train` builds it) for
+    `model` after `widen_state_dict`: each per-parameter tensor of a widened embedding table that has the checkpoint's
+    shape (Adam's exp_avg / exp_avg_sq) gets zero rows for the new members; scalars (step) are kept."""
+    names = [n for n, _ in model.named_parameters()]
+    params = dict(model.named_parameters())
+    out = dict(opt_state)
+    out["state"] = dict(opt_state["state"])
+    for key in widened_tensors(widened):
+        i = names.index(key)
+        if i not in out["state"]:
+            continue
+        old_shape, new_shape = tuple(ck_model[key].shape), tuple(params[key].shape)
+        per = dict(out["state"][i])
+        for k, v in per.items():
+            if torch.is_tensor(v) and tuple(v.shape) == old_shape:
+                w = v.new_zeros(new_shape)
+                w[: old_shape[0]] = v
+                per[k] = w
+        out["state"][i] = per
+    return out
 
 
 def _rng_state(rng: np.random.Generator, device: torch.device) -> dict:
@@ -313,12 +357,16 @@ def effective_floor_step_cap(env) -> int:
 def resume_compat(resume: dict, log=print) -> dict:
     """Check a resume checkpoint's spec against the library sts2vec loads (before any env exists, so a refused resume
     leaves the run directory untouched): `features.check_spec_compat`, raising `SpecMismatch` with every difference in
-    the model's inputs. Returns the compat record for config.json."""
+    the model's inputs. Returns the compat record for config.json (``model_inputs`` identical / widened)."""
     compat = check_spec_compat(resume["spec"], ModelSpec.from_schema(schema_of(load())), what="resume")
-    if compat["other_differences"]:
+    if compat["other_differences"] or compat["widened_enums"]:
+        inputs = "identical"
+        if compat["widened_enums"]:
+            inputs = (f"identical except for widened enums: {describe_widened(compat['widened_enums'])} (the "
+                      "checkpoint's embedding rows are kept, the new rows start at zero)")
         log(f"resume across encoder versions: checkpoint {compat['checkpoint_encoder_version']} -> library "
-            f"{compat['library_encoder_version']}; the model's inputs are identical; other differences (not read by "
-            f"the model): {'; '.join(compat['other_differences'])}")
+            f"{compat['library_encoder_version']}; the model's inputs are {inputs}; other differences (not read by "
+            f"the model): {'; '.join(compat['other_differences']) or 'none'}")
     return compat
 
 
@@ -804,8 +852,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         model = model.to(device)
         opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
         if resume is not None:
-            restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr)
-            log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})")
+            restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr, widened=compat["widened_enums"])
+            log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})"
+                + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else ""))
         updater = MinibatchUpdater(model, opt, cfg, amp, device)
         runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
         tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
@@ -843,7 +892,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                          "cuda_device": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
                          "python": platform.python_version(), "cpu_count": os.cpu_count(), "env_threads": env.threads,
                          "bundle": os.environ.get("STS2TRAIN_BUNDLE"), "encoder_version": spec.encoder_version,
-                         "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None})
+                         "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None,
+                         "model_inputs": compat["model_inputs"] if compat else None,
+                         "widened_enums": compat["widened_enums"] if compat else None})
         from sts2vec.evaluate import repo_sha
 
         atomic_write_json(run / "config.json", {
