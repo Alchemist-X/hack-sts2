@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .game import Game, GameError, Observation
-from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act
+from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act, screens_compatible
 from .twin import Policy, Twin, TwinError
 
 SEED_CHARS = set("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ")
@@ -321,6 +321,12 @@ class Runner:
             if conf:
                 return "confirm", conf[0]
             return "twin_only_prompt", None
+        if tv.screen == "rewards" and real.screen in ("event", "map"):
+            # the game closes an event's rewards screen by itself once everything is claimed; the sim waits for
+            # ProceedRewards
+            rest = [a for a in tacts if a.kind not in ("potion", "discard_potion")]
+            if rest and all(a.kind == "leave" for a in rest):
+                return "leave_rewards", rest[0]
         if tv.screen == "event" and real.screen == "map":
             # the game has already left a finished event (an ancient's save resumes the sim inside it)
             rest = [a for a in tacts if a.kind not in ("potion", "discard_potion")]
@@ -367,8 +373,8 @@ class Runner:
             return match_act(tact.plan[0], racts, [opens[p] for p in sorted(opens)] or None, relaxed=relaxed)
         return match_act(tact, racts, tacts, relaxed=relaxed)
 
-    def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False) -> tuple[int | None, Act | None,
-                                                                                               str]:
+    def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False,
+               tv_screen: str | None = None) -> tuple[int | None, Act | None, str]:
         racts = obs.acts
         if dec is not None and self.mode == "lockstep":
             m = self.map_row(tacts[dec.row], tacts, racts, relaxed=False)
@@ -378,20 +384,28 @@ class Runner:
                 # The states match but the game's interface does not offer this choice (e.g. drinking a potion outside
                 # combat through STS2_MCP): take the best-ranked choice it does offer; the twin takes the same one, so
                 # the two stay in lockstep.
-                for r in dec.ranked():
+                for r in self.second_choices(dec, tacts):
                     m = self.map_row(tacts[r], tacts, racts, relaxed=False)
                     if m is not None:
                         return r, m, "substitute"
             self.enter_follow([{"field": "unmappable", "twin": tacts[dec.row].describe(),
                                 "real": [a.describe() for a in racts][:12]}], obs.view, "choose")
-        if dec is not None:
-            ranked = dec.ranked()
+        # A twin on another screen than the game describes nothing the game can use (screen-independent rows such
+        # as a potion discard would still "map"): the real-side fallback acts until the next save point.
+        if dec is not None and (tv_screen is None or screens_compatible(tv_screen, obs.view.screen)):
+            ranked = self.second_choices(dec, tacts)
             for relaxed in (False, True):
                 for r in ranked:
                     m = self.map_row(tacts[r], tacts, racts, relaxed=relaxed)
                     if m is not None:
                         return r, m, "follow" if not relaxed else "follow_relaxed"
         return None, self.fallback(obs), "fallback"
+
+    @staticmethod
+    def second_choices(dec, tacts: list[Act]) -> list[int]:
+        """The rows in choice order for a substitute / follow choice: a potion discard only when it is the model's
+        own first choice (as a stand-in for another action it would throw a potion away)."""
+        return [r for r in dec.ranked() if r == dec.row or tacts[r].kind != "discard_potion"]
 
     # ------------------------------------------------------------------------------------------------ main loop
 
@@ -532,7 +546,7 @@ class Runner:
         t_pol = time.perf_counter()
         dec = self.policy.decide(self.twin.obs) if self.twin_ok and tacts else None
         pol_ms = (time.perf_counter() - t_pol) * 1000
-        row, ract, how = self.choose(obs, tacts, dec, in_sync=not hard)
+        row, ract, how = self.choose(obs, tacts, dec, in_sync=not hard, tv_screen=tv.screen if tv else None)
         if ract is None:
             raise Abort(f"no action available on screen {real.screen}")
         twin_act = tacts[row] if row is not None else None
