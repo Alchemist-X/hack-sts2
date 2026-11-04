@@ -73,4 +73,24 @@ public static class FidelityTests
         Assert.Equal(2, cs.Player.TurnNumber, "SwitchSides still ran after the win, as in the game");
         Assert.Equal(1, sim.State.MapPointHistory[^1].Rooms[^1].TurnsTaken);
     }
+
+    public static void Test_Fidelity_TurnPhaseIsProjectedAtTheRecordersResolution()
+    {
+        // The recorder keeps the side and `PlayerTurnPhase == Play` only (mod/src/StateBuilder/PassiveStateBuilder.Combat.cs:37,
+        // :40; sts2rec/sts2rec/diff_bundle.py:574-581). GAMBLING_CHIP prompts in AfterPlayerTurnStart on turn 1
+        // (Models.Relics/GamblingChip.cs), i.e. in PlayerTurnPhase.Start (Combat/CombatManager.cs:5293 before :3902, :3914).
+        // Farm UF51XE6ZV1 f11: oracle `player_not_play`, sim `player_start`.
+        var sim = FirstCombat("FIDCHIP01", "IRONCLAD", s => RelicCmd.Obtain(s.State, GamblingChip.RelicId, s.State.Players[0]));
+        var cs = sim.State.Combat!;
+        var prompt = Assert.NotNull(sim.PendingChoice);
+        Assert.Equal("GAMBLING_CHIP:AfterPlayerTurnStart", prompt.SiteId);
+        Assert.Equal(PlayerTurnPhase.Start, cs.Player.Phase);
+        Assert.Equal(ProjectionJson.PhasePlayerNotPlay, SimProjector.Project(cs).Turn.Phase);
+        cs.Player.Phase = PlayerTurnPhase.Play;
+        Assert.Equal(ProjectionJson.PhasePlayerPlay, SimProjector.Phase(cs));
+        cs.Player.Phase = PlayerTurnPhase.AutoPostPlay;
+        Assert.Equal("player_not_play", SimProjector.Phase(cs));
+        cs.CurrentSide = CombatSide.Enemy;
+        Assert.Equal("enemy_turn", SimProjector.Phase(cs), "the exporter's `<side>_turn`");
+    }
 }

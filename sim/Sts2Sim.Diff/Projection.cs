@@ -93,6 +93,8 @@ public static class ProjectionJson
 {
     public const string PhasePlayerPlay = "player_play";
 
+    public const string PhasePlayerNotPlay = "player_not_play";
+
     public static string CardKey(string id, bool upgraded) => upgraded ? id + "+" : id;
 
     public static JsonObject Write(Projection p)
