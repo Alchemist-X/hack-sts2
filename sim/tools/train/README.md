@@ -161,6 +161,46 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
     --modes off,default
 ```
 
+## Rollout overlap (`--overlap off|double`)
+
+`--overlap off` (default) is the serial rollout: per step, the forward of all N slots, then the env step of all N
+slots. `--overlap double` splits the slots into two lanes `[0, N/2)` / `[N/2, N)`, each its own native `VecEnv`
+(`sts2train/overlap.py`: `VecPair`, both lanes writing into one N-slot buffer set), and runs one lane's env step in a
+worker thread while the main thread runs the other lane's bookkeeping + forward (the native step releases the GIL):
+
+    worker:  step A(t)              | step B(t)              | step A(t+1) ...
+    main:    post B(t-1), pre B(t)  | post A(t), pre A(t+1)  | post B(t), pre B(t+1) ...
+
+The store receives the same [T, N] batch; GAE, the bootstrap forward (all N slots, one call), the update and every
+metric are unchanged. The per-slot trackers (rewards, acquisition shaping, loop breaker, cycle detector) run per lane
+with global slot numbers; the aux-head targets write through column views. Stream mode (`LaneStreamEnv`) hands seeds out
+in the order one N-slot env would (A(t) then B(t) = ascending slots), and episode ids are mapped to the one-env
+numbering, so under a deterministic policy `double` reproduces `off` (tests/test_overlap.py: same actions, metrics,
+episodes.jsonl, cycles.jsonl, stream counter and weights to float rounding, also with `--cycle-cost --acq-shaping
+--rollout-loop-breaker --aux-heads`). With sampling the actions differ only because the sampler draws per lane (same
+distribution, different RNG consumption). Pool mode works (fresh pools; lane B's slot start offsets come from the seed
+text `<seed>~L1`: same start distribution, other assignment); `--start-saves` is refused. Both lanes' pools hold every
+stream entry, so template creation (`pool.warm`, during the update) costs twice the CPU, run in parallel per lane.
+
+Metrics (only with `double`): `t_env_s` = summed native step time of both lanes (overlapped, so `t_other_s` goes
+negative), `t_infer_s` = the main thread's pre phases + bootstrap, `t_overlap_wait_s` = main thread blocked on the
+worker, `t_rollout_s` = the rollout's wall time; summary.json `overlap`.
+
+Measured (Huginn testbox, 6 CPUs shared with other jobs, no GPU; `bench/overlap_bench.py`, stream mode, medians of
+updates 2-6, 3 interleaved repeats): 64 slots, rollout 16, d32 model, 2 env + 2 torch threads: off env 0.12 s, infer
+0.51 s, update 0.97 s, total 1.95 s per update; double env 0.18 s, infer 0.85 s, wait 0.003 s, rollout 0.88 s, total
+3.35 s. On a CPU box `double` loses: the forward is CPU work there and the env phase it can hide is small, while a
+half-batch forward costs ~0.85 of a full one (infer ratio 1.7 for the two halves) and env threads compete with torch
+threads. The gain needs a GPU forward and env ~ infer, as on the A100 (env 2.4 s, infer 2.7 s, update 3.2 s per
+update = 8.3 s): double ~ max(2.4 x r_env, 2.7 x r_inf) + 3.2, i.e. 5.9 s (1.41x) at r_inf = 1, 6.8 s (1.22x) at
+1.35, no gain at r_inf >= 1.9, where r_inf = (lane A + lane B forward time) / one full-batch forward on the GPU. Measure
+r_inf before adopting it (`--device cuda` on the Colab bundle):
+
+```bash
+python sim/tools/train/bench/overlap_bench.py --device cuda --envs 1024 --rollout 32 --updates 6 --preset small \
+    --threads 10 --torch-threads 2 --minibatch 4096 --epochs 2 --repeats 2 --out tmp/bench-overlap-a100
+```
+
 ## Pieces
 
 | Module | Content |
