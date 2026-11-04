@@ -1,0 +1,3 @@
+# Run-time requirements of the sts2train Colab bundle besides its two wheels (installed with --no-deps).
+# torch is NOT listed on purpose: Colab preinstalls a CUDA build (smoke_bundle.sh installs a CPU build elsewhere).
+numpy>=1.26
