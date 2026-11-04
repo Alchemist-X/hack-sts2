@@ -26,6 +26,7 @@ from sts2rec.diff_export_v2 import (
     RoomWindow,
     _event_option_index,
     _shop_slot,
+    card_reward_closed_by_skip,
     export_bundles_v2,
     hoist_combat_starting_event_options,
     prompt_open_state,
@@ -524,3 +525,27 @@ def test_event_option_that_starts_a_combat_moves_back_to_the_event() -> None:
                        end_seq=None, states=[], actions=[_act(1201, "event_option", 1200)], events=[])
     assert hoist_combat_starting_event_options([combat, other]) == []
     assert [a.seq for a in other.actions] == [1201]
+
+
+def test_card_reward_selection_closed_by_skip_before_the_pick() -> None:
+    # Farm UUR25UNBL5 f5 BRAIN_LEECH RIP: Index 3 on a 3-card reward is the Skip alternative (Rewards/CardReward.cs:646-658,
+    # Entities.CardRewardAlternatives/CardRewardAlternative.cs Generate), which ends the selection without completing the
+    # reward; the later Index 2 completes it and has the reward_taken.
+    def offer(can_skip: bool = True, can_reroll: bool = False) -> dict[str, Any]:
+        return {"reward_type": "card_reward", "cards": [{"id": "CARD.DISCOVERY"}, {"id": "CARD.FLASH_OF_STEEL"}, {"id": "CARD.FISTICUFFS"}], "can_skip": can_skip, "can_reroll": can_reroll}
+
+    def pick(seq: int, index: int) -> ActionRecord:
+        return _act(seq, "player_choice", seq - 1, choice_type="Index", indexes=[index], index=index, picked=True)
+
+    def taken(seq: int, **kw: Any) -> ActionRecord:
+        return _act(seq, "reward_taken", seq - 1, reward_type="card_reward", set_index=5, offer=offer(**kw))
+
+    proceed = _act(600, "event_proceed", 598, index=0, text_key="PROCEED")
+    reward = taken(599)
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(597, 2), reward, proceed]) is reward
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(596, 3), pick(597, 2), reward]) is reward, "several closes before the pick"
+    assert card_reward_closed_by_skip(pick(597, 2), [reward, proceed]) is None, "the completing pick itself"
+    assert card_reward_closed_by_skip(pick(595, 1), [pick(597, 2), reward]) is None, "an offered card, not an alternative"
+    assert card_reward_closed_by_skip(pick(595, 3), [pick(597, 2), taken(599, can_skip=False, can_reroll=True)]) is None, "REROLL"
+    assert card_reward_closed_by_skip(pick(595, 3), [proceed, pick(597, 2), reward]) is None, "only Index choices in between"
+

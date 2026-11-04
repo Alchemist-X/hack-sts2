@@ -1624,6 +1624,22 @@ def build_run_decisions(
             emit({"type": "event_option", "text_key": text_key, "index": index}, "event")
         elif kind == "event_proceed":
             emit({"type": "event_proceed", "text_key": params.get("text_key"), "index": _int_or_none(params.get("index"))}, "event")
+        elif kind == "player_choice" and screen in ("rewards", "card_reward", "event", "monster", "elite", "boss") and (
+            closed := card_reward_closed_by_skip(action, items[position:])
+        ) is not None:
+            # A card-reward selection closed through Skip: the reward stays on the screen and a later Index pick completes
+            # it (card_reward_closed_by_skip). Opened, then skipped; the later pick opens it again.
+            reward = _params(closed)
+            emit(
+                {"type": "reward_take", "set_index": _int_or_none(reward.get("set_index")), "reward_type": reward.get("reward_type"), "item_id": None},
+                "rewards",
+                oracle_extra={"recorded_order": "skipped_selection", "completed_by_seq": closed.seq},
+            )
+            emit(
+                {"type": "card_reward_skip", "index": _int_or_none(params.get("index")), "card_id": None},
+                "card_reward",
+                oracle_extra={"offered": card_choice_ids or None},
+            )
         # The last snapshot before a card pick can still be the combat room's (``monster``/``elite``/``boss``) when the
         # rewards screen opened without a new snapshot (E3 farm: GREMLIN_MERC_NORMAL after the gold steal).
         elif kind == "player_choice" and params.get("choice_type") == "Index" and screen in ("rewards", "card_reward", "event", "monster", "elite", "boss") and (
@@ -1765,6 +1781,40 @@ def build_run_decisions(
     if pending_choice is not None:
         reasons.append("choice_without_opener")
     return decisions, list(dict.fromkeys(reasons)), screens
+
+
+def card_reward_closed_by_skip(action: ActionRecord, later: Sequence[ActionRecord]) -> ActionRecord | None:
+    """The ``reward_taken`` of the card reward whose selection ``action`` closed through its Skip alternative.
+
+    CardReward.OnSelect syncs one Index per selection (Rewards/CardReward.cs:604-634): 0..N-1 take an offered card, N..
+    pick an alternative (:646-658), generated as Skip when the reward can be skipped, then REROLL when it can be rerolled
+    (Entities.CardRewardAlternatives/CardRewardAlternative.cs Generate). Skip is EndSelectionAndDoNotCompleteReward: the
+    selection ends and the reward stays on the rewards screen, so only a later pick that completes it is followed by a
+    ``reward_taken`` (whose R4 offer gives N, can_skip and can_reroll). ``later`` are the window's actions after
+    ``action``; the completing pick must follow it with only Index choices in between (farm UUR25UNBL5 f5 BRAIN_LEECH:
+    Index 3 of 3 cards, then Index 2 and its reward_taken). None when ``action`` is not such a choice.
+    """
+    params = _params(action)
+    index = _int_or_none(params.get("index"))
+    if params.get("choice_type") != "Index" or index is None or index < 0:
+        return None
+    for position, nxt in enumerate(later):
+        if _kind(nxt) == "reward_taken":
+            return None
+        if _kind(nxt) != "player_choice" or _params(nxt).get("choice_type") != "Index":
+            return None
+        taken = later[position + 1] if position + 1 < len(later) else None
+        if taken is None or _kind(taken) != "reward_taken" or _params(taken).get("reward_type") not in CARD_REWARD_TYPES:
+            continue
+        offer = _params(taken).get("offer")
+        if not isinstance(offer, Mapping) or not isinstance(offer.get("cards"), list):
+            return None
+        alternatives = (["Skip"] if offer.get("can_skip") else []) + (["REROLL"] if offer.get("can_reroll") else [])
+        alternative = index - len(offer["cards"])
+        if 0 <= alternative < len(alternatives) and alternatives[alternative] == "Skip":
+            return taken
+        return None
+    return None
 
 
 def _room_area(window: RoomWindow) -> str | None:
