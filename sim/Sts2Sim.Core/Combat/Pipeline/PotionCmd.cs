@@ -26,6 +26,20 @@ public static class PotionCmd
         return result;
     }
 
+    /// <summary>
+    /// True when <see cref="TryToProcure(RunState, PotionModel, PlayerState, int)"/> with no slot index would add
+    /// <paramref name="potion"/> to <paramref name="player"/>'s belt: the procure hooks allow it (game
+    /// Commands/PotionCmd.cs:258-266, NotAllowed otherwise, e.g. Models.Relics/Sozu.cs:17-20) and the belt has an empty
+    /// slot (Entities.Players/Player.cs:1027-1031 and :1056-1068, TooFull otherwise). Pure: no hook side effect, no RNG.
+    /// </summary>
+    public static bool CanProcure(RunState rs, PotionModel potion, PlayerState player)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(potion);
+        ArgumentNullException.ThrowIfNull(player);
+        return player.HasOpenPotionSlot && Hook.ShouldProcurePotion(rs, CombatOf(rs, player), potion, player);
+    }
+
     public static void Discard(RunState rs, PotionModel potion)
     {
         ArgumentNullException.ThrowIfNull(rs);

@@ -35,7 +35,9 @@ One line per rule: `member — decompile file:line — dropped points / gaps`. P
 
 - `MerchantRoom.EnterInternal` — Rooms/MerchantRoom.cs:20-110 — one inventory per player, then `Hook.AfterRoomEntered`. Node-layer rule ported: `ShouldAllowMerchantCardRemoval` false → removal entry `SetUsed` at fill (Nodes.Screens.Shops/NMerchantCardRemoval.cs:153-156), before `AfterRoomEntered`.
 - `MerchantRoom.Exit` — Rooms/MerchantRoom.cs:200-281 — history only; dropped.
-- `MerchantRoom.TryPurchase(rs, i)` — index into `AllEntries`; `CanPurchase` = stocked and `EnoughGold`.
+- `MerchantRoom.TryPurchase(rs, i)` — index into `AllEntries`; `CanPurchase` / `CanBuy` = stocked, `EnoughGold`, and for a potion
+  `PotionCmd.CanProcure` (free belt slot, no Sozu): the game refuses a potion it cannot procure with nothing changed
+  (MerchantPotionEntry.cs:203-216), so `BuyEntry` is listed only through `CanBuy` (2026-11-04; run-loop.md "Shop").
 - `MerchantInventory.CreateForNormalMerchant` — Entities.Merchant/MerchantInventory.cs:87-109 — character, colorless, relics, potions, removal; `PurchaseCompleted += UpdateEntries` becomes `inventory.UpdateEntries(rs)` after a purchase.
 - `MerchantInventory` colored types {Attack, Attack, Skill, Skill, Power} — MerchantInventory.cs:196-206 static blob lost in v0.111.0; values from design §3.8 / §9.2 ([v107]), not re-verified against IL.
 - `PopulateCharacterCardEntries` — MerchantInventory.cs:115-131 — `Shops.NextInt(5)` sale slot first; `SetOnSale` right after that entry's `Populate`.

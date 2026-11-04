@@ -574,7 +574,7 @@ Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative
 | `price` | `GetCost(rs)`. |
 | `stocked` | 1 while the entry is in stock. |
 | `on_sale` | 1 for the sale card. |
-| `affordable` | stocked and price ≤ gold, which is BuyEntry's own rule. |
+| `affordable` | stocked and price ≤ gold (the price label's colour, `Nodes.Screens.Shops/NMerchantPotion.cs:178`). BuyEntry additionally needs a potion to fit: no BuyEntry is listed for a potion while the belt is full or Sozu forbids it (`MerchantRoom.CanBuy`, 2026-11-04), so read the candidates for what is buyable. |
 
 **rest** (row i = `Options[i]` = ChooseRestOption A)
 

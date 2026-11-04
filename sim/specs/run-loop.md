@@ -34,7 +34,19 @@ Format: `member — decompile file:line — dropped points / gaps`.
 - `RunLegalActionGenerator.Fill` — CONTRACTS C1 — phase actions ascending, then potions (UsePotion by slot, DiscardPotion by slot), then the leave/proceed action; Combat = `LegalActionGenerator.Fill` mapped with `RunAction.FromCombat`; a pending prompt (combat or run) = `LegalActionGenerator.FillPrompt` mapped (PromptSelect/Confirm/Cancel), modal.
 - Rewards — `Rewards/Reward.cs:242-258`; `Multiplayer.Game/RewardsSetSynchronizer.cs:624-771` — `ClaimReward(i)` for every not `SuccessfullySelected` reward of the top set (display order = `RewardsSet.Rewards`); a card reward opens the CardReward phase instead of `OnSelectWrapper`; `ProceedRewards` pops the set, `OnSkipped` on unclaimed rewards, terminal set → `ProceedTerminal`. Gap: a non-terminal set whose rewards are all taken still needs `ProceedRewards` (the game completes it automatically).
 - CardReward — `Rewards/CardReward.cs:591-720` — `PickRewardCard(i)` → R3 `CardReward.PickCard`, `RewardAlternative(j)` → `ChooseAlternative`; the returned bool is read as "selection ended" (`endSelection`), which closes the screen. No leave action (Skip is an alternative).
-- Shop — `Entities.Merchant/MerchantEntry.cs:308-321` — `BuyEntry(i)` iff `IsStocked && EnoughGold`; `LeaveShop` always.
+- Shop — `Entities.Merchant/MerchantEntry.cs:308-321` — `BuyEntry(i)` iff `MerchantRoom.CanBuy`: `IsStocked && EnoughGold`, and for a
+  potion also `PotionCmd.CanProcure` (a free belt slot and no procure veto such as Sozu); `LeaveShop` always. The game
+  procures a potion before charging and refuses the purchase with nothing changed when `PotionCmd.TryToProcure` fails
+  (`Entities.Merchant/MerchantPotionEntry.cs:203-216`: PurchaseFailed FailureSpace / FailureForbidden, no gold spent, entry
+  still stocked; `Commands/PotionCmd.cs:253-267`; `Entities.Players/Player.cs:1027-1031`, `:1056-1068` TooFull;
+  `Models.Relics/Sozu.cs:17-20`; the UI only wiggles the slot, `Nodes.Screens.Shops/NMerchantSlot.cs:425`), so that click
+  is not a legal action.
+  **Candidate-set change (2026-11-04, branch `train/env-deckbuild`):** before it, `BuyEntry` was listed for every stocked,
+  affordable potion even with a full belt or under Sozu, a no-op that a greedy A10 policy looped on until the floor stall
+  cap. Shops with a full belt now list fewer actions, so candidate indices recorded before the change (eval
+  `history_actions`, LLM transcripts through the play server) can diverge on replay from the first such shop on; replay
+  them with a library built before the change. Tests: `VecTests.Test_VecCand_ShopPotionNeedsAFreeBeltSlot`,
+  `Test_VecCand_ShopPotionRefusedUnderSozu`.
 - Rest site — `Nodes.Rooms/NRestSiteRoom.cs:188-190`, `:1056-1062` — enabled options; `LeaveRestSite` iff `ProceedAllowed || Options.Count == 0`.
 - Treasure — `Nodes.Rooms/NTreasureRoom.cs:551-565`, `:640-646` — `OpenChest` until opened; then Take/Skip while a relic is offered; take/skip (or no relic) opens the map (no separate proceed action exists in `RunActionKind`).
 - Event — `Events/EventOption.cs:66`, `:279`, `:292` — `ChooseEventOption(i)` for enabled options of `LocalMutableEvent ?? CanonicalEvent`; `LeaveEvent` iff `IsFinished`.

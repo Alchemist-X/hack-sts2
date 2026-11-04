@@ -73,7 +73,7 @@ last. Decode a row with its columns (`kind`, `hand_slot`, `target_slot`, `option
 | Travel | move to a map node: `option_index` = rank of the destination among the legal nodes sorted by (col, row) | `option_index` |
 | ClaimReward / ProceedRewards | claim `rewards` row `option_index` / leave the rewards screen | `option_index` |
 | PickRewardCard / RewardAlternative | take `card_reward` row / choose `card_reward_alts` row | `option_index`, `card_id` |
-| BuyEntry / LeaveShop | buy `shop` row / leave | `option_index` |
+| BuyEntry / LeaveShop | buy `shop` row / leave (a potion is listed only when it fits: a free belt slot and no Sozu) | `option_index` |
 | ChooseRestOption / LeaveRestSite | `rest` row / leave | `option_index` |
 | OpenChest / TakeTreasureRelic / SkipTreasureRelic | treasure room | — |
 | ChooseEventOption / LeaveEvent | `event_options` row / leave | `option_index` |
