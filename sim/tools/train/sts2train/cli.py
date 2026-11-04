@@ -3,6 +3,7 @@
 
     sts2train train --preset large --device cuda --envs 2048 --max-hours 6 --eval-every 50 --out RUN_DIR
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
+                                                         # (also across encoder versions: model inputs must match)
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
 
 ``train`` flags that are not given keep the default (fresh run) or the checkpoint's value (``--resume``).
@@ -139,7 +140,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")
     g.add_argument("--step-cap", dest="step_cap", type=int, help=f"(default {D.step_cap})")
     g.add_argument("--floor-step-cap", dest="floor_step_cap", type=int,
-                   help="VecEnv floor_step_cap pass-through (only if this sts2vec has it; default unset)")
+                   help="VecEnv floor_step_cap pass-through: truncate after N non-combat decisions on one floor "
+                        "(FLOOR_STALL; 0 = off; an error if this sts2vec has no such parameter). Default unset = the "
+                        "env's default (80 with a library that implements the cap); the cap in effect is recorded "
+                        "in config.json env.floor_step_cap")
     g.add_argument("--ascension", type=int, help=f"(default {D.ascension})")
     g.add_argument("--pool", type=int, help=f"fresh start pool entries (default {D.pool})")
     g.add_argument("--characters", type=lambda v: tuple(x.strip() for x in v.split(",") if x.strip()),
@@ -179,6 +183,7 @@ def main(argv=None) -> int:
             if resume == "auto":
                 ap.error("--resume auto needs --out RUN_DIR")
             given["out"] = f"tmp/train/run-{time.strftime('%Y%m%d-%H%M%S')}"
+        from .features import SpecMismatch
         from .ppo import BigLocalRunError
 
         log = _Log()
@@ -189,7 +194,7 @@ def main(argv=None) -> int:
         log(f"run directory: {cfg.out}")
         try:
             s = train(cfg, log=log, resume=ck, resume_path=ck_path)
-        except BigLocalRunError as e:
+        except (BigLocalRunError, SpecMismatch) as e:
             log(f"error: {e}")
             return 2
         try:
@@ -200,10 +205,15 @@ def main(argv=None) -> int:
         return 0
     if a.cmd in ("eval", "evaluate"):
         from .evaluate import evaluate
+        from .features import SpecMismatch
 
         out = a.out or f"tmp/eval/nn-{Path(a.checkpoint).stem}-{Path(a.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
-        rep = evaluate(a.seedset, a.checkpoint, out, threads=a.threads, device=a.device,
-                       log=lambda m: print(m, flush=True))
+        try:
+            rep = evaluate(a.seedset, a.checkpoint, out, threads=a.threads, device=a.device,
+                           log=lambda m: print(m, flush=True))
+        except SpecMismatch as e:
+            print(f"error: {e}", flush=True)
+            return 2
         h = rep["headline"]
         print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                           "wins": h["wins"], "games": h["games"], "results": h["results"],

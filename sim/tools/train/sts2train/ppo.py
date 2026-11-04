@@ -14,8 +14,13 @@ directory: ``sts2train.runlog``.
 
 The model reads every shape, vocabulary size and column index from the env's published schema at start-up
 (``ModelSpec.from_schema``); buffers it does not use are ignored, so a library with extra observation buffers (a new
-``encoder_version``) trains unchanged. ``floor_step_cap`` is passed to ``VecEnv`` only when set, and only if this
-sts2vec's ``VecEnv`` accepts it.
+``encoder_version``) trains unchanged. ``--resume`` accepts a checkpoint whose spec differs from the library's only
+outside the model's inputs (``features.check_spec_compat``: the 27 input buffers' shapes and column maps, the vocabulary
+and embedded-enum sizes, the pointer enums' members and card_vars must be identical; encoder_version, appended buffers
+and enums the model does not embed may differ) and refuses any other checkpoint before the env is built; config.json
+records both encoder versions. ``floor_step_cap`` is passed to ``VecEnv`` only when set, and only if this sts2vec's
+``VecEnv`` accepts it (unset = the env's default: 80 with a library that implements the cap); the cap in effect is
+recorded in config.json (``env.floor_step_cap``) and FLOOR_STALL truncations are counted per update.
 """
 
 from __future__ import annotations
@@ -37,16 +42,17 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from sts2vec import STATUS, PoolSpec, VecEnv, random_actions
+from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
-from .features import ModelSpec, RolloutStore, bind_spec, obs_to_device
+from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
 from .model import ARCH_KEYS, PRESETS, Policy, activation_bytes_per_sample, arch_of, param_count
 from .objective import OBJECTIVES, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
+FLOOR_STALL = STATUS.get("FLOOR_STALL", 0)   # truncated by the env's floor_step_cap (0 with an sts2vec without it)
 CKPT_FORMAT = 2
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
@@ -234,6 +240,25 @@ def env_kwargs(cfg: TrainConfig, seed_text: str, env_cls=VecEnv) -> dict:
     return kw
 
 
+def effective_floor_step_cap(env) -> int:
+    """The floor stall cap the env enforces (0 = none): ``VecEnv.floor_step_cap`` when the library implements it."""
+    if not getattr(env.schema, "supports_floor_step_cap", False):
+        return 0
+    return int(getattr(env, "floor_step_cap", 0) or 0)
+
+
+def resume_compat(resume: dict, log=print) -> dict:
+    """Check a resume checkpoint's spec against the library sts2vec loads (before any env exists, so a refused resume
+    leaves the run directory untouched): `features.check_spec_compat`, raising `SpecMismatch` with every difference in
+    the model's inputs. Returns the compat record for config.json."""
+    compat = check_spec_compat(resume["spec"], ModelSpec.from_schema(schema_of(load())), what="resume")
+    if compat["other_differences"]:
+        log(f"resume across encoder versions: checkpoint {compat['checkpoint_encoder_version']} -> library "
+            f"{compat['library_encoder_version']}; the model's inputs are identical; other differences (not read by "
+            f"the model): {'; '.join(compat['other_differences'])}")
+    return compat
+
+
 class BigLocalRunError(RuntimeError):
     """A model too big for a cpu / mps box (see `check_local_size`)."""
 
@@ -391,7 +416,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     rng = np.random.default_rng(cfg.seed)
 
     c = dict(updates=0, env_steps=0, episodes=0, wins=0, sim_error=0, content_gap=0, illegal=0, overflow_cand=0,
-             wall_s=0.0, sessions=0)
+             floor_stall=0, wall_s=0.0, sessions=0)
     best_eval = last_eval = None
     if resume is not None:
         c.update({k: v for k, v in (resume.get("counters") or {}).items() if k in c})
@@ -402,14 +427,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     upd0 = c["updates"]
 
     seed_text = f"PPO{cfg.seed}" if resume is None else f"PPO{cfg.seed}R{upd0}"
+    compat = resume_compat(resume, log) if resume is not None else None   # raises SpecMismatch
     env = VecEnv(cfg.envs, **env_kwargs(cfg, seed_text))
     old_handlers: dict = {}
     try:
         spec = ModelSpec.from_schema(env.schema)
         bind_spec(spec)
-        if resume is not None and resume["spec"].get("encoder_version") != spec.encoder_version:
-            log(f"warning: checkpoint encoder_version {resume['spec'].get('encoder_version')} != library "
-                f"{spec.encoder_version}; resuming (parameter shapes are checked on load)")
+        if compat is not None and compat["library_encoder_version"] != spec.encoder_version:
+            raise SpecMismatch(f"the env loaded encoder_version {spec.encoder_version}, the resume check saw "
+                               f"{compat['library_encoder_version']}")
+        floor_cap = effective_floor_step_cap(env)
         arch = {k: getattr(cfg, k) for k in ARCH_KEYS}
         model = Policy(spec, **arch)                       # on the CPU until the size guard has passed
         model.grad_ckpt = bool(cfg.grad_ckpt)
@@ -431,7 +458,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         warmed = env.pool.warm()
         warm_s = time.monotonic() - t
         log(f"library {env.lib.path} ({env.lib.mode}) {env.lib.version()}; pool warm: {warmed} templates in "
-            f"{warm_s:.1f} s; {cfg.envs} envs x {env.threads} threads")
+            f"{warm_s:.1f} s; {cfg.envs} envs x {env.threads} threads; floor_step_cap "
+            + (f"{floor_cap} (FLOOR_STALL truncation)" if floor_cap else "off"))
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
@@ -477,12 +505,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                          "pid": os.getpid(), "device": str(device), "amp": amp, "torch": torch.__version__,
                          "cuda_device": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
                          "python": platform.python_version(), "cpu_count": os.cpu_count(), "env_threads": env.threads,
-                         "bundle": os.environ.get("STS2TRAIN_BUNDLE")})
+                         "bundle": os.environ.get("STS2TRAIN_BUNDLE"), "encoder_version": spec.encoder_version,
+                         "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None})
         from sts2vec.evaluate import repo_sha
 
         atomic_write_json(run / "config.json", {
             "config": config_dict(cfg), "arch": arch, "params": n_params, "encoder_version": spec.encoder_version,
+            "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None,
+            "resume_compat": compat,
             "library": {"path": str(env.lib.path), "mode": env.lib.mode, "version": env.lib.version()},
+            "env": {"step_cap": cfg.step_cap, "floor_step_cap": floor_cap,
+                    "floor_step_cap_supported": bool(getattr(env.schema, "supports_floor_step_cap", False))},
             "repo_sha": repo_sha(), "sessions": sessions})
 
         stop = {"signal": None}
@@ -596,7 +629,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 torch.cuda.reset_peak_memory_stats(device)
             ep_this: list[dict] = []
             env_s = infer_s = 0.0
-            n_steps = se_n = cg_n = il_n = over_n = 0
+            n_steps = se_n = cg_n = il_n = over_n = fs_n = 0
             model.eval()
             for t in range(cfg.rollout):
                 t0 = time.monotonic()
@@ -630,6 +663,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         key = text.splitlines()[0][:160] if text else "?"
                         errors_seen[key] = errors_seen.get(key, 0) + 1
                 se_n, cg_n, il_n = se_n + se, cg_n + cg, il_n + il
+                fs_n += int(np.count_nonzero(status & FLOOR_STALL)) if FLOOR_STALL else 0
                 over_n += int(np.count_nonzero(cand_n > cfg.max_rows))
                 n_steps += int(np.count_nonzero(valid))
                 infer_s += t1 - t0
@@ -709,6 +743,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             c["content_gap"] += cg_n
             c["illegal"] += il_n
             c["overflow_cand"] += over_n
+            c["floor_stall"] += fs_n
             es = _episode_stats(ep_this)
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
@@ -745,7 +780,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
-                   "cand_over_max_rows": over_n, "lr": opt.param_groups[0]["lr"], **gpu_memory(device)}
+                   "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
+                   **gpu_memory(device)}
             metrics.write(row)
             last_sps = round(sps, 1)
             write_status(upd, state)
@@ -772,7 +808,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         train_s = time.monotonic() - train_start
         summary = {
             "config": config_dict(cfg), "objective": cfg.objective, "encoder_version": spec.encoder_version,
-            "params": n_params, "arch": arch, "weights_hash": weights_hash(model), "device": str(device), "amp": amp,
+            "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None,
+            "floor_step_cap": floor_cap, "params": n_params, "arch": arch, "weights_hash": weights_hash(model),
+            "device": str(device), "amp": amp,
             "stop_reason": reason, "session": c["sessions"], "update_start": upd0, "updates": upd,
             "session_updates": upd - upd0, "pool_warm_s": round(warm_s, 2), "pool_warmed": warmed,
             "baseline": baseline, "env_steps": c["env_steps"], "session_env_steps": session_steps,
@@ -782,7 +820,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "env_only_steps_per_s": round(session_steps / max(totals_t["env_s"], 1e-9), 1),
             "episodes": c["episodes"], "wins": c["wins"], "sim_error": c["sim_error"],
             "content_gap": c["content_gap"], "illegal": c["illegal"], "cand_over_max_rows": c["overflow_cand"],
-            "errors": errors_seen, "best_eval": best_eval, "last_eval": last_eval,
+            "floor_stall": c["floor_stall"], "errors": errors_seen, "best_eval": best_eval, "last_eval": last_eval,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
         }
         atomic_write_json(run / "summary.json", summary)

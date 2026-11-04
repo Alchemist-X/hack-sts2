@@ -3,6 +3,10 @@
 `ModelSpec` captures everything the model needs from the published schema (vocab sizes, enum sizes, column indices,
 capacities) so a checkpoint can rebuild its model without a live library, and records the schema's encoder_version.
 Tables are always indexed by the schema's field names (never hard-coded offsets).
+
+`check_spec_compat` decides whether a checkpoint's spec can drive this library (``--resume``, ``sts2train eval``): the
+model's inputs must be identical, while ``encoder_version`` and anything the model does not read may differ (a schema
+append such as fc2eb34c07bc8513 -> 5dbfa09dd9dcb5ed adds buffers and enum members but leaves the 27 inputs unchanged).
 """
 
 from __future__ import annotations
@@ -24,6 +28,10 @@ ROW_TRUNCATED = ("cand", "prompt_options")
 ENUMS = ("RunPhase", "RunActionKind", "IntentType", "MapPointType", "RewardType", "ChoicePromptKind", "CardType",
          "TargetType", "CardRarity", "RestOption", "CardRewardAlt", "ShopCategory", "PileType", "RelicStatus",
          "PromptItemKind")
+# Vocabulary lists the model embeds (model.Policy; ENUMS are the enums it embeds). tests/test_resume_compat.py pins
+# both tuples to the model's parameter count.
+MODEL_VOCABS = ("cards", "relics", "potions", "powers", "monsters", "encounters", "events", "orbs", "enchantments",
+                "afflictions", "acts", "characters")
 
 
 @dataclass
@@ -58,6 +66,93 @@ class ModelSpec:
     @classmethod
     def from_json(cls, d: dict) -> "ModelSpec":
         return cls(**d)
+
+
+class SpecMismatch(ValueError):
+    """A checkpoint's model inputs differ from the library's (`check_spec_compat`)."""
+
+
+def _cols_delta(old: dict | None, new: dict | None) -> str:
+    if old is None or new is None:
+        return f"{'absent' if old is None else len(old)} -> {'absent' if new is None else len(new)} columns"
+    parts = [f"-{k}" for k in old if k not in new] + [f"+{k}" for k in new if k not in old]
+    parts += [f"{k} {old[k]}->{new[k]}" for k in old if k in new and old[k] != new[k]]
+    return ", ".join(parts[:8]) + (f" (+{len(parts) - 8} more)" if len(parts) > 8 else "")
+
+
+def spec_diff(old: "ModelSpec | dict", new: "ModelSpec | dict") -> tuple[list[str], list[str]]:
+    """(model-input differences, other differences) between a checkpoint's spec `old` and the library's `new`.
+
+    Model inputs (what the weights, the column lookups and the pointer wiring depend on; compared exactly): shape and
+    column map of every buffer in USED_BUFFERS, the size of every vocabulary list the model embeds (MODEL_VOCABS) and
+    of every enum it embeds (ENUMS), the member names recorded in `enum_names` (RunActionKind / PromptItemKind pointer
+    wiring, RewardType), `card_vars`. Anything else may differ and is only reported: `encoder_version` (it changes with
+    every schema edit; appended buffers are not part of a spec at all), other enums (EndKind, ItemKind, ...) and
+    vocabulary lists, and the aux / last_episode blocks (the trainer reads those by field name from the live schema,
+    never through the checkpoint)."""
+    o = old.to_json() if isinstance(old, ModelSpec) else dict(old)
+    n = new.to_json() if isinstance(new, ModelSpec) else dict(new)
+    block: list[str] = []
+    other: list[str] = []
+    if o.get("encoder_version") != n.get("encoder_version"):
+        other.append(f"encoder_version {o.get('encoder_version')} -> {n.get('encoder_version')}")
+    oshp, nshp, ocol, ncol = o.get("shapes", {}), n.get("shapes", {}), o.get("cols", {}), n.get("cols", {})
+    for b in USED_BUFFERS:
+        if oshp.get(b) != nshp.get(b):
+            block.append(f"buffer {b}: shape {oshp.get(b)} -> {nshp.get(b)}")
+        if ocol.get(b) != ncol.get(b):
+            block.append(f"buffer {b}: columns {_cols_delta(ocol.get(b), ncol.get(b))}")
+    for b in ("aux", "last_episode"):
+        if oshp.get(b) != nshp.get(b) or ocol.get(b) != ncol.get(b):
+            other.append(f"buffer {b}: {_cols_delta(ocol.get(b), ncol.get(b))} (read by name from the library)")
+    ov, nv = o.get("vocab", {}), n.get("vocab", {})
+    for k in sorted(set(ov) | set(nv) | set(MODEL_VOCABS)):
+        if ov.get(k) == nv.get(k):
+            continue
+        txt = f"vocab {k}: {ov.get(k, 'absent')} -> {nv.get(k, 'absent')}"
+        if k in MODEL_VOCABS:
+            block.append(txt)
+        else:
+            other.append(txt + " (not read by the model)")
+    oe, ne = o.get("enums", {}), n.get("enums", {})
+    for k in sorted(set(oe) | set(ne)):
+        if oe.get(k) == ne.get(k):
+            continue
+        txt = f"enum {k}: {oe.get(k, 'absent')} -> {ne.get(k, 'absent')}"
+        if k in ENUMS:
+            block.append(txt)
+        else:
+            other.append(txt + " (not read by the model)")
+    on, nn_ = o.get("enum_names", {}), n.get("enum_names", {})
+    for k in sorted(set(on) | set(nn_)):
+        if k in on and on.get(k) != nn_.get(k):
+            a, b = on.get(k) or [], nn_.get(k) or []
+            moved = [x for x in a if x in b and a.index(x) != b.index(x)]
+            block.append(f"enum {k} members: -{[x for x in a if x not in b]} +{[x for x in b if x not in a]}"
+                         + (f" moved {moved[:6]}" if moved else ""))
+    if o.get("card_vars") != n.get("card_vars"):
+        block.append(f"card_vars {o.get('card_vars')} -> {n.get('card_vars')}")
+    return block, other
+
+
+def check_spec_compat(old: "ModelSpec | dict", new: "ModelSpec | dict", *, what: str = "resume") -> dict:
+    """Accept a checkpoint spec `old` for the library spec `new` when the model's inputs are identical
+    (`spec_diff`), else raise `SpecMismatch` listing every difference. Returns the record kept in config.json:
+    ``{"checkpoint_encoder_version", "library_encoder_version", "model_inputs": "identical", "other_differences"}``."""
+    block, other = spec_diff(old, new)
+    o = old.to_json() if isinstance(old, ModelSpec) else old
+    n = new.to_json() if isinstance(new, ModelSpec) else new
+    ov, nv = o.get("encoder_version"), n.get("encoder_version")
+    if block:
+        hint = ("resume with the library the checkpoint was trained on (its bundle), or start a fresh run (a new --out)"
+                if what == "resume" else "evaluate with the library the checkpoint was trained on (its bundle)")
+        raise SpecMismatch(
+            f"cannot {what}: the checkpoint's model inputs differ from this library's (checkpoint encoder_version "
+            f"{ov}, library {nv}):\n  - " + "\n  - ".join(block)
+            + "\nOnly an encoder_version change and changes outside the model's inputs (appended buffers, enums the "
+            f"model does not embed, aux / last_episode columns) are accepted; {hint}.")
+    return {"checkpoint_encoder_version": ov, "library_encoder_version": nv, "model_inputs": "identical",
+            "other_differences": other}
 
 
 TORCH_DTYPES = {np.dtype(np.int8): torch.int8, np.dtype(np.int16): torch.int16, np.dtype(np.int32): torch.int32,

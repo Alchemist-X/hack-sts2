@@ -35,10 +35,10 @@ uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve
 | File | Content |
 | --- | --- |
 | `status.json` | rewritten atomically after every update: `state` (running / finished / stopped / aborted / error), `stop_reason`, `update`, `env_steps`, `episodes`, `wins`, `wall_s`, `env_steps_per_s`, `recent` (progress / win rate / floor over the last 20 updates), `best_eval`, `last_eval`, `last_checkpoint`, `updated_at` |
-| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `gpu_mem_*_mb` (CUDA / MPS) |
+| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS) |
 | `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `weights_hash`; `best.pt` = the checkpoint of the best eval so far |
-| `config.json` | resolved config, architecture, parameter count, library path / version, `encoder_version`, one entry per session (host, device, torch, resumed from) |
+| `config.json` | resolved config, architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions) |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
 
@@ -47,6 +47,16 @@ Stops: `--max-hours` (this session's wall clock; the loop stops before an update
 exit; a second SIGINT aborts). A resumed session restores weights, optimizer, counters and RNG states; the env restarts
 from fresh episodes (new start sequence), `metrics.jsonl` / `evals.jsonl` drop rows past the checkpoint. A fresh run
 into a directory that already holds checkpoints is refused.
+
+Resume across library versions: a checkpoint resumes on a library with another `encoder_version` when the model's
+inputs are identical (`features.check_spec_compat`): shape and column map of each of the 27 buffers it reads, the sizes
+of the vocabularies and enums it embeds, the RunActionKind / PromptItemKind / RewardType members, `card_vars`. Appended
+buffers, enums the model does not embed (EndKind, ItemKind) and the aux / last_episode columns (read by name from the
+live schema) may differ; the differences are logged and kept in `config.json` (`resume_compat`), and the next
+checkpoint carries the new spec. Anything else is refused before the env is built (exit 2, every difference listed,
+the run directory untouched). So the Stage-1 checkpoints of `fc2eb34c07bc8513` resume on `5dbfa09dd9dcb5ed` (the
+schema append only added buffers and enum members; `tests/test_resume_compat.py` pins it with that library's spec).
+`sts2train eval` applies the same rule to a checkpoint.
 
 ## Model sizes (`--preset`, or `--d-model --state-dim --depth --heads --ff-mult`)
 
@@ -70,14 +80,15 @@ defaults `PYTORCH_MPS_HIGH_WATERMARK_RATIO` to 0.3 (and the low watermark below 
 `depth > 0` adds a pre-LayerNorm transformer trunk (`F.scaled_dot_product_attention`, key padding mask) over 17
 typed table tokens plus one token per hand card, enemy and potion row; the state is read from the global token and the
 mean of the live tokens, and the contextualised hand / enemy / potion rows feed the candidate pointers. Counts are on
-the `fc2eb34c07bc8513` schema; every size, vocabulary and column index is read from the library's schema at start-up,
-so a library with extra observation buffers trains unchanged (unused buffers are ignored).
+the `fc2eb34c07bc8513` and `5dbfa09dd9dcb5ed` schemas (same model inputs); every size, vocabulary and column index is
+read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
+buffers are ignored).
 
 ## Pieces
 
 | Module | Content |
 | --- | --- |
-| `features.py` | `ModelSpec` (vocab / enum sizes, column maps, shapes, encoder_version from the published schema; stored in checkpoints), `obs_to_device` / `obs_to_torch` (the 27 buffers the model reads; `cand` / `prompt_options` cut to the rows the batch needs), `RolloutStore` ([T, N, ...] tensors on the training device in source dtypes, 643 MiB at 32 × 1024 with 64 candidate / prompt rows; minibatches are gathered on the device) |
+| `features.py` | `ModelSpec` (vocab / enum sizes, column maps, shapes, encoder_version from the published schema; stored in checkpoints), `check_spec_compat` (may a checkpoint's spec drive this library: model inputs identical), `obs_to_device` / `obs_to_torch` (the 27 buffers the model reads; `cand` / `prompt_options` cut to the rows the batch needs), `RolloutStore` ([T, N, ...] tensors on the training device in source dtypes, 643 MiB at 32 × 1024 with 64 candidate / prompt rows; minibatches are gathered on the device) |
 | `model.py` | `Policy`: id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; optional transformer trunk; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head. `PRESETS` |
 | `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
@@ -92,8 +103,10 @@ so a fresh episode's return is exactly its protocol progress (+ bonus on a win);
 of their last state, as the protocol scores `capped` / `stuck` games (`tests/test_objective.py` replays synthetic and
 real episodes against the evaluator's bookkeeping). `win` is the contract's reward (1 at a Victory terminal, else 0).
 `--shaped` (= `--objective shaped`) is the LEGACY smoke objective, `win` + `delta(total_floor) / 48` per step.
-`--floor-step-cap N` is passed to `VecEnv` (stall truncation) when the installed sts2vec supports it; otherwise it is
-an error rather than a silent no-op.
+`--floor-step-cap N` is passed to `VecEnv` (stall truncation: an episode with N non-combat decisions on one floor is
+truncated, status `FLOOR_STALL`, scored like the protocol's `stuck`) when the installed sts2vec supports it; otherwise
+it is an error rather than a silent no-op. Unset, the env's default applies: 80 (`sts2vec.FLOOR_STEP_CAP`, the
+evaluator's `stuck` rule) on a library that implements the cap. The cap in effect is in `config.json` `env`.
 
 Training restricts actions to the first 64 candidates (`--max-rows`; rare overflow is counted as `cand_over_max_rows`);
 eval passes every candidate row.

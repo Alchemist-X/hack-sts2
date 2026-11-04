@@ -1,0 +1,470 @@
+{
+ "aux_fields": [
+  "total_floor",
+  "act_index",
+  "hp",
+  "max_hp",
+  "gold",
+  "bosses_killed",
+  "combats_won",
+  "deck_n",
+  "relic_n",
+  "is_combat",
+  "act_floor",
+  "map_row",
+  "map_col",
+  "act_rooms"
+ ],
+ "card_vars": 133,
+ "cols": {
+  "allies": {
+   "block": 4,
+   "hp": 2,
+   "max_hp": 3,
+   "monster_id": 1,
+   "present": 0
+  },
+  "aux": {
+   "act_floor": 10,
+   "act_index": 1,
+   "act_rooms": 13,
+   "bosses_killed": 5,
+   "combats_won": 6,
+   "deck_n": 7,
+   "gold": 4,
+   "hp": 2,
+   "is_combat": 9,
+   "map_col": 12,
+   "map_row": 11,
+   "max_hp": 3,
+   "relic_n": 8,
+   "total_floor": 0
+  },
+  "cand": {
+   "A": 1,
+   "B": 2,
+   "card_id": 7,
+   "hand_slot": 3,
+   "kind": 0,
+   "option_index": 6,
+   "potion_slot": 5,
+   "target_slot": 4,
+   "target_uid": 8
+  },
+  "card_reward": {
+   "affliction_id": 10,
+   "card_id": 0,
+   "cost_base": 3,
+   "cost_current": 2,
+   "enchant_amount": 9,
+   "enchant_id": 8,
+   "hits": 13,
+   "keyword_mask": 7,
+   "playable": 11,
+   "playable_reason_id": 12,
+   "rarity": 6,
+   "target": 5,
+   "type": 4,
+   "upgrade": 1,
+   "var_id_0": 14,
+   "var_id_1": 15,
+   "var_id_2": 16,
+   "var_id_3": 17,
+   "var_val_0": 18,
+   "var_val_1": 19,
+   "var_val_2": 20,
+   "var_val_3": 21
+  },
+  "deck": {
+   "affliction_id": 4,
+   "card_id": 0,
+   "enchant_amount": 3,
+   "enchant_id": 2,
+   "upgrade": 1
+  },
+  "enemies": {
+   "behind": 7,
+   "block": 5,
+   "flank": 6,
+   "hp": 3,
+   "intent_n": 8,
+   "max_hp": 4,
+   "monster_id": 2,
+   "present": 0,
+   "uid": 1
+  },
+  "enemy_intents": {
+   "card_count": 3,
+   "damage": 1,
+   "times": 2,
+   "type": 0
+  },
+  "enemy_powers": {
+   "amount": 1,
+   "power_id": 0
+  },
+  "event_options": {
+   "enabled": 2,
+   "key_hash": 0,
+   "locked": 3,
+   "ordinal": 1,
+   "proceed": 4,
+   "relic_id": 5
+  },
+  "global_f": {
+   "floor_frac": 2,
+   "gold_log1p": 1,
+   "hp_frac": 0,
+   "incoming_net_hp": 3
+  },
+  "global_i": {
+   "act_floor": 6,
+   "act_id": 4,
+   "act_index": 3,
+   "ally_n": 27,
+   "ascension": 2,
+   "block": 15,
+   "boss_id": 28,
+   "card_removals_used": 30,
+   "card_reward_can_skip": 46,
+   "card_reward_skip_consumes": 47,
+   "character": 1,
+   "decision_kind": 56,
+   "deck_n": 19,
+   "discard_n": 21,
+   "draw_n": 20,
+   "enemy_n": 26,
+   "energy": 12,
+   "event_finished": 52,
+   "event_id": 51,
+   "event_option_n": 53,
+   "exhaust_n": 22,
+   "gold": 11,
+   "hand_n": 25,
+   "hp": 9,
+   "incoming_damage": 32,
+   "incoming_hits": 33,
+   "is_combat": 57,
+   "map_col": 8,
+   "map_row": 7,
+   "max_energy": 13,
+   "max_hp": 10,
+   "orb_slots": 23,
+   "phase": 0,
+   "potion_slots": 18,
+   "prompt_can_cancel": 39,
+   "prompt_can_skip": 40,
+   "prompt_kind": 34,
+   "prompt_max": 36,
+   "prompt_min": 35,
+   "prompt_needs_confirm": 38,
+   "prompt_option_n": 42,
+   "prompt_ordered": 41,
+   "prompt_picked": 37,
+   "prompt_pile": 43,
+   "prompt_site_hash": 44,
+   "relic_n": 24,
+   "removal_price": 31,
+   "rest_option_n": 54,
+   "reward_n": 45,
+   "round": 17,
+   "second_boss_id": 29,
+   "shop_entry_n": 55,
+   "stars": 14,
+   "total_floor": 5,
+   "treasure_claimed": 50,
+   "treasure_opened": 48,
+   "treasure_relic_id": 49,
+   "turn": 16
+  },
+  "hand": {
+   "affliction_id": 10,
+   "card_id": 0,
+   "cost_base": 3,
+   "cost_current": 2,
+   "enchant_amount": 9,
+   "enchant_id": 8,
+   "hits": 13,
+   "keyword_mask": 7,
+   "playable": 11,
+   "playable_reason_id": 12,
+   "rarity": 6,
+   "target": 5,
+   "type": 4,
+   "upgrade": 1,
+   "var_id_0": 14,
+   "var_id_1": 15,
+   "var_id_2": 16,
+   "var_id_3": 17,
+   "var_val_0": 18,
+   "var_val_1": 19,
+   "var_val_2": 20,
+   "var_val_3": 21
+  },
+  "hand_dmg": {
+   "vs_enemy_0": 0,
+   "vs_enemy_1": 1,
+   "vs_enemy_2": 2,
+   "vs_enemy_3": 3,
+   "vs_enemy_4": 4,
+   "vs_enemy_5": 5
+  },
+  "hand_f": {
+   "block_eff": 0,
+   "damage_eff_self_or_all": 1
+  },
+  "last_episode": {
+   "act": 2,
+   "end_kind": 6,
+   "final_hp": 4,
+   "final_max_hp": 5,
+   "floor": 1,
+   "last_encounter_id": 7,
+   "steps": 3,
+   "win": 0
+  },
+  "map_nodes": {
+   "child_mask": 4,
+   "current": 2,
+   "legal_next": 3,
+   "point_type": 0,
+   "quest": 5,
+   "visited": 1
+  },
+  "orbs": {
+   "evoke": 2,
+   "orb_id": 0,
+   "passive": 1
+  },
+  "potions": {
+   "potion_id": 0,
+   "target_type": 2,
+   "usable_now": 1
+  },
+  "powers_player": {
+   "amount": 1,
+   "is_debuff": 2,
+   "power_id": 0
+  },
+  "prompt_options": {
+   "item_id": 0,
+   "kind_of_item": 3,
+   "ordinal": 4,
+   "picked": 2,
+   "upgrade": 1
+  },
+  "relics": {
+   "counter": 1,
+   "relic_id": 0,
+   "stack": 4,
+   "status": 2,
+   "used_up": 3
+  },
+  "rest": {
+   "enabled": 1,
+   "option_id": 0
+  },
+  "rewards": {
+   "amount": 1,
+   "is_card_reward": 3,
+   "item_id": 2,
+   "reward_type": 0
+  },
+  "shop": {
+   "affordable": 6,
+   "category": 0,
+   "item_id": 1,
+   "on_sale": 5,
+   "price": 3,
+   "stocked": 4,
+   "upgrade": 2
+  }
+ },
+ "encoder_version": "fc2eb34c07bc8513",
+ "enum_names": {
+  "PromptItemKind": [
+   "",
+   "?",
+   "bundle",
+   "card",
+   "index",
+   "potion",
+   "relic"
+  ],
+  "RewardType": [
+   "None",
+   "Card",
+   "Gold",
+   "Potion",
+   "Relic",
+   "RemoveCard",
+   "SpecialCard"
+  ],
+  "RunActionKind": [
+   "PlayCard",
+   "EndTurn",
+   "UsePotion",
+   "DiscardPotion",
+   "Travel",
+   "ClaimReward",
+   "ProceedRewards",
+   "PickRewardCard",
+   "RewardAlternative",
+   "BuyEntry",
+   "LeaveShop",
+   "ChooseRestOption",
+   "LeaveRestSite",
+   "OpenChest",
+   "TakeTreasureRelic",
+   "SkipTreasureRelic",
+   "ChooseEventOption",
+   "LeaveEvent",
+   "PromptSelect",
+   "PromptConfirm",
+   "PromptCancel"
+  ]
+ },
+ "enums": {
+  "CardKeyword": 8,
+  "CardRarity": 11,
+  "CardRewardAlt": 5,
+  "CardType": 7,
+  "ChoicePromptKind": 13,
+  "EndKind": 5,
+  "IntentType": 15,
+  "MapPointType": 9,
+  "PileType": 7,
+  "PromptItemKind": 7,
+  "RelicStatus": 3,
+  "RestOption": 11,
+  "RewardType": 7,
+  "RunActionKind": 21,
+  "RunPhase": 11,
+  "ShopCategory": 7,
+  "TargetType": 10
+ },
+ "shapes": {
+  "allies": [
+   2,
+   5
+  ],
+  "aux": [
+   14
+  ],
+  "cand": [
+   192,
+   9
+  ],
+  "cand_n": [],
+  "card_reward": [
+   4,
+   22
+  ],
+  "card_reward_alts": [
+   2
+  ],
+  "deck": [
+   96,
+   5
+  ],
+  "discard_counts": [
+   1196
+  ],
+  "draw_counts": [
+   1196
+  ],
+  "enemies": [
+   6,
+   9
+  ],
+  "enemy_intents": [
+   6,
+   3,
+   4
+  ],
+  "enemy_powers": [
+   6,
+   12,
+   2
+  ],
+  "event_options": [
+   8,
+   6
+  ],
+  "exhaust_counts": [
+   1196
+  ],
+  "global_f": [
+   4
+  ],
+  "global_i": [
+   58
+  ],
+  "hand": [
+   10,
+   22
+  ],
+  "hand_dmg": [
+   10,
+   6
+  ],
+  "hand_f": [
+   10,
+   2
+  ],
+  "last_episode": [
+   8
+  ],
+  "map_nodes": [
+   18,
+   7,
+   6
+  ],
+  "orbs": [
+   10,
+   3
+  ],
+  "potions": [
+   10,
+   3
+  ],
+  "powers_player": [
+   24,
+   3
+  ],
+  "prompt_options": [
+   128,
+   5
+  ],
+  "relics": [
+   32,
+   5
+  ],
+  "rest": [
+   9,
+   2
+  ],
+  "rewards": [
+   8,
+   4
+  ],
+  "shop": [
+   14,
+   7
+  ]
+ },
+ "vocab": {
+  "acts": 6,
+  "afflictions": 9,
+  "cards": 598,
+  "characters": 7,
+  "enchantments": 23,
+  "encounters": 91,
+  "events": 68,
+  "monsters": 113,
+  "orbs": 7,
+  "potions": 66,
+  "powers": 245,
+  "relics": 299
+ }
+}

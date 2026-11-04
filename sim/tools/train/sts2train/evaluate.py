@@ -7,7 +7,9 @@ the weights hash. Everything else — one pool entry and one slot per game, no a
 audit — is ``sts2vec.evaluate.evaluate``. ``sts2eval report DIR`` re-renders the same directory.
 
 ``evaluate_model`` is what the trainer calls in-process every ``eval_every`` updates (the live model, no reload);
-``evaluate`` loads a checkpoint first (``sts2train eval``).
+``evaluate`` loads a checkpoint first (``sts2train eval``). A model whose spec differs from the library's is evaluated
+only when the model's inputs are identical (``features.check_spec_compat``, the rule ``--resume`` uses); the run
+directory's config.json records the checkpoint's encoder_version next to the library's.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import torch
 from sts2vec.evaluate import FLOOR_STEP_CAP, STEP_CAP, replay  # noqa: F401  (re-exported)
 from sts2vec.evaluate import evaluate as vec_evaluate
 
-from .features import bind_spec, obs_to_torch
+from .features import ModelSpec, bind_spec, check_spec_compat, obs_to_torch
 
 
 def greedy_policy(model, device: str = "cpu"):
@@ -36,26 +38,32 @@ def greedy_policy(model, device: str = "cpu"):
 def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str, checkpoint: str | None = None,
                    threads: int = 8, device: str = "cpu", step_cap: int = STEP_CAP,
                    floor_step_cap: int = FLOOR_STEP_CAP, log=print) -> dict:
-    """Play `seedset` greedily with `model` and write the protocol run directory `out_dir`; returns the report."""
+    """Play `seedset` greedily with `model` and write the protocol run directory `out_dir`; returns the report.
+
+    Raises `features.SpecMismatch` (before any game is played) when `spec` differs from the library's in the model's
+    inputs; an encoder_version change outside them is accepted and noted."""
+    from sts2vec import load, schema_of
+
+    compat = check_spec_compat(spec, ModelSpec.from_schema(schema_of(load())), what="evaluate")
+    if compat["other_differences"]:
+        log(f"note: checkpoint encoder_version {compat['checkpoint_encoder_version']}, library "
+            f"{compat['library_encoder_version']}: the model's inputs are identical (other differences: "
+            f"{'; '.join(compat['other_differences'])})")
     bind_spec(spec)
     was_training = model.training
     model.eval()
     name = f"nn:{Path(checkpoint).name}" if checkpoint else "nn:live"
     act = greedy_policy(model, device)
 
-    def checked(obs: dict, ctx) -> np.ndarray:
-        if ctx.step == 0 and ctx.schema.encoder_version != spec.encoder_version:
-            log(f"warning: checkpoint encoder_version {spec.encoder_version} != library {ctx.schema.encoder_version}")
-        return act(obs, ctx)
-
     try:
         return vec_evaluate(
-            seedset, checked, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
+            seedset, act, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
             policy_name=name, policy_hash=f"weights:{weights_hash}", log=log,
             summary_extra={"weights_hash": weights_hash},
             config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
-                          "arch": getattr(model, "arch", None), "device": str(device), "greedy": True})
+                          "arch": getattr(model, "arch", None), "device": str(device), "greedy": True,
+                          "checkpoint_encoder_version": spec.encoder_version})
     finally:
         model.train(was_training)
 
