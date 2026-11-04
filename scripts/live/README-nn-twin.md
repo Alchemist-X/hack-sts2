@@ -50,7 +50,15 @@ checkpoint：s3c `best.pt`（encoder `5dbfa09dd9dcb5ed`，15.8M 参数，静默�
   `TakeRewardCard` / 22 `TakeRewardAlternative`）：单元测试 50 个（+ 按库的 `RunActionKind` 逐个枚举 23 种候选的解码与
   token、`TakeRewardAlternative` 的两步计划、多个卡牌奖励按名次配对、play server 上的宏动作 token）；集成测试 4 个
   （两个小 checkpoint 的 dry run——本库 spec 的和宏动作之前 spec 的（加宽加载）、加宽检查、5 个随机策略整局，宏动作
-  必须出现）。dry run 全部 0 desync、token 全同。**真实游戏没有在合并后的库上重跑**（上面的结果都是宏动作之前的库）。
+  必须出现）。dry run 全部 0 desync、token 全同。
+- **合并后的库上的真实游戏（2026-11-04 早）**：checkpoint s8a `ckpt-0002050.pt`（encoder `3b73317739c650bd`，2.9M
+  参数，`--aux-heads` + `--deck-counts`，状态行显示通关把握），贪心 + `--loop-breaker`（默认开，和 `sts2train eval`
+  一样）。最初两局暴露了三个接口差异，已修（`c89a0bc`、`39c5b46`）：MCP 的遗物奖励不带 id（网络要的遗物被丢下）、
+  事件里的奖励页领完后游戏自己关掉、升级预览上的取消在游戏里只回到选牌网格（要再取消一次）。修复后：
+  `TW1NA10S02` 233 个决策、`TW1NA10S03` 228 个决策，**都是 0 desync、0 resync，与各自 dry run 逐决策相同**（各有
+  1 次 loop breaker：休息处 HEAL 代替又一次 SMITH），都死在第一幕首领（THE_KIN_BOSS / WATERFALL_GIANT_BOSS），
+  约 7.5 分钟一局。修复前的 S03 那局因为兜底动作走了别的路，反而打到第二幕第 22 层。产物：
+  `output/nn-twin/20261104-s8a-silent-a10-*`。
 
 ## 你早上要做的（推荐：可见的隔离实例）
 
