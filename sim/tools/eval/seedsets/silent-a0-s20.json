@@ -1,0 +1,33 @@
+{
+  "name": "silent-a0-s20",
+  "id": "silent-a0-v1",
+  "version": 1,
+  "role": "target",
+  "protocol": "0.2",
+  "frozen": "2026-11-03",
+  "ascension": 0,
+  "content": "ported_only",
+  "sha256": "1c0bf087e2b28e986484b412b64c705706996f79dac261de3d80abc8e7c15206",
+  "games": [
+    {"seed": "C1A0SI01", "character": "SILENT"},
+    {"seed": "C1A0SI02", "character": "SILENT"},
+    {"seed": "C1A0SI03", "character": "SILENT"},
+    {"seed": "C1A0SI04", "character": "SILENT"},
+    {"seed": "C1A0SI05", "character": "SILENT"},
+    {"seed": "C1A0SI06", "character": "SILENT"},
+    {"seed": "C1A0SI07", "character": "SILENT"},
+    {"seed": "C1A0SI08", "character": "SILENT"},
+    {"seed": "C1A0SI09", "character": "SILENT"},
+    {"seed": "C1A0SI10", "character": "SILENT"},
+    {"seed": "C1A0SI11", "character": "SILENT"},
+    {"seed": "C1A0SI12", "character": "SILENT"},
+    {"seed": "C1A0SI13", "character": "SILENT"},
+    {"seed": "C1A0SI14", "character": "SILENT"},
+    {"seed": "C1A0SI15", "character": "SILENT"},
+    {"seed": "C1A0SI16", "character": "SILENT"},
+    {"seed": "C1A0SI17", "character": "SILENT"},
+    {"seed": "C1A0SI18", "character": "SILENT"},
+    {"seed": "C1A0SI19", "character": "SILENT"},
+    {"seed": "C1A0SI20", "character": "SILENT"}
+  ]
+}
