@@ -718,6 +718,34 @@ def _autocast(amp: bool):
     return torch.autocast("cuda", dtype=torch.bfloat16) if amp else contextlib.nullcontext()
 
 
+def _learner_policy(model, xb, act, *, amp, with_aux):
+    with _autocast(amp):
+        if with_aux:
+            logits, value, heads = model(xb, aux=True)
+        else:
+            logits, value = model(xb)
+            heads = None
+    logp_all = F.log_softmax(logits, -1)
+    return logp_all, logp_all.gather(1, act.unsqueeze(1)).squeeze(1), value, heads
+
+
+def _batch_logp_gate(model, args, amp):
+    """Compare actual sampled behavior logp with the first frozen learner minibatch."""
+    xb, act, oldlogp = args[:3]
+    logp_all, newlogp, value, heads = _learner_policy(model, xb, act, amp=amp, with_aux=len(args) > 6)
+    outputs = (oldlogp, logp_all, value, *(heads or {}).values())
+    finite = bool(torch.stack([torch.isfinite(x.detach()).all() for x in outputs]).all())
+    delta = newlogp.detach().double() - oldlogp.double()
+    maximum = float(delta.abs().max()) if finite else None
+    mean_kl = float((torch.expm1(delta) - delta).mean()) if finite else None
+    finite = finite and np.isfinite(mean_kl).item()
+    return {"samples": act.numel(), "finite": finite, "max_abs_delta_logp": maximum,
+            "mean_approx_kl": mean_kl if finite else None, "max_abs_delta_limit": 1e-3, "mean_approx_kl_limit": 1e-6,
+            "learner_train_mode": model.training, "learner_grad_enabled": torch.is_grad_enabled(),
+            "bf16_autocast": amp, "same_candidate_mask": True,
+            "passed": finite and maximum <= 1e-3 and mean_kl <= 1e-6}
+
+
 def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
              madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
              ent_coef: float, amp: bool = False, aux: tuple | None = None,
@@ -726,14 +754,7 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
     and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
     `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
     losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
-    heads = None
-    with _autocast(amp):
-        if aux is None:
-            logits, v = model(xb)
-        else:
-            logits, v, heads = model(xb, aux=True)
-    logp_all = F.log_softmax(logits, -1)
-    newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
+    logp_all, newlogp, v, heads = _learner_policy(model, xb, act, amp=amp, with_aux=aux is not None)
     ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
     ratio = (newlogp - oldlogp).exp()
     pg = -torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv).mean()
@@ -966,7 +987,7 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
 
 def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None,
           given: dict | None = None, episode_hooks=(), isolation_seedsets=(), strict_resume=False,
-          checkpoint_ready=None, seed_range=None, isolation_guard=None) -> dict:
+          checkpoint_ready=None, seed_range=None, isolation_guard=None, batch_probe=None) -> dict:
     """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`;
     `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
     callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
@@ -975,10 +996,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     ``checkpoint_ready``, when supplied, receives the path after each completed atomic save.
     ``seed_range`` limits stream seed issuance to an externally reserved half-open interval.
     ``isolation_guard`` supplies already verified, explicitly bound holdouts for a standalone worker image.
+    ``batch_probe`` records the first frozen learner gate and one full PPO update for the engineering probe.
 
     Before anything is created: an eval seed set with games of a frozen blind set is refused unless
     ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
     game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
+    if batch_probe is not None and (
+        not callable(batch_probe) or resume is not None or seed_range is None or cfg.start_mode != "stream"
+        or (cfg.envs, cfg.rollout, cfg.minibatch, cfg.epochs, cfg.max_updates, cfg.ckpt_every) != (2048, 64, 4096, 1, 1, 1)
+        or cfg.device != "cuda" or not cfg.amp or cfg.compile != "off" or cfg.rollout_loop_breaker
+    ):
+        raise ValueError("batch probe requires one fresh frozen CUDA BF16 update")
     if seed_range is not None and cfg.start_mode != "stream":
         raise ValueError("a seed reservation requires --start-mode stream")
     if cfg.bootstrap_time_limits and cfg.start_mode != "stream":
@@ -1415,6 +1443,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             cyc_r = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
             if r_obj is None:
                 r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
+        if batch_probe is not None:
+            batch_probe("cold_start", {"cold_start_s": time.monotonic() - session_start, "pool_warm_s": warm_s,
+                                       "pool_warmed": warmed, "rollout_store_bytes": store.nbytes, **gpu_memory(device)})
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -1601,6 +1632,28 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
                         d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux))
 
+            if batch_probe is not None:
+                gate_start = time.monotonic()
+                check = (_batch_logp_gate(model, mb_args(mbs[0], d_mbs[0]), amp)
+                         if len(mbs[0]) == cfg.minibatch else {"passed": False, "samples": len(mbs[0])})
+                gate_s = time.monotonic() - gate_start
+                publish_start = time.monotonic()
+                batch_probe("before_update", {
+                    **check, "gate_s": gate_s, "rollout_shape": [cfg.envs, cfg.rollout],
+                    "learner_minibatch_size": cfg.minibatch,
+                    "sample_indices_sha256": hashlib.sha256(mbs[0].astype("<i8", copy=False).tobytes()).hexdigest(),
+                    "optimizer_steps_before": optimizer_step(opt), "rollout_decisions": n_steps,
+                    "learning_samples": len(idx_all), "t_env_s": env_s, "t_infer_s": infer_s,
+                    "cycles": cycles.totals_dict(),
+                    "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
+                    "cand_over_max_rows": over_n, "prompt_over_max_rows": prompt_over_n,
+                    "native_candidate_overflow": native_cand_over_n, "native_table_overflow": native_table_over_n,
+                    **gpu_memory(device),
+                })
+                if not check["passed"] or not len(idx_all) == n_steps == cfg.envs * cfg.rollout:
+                    raise RuntimeError("frozen PPO pre-update gate failed")
+                gate_publish_s = time.monotonic() - publish_start
+                t_up = time.monotonic()
             if updater.compiled is not None and "update" not in compile_check and mbs \
                     and len(mbs[0]) == cfg.minibatch:
                 compile_check["update"] = chk = check_compiled(updater, mb_args(mbs[0], d_mbs[0]), amp=amp, tf32=tf32)
@@ -1614,7 +1667,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch) for mb_h, mb in zip(mbs, d_mbs)]
             stats = torch.stack(stats).cpu().numpy() if stats else None
             update_s = time.monotonic() - t_up
-            if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
+            if stats is not None and not np.isfinite(
+                stats if batch_probe is not None else stats[:, STAT_NAMES.index("loss")]
+            ).all():
                 raise FloatingPointError(f"non-finite loss at update {upd + 1}")
             sm = dict(zip(stat_names(cfg), (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
@@ -1700,7 +1755,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                              ep_this, shaper), **lb_st, **cy_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
                    **gpu_memory(device)}
+            if batch_probe is not None:
+                row.update(t_gate_s=gate_s, t_gate_publish_s=gate_publish_s,
+                           decisions_per_s_excluding_gate=n_steps / max(t_ck - t_iter - gate_s - gate_publish_s, 1e-9))
             metrics.write(row)
+            if batch_probe is not None:
+                batch_probe("after_update", {"metrics": row, "optimizer_steps_after": optimizer_step(opt),
+                                             "learner_minibatches": len(mbs),
+                                             "minibatch_rows": [len(mb) for mb in mbs],
+                                             "gpu_mem_peak_reserved_mb": torch.cuda.max_memory_reserved(device) / 2**20,
+                                             "minibatch_stats": dict(zip(stat_names(cfg), stats.T.tolist()))})
             episodes_log.write_update(upd, c["sessions"], ep_this)
             failed_starts = track.pop_failed()
             if failed_starts:

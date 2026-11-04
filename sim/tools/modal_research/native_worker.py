@@ -116,7 +116,7 @@ def _evaluate_checkpoint(seedset, checkpoint, output, threads):
 
 
 def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, seed_range=None,
-        execution_deadline=None, max_threads=16):
+        execution_deadline=None, max_threads=16, batch_probe=None):
     """Execute one bounded job through the guarded path. Call only after worker admission."""
     spec = validate_job(job)
     result_label(spec)
@@ -190,6 +190,10 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
         "max_env_steps": job.payload["target_decisions"], "max_hours": remaining / 3600,
         "ckpt_every_min": spec["checkpoint_policy"]["interval_seconds"] / 60, "out": str(output),
     }
+    if batch_probe is not None:
+        if job.payload["checkpoint"] is not None or spec["eval_protocol"] != "silent-a10-smoke-v1":
+            raise ValueError("batch probe requires a fresh engineering job")
+        options.update(max_updates=1, ckpt_every=1)
     config = resolve_config(options)
     resume = None
     if checkpoint is not None:
@@ -219,4 +223,5 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
             raise ValueError("training checkpoint does not include complete optimizer and RNG resume state")
     return train(config, resume=resume, resume_path=checkpoint, given=options,
                  isolation_guard=isolation_guard, strict_resume=True,
-                 checkpoint_ready=checkpoint_ready, seed_range=seed_range)
+                 checkpoint_ready=checkpoint_ready, seed_range=seed_range,
+                 **({"batch_probe": batch_probe} if batch_probe is not None else {}))

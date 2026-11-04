@@ -20,6 +20,11 @@ from .manifests import file_digest
 
 TASK = "modal-gpu-engineering-smoke-20261104-020"
 TASKS = {1: TASK, 2: "modal-gpu-engineering-smoke-20261104-021"}
+BATCH_TASK = "modal-s-gpu-batch-probe-20261104-022"
+BATCH_INDEX_HASH = "8d8e45bfb03c40a5720b6d2780d8a1f903bb2f55b7f550e40917bfb23d0d6d28"
+BATCH_ALLOWLIST_HASH = "6d8c7e3c5873d599f77ea84655d4de4894fcade876910431fe07a0f3ba53a9eb"
+BATCH_GRANT = (0, 1_097_984)
+BATCH_TARGET = 131_072
 REUSED_IMAGE_ID = "im-SiAUSyA568b1WIQLQ1Uljr"
 REGISTRY_DIGEST = "c16f4c749e2d9e96878875cdf6cc45cddda1d1a36fddd371dd6f2360f1b6e2a2"
 REGISTRY = f"pytorch/pytorch@sha256:{REGISTRY_DIGEST}"
@@ -101,14 +106,20 @@ def _write_member(bundle, destination, content):
     target.write_bytes(content)
 
 
-def prepare(root, inputs, engine, out, reservation, attempt=1):
+def prepare(root, inputs, engine, out, reservation, attempt=1, *, batch_inputs=None):
     root, inputs, out = Path(root), Path(inputs), Path(out)
-    index_path = inputs / "seed-inputs" / "manifest-index.json"
-    if file_digest(index_path) != INDEX_HASH or file_digest(engine) != ENGINE_HASH:
+    is_batch = batch_inputs is not None
+    if is_batch and attempt != 1:
+        raise ValueError("batch probe has its own family")
+    index_path = (Path(batch_inputs) if is_batch else inputs) / "seed-inputs" / "manifest-index.json"
+    index_hash = BATCH_INDEX_HASH if is_batch else INDEX_HASH
+    if file_digest(index_path) != index_hash or file_digest(engine) != ENGINE_HASH:
         raise ValueError("smoke seed index or verified native library differs")
     index = json.loads(index_path.read_bytes())
-    allowlist = inputs / "package-allowlist.json"
-    if file_digest(allowlist) != ALLOWLIST_HASH:
+    if is_batch and tuple(index["training_seed_grant"]["interval"]) != BATCH_GRANT:
+        raise ValueError("batch seed grant differs from the frozen envelope")
+    allowlist = (Path(batch_inputs) if is_batch else inputs) / "package-allowlist.json"
+    if file_digest(allowlist) != (BATCH_ALLOWLIST_HASH if is_batch else ALLOWLIST_HASH):
         raise ValueError("audited source allowlist differs")
     allow = json.loads(allowlist.read_bytes())
     commit = _git(root, "rev-parse", "HEAD").decode().strip()
@@ -147,9 +158,9 @@ def prepare(root, inputs, engine, out, reservation, attempt=1):
         "files": {path.relative_to(bundle).as_posix(): file_digest(path)
                   for path in sorted(bundle.rglob("*")) if path.is_file()},
     })
-    packet = {"task": TASKS[attempt], "attempt": attempt, "family": TASK,
-              "reservation": identifier(reservation), "code_commit": commit,
-              "bundle_hash": file_digest(bundle / "bundle.json"), "seed_index_hash": INDEX_HASH,
+    packet = {"task": BATCH_TASK if is_batch else TASKS[attempt], "attempt": attempt,
+              "family": BATCH_TASK if is_batch else TASK, "reservation": identifier(reservation), "code_commit": commit,
+              "bundle_hash": file_digest(bundle / "bundle.json"), "seed_index_hash": index_hash,
               "seeds": index["registration_fields"], "image_digest": REGISTRY_DIGEST,
               "dependency_hash": file_digest(bundle / "dependencies.lock")}
     _atomic(out / "packet.json", packet)
@@ -168,9 +179,12 @@ def validate_package(out, packet):
     from .artifact_adapter import verify_bundle
 
     attempt = packet.get("attempt", 1)
-    if (type(attempt) is not int or packet["task"] != TASKS.get(attempt)
-            or packet.get("family", TASK) != TASK
-            or (packet["image_digest"], packet["seed_index_hash"]) != (REGISTRY_DIGEST, INDEX_HASH)):
+    is_batch = packet["task"] == BATCH_TASK
+    family = BATCH_TASK if is_batch else TASK
+    expected_task = BATCH_TASK if is_batch and attempt == 1 else TASKS.get(attempt)
+    index_hash = BATCH_INDEX_HASH if is_batch else INDEX_HASH
+    if (type(attempt) is not int or packet["task"] != expected_task or packet.get("family", TASK) != family
+            or (packet["image_digest"], packet["seed_index_hash"]) != (REGISTRY_DIGEST, index_hash)):
         raise ValueError("unknown engineering smoke packet")
     root = out / "bundle"
     install = _installation(root, packet, out / "output", out / "scratch")
@@ -197,6 +211,17 @@ def _spec(packet, params, deadline):
         "stop_rules": "Stop on stage failure or absolute deadline.",
         "promotion_rules": "Engineering smoke is ineligible for capacity promotion.",
     }
+    if packet["task"] == BATCH_TASK:
+        spec.update(
+            experiment_id="silent-a10-s-batch-probe", hypothesis="Measure one frozen S PPO batch and pre-update parity.",
+            reward_version="protocol-v0.2-delta-win1-noacq-cycle0-stepcap-bootstrap-v1",
+            action_protocol="native-abi2-full-rows192-greedy-off-eval1200-floor80-v1",
+            rollout_shape={"envs": 2048, "rollout": 64}, cumulative_decision_target=BATCH_TARGET,
+            evaluation_milestones=[BATCH_TARGET],
+            ppo_config={**PPO, "minibatch": 4096, "gamma": 1.0, "win_bonus": 1.0, "cycle_cost": 0.0,
+                        "acq_deck_coef": 0.003, "acq_relic_coef": 0.01, "acq_upgrade_coef": 0.004},
+            resource_request={**spec["resource_request"], "segment_seconds": GPU_SECONDS},
+        )
     if (spec["eval_protocol"], spec["dev_seed_count"], spec["blind_seed_count"]) != ("silent-a10-smoke-v1", 4, 4):
         raise ValueError("independent smoke seed protocol required")
     validate_spec(spec)
@@ -251,6 +276,52 @@ def _runtime(installation):
                     "cudnn": torch.backends.cudnn.version(), "device": torch.cuda.get_device_name(0)}
 
 
+def _host_memory():
+    import resource
+
+    result = {"process_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+    peak = Path("/sys/fs/cgroup/memory.peak")
+    try:
+        result["cgroup_peak_bytes"] = int(peak.read_text().strip())
+    except (OSError, ValueError):
+        result["cgroup_peak_bytes"] = None
+    return result
+
+
+def _run_batch(packet, spec, cutoff, installation, artifacts, report, save):
+    from .native_worker import run
+    from sts2train.runlog import _clean
+
+    output = installation.artifacts
+    report["batch_profile"] = {}
+
+    def record(stage, details):
+        details = _clean({**details, "host_memory": _host_memory()})
+        report["stage"] = stage
+        report["batch_profile"][stage] = details
+        if stage == "before_update":
+            parity = output / "parity.json"
+            _atomic(parity, {"packet_hash": report["packet_hash"], **details})
+            report["parity_sha256"] = file_digest(parity)
+        save()
+
+    job = _worker_job(packet, spec, "train-batch", "train", 0, BATCH_TARGET, 0, None, cutoff)
+    result = run(job, installation, checkpoint_ready=lambda path: None, seed_range=BATCH_GRANT,
+                 execution_deadline=cutoff, max_threads=16, batch_probe=record)
+    if (result["env_steps"] != BATCH_TARGET or result["session_updates"] != 1
+            or not result["last_checkpoint"] or report["batch_profile"]["after_update"]["minibatch_rows"] != [4096] * 32):
+        raise RuntimeError("frozen PPO batch did not complete exactly once")
+    started = time.monotonic()
+    final = artifacts.training(SimpleNamespace(job=job, seed_range=BATCH_GRANT),
+                               result["last_checkpoint"], installation.scratch, partial=False)
+    report["batch_profile"]["checkpoint_publication"] = {"seconds": time.monotonic() - started,
+                                                         "host_memory": _host_memory()}
+    report["evidence"].append({"job": asdict(job), "generation": asdict(final),
+                               "weights_hash": result["weights_hash"], "session_updates": 1})
+    report.update(status="passed", stage="completed")
+    save()
+
+
 def worker(packet, cutoff, packet_hash):
     """Process entrypoint. The immutable Sandbox command already verified the bundle bytes."""
     from tempfile import TemporaryDirectory
@@ -258,16 +329,17 @@ def worker(packet, cutoff, packet_hash):
     from .lineage import AcceptedCheckpoint, artifact_identity
     from .native_worker import run
 
+    worker_started = time.monotonic()
     if time.time() >= cutoff:
         raise TimeoutError("worker admission deadline elapsed")
     validate_package(MOUNT, packet)
     output = MOUNT / "output"
     output.mkdir(exist_ok=False)
     volume = _VolumeSync()
-    report = {"task": packet["task"], "attempt": packet.get("attempt", 1), "family": TASK,
+    report = {"task": packet["task"], "attempt": packet.get("attempt", 1), "family": packet.get("family", TASK),
               "reservation": packet["reservation"], "packet_hash": packet_hash,
               "result_label": "engineering_smoke", "status": "running", "stage": "runtime",
-              "blind_evaluation_count": 0, "actual_cost_usd": None,
+              "dev_evaluation_count": 0, "blind_evaluation_count": 0, "actual_cost_usd": None,
               "gpu_lifetime_seconds": GPU_SECONDS, "worker_deadline": cutoff, "evidence": [], "training": []}
 
     def save():
@@ -284,6 +356,12 @@ def worker(packet, cutoff, packet_hash):
             spec = _spec(packet, params, cutoff)
             report.update(spec=spec, config_hash=digest(spec), runtime=runtime)
             artifacts = ArtifactAdapter(output, volume)
+            if packet["task"] == BATCH_TASK:
+                report["runtime_init_s"] = time.monotonic() - worker_started
+                report["stage"] = "initializing_rollout"
+                save()
+                _run_batch(packet, spec, cutoff, installation, artifacts, report, save)
+                return
             accepted = reference = None
             cursor = issued = 0
             for number in (1, 2):
@@ -319,7 +397,7 @@ def worker(packet, cutoff, packet_hash):
             result = run(job, installation, accepted, execution_deadline=cutoff, max_threads=8)
             final = artifacts.evaluation(SimpleNamespace(job=job), result, installation)
             report["evidence"].append({"job": asdict(job), "generation": asdict(final), "headline": result["headline"]})
-            report.update(status="passed", stage="completed")
+            report.update(status="passed", stage="completed", dev_evaluation_count=spec["dev_seed_count"])
             save()
     except BaseException as error:
         report.update(status="failed", error_type=type(error).__name__, error=str(error)[:1000])
@@ -367,7 +445,7 @@ def stage(store, directory, packet, binding, modal):
     app = modal.App.lookup(binding["app"], create_if_missing=True, environment_name=binding["environment"])
     cloud["app_id"] = app.app_id
     _atomic(cloud_path, cloud)
-    if packet.get("attempt", 1) == 2:
+    if packet.get("attempt", 1) == 2 or packet["task"] == BATCH_TASK:
         cloud["image_id"] = REUSED_IMAGE_ID
         cloud["image_reused"] = True
     else:
@@ -475,12 +553,21 @@ def reconcile(store, directory, packet, binding, modal):
         mirror = ArtifactMirror(local, SimpleNamespace(read_file=lambda name: volume.read_file(f"/output/{name}")))
         for entry in report.get("evidence", ()):
             mirror.copy(Job(**entry["job"]), entry["generation"]["reference"])
+        if report.get("parity_sha256"):
+            parity = _read_volume_json(volume, "/output/parity.json")
+            if hashlib.sha256((canonical(parity) + "\n").encode()).hexdigest() != report["parity_sha256"]:
+                raise ValueError("parity evidence differs from the durable worker report")
+            _atomic(directory / "parity.json", parity)
     report.update(provider_exit_code=exit_code, sandbox_id=sandbox.object_id if sandbox else row["remote_id"])
     _atomic(directory / "result.json", report)
     status = None
     if row["submit_started"] and sandbox is not None and exit_code is not None:
-        complete = report["status"] == "passed" and exit_code == 0 and len(report.get("evidence", ())) == 3
-        if complete or report["status"] == "failed" or time.time() >= row["deadline"]:
+        is_batch = packet["task"] == BATCH_TASK
+        complete = (report["status"] == "passed" and exit_code == 0
+                    and len(report.get("evidence", ())) == (1 if is_batch else 3)
+                    and (not is_batch or bool(report.get("parity_sha256"))))
+        if (complete or report["status"] == "failed" or time.time() >= row["deadline"]
+                or (is_batch and exit_code != 0 and report["status"] != "no_worker_report")):
             status = "gpu_verified" if complete else "gpu_failed"
     elif not row["submit_started"] and time.time() >= row["deadline"]:
         status = "gpu_not_launched" if cloud.get("stage_complete") else "gpu_stage_failed"
@@ -503,6 +590,7 @@ def main():
         prepare_parser.add_argument(f"--{key}", required=True, type=Path)
     prepare_parser.add_argument("--reservation", required=True)
     prepare_parser.add_argument("--attempt", type=int, choices=TASKS, default=1)
+    prepare_parser.add_argument("--batch-inputs", type=Path)
     for name in ("stage", "launch", "reconcile"):
         command = commands.add_parser(name)
         command.add_argument("--directory", required=True, type=Path)
@@ -510,7 +598,8 @@ def main():
         command.add_argument("--study-id", default="silent-a10-modal")
     args = parser.parse_args()
     if args.command == "prepare":
-        result = prepare(args.repo, args.inputs, args.engine, args.directory, args.reservation, args.attempt)
+        result = prepare(args.repo, args.inputs, args.engine, args.directory, args.reservation, args.attempt,
+                         batch_inputs=args.batch_inputs)
     else:
         from .store import Store
 
