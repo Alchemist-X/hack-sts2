@@ -56,8 +56,9 @@ with the one-step macros + shaping; combat strength and rest-site upgrades remai
 
 - Pre-signal A10 checkpoint: +0.015 on dev-128 (CI excludes 0), +0.006 on test-100 (n.s.).
 - Final candidate u2050 on dev-128 (turn horizon, value+hp, K=8): lookahead 0.274 [0.255, 0.292]
-  vs greedy-without-loop-breaker 0.282 [0.262, 0.302]; paired Δ +0.008 [−0.011, +0.027]
-  (40 better / 32 worse / 56 same) — not significant. The greedy policy WITH the loop-breaker
+  vs greedy-without-loop-breaker 0.282 [0.262, 0.302]; paired Δ (lookahead − greedy)
+  −0.008 [−0.027, +0.011] (32 better / 40 worse / 56 same) — not significant
+  (an earlier revision of this doc printed the same numbers with the sign flipped). The greedy policy WITH the loop-breaker
   (0.351) is the deliverable; the search needs the loop-breaker and a better leaf score before
   it pays (docs/lookahead-2026-11-04.md).
 

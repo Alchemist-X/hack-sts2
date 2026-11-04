@@ -1,0 +1,1141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>静默猎手 A10 训练结果</title>
+<meta name="description" content="2026-11-03/04 通宵训练周期：Silent 进阶 10 的 PPO 学习曲线、训练信号、候选比较、通关漏斗与死因、前瞻搜索、真游戏孪生对局和算力消耗。">
+<script>
+/* apply the theme before first paint: ?theme= / #theme= override, else the saved choice, else the OS */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('sts2-viz-theme'); } catch (e) {}
+  var m = /theme=(light|dark)/.exec(location.hash + location.search);
+  if (m) t = m[1];
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --ctx: #898781;
+  --o1: #86b6ef; --o2: #2a78d6; --o3: #104281;
+  --track: #cde2fb; --wash: rgba(42, 120, 214, 0.08);
+  --good: #0ca30c; --critical: #d03b3b; --good-text: #006300;
+  --onfill: #ffffff; --tip-bg: #ffffff; --tip-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --ctx: #898781;
+    --o1: #184f95; --o2: #3987e5; --o3: #9ec5f4;
+    --track: #184f95; --wash: rgba(57, 135, 229, 0.13);
+    --good-text: #0ca30c; --tip-bg: #242423; --tip-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --ctx: #898781;
+  --o1: #184f95; --o2: #3987e5; --o3: #9ec5f4;
+  --track: #184f95; --wash: rgba(57, 135, 229, 0.13);
+  --good-text: #0ca30c; --tip-bg: #242423; --tip-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+}
+* { box-sizing: border-box; }
+html { background: var(--page); }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.65; -webkit-text-size-adjust: 100%; }
+.page { max-width: 1160px; margin: 0 auto; padding: 28px 24px 72px; }
+a { color: var(--s1); }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+header .eyebrow { margin: 0; font-size: 13px; color: var(--ink2); }
+.hdr-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 6px 0 10px; font-weight: 650; letter-spacing: 0.01em; }
+.lede { font-size: 16px; margin: 0 0 10px; max-width: 64em; }
+.facts { margin: 0 0 10px; padding-left: 1.2em; max-width: 64em; }
+.facts li { margin: 2px 0; }
+.meta { color: var(--ink2); font-size: 13px; margin: 8px 0 0; }
+.btn { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--wash); }
+.btn:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+nav.toc { margin: 18px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; }
+nav.toc a { color: var(--ink2); text-decoration: none; border-bottom: 1px solid var(--grid); }
+nav.toc a:hover { color: var(--ink); border-bottom-color: var(--ink2); }
+section { margin-top: 44px; scroll-margin-top: 12px; }
+h2 { font-size: 20px; line-height: 1.35; margin: 0 0 4px; font-weight: 650; }
+h2 .num { color: var(--muted); font-weight: 500; margin-right: 6px; }
+h3 { font-size: 15px; margin: 0 0 6px; font-weight: 650; }
+.sub { color: var(--ink2); font-size: 14.5px; margin: 0 0 14px; max-width: 72em; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px 14px; }
+.card + .card { margin-top: 14px; }
+.notes { margin: 12px 0 0; padding-left: 1.1em; color: var(--ink2); font-size: 13.5px; max-width: 76em; }
+.notes li { margin: 3px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 13px; min-width: 0; }
+.tile .label { font-size: 13px; color: var(--ink2); }
+.tile .value { font-size: 28px; font-weight: 620; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere; }
+.tile .value .unit { font-size: 15px; font-weight: 500; color: var(--ink2); }
+.tile .value.mono { font-size: 23px; font-weight: 600; }
+.tile .note { font-size: 12.5px; color: var(--ink2); margin-top: 5px; line-height: 1.5; }
+.meter { height: 6px; border-radius: 3px; background: var(--track); margin-top: 9px; overflow: hidden; }
+.meter > i { display: block; height: 100%; border-radius: 3px; background: var(--s1); }
+.chip { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-size: 12.5px; }
+.chip svg { width: 14px; height: 14px; flex: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink2); margin: 0 0 10px; }
+.legend .k { display: inline-flex; align-items: center; gap: 7px; }
+.legend .ln { width: 20px; height: 0; border-top: 2px solid; display: inline-block; }
+.legend .ln.thin { border-top-width: 1px; opacity: 0.7; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend .dt { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.legend .ring { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--ink); display: inline-block; }
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; overflow: visible; max-width: 100%; }
+.chart svg:focus { outline: none; }
+.chart svg:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; border-radius: 6px; }
+.smgrid { display: grid; gap: 14px 18px; }
+.sm { min-width: 0; }
+.smh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 13px; margin-bottom: 2px; }
+.smh b { font-weight: 650; color: var(--ink); }
+.smh span { color: var(--ink2); font-size: 12px; }
+.cols2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 860px) { .cols2 { grid-template-columns: minmax(0, 1fr); } }
+svg text { font-family: var(--font); font-size: 11px; fill: var(--ink2); }
+svg .tick { fill: var(--ink2); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .ttl { fill: var(--ink); font-size: 12px; font-weight: 650; }
+svg .rowlab { fill: var(--ink); font-size: 12px; }
+svg .vlab { fill: var(--ink); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+svg .strong { font-weight: 650; }
+svg .idlab { fill: var(--ink2); font-family: var(--mono); font-size: 10.5px; }
+svg .ann { fill: var(--ink); font-size: 11.5px; }
+svg .onfill { fill: var(--onfill); font-size: 10.5px; }
+svg .gridline { stroke: var(--grid); stroke-width: 1; }
+svg .axisline { stroke: var(--axis); stroke-width: 1; }
+svg .refline { stroke: var(--ink2); stroke-width: 1; }
+svg .cross { stroke: var(--ink2); stroke-width: 1; pointer-events: none; opacity: 0; }
+svg .hit { fill: transparent; }
+svg .band { fill: var(--wash); }
+svg .lead { stroke: var(--ink2); stroke-width: 1; }
+svg .balline { fill: none; stroke: var(--ink2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+svg .baldot { fill: var(--ink2); stroke: var(--surface); stroke-width: 2; }
+svg .on { filter: brightness(1.12); }
+details.tv { margin-top: 12px; font-size: 13px; }
+details.tv summary { cursor: pointer; color: var(--ink2); width: fit-content; }
+details.tv summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 5px 9px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { color: var(--ink2); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.id { font-family: var(--mono); font-size: 12px; }
+table.live td, table.live th { padding: 7px 10px; }
+@media (max-width: 640px) {
+  table.live thead { display: none; }
+  table.live, table.live tbody, table.live tr { display: block; width: 100%; }
+  table.live tr { border-bottom: 1px solid var(--grid); padding: 6px 0 8px; }
+  table.live td { display: flex; gap: 10px; border: 0; padding: 2px 0; text-align: left; white-space: normal; }
+  table.live td::before { content: attr(data-label); color: var(--ink2); flex: 0 0 8.5em; }
+}
+ol.next { margin: 0; padding-left: 1.3em; max-width: 76em; }
+ol.next li { margin: 8px 0; }
+ol.next li b { font-weight: 650; }
+.why { color: var(--ink2); font-size: 13.5px; }
+.callout { border-left: 3px solid var(--axis); padding: 6px 12px; color: var(--ink2); font-size: 13.5px; margin: 12px 0 0; max-width: 76em; }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--tip-bg); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--tip-shadow); padding: 8px 10px; font-size: 12.5px; line-height: 1.45; max-width: min(360px, calc(100vw - 16px)); }
+.tip[hidden] { display: none; }
+.tip .t { color: var(--ink2); font-size: 12px; margin-bottom: 3px; }
+.tip .row { display: flex; align-items: center; gap: 7px; }
+.tip .row b { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tip .row .l { color: var(--ink2); }
+.tip .key { width: 12px; height: 0; border-top: 2px solid; flex: none; }
+.tip .key.dot { width: 8px; height: 8px; border: 0; border-radius: 50%; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--grid); color: var(--ink2); font-size: 13px; }
+footer ul { padding-left: 1.1em; margin: 6px 0; }
+footer li { margin: 3px 0; }
+noscript p { color: var(--critical); }
+@media (max-width: 600px) {
+  .page { padding: 20px 16px 56px; }
+  h1 { font-size: 23px; }
+  .lede { font-size: 15px; }
+  .card { padding: 12px 12px 10px; border-radius: 10px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { padding: 11px 12px; }
+  .tile .value { font-size: 22px; }
+  .tile .value.mono { font-size: 17px; }
+}
+@media (max-width: 340px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="page" id="page">
+<header>
+  <div class="hdr-top">
+    <p class="eyebrow">hack-sts2 · 神经网络训练周期报告 · 2026-11-03/04 通宵（EST）</p>
+    <button id="themeBtn" class="btn" type="button" aria-label="切换浅色 / 深色主题">主题：跟随系统</button>
+  </div>
+  <h1>静默猎手（Silent）A10 通宵训练结果</h1>
+  <!-- numbers: model-card.json of s8a best (u2225) in runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/; s1b dev-128 greedy 0.1556 from docs/lookahead-2026-11-04.md §1.1; live twin summary.json; balance from the session transcript (colab CLI). -->
+  <p class="lede"><strong>结论：目标没有达成。</strong>最终选定 <code>s8a u2225</code>，在 128 局 dev 集上平均进度 <strong>0.372</strong>（95% CI 0.348–0.396），0 通关；目标是 0.60。</p>
+  <ul class="facts">
+    <li>进步是实在的：dev-128 从周期起点的 0.156（s1b u100，当时策略还不构筑卡组）提高到 0.372；57/128 局击败第 1 幕 Boss。</li>
+    <li>但已进入平台期：s8a、s8b 两条线在 u1800 之后的 20 局评测都在 0.32–0.43 之间振荡。</li>
+    <li>模拟器 ↔ 真游戏闭环通过：u2050 在隔离的无头真游戏实例里打了 2 局，233 / 228 个决策，0 desync。</li>
+    <li>算力：Colab A100 共 147.6 单位（上限 800），两张卡并行。</li>
+  </ul>
+  <p class="meta">数据：Colab 运行元数据归档（metrics / evals / model card，不含权重）、<code>docs/train-results-silent-a10-2026-11-04.md</code>、live twin 输出、会话时间线。时间均为 EST（UTC−5）。悬停或用方向键可查看数值；每张图下方有表格视图。</p>
+  <noscript><p>此页面的图表需要 JavaScript；数据仍可在页面源码的 viz-data 中查看。</p></noscript>
+  <nav class="toc" aria-label="目录">
+    <a href="#s1">1 结论速览</a><a href="#s2">2 学习曲线</a><a href="#s3">3 训练信号</a><a href="#s4">4 候选比较</a><a href="#s5">5 漏斗与死因</a><a href="#s6">6 前瞻搜索</a><a href="#s7">7 真游戏</a><a href="#s8">8 算力</a><a href="#s9">9 下一步</a>
+  </nav>
+</header>
+
+<!-- ============ 1. headline tiles ============
+  sources: runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/model-card.json (u2225: v1 0.427 / dev 0.372 [0.348,0.396] / test 0.346 [0.316,0.377]; staged act1_boss 103, act1_boss_beaten 57, act2 57, act2_boss 8; wins 0 on all sets);
+  goal 0.60 and allowance 800 units: memory/training-cycle-2026-11-03.md; live twin: train-live-twin/output/nn-twin/*-real-*/summary.json;
+  balance 890.85 -> 743.21: session transcript (colab CLI "Current balance"). -->
+<section id="s1" aria-labelledby="h-s1">
+  <h2 id="h-s1"><span class="num">1</span>结论速览</h2>
+  <p class="sub">进度 = 协议 v0.2：((幕 − 1) + 本幕已清房间 / 本幕房间数) / 3，通关记 1.0。均值的 95% CI 为 均值 ± 1.96·s/√n；计数类用 Wilson 区间。策略均为贪心 + loop-breaker。</p>
+  <div class="kpis">
+    <div class="tile"><div class="label">最终选择</div><div class="value mono">s8a u2225</div><div class="note">预注册规则：dev-128 最高者 · weights <code>d59f9ea2095799c0</code></div></div>
+    <div class="tile"><div class="label">dev-128 平均进度</div><div class="value">0.372</div><div class="note">95% CI [0.348, 0.396] · 128 局</div></div>
+    <div class="tile"><div class="label">test-100 平均进度</div><div class="value">0.346</div><div class="note">95% CI [0.316, 0.377] · 只报告，不参与挑选</div></div>
+    <div class="tile"><div class="label">目标 0.60</div><div class="value">0.372 <span class="unit">/ 0.60</span></div>
+      <div class="meter" role="meter" aria-label="dev-128 进度相对目标" aria-valuemin="0" aria-valuemax="0.6" aria-valuenow="0.372"><i style="width:62%"></i></div>
+      <div class="note"><span class="chip"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--critical)"/><path d="M5.2 5.2l5.6 5.6M10.8 5.2l-5.6 5.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>未达成 · 达到目标的 62%</span></div></div>
+    <div class="tile"><div class="label">通关局数</div><div class="value">0</div><div class="note">dev 0/128 · test 0/100 · 20 局集 0/20</div></div>
+    <div class="tile"><div class="label">击败第 1 幕 Boss（dev）</div><div class="value">57 <span class="unit">/ 128</span></div><div class="note">到达第 1 幕 Boss 103；第 2 幕 Boss 到达 8、击败 0</div></div>
+    <div class="tile"><div class="label">真游戏对局（u2050）</div><div class="value">2</div><div class="note"><span class="chip"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--good)"/><path d="M4.6 8.3l2.3 2.3 4.6-4.9" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>0 desync · 0 resync</span> · 233 / 228 个决策</div></div>
+    <div class="tile"><div class="label">算力</div><div class="value">147.6 <span class="unit">/ 800 单位</span></div>
+      <div class="meter" role="meter" aria-label="已用算力占上限" aria-valuemin="0" aria-valuemax="800" aria-valuenow="147.6"><i style="width:18.5%"></i></div>
+      <div class="note">余额 890.85 → 743.21 · 两张 A100</div></div>
+  </div>
+</section>
+
+<!-- ============ 2. learning curves ============
+  sources: runmeta-sts2train.tar.gz:runs/{s2a-silent-a10-warm,s6a-silent-a10-signal,s7a-silent-a10-large-newenv,s8a-silent-a10-mid-upg3}/evals.jsonl,
+           runmeta-sts2b.tar.gz:runs/{s1b-silent-a10,s3c-silent-a10-saves-lam99,s6b-silent-a10-mid-signal,s7b-silent-a10-mid-newenv,s8b-silent-a10-mid-upg3-relic2}/evals.jsonl
+           (seedset silent-a10-v1: update, progress_mean, progress_ci95, results.stuck, loop_breaker);
+  forks/segments: each run's config.json sessions[] (started_at, update_start, resumed_from) + metrics.jsonl first/last "time";
+  candidates: model-card.json in final-eval-gpu*/ and docs/train-results-silent-a10-2026-11-04.md. -->
+<section id="s2" aria-labelledby="h-s2">
+  <h2 id="h-s2"><span class="num">2</span>学习曲线：20 局评测集上的进度</h2>
+  <p class="sub">训练期间每 25 次更新在 <code>silent-a10-v1</code>（20 局，贪心）上评测一次。粗线是 9 次评测的中心滑动平均，细线是单次评测；圆点是后来在 dev-128 / test-100 上复评的候选 checkpoint。s8a 与 s8b 在 u1800 之后的评测都落在 0.32–0.43 之间：这套配方已进入平台期。20 局的置信区间约 ±0.08，所以 20 局上的最佳点只是候选，最终按 128 局 dev 集挑选。</p>
+  <div class="card">
+    <div class="legend" aria-hidden="true">
+      <span class="k"><i class="ln" style="border-color:var(--s1)"></i>s8a · 升级塑形 ×3</span>
+      <span class="k"><i class="ln" style="border-color:var(--s2)"></i>s8b · 升级 ×3 + 遗物 ×2</span>
+      <span class="k"><i class="ln" style="border-color:var(--s3)"></i>s7b · 默认系数（对照）</span>
+      <span class="k"><i class="ln thin" style="border-color:var(--ctx)"></i>早期 A10 运行</span>
+      <span class="k"><i class="ln thin" style="border-color:var(--ink2)"></i>细线 = 单次评测</span>
+      <span class="k"><i class="dt" style="background:var(--ink2)"></i>dev-128 候选</span>
+      <span class="k"><i class="ring"></i>最终选择 u2225</span>
+    </div>
+    <div class="chart" id="c-curves"></div>
+    <details class="tv"><summary>表格视图：全部训练期评测</summary><div id="t-curves"></div></details>
+  </div>
+  <ul class="notes">
+    <li>分叉关系（来自各 run 的 <code>config.json</code> sessions）：s8a 在 u350 从 s7b 分叉，<code>--acq-upgrade-coef 0.012</code>（默认 0.004 的 3 倍）；s8b 在 u1300 从 s8a 分叉，另加 <code>--acq-relic-coef 0.02</code>；s7b 用默认系数作对照跑到 u1400。</li>
+    <li>s7b 的训练期评测没有开 loop-breaker，卡死局把分数拉低（最多 19/20 局卡死）；s8a / s8b 的评测都开了 loop-breaker，0 局卡死。</li>
+    <li>早期运行（s1b、s2a、s3c、s6a、s6b、s7a）用旧环境或 15.8–16.1M 参数的大模型；s1b、s2a 每次更新 65,536 步，其余 131,072 步，横轴只作粗略对照。</li>
+    <li>u1300 的训练期评测是 0.337，期末 report-card 对同一 checkpoint 复评是 0.353（见第 4 节）；两者不一致，原因未查。</li>
+  </ul>
+</section>
+
+<!-- ============ 3. training signals ============
+  sources: runmeta-sts2b.tar.gz:runs/s7b-silent-a10-mid-newenv/metrics.jsonl, runmeta-sts2train.tar.gz:runs/s8a-silent-a10-mid-upg3/metrics.jsonl,
+           runmeta-sts2b.tar.gz:runs/s8b-silent-a10-mid-upg3-relic2/metrics.jsonl
+           (fresh_progress_mean / fresh_episodes, save_progress_mean / save_episodes, entropy, approx_kl, aux_win_loss, aux_combat_loss,
+            env_steps_update / t_total_s); 10-update bins: progress weighted by episodes, others mean, throughput median. -->
+<section id="s3" aria-labelledby="h-s3">
+  <h2 id="h-s3"><span class="num">3</span>训练信号</h2>
+  <p class="sub">来自 <code>metrics.jsonl</code>，每 10 次更新一个点（进度按局数加权；吞吐取中位数）。训练时约 35% 的开局来自 148 个人类 A9 存档（<code>--save-mix 0.35</code>），新开局与存档开局分开记录。</p>
+  <div class="card">
+    <div class="legend" aria-hidden="true">
+      <span class="k"><i class="ln" style="border-color:var(--s1)"></i>s8a</span>
+      <span class="k"><i class="ln" style="border-color:var(--s2)"></i>s8b</span>
+      <span class="k"><i class="ln" style="border-color:var(--s3)"></i>s7b</span>
+      <span class="k">横轴：训练更新次数（update）</span>
+    </div>
+    <div class="chart" id="c-signals"></div>
+    <details class="tv"><summary>表格视图：每 100 次更新取样</summary><div id="t-signals"></div></details>
+  </div>
+  <ul class="notes">
+    <li>新开局进度：s8a 从约 0.21（前 50 次更新）升到约 0.29（最后 100 次更新）；存档开局约 0.45 → 0.51。</li>
+    <li>s8a 的策略熵在 0.74–0.86 之间缓慢下降（0.82 → 0.78），没有塌缩；近似 KL 在 0.0016–0.0042 之间。</li>
+    <li>吞吐中位数：s7b 约 17,400；s8a 三段约 15,700 / 13,600 / 13,300；s8b 两段约 13,600 / 13,200 env-steps/s。</li>
+  </ul>
+</section>
+
+<!-- ============ 4. candidates ============
+  sources: model-card.json (headline.progress_mean / progress_ci95, staged) in
+    runmeta-sts2train.tar.gz:final-eval-gpu1/{s8a-silent-a10-mid-upg3-best (u1900), s8a-...-ckpt-0002050}, final-eval-gpu1-seg3/{s8a-...-best (u2225), s8a-...-ckpt-0002536},
+    runmeta-sts2b.tar.gz:final-eval-gpu2/{s8b-...-best (u2100), s8b-...-ckpt-0002181}, final-eval-gpu2-seg3/{s8b-...-best (u2475), s8b-...-ckpt-0002625};
+  u925 / u1275 / u1300 / u1525: docs/train-results-silent-a10-2026-11-04.md (no model-card.json archived). The 8 JSON rows agree with the doc table to 3 decimals. -->
+<section id="s4" aria-labelledby="h-s4">
+  <h2 id="h-s4"><span class="num">4</span>候选比较：三个种子集上的进度</h2>
+  <p class="sub">12 个候选 checkpoint，贪心 + loop-breaker，点为均值、横线为 95% CI。预注册规则是取 dev-128 最高者 → <strong>u2225（0.372）</strong>。dev-128 前五名（u2225 0.372、u2625 0.365、u2536 0.363、u2050 0.351、u2475 0.350）的区间全部重叠，所以这是按规则选择，不是测得的差异。test-100 只报告，最高的是 u2536（0.373）。20 局集的排名和大集不一致：u925 在 20 局上 0.391，在 dev-128 上只有 0.283。</p>
+  <div class="card">
+    <div class="legend" aria-hidden="true">
+      <span class="k"><i class="dt" style="background:var(--s1)"></i>s8a</span>
+      <span class="k"><i class="dt" style="background:var(--s2)"></i>s8b</span>
+      <span class="k"><i class="sw" style="background:var(--wash)"></i>最终选择</span>
+      <span class="k">数值标签：各集最高者与最终选择</span>
+    </div>
+    <div class="chart" id="c-cands"></div>
+    <details class="tv"><summary>表格视图：候选 checkpoint</summary><div id="t-cands"></div></details>
+  </div>
+  <ul class="notes">
+    <li>u925、u1275、u1300、u1525 的数值取自结果文档（归档里没有这四个 checkpoint 的 model-card.json）；其余 8 个取自 model-card.json，与结果文档逐项一致。</li>
+  </ul>
+</section>
+
+<!-- ============ 5. funnel and deaths ============
+  funnel: runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/model-card.json seedsets[].runs[0].staged (dev-128, test-100, v1-20);
+  death floors / killers: runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/evals/silent-a10-dev-v1/games/*.summary.json
+  (floor, act, death.enemies[0]); cross-checked: identical to model-card.json floor_histogram and endings.detail. -->
+<section id="s5" aria-labelledby="h-s5">
+  <h2 id="h-s5"><span class="num">5</span>最终选择 u2225：在 dev-128 上走到哪、死在哪</h2>
+  <p class="sub">103/128 局到达第 1 幕 Boss，57 局击败它进入第 2 幕，8 局到达第 2 幕 Boss，0 局击败。46 局（36%）死在第 1 幕 Boss 房（第 17 层）。按最后一场战斗的遭遇 id 分：Boss 54 局（42%）、精英 37 局（29%）、普通战斗 37 局（29%）。</p>
+  <div class="card">
+    <h3>阶段漏斗（dev-128）</h3>
+    <div class="legend" aria-hidden="true">
+      <span class="k"><i class="sw" style="background:var(--o1)"></i>第 1 幕</span>
+      <span class="k"><i class="sw" style="background:var(--o2)"></i>第 2 幕</span>
+      <span class="k"><i class="sw" style="background:var(--o3)"></i>第 3 幕</span>
+    </div>
+    <div class="chart" id="c-funnel"></div>
+    <details class="tv"><summary>表格视图：三个种子集的阶段计数</summary><div id="t-funnel"></div></details>
+  </div>
+  <div class="card">
+    <h3>死亡楼层（每局的最终楼层，dev-128）</h3>
+    <div class="chart" id="c-floors"></div>
+    <details class="tv"><summary>表格视图：每层死亡局数与致死遭遇</summary><div id="t-floors"></div></details>
+  </div>
+  <div class="card">
+    <h3>致死遭遇（dev-128，最后一场战斗；颜色 = 所在幕）</h3>
+    <div class="chart" id="c-killers"></div>
+    <details class="tv"><summary>表格视图：全部致死遭遇</summary><div id="t-killers"></div></details>
+  </div>
+</section>
+
+<!-- ============ 6. lookahead ============
+  sources: runmeta-sts2train.tar.gz:la-u2050-dev/report.json (lookahead: 0.2735 [0.2553,0.2918], stuck 44), la-u2050-dev/stats.json (searched 17,414, env_steps 344,546, forwards 236,767, 7.7 ms),
+           la-u2050-dev-greedy/report.json (greedy, loop-breaker off: 0.2818 [0.2619,0.3016], stuck 52),
+           final-eval-gpu1/s8a-silent-a10-mid-upg3-ckpt-0002050/model-card.json (greedy + breaker dev 0.3511 [0.3263,0.3759], stuck 0);
+  paired delta recomputed per seed from the two report.json games[] lists (Student t, df 127). Older checkpoint +0.0152: docs/lookahead-2026-11-04.md §1.1. -->
+<section id="s6" aria-labelledby="h-s6">
+  <h2 id="h-s6"><span class="num">6</span>决策时前瞻：在 u2050 上没有显著收益</h2>
+  <p class="sub">诚实的确定化（determinized）前瞻：每个克隆重新采样抽牌顺序和所有随机流，从不读取真实的隐藏状态；turn 视野，value+hp 叶子评分，K = 8。与同一 checkpoint（s8a u2050）的贪心在相同的 128 个 dev 种子上配对比较，两者都没有开 loop-breaker。</p>
+  <div class="card">
+    <div class="chart" id="c-la"></div>
+    <details class="tv"><summary>表格视图：前瞻与贪心</summary><div id="t-la"></div></details>
+  </div>
+  <ul class="notes">
+    <li>结果：前瞻 0.274 [0.255, 0.292]，贪心 0.282 [0.262, 0.302]；配对差（前瞻 − 贪心）= −0.008 [−0.027, +0.011]，前瞻更好 32 局、更差 40 局、相同 56 局——不显著。</li>
+    <li>为什么交付贪心 + loop-breaker（0.351 [0.326, 0.376]，0 局卡死）：同一个 checkpoint，只差开不开 loop-breaker，进度就差 0.069（不开时贪心 52 局、前瞻 44 局卡死在循环里）。搜索要先接上 loop-breaker、再换更好的叶子评分（例如新的 win_prob / combat_hp 头）才可能有收益；早先在旧 checkpoint 上同一配置的增益是 +0.015（dev-128，CI 不含 0），也还低于 ExIt 的 +0.02 门槛。</li>
+    <li>搜索开销：17,414 个搜索决策（占在线决策的 55%），共 344,546 个 env-steps、236,767 次前向；A100 上每个搜索决策 7.7 ms。</li>
+  </ul>
+  <p class="callout">注：结果文档和会话记录写的“Δ +0.008 [−0.011, +0.027]，40 更好 / 32 更差”是按“贪心 − 前瞻”方向算出的同一组数。按每局进度重算（<code>la-u2050-dev</code> 与 <code>la-u2050-dev-greedy</code> 的 report.json），前瞻 − 贪心 = −0.008，前瞻更好 32 局、更差 40 局。结论不变：不显著。</p>
+</section>
+
+<!-- ============ 7. real game ============
+  sources: /Users/…/hack-sts2/.claude/worktrees/train-live-twin/output/nn-twin/20261104-s8a-silent-a10-TW1NA10S02-real-c89a0bc/{summary.json,status.log}
+           and …/20261104-s8a-silent-a10-TW1NA10S03-real-39c5b46/{summary.json,status.log}; sim/specs/integration.md "Live twin real-game fixes integrate". -->
+<section id="s7" aria-labelledby="h-s7">
+  <h2 id="h-s7"><span class="num">7</span>真游戏：孪生模拟器逐决策对账</h2>
+  <p class="sub">checkpoint 为 s8a u2050（07:30 的保底版本，即第 2 段末的 checkpoint，weights <code>68d3601d9f91672d</code>；u2225 在 10:00 截止前没来得及上真游戏），贪心 + loop-breaker，Silent A10 标准局。</p>
+  <div class="card">
+    <div class="tablewrap" id="t-live"></div>
+  </div>
+  <div class="card">
+    <h3>HP 轨迹（每个决策前的 HP，来自 status.log；末点为终局 HP 0）</h3>
+    <div class="chart" id="c-hp"></div>
+    <details class="tv"><summary>表格视图：每层第一个决策时的 HP</summary><div id="t-hp"></div></details>
+  </div>
+  <p class="callout">孪生验证的是什么：真游戏跑在隔离的无头实例里，通过 STS2_MCP 的 eval API 开局；模拟器孪生与它逐决策同步运行，每一步核对楼层、幕、HP、金币、能量、格挡、手牌、敌人、药水、遗物和界面内容。两局都是 0 desync、0 resync，并且与各自的 dry run 逐决策一致——在模拟器里训练出的策略可以原样驱动真游戏。每局各有一次 loop-breaker 介入（休息点用 HEAL 代替重复的 SMITH），胜率头全程约为 0（最大 0.0001 / 0.0004）。修复前的试跑暴露了三处接口差异（事件奖励页退出、无 id 的遗物奖励、升级预览的二次取消），已在 PR #30 的合并 <code>0fa1fa3</code> 中修复。用户的 Steam 安装、存档和录像都没有改动。</p>
+</section>
+
+<!-- ============ 8. compute ============
+  balance: session transcript ~/.claude/projects/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-recorder-performance-lag-0f9d6d/adbf2344-809a-4167-9774-cd8087651b17.jsonl
+           (colab CLI tool results "Current balance: N compute units", first print of each value, timestamps -> EST);
+           the values at 01:19 / 02:58 / 04:30 / 07:03 / 07:40 / 08:34 / 09:21 match memory/training-cycle-2026-11-03.md (850.9, 829.6, 808.25, 774.6, 765.64, 753.30, 743.21);
+           usage rate 13.46–13.54/h: same transcript; 3-unit loss at the 12:20 crash: memory log.
+  segments: each run's config.json sessions[].started_at and metrics.jsonl last "time" (both archives). -->
+<section id="s8" aria-labelledby="h-s8">
+  <h2 id="h-s8"><span class="num">8</span>算力：Colab A100 余额与训练进程</h2>
+  <p class="sub">周期共消耗 147.6 单位（890.85 → 743.21），上限 800；两张 A100 同时运行时约 13.46–13.54 单位/小时。11-03 12:20 桌面端异常退出、Colab 会话被回收，损耗约 3 单位（12:11 的 890.85 → 21:52 的 887.84）。下方条带是两张卡上训练进程的起止；期末评测、打包和前瞻运行不在条内。</p>
+  <div class="card">
+    <div class="legend" aria-hidden="true">
+      <span class="k"><i class="ln" style="border-color:var(--ink2)"></i>余额（单位）</span>
+      <span class="k"><i class="sw" style="background:var(--s1)"></i>s8a</span>
+      <span class="k"><i class="sw" style="background:var(--s2)"></i>s8b</span>
+      <span class="k"><i class="sw" style="background:var(--s3)"></i>s7b</span>
+      <span class="k"><i class="sw" style="background:var(--ctx)"></i>其他运行（含 A0 与混合角色）</span>
+    </div>
+    <div class="chart" id="c-compute"></div>
+    <details class="tv"><summary>表格视图：余额读数与训练进程</summary><div id="t-compute"></div></details>
+  </div>
+</section>
+
+<!-- ============ 9. next ============
+  sources: memory/training-cycle-2026-11-03.md (09:25 recommendation, 09:40 user directive), model-card.json endings (boss 54 + elite 37 of 128),
+           runs/s8a-silent-a10-mid-upg3/summary.json (env_only_steps_per_s 30,572.3, env_steps_per_s_session 12,722.7),
+           docs/lookahead-2026-11-04.md (+0.0152, ExIt bar +0.02), scratchpad competitor/facts.md (AlphaDefect NoSL v141229 75.1% ± 2.7%; v89500 x 32,768 = 29.4 亿 decisions)
+           and memory/training-cycle-2026-11-03.md ("~2.9–4.6 BILLION decisions"); u2225 env_steps 291,635,200 from its model-card.json. -->
+<section id="s9" aria-labelledby="h-s9">
+  <h2 id="h-s9"><span class="num">9</span>下一步</h2>
+  <div class="card">
+    <ol class="next">
+      <li><b>战斗专项课程。</b>从战斗快照起步的 combat gym，配更密的战斗奖励。<span class="why">依据：dev-128 上 91/128 局（71%）死于 Boss 或精英，其中 46 局死在第 1 幕 Boss 房；构筑通道已经打开，战斗强度是瓶颈。</span></li>
+      <li><b>先把价值头做成叶子评分，再谈前瞻 / ExIt。</b>用 value / win_prob / combat_hp 头给前瞻的叶子打分，前瞻增益稳定超过 +0.02 后再做 ExIt 蒸馏。<span class="why">依据：u2050 上前瞻 −0.008（不显著），旧 checkpoint 上 +0.015，叶子评分是限制。</span></li>
+      <li><b>更长的连续段。</b>两张 A100 各跑 6–8 h。<span class="why">依据：本周期各段 1.3–3.0 h，20 局评测的区间约 ±0.08，小改进需要更长的段和更大的评测集才分得出来。参照：竞品 AlphaDefect 的 NoSL 单模型（Defect A10，v141229）自测胜率 75.1% ± 2.7%，按其版本号推算训练了约 29–46 亿次决策；u2225 累计 2.92 亿 env-steps。</span></li>
+      <li><b>异步采集。</b>把闲置的 CPU 用于并行采样。<span class="why">依据：s8a 最后一段纯环境吞吐 30,572 env-steps/s，端到端只有 12,723。</span></li>
+    </ol>
+    <p class="callout">当前安排（09:40 用户指令）：一张 A100 先继续训练 u2225（Colab 会话 sts2train 已重建）；另一张先空置，等确定一个不同的训练方案后再交替使用。</p>
+  </div>
+</section>
+
+<footer>
+  <b>口径与来源</b>
+  <ul>
+    <li>Colab 归档：<code>runmeta-sts2train.tar.gz</code>（GPU#1）与 <code>runmeta-sts2b.tar.gz</code>（GPU#2）中的 <code>runs/*/{metrics,evals}.jsonl</code>、<code>config.json</code>、<code>summary.json</code>、<code>final-eval-gpu*/**/model-card.json</code>、每局 <code>*.summary.json</code>、<code>la-u2050-dev*</code>。</li>
+    <li>仓库：<code>docs/train-results-silent-a10-2026-11-04.md</code>、<code>docs/model-card-silent-a10-u2225-2026-11-04.md</code>、<code>docs/lookahead-2026-11-04.md</code>、<code>sim/specs/integration.md</code>。</li>
+    <li>live twin：<code>train-live-twin/output/nn-twin/20261104-s8a-silent-a10-TW1NA10S0{2-real-c89a0bc,3-real-39c5b46}</code>。余额读数：会话记录里 colab CLI 的输出（与时间线记忆文件一致）。</li>
+    <li>所有图的数据都嵌在本页的 <code>viz-data</code> 中；HTML 注释标明每张图的来源文件。时间为 EST（UTC−5）。</li>
+  </ul>
+</footer>
+</div>
+
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script id="viz-data" type="application/json">{"sources":{"curves":"runmeta-sts2train.tar.gz / runmeta-sts2b.tar.gz: runs/\u003crun\u003e/evals.jsonl (seedset silent-a10-v1)","segments":"runs/\u003crun\u003e/config.json sessions[] + metrics.jsonl first/last time (both archives)","signals":"runs/{s7b-silent-a10-mid-newenv,s8a-silent-a10-mid-upg3,s8b-silent-a10-mid-upg3-relic2}/metrics.jsonl, 10-update bins","candidates":"final-eval-gpu*/**/model-card.json; u925/u1275/u1300/u1525 from docs/train-results-silent-a10-2026-11-04.md","pick_funnel":"runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/model-card.json","deaths":"runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/evals/silent-a10-dev-v1/games/*.summary.json","lookahead":"runmeta-sts2train.tar.gz:la-u2050-dev/{report,stats}.json, la-u2050-dev-greedy/report.json, final-eval-gpu1/s8a-silent-a10-mid-upg3-ckpt-0002050/model-card.json","live":"train-live-twin/output/nn-twin/20261104-s8a-silent-a10-TW1NA10S0{2-real-c89a0bc,3-real-39c5b46}/{summary.json,status.log}","balance":"session transcript adbf2344-809a-4167-9774-cd8087651b17.jsonl (colab CLI \"Current balance\"), cross-checked with memory/training-cycle-2026-11-03.md"},"curves":{"s1b":{"pts":[[25,0.132353,0.109047,0.155659,0,0],[50,0.15,0.122081,0.177919,0,0],[75,0.147059,0.117618,0.176499,4,0],[100,0.157843,0.122967,0.192719,3,0],[125,0.152941,0.122578,0.183305,2,0],[150,0.15,0.11917,0.18083,2,0],[175,0.148039,0.11731,0.178768,2,0],[200,0.145098,0.11661,0.173586,2,0]],"roll":[],"preset":"large","d":384,"upg":null,"relic":null,"saves":false,"lam":0.95,"acq":false},"s2a":{"pts":[[100,0.173529,0.137469,0.209589,0,0],[125,0.152941,0.1247,0.181182,0,0],[150,0.166667,0.14029,0.193043,0,0],[175,0.151961,0.126426,0.177495,0,0],[200,0.122549,0.110436,0.134662,7,0],[225,0.117647,0.109761,0.125533,11,0]],"roll":[],"preset":"large","d":384,"upg":null,"relic":null,"saves":false,"lam":0.95,"acq":false},"s3c":{"pts":[[120,0.153921,0.121614,0.186229,2,0],[140,0.155882,0.127113,0.184652,2,0],[160,0.155882,0.129362,0.182402,2,0]],"roll":[],"preset":"large","d":384,"upg":null,"relic":null,"saves":true,"lam":0.99,"acq":false},"s6a":{"pts":[[20,0.196078,0.159301,0.232856,0,0]],"roll":[],"preset":"large","d":384,"upg":0.004,"relic":0.01,"saves":true,"lam":0.99,"acq":true},"s6b":{"pts":[[20,0.137255,0.114095,0.160415,7,0],[40,0.165686,0.129929,0.201443,4,0],[60,0.157843,0.12319,0.192496,6,0],[80,0.154902,0.12009,0.189714,6,0],[100,0.183701,0.134338,0.233064,8,0],[120,0.123529,0.080237,0.166821,9,0]],"roll":[],"preset":"mid(d192)","d":192,"upg":0.004,"relic":0.01,"saves":true,"lam":0.99,"acq":true},"s7a":{"pts":[[25,0.185294,0.14932,0.221268,0,0],[50,0.207843,0.16877,0.246916,0,0],[75,0.205882,0.170781,0.240983,0,0],[100,0.167647,0.134484,0.200809,0,0],[125,0.197059,0.158884,0.235234,0,0],[150,0.182353,0.153634,0.211072,0,0],[175,0.169608,0.139934,0.199282,3,0],[200,0.20913,0.145822,0.272437,2,0]],"roll":[],"preset":"large","d":384,"upg":0.004,"relic":0.01,"saves":true,"lam":0.99,"acq":true},"s7b":{"pts":[[150,0.241176,0.207824,0.274529,0,0],[175,0.267218,0.210384,0.324052,1,0],[200,0.238235,0.204171,0.2723,0,0],[225,0.227635,0.18364,0.271629,1,0],[250,0.249326,0.205948,0.292703,0,0],[275,0.216667,0.180157,0.253176,2,0],[300,0.216666,0.179839,0.253494,3,0],[325,0.221875,0.178818,0.264932,3,0],[350,0.257169,0.215559,0.298779,0,0],[375,0.22549,0.1914,0.25958,1,0],[400,0.259804,0.208713,0.310894,2,0],[425,0.219608,0.185279,0.253936,3,0],[450,0.232353,0.20361,0.261095,3,0],[475,0.22647,0.193425,0.259516,4,0],[500,0.263541,0.219802,0.307281,4,0],[525,0.240196,0.202907,0.277485,1,0],[550,0.249938,0.19526,0.304617,2,0],[575,0.238909,0.191561,0.286257,2,0],[600,0.265747,0.218425,0.31307,2,0],[625,0.253615,0.207337,0.299893,3,0],[650,0.267769,0.214958,0.320581,1,0],[675,0.279595,0.227876,0.331315,2,0],[700,0.269301,0.227003,0.311599,1,0],[725,0.288235,0.246227,0.330243,0,0],[750,0.265502,0.218913,0.312091,3,0],[775,0.239216,0.207598,0.270833,12,0],[800,0.284743,0.231088,0.338397,1,0],[825,0.244118,0.212393,0.275843,7,0],[850,0.260172,0.223542,0.296801,11,0],[875,0.219608,0.195366,0.24385,13,0],[900,0.229412,0.194689,0.264135,11,0],[925,0.218627,0.189349,0.247906,12,0],[950,0.24902,0.224066,0.273973,15,0],[975,0.228431,0.207331,0.249532,15,0],[1000,0.22549,0.205482,0.245499,17,0],[1025,0.215686,0.191062,0.24031,14,0],[1050,0.229412,0.207089,0.251734,14,0],[1075,0.162745,0.141493,0.183997,19,0],[1100,0.208823,0.182777,0.23487,13,0],[1125,0.222549,0.196652,0.248446,10,0],[1150,0.244118,0.220712,0.267524,15,0],[1175,0.228431,0.205225,0.251637,11,0],[1200,0.267647,0.243138,0.292156,9,0],[1225,0.277022,0.246513,0.307532,10,0],[1250,0.283517,0.238414,0.328621,15,0],[1275,0.233333,0.205189,0.261478,16,0],[1300,0.205882,0.175789,0.235976,15,0],[1325,0.221569,0.197246,0.245891,15,0],[1350,0.218627,0.1917,0.245555,18,0],[1375,0.246079,0.218836,0.273322,16,0],[1400,0.256863,0.23818,0.275545,17,0]],"roll":[[150,0.244718],[175,0.240043],[200,0.236703],[225,0.23485],[250,0.23733],[275,0.235587],[300,0.234763],[325,0.232693],[350,0.233218],[375,0.230678],[400,0.235886],[425,0.238501],[450,0.241619],[475,0.23959],[500,0.244063],[525,0.243375],[550,0.248726],[575,0.253976],[600,0.258735],[625,0.261478],[650,0.26429],[675,0.263099],[700,0.268191],[725,0.265788],[750,0.266517],[775,0.261166],[800,0.25559],[825,0.249959],[850,0.245602],[875,0.241483],[900,0.239958],[925,0.232285],[950,0.230651],[975,0.219826],[1000,0.218627],[1025,0.217865],[1050,0.220697],[1075,0.218409],[1100,0.222767],[1125,0.228493],[1150,0.236029],[1175,0.236465],[1200,0.241258],[1225,0.242674],[1250,0.242238],[1275,0.242456],[1300,0.245615],[1325,0.242862],[1350,0.237981],[1375,0.230392],[1400,0.229804]],"preset":"mid(d192)","d":192,"upg":0.004,"relic":0.01,"saves":true,"lam":0.99,"acq":true},"s8a":{"pts":[[375,0.249448,0.205974,0.292923,0,1],[400,0.22549,0.186706,0.264274,0,1],[425,0.275,0.238896,0.311104,0,1],[450,0.255515,0.215708,0.295321,0,1],[475,0.256862,0.225703,0.288022,0,1],[500,0.274387,0.231612,0.317162,0,1],[525,0.269914,0.234046,0.305782,0,1],[550,0.255882,0.205281,0.306483,0,1],[575,0.257843,0.230772,0.284914,0,1],[600,0.265319,0.225702,0.304935,0,1],[625,0.248345,0.210501,0.28619,0,1],[650,0.256862,0.22307,0.290655,0,1],[675,0.293076,0.253118,0.333033,0,1],[700,0.304167,0.246635,0.361698,0,1],[725,0.353615,0.288431,0.418799,0,1],[750,0.277144,0.235714,0.318575,0,1],[775,0.341237,0.279577,0.402898,0,1],[800,0.322242,0.276054,0.368431,0,1],[825,0.292769,0.236998,0.348541,0,1],[850,0.325551,0.259611,0.391491,0,1],[875,0.304473,0.255659,0.353287,0,1],[900,0.322181,0.263285,0.381077,0,1],[925,0.391176,0.332228,0.450125,0,1],[950,0.321323,0.260253,0.382394,0,1],[975,0.296139,0.237483,0.354796,0,1],[1000,0.321568,0.255398,0.387739,0,1],[1025,0.312377,0.2517,0.373054,0,1],[1050,0.325674,0.2623,0.389048,0,1],[1075,0.372059,0.308111,0.436007,0,1],[1100,0.326593,0.264292,0.388894,0,1],[1125,0.350184,0.295828,0.404539,0,1],[1150,0.307965,0.253441,0.36249,0,1],[1175,0.369056,0.30653,0.431582,0,1],[1200,0.321385,0.264226,0.378543,0,1],[1225,0.320649,0.250813,0.390485,0,1],[1250,0.336703,0.269896,0.40351,0,1],[1275,0.351654,0.270457,0.432852,0,1],[1300,0.337377,0.279189,0.395565,0,1],[1325,0.302941,0.230715,0.375167,0,1],[1350,0.322365,0.258556,0.386174,0,1],[1375,0.347304,0.274006,0.420601,0,1],[1400,0.367279,0.285741,0.448817,0,1],[1425,0.34571,0.281267,0.410154,0,1],[1450,0.348897,0.288704,0.40909,0,1],[1475,0.385416,0.303822,0.467011,0,1],[1500,0.307169,0.25023,0.364108,0,1],[1525,0.407598,0.347344,0.467852,0,1],[1550,0.364706,0.289918,0.439493,0,1],[1553,0.370037,0.285592,0.454481,0,1],[1575,0.380637,0.297535,0.463739,0,1],[1600,0.346936,0.269785,0.424087,0,1],[1625,0.330208,0.275813,0.384604,0,1],[1650,0.353125,0.287878,0.418371,0,1],[1675,0.350306,0.27831,0.422302,0,1],[1700,0.362193,0.294376,0.430011,0,1],[1725,0.378186,0.316485,0.439887,0,1],[1750,0.327144,0.257976,0.396313,0,1],[1775,0.351225,0.280598,0.421852,0,1],[1800,0.347488,0.272709,0.422266,0,1],[1825,0.381495,0.318306,0.444684,0,1],[1850,0.3731,0.29421,0.45199,0,1],[1875,0.365441,0.313279,0.417602,0,1],[1900,0.41348,0.339879,0.487081,0,1],[1925,0.362071,0.298511,0.425631,0,1],[1950,0.366299,0.295755,0.436843,0,1],[1975,0.374877,0.2933,0.456454,0,1],[2000,0.339154,0.273148,0.405161,0,1],[2025,0.34761,0.285234,0.409986,0,1],[2050,0.389338,0.311398,0.467278,0,1],[2075,0.344056,0.275242,0.412871,0,1],[2100,0.346691,0.282188,0.411194,0,1],[2125,0.339767,0.275807,0.403727,0,1],[2150,0.352573,0.280927,0.42422,0,1],[2175,0.323836,0.256032,0.391639,0,1],[2200,0.34424,0.275398,0.413082,0,1],[2225,0.426715,0.350579,0.502852,0,1],[2250,0.333027,0.247993,0.418061,0,1],[2275,0.376287,0.292285,0.460289,0,1],[2300,0.356372,0.271681,0.441064,0,1],[2325,0.392402,0.302856,0.481947,0,1],[2350,0.394179,0.318074,0.470283,0,1],[2375,0.411274,0.340105,0.482443,0,1],[2400,0.362255,0.292339,0.43217,0,1],[2425,0.351777,0.273816,0.429738,0,1],[2450,0.354044,0.284557,0.42353,0,1],[2475,0.347978,0.279859,0.416096,0,1],[2500,0.364154,0.281134,0.447174,0,1],[2525,0.401532,0.308256,0.494808,0,1],[2536,0.384681,0.300908,0.468454,0,1]],"roll":[[375,0.252463],[400,0.256117],[425,0.258088],[450,0.257812],[475,0.257816],[500,0.259579],[525,0.262119],[550,0.260103],[575,0.264277],[600,0.269533],[625,0.278336],[650,0.279139],[675,0.288623],[700,0.295779],[725,0.298829],[750,0.307407],[775,0.312697],[800,0.315931],[825,0.325599],[850,0.322011],[875,0.324121],[900,0.321936],[925,0.32084],[950,0.324496],[975,0.329663],[1000,0.332121],[1025,0.335233],[1050,0.325987],[1075,0.331291],[1100,0.334096],[1125,0.333994],[1150,0.336696],[1175,0.339583],[1200,0.33573],[1225,0.333102],[1250,0.330011],[1275,0.334382],[1300,0.334184],[1325,0.336887],[1350,0.340026],[1375,0.345438],[1400,0.340495],[1425,0.348298],[1450,0.35516],[1475,0.360457],[1500,0.364161],[1525,0.361901],[1550,0.360178],[1553,0.360648],[1575,0.356747],[1600,0.362861],[1625,0.359593],[1650,0.355419],[1675,0.353329],[1700,0.349646],[1725,0.353486],[1750,0.358251],[1775,0.35962],[1800,0.366639],[1825,0.366626],[1850,0.365305],[1875,0.370608],[1900,0.369267],[1925,0.369281],[1950,0.370152],[1975,0.366925],[2000,0.364842],[2025,0.356651],[2050,0.355596],[2075,0.350878],[2100,0.347474],[2125,0.357203],[2150,0.355583],[2175,0.354132],[2200,0.355501],[2225,0.36058],[2250,0.366626],[2275,0.373148],[2300,0.377417],[2325,0.378254],[2350,0.37018],[2375,0.371841],[2400,0.370493],[2425,0.375511],[2450,0.374653],[2475,0.372212],[2500,0.366632],[2525,0.367361],[2536,0.370478]],"preset":"mid(d192)","d":192,"upg":0.012,"relic":0.01,"saves":true,"lam":0.99,"acq":true},"s8b":{"pts":[[1325,0.322855,0.253701,0.392009,0,1],[1350,0.294424,0.231974,0.356874,0,1],[1375,0.298468,0.233045,0.363891,0,1],[1400,0.363419,0.278652,0.448185,0,1],[1425,0.323652,0.245692,0.401611,0,1],[1450,0.361519,0.291374,0.431665,0,1],[1475,0.336029,0.264683,0.407375,0,1],[1500,0.300796,0.226483,0.37511,0,1],[1525,0.317953,0.248147,0.38776,0,1],[1550,0.346385,0.276084,0.416685,0,1],[1575,0.325245,0.2556,0.39489,0,1],[1600,0.345404,0.285556,0.405253,0,1],[1625,0.319791,0.238277,0.401305,0,1],[1650,0.356679,0.283718,0.42964,0,1],[1675,0.319608,0.258612,0.380603,0,1],[1700,0.354534,0.279356,0.429712,0,1],[1725,0.377451,0.316118,0.438784,0,1],[1750,0.352083,0.282706,0.421461,0,1],[1775,0.36875,0.293975,0.443524,0,1],[1800,0.364951,0.302303,0.427599,0,1],[1825,0.409742,0.34897,0.470515,0,1],[1850,0.326225,0.249725,0.402725,0,1],[1875,0.355882,0.28094,0.430825,0,1],[1900,0.368137,0.303846,0.432428,0,1],[1925,0.40772,0.332709,0.482731,0,1],[1950,0.405147,0.31929,0.491004,0,1],[1975,0.375429,0.31103,0.439828,0,1],[2000,0.412071,0.325007,0.499135,0,1],[2025,0.387684,0.306324,0.469043,0,1],[2050,0.401409,0.323517,0.479301,0,1],[2075,0.407659,0.3145,0.500818,0,1],[2100,0.412377,0.321406,0.503349,0,1],[2125,0.366728,0.293618,0.439838,0,1],[2150,0.348958,0.283873,0.414043,0,1],[2175,0.374387,0.304986,0.443788,0,1],[2181,0.365625,0.279012,0.452238,0,1],[2200,0.396323,0.309464,0.483182,0,1],[2225,0.39234,0.312611,0.47207,0,1],[2250,0.4125,0.326032,0.498967,0,1],[2275,0.389644,0.296105,0.483184,0,1],[2300,0.390318,0.303091,0.477546,0,1],[2325,0.365992,0.289391,0.442594,0,1],[2350,0.375184,0.31057,0.439797,0,1],[2375,0.350919,0.269393,0.432445,0,1],[2400,0.40913,0.313268,0.504992,0,1],[2425,0.387316,0.301148,0.473484,0,1],[2450,0.385845,0.313107,0.458584,0,1],[2475,0.423345,0.349673,0.497018,0,1],[2500,0.371078,0.278437,0.463719,0,1],[2525,0.405208,0.320629,0.489787,0,1],[2550,0.408149,0.33961,0.476688,0,1],[2575,0.363051,0.297806,0.428297,0,1],[2600,0.418627,0.332897,0.504357,0,1],[2625,0.357353,0.286118,0.428588,0,1]],"roll":[[1325,0.320564],[1350,0.327389],[1375,0.328624],[1400,0.325145],[1425,0.324346],[1450,0.326961],[1475,0.330385],[1500,0.3356],[1525,0.330753],[1550,0.334422],[1575,0.329766],[1600,0.331822],[1625,0.340339],[1650,0.344131],[1675,0.346616],[1700,0.351028],[1725,0.358177],[1750,0.358891],[1775,0.358803],[1800,0.364195],[1825,0.370105],[1850,0.373182],[1875,0.375776],[1900,0.380589],[1925,0.383115],[1950,0.382189],[1975,0.391238],[2000,0.397515],[2025,0.397358],[2050,0.390829],[2075,0.387411],[2100,0.386322],[2125,0.384572],[2150,0.38509],[2175,0.386322],[2181,0.38432],[2200,0.381869],[2225,0.381787],[2250,0.384701],[2275,0.382094],[2300,0.386928],[2325,0.385927],[2350,0.385205],[2375,0.38641],[2400,0.384347],[2425,0.386002],[2450,0.390686],[2475,0.389338],[2500,0.396861],[2525,0.391108],[2550,0.391582],[2575,0.392402],[2600,0.387244],[2625,0.390478]],"preset":"mid(d192)","d":192,"upg":0.012,"relic":0.02,"saves":true,"lam":0.99,"acq":true}},"segments":[{"run":"t0","gpu":"gpu1","u0":0,"u1":31,"start":"11-03 22:22","end":"11-03 22:29","from":null,"bundle":"sts2train-ef356974fa","session":1},{"run":"s1a","gpu":"gpu1","u0":0,"u1":195,"start":"11-03 22:38","end":"11-03 23:21","from":null,"bundle":"sts2train-ef356974fa","session":1},{"run":"s2a","gpu":"gpu1","u0":75,"u1":246,"start":"11-03 23:24","end":"11-04 00:01","from":"best.pt","bundle":"sts2train-ef356974fa","session":2},{"run":"s4a","gpu":"gpu1","u0":75,"u1":320,"start":"11-04 00:04","end":"11-04 02:03","from":"best.pt","bundle":"sts2train-35424a862a","session":2},{"run":"s6a","gpu":"gpu1","u0":0,"u1":20,"start":"11-04 02:09","end":"11-04 02:16","from":null,"bundle":"sts2train-ef70ee6273","session":1},{"run":"s7a","gpu":"gpu1","u0":20,"u1":201,"start":"11-04 02:20","end":"11-04 03:01","from":"ckpt-0000020.pt","bundle":"sts2train-e877036880","session":2},{"run":"s8a","gpu":"gpu1","u0":350,"u1":1553,"start":"11-04 03:04","end":"11-04 06:04","from":"s7b-fork.pt","bundle":"sts2train-9f6608701d","session":3},{"run":"s8a","gpu":"gpu1","u0":1553,"u1":2050,"start":"11-04 06:05","end":"11-04 07:29","from":"ckpt-0001553.pt","bundle":"sts2train-26f1d805a0","session":4},{"run":"s8a","gpu":"gpu1","u0":2050,"u1":2536,"start":"11-04 07:42","end":"11-04 09:05","from":"ckpt-0002050.pt","bundle":"sts2train-26f1d805a0","session":5},{"run":"s1b","gpu":"gpu2","u0":0,"u1":220,"start":"11-03 22:51","end":"11-03 23:39","from":null,"bundle":"sts2train-ef356974fa","session":1},{"run":"s3b","gpu":"gpu2","u0":100,"u1":103,"start":"11-03 23:51","end":"11-03 23:52","from":"best.pt","bundle":"sts2train-35424a862a","session":2},{"run":"s3c","gpu":"gpu2","u0":100,"u1":177,"start":"11-03 23:54","end":"11-04 00:31","from":"best.pt","bundle":"sts2train-35424a862a","session":2},{"run":"s5b","gpu":"gpu2","u0":0,"u1":248,"start":"11-04 00:34","end":"11-04 02:03","from":null,"bundle":"sts2train-bf005c7355","session":1},{"run":"s6b","gpu":"gpu2","u0":0,"u1":126,"start":"11-04 02:04","end":"11-04 02:22","from":null,"bundle":"sts2train-ef70ee6273","session":1},{"run":"s7b","gpu":"gpu2","u0":126,"u1":1400,"start":"11-04 02:25","end":"11-04 05:25","from":"ckpt-0000126.pt","bundle":"sts2train-e877036880","session":2},{"run":"s8b","gpu":"gpu2","u0":1300,"u1":2181,"start":"11-04 05:27","end":"11-04 07:56","from":"s8a-fork.pt","bundle":"sts2train-9f6608701d","session":4},{"run":"s8b","gpu":"gpu2","u0":2181,"u1":2625,"start":"11-04 08:00","end":"11-04 09:17","from":"ckpt-0002181.pt","bundle":"sts2train-26f1d805a0","session":5}],"signals":{"s7b":[[130,0.1718,0.4028,0.8648,0.002862,0.008759,0.008591,17548],[140,0.1969,0.4365,0.8529,0.002453,0.008277,0.009164,18914],[150,0.2018,0.4443,0.8495,0.002595,0.018803,0.009124,17579],[160,0.2048,0.4381,0.8306,0.002621,0.016532,0.00906,18786],[170,0.2096,0.4495,0.7914,0.002827,0.016925,0.008876,18516],[180,0.2099,0.4383,0.7827,0.002728,0.017183,0.008816,18383],[190,0.2116,0.4468,0.8,0.002558,0.023776,0.008714,18820],[200,0.2092,0.4403,0.7988,0.00284,0.014849,0.008886,17246],[210,0.21,0.4453,0.7837,0.002687,0.013769,0.008409,18526],[220,0.2109,0.4517,0.7847,0.002698,0.01267,0.008545,17216],[230,0.2136,0.4582,0.8073,0.002513,0.020934,0.008533,18150],[240,0.2105,0.4575,0.823,0.002212,0.018139,0.00838,18420],[250,0.2061,0.459,0.8378,0.00227,0.01948,0.008431,17606],[260,0.2089,0.4559,0.8256,0.002478,0.028286,0.008338,18106],[270,0.2022,0.4457,0.8531,0.00229,0.031949,0.008382,18841],[280,0.2043,0.4477,0.8404,0.002419,0.030347,0.008401,18749],[290,0.2142,0.4646,0.8181,0.002818,0.023817,0.008573,19030],[300,0.2163,0.4581,0.7811,0.002661,0.027457,0.008541,17293],[310,0.2216,0.458,0.7773,0.002508,0.022233,0.008192,18678],[320,0.2187,0.4626,0.772,0.00265,0.027525,0.008194,18358],[330,0.2198,0.4603,0.7724,0.002683,0.03948,0.008405,17916],[340,0.2198,0.4758,0.7844,0.002365,0.037628,0.008318,18212],[350,0.2156,0.4534,0.7979,0.002348,0.029895,0.00848,18420],[360,0.2197,0.4636,0.7993,0.002259,0.03218,0.008239,17861],[370,0.2161,0.4588,0.7965,0.002519,0.032954,0.008063,19024],[380,0.2129,0.4625,0.7982,0.002755,0.033023,0.008107,18313],[390,0.222,0.4708,0.7861,0.002936,0.023898,0.008133,18038],[400,0.2231,0.4637,0.7811,0.002527,0.02559,0.008398,17330],[410,0.2235,0.4672,0.766,0.002903,0.029221,0.008288,17880],[420,0.2248,0.4668,0.7762,0.002484,0.030414,0.00822,18531],[430,0.2217,0.4633,0.7899,0.00244,0.037551,0.008142,18287],[440,0.2291,0.4681,0.7827,0.00254,0.034097,0.008197,18127],[450,0.2294,0.4712,0.7802,0.002421,0.025917,0.008051,17093],[460,0.2317,0.476,0.7787,0.002703,0.02976,0.00794,18480],[470,0.2261,0.4638,0.8076,0.002516,0.032349,0.008059,18963],[480,0.2237,0.4609,0.82,0.00219,0.038524,0.008079,17944],[490,0.2248,0.4654,0.8222,0.002195,0.029295,0.008013,18711],[500,0.2255,0.4654,0.8092,0.002525,0.028718,0.008174,17545],[510,0.2309,0.4783,0.8017,0.002531,0.027891,0.008113,17865],[520,0.2328,0.4804,0.7805,0.00269,0.027979,0.008106,18186],[530,0.2248,0.4648,0.8212,0.002173,0.031762,0.008005,17457],[540,0.2257,0.4695,0.8178,0.002386,0.030358,0.008362,18806],[550,0.2316,0.4754,0.7911,0.002334,0.031596,0.008174,16717],[560,0.2353,0.482,0.8005,0.002282,0.030868,0.008185,16971],[570,0.2266,0.4668,0.8209,0.002169,0.023839,0.008042,17629],[580,0.2195,0.4657,0.8385,0.002217,0.028275,0.008126,17241],[590,0.226,0.4684,0.8221,0.002438,0.026719,0.008226,18671],[600,0.2264,0.4633,0.8105,0.002526,0.026634,0.007921,17634],[610,0.2326,0.4654,0.7784,0.002254,0.027158,0.008159,18790],[620,0.232,0.4727,0.7822,0.002403,0.024031,0.007881,18136],[630,0.2301,0.4667,0.7853,0.002404,0.024671,0.007944,17543],[640,0.2294,0.4769,0.7969,0.002156,0.029379,0.007965,17711],[650,0.226,0.4691,0.7985,0.002201,0.035048,0.008124,18378],[660,0.229,0.4861,0.7925,0.002258,0.038539,0.008152,17457],[670,0.2217,0.4791,0.8236,0.002289,0.032368,0.008145,18543],[680,0.2221,0.4689,0.8234,0.001979,0.031084,0.008025,17736],[690,0.2288,0.4685,0.7971,0.002348,0.030569,0.008215,18470],[700,0.2213,0.4615,0.8325,0.001958,0.037031,0.008181,17662],[710,0.2276,0.4839,0.8134,0.002121,0.04194,0.008148,17900],[720,0.2325,0.4703,0.7946,0.002217,0.031762,0.007901,17998],[730,0.2342,0.4805,0.8002,0.002392,0.025798,0.007638,17194],[740,0.232,0.4802,0.793,0.002198,0.026582,0.007787,18892],[750,0.2389,0.4651,0.7779,0.002547,0.025305,0.007995,18171],[760,0.2374,0.4714,0.7965,0.002213,0.025706,0.007917,17773],[770,0.2343,0.4704,0.8041,0.002185,0.028304,0.008235,16295],[780,0.2351,0.4798,0.8004,0.002103,0.030555,0.008104,18015],[790,0.2317,0.4735,0.8136,0.002276,0.02829,0.008099,18717],[800,0.2316,0.4659,0.798,0.002227,0.030139,0.008062,18260],[810,0.2324,0.4737,0.8009,0.002149,0.032086,0.008118,16409],[820,0.2366,0.4841,0.7856,0.002427,0.038238,0.007914,18304],[830,0.2378,0.4849,0.7967,0.002008,0.039934,0.008099,17810],[840,0.2384,0.4685,0.8174,0.002349,0.029057,0.008337,18487],[850,0.2321,0.4696,0.8327,0.002328,0.030566,0.008311,16378],[860,0.2357,0.4782,0.8239,0.0021,0.03824,0.008213,17720],[870,0.2338,0.4695,0.8353,0.002694,0.021534,0.008036,16946],[880,0.2316,0.4843,0.8372,0.001968,0.034289,0.008199,18060],[890,0.2387,0.4858,0.8187,0.002563,0.035801,0.00846,17334],[900,0.2506,0.4952,0.7872,0.002384,0.027116,0.008448,16685],[910,0.2486,0.4885,0.807,0.002371,0.028522,0.008452,16180],[920,0.2464,0.4872,0.8128,0.002361,0.026358,0.008077,16790],[930,0.2514,0.4801,0.7947,0.002171,0.028182,0.008339,16740],[940,0.2545,0.4828,0.7973,0.002262,0.025332,0.008353,16393],[950,0.2536,0.4903,0.803,0.002067,0.02647,0.008359,16748],[960,0.2537,0.4855,0.8077,0.002179,0.025846,0.008134,17458],[970,0.2518,0.4879,0.8037,0.002401,0.031242,0.008451,17198],[980,0.2521,0.4908,0.7968,0.002286,0.032953,0.008317,16411],[990,0.2566,0.4893,0.7679,0.002396,0.028655,0.008571,16075],[1000,0.2617,0.4891,0.7765,0.002123,0.028519,0.008683,15340],[1010,0.2581,0.4782,0.7944,0.002037,0.020667,0.008296,15561],[1020,0.2591,0.4946,0.774,0.002431,0.022215,0.008522,16829],[1030,0.2634,0.5023,0.7843,0.002021,0.021606,0.00868,15718],[1040,0.2591,0.4867,0.7735,0.002219,0.023657,0.008538,16751],[1050,0.2625,0.4969,0.7646,0.002283,0.033069,0.008721,16052],[1060,0.2569,0.4979,0.7738,0.001963,0.043788,0.008449,15723],[1070,0.2646,0.4949,0.7742,0.002025,0.033961,0.008661,15420],[1080,0.2609,0.4952,0.7753,0.001922,0.025054,0.00837,16350],[1090,0.2683,0.4866,0.7695,0.002384,0.024671,0.00881,15293],[1100,0.2682,0.4833,0.7732,0.002538,0.01972,0.008803,14650],[1110,0.2666,0.4926,0.7759,0.002255,0.026793,0.008678,15658],[1120,0.2561,0.4782,0.807,0.00196,0.027325,0.008623,15996],[1130,0.2574,0.4927,0.8046,0.00216,0.032743,0.008625,16387],[1140,0.2639,0.4865,0.8023,0.002434,0.025855,0.008597,15554],[1150,0.2595,0.5012,0.8012,0.002673,0.0237,0.008621,14169],[1160,0.26,0.4917,0.7955,0.002802,0.020755,0.008632,14866],[1170,0.2622,0.4949,0.8015,0.002211,0.020619,0.008782,15183],[1180,0.253,0.4705,0.8229,0.001899,0.024027,0.008487,15237],[1190,0.2592,0.4999,0.8156,0.001962,0.039586,0.008342,14950],[1200,0.2557,0.489,0.8161,0.001823,0.039214,0.008453,15074],[1210,0.257,0.4865,0.8255,0.001815,0.030433,0.008417,14733],[1220,0.2552,0.481,0.8343,0.001876,0.025705,0.008544,15422],[1230,0.2566,0.493,0.8191,0.001949,0.031664,0.008429,14797],[1240,0.2622,0.4919,0.8139,0.002183,0.033891,0.008363,14955],[1250,0.2661,0.4908,0.8131,0.002314,0.029642,0.00832,15499],[1260,0.2677,0.493,0.8065,0.002124,0.022511,0.008307,14088],[1270,0.266,0.4984,0.8029,0.002164,0.022746,0.008516,14844],[1280,0.2698,0.4977,0.8041,0.002162,0.023737,0.008468,15083],[1290,0.2672,0.489,0.7862,0.002023,0.029891,0.008383,14205],[1300,0.2733,0.5124,0.7752,0.002333,0.04459,0.008615,15210],[1310,0.2723,0.5028,0.7631,0.002353,0.037016,0.008837,15265],[1320,0.2705,0.4948,0.776,0.002028,0.037819,0.008665,14143],[1330,0.2677,0.5102,0.7873,0.002189,0.035099,0.008724,14195],[1340,0.2653,0.4938,0.7919,0.002654,0.030306,0.008449,14901],[1350,0.2675,0.4926,0.7959,0.001973,0.037249,0.008633,14445],[1360,0.2651,0.4946,0.8061,0.002061,0.029783,0.008617,14828],[1370,0.2696,0.4801,0.8042,0.002274,0.031676,0.009012,14835],[1380,0.2692,0.4918,0.7901,0.00183,0.028156,0.00862,14098],[1390,0.2719,0.4949,0.7829,0.002043,0.033085,0.008459,14272],[1400,0.2749,0.4922,0.7655,0.002088,0.028229,0.008554,14091]],"s8a":[[360,0.2092,0.4326,0.8081,0.002323,0.030851,0.00812,17536],[370,0.2138,0.4625,0.8068,0.002435,0.033718,0.008297,18170],[380,0.2155,0.4565,0.8132,0.002832,0.03991,0.008473,17584],[390,0.2083,0.4524,0.8245,0.002601,0.040023,0.008091,18501],[400,0.2073,0.4441,0.8345,0.002617,0.026927,0.008241,18219],[410,0.2098,0.4519,0.8296,0.002638,0.025982,0.008016,18663],[420,0.213,0.4614,0.8214,0.002413,0.034033,0.008195,18778],[430,0.2168,0.4664,0.818,0.002732,0.03673,0.00819,18496],[440,0.2187,0.4624,0.8104,0.002642,0.023056,0.008357,18534],[450,0.2215,0.4734,0.8032,0.002754,0.019075,0.008221,17697],[460,0.2267,0.46,0.8004,0.002699,0.020173,0.007881,18775],[470,0.2225,0.4606,0.8176,0.002978,0.021491,0.007765,18532],[480,0.2154,0.454,0.8458,0.002215,0.022814,0.007839,16590],[490,0.2165,0.4611,0.839,0.002091,0.023316,0.007895,18333],[500,0.2184,0.4632,0.8231,0.002319,0.023123,0.007976,18521],[510,0.2265,0.4631,0.8115,0.002605,0.027236,0.007892,17882],[520,0.226,0.4631,0.7938,0.002772,0.026241,0.008051,18776],[530,0.2292,0.4654,0.8039,0.002837,0.017231,0.007808,19288],[540,0.2295,0.4556,0.8089,0.002361,0.020869,0.007871,18167],[550,0.2314,0.4644,0.7999,0.002407,0.018417,0.007805,18252],[560,0.2264,0.4712,0.7994,0.002502,0.020452,0.007904,16235],[570,0.2352,0.4714,0.7833,0.00243,0.020866,0.007928,18000],[580,0.2331,0.4722,0.7864,0.002331,0.024057,0.008027,17429],[590,0.23,0.4714,0.8013,0.00215,0.021961,0.007835,18276],[600,0.228,0.4771,0.8104,0.002394,0.024424,0.008051,17380],[610,0.2219,0.4666,0.8163,0.002304,0.025507,0.007963,17596],[620,0.2302,0.4744,0.7994,0.002286,0.03087,0.007889,16230],[630,0.2314,0.4673,0.805,0.002214,0.032678,0.007794,15827],[640,0.2305,0.4718,0.8036,0.00214,0.029763,0.007962,18276],[650,0.2314,0.4669,0.7938,0.002212,0.023539,0.007719,17390],[660,0.2275,0.4769,0.817,0.002826,0.032279,0.007892,18681],[670,0.2276,0.4714,0.8183,0.002224,0.027414,0.008036,17231],[680,0.2339,0.4783,0.817,0.002178,0.030029,0.008058,17445],[690,0.2324,0.4798,0.8208,0.002137,0.029009,0.008059,16194],[700,0.2318,0.4875,0.8202,0.002125,0.03014,0.007908,16809],[710,0.2354,0.4787,0.831,0.00214,0.025349,0.008273,17215],[720,0.2377,0.4754,0.8333,0.002294,0.028252,0.008173,16229],[730,0.2354,0.4831,0.8535,0.002278,0.027244,0.008209,16289],[740,0.2376,0.4803,0.8359,0.002036,0.024051,0.008409,16840],[750,0.2449,0.4719,0.8201,0.002281,0.025851,0.008379,15627],[760,0.2428,0.4601,0.8216,0.002075,0.027432,0.008217,15775],[770,0.2329,0.4626,0.8561,0.002262,0.029352,0.008182,17038],[780,0.2393,0.4582,0.8504,0.002217,0.023999,0.007813,16772],[790,0.2502,0.4686,0.8049,0.002464,0.020747,0.008152,16263],[800,0.252,0.469,0.8248,0.002348,0.017259,0.007885,16186],[810,0.2499,0.4791,0.8166,0.002283,0.016799,0.008008,16219],[820,0.2512,0.4701,0.8125,0.002315,0.020671,0.008376,16264],[830,0.2486,0.4689,0.8298,0.002214,0.019729,0.008391,16925],[840,0.2483,0.4777,0.8275,0.002265,0.023953,0.008236,16977],[850,0.2501,0.4822,0.8223,0.002319,0.030262,0.008344,14800],[860,0.2444,0.4788,0.8345,0.002347,0.021188,0.007925,16959],[870,0.2469,0.4845,0.841,0.00201,0.024297,0.008121,16359],[880,0.2413,0.4788,0.8476,0.001959,0.025509,0.008251,15239],[890,0.2386,0.486,0.8422,0.002146,0.030838,0.008041,17562],[900,0.2435,0.475,0.8333,0.00202,0.026024,0.008243,16325],[910,0.2442,0.4911,0.8319,0.002077,0.034119,0.008444,16746],[920,0.2474,0.4935,0.8177,0.002003,0.030624,0.008289,16376],[930,0.2507,0.4988,0.8087,0.002088,0.034923,0.008323,15282],[940,0.254,0.4917,0.7887,0.002526,0.036967,0.008141,16276],[950,0.2583,0.4997,0.7903,0.002716,0.038846,0.008678,14897],[960,0.2592,0.484,0.8048,0.002034,0.033946,0.0085,15297],[970,0.2544,0.4856,0.8115,0.002024,0.038315,0.008276,15436],[980,0.2475,0.4922,0.8327,0.00208,0.0351,0.008464,16126],[990,0.2379,0.4785,0.8596,0.001999,0.03606,0.008001,16630],[1000,0.238,0.4929,0.8451,0.002231,0.034172,0.007996,15718],[1010,0.2433,0.488,0.8264,0.001926,0.03792,0.00796,15389],[1020,0.2452,0.5019,0.8242,0.002086,0.038249,0.008085,16568],[1030,0.2507,0.4782,0.8095,0.001957,0.033174,0.008323,15337],[1040,0.2495,0.4917,0.8149,0.002058,0.024723,0.008313,15471],[1050,0.2542,0.4981,0.8159,0.002327,0.026666,0.008295,16213],[1060,0.2508,0.4883,0.8247,0.002096,0.027443,0.008445,15183],[1070,0.2491,0.4924,0.8322,0.001907,0.038426,0.0083,15572],[1080,0.2596,0.497,0.8183,0.002046,0.033928,0.008388,14492],[1090,0.2605,0.4971,0.8189,0.002274,0.032463,0.008348,15510],[1100,0.2612,0.4935,0.8372,0.001892,0.030839,0.008189,14208],[1110,0.255,0.4962,0.8336,0.002077,0.031498,0.00833,15641],[1120,0.2586,0.4875,0.8325,0.002005,0.02836,0.008496,15542],[1130,0.2632,0.5031,0.8193,0.002572,0.023986,0.008804,14655],[1140,0.2734,0.5,0.7843,0.002449,0.02785,0.008737,14693],[1150,0.2712,0.4896,0.7749,0.002404,0.030605,0.008646,14039],[1160,0.2721,0.4911,0.7761,0.002355,0.029782,0.00899,13801],[1170,0.2761,0.5059,0.7561,0.002306,0.030137,0.009008,14073],[1180,0.2793,0.5002,0.7571,0.002064,0.030448,0.008466,13683],[1190,0.2727,0.4936,0.7959,0.002077,0.029781,0.008612,14502],[1200,0.2688,0.4914,0.8011,0.001892,0.030117,0.008648,14527],[1210,0.2641,0.5075,0.7922,0.002131,0.035927,0.008645,14225],[1220,0.2668,0.492,0.7948,0.001876,0.035354,0.008507,14626],[1230,0.2705,0.5066,0.7919,0.00225,0.035987,0.008401,14350],[1240,0.2736,0.5013,0.8043,0.002087,0.035631,0.008538,13964],[1250,0.2646,0.4924,0.8373,0.001898,0.035609,0.00843,13917],[1260,0.2631,0.4858,0.8389,0.002021,0.034611,0.008304,14589],[1270,0.2595,0.4988,0.82,0.002033,0.043871,0.008457,15067],[1280,0.2642,0.499,0.8198,0.001961,0.037873,0.008303,14931],[1290,0.2726,0.4896,0.7781,0.002434,0.029547,0.008334,13675],[1300,0.2771,0.4973,0.7868,0.00231,0.030262,0.008514,13882],[1310,0.2744,0.5012,0.8089,0.002054,0.029054,0.008351,14567],[1320,0.2662,0.4837,0.8239,0.002209,0.028132,0.008255,14866],[1330,0.2607,0.4905,0.8244,0.002033,0.034312,0.008328,16005],[1340,0.2632,0.4924,0.8272,0.002017,0.029067,0.008235,14383],[1350,0.2624,0.5001,0.817,0.00205,0.033619,0.008564,14928],[1360,0.2697,0.502,0.7977,0.002154,0.031594,0.008374,14105],[1370,0.276,0.4976,0.8068,0.002256,0.026955,0.008463,14158],[1380,0.2684,0.5039,0.8133,0.002196,0.038318,0.008714,14644],[1390,0.262,0.5061,0.8193,0.002167,0.040653,0.008699,14494],[1400,0.2596,0.4913,0.8147,0.002476,0.041625,0.008527,14880],[1410,0.2752,0.5063,0.7966,0.002107,0.03217,0.008691,13353],[1420,0.2692,0.509,0.8069,0.00197,0.037801,0.008703,14465],[1430,0.2713,0.5008,0.8007,0.002342,0.036248,0.008702,14418],[1440,0.27,0.4893,0.7997,0.002257,0.034468,0.008454,15088],[1450,0.2654,0.5086,0.8073,0.002029,0.04994,0.008365,14109],[1460,0.2725,0.5126,0.8008,0.002231,0.036229,0.008345,14611],[1470,0.2745,0.517,0.7947,0.002133,0.027428,0.008666,13914],[1480,0.2859,0.5009,0.7615,0.002314,0.024686,0.008679,13687],[1490,0.2894,0.5189,0.7386,0.002358,0.029865,0.008811,13547],[1500,0.2842,0.5094,0.7564,0.002515,0.037233,0.008724,14006],[1510,0.2764,0.4965,0.7758,0.002436,0.035736,0.008573,14219],[1520,0.2746,0.5132,0.7857,0.002024,0.037433,0.008556,13479],[1530,0.2714,0.4917,0.8028,0.001846,0.03342,0.008521,14479],[1540,0.2727,0.4963,0.7975,0.001934,0.033561,0.008602,13769],[1550,0.2792,0.4964,0.7909,0.001949,0.030646,0.00866,13837],[1560,0.262,0.4622,0.7806,0.001929,0.026852,0.008224,15016],[1570,0.2745,0.4899,0.8001,0.00197,0.032325,0.008494,13730],[1580,0.2754,0.5077,0.7902,0.001853,0.036411,0.008562,13693],[1590,0.2775,0.4984,0.7945,0.00181,0.034959,0.008625,13501],[1600,0.2787,0.5054,0.7807,0.002217,0.034748,0.008854,13680],[1610,0.2777,0.4957,0.7814,0.001904,0.031579,0.008855,13079],[1620,0.2816,0.5056,0.7696,0.002155,0.033821,0.009132,14031],[1630,0.2664,0.4874,0.7827,0.001892,0.033771,0.008963,14447],[1640,0.2769,0.5073,0.768,0.001831,0.035242,0.008872,13953],[1650,0.2828,0.5056,0.7669,0.00233,0.039749,0.009326,13046],[1660,0.2844,0.5147,0.7667,0.002201,0.031582,0.009103,13439],[1670,0.2802,0.5021,0.794,0.001867,0.035419,0.009099,14225],[1680,0.2792,0.5131,0.7911,0.001891,0.033969,0.009061,13482],[1690,0.2811,0.5089,0.7871,0.001849,0.037866,0.008927,13322],[1700,0.2833,0.4995,0.7807,0.001967,0.028416,0.009238,13577],[1710,0.278,0.5038,0.8071,0.002009,0.031529,0.0089,14032],[1720,0.2738,0.4958,0.8109,0.002063,0.032882,0.009097,13769],[1730,0.271,0.5028,0.816,0.002058,0.040353,0.009118,14405],[1740,0.2712,0.5089,0.8148,0.002087,0.034169,0.008897,13742],[1750,0.2764,0.5071,0.81,0.002059,0.029102,0.009068,13442],[1760,0.2682,0.5001,0.8344,0.001986,0.026941,0.008752,14597],[1770,0.2646,0.4933,0.8387,0.001755,0.032651,0.008654,14261],[1780,0.2689,0.5,0.8265,0.001941,0.030697,0.008883,13780],[1790,0.2748,0.5103,0.8095,0.001803,0.03202,0.009202,14804],[1800,0.2859,0.5091,0.793,0.001897,0.032616,0.009184,13521],[1810,0.2827,0.5005,0.8018,0.002022,0.047587,0.009262,13926],[1820,0.2783,0.5274,0.8184,0.001967,0.045419,0.009175,13733],[1830,0.2735,0.5046,0.8173,0.002029,0.038033,0.009287,13112],[1840,0.2715,0.4993,0.8179,0.002124,0.03839,0.008952,14040],[1850,0.2812,0.5051,0.7875,0.002094,0.035347,0.008906,13196],[1860,0.2966,0.5081,0.7593,0.002181,0.032218,0.009289,13731],[1870,0.3053,0.5092,0.7531,0.002184,0.032325,0.009043,13208],[1880,0.298,0.5238,0.7525,0.002068,0.036705,0.009153,13272],[1890,0.291,0.511,0.756,0.001952,0.040811,0.009122,13078],[1900,0.2908,0.5093,0.7716,0.001909,0.034786,0.008842,12938],[1910,0.2838,0.5076,0.7937,0.001716,0.037376,0.008845,13435],[1920,0.2879,0.5091,0.7938,0.001954,0.038117,0.008519,13637],[1930,0.2759,0.5031,0.813,0.002067,0.035286,0.008838,13246],[1940,0.2823,0.5067,0.8036,0.002006,0.031723,0.008747,13743],[1950,0.2849,0.4995,0.8015,0.001838,0.040229,0.009021,12784],[1960,0.2853,0.506,0.7865,0.001836,0.040518,0.008853,13749],[1970,0.2875,0.5105,0.7818,0.00192,0.042253,0.008894,13739],[1980,0.2873,0.5054,0.7909,0.002116,0.034948,0.008799,12936],[1990,0.2863,0.5018,0.7929,0.002064,0.036783,0.008846,13432],[2000,0.2849,0.5073,0.7949,0.001972,0.040873,0.00897,13130],[2010,0.287,0.4992,0.7966,0.001952,0.040404,0.009026,13253],[2020,0.2957,0.5151,0.7793,0.001888,0.032318,0.009259,13309],[2030,0.2931,0.5131,0.7817,0.001947,0.033066,0.008726,13809],[2040,0.2917,0.5136,0.7794,0.001876,0.042143,0.009063,13128],[2050,0.2946,0.5123,0.7662,0.002152,0.043153,0.009137,13496],[2060,0.2801,0.4668,0.7592,0.002004,0.03337,0.008778,12689],[2070,0.2952,0.5144,0.7716,0.001882,0.033733,0.008657,13782],[2080,0.2993,0.5022,0.7576,0.001809,0.032288,0.008653,13325],[2090,0.2979,0.5227,0.7613,0.001931,0.04486,0.008925,12528],[2100,0.3011,0.509,0.7651,0.001989,0.027556,0.00845,13144],[2110,0.3012,0.4999,0.7539,0.002275,0.027448,0.008701,13195],[2120,0.2962,0.518,0.7671,0.002079,0.033186,0.009077,12942],[2130,0.2955,0.5058,0.7618,0.002085,0.037891,0.008924,13335],[2140,0.2935,0.5091,0.7963,0.001924,0.03496,0.009225,13327],[2150,0.2905,0.5098,0.8067,0.001671,0.040056,0.008885,13079],[2160,0.2889,0.5166,0.814,0.001809,0.033078,0.008911,13659],[2170,0.2939,0.5051,0.7912,0.002003,0.029391,0.008776,13399],[2180,0.292,0.4989,0.7885,0.002171,0.035883,0.008873,12552],[2190,0.2921,0.5036,0.8008,0.00191,0.041922,0.008665,13412],[2200,0.2857,0.5056,0.8054,0.001993,0.037149,0.008555,13555],[2210,0.2968,0.5116,0.7925,0.002028,0.035949,0.008939,12952],[2220,0.2895,0.5151,0.8067,0.002195,0.038531,0.008907,13166],[2230,0.2929,0.5246,0.8011,0.002179,0.036501,0.00901,13151],[2240,0.2896,0.5182,0.7943,0.001967,0.03878,0.008874,12745],[2250,0.2936,0.5206,0.7896,0.001837,0.043317,0.009034,13507],[2260,0.2962,0.5168,0.7783,0.001878,0.040884,0.009381,13266],[2270,0.3008,0.5162,0.7732,0.001803,0.040248,0.00927,12627],[2280,0.2956,0.5056,0.801,0.001804,0.035103,0.008886,13379],[2290,0.29,0.5158,0.7974,0.001832,0.035178,0.008806,13164],[2300,0.2909,0.5212,0.7926,0.001839,0.036742,0.009005,13443],[2310,0.2847,0.5124,0.7983,0.001902,0.044001,0.00837,13906],[2320,0.2775,0.5077,0.8087,0.001768,0.046681,0.008509,13884],[2330,0.2718,0.5021,0.81,0.001936,0.042212,0.00833,13427],[2340,0.2854,0.5145,0.8019,0.001738,0.042536,0.008483,13665],[2350,0.2899,0.5098,0.7985,0.00179,0.048634,0.008605,13066],[2360,0.2849,0.5064,0.7885,0.001874,0.044419,0.008362,13824],[2370,0.2872,0.5056,0.8049,0.001961,0.04867,0.008538,13491],[2380,0.2862,0.5121,0.7988,0.002026,0.053309,0.008777,13270],[2390,0.2873,0.5197,0.8016,0.001957,0.052204,0.008656,14698],[2400,0.2886,0.5116,0.7964,0.001949,0.044688,0.008769,13229],[2410,0.293,0.53,0.7805,0.001813,0.046781,0.008878,13295],[2420,0.2899,0.5001,0.7872,0.001861,0.045843,0.00877,13694],[2430,0.296,0.5175,0.7688,0.002003,0.050857,0.009131,13359],[2440,0.2985,0.523,0.7764,0.001687,0.049255,0.009246,13954],[2450,0.2995,0.5217,0.7918,0.001595,0.040764,0.009069,12744],[2460,0.2966,0.5058,0.8038,0.001815,0.038122,0.008614,13505],[2470,0.298,0.5257,0.7858,0.001811,0.038601,0.008608,13615],[2480,0.3012,0.5209,0.7757,0.001989,0.033587,0.008766,13129],[2490,0.3079,0.5113,0.7559,0.003851,0.033593,0.008928,13171],[2500,0.2918,0.5089,0.7643,0.003646,0.036134,0.008605,13266],[2510,0.2816,0.4958,0.7768,0.004195,0.032463,0.008493,13959],[2520,0.2865,0.5187,0.7769,0.002109,0.039047,0.008635,14033],[2530,0.2856,0.5164,0.7831,0.002026,0.038834,0.008715,13125],[2536,0.2945,0.5221,0.7781,0.002108,0.037162,0.008522,13438]],"s8b":[[1310,0.2633,0.4705,0.7909,0.002191,0.025554,0.008279,14499],[1320,0.2749,0.5066,0.7976,0.002122,0.027498,0.008563,13649],[1330,0.2679,0.5033,0.7999,0.001936,0.034419,0.008557,14565],[1340,0.2621,0.501,0.8085,0.00181,0.04566,0.008489,14969],[1350,0.2655,0.4969,0.8144,0.002005,0.031603,0.008597,8858],[1360,0.2614,0.4939,0.8292,0.001945,0.028694,0.008357,7827],[1370,0.263,0.4939,0.8291,0.001835,0.034184,0.008477,14408],[1380,0.2656,0.4955,0.8062,0.001938,0.032454,0.008163,14315],[1390,0.2695,0.4849,0.8061,0.002069,0.030538,0.008501,14022],[1400,0.2646,0.4998,0.8027,0.001937,0.030889,0.008361,14558],[1410,0.2734,0.5102,0.8008,0.002068,0.031314,0.008387,14392],[1420,0.2658,0.4966,0.8067,0.001998,0.033929,0.008408,13935],[1430,0.264,0.4937,0.8082,0.001978,0.040031,0.008703,14237],[1440,0.2687,0.5012,0.7973,0.001958,0.038757,0.008493,15045],[1450,0.2782,0.4974,0.7956,0.001922,0.032093,0.008671,13826],[1460,0.2734,0.4886,0.8102,0.00199,0.037052,0.008755,14517],[1470,0.2658,0.5064,0.8256,0.001845,0.028299,0.008717,13837],[1480,0.2687,0.4914,0.8269,0.001948,0.023203,0.008459,13984],[1490,0.265,0.5017,0.8176,0.001877,0.030271,0.008337,14189],[1500,0.2682,0.4895,0.8254,0.002001,0.024804,0.008484,14022],[1510,0.2726,0.4844,0.8093,0.002158,0.030439,0.008536,13906],[1520,0.2785,0.5002,0.8011,0.002269,0.03296,0.008804,10329],[1530,0.2763,0.486,0.8145,0.00218,0.034809,0.008666,14459],[1540,0.2705,0.5021,0.8181,0.002066,0.0302,0.008672,14347],[1550,0.2726,0.5091,0.8034,0.002055,0.033892,0.008769,13059],[1560,0.2769,0.503,0.7975,0.001953,0.031982,0.00883,13949],[1570,0.2795,0.5017,0.7994,0.001961,0.029164,0.008841,14211],[1580,0.2794,0.5038,0.7872,0.001821,0.036105,0.008807,13782],[1590,0.2868,0.4975,0.7785,0.001959,0.031446,0.008775,13700],[1600,0.2839,0.5001,0.7741,0.001932,0.030114,0.008802,13682],[1610,0.2868,0.5123,0.7497,0.001878,0.044181,0.008796,13388],[1620,0.2908,0.5123,0.7556,0.002196,0.041202,0.009006,13591],[1630,0.2861,0.5064,0.7526,0.002205,0.03938,0.00875,13490],[1640,0.2804,0.5118,0.7724,0.001983,0.047993,0.008826,13973],[1650,0.2826,0.5083,0.7788,0.001876,0.043417,0.00864,13525],[1660,0.2793,0.4997,0.7816,0.001824,0.041445,0.00901,13622],[1670,0.2826,0.5054,0.7755,0.001918,0.03597,0.008884,13341],[1680,0.2802,0.5133,0.7981,0.001801,0.03847,0.008835,13404],[1690,0.2748,0.4905,0.8186,0.001791,0.035138,0.008907,14111],[1700,0.2738,0.4913,0.8092,0.002011,0.035143,0.008697,13824],[1710,0.2819,0.4989,0.7886,0.001838,0.036101,0.008758,13464],[1720,0.2775,0.5152,0.7927,0.001955,0.043903,0.008979,14345],[1730,0.2772,0.506,0.7942,0.001904,0.041793,0.008879,13312],[1740,0.2817,0.4908,0.7774,0.002086,0.039486,0.008741,13379],[1750,0.2756,0.5019,0.8012,0.001952,0.040786,0.009009,12822],[1760,0.271,0.508,0.7957,0.002241,0.042021,0.009057,13898],[1770,0.2701,0.4996,0.8116,0.002035,0.036985,0.009137,13524],[1780,0.2655,0.4984,0.8264,0.001988,0.037623,0.00902,14039],[1790,0.2671,0.497,0.8185,0.002388,0.032077,0.008716,14576],[1800,0.2674,0.4882,0.8359,0.002055,0.032294,0.008901,14349],[1810,0.2765,0.4926,0.8188,0.001992,0.030402,0.009183,13900],[1820,0.2846,0.499,0.8101,0.002011,0.029275,0.00919,13814],[1830,0.2784,0.4983,0.8266,0.002241,0.030151,0.008986,13405],[1840,0.2825,0.4993,0.8098,0.002084,0.035122,0.009068,13505],[1850,0.2834,0.5086,0.8017,0.001891,0.030618,0.008989,13583],[1860,0.2857,0.4955,0.7966,0.001896,0.030186,0.00894,13344],[1870,0.2834,0.5005,0.786,0.002009,0.02768,0.008939,14097],[1880,0.284,0.5042,0.7987,0.001974,0.037342,0.009397,14163],[1890,0.2826,0.5039,0.7966,0.001927,0.045682,0.008878,14011],[1900,0.2855,0.5161,0.7877,0.00183,0.045334,0.009066,14000],[1910,0.2893,0.5128,0.7627,0.001977,0.035606,0.008971,14040],[1920,0.2882,0.5037,0.7616,0.002102,0.045238,0.008915,13658],[1930,0.287,0.5084,0.7727,0.001963,0.040908,0.008959,13289],[1940,0.2899,0.5302,0.7582,0.002351,0.040583,0.009227,13715],[1950,0.2845,0.5089,0.7525,0.002035,0.033888,0.009258,13218],[1960,0.2983,0.5102,0.741,0.001916,0.032145,0.009311,13622],[1970,0.2983,0.5159,0.7525,0.002226,0.029404,0.009343,13034],[1980,0.2916,0.5207,0.7476,0.002078,0.035782,0.009305,12960],[1990,0.2901,0.5062,0.746,0.001998,0.033608,0.009226,13388],[2000,0.2918,0.5067,0.7789,0.00166,0.032926,0.008921,13473],[2010,0.2778,0.5072,0.7965,0.001692,0.04164,0.008794,13473],[2020,0.2854,0.5056,0.7721,0.001892,0.04124,0.009075,12960],[2030,0.2783,0.5033,0.7896,0.001933,0.032782,0.009347,13601],[2040,0.276,0.4949,0.791,0.001875,0.038194,0.009082,13566],[2050,0.2735,0.5032,0.7819,0.001904,0.039713,0.009113,13335],[2060,0.2811,0.5129,0.7745,0.001989,0.043777,0.009028,13224],[2070,0.2881,0.5044,0.7786,0.001907,0.040635,0.009305,13551],[2080,0.2872,0.5115,0.7703,0.002002,0.037797,0.009214,13231],[2090,0.2952,0.515,0.7539,0.00214,0.037338,0.009261,13535],[2100,0.2898,0.5128,0.7723,0.002038,0.040934,0.009299,13468],[2110,0.2882,0.5175,0.7604,0.002397,0.03962,0.009176,13930],[2120,0.3003,0.5181,0.7393,0.002196,0.040184,0.009208,13495],[2130,0.3033,0.52,0.7155,0.002168,0.036819,0.009183,13415],[2140,0.2973,0.5115,0.7335,0.00213,0.039661,0.008839,13623],[2150,0.2949,0.5208,0.7472,0.001719,0.03626,0.008614,13513],[2160,0.2863,0.5092,0.7646,0.001703,0.035871,0.009002,13444],[2170,0.2806,0.5127,0.7738,0.001723,0.047097,0.008924,13369],[2180,0.2857,0.5074,0.7601,0.001756,0.043337,0.008665,13114],[2190,0.2682,0.478,0.7637,0.001826,0.03563,0.008334,13319],[2200,0.2972,0.5087,0.7551,0.001956,0.039134,0.00888,13433],[2210,0.2923,0.5069,0.7605,0.001903,0.041746,0.008944,13331],[2220,0.2938,0.5204,0.747,0.002014,0.042649,0.008764,13376],[2230,0.2947,0.5104,0.7584,0.001895,0.033548,0.009252,12927],[2240,0.2855,0.4991,0.7683,0.001857,0.033441,0.009018,13245],[2250,0.2821,0.5067,0.7793,0.001871,0.038883,0.008676,12889],[2260,0.2853,0.5022,0.7818,0.002697,0.049284,0.008746,13601],[2270,0.2839,0.5098,0.7831,0.001768,0.053713,0.008585,13972],[2280,0.2849,0.5147,0.7768,0.001861,0.040623,0.008705,13182],[2290,0.2903,0.5028,0.7814,0.001701,0.039175,0.008748,13437],[2300,0.2881,0.5115,0.7691,0.001604,0.038403,0.008888,13047],[2310,0.2848,0.5203,0.779,0.001683,0.044743,0.008635,13613],[2320,0.2801,0.5015,0.8059,0.001677,0.040973,0.008732,13968],[2330,0.2884,0.5031,0.7881,0.002068,0.039533,0.008768,13166],[2340,0.2926,0.5033,0.7844,0.002189,0.045224,0.008826,13308],[2350,0.2953,0.5174,0.781,0.001937,0.042363,0.009107,12982],[2360,0.3035,0.5207,0.7595,0.002062,0.035649,0.00929,13215],[2370,0.2949,0.5051,0.7764,0.001743,0.037123,0.008927,12865],[2380,0.2924,0.5076,0.7788,0.001856,0.038689,0.008778,13662],[2390,0.2891,0.5204,0.777,0.001849,0.039951,0.008684,13659],[2400,0.2925,0.5085,0.789,0.00182,0.036224,0.008736,12863],[2410,0.2894,0.5061,0.7865,0.001828,0.038197,0.008875,13409],[2420,0.2915,0.5062,0.776,0.001922,0.041061,0.009105,13302],[2430,0.289,0.5189,0.7737,0.0019,0.038737,0.009113,13394],[2440,0.2869,0.5221,0.7803,0.001871,0.040082,0.009082,13045],[2450,0.2871,0.507,0.7867,0.00176,0.041606,0.008812,12983],[2460,0.2886,0.5088,0.7822,0.001775,0.042507,0.008823,13034],[2470,0.2787,0.502,0.7938,0.001838,0.043913,0.008922,12990],[2480,0.2832,0.5113,0.7937,0.001649,0.037098,0.008589,13730],[2490,0.2918,0.5122,0.7797,0.001907,0.035535,0.008642,12853],[2500,0.2956,0.5182,0.7813,0.001816,0.038209,0.008669,12787],[2510,0.2917,0.5163,0.7834,0.001621,0.037843,0.008923,13581],[2520,0.2897,0.512,0.8001,0.001608,0.044138,0.008638,13531],[2530,0.2964,0.514,0.7943,0.001799,0.035621,0.008822,13027],[2540,0.2989,0.5122,0.7882,0.001809,0.0372,0.008703,12973],[2550,0.2956,0.5121,0.7843,0.001948,0.042203,0.008616,13387],[2560,0.2938,0.5076,0.7866,0.002155,0.042447,0.00896,12565],[2570,0.2893,0.4976,0.7902,0.00194,0.050928,0.008637,13347],[2580,0.2843,0.5139,0.7802,0.001962,0.051604,0.008662,13477],[2590,0.2889,0.5219,0.7792,0.002305,0.045538,0.00857,13041],[2600,0.2911,0.5096,0.7791,0.003968,0.048559,0.008791,13283],[2610,0.2955,0.5116,0.7747,0.002371,0.03678,0.008818,13194],[2620,0.294,0.5119,0.7602,0.002042,0.035775,0.008819,12951],[2625,0.304,0.5306,0.7635,0.002252,0.031952,0.008959,13042]]},"signals_cols":["update_end_of_bin","fresh_progress_mean(w)","save_progress_mean(w)","entropy","approx_kl","aux_win_loss","aux_combat_loss","env_steps_per_s(median of env_steps_update/t_total_s)"],"candidates":[{"run":"s8a","u":925,"v1":[0.391,0.332,0.45],"dev":[0.283,0.263,0.304],"test":[0.295,0.273,0.316],"a1beat":19,"a2":19,"src":"docs/train-results-silent-a10-2026-11-04.md"},{"run":"s8a","u":1275,"v1":[0.352,0.27,0.433],"dev":[0.325,0.302,0.347],"test":[0.313,0.288,0.338],"a1beat":38,"a2":38,"src":"docs/train-results-silent-a10-2026-11-04.md"},{"run":"s8a","u":1300,"v1":[0.353,0.297,0.41],"dev":[0.329,0.309,0.349],"test":[0.327,0.299,0.355],"a1beat":37,"a2":37,"src":"docs/train-results-silent-a10-2026-11-04.md"},{"run":"s8a","u":1525,"v1":[0.408,0.347,0.468],"dev":[0.335,0.31,0.36],"test":[0.326,0.299,0.353],"a1beat":42,"a2":42,"src":"docs/train-results-silent-a10-2026-11-04.md"},{"run":"s8a","u":1900,"v1":[0.41348,0.339879,0.487081],"dev":[0.341969,0.318915,0.365023],"test":[0.365318,0.331533,0.399104],"a1beat":47,"a2":47,"src":"runmeta-sts2train.tar.gz:final-eval-gpu1/s8a-silent-a10-mid-upg3-best/model-card.json","wh":"1ae4c556e7ae91ba"},{"run":"s8a","u":2050,"v1":[0.389338,0.311398,0.467278],"dev":[0.351103,0.326268,0.375938],"test":[0.35337,0.323608,0.383132],"a1beat":52,"a2":52,"src":"runmeta-sts2train.tar.gz:final-eval-gpu1/s8a-silent-a10-mid-upg3-ckpt-0002050/model-card.json","wh":"68d3601d9f91672d"},{"run":"s8b","u":2100,"v1":[0.412377,0.321406,0.503349],"dev":[0.335315,0.310823,0.359807],"test":[0.349804,0.319226,0.380382],"a1beat":49,"a2":49,"src":"runmeta-sts2b.tar.gz:final-eval-gpu2/s8b-silent-a10-mid-upg3-relic2-best/model-card.json","wh":"820859ee3e0267d9"},{"run":"s8b","u":2181,"v1":[0.365625,0.279012,0.452238],"dev":[0.343463,0.318897,0.368028],"test":[0.341152,0.309125,0.373179],"a1beat":48,"a2":48,"src":"runmeta-sts2b.tar.gz:final-eval-gpu2/s8b-silent-a10-mid-upg3-relic2-ckpt-0002181/model-card.json","wh":"f19729c5e916e754"},{"run":"s8a","u":2225,"v1":[0.426715,0.350579,0.502852],"dev":[0.372175,0.34831,0.396041],"test":[0.346434,0.316213,0.376654],"a1beat":57,"a2":57,"src":"runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-best/model-card.json","wh":"d59f9ea2095799c0"},{"run":"s8b","u":2475,"v1":[0.423345,0.349673,0.497018],"dev":[0.350117,0.32739,0.372844],"test":[0.343713,0.314369,0.373058],"a1beat":52,"a2":52,"src":"runmeta-sts2b.tar.gz:final-eval-gpu2-seg3/s8b-silent-a10-mid-upg3-relic2-best/model-card.json","wh":"a0e413ddc25afa67"},{"run":"s8a","u":2536,"v1":[0.384681,0.300908,0.468454],"dev":[0.362687,0.33783,0.387545],"test":[0.373382,0.339503,0.407261],"a1beat":52,"a2":52,"src":"runmeta-sts2train.tar.gz:final-eval-gpu1-seg3/s8a-silent-a10-mid-upg3-ckpt-0002536/model-card.json","wh":"b51e25a41ab2de25"},{"run":"s8b","u":2625,"v1":[0.357353,0.286118,0.428588],"dev":[0.364794,0.339582,0.390006],"test":[0.369448,0.336137,0.402759],"a1beat":55,"a2":55,"src":"runmeta-sts2b.tar.gz:final-eval-gpu2-seg3/s8b-silent-a10-mid-upg3-relic2-ckpt-0002625/model-card.json","wh":"899ab7ebf1fcbc59"}],"v1_periodic_vs_card":["s8a u1300: periodic 0.337377 vs card 0.353"],"pick":{"update":2225,"env_steps":291635200,"episodes":1492418,"train_wins":26575,"sessions":5,"train_hours":5.68,"weights_hash":"d59f9ea2095799c0","params":2904208,"saved_at":"2026-11-04T13:12:07+00:00","sets":{"silent-a10-v1":{"m":0.426715,"lo":0.350579,"hi":0.502852,"games":20,"floor_mean":22.4,"wins":0},"silent-a10-dev-v1":{"m":0.372175,"lo":0.34831,"hi":0.396041,"games":128,"floor_mean":19.7578125,"wins":0},"silent-a10-test-v1":{"m":0.346434,"lo":0.316213,"hi":0.376654,"games":100,"floor_mean":18.46,"wins":0}}},"funnel":{"silent-a10-v1":{"act1_boss":17,"act1_boss_beaten":12,"act2":12,"act2_boss":3,"act2_boss_beaten":1,"act3":1,"cleared":0,"games":20},"silent-a10-dev-v1":{"act1_boss":103,"act1_boss_beaten":57,"act2":57,"act2_boss":8,"act2_boss_beaten":0,"act3":0,"cleared":0,"games":128},"silent-a10-test-v1":{"act1_boss":69,"act1_boss_beaten":44,"act2":44,"act2_boss":5,"act2_boss_beaten":1,"act3":1,"cleared":0,"games":100}},"death_floors":[[1,7,4],[1,8,4],[1,9,6],[1,12,3],[1,14,6],[1,15,2],[1,17,46],[2,21,6],[2,22,6],[2,23,6],[2,24,9],[2,25,6],[2,27,8],[2,29,2],[2,30,3],[2,31,3],[2,33,8]],"death_detail":{"7":[["BYGONE_EFFIGY_ELITE",1],["TERROR_EEL_ELITE",1],["CORPSE_SLUGS_NORMAL",1],["SEAPUNK_NORMAL",1]],"8":[["BYGONE_EFFIGY_ELITE",1],["FOSSIL_STALKER_NORMAL",1],["TERROR_EEL_ELITE",1],["PHROG_PARASITE_ELITE",1]],"9":[["BYGONE_EFFIGY_ELITE",3],["PHANTASMAL_GARDENERS_ELITE",2],["PHROG_PARASITE_ELITE",1]],"12":[["TERROR_EEL_ELITE",1],["BYGONE_EFFIGY_ELITE",1],["SLIMES_NORMAL",1]],"14":[["MAWLER_NORMAL",2],["BYRDONIS_ELITE",1],["SNAPPING_JAXFRUIT_NORMAL",1],["SKULKING_COLONY_ELITE",1],["BYGONE_EFFIGY_ELITE",1]],"15":[["TERROR_EEL_ELITE",2]],"17":[["LAGAVULIN_MATRIARCH_BOSS",9],["WATERFALL_GIANT_BOSS",9],["CEREMONIAL_BEAST_BOSS",9],["THE_KIN_BOSS",8],["SOUL_FYSH_BOSS",7],["VANTOM_BOSS",4]],"21":[["THE_OBSCURA_NORMAL",1],["TUNNELER_WEAK",1],["SLUMBERING_BEETLE_NORMAL",1],["HUNTER_KILLER_NORMAL",1],["OVICOPTER_NORMAL",1],["MYTES_NORMAL",1]],"22":[["SPINY_TOAD_NORMAL",3],["LOUSE_PROGENITOR_NORMAL",1],["CHOMPERS_NORMAL",1],["OVICOPTER_NORMAL",1]],"23":[["THE_OBSCURA_NORMAL",2],["OVICOPTER_NORMAL",1],["SLUMBERING_BEETLE_NORMAL",1],["SPINY_TOAD_NORMAL",1],["HUNTER_KILLER_NORMAL",1]],"24":[["DECIMILLIPEDE_ELITE",3],["INFESTED_PRISMS_ELITE",2],["OVICOPTER_NORMAL",2],["LOUSE_PROGENITOR_NORMAL",1],["ENTOMANCER_ELITE",1]],"25":[["DECIMILLIPEDE_ELITE",2],["INFESTED_PRISMS_ELITE",2],["ENTOMANCER_ELITE",1],["THE_OBSCURA_NORMAL",1]],"27":[["DECIMILLIPEDE_ELITE",2],["THE_OBSCURA_NORMAL",1],["SLUMBERING_BEETLE_NORMAL",1],["CHOMPERS_NORMAL",1],["ENTOMANCER_ELITE",1],["BOWLBUGS_NORMAL",1],["INFESTED_PRISMS_ELITE",1]],"29":[["OVICOPTER_NORMAL",1],["DECIMILLIPEDE_ELITE",1]],"30":[["CHOMPERS_NORMAL",1],["DECIMILLIPEDE_ELITE",1],["SLUMBERING_BEETLE_NORMAL",1]],"31":[["INFESTED_PRISMS_ELITE",1],["SPINY_TOAD_NORMAL",1],["DECIMILLIPEDE_ELITE",1]],"33":[["KAISER_CRAB_BOSS",4],["THE_INSATIABLE_BOSS",2],["KNOWLEDGE_DEMON_BOSS",2]]},"killers":[["DECIMILLIPEDE_ELITE",10,"elite",2],["LAGAVULIN_MATRIARCH_BOSS",9,"boss",1],["WATERFALL_GIANT_BOSS",9,"boss",1],["CEREMONIAL_BEAST_BOSS",9,"boss",1],["THE_KIN_BOSS",8,"boss",1],["SOUL_FYSH_BOSS",7,"boss",1],["BYGONE_EFFIGY_ELITE",7,"elite",1],["OVICOPTER_NORMAL",6,"normal",2],["INFESTED_PRISMS_ELITE",6,"elite",2],["THE_OBSCURA_NORMAL",5,"normal",2],["SPINY_TOAD_NORMAL",5,"normal",2],["TERROR_EEL_ELITE",5,"elite",1],["VANTOM_BOSS",4,"boss",1],["SLUMBERING_BEETLE_NORMAL",4,"normal",2],["KAISER_CRAB_BOSS",4,"boss",2],["CHOMPERS_NORMAL",3,"normal",2],["ENTOMANCER_ELITE",3,"elite",2],["THE_INSATIABLE_BOSS",2,"boss",2],["PHANTASMAL_GARDENERS_ELITE",2,"elite",1],["LOUSE_PROGENITOR_NORMAL",2,"normal",2],["PHROG_PARASITE_ELITE",2,"elite",1],["MAWLER_NORMAL",2,"normal",1],["HUNTER_KILLER_NORMAL",2,"normal",2],["KNOWLEDGE_DEMON_BOSS",2,"boss",2],["BYRDONIS_ELITE",1,"elite",1],["TUNNELER_WEAK",1,"normal",2],["SNAPPING_JAXFRUIT_NORMAL",1,"normal",1],["MYTES_NORMAL",1,"normal",2],["FOSSIL_STALKER_NORMAL",1,"normal",1],["SLIMES_NORMAL",1,"normal",1],["SKULKING_COLONY_ELITE",1,"elite",1],["CORPSE_SLUGS_NORMAL",1,"normal",1],["BOWLBUGS_NORMAL",1,"normal",2],["SEAPUNK_NORMAL",1,"normal",1]],"endings":{"died_boss":54,"died_elite":37,"died_normal":37},"loop_breaker_dev":{"mode":"on","k":3,"window":64,"loop_breaks":177,"no_op_actions":0,"cycle_revisits":177,"games_with_loop_breaks":94,"games_with_no_ops":0,"games_with_cycles":94},"lookahead":{"greedy_nolb":[0.281757,0.261897,0.301618,52],"lookahead":[0.273524,0.255288,0.29176,44],"greedy_lb":[0.351103,0.326268,0.375938,0],"delta_la_minus_greedy":[-0.008234,-0.027078,0.010611],"better":32,"worse":40,"same":56,"searched":17414,"env_steps":344546,"forwards":236767,"changed_rate":0.1961,"ms_per_searched":7.7,"config":{"K":8,"R":1,"H":12,"horizon":"turn","score":"value+hp","threads":12,"seed":0,"pool_budget":50000,"device":"cuda"}},"live":[{"dir":"20261104-s8a-silent-a10-TW1NA10S02-real-c89a0bc","seed":"TW1NA10S02","decisions":233,"desync":0,"resync":0,"floor":17,"act":1,"cause":"THE_KIN_BOSS","score":442,"wall_s":453.1,"s_per_decision":1.94,"loop_breaks":1,"deck":18,"relics":5,"gold":109,"max_hp":70,"win_prob_max":0.0001,"weights_hash":"68d3601d9f91672d","updates":2050,"finished_at":"11-04 08:03","hp":[[0,1,1,"event",56,70],[1,1,1,"event",56,70],[2,1,1,"map",56,70],[3,1,2,"combat",56,70],[4,1,2,"combat",56,70],[5,1,2,"combat",56,70],[6,1,2,"combat",56,70],[7,1,2,"combat",56,70],[8,1,2,"combat",56,70],[9,1,2,"prompt",56,70],[10,1,2,"combat",56,70],[11,1,2,"combat",56,70],[12,1,2,"combat",56,70],[13,1,2,"combat",56,70],[14,1,2,"combat",56,70],[15,1,2,"combat",56,70],[16,1,2,"combat",56,70],[17,1,2,"combat",56,70],[18,1,2,"combat",56,70],[19,1,2,"combat",56,70],[20,1,2,"combat",56,70],[21,1,2,"combat",56,70],[22,1,2,"combat",55,70],[23,1,2,"combat",55,70],[24,1,2,"combat",55,70],[25,1,2,"combat",55,70],[26,1,2,"combat",55,70],[27,1,2,"prompt",55,70],[28,1,2,"combat",55,70],[29,1,2,"combat",55,70],[30,1,2,"combat",55,70],[31,1,2,"combat",55,70],[32,1,2,"rewards",55,70],[33,1,2,"rewards",55,70],[34,1,2,"rewards",55,70],[35,1,2,"map",55,70],[36,1,3,"event",55,70],[37,1,3,"event",55,70],[38,1,3,"map",55,70],[39,1,4,"shop",55,70],[40,1,4,"shop",55,70],[41,1,4,"shop",55,70],[42,1,4,"map",55,70],[43,1,5,"shop",55,70],[44,1,5,"map",55,70],[45,1,6,"combat",55,70],[46,1,6,"combat",55,70],[47,1,6,"combat",55,70],[48,1,6,"combat",55,70],[49,1,6,"combat",55,70],[50,1,6,"combat",55,70],[51,1,6,"prompt",55,70],[52,1,6,"combat",55,70],[53,1,6,"rewards",55,70],[54,1,6,"rewards",55,70],[55,1,6,"rewards",55,70],[56,1,6,"map",55,70],[57,1,7,"rest",55,70],[58,1,7,"rest",70,70],[59,1,7,"map",70,70],[60,1,8,"rest",70,70],[61,1,8,"prompt",70,70],[62,1,8,"prompt",70,70],[63,1,8,"rest",70,70],[64,1,8,"map",70,70],[65,1,9,"event",70,70],[66,1,9,"rewards",70,70],[67,1,9,"event",70,70],[68,1,9,"map",70,70],[69,1,10,"treasure",70,70],[70,1,10,"map",70,70],[71,1,11,"rest",70,70],[72,1,11,"prompt",70,70],[73,1,11,"prompt",70,70],[74,1,11,"rest",70,70],[75,1,11,"map",70,70],[76,1,12,"combat",70,70],[77,1,12,"combat",70,70],[78,1,12,"combat",70,70],[79,1,12,"combat",70,70],[80,1,12,"combat",70,70],[81,1,12,"prompt",70,70],[82,1,12,"combat",70,70],[83,1,12,"combat",70,70],[84,1,12,"combat",70,70],[85,1,12,"combat",70,70],[86,1,12,"combat",70,70],[87,1,12,"combat",70,70],[88,1,12,"combat",70,70],[89,1,12,"prompt",70,70],[90,1,12,"combat",70,70],[91,1,12,"combat",70,70],[92,1,12,"combat",70,70],[93,1,12,"combat",60,70],[94,1,12,"combat",60,70],[95,1,12,"combat",60,70],[96,1,12,"combat",60,70],[97,1,12,"combat",60,70],[98,1,12,"combat",48,70],[99,1,12,"combat",48,70],[100,1,12,"combat",48,70],[101,1,12,"combat",48,70],[102,1,12,"rewards",48,70],[103,1,12,"rewards",48,70],[104,1,12,"rewards",48,70],[105,1,12,"rewards",48,70],[106,1,12,"map",48,70],[107,1,13,"event",48,70],[108,1,13,"prompt",48,70],[109,1,13,"event",48,70],[110,1,13,"map",48,70],[111,1,14,"combat",48,70],[112,1,14,"combat",48,70],[113,1,14,"combat",48,70],[114,1,14,"combat",48,70],[115,1,14,"combat",48,70],[116,1,14,"combat",48,70],[117,1,14,"combat",48,70],[118,1,14,"combat",48,70],[119,1,14,"combat",48,70],[120,1,14,"combat",48,70],[121,1,14,"rewards",48,70],[122,1,14,"rewards",48,70],[123,1,14,"rewards",48,70],[124,1,14,"map",48,70],[125,1,15,"combat",48,70],[126,1,15,"combat",48,70],[127,1,15,"combat",48,70],[128,1,15,"combat",48,70],[129,1,15,"combat",48,70],[130,1,15,"combat",48,70],[131,1,15,"combat",48,70],[132,1,15,"combat",48,70],[133,1,15,"combat",48,70],[134,1,15,"combat",48,70],[135,1,15,"combat",48,70],[136,1,15,"combat",48,70],[137,1,15,"combat",48,70],[138,1,15,"combat",48,70],[139,1,15,"combat",48,70],[140,1,15,"prompt",48,70],[141,1,15,"combat",48,70],[142,1,15,"combat",48,70],[143,1,15,"combat",48,70],[144,1,15,"combat",48,70],[145,1,15,"combat",48,70],[146,1,15,"combat",48,70],[147,1,15,"combat",48,70],[148,1,15,"combat",48,70],[149,1,15,"combat",48,70],[150,1,15,"combat",48,70],[151,1,15,"rewards",48,70],[152,1,15,"rewards",48,70],[153,1,15,"rewards",48,70],[154,1,15,"rewards",48,70],[155,1,15,"map",48,70],[156,1,16,"rest",48,70],[157,1,16,"prompt",48,70],[158,1,16,"rest",48,70],[159,1,16,"rest",69,70],[160,1,16,"map",69,70],[161,1,17,"combat",69,70],[162,1,17,"combat",69,70],[163,1,17,"combat",69,70],[164,1,17,"combat",69,70],[165,1,17,"combat",69,70],[166,1,17,"combat",69,70],[167,1,17,"prompt",69,70],[168,1,17,"combat",69,70],[169,1,17,"combat",69,70],[170,1,17,"combat",69,70],[171,1,17,"combat",69,70],[172,1,17,"combat",60,70],[173,1,17,"combat",60,70],[174,1,17,"combat",60,70],[175,1,17,"combat",60,70],[176,1,17,"combat",60,70],[177,1,17,"combat",51,70],[178,1,17,"prompt",51,70],[179,1,17,"combat",51,70],[180,1,17,"combat",51,70],[181,1,17,"combat",51,70],[182,1,17,"combat",51,70],[183,1,17,"combat",51,70],[184,1,17,"combat",51,70],[185,1,17,"combat",51,70],[186,1,17,"combat",49,70],[187,1,17,"combat",49,70],[188,1,17,"prompt",49,70],[189,1,17,"combat",49,70],[190,1,17,"combat",49,70],[191,1,17,"combat",49,70],[192,1,17,"combat",47,70],[193,1,17,"combat",47,70],[194,1,17,"combat",47,70],[195,1,17,"combat",47,70],[196,1,17,"combat",47,70],[197,1,17,"combat",35,70],[198,1,17,"combat",35,70],[199,1,17,"combat",35,70],[200,1,17,"combat",35,70],[201,1,17,"combat",35,70],[202,1,17,"combat",35,70],[203,1,17,"combat",35,70],[204,1,17,"prompt",35,70],[205,1,17,"combat",35,70],[206,1,17,"combat",35,70],[207,1,17,"combat",35,70],[208,1,17,"combat",35,70],[209,1,17,"combat",35,70],[210,1,17,"combat",35,70],[211,1,17,"combat",28,70],[212,1,17,"prompt",28,70],[213,1,17,"combat",28,70],[214,1,17,"combat",28,70],[215,1,17,"combat",28,70],[216,1,17,"combat",16,70],[217,1,17,"combat",16,70],[218,1,17,"combat",16,70],[219,1,17,"combat",16,70],[220,1,17,"combat",16,70],[221,1,17,"combat",16,70],[222,1,17,"combat",16,70],[223,1,17,"combat",16,70],[224,1,17,"combat",16,70],[225,1,17,"combat",16,70],[226,1,17,"combat",16,70],[227,1,17,"combat",16,70],[228,1,17,"combat",6,70],[229,1,17,"combat",6,70],[230,1,17,"combat",6,70],[231,1,17,"combat",6,70],[232,1,17,"combat",6,70]]},{"dir":"20261104-s8a-silent-a10-TW1NA10S03-real-39c5b46","seed":"TW1NA10S03","decisions":228,"desync":0,"resync":0,"floor":17,"act":1,"cause":"WATERFALL_GIANT_BOSS","score":348,"wall_s":432.6,"s_per_decision":1.9,"loop_breaks":1,"deck":20,"relics":3,"gold":416,"max_hp":70,"win_prob_max":0.0004,"weights_hash":"68d3601d9f91672d","updates":2050,"finished_at":"11-04 08:11","hp":[[0,1,1,"event",56,70],[1,1,1,"event",56,70],[2,1,1,"map",56,70],[3,1,2,"combat",56,70],[4,1,2,"combat",56,70],[5,1,2,"combat",56,70],[6,1,2,"combat",56,70],[7,1,2,"combat",51,70],[8,1,2,"combat",51,70],[9,1,2,"combat",51,70],[10,1,2,"combat",51,70],[11,1,2,"combat",51,70],[12,1,2,"combat",51,70],[13,1,2,"combat",51,70],[14,1,2,"combat",51,70],[15,1,2,"prompt",51,70],[16,1,2,"combat",51,70],[17,1,2,"combat",51,70],[18,1,2,"combat",51,70],[19,1,2,"combat",51,70],[20,1,2,"combat",51,70],[21,1,2,"combat",51,70],[22,1,2,"combat",51,70],[23,1,2,"combat",51,70],[24,1,2,"combat",51,70],[25,1,2,"combat",51,70],[26,1,2,"combat",35,70],[27,1,2,"rewards",35,70],[28,1,2,"rewards",35,70],[29,1,2,"rewards",35,70],[30,1,2,"map",35,70],[31,1,3,"shop",35,70],[32,1,3,"shop",35,70],[33,1,3,"map",35,70],[34,1,4,"event",35,70],[35,1,4,"event",45,70],[36,1,4,"map",45,70],[37,1,5,"event",45,70],[38,1,5,"event",68,70],[39,1,5,"map",68,70],[40,1,6,"shop",68,70],[41,1,6,"shop",68,70],[42,1,6,"map",68,70],[43,1,7,"rest",68,70],[44,1,7,"prompt",68,70],[45,1,7,"prompt",68,70],[46,1,7,"rest",68,70],[47,1,7,"map",68,70],[48,1,8,"event",68,70],[49,1,8,"event",68,70],[50,1,8,"map",68,70],[51,1,9,"rest",68,70],[52,1,9,"prompt",68,70],[53,1,9,"prompt",68,70],[54,1,9,"rest",68,70],[55,1,9,"map",68,70],[56,1,10,"treasure",68,70],[57,1,10,"map",68,70],[58,1,11,"combat",68,70],[59,1,11,"combat",68,70],[60,1,11,"combat",68,70],[61,1,11,"combat",68,70],[62,1,11,"combat",68,70],[63,1,11,"combat",70,70],[64,1,11,"combat",70,70],[65,1,11,"combat",70,70],[66,1,11,"combat",70,70],[67,1,11,"combat",61,70],[68,1,11,"prompt",61,70],[69,1,11,"combat",61,70],[70,1,11,"combat",61,70],[71,1,11,"combat",61,70],[72,1,11,"combat",64,70],[73,1,11,"rewards",64,70],[74,1,11,"rewards",64,70],[75,1,11,"rewards",64,70],[76,1,11,"map",64,70],[77,1,12,"rest",64,70],[78,1,12,"prompt",64,70],[79,1,12,"prompt",64,70],[80,1,12,"rest",64,70],[81,1,12,"rest",70,70],[82,1,12,"map",70,70],[83,1,13,"combat",70,70],[84,1,13,"combat",70,70],[85,1,13,"combat",70,70],[86,1,13,"combat",70,70],[87,1,13,"combat",70,70],[88,1,13,"prompt",70,70],[89,1,13,"combat",70,70],[90,1,13,"combat",70,70],[91,1,13,"combat",70,70],[92,1,13,"combat",70,70],[93,1,13,"combat",70,70],[94,1,13,"combat",70,70],[95,1,13,"combat",70,70],[96,1,13,"combat",68,70],[97,1,13,"combat",66,70],[98,1,13,"combat",54,70],[99,1,13,"combat",54,70],[100,1,13,"combat",54,70],[101,1,13,"combat",54,70],[102,1,13,"combat",54,70],[103,1,13,"combat",54,70],[104,1,13,"combat",54,70],[105,1,13,"combat",54,70],[106,1,13,"combat",54,70],[107,1,13,"combat",54,70],[108,1,13,"combat",54,70],[109,1,13,"rewards",54,70],[110,1,13,"rewards",54,70],[111,1,13,"rewards",54,70],[112,1,13,"rewards",54,70],[113,1,13,"map",54,70],[114,1,14,"event",54,70],[115,1,14,"prompt",54,70],[116,1,14,"event",54,70],[117,1,14,"map",54,70],[118,1,15,"combat",54,70],[119,1,15,"combat",54,70],[120,1,15,"combat",54,70],[121,1,15,"prompt",54,70],[122,1,15,"combat",54,70],[123,1,15,"combat",54,70],[124,1,15,"combat",54,70],[125,1,15,"combat",54,70],[126,1,15,"combat",54,70],[127,1,15,"combat",54,70],[128,1,15,"combat",54,70],[129,1,15,"combat",54,70],[130,1,15,"combat",54,70],[131,1,15,"combat",54,70],[132,1,15,"combat",54,70],[133,1,15,"combat",54,70],[134,1,15,"combat",54,70],[135,1,15,"combat",54,70],[136,1,15,"combat",54,70],[137,1,15,"combat",54,70],[138,1,15,"combat",54,70],[139,1,15,"combat",54,70],[140,1,15,"combat",54,70],[141,1,15,"combat",52,70],[142,1,15,"combat",52,70],[143,1,15,"combat",52,70],[144,1,15,"combat",52,70],[145,1,15,"rewards",52,70],[146,1,15,"rewards",52,70],[147,1,15,"rewards",52,70],[148,1,15,"map",52,70],[149,1,16,"rest",52,70],[150,1,16,"rest",70,70],[151,1,16,"map",70,70],[152,1,17,"combat",70,70],[153,1,17,"combat",70,70],[154,1,17,"combat",70,70],[155,1,17,"combat",70,70],[156,1,17,"combat",70,70],[157,1,17,"combat",70,70],[158,1,17,"combat",70,70],[159,1,17,"combat",70,70],[160,1,17,"combat",70,70],[161,1,17,"combat",70,70],[162,1,17,"combat",70,70],[163,1,17,"combat",70,70],[164,1,17,"combat",70,70],[165,1,17,"combat",70,70],[166,1,17,"combat",70,70],[167,1,17,"combat",70,70],[168,1,17,"combat",70,70],[169,1,17,"combat",67,70],[170,1,17,"combat",67,70],[171,1,17,"combat",67,70],[172,1,17,"combat",67,70],[173,1,17,"combat",67,70],[174,1,17,"combat",67,70],[175,1,17,"combat",67,70],[176,1,17,"combat",67,70],[177,1,17,"combat",67,70],[178,1,17,"combat",58,70],[179,1,17,"combat",58,70],[180,1,17,"combat",58,70],[181,1,17,"combat",58,70],[182,1,17,"combat",58,70],[183,1,17,"combat",58,70],[184,1,17,"combat",58,70],[185,1,17,"combat",58,70],[186,1,17,"combat",58,70],[187,1,17,"combat",47,70],[188,1,17,"combat",47,70],[189,1,17,"combat",47,70],[190,1,17,"combat",47,70],[191,1,17,"combat",47,70],[192,1,17,"combat",47,70],[193,1,17,"combat",47,70],[194,1,17,"combat",47,70],[195,1,17,"combat",47,70],[196,1,17,"combat",47,70],[197,1,17,"combat",47,70],[198,1,17,"combat",47,70],[199,1,17,"combat",47,70],[200,1,17,"combat",32,70],[201,1,17,"combat",32,70],[202,1,17,"combat",32,70],[203,1,17,"combat",32,70],[204,1,17,"combat",30,70],[205,1,17,"combat",30,70],[206,1,17,"combat",30,70],[207,1,17,"combat",30,70],[208,1,17,"combat",30,70],[209,1,17,"combat",19,70],[210,1,17,"combat",19,70],[211,1,17,"prompt",19,70],[212,1,17,"combat",19,70],[213,1,17,"combat",19,70],[214,1,17,"combat",16,70],[215,1,17,"combat",16,70],[216,1,17,"combat",16,70],[217,1,17,"combat",16,70],[218,1,17,"combat",16,70],[219,1,17,"combat",16,70],[220,1,17,"combat",16,70],[221,1,17,"combat",16,70],[222,1,17,"combat",16,70],[223,1,17,"combat",16,70],[224,1,17,"combat",5,70],[225,1,17,"combat",5,70],[226,1,17,"combat",5,70],[227,1,17,"combat",5,70]]}],"balance":[["11-03 12:11",890.85],["11-03 21:52",887.84],["11-03 22:52",884.61],["11-03 22:58",883.6],["11-04 00:06",867.82],["11-04 01:19",850.9],["11-04 02:58",829.57],["11-04 04:30",808.25],["11-04 07:03",774.61],["11-04 07:40",765.64],["11-04 08:34",753.3],["11-04 09:18",744.34],["11-04 09:21",743.21]]}</script>
+<script>
+(function () {
+'use strict';
+var D = JSON.parse(document.getElementById('viz-data').textContent);
+var NS = 'http://www.w3.org/2000/svg';
+var RUNCOL = { s8a: 'var(--s1)', s8b: 'var(--s2)', s7b: 'var(--s3)' };
+var ACTCOL = { 1: 'var(--o1)', 2: 'var(--o2)', 3: 'var(--o3)' };
+var CTX = ['s1b', 's2a', 's3c', 's6a', 's6b', 's7a'];
+var MAIN = ['s8a', 's8b', 's7b'];
+var MINUS = '−';
+function col(r) { return RUNCOL[r] || 'var(--ctx)'; }
+function isPick(c) { return c.run === 's8a' && c.u === 2225; }
+
+/* ---------- helpers ---------- */
+function S(tag, a, p) {
+  var e = document.createElementNS(NS, tag);
+  if (a) for (var k in a) {
+    var v = a[k];
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'number') {
+      if (!isFinite(v)) throw new Error('non-finite ' + k + ' on <' + tag + '>');
+      v = Math.round(v * 100) / 100;
+    }
+    e.setAttribute(k, v);
+  }
+  if (p) p.appendChild(e);
+  return e;
+}
+function T(p, x, y, s, a) { var o = {}; for (var k in (a || {})) o[k] = a[k]; o.x = x; o.y = y; var t = S('text', o, p); t.textContent = s; return t; }
+function H(tag, cls, p, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined && txt !== null) e.textContent = txt; if (p) p.appendChild(e); return e; }
+function lin(d0, d1, r0, r1) { var f = function (v) { return r0 + (v - d0) / (d1 - d0) * (r1 - r0); }; f.inv = function (q) { return d0 + (q - r0) / (r1 - r0) * (d1 - d0); }; return f; }
+function n1(v) { if (!isFinite(v)) throw new Error('non-finite coordinate'); return Math.round(v * 10) / 10; }
+function pathD(pts) {
+  var d = '', pen = false;
+  for (var i = 0; i < pts.length; i++) {
+    var p = pts[i];
+    if (!p || p[1] === null || p[1] === undefined || !isFinite(p[0]) || !isFinite(p[1])) { pen = false; continue; }
+    d += (pen ? 'L' : 'M') + n1(p[0]) + ',' + n1(p[1]); pen = true;
+  }
+  return d;
+}
+function hbar(x0, y0, w, h, r) { /* square at the baseline (x0), 4px rounded data end */
+  r = Math.min(r, w, h / 2);
+  return 'M' + n1(x0) + ',' + n1(y0) + 'H' + n1(x0 + w - r) + 'Q' + n1(x0 + w) + ',' + n1(y0) + ' ' + n1(x0 + w) + ',' + n1(y0 + r) +
+    'V' + n1(y0 + h - r) + 'Q' + n1(x0 + w) + ',' + n1(y0 + h) + ' ' + n1(x0 + w - r) + ',' + n1(y0 + h) + 'H' + n1(x0) + 'Z';
+}
+function vbar(x0, yb, w, h, r) { /* column from baseline yb, rounded top */
+  r = Math.min(r, h, w / 2);
+  var yt = yb - h;
+  return 'M' + n1(x0) + ',' + n1(yb) + 'V' + n1(yt + r) + 'Q' + n1(x0) + ',' + n1(yt) + ' ' + n1(x0 + r) + ',' + n1(yt) +
+    'H' + n1(x0 + w - r) + 'Q' + n1(x0 + w) + ',' + n1(yt) + ' ' + n1(x0 + w) + ',' + n1(yt + r) + 'V' + n1(yb) + 'Z';
+}
+function f3(v) { var s = Math.abs(v).toFixed(3); return (v < 0 && s !== '0.000' ? MINUS : '') + s; }
+function sg3(v) { var s = Math.abs(v).toFixed(3); return (v < 0 ? MINUS : '+') + s; }
+function ci3(lo, hi) { return '[' + f3(lo) + ', ' + f3(hi) + ']'; }
+function pct(a, b) { return (100 * a / b).toFixed(1) + '%'; }
+function intc(v) { return Math.round(v).toLocaleString('en-US'); }
+function tmin(s) { var m = /^(\d\d)-(\d\d) (\d\d):(\d\d)$/.exec(s); return (+m[2] - 3) * 1440 + (+m[3]) * 60 + (+m[4]); }
+function hrs(a, b) { return ((tmin(b) - tmin(a)) / 60).toFixed(1); }
+function measure(svg, str, cls) { var t = T(svg, 0, -1000, str, { 'class': cls }); var w = t.getComputedTextLength(); svg.removeChild(t); return w; }
+function niceDomain(lo, hi, n) {
+  if (!(hi - lo > 1e-12)) { hi = lo + Math.max(1e-3, Math.abs(lo) * 0.1); }
+  var raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), e = raw / p;
+  var st = (e >= 7.5 ? 10 : e >= 3.5 ? 5 : e >= 1.5 ? 2 : 1) * p;
+  var a = Math.floor(lo / st + 1e-9) * st, b = Math.ceil(hi / st - 1e-9) * st, ticks = [];
+  for (var v = a; v <= b + st * 1e-6; v += st) ticks.push(+v.toFixed(12));
+  return { lo: a, hi: b, ticks: ticks, step: st };
+}
+function tickFmt(v, step) {
+  if (step >= 1000) return (v / 1000).toLocaleString('en-US') + 'k';
+  var d = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  var s = Math.abs(v).toFixed(d);
+  return (v < 0 && +s !== 0 ? MINUS : '') + s;
+}
+function newSvg(root, W, Ht, label) {
+  var svg = S('svg', { viewBox: '0 0 ' + W + ' ' + Ht, width: W, height: Ht, role: 'img', 'aria-label': label }, root);
+  return svg;
+}
+
+/* ---------- tooltip + keyboard ---------- */
+var tip = document.getElementById('tip');
+function tipShow(content, cx, cy) {
+  var title = content[0], rows = content[1];
+  tip.textContent = '';
+  if (title) H('div', 't', tip, title);
+  rows.forEach(function (r) {
+    var row = H('div', 'row', tip);
+    if (r.color) { var k = H('span', r.dot ? 'key dot' : 'key', row); if (r.dot) k.style.background = r.color; else k.style.borderTopColor = r.color; }
+    if (r.value !== undefined && r.value !== '') H('b', null, row, r.value);
+    if (r.label) H('span', 'l', row, r.label);
+  });
+  tip.hidden = false;
+  var w = tip.offsetWidth, h = tip.offsetHeight, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  var L = cx + 14, Tp = cy + 14;
+  if (L + w > vw - 8) L = Math.max(8, cx - w - 14);
+  if (Tp + h > vh - 8) Tp = Math.max(8, cy - h - 14);
+  tip.style.left = L + 'px'; tip.style.top = Tp + 'px';
+}
+function tipHide() { tip.hidden = true; }
+function svgPt(svg, ev, W) { var r = svg.getBoundingClientRect(); return [(ev.clientX - r.left) * (W / r.width), (ev.clientY - r.top) * (W / r.width)]; }
+/* one tab stop per chart; arrows walk its marks, the same readout as hover */
+function keyNav(svg, targets) {
+  if (!targets.length) return;
+  svg.setAttribute('tabindex', '0');
+  var i = -1;
+  function show() {
+    var t = targets[i], r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal, sc = r.width / vb.width;
+    if (t.on) t.on();
+    tipShow(t.tip(), r.left + t.x * sc, r.top + t.y * sc);
+  }
+  svg.addEventListener('focus', function () { if (i < 0) { i = 0; for (var j = 0; j < targets.length; j++) if (targets[j].def) i = j; } show(); });
+  svg.addEventListener('blur', function () { tipHide(); var t = targets[i]; if (t && t.off) t.off(); });
+  svg.addEventListener('keydown', function (ev) {
+    var k = ev.key, old = targets[i];
+    if (k === 'ArrowRight' || k === 'ArrowDown') i = Math.min(targets.length - 1, i + 1);
+    else if (k === 'ArrowLeft' || k === 'ArrowUp') i = Math.max(0, i - 1);
+    else if (k === 'Home') i = 0;
+    else if (k === 'End') i = targets.length - 1;
+    else if (k === 'Escape') { tipHide(); return; }
+    else return;
+    ev.preventDefault();
+    if (old && old !== targets[i] && old.off) old.off();
+    show();
+  });
+}
+function bindHover(node, content, on, off) {
+  node.addEventListener('pointerenter', function (ev) { if (on) on(); tipShow(content(), ev.clientX, ev.clientY); });
+  node.addEventListener('pointermove', function (ev) { tipShow(content(), ev.clientX, ev.clientY); });
+  node.addEventListener('pointerleave', function () { tipHide(); if (off) off(); });
+}
+function lift(node) { return [function () { node.classList.add('on'); }, function () { node.classList.remove('on'); }]; }
+
+/* ---------- 2. learning curves ---------- */
+function chartCurves(root, W) {
+  var mob = W < 640;
+  var m = { l: 36, r: mob ? 8 : 14, t: 20 };
+  var plotH = mob ? 230 : 320;
+  var x = lin(0, 2650, m.l, W - m.r), y = lin(0, 0.65, m.t + plotH, m.t);
+  var rib = ['s7b', 's8a', 's8b'], rowH = 21, ribTop = m.t + plotH + 44;
+  var Ht = ribTop + rib.length * rowH + 4;
+  var svg = newSvg(root, W, Ht, '学习曲线：s8a、s8b、s7b 与早期 A10 运行在 silent-a10-v1（20 局）上的进度随训练更新的变化，以及训练段与分叉');
+  [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].forEach(function (v) {
+    S('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), 'class': 'gridline' }, svg);
+    T(svg, m.l - 6, y(v) + 3.5, v.toFixed(1), { 'class': 'tick', 'text-anchor': 'end' });
+  });
+  S('line', { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), 'class': 'axisline' }, svg);
+  T(svg, 0, m.t - 8, '平均进度（20 局）', { 'class': 'tick' });
+  (mob ? [0, 1000, 2000] : [0, 500, 1000, 1500, 2000, 2500]).forEach(function (v) {
+    S('line', { x1: x(v), x2: x(v), y1: y(0), y2: y(0) + 4, 'class': 'axisline' }, svg);
+    T(svg, x(v), y(0) + 16, intc(v), { 'class': 'tick', 'text-anchor': 'middle' });
+  });
+  T(svg, W - m.r, y(0) + 30, mob ? 'update' : '训练更新次数 update', { 'class': 'tick', 'text-anchor': 'end' });
+  /* reference lines: goal and rule baseline (docs/train-results: heuristic 0.117 on silent-a10-v1) */
+  S('line', { x1: m.l, x2: W - m.r, y1: y(0.6), y2: y(0.6), 'class': 'refline' }, svg);
+  T(svg, m.l + 4, y(0.6) - 6, '目标 0.60', { 'class': 'ann' });
+  S('line', { x1: m.l, x2: W - m.r, y1: y(0.117), y2: y(0.117), 'class': 'axisline' }, svg);
+  T(svg, W - m.r - 2, y(0.117) + 14, '规则基线 heuristic 0.117', { 'class': 'tick', 'text-anchor': 'end' });
+  /* context runs */
+  CTX.forEach(function (n) {
+    var pts = D.curves[n].pts.map(function (p) { return [x(p[0]), y(p[1])]; });
+    if (pts.length > 1) S('path', { d: pathD(pts), style: 'fill:none;stroke:var(--ctx);stroke-width:1.25;opacity:.8;stroke-linejoin:round' }, svg);
+    else S('circle', { cx: pts[0][0], cy: pts[0][1], r: 2.5, style: 'fill:var(--ctx)' }, svg);
+  });
+  /* main runs: raw thin + rolling 2px; s8a drawn last */
+  ['s7b', 's8b', 's8a'].forEach(function (n) {
+    var c = D.curves[n];
+    S('path', { d: pathD(c.pts.map(function (p) { return [x(p[0]), y(p[1])]; })), style: 'fill:none;stroke:' + col(n) + ';stroke-width:1.1;opacity:.5;stroke-linejoin:round' }, svg);
+    S('path', { d: pathD(c.roll.map(function (p) { return [x(p[0]), y(p[1])]; })), style: 'fill:none;stroke:' + col(n) + ';stroke-width:2;stroke-linejoin:round;stroke-linecap:round' }, svg);
+  });
+  if (!mob) T(svg, x(1400) + 6, y(D.curves.s7b.roll[D.curves.s7b.roll.length - 1][1]) + 4, 's7b 对照', { 'class': 'tick' });
+  /* candidate markers (dev-128 re-evaluated) */
+  var idx = {};
+  MAIN.concat(CTX).forEach(function (n) { idx[n] = {}; D.curves[n].pts.forEach(function (p) { idx[n][p[0]] = p; }); });
+  var cand = {};
+  D.candidates.forEach(function (c) {
+    cand[c.run + ':' + c.u] = c;
+    var p = idx[c.run][c.u]; if (!p) return;
+    if (isPick(c)) S('circle', { cx: x(c.u), cy: y(p[1]), r: 9, style: 'fill:none;stroke:var(--ink);stroke-width:1.5' }, svg);
+    S('circle', { cx: x(c.u), cy: y(p[1]), r: isPick(c) ? 5.5 : 4.5, style: 'fill:' + col(c.run) + ';stroke:var(--surface);stroke-width:2' }, svg);
+  });
+  /* annotations: best on the 20-game set per lineage */
+  var anns = [
+    { run: 's8a', u: 2225, txt: mob ? 'u2225 0.427' : 's8a u2225 · 20 局最佳 0.427 · 最终选择' },
+    { run: 's8b', u: 2475, txt: mob ? 'u2475 0.423' : 's8b u2475 · 0.423' }
+  ];
+  var placed = [];
+  anns.forEach(function (a) {
+    var p = idx[a.run][a.u], px = x(a.u), py = y(p[1]);
+    var w = measure(svg, a.txt, 'ann strong');
+    var tx = Math.min(px + 6, W - m.r) , ty = py - 15;
+    var box = function () { return [tx - w, ty - 11, tx, ty + 3]; };
+    var clash = function (b) { return placed.some(function (q) { return !(b[2] < q[0] - 4 || b[0] > q[2] + 4 || b[3] < q[1] - 2 || b[1] > q[3] + 2); }); };
+    var tries = 0;
+    while (clash(box()) && tries < 6) { ty -= 15; tries++; }
+    if (tx - w < m.l) tx = m.l + w;
+    if (ty < py - 20) S('line', { x1: px, x2: px, y1: py - 10, y2: ty + 4, 'class': 'lead' }, svg);
+    T(svg, tx, ty, a.txt, { 'class': 'ann strong', 'text-anchor': 'end' });
+    placed.push(box());
+  });
+  /* segment ribbon */
+  T(svg, m.l, ribTop - 8, '训练段（Colab 会话）与分叉点', { 'class': 'tick' });
+  var segTargets = [];
+  rib.forEach(function (run, i) {
+    var yy = ribTop + i * rowH, segs = D.segments.filter(function (s) { return s.run === run; });
+    T(svg, m.l - 6, yy + 12, run, { 'class': 'tick', 'text-anchor': 'end' });
+    segs.forEach(function (s, j) {
+      var x0 = x(s.u0) + (j > 0 ? 1 : 0), x1 = x(s.u1) - (j < segs.length - 1 ? 1 : 0);
+      var rect = S('rect', { x: x0, y: yy + 2, width: Math.max(2, x1 - x0), height: 14, rx: 3, style: 'fill:' + col(run) }, svg);
+      var lab = (run === 's7b' ? 's6b u126 续训 · ' : '段' + (j + 1) + ' · ') + hrs(s.start, s.end) + ' h';
+      if (measure(svg, lab, 'onfill') + 10 < x1 - x0) T(svg, (x0 + x1) / 2, yy + 12.5, lab, { 'class': 'onfill', 'text-anchor': 'middle' });
+      else if (measure(svg, hrs(s.start, s.end) + 'h', 'onfill') + 8 < x1 - x0) T(svg, (x0 + x1) / 2, yy + 12.5, hrs(s.start, s.end) + 'h', { 'class': 'onfill', 'text-anchor': 'middle' });
+      var content = function () {
+        return [run + (run === 's7b' ? '' : ' 段' + (j + 1)) + '：u' + s.u0 + ' → u' + s.u1, [
+          { color: col(run), value: s.start + ' → ' + s.end, label: hrs(s.start, s.end) + ' h' },
+          { label: '起点 ' + (s.from || '新训练') + ' · 包 ' + s.bundle }]];
+      };
+      var lf = lift(rect);
+      bindHover(rect, content, lf[0], lf[1]);
+      segTargets.push({ x: (x0 + x1) / 2, y: yy, tip: content });
+    });
+    var first = segs[0];
+    if (first && first.from && /-fork\.pt$/.test(first.from)) {
+      var src = first.from.replace('-fork.pt', '');
+      var ft = '自 ' + src + ' u' + first.u0 + ' 分叉 →';
+      var fw = measure(svg, ft, 'tick');
+      if (x(first.u0) - 8 - fw > m.l + 4) T(svg, x(first.u0) - 6, yy + 12.5, ft, { 'class': 'tick', 'text-anchor': 'end' });
+    }
+  });
+  /* crosshair + readout (hit layer on top) */
+  var us = {};
+  MAIN.concat(CTX).forEach(function (n) { D.curves[n].pts.forEach(function (p) { us[p[0]] = 1; }); });
+  var U = Object.keys(us).map(Number).sort(function (a, b) { return a - b; });
+  var roll = {};
+  MAIN.forEach(function (n) { roll[n] = {}; D.curves[n].roll.forEach(function (p) { roll[n][p[0]] = p[1]; }); });
+  function content(u) {
+    var rows = [];
+    MAIN.forEach(function (n) {
+      var p = idx[n][u]; if (!p) return;
+      var lab = n + ' ' + ci3(p[2], p[3]);
+      if (roll[n][u] !== undefined) lab += ' · 滑动 ' + f3(roll[n][u]);
+      if (p[4]) lab += ' · 卡死 ' + p[4] + '/20';
+      if (!p[5]) lab += ' · 无 breaker';
+      rows.push({ color: col(n), value: f3(p[1]), label: lab });
+      var c = cand[n + ':' + u];
+      if (c) rows.push({ label: '  候选复评：20 局 ' + f3(c.v1[0]) + ' · dev ' + f3(c.dev[0]) + ' · test ' + f3(c.test[0]) });
+    });
+    CTX.forEach(function (n) { var p = idx[n][u]; if (p) rows.push({ color: 'var(--ctx)', value: f3(p[1]), label: n + '（早期）' + (p[4] ? ' · 卡死 ' + p[4] + '/20' : '') }); });
+    return ['update ' + intc(u), rows];
+  }
+  var cross = S('line', { x1: 0, x2: 0, y1: m.t, y2: y(0), 'class': 'cross' }, svg);
+  var hit = S('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: plotH, 'class': 'hit' }, svg);
+  function nearest(v) { var lo = 0, hi = U.length - 1; while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (U[mid] < v) lo = mid; else hi = mid; } return Math.abs(U[lo] - v) <= Math.abs(U[hi] - v) ? U[lo] : U[hi]; }
+  function moveTo(u) { cross.setAttribute('x1', n1(x(u))); cross.setAttribute('x2', n1(x(u))); cross.style.opacity = 1; }
+  hit.addEventListener('pointermove', function (ev) { var u = nearest(x.inv(svgPt(svg, ev, W)[0])); moveTo(u); tipShow(content(u), ev.clientX, ev.clientY); });
+  hit.addEventListener('pointerleave', function () { cross.style.opacity = 0; tipHide(); });
+  keyNav(svg, U.map(function (u) { return { x: x(u), y: m.t + 30, tip: function () { return content(u); }, on: function () { moveTo(u); }, off: function () { cross.style.opacity = 0; }, def: u === 2225 }; }).concat(segTargets));
+}
+
+/* ---------- 3. training signals ---------- */
+var SIGS = [
+  { i: 1, t: '新开局训练进度', k: 'fresh_progress_mean' },
+  { i: 2, t: '存档开局训练进度', k: 'save_progress_mean' },
+  { i: 3, t: '策略熵', k: 'entropy' },
+  { i: 4, t: '近似 KL', k: 'approx_kl' },
+  { i: 5, t: '胜率头 BCE', k: 'aux_win_loss (win_bce)' },
+  { i: 6, t: '战斗 HP 头平方误差', k: 'aux_combat_loss (combat_se)' },
+  { i: 7, t: '吞吐 env-steps/s', k: '每次 update 的步数 / 用时，10 次中位数' }
+];
+function chartSignals(root, W) {
+  var cols = W >= 900 ? 3 : W >= 540 ? 2 : 1, gap = 18;
+  var pw = Math.floor((W - gap * (cols - 1)) / cols);
+  var grid = H('div', 'smgrid', root); grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+  var x0 = 0, x1 = 2650;
+  SIGS.forEach(function (sg) {
+    var cell = H('div', 'sm', grid), hd = H('div', 'smh', cell);
+    H('b', null, hd, sg.t); H('span', null, hd, sg.k);
+    var m = { l: 42, r: 8, t: 8, b: 22 }, ph = 124, Ht = m.t + ph + m.b;
+    var svg = newSvg(cell, pw, Ht, sg.t + '：s7b、s8a、s8b 随训练更新的变化');
+    var lo = Infinity, hi = -Infinity;
+    MAIN.forEach(function (n) { D.signals[n].forEach(function (r) { var v = r[sg.i]; if (v === null || v === undefined) return; if (v < lo) lo = v; if (v > hi) hi = v; }); });
+    var dom = niceDomain(lo, hi, 3);
+    var x = lin(x0, x1, m.l, pw - m.r), y = lin(dom.lo, dom.hi, m.t + ph, m.t);
+    dom.ticks.forEach(function (v) {
+      S('line', { x1: m.l, x2: pw - m.r, y1: y(v), y2: y(v), 'class': 'gridline' }, svg);
+      T(svg, m.l - 5, y(v) + 3.5, tickFmt(v, dom.step), { 'class': 'tick', 'text-anchor': 'end' });
+    });
+    S('line', { x1: m.l, x2: pw - m.r, y1: m.t + ph, y2: m.t + ph, 'class': 'axisline' }, svg);
+    [0, 1000, 2000].forEach(function (v) { T(svg, x(v), m.t + ph + 15, intc(v), { 'class': 'tick', 'text-anchor': 'middle' }); });
+    ['s7b', 's8b', 's8a'].forEach(function (n) {
+      S('path', { d: pathD(D.signals[n].map(function (r) { return [x(r[0]), r[sg.i] === null ? null : y(r[sg.i])]; })), style: 'fill:none;stroke:' + col(n) + ';stroke-width:1.5;stroke-linejoin:round' }, svg);
+    });
+    var cross = S('line', { x1: 0, x2: 0, y1: m.t, y2: m.t + ph, 'class': 'cross' }, svg);
+    var hit = S('rect', { x: m.l, y: m.t, width: pw - m.l - m.r, height: ph, 'class': 'hit' }, svg);
+    function at(u) {
+      var rows = [];
+      MAIN.forEach(function (n) {
+        var best = null, bd = 1e9;
+        D.signals[n].forEach(function (r) { var d = Math.abs(r[0] - u); if (d < bd) { bd = d; best = r; } });
+        if (best && bd <= 10 && best[sg.i] !== null) rows.push({ color: col(n), value: sg.i === 7 ? intc(best[sg.i]) : best[sg.i].toPrecision(3), label: n + ' · u' + best[0] });
+      });
+      return [sg.t + ' · update ≈ ' + intc(u), rows];
+    }
+    function moveTo(u) { cross.setAttribute('x1', n1(x(u))); cross.setAttribute('x2', n1(x(u))); cross.style.opacity = 1; }
+    hit.addEventListener('pointermove', function (ev) { var u = Math.round(x.inv(svgPt(svg, ev, pw)[0]) / 10) * 10; u = Math.max(130, Math.min(2625, u)); moveTo(u); tipShow(at(u), ev.clientX, ev.clientY); });
+    hit.addEventListener('pointerleave', function () { cross.style.opacity = 0; tipHide(); });
+    var tg = []; for (var u = 200; u <= 2600; u += 100) (function (uu) { tg.push({ x: x(uu), y: m.t + 10, tip: function () { return at(uu); }, on: function () { moveTo(uu); }, off: function () { cross.style.opacity = 0; } }); })(u);
+    keyNav(svg, tg);
+  });
+}
+
+/* ---------- 4. candidates ---------- */
+var SETS = [['v1', 'silent-a10-v1', '20 局 · 训练期评测集'], ['dev', 'silent-a10-dev-v1', '128 局 · 挑选依据'], ['test', 'silent-a10-test-v1', '100 局 · 只报告']];
+function candContent(c) {
+  return ['s' + c.run.slice(1) + ' u' + c.u + (isPick(c) ? '（最终选择）' : ''), [
+    { color: col(c.run), dot: true, value: f3(c.v1[0]), label: 'silent-a10-v1 ' + ci3(c.v1[1], c.v1[2]) },
+    { color: col(c.run), dot: true, value: f3(c.dev[0]), label: 'dev-128 ' + ci3(c.dev[1], c.dev[2]) },
+    { color: col(c.run), dot: true, value: f3(c.test[0]), label: 'test-100 ' + ci3(c.test[1], c.test[2]) },
+    { label: '击败第 1 幕 Boss（dev）' + c.a1beat + '/128 · 来源 ' + (/model-card/.test(c.src) ? 'model-card.json' : '结果文档') }]];
+}
+function chartCands(root, W) {
+  var rows = D.candidates.slice().sort(function (a, b) { return a.u - b.u; });
+  var stacked = W < 760, lw = 96, gap = 20, rowH = 25, top = 42, bot = 24;
+  var groups = stacked ? SETS.map(function (s) { return [s]; }) : [SETS];
+  var dmin = 0.20, dmax = 0.52;
+  groups.forEach(function (group, gi) {
+    var pw = stacked ? W - lw : (W - lw - gap * 2) / 3;
+    var Ht = top + rows.length * rowH + bot;
+    var svg = newSvg(root, W, Ht, '候选 checkpoint 在 ' + group.map(function (s) { return s[1]; }).join('、') + ' 上的进度与 95% 置信区间');
+    if (stacked && gi > 0) svg.style.marginTop = '10px';
+    rows.forEach(function (c, i) {
+      var yy = top + i * rowH + rowH / 2;
+      if (isPick(c)) S('rect', { x: 0, y: top + i * rowH + 1, width: W, height: rowH - 2, rx: 5, 'class': 'band' }, svg);
+      S('circle', { cx: 6, cy: yy, r: 4, style: 'fill:' + col(c.run) }, svg);
+      T(svg, 16, yy + 4, c.run + ' u' + c.u, { 'class': 'rowlab' + (isPick(c) ? ' strong' : '') });
+    });
+    group.forEach(function (s, k) {
+      var px0 = lw + k * (pw + gap), px1 = px0 + pw, x = lin(dmin, dmax, px0, px1), key = s[0];
+      T(svg, px0, 15, s[1], { 'class': 'ttl' });
+      T(svg, px0, 31, s[2], { 'class': 'tick' });
+      [0.25, 0.30, 0.35, 0.40, 0.45, 0.50].forEach(function (v) {
+        S('line', { x1: x(v), x2: x(v), y1: top - 4, y2: top + rows.length * rowH, 'class': 'gridline' }, svg);
+        if (!(stacked === false && pw < 250 && (v === 0.25 || v === 0.35 || v === 0.45))) T(svg, x(v), top + rows.length * rowH + 15, v.toFixed(2), { 'class': 'tick', 'text-anchor': 'middle' });
+      });
+      var order = rows.slice().sort(function (a, b) { return b[key][0] - a[key][0]; });
+      var labelled = {};
+      labelled[order[0].run + order[0].u] = 1;
+      rows.forEach(function (c) { if (isPick(c)) labelled[c.run + c.u] = 1; });
+      rows.forEach(function (c, i) {
+        var v = c[key], yy = top + i * rowH + rowH / 2;
+        S('line', { x1: x(v[1]), x2: x(v[2]), y1: yy, y2: yy, style: 'stroke:' + col(c.run) + ';stroke-width:2;stroke-linecap:round;opacity:.5' }, svg);
+        S('circle', { cx: x(v[0]), cy: yy, r: isPick(c) ? 5.5 : 4.5, style: 'fill:' + col(c.run) + ';stroke:var(--surface);stroke-width:2' }, svg);
+        if (labelled[c.run + c.u]) {
+          var txt = f3(v[0]), w = measure(svg, txt, 'vlab strong');
+          if (x(v[2]) + 6 + w <= px1 + (k < group.length - 1 ? gap - 4 : 0)) T(svg, x(v[2]) + 6, yy + 4, txt, { 'class': 'vlab strong' });
+          else T(svg, x(v[1]) - 6, yy + 4, txt, { 'class': 'vlab strong', 'text-anchor': 'end' });
+        }
+      });
+    });
+    var tg = [];
+    rows.forEach(function (c, i) {
+      var r = S('rect', { x: 0, y: top + i * rowH, width: W, height: rowH, 'class': 'hit' }, svg);
+      bindHover(r, function () { return candContent(c); });
+      tg.push({ x: lw + 20, y: top + i * rowH + rowH / 2, tip: function () { return candContent(c); }, def: isPick(c) });
+    });
+    keyNav(svg, tg);
+  });
+}
+
+/* ---------- 5a. funnel ---------- */
+function stages(f) {
+  return [['开局', f.games, 1], ['到达第 1 幕 Boss', f.act1_boss, 1], ['击败第 1 幕 Boss', f.act1_boss_beaten, 1], ['进入第 2 幕', f.act2, 2],
+    ['到达第 2 幕 Boss', f.act2_boss, 2], ['击败第 2 幕 Boss', f.act2_boss_beaten, 2], ['进入第 3 幕', f.act3, 3], ['通关', f.cleared, 3]];
+}
+function chartFunnel(root, W) {
+  var f = D.funnel['silent-a10-dev-v1'], N = f.games, st = stages(f);
+  var lw = W < 480 ? 108 : 132, vw = W < 480 ? 92 : 210, rowH = 30, bh = 18, top = 4;
+  var Ht = top + st.length * rowH + 4;
+  var svg = newSvg(root, W, Ht, 'u2225 在 dev-128 上的阶段漏斗');
+  var x = lin(0, N, lw, W - vw), tg = [];
+  st.forEach(function (s, i) {
+    var yy = top + i * rowH, cy = yy + rowH / 2;
+    T(svg, lw - 10, cy + 4, s[0], { 'class': 'rowlab', 'text-anchor': 'end' });
+    var w = x(s[1]) - lw, node = null;
+    if (s[1] > 0) node = S('path', { d: hbar(lw, cy - bh / 2, w, bh, 4), style: 'fill:' + ACTCOL[s[2]] }, svg);
+    var lab = s[1] + ' / ' + N + ' · ' + pct(s[1], N);
+    T(svg, lw + Math.max(w, 0) + 6, cy + 4, lab, { 'class': 'vlab' });
+    if (i === 2 && W >= 600) {
+      var lost = st[1][1] - st[2][1];
+      T(svg, lw + w + 6 + measure(svg, lab, 'vlab') + 10, cy + 4, '← 第 1 幕 Boss 处失败 ' + lost + ' 局', { 'class': 'tick' });
+    }
+    var prev = i > 0 ? st[i - 1][1] : null;
+    var content = function () { return [s[0] + '（dev-128）', [{ color: ACTCOL[s[2]], dot: true, value: s[1] + ' / ' + N, label: pct(s[1], N) + (prev !== null ? ' · 较上一阶段 ' + (s[1] - prev === 0 ? '±0' : MINUS + (prev - s[1])) : '') }]]; };
+    var hit = S('rect', { x: 0, y: yy, width: W, height: rowH, 'class': 'hit' }, svg);
+    var lf = node ? lift(node) : [null, null];
+    bindHover(hit, content, lf[0], lf[1]);
+    tg.push({ x: lw + Math.max(w, 0), y: yy, tip: content, on: lf[0], off: lf[1] });
+  });
+  S('line', { x1: lw, x2: lw, y1: top, y2: top + st.length * rowH, 'class': 'axisline' }, svg);
+  keyNav(svg, tg);
+}
+
+/* ---------- 5b. death floors ---------- */
+function chartFloors(root, W) {
+  var cnt = {}, act = {};
+  D.death_floors.forEach(function (r) { cnt[r[1]] = (cnt[r[1]] || 0) + r[2]; act[r[1]] = r[0]; });
+  var F = 33, m = { l: 32, r: 6, t: 30, b: 40 }, ph = W < 560 ? 150 : 180, Ht = m.t + ph + m.b;
+  var svg = newSvg(root, W, Ht, 'u2225 在 dev-128 上每局最终楼层（死亡楼层）的分布');
+  var band = (W - m.l - m.r) / F, bw = Math.max(3, Math.min(24, band - 2)), y = lin(0, 50, m.t + ph, m.t);
+  [0, 10, 20, 30, 40, 50].forEach(function (v) {
+    S('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), 'class': v === 0 ? 'axisline' : 'gridline' }, svg);
+    T(svg, m.l - 5, y(v) + 3.5, String(v), { 'class': 'tick', 'text-anchor': 'end' });
+  });
+  var sep = m.l + 17 * band;
+  S('line', { x1: sep, x2: sep, y1: m.t - 6, y2: m.t + ph + 4, 'class': 'axisline' }, svg);
+  T(svg, sep - 4, m.t + ph + 32, '← 第 1 幕（1–17 层）', { 'class': 'tick', 'text-anchor': 'end' });
+  T(svg, sep + 4, m.t + ph + 32, '第 2 幕（18–33 层）→', { 'class': 'tick' });
+  var tg = [];
+  for (var fl = 1; fl <= F; fl++) (function (f) {
+    var c = cnt[f] || 0, a = act[f] || (f <= 17 ? 1 : 2), bx = m.l + (f - 1) * band + (band - bw) / 2, node = null;
+    if (c > 0) node = S('path', { d: vbar(bx, y(0), bw, y(0) - y(c), 4), style: 'fill:' + ACTCOL[a] }, svg);
+    if (band >= 20 || f % 4 === 1) T(svg, bx + bw / 2, m.t + ph + 15, String(f), { 'class': 'tick', 'text-anchor': 'middle' });
+    if (f === 17 || f === 33) {
+      T(svg, bx + bw / 2, y(c) - 5, String(c), { 'class': 'vlab strong', 'text-anchor': 'middle' });
+      var lt = f === 17 ? '第 1 幕 Boss' : '第 2 幕 Boss';
+      T(svg, bx + bw, y(c) - 19, lt, { 'class': 'ann', 'text-anchor': 'end' });
+    }
+    var det = (D.death_detail[String(f)] || []).slice(0, 4);
+    var content = function () {
+      var rows = [{ color: ACTCOL[a], dot: true, value: c + ' 局', label: '第 ' + a + ' 幕 · 占 ' + pct(c, 128) }];
+      det.forEach(function (d) { rows.push({ value: String(d[1]), label: d[0] }); });
+      return ['第 ' + f + ' 层', rows];
+    };
+    var hit = S('rect', { x: m.l + (f - 1) * band, y: m.t, width: band, height: ph, 'class': 'hit' }, svg);
+    var lf = node ? lift(node) : [null, null];
+    bindHover(hit, content, lf[0], lf[1]);
+    if (c > 0) tg.push({ x: bx + bw / 2, y: y(c), tip: content, on: lf[0], off: lf[1], def: f === 17 });
+  })(fl);
+  T(svg, W - m.r, 12, '局数', { 'class': 'tick', 'text-anchor': 'end' });
+  keyNav(svg, tg);
+}
+
+/* ---------- 5c. killers ---------- */
+function chartKillers(root, W) {
+  var N = D.funnel['silent-a10-dev-v1'].games;
+  var groups = [['boss', 'Boss', D.endings.died_boss], ['elite', '精英', D.endings.died_elite], ['normal', '普通战斗', D.endings.died_normal]];
+  var cols = W >= 920 ? 3 : 1, gap = 22, pw = Math.floor((W - gap * (cols - 1)) / cols);
+  var grid = H('div', 'smgrid', root); grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+  var sets = groups.map(function (g) {
+    var items = D.killers.filter(function (k) { return k[2] === g[0]; });
+    var rows = items.slice(0, 6).map(function (k) { return { id: k[0], n: k[1], act: k[3] }; });
+    var rest = items.slice(6);
+    if (rest.length) rows.push({ id: '其他 ' + rest.length + ' 种', n: rest.reduce(function (a, k) { return a + k[1]; }, 0), act: null, rest: rest });
+    return rows;
+  });
+  var xmax = 0; sets.forEach(function (r) { r.forEach(function (q) { if (q.n > xmax) xmax = q.n; }); });
+  groups.forEach(function (g, gi) {
+    var cell = H('div', 'sm', grid), hd = H('div', 'smh', cell);
+    H('b', null, hd, g[1] + ' · ' + g[2] + ' 局'); H('span', null, hd, '占全部死亡的 ' + pct(g[2], N));
+    var rows = sets[gi], rowH = 22, bh = 13, Ht = rows.length * rowH + 6;
+    var svg = newSvg(cell, pw, Ht, g[1] + ' 致死遭遇');
+    var lw = Math.min(200, Math.round(pw * 0.6)), x = lin(0, xmax, lw, pw - 30), tg = [];
+    rows.forEach(function (r, i) {
+      var yy = 3 + i * rowH, cy = yy + rowH / 2;
+      T(svg, lw - 8, cy + 3.5, r.id, { 'class': r.rest ? 'tick' : 'idlab', 'text-anchor': 'end' });
+      var node = S('path', { d: hbar(lw, cy - bh / 2, x(r.n) - lw, bh, 4), style: 'fill:' + (r.act ? ACTCOL[r.act] : 'var(--ctx)') }, svg);
+      T(svg, x(r.n) + 5, cy + 4, String(r.n), { 'class': 'vlab' });
+      var content = function () {
+        var out = [{ color: r.act ? ACTCOL[r.act] : 'var(--ctx)', dot: true, value: r.n + ' 局', label: (r.act ? '第 ' + r.act + ' 幕 · ' : '') + pct(r.n, N) + ' 的 dev 局' }];
+        if (r.rest) r.rest.forEach(function (k) { out.push({ value: String(k[1]), label: k[0] }); });
+        return [r.rest ? g[1] + '：其他遭遇' : r.id, out];
+      };
+      var hit = S('rect', { x: 0, y: yy, width: pw, height: rowH, 'class': 'hit' }, svg);
+      var lf = lift(node);
+      bindHover(hit, content, lf[0], lf[1]);
+      tg.push({ x: x(r.n), y: yy, tip: content, on: lf[0], off: lf[1] });
+    });
+    keyNav(svg, tg);
+  });
+  var lg = H('div', 'legend', root); lg.style.marginTop = '10px'; lg.setAttribute('aria-hidden', 'true');
+  [['var(--o1)', '第 1 幕遭遇'], ['var(--o2)', '第 2 幕遭遇'], ['var(--ctx)', '其他（合并）']].forEach(function (q) { var k = H('span', 'k', lg); var s = H('i', 'sw', k); s.style.background = q[0]; k.appendChild(document.createTextNode(q[1])); });
+}
+
+/* ---------- 6. lookahead ---------- */
+function chartLA(root, W) {
+  var L = D.lookahead, mob = W < 680;
+  var rows = [['贪心，无 loop-breaker', L.greedy_nolb, false], ['前瞻（turn · value+hp · K=8），无 loop-breaker', L.lookahead, false], ['贪心 + loop-breaker（交付模式；最终权重为 u2225）', L.greedy_lb, true]];
+  var lw = mob ? 8 : 300, rowH = mob ? 48 : 34, top = mob ? 8 : 6, vr = mob ? 8 : 120;
+  var dTop = top + rows.length * rowH + 62, dH = mob ? 64 : 54;
+  var Ht = dTop + dH + 22;
+  var svg = newSvg(root, W, Ht, 'u2050 在 dev-128 上：贪心、前瞻、贪心加 loop-breaker 的进度，以及前瞻减贪心的配对差');
+  var x = lin(0.24, 0.40, lw + 6, W - vr - 6);
+  [0.25, 0.30, 0.35, 0.40].forEach(function (v) {
+    S('line', { x1: x(v), x2: x(v), y1: top, y2: top + rows.length * rowH, 'class': 'gridline' }, svg);
+    T(svg, x(v), top + rows.length * rowH + 14, v.toFixed(2), { 'class': 'tick', 'text-anchor': 'middle' });
+  });
+  T(svg, W - vr - 6, top + rows.length * rowH + 28, 'dev-128 平均进度', { 'class': 'tick', 'text-anchor': 'end' });
+  var tg = [];
+  rows.forEach(function (r, i) {
+    var v = r[1], cy = top + i * rowH + (mob ? 32 : rowH / 2), c = r[2] ? 'var(--s1)' : 'var(--ink2)';
+    if (mob) T(svg, lw, cy - 14, r[0], { 'class': 'rowlab' + (r[2] ? ' strong' : '') });
+    else T(svg, lw - 12, cy + 4, r[0], { 'class': 'rowlab' + (r[2] ? ' strong' : ''), 'text-anchor': 'end' });
+    S('line', { x1: x(v[1]), x2: x(v[2]), y1: cy, y2: cy, style: 'stroke:' + c + ';stroke-width:2;stroke-linecap:round;opacity:.6' }, svg);
+    var dot = S('circle', { cx: x(v[0]), cy: cy, r: 5, style: 'fill:' + c + ';stroke:var(--surface);stroke-width:2' }, svg);
+    var vt = f3(v[0]) + ' · 卡死 ' + v[3] + '/128', vcls = 'vlab' + (r[2] ? ' strong' : ''), vwid = measure(svg, vt, vcls);
+    if (x(v[2]) + 8 + vwid <= W - 2) T(svg, x(v[2]) + 8, cy + 4, vt, { 'class': vcls });
+    else if (x(v[1]) - 8 - vwid >= 0) T(svg, x(v[1]) - 8, cy + 4, vt, { 'class': vcls, 'text-anchor': 'end' });
+    else T(svg, x(v[0]), cy - 9, vt, { 'class': vcls, 'text-anchor': 'middle' });
+    var content = function () { return [r[0], [{ color: c, dot: true, value: f3(v[0]), label: '95% CI ' + ci3(v[1], v[2]) + ' · 卡死 ' + v[3] + '/128' }]]; };
+    var hit = S('rect', { x: 0, y: top + i * rowH, width: W, height: rowH, 'class': 'hit' }, svg);
+    var lf = lift(dot); bindHover(hit, content, lf[0], lf[1]);
+    tg.push({ x: x(v[0]), y: cy - 8, tip: content, on: lf[0], off: lf[1], def: r[2] });
+  });
+  /* paired delta, lookahead - greedy */
+  var d = L.delta_la_minus_greedy;
+  T(svg, lw, dTop - 12, '配对差 Δ = 前瞻 − 贪心（同一批 128 个种子，t 区间）', { 'class': 'ttl' });
+  var xd = lin(-0.04, 0.04, lw + 6, W - vr - 6), cy2 = dTop + 18;
+  [-0.04, -0.02, 0, 0.02, 0.04].forEach(function (v) {
+    S('line', { x1: xd(v), x2: xd(v), y1: dTop, y2: dTop + 34, 'class': v === 0 ? 'refline' : 'gridline' }, svg);
+    T(svg, xd(v), dTop + 48, v === 0 ? '0' : sg3(v).replace(/0+$/, '').replace(/\.$/, ''), { 'class': 'tick', 'text-anchor': 'middle' });
+  });
+  S('line', { x1: xd(d[1]), x2: xd(d[2]), y1: cy2, y2: cy2, style: 'stroke:var(--ink2);stroke-width:2;stroke-linecap:round' }, svg);
+  var dd = S('circle', { cx: xd(d[0]), cy: cy2, r: 5, style: 'fill:var(--ink);stroke:var(--surface);stroke-width:2' }, svg);
+  var dl = sg3(d[0]) + ' ' + '[' + sg3(d[1]) + ', ' + sg3(d[2]) + ']';
+  var dlw = measure(svg, dl, 'vlab strong');
+  if (xd(d[2]) + 8 + dlw <= W - 2) T(svg, xd(d[2]) + 8, cy2 + 4, dl, { 'class': 'vlab strong' });
+  else T(svg, xd(d[0]), cy2 - 9, dl, { 'class': 'vlab strong', 'text-anchor': 'middle' });
+  T(svg, mob ? lw : xd(-0.04) - 12, mob ? dTop + 62 : cy2 + 4, '前瞻更好 ' + L.better + ' · 更差 ' + L.worse + ' · 相同 ' + L.same, { 'class': 'tick', 'text-anchor': mob ? 'start' : 'end' });
+  var dcontent = function () { return ['配对差：前瞻 − 贪心', [{ value: sg3(d[0]), label: '95% t 区间 [' + sg3(d[1]) + ', ' + sg3(d[2]) + ']，含 0：不显著' }, { label: '前瞻更好 ' + L.better + ' 局 · 更差 ' + L.worse + ' 局 · 相同 ' + L.same + ' 局' }]]; };
+  var dh = S('rect', { x: 0, y: dTop - 4, width: W, height: 40, 'class': 'hit' }, svg);
+  var lf2 = lift(dd); bindHover(dh, dcontent, lf2[0], lf2[1]);
+  tg.push({ x: xd(d[0]), y: cy2 - 8, tip: dcontent, on: lf2[0], off: lf2[1] });
+  keyNav(svg, tg);
+}
+
+/* ---------- 7. live twin HP ---------- */
+function chartHP(root, W) {
+  var cols = W >= 700 ? 2 : 1, gap = 22, pw = Math.floor((W - gap * (cols - 1)) / cols);
+  var grid = H('div', 'smgrid', root); grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+  D.live.forEach(function (r) {
+    var cell = H('div', 'sm', grid), hd = H('div', 'smh', cell);
+    H('b', null, hd, r.seed); H('span', null, hd, r.decisions + ' 个决策 · 第 ' + r.floor + ' 层死于 ' + r.cause);
+    var m = { l: 30, r: 10, t: 20, b: 24 }, ph = 118, Ht = m.t + ph + m.b;
+    var svg = newSvg(cell, pw, Ht, r.seed + ' 真游戏对局中每个决策前的 HP');
+    var pts = r.hp.map(function (h) { return [h[0], h[4], h[2], h[3], h[5]]; });
+    pts.push([r.decisions, 0, r.floor, 'end', r.max_hp]);
+    var maxhp = r.max_hp, x = lin(0, r.decisions, m.l, pw - m.r), y = lin(0, maxhp, m.t + ph, m.t);
+    var f17 = pts.filter(function (p) { return p[2] === 17; });
+    if (f17.length) {
+      S('rect', { x: x(f17[0][0]), y: m.t, width: Math.max(2, x(r.decisions) - x(f17[0][0])), height: ph, 'class': 'band' }, svg);
+      T(svg, Math.min((x(f17[0][0]) + x(r.decisions)) / 2, pw - m.r - measure(svg, '第 17 层 Boss 战', 'tick') / 2), m.t - 6, '第 17 层 Boss 战', { 'class': 'tick', 'text-anchor': 'middle' });
+    }
+    [0, maxhp / 2, maxhp].forEach(function (v) {
+      S('line', { x1: m.l, x2: pw - m.r, y1: y(v), y2: y(v), 'class': v === 0 ? 'axisline' : 'gridline' }, svg);
+      T(svg, m.l - 5, y(v) + 3.5, String(v), { 'class': 'tick', 'text-anchor': 'end' });
+    });
+    [0, 50, 100, 150, 200].forEach(function (v) { T(svg, x(v), m.t + ph + 15, String(v), { 'class': 'tick', 'text-anchor': 'middle' }); });
+    var line = pts.map(function (p) { return [x(p[0]), y(p[1])]; });
+    var area = pathD(line) + 'L' + n1(x(r.decisions)) + ',' + n1(y(0)) + 'L' + n1(x(0)) + ',' + n1(y(0)) + 'Z';
+    S('path', { d: area, style: 'fill:var(--s1);opacity:.10' }, svg);
+    S('path', { d: pathD(line), style: 'fill:none;stroke:var(--s1);stroke-width:1.5;stroke-linejoin:round' }, svg);
+    S('circle', { cx: x(r.decisions), cy: y(0), r: 4, style: 'fill:var(--s1);stroke:var(--surface);stroke-width:2' }, svg);
+    var cross = S('line', { x1: 0, x2: 0, y1: m.t, y2: m.t + ph, 'class': 'cross' }, svg);
+    var hit = S('rect', { x: m.l, y: m.t, width: pw - m.l - m.r, height: ph, 'class': 'hit' }, svg);
+    function at(i) { var p = pts[i]; return [r.seed + (p[3] === 'end' ? ' · 终局' : ' · 决策 #' + p[0]), [{ color: 'var(--s1)', value: 'HP ' + p[1] + '/' + p[4], label: '第 ' + p[2] + ' 层 · ' + (p[3] === 'end' ? '终局（defeat）' : p[3]) }]]; }
+    function moveTo(i) { cross.setAttribute('x1', n1(x(pts[i][0]))); cross.setAttribute('x2', n1(x(pts[i][0]))); cross.style.opacity = 1; }
+    function near(v) { var b = 0; for (var i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - v) < Math.abs(pts[b][0] - v)) b = i; return b; }
+    hit.addEventListener('pointermove', function (ev) { var i = near(x.inv(svgPt(svg, ev, pw)[0])); moveTo(i); tipShow(at(i), ev.clientX, ev.clientY); });
+    hit.addEventListener('pointerleave', function () { cross.style.opacity = 0; tipHide(); });
+    var tg = []; for (var i = 0; i < pts.length; i += 10) (function (ii) { tg.push({ x: x(pts[ii][0]), y: m.t + 10, tip: function () { return at(ii); }, on: function () { moveTo(ii); }, off: function () { cross.style.opacity = 0; } }); })(i);
+    var li = pts.length - 1; tg.push({ x: x(pts[li][0]), y: m.t + 10, tip: function () { return at(li); }, on: function () { moveTo(li); }, off: function () { cross.style.opacity = 0; } });
+    keyNav(svg, tg);
+  });
+}
+
+/* ---------- 8. compute ---------- */
+function chartCompute(root, W) {
+  var mob = W < 640;
+  var m = { l: 44, r: mob ? 10 : 18, t: 22 }, lineH = mob ? 160 : 190, stubW = 50;
+  var tA = tmin('11-03 21:30'), tB = tmin('11-04 09:40');
+  var xm = lin(tA, tB, m.l + stubW, W - m.r);
+  function tx(s) { var t = tmin(s); return t < tA ? m.l + 16 : xm(t); }
+  var y = lin(735, 900, m.t + lineH, m.t);
+  var lanes = [['gpu1', 'GPU#1 · Colab 会话 sts2train'], ['gpu2', 'GPU#2 · Colab 会话 sts2b']];
+  var laneTop = m.t + lineH + 22, laneH = 36, axisY = laneTop + lanes.length * laneH + 4, Ht = axisY + 32;
+  var svg = newSvg(root, W, Ht, 'Colab 余额随时间的变化，以及两张 A100 上各训练进程的起止');
+  var ticks = mob ? ['11-03 22:00', '11-04 02:00', '11-04 06:00'] : ['11-03 22:00', '11-04 00:00', '11-04 02:00', '11-04 04:00', '11-04 06:00', '11-04 08:00'];
+  ticks.forEach(function (t) {
+    var xx = xm(tmin(t));
+    S('line', { x1: xx, x2: xx, y1: m.t, y2: axisY, 'class': 'gridline' }, svg);
+    T(svg, xx, axisY + 15, t.slice(6), { 'class': 'tick', 'text-anchor': 'middle' });
+  });
+  T(svg, xm(tmin('11-03 22:00')), axisY + 28, '11-03', { 'class': 'tick', 'text-anchor': 'middle' });
+  T(svg, xm(tmin(mob ? '11-04 02:00' : '11-04 00:00')), axisY + 28, '11-04', { 'class': 'tick', 'text-anchor': 'middle' });
+  T(svg, m.l + 16, axisY + 15, '12:11', { 'class': 'tick', 'text-anchor': 'middle' });
+  T(svg, m.l + 16, axisY + 28, '11-03', { 'class': 'tick', 'text-anchor': 'middle' });
+  /* time axis with a break between the 12:11 reading and 21:30 */
+  var b0 = m.l + 31, b1 = m.l + 39;
+  S('line', { x1: m.l, x2: b0, y1: axisY, y2: axisY, 'class': 'axisline' }, svg);
+  S('line', { x1: b1, x2: W - m.r, y1: axisY, y2: axisY, 'class': 'axisline' }, svg);
+  S('line', { x1: b0 - 3, x2: b0 + 3, y1: axisY + 5, y2: axisY - 5, 'class': 'refline' }, svg);
+  S('line', { x1: b1 - 3, x2: b1 + 3, y1: axisY + 5, y2: axisY - 5, 'class': 'refline' }, svg);
+  [740, 780, 820, 860, 900].forEach(function (v) {
+    S('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), 'class': 'gridline' }, svg);
+    T(svg, m.l - 6, y(v) + 3.5, String(v), { 'class': 'tick', 'text-anchor': 'end' });
+  });
+  var B = D.balance, pts = B.map(function (b) { return [tx(b[0]), y(b[1])]; });
+  S('path', { d: pathD(pts), 'class': 'balline' }, svg);
+  var tg = [];
+  B.forEach(function (b, i) {
+    var dot = S('circle', { cx: pts[i][0], cy: pts[i][1], r: 4, 'class': 'baldot' }, svg);
+    var content = function () {
+      var rows = [{ color: 'var(--ink2)', dot: true, value: b[1].toFixed(2) + ' 单位', label: b[0] + ' EST' }];
+      if (i > 0) { var dv = B[i - 1][1] - b[1], dh = (tmin(b[0]) - tmin(B[i - 1][0])) / 60; rows.push({ label: '较上次读数 −' + dv.toFixed(2) + '（' + dh.toFixed(1) + ' h，' + (dh > 0 ? (dv / dh).toFixed(1) : '–') + ' / h）' }); }
+      rows.push({ label: '累计 ' + (B[0][1] - b[1]).toFixed(2) + ' / 800' });
+      return ['Colab 余额读数', rows];
+    };
+    var hit = S('circle', { cx: pts[i][0], cy: pts[i][1], r: 11, 'class': 'hit' }, svg);
+    var lf = lift(dot); bindHover(hit, content, lf[0], lf[1]);
+    tg.push({ x: pts[i][0], y: pts[i][1], tip: content, on: lf[0], off: lf[1] });
+  });
+  var p0 = pts[0], pn = pts[pts.length - 1];
+  T(svg, p0[0] + 8, p0[1] - 8, B[0][1].toFixed(2), { 'class': 'vlab strong' });
+  T(svg, pn[0] - 6, pn[1] + 18, B[B.length - 1][1].toFixed(2), { 'class': 'vlab strong', 'text-anchor': 'end' });
+  T(svg, W - m.r, m.t - 8, '共消耗 ' + (B[0][1] - B[B.length - 1][1]).toFixed(1) + ' 单位（上限 800）', { 'class': 'ann strong', 'text-anchor': 'end' });
+  lanes.forEach(function (ln, li) {
+    var ly = laneTop + li * laneH;
+    T(svg, m.l, ly + 10, ln[1], { 'class': 'tick' });
+    var segs = D.segments.filter(function (s) { return s.gpu === ln[0]; });
+    var count = {}; segs.forEach(function (s) { count[s.run] = (count[s.run] || 0) + 1; });
+    var seen = {};
+    segs.forEach(function (s) {
+      seen[s.run] = (seen[s.run] || 0) + 1;
+      var x0 = xm(tmin(s.start)), x1 = xm(tmin(s.end)), w = Math.max(2, x1 - x0 - 2);
+      var rect = S('rect', { x: x0 + 1, y: ly + 15, width: w, height: 15, rx: 3, style: 'fill:' + col(s.run) }, svg);
+      var nm = s.run + (count[s.run] > 1 ? ' 段' + seen[s.run] : '');
+      if (measure(svg, nm, 'onfill') + 8 < w) T(svg, x0 + 1 + w / 2, ly + 26, nm, { 'class': 'onfill', 'text-anchor': 'middle' });
+      else if (measure(svg, s.run, 'onfill') + 6 < w) T(svg, x0 + 1 + w / 2, ly + 26, s.run, { 'class': 'onfill', 'text-anchor': 'middle' });
+      var content = function () { return [nm + '（' + ln[0].toUpperCase().replace('GPU', 'GPU#') + '）', [{ color: col(s.run), dot: true, value: s.start + ' → ' + s.end, label: hrs(s.start, s.end) + ' h' }, { label: 'update ' + s.u0 + ' → ' + s.u1 + ' · 起点 ' + (s.from || '新训练') }]]; };
+      var lf = lift(rect); bindHover(rect, content, lf[0], lf[1]);
+      tg.push({ x: x0 + w / 2, y: ly + 15, tip: content, on: lf[0], off: lf[1] });
+    });
+  });
+  keyNav(svg, tg);
+}
+
+/* ---------- tables (accessibility twins) ---------- */
+function table(container, head, rows, num) {
+  var wrap = H('div', 'tablewrap', container), t = H('table', null, wrap), tr = H('tr', null, H('thead', null, t));
+  head.forEach(function (h, i) { H('th', num.indexOf(i) >= 0 ? 'num' : null, tr, h); });
+  var tb = H('tbody', null, t);
+  rows.forEach(function (r) { var row = H('tr', null, tb); r.forEach(function (c, i) { var td = H('td', num.indexOf(i) >= 0 ? 'num' : null, row, c); td.setAttribute('data-label', head[i]); }); });
+  return t;
+}
+function tables() {
+  var rows = [];
+  MAIN.concat(CTX).forEach(function (n) { D.curves[n].pts.forEach(function (p) { rows.push([n, intc(p[0]), f3(p[1]), ci3(p[2], p[3]), String(p[4]), p[5] ? '开' : '关']); }); });
+  table(document.getElementById('t-curves'), ['run', 'update', '进度（20 局）', '95% CI', '卡死', 'loop-breaker'], rows, [1, 2, 4]);
+  var sr = [];
+  MAIN.forEach(function (n) { D.signals[n].forEach(function (r) { if (r[0] % 100 === 0) sr.push([n, intc(r[0]), r[1] === null ? '–' : r[1].toFixed(3), r[2] === null ? '–' : r[2].toFixed(3), r[3].toFixed(3), r[4].toFixed(4), r[5].toFixed(4), r[6].toFixed(4), intc(r[7])]); }); });
+  table(document.getElementById('t-signals'), ['run', 'update', '新开局进度', '存档开局进度', '熵', 'KL', '胜率头 BCE', '战斗头误差', 'env-steps/s'], sr, [1, 2, 3, 4, 5, 6, 7, 8]);
+  table(document.getElementById('t-cands'), ['checkpoint', 'silent-a10-v1（20）', 'dev-128', 'test-100', '击败第 1 幕 Boss（dev）', '进入第 2 幕（dev）', '来源'],
+    D.candidates.slice().sort(function (a, b) { return a.u - b.u; }).map(function (c) {
+      return [c.run + ' u' + c.u + (isPick(c) ? '（最终选择）' : ''), f3(c.v1[0]) + ' ' + ci3(c.v1[1], c.v1[2]), f3(c.dev[0]) + ' ' + ci3(c.dev[1], c.dev[2]), f3(c.test[0]) + ' ' + ci3(c.test[1], c.test[2]), c.a1beat + '/128', c.a2 + '/128', /model-card/.test(c.src) ? 'model-card.json' : '结果文档'];
+    }), [4, 5]);
+  var fd = stages(D.funnel['silent-a10-dev-v1']), ft = stages(D.funnel['silent-a10-test-v1']), fv = stages(D.funnel['silent-a10-v1']);
+  table(document.getElementById('t-funnel'), ['阶段', 'dev-128', 'test-100', 'silent-a10-v1（20）'], fd.map(function (s, i) {
+    return [s[0], s[1] + ' (' + pct(s[1], fd[0][1]) + ')', ft[i][1] + ' (' + pct(ft[i][1], ft[0][1]) + ')', fv[i][1] + ' (' + pct(fv[i][1], fv[0][1]) + ')'];
+  }), [1, 2, 3]);
+  table(document.getElementById('t-floors'), ['楼层', '幕', '局数', '致死遭遇'], D.death_floors.map(function (r) {
+    return ['第 ' + r[1] + ' 层', '第 ' + r[0] + ' 幕', String(r[2]), (D.death_detail[String(r[1])] || []).map(function (d) { return d[0] + ' ' + d[1]; }).join('，')];
+  }), [2]);
+  var tl = { boss: 'Boss', elite: '精英', normal: '普通' };
+  table(document.getElementById('t-killers'), ['遭遇 id', '类型', '幕', '局数'], D.killers.map(function (k) { return [k[0], tl[k[2]], '第 ' + k[3] + ' 幕', String(k[1])]; }), [3]);
+  var L = D.lookahead;
+  table(document.getElementById('t-la'), ['策略（u2050，dev-128）', '进度', '95% CI', '卡死'], [
+    ['贪心，无 loop-breaker', f3(L.greedy_nolb[0]), ci3(L.greedy_nolb[1], L.greedy_nolb[2]), L.greedy_nolb[3] + '/128'],
+    ['前瞻（turn · value+hp · K=8），无 loop-breaker', f3(L.lookahead[0]), ci3(L.lookahead[1], L.lookahead[2]), L.lookahead[3] + '/128'],
+    ['贪心 + loop-breaker（交付模式；最终权重为 u2225）', f3(L.greedy_lb[0]), ci3(L.greedy_lb[1], L.greedy_lb[2]), L.greedy_lb[3] + '/128'],
+    ['配对差：前瞻 − 贪心', sg3(L.delta_la_minus_greedy[0]), '[' + sg3(L.delta_la_minus_greedy[1]) + ', ' + sg3(L.delta_la_minus_greedy[2]) + ']', '更好 ' + L.better + ' / 更差 ' + L.worse + ' / 相同 ' + L.same]
+  ], [1]);
+  var lt = table(document.getElementById('t-live'), ['种子', '决策数', 'desync / resync', '结局', '分数', '用时', '每决策', 'loop-breaker 介入', '终局卡组 / 遗物'], D.live.map(function (r) {
+    return [r.seed, String(r.decisions), r.desync + ' / ' + r.resync, '第 ' + r.floor + ' 层，' + r.cause + '（第 ' + r.act + ' 幕 Boss）', String(r.score), Math.round(r.wall_s) + ' s', r.s_per_decision.toFixed(2) + ' s', String(r.loop_breaks), r.deck + ' 张 / ' + r.relics + ' 个'];
+  }), [1, 4, 5, 6, 7]);
+  lt.className = 'live';
+  var hpRows = {}, seeds = D.live.map(function (r) { return r.seed; });
+  D.live.forEach(function (r, k) { r.hp.forEach(function (h) { var key = h[1] * 100 + h[2]; if (!hpRows[key]) hpRows[key] = { act: h[1], floor: h[2], v: [] }; if (!hpRows[key].v[k]) hpRows[key].v[k] = '#' + h[0] + ' · HP ' + h[4] + '/' + h[5] + ' · ' + h[3]; }); });
+  table(document.getElementById('t-hp'), ['幕 / 层'].concat(seeds.map(function (s) { return s + '（决策 · HP · 界面）'; })), Object.keys(hpRows).map(Number).sort(function (a, b) { return a - b; }).map(function (k) {
+    var r = hpRows[k]; return ['第 ' + r.act + ' 幕 第 ' + r.floor + ' 层'].concat(seeds.map(function (s, i) { return r.v[i] || '–'; }));
+  }), []);
+  var B = D.balance;
+  table(document.getElementById('t-compute'), ['时间（EST）', '余额', '较上次'], B.map(function (b, i) { return [b[0], b[1].toFixed(2), i ? MINUS + (B[i - 1][1] - b[1]).toFixed(2) : '–']; }), [1, 2]);
+  table(document.getElementById('t-compute'), ['run', 'GPU', '开始', '结束', 'update', '起点'], D.segments.map(function (s) { return [s.run, s.gpu === 'gpu1' ? 'GPU#1' : 'GPU#2', s.start, s.end, s.u0 + ' → ' + s.u1, s.from || '新训练']; }), [4]);
+}
+
+/* ---------- boot ---------- */
+var charts = [['c-curves', chartCurves], ['c-signals', chartSignals], ['c-cands', chartCands], ['c-funnel', chartFunnel], ['c-floors', chartFloors], ['c-killers', chartKillers], ['c-la', chartLA], ['c-hp', chartHP], ['c-compute', chartCompute]];
+function renderAll() {
+  tipHide();
+  charts.forEach(function (c) {
+    var el = document.getElementById(c[0]); if (!el) return;
+    el.textContent = '';
+    var W = Math.floor(el.getBoundingClientRect().width);
+    try { c[1](el, W); } catch (err) { el.textContent = '图表渲染失败：' + err.message; if (window.console) console.error(err); }
+  });
+}
+try { tables(); } catch (err) { if (window.console) console.error(err); }
+renderAll();
+var lastW = document.getElementById('page').clientWidth, timer = null;
+function onResize() { var w = document.getElementById('page').clientWidth; if (Math.abs(w - lastW) < 2) return; lastW = w; clearTimeout(timer); timer = setTimeout(renderAll, 120); }
+if (window.ResizeObserver) new ResizeObserver(onResize).observe(document.getElementById('page')); else window.addEventListener('resize', onResize);
+
+/* theme toggle: follow OS -> light -> dark */
+var btn = document.getElementById('themeBtn'), rootEl = document.documentElement;
+function label() { var t = rootEl.getAttribute('data-theme'); btn.textContent = '主题：' + (t === 'light' ? '浅色' : t === 'dark' ? '深色' : '跟随系统'); }
+label();
+btn.addEventListener('click', function () {
+  var t = rootEl.getAttribute('data-theme'), next = t === null ? 'light' : t === 'light' ? 'dark' : null;
+  if (next) rootEl.setAttribute('data-theme', next); else rootEl.removeAttribute('data-theme');
+  try { if (next) localStorage.setItem('sts2-viz-theme', next); else localStorage.removeItem('sts2-viz-theme'); } catch (e) {}
+  label();
+});
+})();
+</script>
+</body>
+</html>
