@@ -93,4 +93,37 @@ public static class FidelityTests
         cs.CurrentSide = CombatSide.Enemy;
         Assert.Equal("enemy_turn", SimProjector.Phase(cs), "the exporter's `<side>_turn`");
     }
+
+    public static void Test_Fidelity_DrawPileGridsCompareAsAMultisetAndPickByIdentity()
+    {
+        // STRATAGEM_POWER AfterShuffle (Models.Powers/StratagemPower.cs) selects from the draw pile. The prompt lists it by
+        // rarity, then ModelId (Commands/CardSelectCmd.cs:897); the recorder reads the screen, which sorts by rarity, then
+        // the localized title (Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-430, Nodes.Cards/NCardGrid.cs:619).
+        // Farm 3ZGJFKTD64 f9 (zh-CN game): same 15 cards, other order; the agent picked CRUSH_UNDER at UI index 8.
+        string[] ui = { "STRIKE_REGENT", "STRIKE_REGENT", "DEFEND_REGENT", "DEFEND_REGENT+", "FALLING_STAR", "GATHER_LIGHT", "CRUSH_UNDER", "ASTRAL_PULSE" };
+        string[] rules = { "DEFEND_REGENT", "DEFEND_REGENT+", "FALLING_STAR", "STRIKE_REGENT", "STRIKE_REGENT", "ASTRAL_PULSE", "CRUSH_UNDER", "GATHER_LIGHT" };
+        JsonObject Card(string key) => new() { ["id"] = key.TrimEnd('+'), ["upgraded"] = key.EndsWith('+') };
+        var oracle = new JsonObject { ["kind"] = "card_select", ["candidates"] = new JsonArray(ui.Select(k => (JsonNode)Card(k)).ToArray()) };
+        var options = rules.Select((k, i) => new ChoiceOption(100 + i, k.TrimEnd('+'), k.EndsWith('+') ? 1 : 0)).ToList();
+        var prompt = new ChoicePrompt(ChoicePromptKind.PileSelect, "STRATAGEM_POWER:AfterShuffle", "STRATAGEM_POWER", 1, PileType.Draw, options,
+            1, 1, false, false, false, false, ChoiceResultType.CombatCard);
+        var sim = RunScreenProjector.Select(prompt, Array.Empty<int>());
+        Assert.Equal("draw", sim["pile"]!.GetValue<string>());
+        var diffs = V2Runner.CompareCombatSelect(oracle, sim);
+        Assert.Equal(0, diffs.Count(d => d.Severity == DiffSeverity.Hard), string.Join("; ", diffs.Select(d => d.Path)));
+        var other = (JsonObject)oracle.DeepClone();
+        other["candidates"]![0]!["upgraded"] = true;
+        Assert.True(V2Runner.CompareCombatSelect(other, sim).Any(d => d.Severity == DiffSeverity.Hard), "a different multiset still diverges");
+        var discard = prompt with { Pile = PileType.Discard };
+        Assert.True(V2Runner.CompareCombatSelect(oracle, RunScreenProjector.Select(discard, Array.Empty<int>())).Any(d => d.Severity == DiffSeverity.Hard),
+            "other piles keep their order (SortingOrders.Ascending, NCombatPileCardSelectScreen.cs:412-419)");
+        var choose = new JsonObject { ["type"] = "choose", ["kind"] = "grid", ["picks"] = new JsonArray(new JsonObject { ["index"] = 5, ["card_id"] = "GATHER_LIGHT", ["upgraded"] = false }) };
+        var action = new V2Action(V2Action.Choose, choose, new[] { new ChoosePick(5, null, null, "GATHER_LIGHT", false) });
+        var picks = ActionMapper.PicksByIdentity(action, prompt);
+        Assert.Null(picks[0].Index);
+        Assert.Equal(7, ActionMapper.ResolvePick(prompt, Array.Empty<int>(), picks[0], out var miss), "UI index 5 is the prompt's option 7");
+        Assert.Null(miss);
+        Assert.Equal(5, ActionMapper.PicksByIdentity(action, discard)[0].Index, "non-draw grids keep the recorded index");
+    }
 }
+

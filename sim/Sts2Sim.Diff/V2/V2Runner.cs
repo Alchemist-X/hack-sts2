@@ -800,7 +800,11 @@ public static class V2Runner
 
     // Combat selection screens. `mode` / `can_confirm` and the candidates' `index` are recorder UI fields without a
     // sim projection (soft). Hand selects list the candidates in UI order; the game's prompt is the hand in hand order,
-    // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded).
+    // filtered (Commands/CardSelectCmd.cs:3687), so their candidates compare as a multiset of (id, upgraded). Draw-pile
+    // grids too: the rules order is rarity, then ModelId (Commands/CardSelectCmd.cs:897, :915), but the screen the recorder
+    // reads sorts by rarity, then the localized title in the game's culture
+    // (Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-430, Nodes.Cards/NCardGrid.cs:619), an order that
+    // depends on the game's language (farm 3ZGJFKTD64 f9 STRATAGEM_POWER, a zh-CN game: same cards, other order).
     public static List<FieldDiff> CompareCombatSelect(JsonObject oracleSelect, JsonObject simSelect)
     {
         var o = (JsonObject)oracleSelect.DeepClone();
@@ -814,7 +818,8 @@ public static class V2Runner
                 o.Remove(name);
             }
         }
-        bool hand = string.Equals(o["kind"]?.GetValue<string>(), "hand_select", StringComparison.Ordinal);
+        bool hand = string.Equals(o["kind"]?.GetValue<string>(), "hand_select", StringComparison.Ordinal)
+            || string.Equals(s["pile"]?.GetValue<string>(), "draw", StringComparison.Ordinal);
         foreach (var obj in new[] { o, s })
         {
             if (obj["candidates"] is not JsonArray arr)

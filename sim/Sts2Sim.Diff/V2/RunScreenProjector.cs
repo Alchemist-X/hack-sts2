@@ -352,6 +352,10 @@ public static class RunScreenProjector
         }
         o["kind"] = Snake(prompt.Kind.ToString());
         o["site_id"] = prompt.SiteId;
+        if (prompt.Pile is { } pile)
+        {
+            o["pile"] = Snake(pile.ToString());
+        }
         var candidates = new JsonArray();
         foreach (var option in prompt.Options)
         {

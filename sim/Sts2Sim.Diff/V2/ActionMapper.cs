@@ -18,7 +18,7 @@ public static class ActionMapper
             case V2Action.DiscardPotion:
                 return ApplyPotion(drv, a);
             case V2Action.Choose:
-                return ApplyChoose(drv, HandPicksByIdentity(a), a.Bool("skipped") == true, a.Bool("confirm"));
+                return ApplyChoose(drv, PicksByIdentity(a, drv.PendingChoice), a.Bool("skipped") == true, a.Bool("confirm"));
             case V2Action.UndoEndTurn:
                 return new FieldDiff("action.type", a.Type, null, DiffSeverity.Hard, "undo_end_turn: " + UnsupportedNote);
             default:
@@ -37,6 +37,18 @@ public static class ActionMapper
             return a.Picks;
         }
         return a.Picks.Select(p => p.CardId != null ? p with { Index = null } : p).ToList();
+    }
+
+    // Draw-pile grids list the pile in the screen's order (rarity, then the localized title:
+    // Nodes.Screens.CardSelection/NCombatPileCardSelectScreen.cs:412-430), not the prompt's (rarity, then ModelId:
+    // Commands/CardSelectCmd.cs:897), so their picks are resolved by identity like hand picks.
+    public static IReadOnlyList<ChoosePick> PicksByIdentity(V2Action a, ChoicePrompt? prompt)
+    {
+        if (prompt?.Pile == PileType.Draw)
+        {
+            return a.Picks.Select(p => p.CardId != null ? p with { Index = null } : p).ToList();
+        }
+        return HandPicksByIdentity(a);
     }
 
     private static FieldDiff? ApplyPlayOrEnd(CombatDriver drv, V2Action a)
