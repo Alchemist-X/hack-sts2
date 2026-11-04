@@ -1,6 +1,7 @@
 """sts2train CLI (also installed as ``sts2train-smoke``): ``train`` (PPO), ``eval`` (protocol v0.2 NN entry point; exit
 1 when the replay audit fails, like ``sts2vec eval``), ``plot`` (curves of a run directory), ``bench-update``
-(synthetic timing of the PPO update and the rollout forward).
+(synthetic timing of the PPO update and the rollout forward), ``report-card`` / ``pack`` / ``probe`` (model card,
+weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard``).
 
     sts2train train --preset large --device cuda --envs 2048 --max-hours 6 --eval-every 50 --out RUN_DIR
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
@@ -8,6 +9,9 @@
     sts2train train --characters SILENT --start-saves SAVES_DIR --save-mix 0.5 ...   # half the starts from saves
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
     sts2train eval ... --loop-breaker off                # the plain argmax (no-op loops run into the floor cap)
+    sts2train report-card --checkpoint CKPT --out CARD_DIR [--seedsets silent-a10-v1,...] [--lookahead-dir DIR ...]
+    sts2train pack --checkpoint CKPT --out FILE.tar.gz [--card CARD_DIR]
+    sts2train probe --checkpoint CKPT --eval-dir EVAL_DIR [--game KEY] [--out FILE.jsonl]
 
 ``train`` flags that are not given keep the default (fresh run) or the checkpoint's value (``--resume``).
 """
@@ -279,6 +283,108 @@ def _bench_parser(sub) -> argparse.ArgumentParser:
     return b
 
 
+def _card_parsers(sub) -> None:
+    from .reportcard import BASELINES, DEFAULT_BASELINE_CACHE, DEFAULT_SEEDSETS
+
+    def common(p) -> None:
+        p.add_argument("--seedsets", default=",".join(DEFAULT_SEEDSETS),
+                       help="comma-separated seed sets (name, id or path; default %(default)s)")
+        p.add_argument("--threads", type=int, default=4, help="env worker threads and torch threads (default 4)")
+        p.add_argument("--device", default="cpu", help="device of the model: cpu | cuda[:i] | mps (default cpu)")
+        p.add_argument("--lookahead-dir", dest="lookahead_dirs", nargs="+", action="extend", default=[],
+                       metavar="DIR", help="protocol run directories of sts2train.lookahead evaluations: extra rows "
+                                           "labelled 'lookahead, determinized' (read only)")
+        p.add_argument("--baselines", default=",".join(BASELINES),
+                       help="rule policies run with sts2vec eval on the same seed sets for context, or 'none' "
+                            "(default %(default)s)")
+        p.add_argument("--baseline-cache", default=DEFAULT_BASELINE_CACHE,
+                       help="baseline run directories, shared by every card (default %(default)s)")
+
+    rc = sub.add_parser("report-card", help="model card of a checkpoint: greedy evals (run or reused), baselines, "
+                                            "staged tables with Wilson intervals",
+                        description="Runs (or reuses) `sts2train eval` per seed set into OUT/evals/<seed set>, the "
+                                    "rule baselines into --baseline-cache, and writes OUT/model-card.md + "
+                                    "OUT/model-card.json. Exit 1 when a greedy eval fails the replay audit.")
+    rc.add_argument("--checkpoint", required=True)
+    rc.add_argument("--out", required=True, help="card directory")
+    common(rc)
+    pk = sub.add_parser("pack", help="weights bundle: checkpoint, spec / config, model card, library version, "
+                                     "README-weights.md, sha256 manifest",
+                        description="Writes FILE.tar.gz (top directory FILE) and verifies it. The model card comes "
+                                    "from --card (default FILE.card next to the archive) when it is this checkpoint's, "
+                                    "else it is made there with the report-card options below.")
+    pk.add_argument("--checkpoint", required=True)
+    pk.add_argument("--out", required=True, help="FILE.tar.gz")
+    pk.add_argument("--card", help="model card directory (default FILE.card next to FILE.tar.gz)")
+    common(pk)
+    pr = sub.add_parser("probe", help="replay games of an eval run and read the checkpoint at every decision",
+                        description="Replays the recorded actions of an eval run directory's games and prints, per "
+                                    "decision, the action taken, the model's top candidates with probabilities, the "
+                                    "value head (and win_prob / combat_hp_pred with aux heads).")
+    pr.add_argument("--checkpoint", required=True)
+    pr.add_argument("--eval-dir", dest="eval_dir", required=True, help="protocol run directory (sts2train eval)")
+    pr.add_argument("--game", dest="games", action="append", metavar="KEY",
+                    help="game key (SILENT-C1A10SI01) or seed; repeatable (default every game)")
+    pr.add_argument("--top", type=int, default=3, help="candidates shown per decision (default 3)")
+    pr.add_argument("--out", help="also write the rows as JSON lines to this file")
+    pr.add_argument("--threads", type=int, default=4, help="(default 4)")
+    pr.add_argument("--device", default="cpu", help="(default cpu)")
+
+
+def _card_cmd(a) -> int:
+    import torch
+
+    from . import reportcard as RC
+    from .features import SpecMismatch
+
+    torch.set_num_threads(max(1, a.threads))
+
+    def log(m: str) -> None:
+        print(m, flush=True)
+
+    def csv(v: str) -> list[str]:
+        return [x.strip() for x in v.split(",") if x.strip()]
+
+    try:
+        if a.cmd == "probe":
+            rows = RC.probe(a.checkpoint, a.eval_dir, games=a.games, top=a.top, out=a.out, threads=a.threads,
+                            device=a.device, log=log)
+            print(json.dumps({"decisions": len(rows), "games": len({r["key"] for r in rows}), "out": a.out}))
+            return 0
+        kw = dict(seedsets=csv(a.seedsets), threads=a.threads, device=a.device, lookahead_dirs=a.lookahead_dirs,
+                  baselines=[] if a.baselines.strip().lower() == "none" else csv(a.baselines),
+                  baseline_cache=a.baseline_cache, log=log)
+        res = {}
+        if a.cmd == "report-card":
+            card = RC.report_card(a.checkpoint, a.out, **kw)
+            res["out"] = a.out
+        else:
+            res = RC.pack(a.checkpoint, a.out, card_dir=a.card, **kw)
+            card = res.pop("card")
+    except SpecMismatch as e:
+        print(f"error: {e}", flush=True)
+        return 2
+    res["seedsets"] = []
+    failed = []
+    for sec in card["seedsets"]:
+        for r in sec["runs"]:
+            if r["kind"] != "nn":
+                continue
+            h = r["headline"]
+            res["seedsets"].append({"seedset": sec["id"], "games": h["games"], "progress_mean": h["progress_mean"],
+                                    "progress_ci95": h["progress_ci95"], "wins": h["wins"],
+                                    "win_rate_ci95": h["win_rate_ci95"], "reached_act2": r["staged"]["act2"]["count"],
+                                    "replayable": h["replayable"], "reused": r["reused"]})
+            if h["replayable"] != h["games"]:
+                failed.append(f"{sec['id']} {h['replayable']}/{h['games']}")
+    print(json.dumps(res, indent=1))
+    if failed:
+        print(f"error: replay audit failed: {', '.join(failed)} games replayable (model-card.md lists the runs)",
+              file=sys.stderr, flush=True)
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sts2train")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -298,7 +404,10 @@ def main(argv=None) -> int:
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
     _bench_parser(sub)
+    _card_parsers(sub)
     a = ap.parse_args(argv)
+    if a.cmd in ("report-card", "pack", "probe"):
+        return _card_cmd(a)
     if a.cmd == "bench-update":
         from .bench import BenchSizeError, bench_update
 
