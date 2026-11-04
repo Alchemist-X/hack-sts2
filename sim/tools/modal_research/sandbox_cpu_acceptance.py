@@ -19,6 +19,8 @@ from .modal_provider import SdkProcessTransport
 from .sandbox_provider import MOUNT, SDK_VERSION, SandboxBinding, SandboxProvider, _sdk_request
 from .store import Store
 
+MODULE_NAME = "modal_research.sandbox_cpu_acceptance"
+
 CPU_CODE = r"""
 import hashlib, json, os, pathlib, subprocess, sys, time
 root = pathlib.Path('/sts2-study')
@@ -80,7 +82,7 @@ sync()
 class CpuProvider(SandboxProvider):
     def __init__(self, binding, artifacts, marker, scenario, operation_deadline, **kwargs):
         super().__init__(binding, artifacts, transport=SdkProcessTransport(
-            verified_binding=True, worker_module=__name__), **kwargs)
+            verified_binding=True, worker_module=MODULE_NAME), **kwargs)
         self.marker = marker
         self.scenario = scenario
         self.operation_deadline = operation_deadline
@@ -110,11 +112,14 @@ class CpuProvider(SandboxProvider):
 
 
 def _cpu_sdk():
+    message = json.loads(sys.stdin.buffer.read(256_000))
+    if message == {"operation": "local-module-check"}:
+        print(canonical({"module": __spec__.name}))
+        return
     import modal
 
     if modal.__version__ != SDK_VERSION or os.environ.get("MODAL_SANDBOX_V2") != "0":
         raise RuntimeError("CPU acceptance requires the pinned V1 transport")
-    message = json.loads(sys.stdin.buffer.read(256_000))
     if message["operation"] != "cpu-probe-spawn":
         print(canonical(_sdk_request(message, modal)))
         return
@@ -175,6 +180,12 @@ def tick(root, binding, scenario, operation_deadline):
 
 
 def main():
+    if sys.argv[1:] == ["--check-module"]:
+        transport = SdkProcessTransport(verified_binding=True, worker_module=MODULE_NAME)
+        if transport.request({"operation": "local-module-check"}, 5) != {"module": MODULE_NAME}:
+            raise ValueError("unexpected CPU SDK subprocess module")
+        print(MODULE_NAME)
+        return
     if sys.argv[1:] == ["--sdk-request"]:
         _cpu_sdk()
         return
