@@ -121,14 +121,23 @@ def replay(ss: dict, actions_log: list[list[int]], *, step_cap: int = STEP_CAP, 
 def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int = 8, step_cap: int = STEP_CAP,
              floor_step_cap: int = FLOOR_STEP_CAP, seed: int = 0, policy_name: str | None = None,
              policy_hash: str | None = None, config_extra: dict | None = None, summary_extra: dict | None = None,
-             log: Callable[[str], None] = print, dll=None) -> dict:
+             log: Callable[[str], None] = print, dll=None, allow_blind: bool = False,
+             purpose: str | None = None) -> dict:
     """Play ``seedset`` (name, id, path or dict) with ``policy`` (built-in name, ``module:callable``,
     ``file.py:callable`` or a callable; see ``sts2vec.policies``) and write the protocol run directory ``out_dir``.
-    Returns the report dict (``report["headline"]["progress_mean"]`` is the protocol metric)."""
+    Returns the report dict (``report["headline"]["progress_mean"]`` is the protocol metric).
+
+    A seed set with games of a frozen blind set (``protocol.blind_overlap``) raises ``protocol.BlindSetError`` before
+    anything runs unless ``allow_blind`` and a ``purpose`` are given; the access is then logged to
+    ``out_dir/blind-access.jsonl`` (``protocol.require_blind_access``)."""
     ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(seedset)
     fn, label, phash = resolve(policy)
     policy_name = policy_name or label
     policy_hash = policy_hash or phash
+    access = PG.require_blind_access(ss, allow_blind=allow_blind, purpose=purpose, out_dir=out_dir,
+                                     weights_hash=policy_hash)
+    if access is not None:
+        log(f"BLIND seed set access logged to {Path(out_dir) / 'blind-access.jsonl'}: {access['purpose']}")
     games = ss["games"]
     n = len(games)
     keys = [PG.game_key(g) for g in games]

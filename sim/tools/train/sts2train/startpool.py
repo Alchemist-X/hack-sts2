@@ -442,10 +442,14 @@ def start_pool_from_config(env: VecEnv, cfg, log=print) -> StartPool | None:
             log(f"--start-saves {cfg.start_saves} ignored: --save-mix 0 (fresh starts only)")
         return None
     spec = env.pool_spec
+    env_seed = getattr(cfg, "env_seed", None)
+    start_seed = getattr(cfg, "start_seed", None)
     sp = build_start_pool(env, cfg.start_saves, mix=float(cfg.save_mix), copies_mode=cfg.save_copies,
                           fresh=int(cfg.pool), characters=tuple(cfg.characters), ascension=int(cfg.ascension),
-                          seed_prefix=spec.seed_prefix if spec is not None else f"TRAIN{cfg.seed}",
-                          act1=spec.act1 if spec is not None else "random", seed=int(cfg.seed))
+                          seed_prefix=spec.seed_prefix if spec is not None else
+                          f"TRAIN{cfg.seed if env_seed is None else env_seed}",
+                          act1=spec.act1 if spec is not None else "random",
+                          seed=int(cfg.seed if start_seed is None else start_seed))
     for line in sp.describe():
         log(line)
     other = sorted(a for a in sp.histograms()["ascension"] if a != int(cfg.ascension))

@@ -136,9 +136,12 @@ class HeadLog:
 def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str, checkpoint: str | None = None,
                    threads: int = 8, device: str = "cpu", step_cap: int = STEP_CAP,
                    floor_step_cap: int = FLOOR_STEP_CAP, spec_compat: dict | None = None, loop_breaker: bool = True,
-                   loop_breaker_k: int = DEFAULT_K, log=print) -> dict:
+                   loop_breaker_k: int = DEFAULT_K, log=print, allow_blind: bool = False,
+                   blind_purpose: str | None = None) -> dict:
     """Play `seedset` greedily with `model` and write the protocol run directory `out_dir`; returns the report (with
-    the loop breaker's totals under ``loop_breaker``).
+    the loop breaker's totals under ``loop_breaker``). A seed set with games of a frozen blind set is refused
+    (``sts2vec.protocol.BlindSetError``, before any game) unless `allow_blind` and `blind_purpose` are given; the
+    access is then logged to ``out_dir/blind-access.jsonl``.
 
     Raises `features.SpecMismatch` (before any game is played) when `spec` (the model's) differs from the library's in
     the model's inputs; an encoder_version change outside them is accepted and noted. `spec_compat` = the record of a
@@ -172,8 +175,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
     try:
         rep = vec_evaluate(
             seedset, act, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
-            policy_name=name, policy_hash=f"weights:{weights_hash}", log=log,
-            summary_extra={"weights_hash": weights_hash},
+            policy_name=name, policy_hash=f"weights:{weights_hash}", log=log, allow_blind=allow_blind,
+            purpose=blind_purpose, summary_extra={"weights_hash": weights_hash},
             config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
                           "arch": getattr(model, "arch", None), "device": str(device), "greedy": True,
@@ -196,7 +199,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
 
 def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, device: str = "cpu",
              step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, loop_breaker: bool = True,
-             loop_breaker_k: int = DEFAULT_K, log=print) -> dict:
+             loop_breaker_k: int = DEFAULT_K, log=print, allow_blind: bool = False,
+             blind_purpose: str | None = None) -> dict:
     """`sts2train eval`: load `checkpoint` for the library sts2vec loads (`load_checkpoint(library=...)`: refused with
     `SpecMismatch` before any game, widened when its embedded enums only gained members) and evaluate it. The weights
     hash is the checkpoint's (a widened model adds only zero rows)."""
@@ -204,8 +208,12 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
 
     from .ppo import load_checkpoint
 
+    from .isolation import check_blind_eval
+
+    check_blind_eval(seedset, allow_blind=allow_blind, purpose=blind_purpose)     # refuse before loading anything
     model, spec, ck = load_checkpoint(checkpoint, device, library=ModelSpec.from_schema(schema_of(load())))
     return evaluate_model(model, spec, seedset, out_dir, weights_hash=ck.get("weights_hash") or "?",
                           checkpoint=checkpoint, threads=threads, device=device, step_cap=step_cap,
                           floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"), loop_breaker=loop_breaker,
-                          loop_breaker_k=loop_breaker_k, log=log)
+                          loop_breaker_k=loop_breaker_k, log=log, allow_blind=allow_blind,
+                          blind_purpose=blind_purpose)

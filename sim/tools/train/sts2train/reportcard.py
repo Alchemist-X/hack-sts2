@@ -513,10 +513,14 @@ def _now() -> str:
 
 def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4, device: str = "cpu",
                 lookahead_dirs=(), baselines=BASELINES, baseline_cache=DEFAULT_BASELINE_CACHE,
-                log: Callable[[str], None] = print) -> dict:
+                log: Callable[[str], None] = print, allow_blind: bool = False,
+                blind_purpose: str | None = None) -> dict:
     """Run or reuse the evaluations and write ``out/model-card.json`` + ``out/model-card.md``; -> the card.
 
-    Raises `features.SpecMismatch` (before any game) when the checkpoint cannot drive this library."""
+    Raises `features.SpecMismatch` (before any game) when the checkpoint cannot drive this library, and
+    `sts2vec.protocol.BlindSetError` (before any game) when a seed set (given, or embedded in a lookahead run) holds
+    games of a frozen blind set unless `allow_blind` and `blind_purpose` are given; each allowed blind set is then
+    logged to ``out/blind-access.jsonl`` (and by every evaluation into its own directory)."""
     from sts2vec import load, schema_of
     from sts2vec.evaluate import evaluate as vec_evaluate
     from sts2vec.evaluate import repo_sha
@@ -566,6 +570,11 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
         refs.setdefault(PG.checksum(ss), ref_of(ss, None))
         add_set(ss)
 
+    from .isolation import check_blind_eval
+
+    blind = [ss for ss in sets if PG.blind_overlap(ss)]
+    for ss in blind:                    # refuse (or log) before any game, the cached / reused runs included
+        check_blind_eval(ss, allow_blind=allow_blind, purpose=blind_purpose, log_dir=out, weights_hash=wh)
     sections = []
     used: set[str] = set()
     for ss in sets:
@@ -582,7 +591,7 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             _set_aside(d, log)
             evaluate_model(model, spec, ss, str(d), weights_hash=wh, checkpoint=str(checkpoint), threads=threads,
                            device=device, spec_compat=ck.get("spec_compat"), loop_breaker=True,
-                           loop_breaker_k=DEFAULT_K, log=log)
+                           loop_breaker_k=DEFAULT_K, log=log, allow_blind=allow_blind, blind_purpose=blind_purpose)
         runs.append(run_entry(d, "nn", GREEDY_LABEL, asc, reused=reason is None, weights_hash=wh,
                               library_version=lib["version"]))
         for ld, kind, label, lss in lookahead:
@@ -602,7 +611,8 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             else:
                 log(f"[{sid}] baseline {pol} -> {bd} ({reason})")
                 _set_aside(bd, log)
-                vec_evaluate(ss, pol, str(bd), threads=threads, seed=0, log=log)
+                vec_evaluate(ss, pol, str(bd), threads=threads, seed=0, log=log, allow_blind=allow_blind,
+                             purpose=blind_purpose)
             runs.append(run_entry(bd, "baseline", pol, asc, reused=reason is None, library_version=lib["version"]))
         ident_ss = PG.seedset_identity(ss)
         sections.append({"id": sid, "name": ss.get("name"), "role": ss.get("role"), "ascension": asc,

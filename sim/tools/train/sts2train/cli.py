@@ -143,7 +143,19 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--allow-big-local", dest="allow_big_local", action="store_true",
                    help="allow cpu / mps training of models above 3M parameters or the large preset (refused otherwise)")
     g.add_argument("--torch-threads", dest="torch_threads", type=int, help="torch CPU threads (0 = auto)")
-    g.add_argument("--seed", type=int, help=f"(default {D.seed})")
+    g.add_argument("--seed", type=int,
+                   help=f"derives --init-seed / --sample-seed / --env-seed / --start-seed when they are not given "
+                        f"(default {D.seed}); on a resume the checkpoint's resolved seeds are kept")
+    g.add_argument("--init-seed", dest="init_seed", type=int,
+                   help="model initialisation (its own generator; a resume must keep the checkpoint's)")
+    g.add_argument("--sample-seed", dest="sample_seed", type=int,
+                   help="action sampling (torch) and minibatch shuffles (numpy); on a resume a different value "
+                        "re-seeds them instead of restoring the checkpoint's RNG states")
+    g.add_argument("--env-seed", dest="env_seed", type=int,
+                   help="environment seeds: the stream prefix SP<env_seed> (--start-mode stream) or the fixed pool's "
+                        "family TRAIN<env_seed> (pool)")
+    g.add_argument("--start-seed", dest="start_seed", type=int,
+                   help="--start-mode pool only: the slots' start offsets into the pool and the save copies")
     g = tr.add_argument_group("budget (whichever comes first)")
     g.add_argument("--max-hours", dest="max_hours", type=float,
                    help=f"wall-clock budget of this session, hours (default {D.max_hours}; 0 = none)")
@@ -164,6 +176,13 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "observation a game already decided at (a no-op or a cycle), mask the candidates taken there; "
                         "from the --loop-breaker-k-th return prefer leaving the screen (default on)")
     g.add_argument("--log-every", dest="log_every", type=int, help=f"stdout line every N updates (default {D.log_every})")
+    g.add_argument("--episodes-log", dest="episodes_log", action=argparse.BooleanOptionalAction,
+                   help="RUN_DIR/episodes.jsonl: one row per episode (seed, result, act, floor, steps, progress; "
+                        "sts2train.episodes; default on)")
+    g.add_argument("--allow-blind", dest="allow_blind", action="store_true",
+                   help="let the periodic eval use a seed set with games of a frozen blind set (refused otherwise; "
+                        "needs --purpose; never inherited by a resume); logged to RUN_DIR/blind-access.jsonl")
+    g.add_argument("--purpose", dest="blind_purpose", help="why a blind set is evaluated (with --allow-blind)")
     g.add_argument("--baseline-steps", dest="baseline_steps", type=int, help="uniform-random baseline steps first")
     g = tr.add_argument_group("model")
     g.add_argument("--preset", choices=sorted(PRESETS),
@@ -219,6 +238,20 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "env's default (80 with a library that implements the cap); the cap in effect is recorded "
                         "in config.json env.floor_step_cap")
     g.add_argument("--ascension", type=int, help=f"(default {D.ascension})")
+    g.add_argument("--start-mode", dest="start_mode", choices=["pool", "stream"],
+                   help="pool (default): episodes start from a fixed pool of --pool fresh seeds "
+                        "TRAIN<env_seed>-<C>-<i> (+ --start-saves); refused when it holds a frozen eval seed set's "
+                        "game. stream: every episode "
+                        "starts from a never-used seed <prefix>-<C>-<n>, n from a counter kept in the checkpoint "
+                        "(sts2train.seedstream); holdout games are skipped; --start-saves must be none")
+    g.add_argument("--seed-stream-prefix", dest="seed_stream_prefix",
+                   help="stream: seed text prefix, [A-Z][A-Z0-9_]{0,23}, not TRAIN* (default SP<env_seed>)")
+    g.add_argument("--stream-lookahead", dest="stream_lookahead", type=int,
+                   help="stream: entries generated ahead (default auto: max(64, 2 x envs), grown to 1.25 x the starts "
+                        "of an update; 0 = each start creates its run in the step)")
+    g.add_argument("--stream-prefetch", dest="stream_prefetch", action=argparse.BooleanOptionalAction,
+                   help="stream: create the lookahead's runs in a thread while the PPO update runs (default on; off = "
+                        "synchronously once per update)")
     g.add_argument("--pool", type=int, help=f"fresh start pool entries (default {D.pool})")
     g.add_argument("--characters", type=lambda v: tuple(x.strip() for x in v.split(",") if x.strip()),
                    help="comma separated (default all five)")
@@ -301,6 +334,11 @@ def _card_parsers(sub) -> None:
                             "(default %(default)s)")
         p.add_argument("--baseline-cache", default=DEFAULT_BASELINE_CACHE,
                        help="baseline run directories, shared by every card (default %(default)s)")
+        p.add_argument("--allow-blind", dest="allow_blind", action="store_true",
+                       help="allow seed sets with games of a frozen blind set (refused otherwise; needs --purpose); "
+                            "logged to OUT/blind-access.jsonl")
+        p.add_argument("--purpose", dest="blind_purpose", default=None,
+                       help="why a blind set is evaluated (with --allow-blind)")
 
     rc = sub.add_parser("report-card", help="model card of a checkpoint: greedy evals (run or reused), baselines, "
                                             "staged tables with Wilson intervals",
@@ -336,6 +374,8 @@ def _card_parsers(sub) -> None:
 def _card_cmd(a) -> int:
     import torch
 
+    from sts2vec.protocol import BlindSetError
+
     from . import reportcard as RC
     from .features import SpecMismatch
 
@@ -355,7 +395,7 @@ def _card_cmd(a) -> int:
             return 0
         kw = dict(seedsets=csv(a.seedsets), threads=a.threads, device=a.device, lookahead_dirs=a.lookahead_dirs,
                   baselines=[] if a.baselines.strip().lower() == "none" else csv(a.baselines),
-                  baseline_cache=a.baseline_cache, log=log)
+                  baseline_cache=a.baseline_cache, log=log, allow_blind=a.allow_blind, blind_purpose=a.blind_purpose)
         res = {}
         if a.cmd == "report-card":
             card = RC.report_card(a.checkpoint, a.out, **kw)
@@ -363,7 +403,7 @@ def _card_cmd(a) -> int:
         else:
             res = RC.pack(a.checkpoint, a.out, card_dir=a.card, **kw)
             card = res.pop("card")
-    except SpecMismatch as e:
+    except (SpecMismatch, BlindSetError) as e:
         print(f"error: {e}", flush=True)
         return 2
     res["seedsets"] = []
@@ -413,6 +453,10 @@ def main(argv=None) -> int:
                          "taken there; from the --loop-breaker-k-th return prefer the rows that leave the screen "
                          "(default on; off = the plain argmax)")
     ev.add_argument("--loop-breaker-k", type=int, default=3, help="(default 3)")
+    ev.add_argument("--allow-blind", action="store_true",
+                    help="allow a seed set with games of a frozen blind set (refused otherwise; needs --purpose); "
+                         "logged to OUT/blind-access.jsonl")
+    ev.add_argument("--purpose", default=None, help="why a blind set is evaluated (with --allow-blind)")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
     _bench_parser(sub)
@@ -445,18 +489,36 @@ def main(argv=None) -> int:
             if resume == "auto":
                 ap.error("--resume auto needs --out RUN_DIR")
             given["out"] = f"tmp/train/run-{time.strftime('%Y%m%d-%H%M%S')}"
+        from sts2vec.protocol import BlindSetError
+
         from .features import SpecMismatch
+        from .isolation import IsolationError
         from .ppo import BigLocalRunError
 
         log = _Log()
-        cfg, ck, ck_path = plan_run(given, resume, log=log)
+        try:
+            cfg, ck, ck_path = plan_run(given, resume, log=log)
+        except ValueError as e:         # config errors (incl. --start-mode stream with start saves, --init-seed)
+            print(f"error: {e}", flush=True)
+            return 2
+        try:                            # refused before the run directory exists (isolation, blind gate)
+            from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
+
+            if cfg.eval_every:
+                check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
+            if cfg.start_mode == "pool":
+                check_legacy_pool(cfg, IsolationGuard.from_seedsets(extra=[cfg.eval_seedset] if cfg.eval_every
+                                                                    else ()))
+        except (IsolationError, BlindSetError) as e:
+            print(f"error: {e}", flush=True)
+            return 2
         log.open(Path(cfg.out) / "train.log")
         if cfg.objective == "shaped":
             log("NOTE: --shaped is the LEGACY smoke objective (floor-reached shaping); the default is --objective protocol.")
         log(f"run directory: {cfg.out}")
         try:
-            s = train(cfg, log=log, resume=ck, resume_path=ck_path)
-        except (BigLocalRunError, SpecMismatch) as e:
+            s = train(cfg, log=log, resume=ck, resume_path=ck_path, given=given)
+        except (BigLocalRunError, SpecMismatch, IsolationError, BlindSetError) as e:
             log(f"error: {e}")
             return 2
         try:
@@ -466,6 +528,8 @@ def main(argv=None) -> int:
         log(json.dumps({k: v for k, v in s.items() if k not in ("config",)}, indent=1, default=str))
         return 0
     if a.cmd in ("eval", "evaluate"):
+        from sts2vec.protocol import BlindSetError
+
         from .evaluate import evaluate
         from .features import SpecMismatch
 
@@ -473,8 +537,8 @@ def main(argv=None) -> int:
         try:
             rep = evaluate(a.seedset, a.checkpoint, out, threads=a.threads, device=a.device,
                            loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k,
-                           log=lambda m: print(m, flush=True))
-        except SpecMismatch as e:
+                           log=lambda m: print(m, flush=True), allow_blind=a.allow_blind, blind_purpose=a.purpose)
+        except (SpecMismatch, BlindSetError) as e:
             print(f"error: {e}", flush=True)
             return 2
         h = rep["headline"]

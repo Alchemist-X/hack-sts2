@@ -17,6 +17,13 @@ log-probs are the masked distribution's, so PPO's ratio is taken against the pol
 flags off the trainer computes exactly what it computed before. The periodic eval's greedy policy runs with the loop
 breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
+Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
+``TRAIN<env_seed>`` pool, bit for bit the earlier trainer) or ``stream`` (``sts2train.seedstream``: every episode from a
+never-used seed ``<prefix>-<CHARACTER>-<n>``, the counter in the checkpoint). ``seed`` derives ``init_seed`` /
+``sample_seed`` / ``env_seed`` / ``start_seed``; ``rng_scheme`` legacy (pool mode without explicit init / sample seeds:
+the old single torch stream) or decoupled (``seed_rngs``, ``init_rng``). Isolation from the frozen eval seed sets and
+the blind-set gate: ``sts2train.isolation``; per-episode rows: ``sts2train.episodes``.
+
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
 the env restarts from fresh episodes),
@@ -70,15 +77,19 @@ import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
+from .episodes import EPISODE_HOOKS, EpisodeLog
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
                        obs_to_device, widen_spec)
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
+from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
 from .loopbreak import LoopBreaker
 from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
                     widened_tensors)
 from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
+from .seedstream import (START_MODES, PoolStarts, SeedStream, StreamEnv, lookahead_of, max_lookahead,
+                         stream_prefix)
 from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
@@ -88,6 +99,9 @@ COMPILE_MODES = ("off", "default", "reduce-overhead")
 STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
 NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
+RNG_SCHEMES = ("legacy", "decoupled")
+SEED_FIELDS = ("init_seed", "sample_seed", "env_seed", "start_seed")
+NOT_INHERITED = ("allow_big_local", "allow_blind", "blind_purpose")   # never taken from a checkpoint's config
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
 
 
@@ -101,6 +115,12 @@ class TrainConfig:
     ascension: int = 0
     pool: int = 2048
     characters: tuple = ALL_CHARACTERS
+    start_mode: str = "pool"        # pool (fixed TRAIN<env_seed> pool + start saves) | stream (sts2train.seedstream)
+    seed_stream_prefix: str | None = None   # stream: seed text prefix (None = SP<env_seed>)
+    stream_lookahead: int | None = None     # stream: entries generated ahead (None = auto: max(64, 2 envs), grown to
+                                            # 1.25 x an update's starts; 0 = none: NewRun in the step)
+    stream_prefetch: bool = True    # stream: create the lookahead's templates in a thread during the PPO update (else
+                                    # synchronously once per update)
     start_saves: str | None = None  # directory of game .save files (recursive) to start episodes from (startpool.py)
     save_mix: float = 0.5           # fraction of episode starts from start_saves (pool entry multiplicities)
     save_copies: str = "determinized"   # further copies of a save: determinized (hidden state resampled) | exact
@@ -145,7 +165,13 @@ class TrainConfig:
     grad_ckpt: bool = False         # recompute the trunk blocks in backward (less activation memory, more compute)
     allow_big_local: bool = False   # override the cpu / mps size guard (never inherited from a checkpoint)
     torch_threads: int = 0          # 0 = min(os.cpu_count(), 16)
-    seed: int = 0
+    seed: int = 0                   # derives the four seeds below when they are not given
+    init_seed: int | None = None    # model initialisation (decoupled scheme: its own generator)
+    sample_seed: int | None = None  # action sampling (torch) + minibatch shuffles (numpy)
+    env_seed: int | None = None     # environment seeds: stream prefix SP<env_seed> / pool family TRAIN<env_seed>
+    start_seed: int | None = None   # pool mode only: slot start offsets (env seed_text PPO<start_seed>), save copies
+    rng_scheme: str | None = None   # legacy (pool mode without --init-seed / --sample-seed: one torch RNG seeded with
+                                    # `seed` for init and sampling, as before) | decoupled; fixed at the run's start
     out: str = "tmp/train/run"
     # budget (whichever comes first; max_updates / max_env_steps count across resumes, max_hours is per session)
     max_hours: float = 1.0
@@ -163,6 +189,9 @@ class TrainConfig:
     rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
+    episodes_log: bool = True       # <run>/episodes.jsonl: one row per episode (sts2train.episodes)
+    allow_blind: bool = False       # the periodic eval may use a frozen blind seed set (never inherited)
+    blind_purpose: str | None = None  # why (logged to <run>/blind-access.jsonl; never inherited)
 
 
 CONFIG_FIELDS = {f.name for f in fields(TrainConfig)}
@@ -172,7 +201,7 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     """dataclass defaults < `base` (a resumed checkpoint's config) < preset (`given["preset"]`) < other `given`."""
     cfg = asdict(TrainConfig())
     if base:
-        cfg.update({k: v for k, v in base.items() if k in CONFIG_FIELDS and k != "allow_big_local"})
+        cfg.update({k: v for k, v in base.items() if k in CONFIG_FIELDS and k not in NOT_INHERITED})
     preset = given.get("preset")
     if preset:
         if preset not in PRESETS:
@@ -203,7 +232,90 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         out.loop_breaker = out.loop_breaker == "on"
     if int(out.loop_breaker_k) < 1:
         raise ValueError(f"loop_breaker_k {out.loop_breaker_k} must be >= 1")
+    resolve_seeds(out, given, base)
+    if out.start_mode not in START_MODES:
+        raise ValueError(f"start_mode {out.start_mode!r}: expected one of {START_MODES}")
+    if out.start_mode == "stream":
+        if out.start_saves:
+            raise ValueError("--start-mode stream takes fresh starts only: --start-saves must be none (on a resume "
+                             "of a run with start saves pass --start-saves none)")
+        if out.baseline_steps:
+            raise ValueError("--baseline-steps plays on the training env, which --start-mode stream reserves for the "
+                             "seed stream: drop it or use --start-mode pool")
+        if "start_seed" in given:
+            raise ValueError("--start-seed applies to --start-mode pool only (slot offsets, save copies)")
+        if out.stream_lookahead is not None and int(out.stream_lookahead) < 0:
+            raise ValueError(f"stream_lookahead {out.stream_lookahead} must be >= 0 (None = auto)")
+        stream_prefix(out)                  # validates an explicit prefix / the SP<env_seed> default
+    elif "seed_stream_prefix" in given and given["seed_stream_prefix"]:
+        raise ValueError("--seed-stream-prefix applies to --start-mode stream only")
     return out
+
+
+def resolve_seeds(out: TrainConfig, given: dict, base: dict | None) -> None:
+    """Fill the four seeds and the RNG scheme of a resolved config (in place).
+
+    Fresh run: a seed not given is ``seed``; the scheme is ``legacy`` for --start-mode pool without --init-seed /
+    --sample-seed (one torch RNG seeded with ``seed`` serves the model init and the sampling, numpy's minibatch RNG is
+    seeded with ``seed``: what the trainer did before, bit for bit), else ``decoupled`` (``seed_rngs``,
+    ``init_rng``). Resume: the checkpoint's values are kept unless given; a checkpoint without them ran the legacy
+    scheme with init / sample seed = its ``seed`` (env / start seed follow ``seed`` as before: --seed on a resume of
+    such a checkpoint still picks the pool family and offsets). --init-seed on a resume must equal the checkpoint's
+    (the weights come from it); --sample-seed different from the checkpoint's re-seeds the sampling RNGs."""
+    if out.rng_scheme is None:
+        out.rng_scheme = "legacy" if base or (out.start_mode == "pool" and out.init_seed is None
+                                               and out.sample_seed is None) else "decoupled"
+    if out.rng_scheme not in RNG_SCHEMES:
+        raise ValueError(f"rng_scheme {out.rng_scheme!r}: expected one of {RNG_SCHEMES}")
+    base_seed = int((base or {}).get("seed", out.seed) or 0)
+    if base and "init_seed" in given:
+        was = base.get("init_seed")
+        was = base_seed if was is None else int(was)
+        if int(given["init_seed"]) != was:
+            raise ValueError(f"--init-seed {given['init_seed']} on a resume: the weights come from the checkpoint "
+                             f"(init_seed {was}); fork with the same --init-seed or start a fresh run")
+    for k in SEED_FIELDS:
+        if getattr(out, k) is None:
+            setattr(out, k, base_seed if (base and k in ("init_seed", "sample_seed")) else int(out.seed))
+        setattr(out, k, int(getattr(out, k)))
+
+
+def seed_of(cfg, name: str) -> int:
+    """A seed field of a (possibly unresolved) config: the field, else ``seed``."""
+    v = getattr(cfg, name, None)
+    return int(cfg.seed if v is None else v)
+
+
+def purpose_seed(seed: int, purpose: str) -> int:
+    """A 63-bit seed for one use (init / sample / shuffle / baseline) of a user seed: two uses of one value never
+    share a random stream."""
+    return int.from_bytes(hashlib.sha256(f"sts2train:{purpose}:{int(seed)}".encode()).digest()[:8], "little") >> 1
+
+
+def seed_rngs(cfg: TrainConfig) -> np.random.Generator:
+    """Seed the trainer's sampling RNGs; -> the numpy minibatch RNG. legacy: ``torch.manual_seed(seed)`` (the model
+    init draws from the same stream first) and ``default_rng(seed)``; decoupled: torch (every device) from
+    ``sample_seed`` ("sample") and numpy from ``sample_seed`` ("shuffle"). The model init does not touch them
+    (``init_rng``)."""
+    if cfg.rng_scheme == "legacy":
+        torch.manual_seed(cfg.seed)
+        return np.random.default_rng(cfg.seed)
+    torch.manual_seed(purpose_seed(seed_of(cfg, "sample_seed"), "sample"))
+    return np.random.default_rng(purpose_seed(seed_of(cfg, "sample_seed"), "shuffle"))
+
+
+@contextlib.contextmanager
+def init_rng(cfg: TrainConfig):
+    """Context of the model construction. legacy: nothing (the init consumes the global torch stream seeded by
+    ``seed_rngs``); decoupled: its own CPU generator state from ``init_seed`` ("init"), the global CPU state restored
+    afterwards and no accelerator RNG touched (the model is built on the CPU), so the init weights depend on
+    ``init_seed`` only and the sampling stream does not depend on it."""
+    if cfg.rng_scheme == "legacy":
+        yield
+        return
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(purpose_seed(seed_of(cfg, "init_seed"), "init"))
+        yield
 
 
 def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
@@ -278,11 +390,12 @@ def make_checkpoint(model: Policy, opt: torch.optim.Optimizer, spec: ModelSpec, 
 
 
 def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | None, rng: np.random.Generator | None,
-                       device: torch.device, lr: float | None = None, widened=None) -> None:
+                       device: torch.device, lr: float | None = None, widened=None) -> dict | None:
     """Load weights (strict: parameter shapes must match), optimizer state (moved to the parameters' device) and RNG
     states from a `make_checkpoint` dict. `widened` (enum names, `features.check_spec_compat`'s "widened_enums"): the
     model was built with those enums grown by appended members; their embedding tables take the checkpoint's rows and
-    zero rows for the new members (`model.widen_state_dict`), and so do those tables' Adam moments (steps kept)."""
+    zero rows for the new members (`model.widen_state_dict`), and so do those tables' Adam moments (steps kept).
+    Returns what happened to each RNG state (`_set_rng_state`; None without `rng`)."""
     widened = sorted(widened or ())
     model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     if opt is not None and ck.get("optimizer"):
@@ -292,7 +405,8 @@ def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | Non
             for g in opt.param_groups:
                 g["lr"] = lr
     if rng is not None:
-        _set_rng_state(rng, ck.get("rng"), device)
+        return _set_rng_state(rng, ck.get("rng"), device)
+    return None
 
 
 def widen_optimizer_state(opt_state: dict, ck_model: dict, model: Policy, widened) -> dict:
@@ -330,17 +444,33 @@ def _rng_state(rng: np.random.Generator, device: torch.device) -> dict:
     return st
 
 
-def _set_rng_state(rng: np.random.Generator, st: dict, device: torch.device) -> None:
+def _set_rng_state(rng: np.random.Generator, st: dict, device: torch.device) -> dict:
+    """Write a checkpoint's RNG states back; -> {"numpy", "torch", "cuda"[, "mps"]: "ok" | "failed" | "absent"}
+    (absent: not in the checkpoint, or not this device's; a failed accelerator state is reported, not raised)."""
+    out = {"numpy": "absent", "torch": "absent", "cuda": "absent"}
     if not st:
-        return
-    rng.bit_generator.state = st["numpy"]
-    torch.set_rng_state(st["torch"])
+        return out
+    if "numpy" in st:
+        rng.bit_generator.state = st["numpy"]
+        out["numpy"] = "ok"
+    if "torch" in st:
+        torch.set_rng_state(st["torch"])
+        out["torch"] = "ok"
     if device.type == "cuda" and "cuda" in st:
-        with contextlib.suppress(Exception):
+        try:
             torch.cuda.set_rng_state_all(st["cuda"])
-    if device.type == "mps" and "mps" in st:
-        with contextlib.suppress(Exception):
-            torch.mps.set_rng_state(st["mps"])
+            out["cuda"] = "ok"
+        except Exception:
+            out["cuda"] = "failed"
+    if device.type == "mps":
+        out["mps"] = "absent"
+        if "mps" in st:
+            try:
+                torch.mps.set_rng_state(st["mps"])
+                out["mps"] = "ok"
+            except Exception:
+                out["mps"] = "failed"
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ env / device
@@ -348,11 +478,18 @@ def _set_rng_state(rng: np.random.Generator, st: dict, device: torch.device) -> 
 
 def env_kwargs(cfg: TrainConfig, seed_text: str, env_cls=VecEnv) -> dict:
     """VecEnv keyword arguments; `floor_step_cap` only when set, and an error if this VecEnv does not take it. With
-    `start_saves` the pool starts empty: `startpool.start_pool_from_config` adds the fresh and save entries."""
-    pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension,
-                    count=0 if uses_start_saves(cfg) else cfg.pool, seed_prefix=f"TRAIN{cfg.seed}")
-    kw = dict(threads=cfg.threads or os.cpu_count() or 8, step_cap=cfg.step_cap, auto_reset=True, seed_text=seed_text,
-              pool=pool, pool_cache=max(4096, cfg.pool))
+    `start_saves` the pool starts empty: `startpool.start_pool_from_config` adds the fresh and save entries. Stream
+    mode: an empty pool and no auto-reset (`seedstream.StreamEnv` starts every episode), a template cache for the
+    lookahead."""
+    if getattr(cfg, "start_mode", "pool") == "stream":
+        kw = dict(threads=cfg.threads or os.cpu_count() or 8, step_cap=cfg.step_cap, auto_reset=False,
+                  seed_text=seed_text, pool=None,
+                  pool_cache=max(4096, 2 * max(lookahead_of(cfg), max_lookahead(cfg.envs)) + 64))
+    else:
+        pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension,
+                        count=0 if uses_start_saves(cfg) else cfg.pool, seed_prefix=f"TRAIN{seed_of(cfg, 'env_seed')}")
+        kw = dict(threads=cfg.threads or os.cpu_count() or 8, step_cap=cfg.step_cap, auto_reset=True,
+                  seed_text=seed_text, pool=pool, pool_cache=max(4096, cfg.pool))
     if cfg.floor_step_cap is not None:
         if "floor_step_cap" not in inspect.signature(env_cls.__init__).parameters:
             raise ValueError("floor_step_cap is set but this sts2vec VecEnv has no floor_step_cap parameter "
@@ -775,10 +912,24 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
 # ------------------------------------------------------------------------------------------------ training
 
 
-def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None) -> dict:
-    """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`."""
+def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None,
+          given: dict | None = None, episode_hooks=()) -> dict:
+    """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`;
+    `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
+    callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
+
+    Before anything is created: an eval seed set with games of a frozen blind set is refused unless
+    ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
+    game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
     session_start = time.monotonic()
     run = Path(cfg.out)
+    blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
+                  if cfg.eval_every else None)
+    guard = IsolationGuard.from_seedsets(extra=[cfg.eval_seedset] if cfg.eval_every else ())
+    if cfg.start_mode == "pool":
+        isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
+    else:
+        isolation = {**guard.record(), "mode": "stream", "collisions_skipped": None, "refused": False}
     run.mkdir(parents=True, exist_ok=True)
     device = pick_device(cfg.device)
     if device.type == "mps":
@@ -791,11 +942,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
     static = use_static_rows(cfg)
-    torch.manual_seed(cfg.seed)
-    rng = np.random.default_rng(cfg.seed)
+    rng = seed_rngs(cfg)                # legacy: torch.manual_seed(seed) + default_rng(seed), as before
 
     c = dict(updates=0, env_steps=0, episodes=0, wins=0, sim_error=0, content_gap=0, illegal=0, overflow_cand=0,
-             floor_stall=0, wall_s=0.0, sessions=0)
+             floor_stall=0, wall_s=0.0, sessions=0, starts=0, dropped=0)
     best_eval = last_eval = None
     if resume is not None:
         c.update({k: v for k, v in (resume.get("counters") or {}).items() if k in c})
@@ -805,11 +955,23 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     c["sessions"] += 1
     upd0 = c["updates"]
 
-    seed_text = f"PPO{cfg.seed}" if resume is None else f"PPO{cfg.seed}R{upd0}"
+    if cfg.start_mode == "stream":      # the env's own start sequence is never used (no auto-reset, empty pool)
+        seed_text = f"SPENV{seed_of(cfg, 'env_seed')}"
+    else:                               # the slots' start offsets into the fixed pool (VecEnv slot seeds)
+        start_seed = seed_of(cfg, "start_seed")
+        seed_text = f"PPO{start_seed}" if resume is None else f"PPO{start_seed}R{upd0}"
     compat = resume_compat(resume, log) if resume is not None else None   # raises SpecMismatch
     env = VecEnv(cfg.envs, **env_kwargs(cfg, seed_text))
     old_handlers: dict = {}
     try:
+        if cfg.start_mode == "stream":
+            stream = SeedStream(stream_prefix(cfg), cfg.characters, cfg.ascension, guard=guard,
+                                state=(resume or {}).get("seed_stream"))
+            env = StreamEnv(env, stream, lookahead=lookahead_of(cfg), prefetch=cfg.stream_prefetch,
+                            adaptive=cfg.stream_lookahead is None)
+            if stream.resumed_prefix and stream.resumed_prefix != stream.prefix:
+                log(f"seed stream: prefix {stream.resumed_prefix} -> {stream.prefix}; the counter continues at "
+                    f"{stream.state.next}")
         spec = ModelSpec.from_schema(env.schema)
         bind_spec(spec)
         if compat is not None and compat["library_encoder_version"] != spec.encoder_version:
@@ -817,8 +979,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                f"{compat['library_encoder_version']}")
         floor_cap = effective_floor_step_cap(env)
         starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
+        track = env if cfg.start_mode == "stream" else PoolStarts(env, starts, (resume or {}).get("start_counts"))
+        carried_stream = (resume or {}).get("seed_stream") if cfg.start_mode == "pool" else None
         arch = model_arch(cfg)                             # size knobs + the optional parts that are on
-        model = Policy(spec, **arch)                       # on the CPU until the size guard has passed
+        with init_rng(cfg):                                # decoupled: the init has its own generator (init_seed)
+            model = Policy(spec, **arch)                   # on the CPU until the size guard has passed
+        init_hash = weights_hash(model) if resume is None else None
         model.grad_ckpt = bool(cfg.grad_ckpt)
         n_params = param_count(model)
         act = activation_bytes_per_sample(model, spec, rows=cfg.max_rows)
@@ -835,11 +1001,22 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"({free / 2 ** 30:.1f} of {total / 2 ** 30:.1f} GiB): expect an out-of-memory error; use --amp, "
                     f"--grad-checkpoint or a smaller --minibatch")
         t = time.monotonic()
+        if cfg.start_mode == "stream":
+            env.prime()                                    # the first envs + lookahead stream entries
         warmed = env.pool.warm()
         warm_s = time.monotonic() - t
         log(f"library {env.lib.path} ({env.lib.mode}) {env.lib.version()}; pool warm: {warmed} templates in "
             f"{warm_s:.1f} s; {cfg.envs} envs x {env.threads} threads; floor_step_cap "
             + (f"{floor_cap} (FLOOR_STALL truncation)" if floor_cap else "off"))
+        log(f"seeds: seed {cfg.seed} -> init {cfg.init_seed}, sample {cfg.sample_seed}, env {cfg.env_seed}, start "
+            f"{cfg.start_seed} (rng scheme {cfg.rng_scheme}); start mode {cfg.start_mode}"
+            + (f": seed stream {env.stream.prefix}-<character>-<n> from n = {env.stream.state.next} (lookahead "
+               f"{env.lookahead}{' auto' if env.adaptive else ''}, prefetch "
+               f"{'background' if env.prefetch_enabled else 'off' if not env.lookahead else 'sync'}); isolation: "
+               f"the generator skips the {len(guard.by_seed)} run seeds of {len(guard.sets)} holdout sets"
+               if cfg.start_mode == "stream" else
+               f": {isolation['start_seeds_checked']} pool seeds checked against {len(guard.sets)} holdout sets "
+               f"({len(guard.by_seed)} run seeds): no collision"))
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
@@ -869,16 +1046,32 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if cfg.baseline_steps and resume is None:
             t = time.monotonic()
             tracker = ProgressTracker(spec.aux_fields, env.schema["last_episode"].fields, cfg.envs, cfg.ascension)
-            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1, starts)
+            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1 if cfg.rng_scheme == "legacy"
+                                       else purpose_seed(seed_of(cfg, "sample_seed"), "baseline"), starts)
             baseline["seconds"] = round(time.monotonic() - t, 2)
             log(f"random baseline ({cfg.baseline_steps} steps x {cfg.envs}): {baseline}")
 
         model = model.to(device)
         opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
+        rng_restored = None
+        best_src = None
         if resume is not None:
-            restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr, widened=compat["widened_enums"])
+            rng_restored = restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr,
+                                              widened=compat["widened_enums"])
+            ck_cfg = resume.get("config") or {}
+            ck_sample = ck_cfg.get("sample_seed")
+            ck_sample = int(ck_cfg.get("seed", 0) or 0) if ck_sample is None else int(ck_sample)
+            if int(cfg.sample_seed) != ck_sample:          # a fork with a new sampling seed: re-seed, not restore
+                torch.manual_seed(purpose_seed(cfg.sample_seed, "sample"))
+                rng.bit_generator.state = np.random.default_rng(
+                    purpose_seed(cfg.sample_seed, "shuffle")).bit_generator.state
+                rng_restored = {k: f"reseeded (sample_seed {ck_sample} -> {cfg.sample_seed})" for k in rng_restored}
+            best_eval, last_eval, best_src = evals_history(resume_path, run, upd0, cfg.eval_seedset, best_eval,
+                                                           last_eval)
             log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})"
-                + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else ""))
+                + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else "")
+                + f"; rng {rng_restored}; best_eval from {best_src['source']}")
+        adam_step = optimizer_step(opt)
         updater = MinibatchUpdater(model, opt, cfg, amp, device)
         runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
         tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
@@ -895,6 +1088,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         ckpts = CheckpointManager(run, cfg.keep_ckpts)
         metrics = JsonlWriter(run / "metrics.jsonl", keep_upto=upd0)
         evals = JsonlWriter(run / "evals.jsonl", keep_upto=upd0)
+        episodes_log = EpisodeLog(run / "episodes.jsonl", keep_upto=upd0, enabled=cfg.episodes_log)
+        dropped_now = 0
+        if resume is not None:          # the checkpoint's in-flight episodes never finish: logged, never reused
+            infl = resume.get("inflight")
+            if infl is not None:
+                rows = [{"slot": a, "n": b, "seed_text": t, "steps": k} for a, b, t, k in
+                        zip(infl["slot"], infl["n"], infl["seed_text"], infl["steps"])]
+                episodes_log.write_special(upd0, c["sessions"], rows, "dropped")
+                dropped_now = len(rows)
+            else:                       # a checkpoint from before the in-flight record: every slot was running
+                dropped_now = int((resume.get("config") or {}).get("envs", 0) or 0)
+            c["dropped"] += dropped_now
         last_ckpt_path = resume_path if resume is not None else None
         last_ckpt_upd = upd0 if resume is not None else -1
         if cfg.eval_every:
@@ -918,7 +1123,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                          "bundle": os.environ.get("STS2TRAIN_BUNDLE"), "encoder_version": spec.encoder_version,
                          "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None,
                          "model_inputs": compat["model_inputs"] if compat else None,
-                         "widened_enums": compat["widened_enums"] if compat else None})
+                         "widened_enums": compat["widened_enums"] if compat else None,
+                         "given": given, "config_diff": config_diff(resume, cfg),
+                         "seeds": seeds_record(cfg), "rng_restored": rng_restored, "adam_step": adam_step,
+                         "init_weights_hash": init_hash, "start_mode": cfg.start_mode,
+                         "seed_stream_next": env.stream.state.next if cfg.start_mode == "stream" else None,
+                         "dropped_at_start": dropped_now, "best_eval_source": best_src})
         from sts2vec.evaluate import repo_sha
 
         atomic_write_json(run / "config.json", {
@@ -928,7 +1138,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "library": {"path": str(env.lib.path), "mode": env.lib.mode, "version": env.lib.version()},
             "env": {"step_cap": cfg.step_cap, "floor_step_cap": floor_cap,
                     "floor_step_cap_supported": bool(getattr(env.schema, "supports_floor_step_cap", False))},
-            "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None})
+            "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None,
+            "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
+            "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
+            else isolation, "seed_stream": track.record(), "blind_eval": blind_eval})
 
         stop = {"signal": None}
 
@@ -944,8 +1157,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
         def save(upd: int) -> Path:
             nonlocal last_ckpt_path, last_ckpt_upd
+            if cfg.start_mode == "stream":
+                extra = {"seed_stream": track.state_dict()}
+            else:                       # a pool session keeps a stream's counter for a later stream session
+                extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))
             state = make_checkpoint(model, opt, spec, cfg, dict(c, updates=upd), rng, device, best_eval=best_eval,
-                                    last_eval=last_eval)
+                                    last_eval=last_eval, inflight=track.inflight(), **extra)
             last_ckpt_path = ckpts.save(state, upd)
             last_ckpt_upd = upd
             return last_ckpt_path
@@ -960,10 +1177,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             t = time.monotonic()
             model.eval()
             try:
+                if blind_eval is not None:      # allowed (--allow-blind --purpose): every access is logged
+                    check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose,
+                                     log_dir=run, weights_hash=weights_hash(model))
                 rep = evaluate_model(model, spec, cfg.eval_seedset, str(out), weights_hash=weights_hash(model),
                                      checkpoint=str(last_ckpt_path), threads=cfg.eval_threads or min(os.cpu_count() or 4, 8),
                                      device=str(device), loop_breaker=cfg.loop_breaker,
-                                     loop_breaker_k=cfg.loop_breaker_k, log=lambda m: None)
+                                     loop_breaker_k=cfg.loop_breaker_k, log=lambda m: None,
+                                     allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose)
             except Exception as e:  # an eval failure must not end a multi-hour run
                 log(f"eval at update {upd} failed: {type(e).__name__}: {e}")
                 row = {"update": upd, "env_steps": c["env_steps"], "seedset": cfg.eval_seedset,
@@ -1024,9 +1245,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 "last_checkpoint_update": last_ckpt_upd if last_ckpt_upd >= 0 else None,
                 "objective": cfg.objective, "params": n_params, "device": str(device), "amp": amp,
                 "max_hours": cfg.max_hours, "max_updates": cfg.max_updates, "max_env_steps": cfg.max_env_steps,
+                "start_mode": cfg.start_mode, "starts": c["starts"], "dropped_total": c["dropped"], **track.metrics(),
                 "pid": os.getpid(), "host": socket.gethostname(), "updated_at": _now_iso()})
 
+        hooks_on = bool(EPISODE_HOOKS) or bool(episode_hooks)
         obs = env.reset()
+        track.count_starts(None, env.info())           # pool mode: the reset's starts (stream: counted itself)
         rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
         r_obj = None
         if shaper is not None:
@@ -1092,6 +1316,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 if breaker is not None:             # auto-reset slots start new episodes
                     breaker.reset(done)
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                if done.any():
+                    track.count_starts(done, info)          # pool mode: the auto-reset starts
+                if fin:
+                    track.annotate(fin)                     # seed_text / seed_n of each ended episode
+                    if hooks_on:
+                        for e in fin:
+                            e["update"], e["t"] = upd + 1, t
+                            e["fields"] = EPISODE_HOOKS.fields(e, episode_hooks)
                 if aux_tg is not None:
                     aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
                 if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
@@ -1141,6 +1373,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 gae = delta + cfg.gamma * cfg.lam * nonterm * gae
                 adv[t] = gae
             ret = adv + store.values
+
+            if cfg.start_mode == "stream":
+                env.prefetch()                      # the lookahead's templates, in a thread while the update runs
 
             # PPO update: minibatches gathered on the device; every epoch's minibatch indices go up in one copy, row
             # cuts come from host counts and the statistics come back once, so the minibatches queue without a sync
@@ -1192,6 +1427,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             c["illegal"] += il_n
             c["overflow_cand"] += over_n
             c["floor_stall"] += fs_n
+            track.wait_prefetch()               # stream: the update's background prefetch is done (or joined here)
+            tu = track.pop_update()
+            c["starts"] += tu["starts"]
             es = _episode_stats(ep_this)
             ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
             lb_st = {}
@@ -1235,9 +1473,20 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
+                   "ent_coef": cfg.ent_coef, "vf_coef": cfg.vf_coef, "clip": cfg.clip, "session": c["sessions"],
+                   "session_update": upd - upd0, "starts_update": tu["starts"], "starts_total": c["starts"],
+                   **track.metrics(), "dropped_total": c["dropped"],
+                   **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
+                       "t_prefetch_s": round(tu["t_prefetch"], 3), "t_prefetch_wait_s": round(tu["t_prefetch_wait"], 3)}
+                      if cfg.start_mode == "stream" else {}),
                    **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **lb_st,
                    **gpu_memory(device)}
             metrics.write(row)
+            episodes_log.write_update(upd, c["sessions"], ep_this)
+            failed_starts = track.pop_failed()
+            if failed_starts:
+                episodes_log.write_special(upd, c["sessions"], failed_starts, "start_failed")
+                log(f"update {upd}: {len(failed_starts)} stream starts failed (seeds consumed): {failed_starts[:3]}")
             last_sps = round(sps, 1)
             write_status(upd, state)
             if upd == upd0 + 1 or upd % max(cfg.log_every, 1) == 0:
@@ -1267,9 +1516,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             run_eval(upd)
             totals_t["eval_s"] += time.monotonic() - t
         state = "stopped" if stop["signal"] else "finished"
+        track.wait_prefetch()
         write_status(upd, state, reason)
         metrics.close()
         evals.close()
+        episodes_log.close()
+        inflight_end = track.inflight()
         train_s = time.monotonic() - train_start
         summary = {
             "config": config_dict(cfg), "objective": cfg.objective, "encoder_version": spec.encoder_version,
@@ -1289,6 +1541,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "start_pool": starts.summary(brief=True) if starts else None, "compile": cfg.compile,
             "static_rows": static, "compile_check": compile_check or None,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
+            "start_mode": cfg.start_mode, "seeds": seeds_record(cfg), "starts": c["starts"],
+            "dropped_total": c["dropped"], "inflight_at_end": len(inflight_end["slot"]),
+            "seed_stream": {**track.record(), **track.metrics(),
+                            **({"timing_s": {k: round(v, 3) if isinstance(v, float) else v
+                                             for k, v in env.totals.items()}} if cfg.start_mode == "stream" else {})},
+            "isolation": {k: v for k, v in (dict(isolation, collisions_skipped=env.stream.state.skipped)
+                                            if cfg.start_mode == "stream" else isolation).items()
+                          if k not in ("checked_sets", "exposed")},
+            "episodes_log_rows": episodes_log.rows,
         }
         if breaker is not None:
             t_lb = breaker.totals()
@@ -1311,6 +1572,55 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             with contextlib.suppress(Exception):
                 signal.signal(sg, h)
         env.close()
+
+
+def seeds_record(cfg: TrainConfig) -> dict:
+    """The resolved seeds of a config (config.json ``seeds``, ``sessions[]``, summary.json)."""
+    return {"seed": int(cfg.seed), **{k: seed_of(cfg, k) for k in SEED_FIELDS}, "rng_scheme": cfg.rng_scheme,
+            "seed_stream_prefix": stream_prefix(cfg) if cfg.start_mode == "stream" else None,
+            "pool_family": f"TRAIN{seed_of(cfg, 'env_seed')}" if cfg.start_mode == "pool" else None}
+
+
+def config_diff(resume: dict | None, cfg: TrainConfig) -> dict | None:
+    """{key: [checkpoint value, this session's value]} for the config keys a resume changed (None for a fresh run)."""
+    if resume is None:
+        return None
+    old = resume.get("config") or {}
+    new = config_dict(cfg)
+    return {k: [old.get(k), v] for k, v in new.items() if old.get(k) != v}
+
+
+def optimizer_step(opt: torch.optim.Optimizer) -> int:
+    """Adam's step count (the largest over the parameters; 0 for a fresh optimizer)."""
+    steps = [st.get("step", 0) for st in opt.state.values()]
+    return int(max((float(x) for x in steps), default=0))
+
+
+def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | None,
+                  last: dict | None) -> tuple[dict | None, dict | None, dict]:
+    """best_eval / last_eval of a resume, recomputed from the evals.jsonl of the checkpoint's own run directory (the
+    rows up to the checkpoint's update): a checkpoint is written before the same update's eval, so its own
+    best_eval / last_eval miss that eval (Q9). The best is the clean row (``is_new_best``) with the highest progress on
+    this session's eval seed set (another set's numbers are not comparable: none then); without that file the
+    checkpoint's values stay. -> (best, last, {"source", "rows", "best_update", "checkpoint_best_update"})."""
+    p = Path(resume_path) if resume_path else None
+    src = None
+    if p is not None:
+        src = p.parent.parent if p.parent.name == "checkpoints" else p.parent
+    rec = {"source": "checkpoint", "rows": 0, "best_update": (best or {}).get("update"),
+           "checkpoint_best_update": (best or {}).get("update"), "evals": None}
+    f = None if src is None else src / "evals.jsonl"
+    if f is None or not f.exists():
+        return best, last, rec
+    rows = [r for r in read_jsonl(f) if int(r.get("update", 0) or 0) <= upd0]
+    new_best = None
+    for r in rows:
+        if r.get("seedset") == seedset and is_new_best(r, new_best):
+            new_best = r
+    new_last = rows[-1] if rows else last
+    rec.update(source="same run directory" if src.resolve() == run.resolve() else "source run directory",
+               rows=len(rows), best_update=(new_best or {}).get("update"), evals=str(f))
+    return new_best, new_last, rec
 
 
 def shaping_stats(rewards: np.ndarray, r_obj: np.ndarray | None, idx_all: np.ndarray, eps: list[dict],

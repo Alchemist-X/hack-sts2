@@ -23,6 +23,9 @@ uv run --project sim/tools/train sts2train train --preset large --device cuda --
 # resume: newest checkpoint of the run dir; the checkpoint's config is kept, flags given here override it
 uv run --project sim/tools/train sts2train train --resume auto --out tmp/train/run1 --max-hours 6
 uv run --project sim/tools/train sts2train train --resume tmp/train/run1/checkpoints/ckpt-0000500.pt
+# fresh starts from a never-repeating seed stream (SP<env-seed>-<CHARACTER>-<n>), decoupled seeds; see "Start modes"
+uv run --project sim/tools/train sts2train train --start-mode stream --characters SILENT --ascension 10 \
+    --init-seed 1 --sample-seed 1 --env-seed 0 --preset large --device cuda --amp --envs 2048 --out tmp/train/w0
 
 # protocol v0.2 NN entry point: greedy policy on a frozen seed set -> run dir + report.md (same format as sts2eval);
 # exit 1 when a game's history does not replay (the replay audit), like sts2vec eval
@@ -52,15 +55,21 @@ uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset si
 | `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker") |
 | `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; the greedy policy runs with the loop breaker (`--loop-breaker off` turns it off) and the row carries `loop_breaker`, `loop_breaks`, `no_op_actions`, `cycle_revisits`; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
-| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save) |
-| `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval) |
+| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`, and since 2026-11-04 `given` (the command line's explicit flags), `config_diff` ({key: [checkpoint, this session]}), `seeds`, `rng_restored` ({numpy, torch, cuda: ok / failed / absent / reseeded}), `adam_step`, `init_weights_hash` (fresh runs), `start_mode`, `seed_stream_next`, `dropped_at_start`, `best_eval_source`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save); `start_mode`, `seeds`, `isolation` (checked holdout sets, collisions), `seed_stream` (see "Start modes, seeds and isolation") |
+| `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind` + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
+| `blind-access.jsonl` | one row per allowed evaluation on a frozen blind seed set (`--allow-blind --purpose`): utc, weights hash, seed set, purpose |
+| `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval, `seeds`, `starts`, `dropped_total`, `inflight_at_end`, `seed_stream` with the stream's timing, `isolation`) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
 
 Stops: `--max-hours` (this session's wall clock; the loop stops before an update that would overrun it),
 `--max-updates` / `--max-env-steps` (totals across resumes), or SIGINT / SIGTERM (finish the update, checkpoint,
 exit; a second SIGINT aborts). A resumed session restores weights, optimizer, counters and RNG states; the env restarts
-from fresh episodes (new start sequence), `metrics.jsonl` / `evals.jsonl` drop rows past the checkpoint. A fresh run
-into a directory that already holds checkpoints is refused.
+from fresh episodes (pool mode: a new start sequence; stream mode: the stream continues at the checkpoint's counter),
+`metrics.jsonl` / `evals.jsonl` / `episodes.jsonl` drop rows past the checkpoint, and the checkpoint's in-flight
+episodes are logged as `dropped`. `best_eval` / `last_eval` are recomputed from the checkpoint's run directory's
+`evals.jsonl` (rows up to the checkpoint's update, the session's eval seed set): a checkpoint is written before its
+own update's eval, so the values stored in it lag by one eval (Q9); a fork into a new directory reads the source run's
+file. A fresh run into a directory that already holds checkpoints is refused.
 
 Resume across library versions: a checkpoint resumes on a library with another `encoder_version` when the model's
 inputs are identical (`features.check_spec_compat`): shape and column map of each of the 27 buffers it reads, the sizes
@@ -224,6 +233,74 @@ was trained with (other values are refused before the env starts, like the size 
 after all others, so a model with a flag on starts every other parameter from the same initial values as without it.
 `--acq-shaping` and the coefficients are objective settings and may change on resume. `bench-update --deck-counts
 --aux-heads` times the flagged model / loss.
+
+## Start modes, seeds and isolation (`--start-mode`, `--init-seed` / `--sample-seed` / `--env-seed`, blind sets)
+
+**`--start-mode stream`** (`sts2train.seedstream`; the 2026-11-04 mainline): every episode of every slot starts from a
+seed that no episode of the run started from before, `<prefix>-<CHARACTER>-<n>` (`--seed-stream-prefix`, default
+`SP<env-seed>`, `[A-Z][A-Z0-9_]{0,23}`, `TRAIN*` refused; character `characters[n % len]`; `--ascension`), `n` from a
+counter that the checkpoint stores (`seed_stream`: `next`, `started`, `failed`, `skipped`) and a resume continues; the
+episodes in flight at the checkpoint are logged as `dropped` rows by the resumed session and never restarted.
+`--start-saves` must be none, `--baseline-steps` 0. The VecEnv runs with `auto_reset=False` and an empty pool, so it
+never starts an episode by itself: after each step the ended slots are restarted with `restore_many` onto the next
+stream entries, which are released at once (the step's reward / terminated / truncated / status are copied first, a
+restore writes RESET signals; `last_episode` keeps describing the ended episode). Slot i's k-th episode therefore has
+`episode_id = (k - 1) * N + i + 1` (checked by `tests/test_seed_stream.py`). Assignment is FIFO in slot order, no RNG.
+Lookahead (`--stream-lookahead`, default auto = `max(64, 2 x envs)`, grown to 1.25 x an update's starts): entries
+generated ahead whose `RunSim.NewRun` templates `pool.warm()` creates once per update, in a background thread during
+the PPO update (`--stream-prefetch`, default) or synchronously (`--no-stream-prefetch`). CPU smoke (16 envs x 2
+threads, rollout 16, Silent A10, 60 updates, random-init policy, ~80 steps per episode): pool mode 8.8-9.9 ms of env
+time per update; stream without lookahead 57 ms (+478 %, 84 % of it NewRun, ~15 ms per start); with the auto
+lookahead and the background prefetch 9.8-10.4 ms (restarts 3-4 % of env time) plus ~33 ms of NewRun per update in the
+prefetch thread, hidden behind the ~150 ms update; synchronous prefetch costs those ~32 ms on the critical path.
+Two forks of one checkpoint (e.g. A/B arms) continue the same stream (common random numbers); `--env-seed` /
+`--seed-stream-prefix` give a fork its own family. Metrics: `starts_update`, `starts_total`, `seeds_used_total`,
+`seed_stream_next`, `dropped_total`, `stream_skipped_total`, `stream_failed_total`, `stream_start_failed`,
+`stream_lookahead`, `t_stream_s` (restarts inside the steps; the first update also holds the reset's),
+`t_prefetch_s` (thread time), `t_prefetch_wait_s` (time the trainer waited for it).
+
+**`--start-mode pool`** (default; legacy, bit for bit the earlier trainer): the fixed pool of `--pool` fresh seeds
+`TRAIN<env-seed>-<CHARACTER>-<i>` (+ `--start-saves`), slot offsets from `PPO<start-seed>[R<update>]`. Metrics add
+`starts_update` / `starts_total`, `seeds_used_total` (pool entries started at least once; the checkpoint keeps the
+per-entry `start_counts` while the pool size is unchanged) and `dropped_total`.
+
+**Seeds** (`--seed` derives the four when they are not given; the resolved values are in config.json `seeds`, the
+checkpoint's config and `sessions[]`): `--init-seed` (model initialisation: its own CPU generator state, the global
+state restored afterwards), `--sample-seed` (action sampling, torch on every device, and the minibatch shuffles,
+numpy), `--env-seed` (the stream prefix `SP<env-seed>` / the pool family `TRAIN<env-seed>`), `--start-seed` (pool mode
+only: slot offsets, save copies). Scheme `rng_scheme`: `legacy` for pool mode without `--init-seed` / `--sample-seed`
+(one torch RNG seeded with `--seed` serves the init and then the sampling, as before), else `decoupled` (each use gets
+a sha256-derived seed of its own: `ppo.purpose_seed`; changing `--sample-seed` leaves the initial weights unchanged,
+changing `--init-seed` leaves the sampling streams unchanged; config.json `sessions[0].init_weights_hash` records the
+initial weights). On a resume the checkpoint's seeds are kept and the RNG states restored; `--init-seed` must equal
+the checkpoint's; a different `--sample-seed` re-seeds the sampling streams (`rng_restored` = `reseeded`); an old
+checkpoint without these fields ran `legacy` with init / sample seed = its `--seed`.
+
+**Isolation** (`sts2train.isolation`): every frozen seed set under `sim/tools/eval/seedsets` (+ `$STS2VEC_SEEDSETS`)
+with a role in target / dev / test / dev2 / ab / blind / official / smoke, plus the run's eval seed set, are holdouts,
+compared by the game's 64-bit run seed (`sts2vec.protocol.run_seed` = `RngSeeds.RunSeed`: XxHash64 of the UTF-8 text,
+the legacy 32-bit hash for `old*` texts) and by (character, seed text, ascension). The stream generator skips a
+colliding index (counted); pool mode refuses to start (exit 2, before the run directory exists) when the pool holds a
+holdout game: `--seed 0 --pool 4608` would swallow `silent-a10-ab-v1` (TRAIN0-SILENT-4096..4607, committed here from
+train/harvest a570373 with the `TRAIN<n>-<CHARACTER>-<i>` seed form). `silent-a10-test-v1` is now role `dev2` (exposed by
+selection and analysis, Q3 audit; the checksum covers ascension / content / games only, so its sha256 is unchanged).
+
+**Blind sets** (role `blind`; `silent-a10-blind-v1` = `silent-a10-blind-s256`, B1A10SI001..256, frozen 2026-11-04; no
+text and no run seed in common with any other set, the TRAIN0 pools or the start of the SP stream family): every
+evaluation (`sts2vec.evaluate.evaluate`, so `sts2train eval`, report-card / pack incl. their baselines, the trainer's
+periodic eval, `sts2vec eval`, the lookahead) refuses a seed set holding a blind game unless `--allow-blind --purpose
+"<text>"` is given, and then appends {utc, weights_hash, seedset, purpose} to `<out>/blind-access.jsonl` (the trainer
+and report-card also to their own directory). Not evaluated while a scheme is chosen.
+
+**Episode hooks** (`sts2train.episodes.EPISODE_HOOKS`; `train(..., episode_hooks=[...])` for one call): a callable
+`fn(episode) -> dict | None` runs once per finished episode in the rollout step it ended in (after
+`EpisodeRewards.step`), gets the finished-episode dict (slot, win, floor, act, steps, end_kind, progress, return, start
+fields, `seed_text`, `seed_n`, `update`, `t`) and returns fields for that episode's `episodes.jsonl` row:
+
+```python
+from sts2train.episodes import EPISODE_HOOKS
+EPISODE_HOOKS.register("ui_cycles", lambda e: {"ui_cycles": monitor.pop_slot(e["slot"])})   # e.g. a loop monitor
+```
 
 ## Start saves (`--start-saves DIR --save-mix R`)
 

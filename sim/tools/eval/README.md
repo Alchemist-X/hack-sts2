@@ -63,7 +63,12 @@ transcripts (`act`/`floor` of each step and the act-map grid of Map-phase `obs_t
 
 Seed sets: `seedsets/*.json` carry `id`, `version`, `role`, `frozen` and `sha256` (sha256 of the compact sorted-key JSON
 of `{ascension, content, games[{character, seed}]}`); `seedsets.load` rejects a file whose content no longer matches its
-checksum. Frozen sets never change: publish a new id instead.
+checksum. Frozen sets never change: publish a new id instead. The role is metadata outside the checksum: on
+2026-11-04 `silent-a10-test-v1` (H1A10SI001..100) went from `test` to `dev2` (it was seen next to every dev-128
+selection; Q3 audit) with its sha256 unchanged. Roles in use: `official`, `smoke`, `target`, `dev`, `dev2`, `ab`
+(`silent-a10-ab-v1`, the training generator's TRAIN0-SILENT-4096..4607, sim-only), `blind` (`silent-a10-blind-v1`,
+B1A10SI001..256: never evaluated while a scheme is chosen; the sim evaluators refuse it without `--allow-blind
+--purpose`, which is logged). Training refuses or skips every game of these sets (`sim/tools/train/sts2train/isolation.py`).
 
 Parity check of the compact mode against a live server (every id, number and text of the server text must
 appear in run context + step text; run-context blocks must be byte-identical while their inputs are):
