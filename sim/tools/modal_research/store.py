@@ -342,7 +342,7 @@ class Store:
 
     def reserve_access_probe(self, key, decision_id, category, reserve_usd, seconds, *, prepare_only=False,
                              authorized_jobs=None, authorized_event=None, isolated_gpu_namespace=None,
-                             billing_vendor=None, billing_reference=None):
+                             billing_vendor=None, billing_reference=None, worker_seconds=None):
         identifier(key)
         identifier(decision_id)
         identifier(category)
@@ -351,6 +351,8 @@ class Store:
             "env_cpu_validation": (10, 600), "gpu_smoke": (200, 1200),
             "runtime_gpu_acceptance": (200, 1200), "runtime_research_acceptance": (200, 1200),
         }.get(category, (100, 180))
+        if category == "gpu_smoke" and worker_seconds is not None:
+            max_reserve = 250
         if not 0 < reserve <= max_reserve or type(seconds) is not int or not 0 < seconds <= max_seconds:
             raise ValueError("access probe exceeds local authorization envelope")
         payload = {"decision_id": decision_id, "category": category, "seconds": seconds, "retry_limit": 0}
@@ -358,6 +360,12 @@ class Store:
             if category != "gpu_smoke" or isolated_gpu_namespace != self.isolated_smoke_namespace(key):
                 raise ValueError("external GPU scope must match the dedicated immutable smoke namespace")
             payload["isolated_gpu_namespace"] = isolated_gpu_namespace
+        if worker_seconds is not None:
+            if (category != "gpu_smoke" or isolated_gpu_namespace is None
+                    or reserve != 250 or type(worker_seconds) is not int or not 300 < worker_seconds <= 600
+                    or seconds < worker_seconds + 80):
+                raise ValueError("extended worker duration requires an isolated bounded GPU probe")
+            payload["worker_seconds"] = worker_seconds
         if (billing_vendor is None) != (billing_reference is None):
             raise ValueError("explicit billing vendor requires a verification reference")
         if category == "runtime_gpu_acceptance":
@@ -438,7 +446,10 @@ class Store:
                 raise ValueError("GPU smoke requires its own operational reservation")
             payload = json.loads(row["payload"])
             scope = payload.get("isolated_gpu_namespace")
+            worker_seconds = payload.get("worker_seconds", 300)
             if (binding.get("decision_id", binding.get("task")) != payload["decision_id"]
+                    or binding.get("worker_seconds", 300) != worker_seconds
+                    or ("worker_seconds" in payload and row["reserve"] != 250)
                     or (scope is not None and (binding.get("app"), binding.get("volume")) != (scope, scope))):
                 raise ValueError("GPU packet is outside its authorized decision or namespace")
             previous = db.execute("SELECT payload FROM events WHERE id=?", (f"{key}-stage",)).fetchone()
@@ -452,7 +463,7 @@ class Store:
             spent, reserved = self.ledger(db)
             modal_spent, modal_reserved = self.modal_ledger(db)
             platform = self.platform_headroom(state, modal_spent)
-            minimum_time = 320 if step == "launch" else 380
+            minimum_time = worker_seconds + (20 if step == "launch" else 80)
             if (row["state"] != "external_reserved" or row["deadline"] - now < minimum_time
                     or state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
                     or self.provider_paused(db, "train") or platform is None
@@ -468,8 +479,8 @@ class Store:
                     raise ValueError("launch already attempted, conflicting GPU job, or packet was never staged")
                 db.execute("UPDATE jobs SET submit_started=1,error='gpu_receipt_unknown' WHERE id=?", (key,))
             self.append_event(db, f"{key}-{step}", f"gpu_smoke_{step}",
-                              binding if step == "stage" else {**binding, "worker_deadline": int(now) + 300}, now)
-            return {**dict(row), "worker_deadline": int(now) + 300}
+                              binding if step == "stage" else {**binding, "worker_deadline": int(now) + worker_seconds}, now)
+            return {**dict(row), "worker_deadline": int(now) + worker_seconds, "worker_seconds": worker_seconds}
 
     def gpu_smoke_receipt(self, key, remote_id):
         identifier(remote_id)

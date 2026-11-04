@@ -34,6 +34,7 @@ def main():
     probe.add_argument("--isolated-gpu-namespace")
     probe.add_argument("--billing-vendor", choices=("modal", "non_modal"))
     probe.add_argument("--billing-reference")
+    probe.add_argument("--worker-seconds", type=int)
     classify = commands.add_parser("classify-billing")
     classify.add_argument("--mapping-json", type=json.loads, required=True)
     classify.add_argument("--reference", required=True)
@@ -72,7 +73,8 @@ def main():
                                    prepare_only=args.prepare_only, authorized_jobs=args.child_job,
                                    authorized_event=args.research_event,
                                    isolated_gpu_namespace=args.isolated_gpu_namespace,
-                                   billing_vendor=args.billing_vendor, billing_reference=args.billing_reference)
+                                   billing_vendor=args.billing_vendor, billing_reference=args.billing_reference,
+                                   worker_seconds=args.worker_seconds)
     elif args.command == "classify-billing":
         store.classify_billing(args.mapping_json, args.reference)
     elif args.command == "activate-access-probe":
