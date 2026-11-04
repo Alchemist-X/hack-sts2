@@ -15,8 +15,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import canonical, identifier, integer, verify_seed_isolation
-from .lineage import admit_worker, validate_job
+from .contracts import identifier, integer, verify_seed_isolation
+from .lineage import admit_worker, trainer_config_matches, validate_job
 from .manifests import file_digest
 
 
@@ -207,7 +207,7 @@ def run(job, installation, accepted_checkpoint=None, *, checkpoint_ready=None, s
             "start_mode", "start_saves", "save_mix", "init_seed", "sample_seed", "env_seed", "rng_scheme",
             "bootstrap_time_limits", "rollout_loop_breaker",
         )}
-        if canonical({key: persisted[key] for key in invariants}) != canonical(invariants):
+        if not trainer_config_matches(persisted, invariants):
             raise ValueError("checkpoint trainer configuration differs from the frozen pure configuration")
         optimizer = resume.get("optimizer")
         rng = resume.get("rng")

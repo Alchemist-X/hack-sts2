@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .contracts import DIGEST, canonical, identifier, integer
-from .lineage import artifact_identity, validate_job
+from .lineage import artifact_identity, trainer_config_matches, validate_job
 from .manifests import file_digest, publish, verify
 from .native_worker import result_label
 
@@ -110,7 +110,7 @@ def _check_checkpoint(data, is_tensor, job, seed_range):
         "sample_seed": spec["policy_seed"], "env_seed": spec["env_seed"], "rng_scheme": "decoupled",
         "bootstrap_time_limits": True, "rollout_loop_breaker": False,
     }
-    if canonical({key: config[key] for key in frozen}) != canonical(frozen):
+    if not trainer_config_matches(config, frozen):
         raise ValueError("checkpoint config differs from frozen experiment")
     architecture = data["arch"]
     if any(architecture.get(key, False) != value for key, value in spec["model_config"].items()):

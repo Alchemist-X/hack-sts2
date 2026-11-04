@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import DIGEST, digest, identifier, integer, validate_spec
+from .contracts import DIGEST, PPO_NUMBERS, canonical, digest, identifier, integer, validate_spec
 from .manifests import verify
 
 FROZEN_HASHES = ("code_commit", "image_digest", "engine_hash", "schema_hash", "dependency_hash",
@@ -64,6 +64,18 @@ def validate_job(job):
     if (job.kind == "train" and start >= target) or (job.kind == "eval" and start != target):
         raise ValueError("worker start and target do not match the selected stage")
     return spec
+
+
+def trainer_config_matches(actual, frozen):
+    """The trainer may normalize a frozen numeric PPO value from int to float."""
+    for key, expected in frozen.items():
+        value = actual[key]
+        if key in PPO_NUMBERS:
+            if type(value) not in (int, float) or value != expected:
+                return False
+        elif canonical(value) != canonical(expected):
+            return False
+    return True
 
 
 def artifact_identity(job):

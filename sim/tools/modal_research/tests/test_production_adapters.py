@@ -196,6 +196,9 @@ class ArtifactTest(unittest.TestCase):
             "init_seed": 1, "sample_seed": 2, "env_seed": 3, "rng_scheme": "decoupled",
             "bootstrap_time_limits": True, "rollout_loop_breaker": False,
         }
+        # resolve_config normalizes the operational freeze's integer zero.
+        self.assertIs(type(recipe["cycle_cost"]), int)
+        frozen_config["cycle_cost"] = float(recipe["cycle_cost"])
         record = {
             "format": 2, "env_steps": 1, "updates": 1, "params": 1, "config": frozen_config,
             "spec": {"encoder_version": "enc"}, "encoder_version": "enc", "arch": model,
@@ -212,7 +215,7 @@ class ArtifactTest(unittest.TestCase):
             "inflight": {"slot": [0], "n": [0], "seed_text": ["FIXTURETRAIN-SILENT-0"], "steps": [1]},
         }
         volume = Volume(artifact_root)
-        names = iter(["gen-valid", "gen-invalid"])
+        names = iter(["gen-valid", "gen-changed-recipe", "gen-bool-recipe", "gen-invalid"])
 
         def load(path):
             self.assertNotEqual(path, cp)
@@ -238,6 +241,11 @@ class ArtifactTest(unittest.TestCase):
         (mirror_root / self.job.key / "gen-valid" / "checkpoint.pt").write_text("corrupt")
         with self.assertRaisesRegex(ValueError, "checksum"):
             mirror.ready(self.job, result.reference)
+        for changed in (0.1, False):
+            record["config"]["cycle_cost"] = changed
+            with self.assertRaisesRegex(ValueError, "config differs"):
+                adapter.training(self.claim, cp, scratch, partial=False)
+        record["config"]["cycle_cost"] = 0.0
         record["rng"]["cuda"] = []
         with self.assertRaisesRegex(ValueError, "RNG"):
             adapter.training(self.claim, cp, scratch, partial=False)
