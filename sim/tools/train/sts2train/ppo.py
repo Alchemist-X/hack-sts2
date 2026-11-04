@@ -739,7 +739,15 @@ def _batch_logp_gate(model, args, amp):
     maximum = float(delta.abs().max()) if finite else None
     mean_kl = float((torch.expm1(delta) - delta).mean()) if finite else None
     finite = finite and np.isfinite(mean_kl).item()
-    return {"samples": act.numel(), "finite": finite, "max_abs_delta_logp": maximum,
+    distribution = {}
+    if finite:
+        values = delta.cpu().numpy()
+        p95, p99 = np.quantile(np.abs(values), (0.95, 0.99))
+        distribution = {"p95_abs_delta_logp": float(p95), "p99_abs_delta_logp": float(p99),
+                        "min_signed_delta_logp": float(values.min()), "max_signed_delta_logp": float(values.max()),
+                        "positive_deltas": int((values > 0).sum()), "negative_deltas": int((values < 0).sum()),
+                        "zero_deltas": int((values == 0).sum())}
+    return {**distribution, "samples": act.numel(), "finite": finite, "max_abs_delta_logp": maximum,
             "mean_approx_kl": mean_kl if finite else None, "max_abs_delta_limit": 1e-3, "mean_approx_kl_limit": 1e-6,
             "learner_train_mode": model.training, "learner_grad_enabled": torch.is_grad_enabled(),
             "bf16_autocast": amp, "same_candidate_mask": True,
@@ -1004,9 +1012,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     if batch_probe is not None and (
         not callable(batch_probe) or resume is not None or seed_range is None or cfg.start_mode != "stream"
         or (cfg.envs, cfg.rollout, cfg.minibatch, cfg.epochs, cfg.max_updates, cfg.ckpt_every) != (2048, 64, 4096, 1, 1, 1)
-        or cfg.device != "cuda" or not cfg.amp or cfg.compile != "off" or cfg.rollout_loop_breaker
+        or cfg.device != "cuda" or cfg.compile != "off" or cfg.rollout_loop_breaker
     ):
-        raise ValueError("batch probe requires one fresh frozen CUDA BF16 update")
+        raise ValueError("batch probe requires one fresh frozen CUDA update")
     if seed_range is not None and cfg.start_mode != "stream":
         raise ValueError("a seed reservation requires --start-mode stream")
     if cfg.bootstrap_time_limits and cfg.start_mode != "stream":
@@ -1041,8 +1049,25 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     if cfg.amp and not amp:
         log(f"note: --amp only applies on CUDA; running {device} in float32")
     if device.type == "cuda":
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+        strict_fp32 = batch_probe is not None and not amp
+        if strict_fp32 and os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1":
+            raise ValueError("strict FP32 probe cannot run with the CUDA TF32 override")
+        torch.backends.cuda.matmul.allow_tf32 = not strict_fp32
+        torch.backends.cudnn.allow_tf32 = not strict_fp32
+        if batch_probe is not None:
+            precision = {
+                "bf16_autocast": amp,
+                "cuda_matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
+                "cudnn_tf32": torch.backends.cudnn.allow_tf32,
+                "default_dtype": str(torch.get_default_dtype()),
+                "float32_matmul_precision": torch.get_float32_matmul_precision(),
+                "ambient_cuda_autocast": torch.is_autocast_enabled("cuda"),
+            }
+            if strict_fp32 and (precision["cuda_matmul_tf32"] or precision["cudnn_tf32"]
+                                or precision["float32_matmul_precision"] != "highest"
+                                or torch.get_default_dtype() != torch.float32 or precision["ambient_cuda_autocast"]):
+                raise RuntimeError("strict FP32 probe flags did not take effect")
+            batch_probe("precision", precision)
     static = use_static_rows(cfg)
     rng = seed_rngs(cfg)                # legacy: torch.manual_seed(seed) + default_rng(seed), as before
 
@@ -1639,7 +1664,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 gate_s = time.monotonic() - gate_start
                 publish_start = time.monotonic()
                 batch_probe("before_update", {
-                    **check, "gate_s": gate_s, "rollout_shape": [cfg.envs, cfg.rollout],
+                    **check, "precision": precision, "gate_s": gate_s, "rollout_shape": [cfg.envs, cfg.rollout],
                     "learner_minibatch_size": cfg.minibatch,
                     "sample_indices_sha256": hashlib.sha256(mbs[0].astype("<i8", copy=False).tobytes()).hexdigest(),
                     "optimizer_steps_before": optimizer_step(opt), "rollout_decisions": n_steps,
