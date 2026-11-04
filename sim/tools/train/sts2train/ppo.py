@@ -24,6 +24,20 @@ never-used seed ``<prefix>-<CHARACTER>-<n>``, the counter in the checkpoint). ``
 the old single torch stream) or decoupled (``seed_rngs``, ``init_rng``). Isolation from the frozen eval seed sets and
 the blind-set gate: ``sts2train.isolation``; per-episode rows: ``sts2train.episodes``.
 
+UI revisit cycles (``sts2train.cycles``, 2026-11-04): every rollout runs the cycle detector (counting only; actions,
+rewards and RNG untouched): a verified zero-progress RestSite / Shop -> prompt -> cancel loop back to the same
+observation is logged in ``cycles.jsonl`` (update, rollout step, slot, episode, room, floor, action path, length) and
+counted per update (``cycles_total`` / ``cycles_rest`` / ``cycles_shop`` / ``cycle_steps`` / ``cycles_rejected`` /
+``episodes_with_cycle`` / ``cycle_max_per_episode`` / ``cycle_cost_total``; each finished episode's count is the
+``cycles`` field of its ``episodes.jsonl`` row). ``cycle_cost`` (``--cycle-cost c``, default 0) subtracts c from the
+trainer's reward of the transition that closes a cycle, once per cycle (GAE, gamma, lambda and the value targets are
+unchanged; the env, the objective's logged reward / return / progress and the acquisition shaping are untouched).
+Fixed-endpoint evaluation: ``eval_at`` (``--eval-at u1,u2``) evaluates the live
+model at those absolute updates on ``eval_at_seedset`` (default silent-a10-dev-v1) in each of ``eval_at_modes``
+(``sts2train.evaluate`` modes: greedy-on, greedy-off, sample-off) into ``evals/u<N>/<mode>/`` with a ``mode`` row in
+evals.jsonl and the checkpoint kept as ``checkpoints/pinned-<N>.pt``; these rows never select ``best.pt``.
+``no_best`` (``--no-best``) turns ``best.pt`` off altogether (the periodic eval stays a monitor).
+
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
 the env restarts from fresh episodes),
@@ -77,6 +91,8 @@ import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
+from .cycles import CycleDetector
+from .cycles import update_stats as cycle_update_stats
 from .episodes import EPISODE_HOOKS, EpisodeLog
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
                        obs_to_device, widen_spec)
@@ -187,6 +203,13 @@ class TrainConfig:
     loop_breaker: bool = True       # the periodic eval's greedy policy runs with the loop breaker (sts2train.loopbreak)
     loop_breaker_k: int = 3         # returns to an observation before the breaker prefers leaving the screen
     rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
+    # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
+    cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
+    eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
+    eval_at_seedset: str = "silent-a10-dev-v1"
+    eval_at_modes: tuple = ("greedy-on", "greedy-off", "sample-off")
+    eval_at_sample_seed: int = 1    # sample-mode play RNG seed of the eval_at evaluations (one play per game)
+    no_best: bool = False           # never select best.pt (the periodic eval only monitors)
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
     episodes_log: bool = True       # <run>/episodes.jsonl: one row per episode (sts2train.episodes)
@@ -249,6 +272,18 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         stream_prefix(out)                  # validates an explicit prefix / the SP<env_seed> default
     elif "seed_stream_prefix" in given and given["seed_stream_prefix"]:
         raise ValueError("--seed-stream-prefix applies to --start-mode stream only")
+    out.cycle_cost = float(out.cycle_cost)
+    if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
+        raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
+    out.eval_at = parse_eval_at(out.eval_at)
+    modes = out.eval_at_modes.split(",") if isinstance(out.eval_at_modes, str) else list(out.eval_at_modes)
+    out.eval_at_modes = tuple(m.strip() for m in modes if str(m).strip())
+    from .evaluate import parse_mode
+
+    for m in out.eval_at_modes:
+        parse_mode(m)                       # ValueError on an unknown mode
+    if out.eval_at and not out.eval_at_modes:
+        raise ValueError("eval_at is set but eval_at_modes is empty")
     return out
 
 
@@ -278,6 +313,15 @@ def resolve_seeds(out: TrainConfig, given: dict, base: dict | None) -> None:
         if getattr(out, k) is None:
             setattr(out, k, base_seed if (base and k in ("init_seed", "sample_seed")) else int(out.seed))
         setattr(out, k, int(getattr(out, k)))
+
+
+def eval_seedsets(cfg) -> list[str]:
+    """The seed sets a run evaluates on: ``eval_seedset`` (with ``eval_every``) and ``eval_at_seedset`` (with
+    ``eval_at``); the blind-set gate and the isolation guard's extra sets."""
+    out = [cfg.eval_seedset] if getattr(cfg, "eval_every", 0) else []
+    if getattr(cfg, "eval_at", ()) and cfg.eval_at_seedset not in out:
+        out.append(cfg.eval_at_seedset)
+    return out
 
 
 def seed_of(cfg, name: str) -> int:
@@ -316,6 +360,20 @@ def init_rng(cfg: TrainConfig):
     with torch.random.fork_rng(devices=[]):
         torch.random.default_generator.manual_seed(purpose_seed(seed_of(cfg, "init_seed"), "init"))
         yield
+
+
+def parse_eval_at(v) -> tuple[int, ...]:
+    """Sorted distinct absolute update numbers (> 0) from "u500,1000" / [500, 1000] / ()."""
+    items = v.split(",") if isinstance(v, str) else list(v or ())
+    out = set()
+    for x in items:
+        t = str(x).strip().lower().lstrip("u")
+        if not t:
+            continue
+        if not t.isdigit() or int(t) < 1:
+            raise ValueError(f"eval_at: {x!r} is not an update number >= 1")
+        out.add(int(t))
+    return tuple(sorted(out))
 
 
 def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
@@ -918,14 +976,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
     callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
 
-    Before anything is created: an eval seed set with games of a frozen blind set is refused unless
-    ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
-    game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
+    Before anything is created: an eval seed set (``eval_seedset`` with ``eval_every``, ``eval_at_seedset`` with
+    ``eval_at``) with games of a frozen blind set is refused unless ``allow_blind`` + ``blind_purpose``
+    (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout game is refused
+    (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
     session_start = time.monotonic()
     run = Path(cfg.out)
     blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
                   if cfg.eval_every else None)
-    guard = IsolationGuard.from_seedsets(extra=[cfg.eval_seedset] if cfg.eval_every else ())
+    blind_eval_at = (check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
+                     if cfg.eval_at else None)     # --eval-at: the same gate (sts2train.cycles x isolation)
+    guard = IsolationGuard.from_seedsets(extra=eval_seedsets(cfg))
     if cfg.start_mode == "pool":
         isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
     else:
@@ -945,13 +1006,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     rng = seed_rngs(cfg)                # legacy: torch.manual_seed(seed) + default_rng(seed), as before
 
     c = dict(updates=0, env_steps=0, episodes=0, wins=0, sim_error=0, content_gap=0, illegal=0, overflow_cand=0,
-             floor_stall=0, wall_s=0.0, sessions=0, starts=0, dropped=0)
+             floor_stall=0, wall_s=0.0, sessions=0, starts=0, dropped=0, cycles=0)
     best_eval = last_eval = None
     if resume is not None:
         c.update({k: v for k, v in (resume.get("counters") or {}).items() if k in c})
         c["updates"] = int(resume.get("updates", c["updates"]))
         c["env_steps"] = int(resume.get("env_steps", c["env_steps"]))
         best_eval, last_eval = resume.get("best_eval"), resume.get("last_eval")
+    if cfg.no_best:                         # --no-best: nothing selects, a resumed best_eval is not carried on
+        best_eval = None
     c["sessions"] += 1
     upd0 = c["updates"]
 
@@ -1041,6 +1104,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             log(f"rollout loop breaker: back at an observation of its last {breaker.window} decisions a slot gives "
                 f"probability 0 to the candidates it took there; back there {cfg.loop_breaker_k} times or more, only "
                 f"the rows that leave the screen stay (when legal)")
+        # --- UI revisit cycles (sts2train.cycles): counted in every rollout; --cycle-cost charges the closing step ---
+        cycles = CycleDetector(spec, cfg.envs, card_name=env.schema.vocab.cards.name)   # the library's spec
+        cyc_cost = float(cfg.cycle_cost)
+        log("UI revisit cycles (RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> back to the same observation): "
+            + (f"cost {cyc_cost} on the trainer's reward of each closing transition" if cyc_cost else "counted only"))
+        eval_at = set(cfg.eval_at)
+        if eval_at:
+            log(f"fixed-endpoint evals at updates {sorted(eval_at)}: {cfg.eval_at_seedset} x {list(cfg.eval_at_modes)}"
+                + (" (sample seed " + str(cfg.eval_at_sample_seed) + ")" if any(m.startswith("sample")
+                                                                             for m in cfg.eval_at_modes) else ""))
+        if cfg.no_best:
+            log("--no-best: no evaluation selects best.pt")
+        # ---
 
         baseline = None
         if cfg.baseline_steps and resume is None:
@@ -1068,6 +1144,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 rng_restored = {k: f"reseeded (sample_seed {ck_sample} -> {cfg.sample_seed})" for k in rng_restored}
             best_eval, last_eval, best_src = evals_history(resume_path, run, upd0, cfg.eval_seedset, best_eval,
                                                            last_eval)
+            if cfg.no_best:                     # --no-best: the recomputed best is not carried on either
+                best_eval = None
             log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})"
                 + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else "")
                 + f"; rng {rng_restored}; best_eval from {best_src['source']}")
@@ -1100,6 +1178,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             else:                       # a checkpoint from before the in-flight record: every slot was running
                 dropped_now = int((resume.get("config") or {}).get("envs", 0) or 0)
             c["dropped"] += dropped_now
+        cycle_log = JsonlWriter(run / "cycles.jsonl", keep_upto=upd0)             # one row per closed cycle
         last_ckpt_path = resume_path if resume is not None else None
         last_ckpt_upd = upd0 if resume is not None else -1
         if cfg.eval_every:
@@ -1141,7 +1220,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None,
             "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
             "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
-            else isolation, "seed_stream": track.record(), "blind_eval": blind_eval})
+            else isolation, "seed_stream": track.record(), "blind_eval": blind_eval,
+            "blind_eval_at": blind_eval_at})
 
         stop = {"signal": None}
 
@@ -1209,7 +1289,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 row["best_skip"] = skip
             evals.write(row)
             last_eval = row
-            if is_new_best(row, best_eval):          # best.pt: the clean eval with the highest progress
+            if not cfg.no_best and is_new_best(row, best_eval):   # best.pt: the clean eval with the highest progress
                 best_eval = row
                 ckpts.mark_best(last_ckpt_path)
             pm = row["progress_mean"]
@@ -1218,6 +1298,61 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 + (f" loop breaks {lb['loop_breaks']}" if lb and lb["loop_breaks"] else "")
                 + (" *best*" if best_eval is row else "") + (f" [not eligible for best.pt: {skip}]" if skip else ""))
             return row
+
+        def run_eval_at(upd: int) -> list[dict]:
+            """Fixed-endpoint evaluation (--eval-at): every eval_at_modes mode on eval_at_seedset, the checkpoint
+            pinned; one evals.jsonl row per mode (``mode``, ``eval_at``); never selects best.pt."""
+            from .evaluate import evaluate_model, parse_mode
+
+            if last_ckpt_upd != upd:
+                save(upd)
+            pinned = ckpts.pin(last_ckpt_path, upd)
+            wh = weights_hash(model)
+            model.eval()
+            rows = []
+            for mode in cfg.eval_at_modes:
+                pol, br = parse_mode(mode)
+                out = run / "evals" / f"u{upd:07d}" / mode
+                t = time.monotonic()
+                base = {"update": upd, "env_steps": c["env_steps"], "wall_s": round(c["wall_s"], 1), "time": _now_iso(),
+                        "seedset": cfg.eval_at_seedset, "mode": mode, "eval_at": True, "policy": pol,
+                        "breaker": "on" if br else "off",
+                        "sample_seed": int(cfg.eval_at_sample_seed) if pol == "sample" else None,
+                        "weights_hash": wh, "checkpoint": _rel(pinned, run), "dir": _rel(out, run)}
+                try:
+                    if blind_eval_at is not None:   # allowed (--allow-blind --purpose): every access is logged
+                        check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose,
+                                         log_dir=run, weights_hash=wh)
+                    rep = evaluate_model(model, spec, cfg.eval_at_seedset, str(out), weights_hash=wh,
+                                         checkpoint=str(pinned),
+                                         threads=cfg.eval_threads or min(os.cpu_count() or 4, 8), device=str(device),
+                                         loop_breaker=br, loop_breaker_k=cfg.loop_breaker_k, policy=pol,
+                                         sample_seed=cfg.eval_at_sample_seed, repeat=0, log=lambda m: None,
+                                         allow_blind=cfg.allow_blind, blind_purpose=cfg.blind_purpose)
+                except Exception as e:  # an eval failure must not end a multi-hour run
+                    log(f"eval-at u{upd} {mode} failed: {type(e).__name__}: {e}")
+                    row = {**base, "error": f"{type(e).__name__}: {e}", "seconds": round(time.monotonic() - t, 2)}
+                    evals.write(row)
+                    rows.append(row)
+                    continue
+                h, cy, lb = rep["headline"], rep.get("cycles") or {}, rep.get("loop_breaker") or {}
+                row = {**base, "progress_mean": h["progress_mean"], "progress_ci95": h.get("progress_ci95"),
+                       "progress_median": h.get("progress_median"), "wins": h["wins"], "games": h["games"],
+                       "win_rate": h["wins"] / max(h["games"], 1), "floor_mean": h.get("floor_mean"),
+                       "results": h.get("results"), "act_reached": h.get("act_reached"),
+                       "replayable": h.get("replayable"), "stuck": (h.get("results") or {}).get("stuck"),
+                       "cycles": cy.get("cycles"), "cycles_rest": cy.get("cycles_rest"),
+                       "cycles_shop": cy.get("cycles_shop"), "games_with_cycle": cy.get("games_with_cycle"),
+                       "loop_breaks": lb.get("loop_breaks"), "games_with_loop_breaks": lb.get("games_with_loop_breaks"),
+                       "seconds": round(time.monotonic() - t, 2)}
+                evals.write(row)
+                rows.append(row)
+            log(f"[eval-at u{upd}] {cfg.eval_at_seedset}: " + "; ".join(
+                f"{r['mode']} " + (f"error {r['error']}" if r.get("error") else
+                                   f"progress {r['progress_mean']:.4f} stuck {r['stuck']} cycles {r['cycles']} in "
+                                   f"{r['games_with_cycle']} games breaker games {r['games_with_loop_breaks']}")
+                for r in rows))
+            return rows
 
         recent: deque = deque(maxlen=20)
         errors_seen: dict[str, int] = {}
@@ -1256,6 +1391,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if shaper is not None:
             shaper.reset(obs["aux"], obs["deck"])
             r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)     # the objective's reward (unshaped)
+        cycles.observe(obs, episode_ids=env.info()["episode_id"])          # --- sts2train.cycles: first observations
+        cyc_r = None
+        if cyc_cost:                                                        # the cycle cost charged per step
+            cyc_r = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
+            if r_obj is None:
+                r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -1305,6 +1446,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 a_np[~valid] = -1
                 if breaker is not None:
                     breaker.commit(a_np)
+                cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
                 store.actions[t] = np.maximum(a_np, 0)
                 store.logp[t] = logp.cpu().numpy()
                 store.values[t] = value.cpu().numpy()
@@ -1333,6 +1475,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         e["shaped_return"] = e["return"] + e["shaping"]
                     r_obj[t] = r
                     r = r + f_acq
+                # --- sts2train.cycles hook: did this transition close a verified UI revisit cycle (cost once) ---
+                closed = cycles.after_step(obs, done, fin, episode_ids=info["episode_id"], t=t)
+                if cyc_r is not None:
+                    if shaper is None:
+                        r_obj[t] = r
+                    cyc_r[t] = np.float32(cyc_cost) * closed
+                    r = r - cyc_r[t]
+                # ---
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -1436,6 +1586,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
                 lb_st = {"loop_breaks": lb_n, "no_op_actions": no_n, "cycle_revisits": cy_n}
+            cy_counts, cy_events = cycles.pop()     # --- sts2train.cycles: this update's cycles
+            cy_st = cycle_update_stats(cy_counts, ep_this, cyc_cost)
+            c["cycles"] += cy_counts["cycles"]
+            for ev in cy_events:
+                cycle_log.write({"update": upd, **ev})
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
                            "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
@@ -1451,6 +1606,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             t_ev = time.monotonic()
             if cfg.eval_every and upd % cfg.eval_every == 0:
                 run_eval(upd)
+            if upd in eval_at:
+                run_eval_at(upd)
             eval_s = time.monotonic() - t_ev
             t_end = time.monotonic()
             iter_s = t_end - t_iter
@@ -1479,7 +1636,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
                        "t_prefetch_s": round(tu["t_prefetch"], 3), "t_prefetch_wait_s": round(tu["t_prefetch_wait"], 3)}
                       if cfg.start_mode == "stream" else {}),
-                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **lb_st,
+                   **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
+                                             ep_this, shaper), **lb_st, **cy_st,
+                   "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
                    **gpu_memory(device)}
             metrics.write(row)
             episodes_log.write_update(upd, c["sessions"], ep_this)
@@ -1505,6 +1664,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        if aux_tg is not None else "")
                     + (f" | loop breaks={lb_st['loop_breaks']} no-ops={lb_st['no_op_actions']} "
                        f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
+                    + f" | ui cycles={cy_st['cycles_total']} eps={cy_st['episodes_with_cycle']}"
+                    + (f" cost={cy_st['cycle_cost_total']:.3f}" if cyc_cost else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -1522,6 +1683,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         evals.close()
         episodes_log.close()
         inflight_end = track.inflight()
+        cycle_log.close()
         train_s = time.monotonic() - train_start
         summary = {
             "config": config_dict(cfg), "objective": cfg.objective, "encoder_version": spec.encoder_version,
@@ -1550,6 +1712,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                             if cfg.start_mode == "stream" else isolation).items()
                           if k not in ("checked_sets", "exposed")},
             "episodes_log_rows": episodes_log.rows,
+            "cycles": {**cycles.totals_dict(), "cost": cyc_cost, "run_total": c["cycles"]},
         }
         if breaker is not None:
             t_lb = breaker.totals()
@@ -1602,7 +1765,8 @@ def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | 
     rows up to the checkpoint's update): a checkpoint is written before the same update's eval, so its own
     best_eval / last_eval miss that eval (Q9). The best is the clean row (``is_new_best``) with the highest progress on
     this session's eval seed set (another set's numbers are not comparable: none then); without that file the
-    checkpoint's values stay. -> (best, last, {"source", "rows", "best_update", "checkpoint_best_update"})."""
+    checkpoint's values stay. Fixed-endpoint rows (``eval_at``, ``--eval-at``) are neither best nor last: they never
+    select best.pt. -> (best, last, {"source", "rows", "best_update", "checkpoint_best_update"})."""
     p = Path(resume_path) if resume_path else None
     src = None
     if p is not None:
@@ -1613,11 +1777,12 @@ def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | 
     if f is None or not f.exists():
         return best, last, rec
     rows = [r for r in read_jsonl(f) if int(r.get("update", 0) or 0) <= upd0]
+    periodic = [r for r in rows if not r.get("eval_at")]
     new_best = None
-    for r in rows:
+    for r in periodic:
         if r.get("seedset") == seedset and is_new_best(r, new_best):
             new_best = r
-    new_last = rows[-1] if rows else last
+    new_last = periodic[-1] if periodic else last
     rec.update(source="same run directory" if src.resolve() == run.resolve() else "source run directory",
                rows=len(rows), best_update=(new_best or {}).get("update"), evals=str(f))
     return new_best, new_last, rec

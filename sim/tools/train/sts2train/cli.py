@@ -1,5 +1,6 @@
 """sts2train CLI (also installed as ``sts2train-smoke``): ``train`` (PPO), ``eval`` (protocol v0.2 NN entry point; exit
-1 when the replay audit fails, like ``sts2vec eval``), ``plot`` (curves of a run directory), ``bench-update``
+1 when the replay audit fails, like ``sts2vec eval``; greedy / sampled, loop breaker on / off, repeats, slices),
+``compare`` (per-seed paired comparison of evaluations), ``plot`` (curves of a run directory), ``bench-update``
 (synthetic timing of the PPO update and the rollout forward), ``report-card`` / ``pack`` / ``probe`` (model card,
 weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard``).
 
@@ -12,6 +13,8 @@ weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard`
     sts2train report-card --checkpoint CKPT --out CARD_DIR [--seedsets silent-a10-v1,...] [--lookahead-dir DIR ...]
     sts2train pack --checkpoint CKPT --out FILE.tar.gz [--card CARD_DIR]
     sts2train probe --checkpoint CKPT --eval-dir EVAL_DIR [--game KEY] [--out FILE.jsonl]
+    sts2train eval ... --policy sample --sample-seed 1 --repeats 3 --breaker off --chunk 0/2   # execution modes
+    sts2train compare RUN_A0,RUN_A1 RUN_B0,RUN_B1 --labels a,b      # per-seed paired comparison (sts2train.compare)
 
 ``train`` flags that are not given keep the default (fresh run) or the checkpoint's value (``--resume``).
 """
@@ -175,6 +178,20 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="loop breaker of the periodic eval's greedy policy (sts2train.loopbreak): back at an "
                         "observation a game already decided at (a no-op or a cycle), mask the candidates taken there; "
                         "from the --loop-breaker-k-th return prefer leaving the screen (default on)")
+    g.add_argument("--eval-at", dest="eval_at", metavar="U1,U2,...",
+                   help="fixed-endpoint evaluations at these absolute update numbers: --eval-at-seedset in every "
+                        "--eval-at-modes mode into evals/u<N>/<mode>/, one evals.jsonl row per mode (mode, eval_at), "
+                        "the checkpoint kept as checkpoints/pinned-<N>.pt; they never select best.pt (default none)")
+    g.add_argument("--eval-at-seedset", dest="eval_at_seedset", help=f"(default {D.eval_at_seedset})")
+    g.add_argument("--eval-at-modes", dest="eval_at_modes", metavar="MODES",
+                   help="comma-separated greedy-on / greedy-off / sample-on / sample-off (default "
+                        f"{','.join(D.eval_at_modes)}; sample = one play per game)")
+    g.add_argument("--eval-at-sample-seed", dest="eval_at_sample_seed", type=int,
+                   help=f"play RNG seed of the sample-mode eval-at runs (default {D.eval_at_sample_seed})")
+    g.add_argument("--no-best", dest="no_best", action="store_true",
+                   help="never select best.pt (the periodic --eval-every eval stays a monitor; compare fixed "
+                        "endpoints with --eval-at instead)")
+    g.add_argument("--best", dest="no_best", action="store_false", help="undo --no-best on --resume")
     g.add_argument("--log-every", dest="log_every", type=int, help=f"stdout line every N updates (default {D.log_every})")
     g.add_argument("--episodes-log", dest="episodes_log", action=argparse.BooleanOptionalAction,
                    help="RUN_DIR/episodes.jsonl: one row per episode (seed, result, act, floor, steps, progress; "
@@ -228,6 +245,12 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--loop-breaker-k", dest="loop_breaker_k", type=int,
                    help=f"returns to one observation after which the loop breaker prefers the rows that leave the "
                         f"screen (eval and rollouts; default {D.loop_breaker_k})")
+    g.add_argument("--cycle-cost", dest="cycle_cost", type=float,
+                   help="subtract this from the trainer's reward of every transition that closes a verified UI "
+                        "revisit cycle (RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> back to the same "
+                        "observation; sts2train.cycles), once per cycle; the env, gamma / lambda, the logged "
+                        "objective and the acquisition shaping are unchanged. Cycles are counted and logged "
+                        f"(cycles.jsonl, metrics) in every run (default {D.cycle_cost} = count only)")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")
@@ -339,6 +362,11 @@ def _card_parsers(sub) -> None:
                             "logged to OUT/blind-access.jsonl")
         p.add_argument("--purpose", dest="blind_purpose", default=None,
                        help="why a blind set is evaluated (with --allow-blind)")
+        p.add_argument("--modes", default="greedy-on",
+                       help="comma-separated execution modes (greedy-on, greedy-off, sample-on, sample-off): each one "
+                            "after greedy-on is an NN row paired per seed against the greedy row (default %(default)s)")
+        p.add_argument("--sample-seed", dest="sample_seed", type=int, default=1,
+                       help="play RNG seed of the sample-mode rows (one play per game; default %(default)s)")
 
     rc = sub.add_parser("report-card", help="model card of a checkpoint: greedy evals (run or reused), baselines, "
                                             "staged tables with Wilson intervals",
@@ -395,7 +423,8 @@ def _card_cmd(a) -> int:
             return 0
         kw = dict(seedsets=csv(a.seedsets), threads=a.threads, device=a.device, lookahead_dirs=a.lookahead_dirs,
                   baselines=[] if a.baselines.strip().lower() == "none" else csv(a.baselines),
-                  baseline_cache=a.baseline_cache, log=log, allow_blind=a.allow_blind, blind_purpose=a.blind_purpose)
+                  baseline_cache=a.baseline_cache, modes=csv(a.modes), sample_seed=a.sample_seed, log=log,
+                  allow_blind=a.allow_blind, blind_purpose=a.blind_purpose)
         res = {}
         if a.cmd == "report-card":
             card = RC.report_card(a.checkpoint, a.out, **kw)
@@ -448,17 +477,35 @@ def main(argv=None) -> int:
     ev.add_argument("--out", default=None, help="run directory (default tmp/eval/nn-<checkpoint>-<seedset>-<time>)")
     ev.add_argument("--threads", type=int, default=8)
     ev.add_argument("--device", default="cpu")
-    ev.add_argument("--loop-breaker", choices=["off", "on"], default="on",
+    ev.add_argument("--loop-breaker", "--breaker", dest="loop_breaker", choices=["off", "on"], default="on",
                     help="back at an observation a game already decided at (a no-op or a cycle), mask the candidates "
                          "taken there; from the --loop-breaker-k-th return prefer the rows that leave the screen "
-                         "(default on; off = the plain argmax)")
+                         "(default on; off = the plain argmax / the plain distribution)")
     ev.add_argument("--loop-breaker-k", type=int, default=3, help="(default 3)")
     ev.add_argument("--allow-blind", action="store_true",
                     help="allow a seed set with games of a frozen blind set (refused otherwise; needs --purpose); "
                          "logged to OUT/blind-access.jsonl")
     ev.add_argument("--purpose", default=None, help="why a blind set is evaluated (with --allow-blind)")
+    ev.add_argument("--policy", choices=["greedy", "sample"], default="greedy",
+                    help="greedy = argmax (default); sample = one draw per decision from the model's distribution over "
+                         "the legal candidates, the play's RNG seeded from (--sample-seed, game key, repeat)")
+    ev.add_argument("--sample-seed", dest="sample_seed", type=int, default=0, help="(sample; default 0)")
+    ev.add_argument("--repeats", type=int, default=1,
+                    help="sample: plays per game; > 1 writes OUT/r<k>/ per repeat and OUT/repeats.json (default 1)")
+    ev.add_argument("--chunk", default=None, metavar="I/N",
+                    help="play only the I-th of N equal slices of the seed set (config.json parent_seedset records "
+                         "the full set; `sts2train compare DIR0,DIR1 ...` merges slices)")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
+    cp = sub.add_parser("compare", help="per-seed paired comparison of protocol evaluations of one seed set "
+                                        "(modes, checkpoints; slices and repeats merged)",
+                        description="Each ARM is a comma-separated list of run directories (sts2train eval: slices "
+                                    "with --chunk, repeat parents with --repeats) of the same seed set. Prints per arm "
+                                    "progress [95%% t], clear rate, stalls, UI revisit cycles, loop-breaker plays, "
+                                    "the stage funnel, and per pair the per-seed differences (t and bootstrap 95%%).")
+    cp.add_argument("arms", nargs="+", metavar="ARM")
+    cp.add_argument("--labels", default=None, help="comma-separated arm labels")
+    cp.add_argument("--json", default=None, help="also write the full result (per-game differences) to this file")
     _bench_parser(sub)
     _card_parsers(sub)
     a = ap.parse_args(argv)
@@ -502,14 +549,16 @@ def main(argv=None) -> int:
             print(f"error: {e}", flush=True)
             return 2
         try:                            # refused before the run directory exists (isolation, blind gate)
-            from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
+            from sts2vec.protocol import SeedSetError
 
-            if cfg.eval_every:
-                check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
+            from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
+            from .ppo import eval_seedsets
+
+            for name in eval_seedsets(cfg):     # --eval-every's set and --eval-at's set
+                check_blind_eval(name, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
             if cfg.start_mode == "pool":
-                check_legacy_pool(cfg, IsolationGuard.from_seedsets(extra=[cfg.eval_seedset] if cfg.eval_every
-                                                                    else ()))
-        except (IsolationError, BlindSetError) as e:
+                check_legacy_pool(cfg, IsolationGuard.from_seedsets(extra=eval_seedsets(cfg)))
+        except (IsolationError, SeedSetError) as e:     # SeedSetError: also BlindSetError, an unknown eval set
             print(f"error: {e}", flush=True)
             return 2
         log.open(Path(cfg.out) / "train.log")
@@ -533,10 +582,17 @@ def main(argv=None) -> int:
         from .evaluate import evaluate
         from .features import SpecMismatch
 
+        if a.repeats < 1 or (a.repeats > 1 and a.policy != "sample"):
+            ap.error("--repeats must be >= 1, and > 1 only with --policy sample (greedy plays are identical)")
+        if a.chunk is not None:
+            ci, _, cn = a.chunk.partition("/")
+            if not (ci.isdigit() and cn.isdigit() and int(ci) < int(cn)):
+                ap.error(f"--chunk {a.chunk}: expected I/N with 0 <= I < N")
         out = a.out or f"tmp/eval/nn-{Path(a.checkpoint).stem}-{Path(a.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
             rep = evaluate(a.seedset, a.checkpoint, out, threads=a.threads, device=a.device,
-                           loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k,
+                           loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k, policy=a.policy,
+                           sample_seed=a.sample_seed, repeats=a.repeats, chunk=a.chunk,
                            log=lambda m: print(m, flush=True), allow_blind=a.allow_blind, blind_purpose=a.purpose)
         except (SpecMismatch, BlindSetError) as e:
             print(f"error: {e}", flush=True)
@@ -549,14 +605,36 @@ def main(argv=None) -> int:
                           **({"loop_breaker": lb["mode"], "loop_breaks": lb["loop_breaks"],
                               "no_op_actions": lb["no_op_actions"], "cycle_revisits": lb["cycle_revisits"]}
                              if (lb := rep.get("loop_breaker")) else {}),
+                          **({"eval_mode": rep["eval_mode"]["name"]} if "eval_mode" in rep else {}),
+                          **({"cycles": {k: cy[k] for k in ("cycles", "cycles_rest", "cycles_shop",
+                                                            "games_with_cycle", "stuck")}}
+                             if (cy := rep.get("cycles")) else {}),
+                          **({"repeats": {k: rep["repeats"][k] for k in ("repeats", "plays", "progress_mean_pooled",
+                                                                         "runs")}} if "repeats" in rep else {}),
                           **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {})}, indent=1))
-        if h["replayable"] != h["games"]:      # the replay audit failed: the score is not reproducible (sts2vec eval)
-            print(f"error: replay audit failed: {h['replayable']}/{h['games']} games replayable (report.md lists "
-                  f"them)", file=sys.stderr, flush=True)
+        runs = rep["repeats"]["runs"] if "repeats" in rep else [{"replayable": h["replayable"], "games": h["games"]}]
+        bad = ", ".join(f"{r['replayable']}/{r['games']}" for r in runs if r["replayable"] != r["games"])
+        if bad:      # the replay audit failed: the score is not reproducible (sts2vec eval)
+            print(f"error: replay audit failed: {bad} games replayable (report.md lists them)", file=sys.stderr,
+                  flush=True)
             return 1
         return 0
     if a.cmd == "plot":
         _plot(Path(a.out))
+        return 0
+    if a.cmd == "compare":
+        from .compare import compare, render
+
+        if len(a.arms) < 2:
+            ap.error("compare needs at least two arms")
+        try:
+            r = compare(a.arms, [x for x in (a.labels or "").split(",") if x] or None)
+        except (ValueError, FileNotFoundError) as e:
+            print(f"error: {e}", file=sys.stderr, flush=True)
+            return 2
+        print(render(r))
+        if a.json:
+            Path(a.json).write_text(json.dumps(r, indent=1) + "\n", encoding="utf-8")
         return 0
     return 2
 

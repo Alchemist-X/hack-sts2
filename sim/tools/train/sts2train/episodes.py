@@ -3,7 +3,8 @@
 Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, flushed):
 
     {"update": 12, "session": 1, "slot": 3, "seed_text": "SP0-SILENT-1041", "n": 1041, "result": "death",
-     "act": 1, "floor": 9, "steps": 212, "progress": 0.156863, "return": 0.156863, "end_kind": 1, ...hook fields}
+     "act": 1, "floor": 9, "steps": 212, "progress": 0.156863, "return": 0.156863, "end_kind": 1, "cycles": 0,
+     ...hook fields}
 
 - ``update``: the PPO update whose rollout the episode ended in; ``session``: the trainer session (1 = fresh run).
 - ``seed_text`` / ``n``: the start's seed text and stream index (``--start-mode stream``); in pool mode the pool
@@ -15,6 +16,9 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
   (a stream seed whose template / first observation failed).
 - ``progress``: protocol v0.2 progress at the end (what ``sts2vec eval`` would score); ``return``: the objective's
   summed reward (unshaped).
+- ``cycles``: the verified UI revisit cycles (``sts2train.cycles``: rest-site / shop prompt -> cancel back to the same
+  observation) the episode closed, counted with or without ``--cycle-cost`` (null on ``dropped`` / ``start_failed``
+  rows); the per-cycle rows (path, room, floor) are in ``cycles.jsonl``.
 
 A resume in the same run directory drops the rows past the checkpoint's update and that update's ``dropped`` rows
 (the resumed session writes them again), like metrics.jsonl, so repeated resumes never duplicate a row. Size: ~170
@@ -43,7 +47,7 @@ from .runlog import JsonlWriter
 
 END_RESULT = {2: "trunc", 3: "error", 4: "error", 5: "stall"}     # EndKind (sim/Sts2Sim.Vec/Status.cs) -> result
 BASE_KEYS = ("update", "session", "slot", "seed_text", "n", "result", "act", "floor", "steps", "progress", "return",
-             "end_kind")
+             "end_kind", "cycles")
 
 EpisodeHook = Callable[[dict], "Mapping | None"]
 
@@ -123,7 +127,7 @@ class EpisodeLog:
             row = {"update": update, "session": session, "slot": e["slot"], "seed_text": e.get("seed_text"),
                    "n": e.get("seed_n"), "result": episode_result(e), "act": e.get("act"), "floor": e.get("floor"),
                    "steps": e.get("steps"), "progress": _r(e.get("progress")), "return": _r(e.get("return")),
-                   "end_kind": e.get("end_kind")}
+                   "end_kind": e.get("end_kind"), "cycles": int(e.get("cycles", 0))}
             row.update(e.get("fields") or {})
             self._write(row)
 
@@ -134,7 +138,7 @@ class EpisodeLog:
         for r in rows:
             row = {"update": update, "session": session, "slot": r.get("slot"), "seed_text": r.get("seed_text"),
                    "n": r.get("n"), "result": result, "act": None, "floor": None, "steps": r.get("steps"),
-                   "progress": None, "return": None, "end_kind": None}
+                   "progress": None, "return": None, "end_kind": None, "cycles": None}
             if r.get("reason"):
                 row["reason"] = r["reason"]
             self._write(row)
