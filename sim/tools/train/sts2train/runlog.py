@@ -5,7 +5,9 @@ Run directory layout (``sts2train train --out RUN_DIR``)::
     config.json            resolved TrainConfig + parameter count, device, library / encoder version, sessions
     status.json            rewritten (atomically) after every update: an external watcher's single source of truth
     metrics.jsonl          one JSON object per PPO update (append-only; a resume drops rows past the checkpoint)
+    episodes.jsonl         one row per training episode (sts2train.episodes; a resume drops rows past the checkpoint)
     evals.jsonl            one row per protocol evaluation; the run directories live in evals/u<update>/
+    blind-access.jsonl     one row per allowed evaluation on a frozen blind seed set (--allow-blind --purpose)
     checkpoints/ckpt-<update>.pt   the last K checkpoints (tmp file + rename); best.pt = best eval progress so far
     summary.json           written when a session ends
     train.log              the CLI's log lines with timestamps (all sessions)
@@ -104,12 +106,13 @@ def read_jsonl(path: str | os.PathLike) -> list[dict]:
 
 class JsonlWriter:
     """Append-only JSONL log, one flushed line per `write`. `keep_upto=u` first drops rows whose `update` > u (a
-    resumed run re-does those updates), rewriting the file atomically."""
+    resumed run re-does those updates), and the rows `drop(row)` is true for, rewriting the file atomically."""
 
-    def __init__(self, path: str | os.PathLike, *, keep_upto: int | None = None, key: str = "update"):
+    def __init__(self, path: str | os.PathLike, *, keep_upto: int | None = None, key: str = "update", drop=None):
         self.path = Path(path)
         if keep_upto is not None and self.path.exists():
-            rows = [r for r in read_jsonl(self.path) if int(r.get(key, 0) or 0) <= keep_upto]
+            rows = [r for r in read_jsonl(self.path) if int(r.get(key, 0) or 0) <= keep_upto
+                    and not (drop is not None and drop(r))]
             atomic_write_bytes(self.path, "".join(json.dumps(_clean(r), allow_nan=False) + "\n" for r in rows)
                                .encode("utf-8"))
         self._f = open(self.path, "a", encoding="utf-8")

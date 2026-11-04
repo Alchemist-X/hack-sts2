@@ -336,7 +336,8 @@ def test_paired_statistics(runs):
 
 
 SILENT_SETS = {"silent-a10-dev-v1": ("silent-a10-dev-s128", "D1A10SI", 128, 10, "dev"),
-               "silent-a10-test-v1": ("silent-a10-test-s100", "H1A10SI", 100, 10, "test"),
+               # downgraded test -> dev2 on 2026-11-04 (exposed; sts2train.isolation.EXPOSED); sha256 unchanged
+               "silent-a10-test-v1": ("silent-a10-test-s100", "H1A10SI", 100, 10, "dev2"),
                "silent-a0-dev-v1": ("silent-a0-dev-s100", "D1A0SI", 100, 0, "dev")}
 
 
