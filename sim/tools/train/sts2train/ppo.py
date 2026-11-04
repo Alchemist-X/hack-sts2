@@ -10,8 +10,12 @@ protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory ter
 head and PPO loss are unchanged. ``deck_counts`` (``--deck-counts``) switches the deck / pile encoders to count-aware
 pooling (``model.Policy._deck_bag``). ``acq_shaping`` (``--acq-shaping``) adds potential-based shaping for deck size,
 relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``reward_mean`` / ``return_mean`` /
-progress stay the objective's, the shaping is logged apart). With these flags off the trainer computes exactly what
-it computed before.
+progress stay the objective's, the shaping is logged apart). ``rollout_loop_breaker`` (``--rollout-loop-breaker``)
+applies the evaluation's loop breaker (``sts2train.loopbreak``) to the rollout sampling: back at an observation of its
+last 64 decisions (a no-op or a cycle) a slot gives probability 0 to the candidates it took there (the stored
+log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled). With these
+flags off the trainer computes exactly what it computed before. The periodic eval's greedy policy runs with the loop
+breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
 progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
@@ -65,6 +69,7 @@ from sts2vec.pool import ALL_CHARACTERS
 
 from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
+from .loopbreak import LoopBreaker
 from .model import PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count
 from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
@@ -148,6 +153,9 @@ class TrainConfig:
     eval_every: int = 0             # updates (0 = off); a final eval also runs when a budget ends the session
     eval_seedset: str = "std-a0-v1"
     eval_threads: int = 0           # 0 = min(os.cpu_count(), 8)
+    loop_breaker: bool = True       # the periodic eval's greedy policy runs with the loop breaker (sts2train.loopbreak)
+    loop_breaker_k: int = 3         # returns to an observation before the breaker prefers leaving the screen
+    rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
 
@@ -184,6 +192,12 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
     if not float(out.aux_coef) >= 0.0:
         raise ValueError(f"aux_coef {out.aux_coef} must be >= 0")
+    if isinstance(out.loop_breaker, str):
+        if out.loop_breaker not in ("on", "off"):
+            raise ValueError(f"loop_breaker {out.loop_breaker!r}: expected on / off")
+        out.loop_breaker = out.loop_breaker == "on"
+    if int(out.loop_breaker_k) < 1:
+        raise ValueError(f"loop_breaker_k {out.loop_breaker_k} must be >= 1")
     return out
 
 
@@ -665,8 +679,11 @@ class InferenceRunner:
                 return self.compiled(x)
             return self.eager(x)
 
-    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True):
+    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True, adjust=None):
+        """`adjust` (logits -> logits, e.g. ``LoopBreaker.apply``) runs on the logits before sampling, eager."""
         logits, value = self.forward(x, compiled=compiled)
+        if adjust is not None:
+            logits = adjust(logits)
         dist = torch.distributions.Categorical(logits=logits, validate_args=False)
         a = dist.sample()
         return a, dist.log_prob(a), value
@@ -793,6 +810,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 f"{cfg.aux_coef}; running episodes / combats at the window end: "
                 + ("bootstrapped from the heads" if cfg.aux_bootstrap else "masked"))
 
+        breaker = None
+        if cfg.rollout_loop_breaker:
+            breaker = LoopBreaker(spec, cfg.envs, k=cfg.loop_breaker_k)
+            log(f"rollout loop breaker: back at an observation of its last {breaker.window} decisions a slot gives "
+                f"probability 0 to the candidates it took there; back there {cfg.loop_breaker_k} times or more, only "
+                f"the rows that leave the screen stay (when legal)")
+
         baseline = None
         if cfg.baseline_steps and resume is None:
             t = time.monotonic()
@@ -887,7 +911,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             try:
                 rep = evaluate_model(model, spec, cfg.eval_seedset, str(out), weights_hash=weights_hash(model),
                                      checkpoint=str(last_ckpt_path), threads=cfg.eval_threads or min(os.cpu_count() or 4, 8),
-                                     device=str(device), log=lambda m: None)
+                                     device=str(device), loop_breaker=cfg.loop_breaker,
+                                     loop_breaker_k=cfg.loop_breaker_k, log=lambda m: None)
             except Exception as e:  # an eval failure must not end a multi-hour run
                 log(f"eval at update {upd} failed: {type(e).__name__}: {e}")
                 row = {"update": upd, "env_steps": c["env_steps"], "seedset": cfg.eval_seedset,
@@ -903,6 +928,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "replayable": h.get("replayable"), "weights_hash": weights_hash(model),
                    "checkpoint": _rel(last_ckpt_path, run), "dir": _rel(out, run),
                    "seconds": round(time.monotonic() - t, 2)}
+            lb = rep.get("loop_breaker")
+            if lb:
+                row.update(loop_breaker=lb["mode"], loop_breaks=lb["loop_breaks"], no_op_actions=lb["no_op_actions"],
+                           cycle_revisits=lb.get("cycle_revisits"))
             skip = best_skip_reason(row)
             if skip:
                 row["best_skip"] = skip
@@ -914,6 +943,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             pm = row["progress_mean"]
             log(f"[eval u{upd}] {cfg.eval_seedset}: progress {'n/a' if pm is None else format(pm, '.4f')} "
                 f"wins {row['wins']}/{row['games']} floor {row['floor_mean']} ({row['seconds']:.1f} s)"
+                + (f" loop breaks {lb['loop_breaks']}" if lb and lb["loop_breaks"] else "")
                 + (" *best*" if best_eval is row else "") + (f" [not eligible for best.pt: {skip}]" if skip else ""))
             return row
 
@@ -990,11 +1020,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     if not chk["ok"]:
                         raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
                                                     f"rerun with --compile off")
-                a, logp, value = runner.sample(x)
+                if breaker is None:
+                    a, logp, value = runner.sample(x)
+                else:                               # obs is still this step's (the env steps below)
+                    a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg))
                 store.put(t, x, obs)
                 a_np = a.cpu().numpy().astype(np.int32)
                 valid = cand_n > 0
                 a_np[~valid] = -1
+                if breaker is not None:
+                    breaker.commit(a_np)
                 store.actions[t] = np.maximum(a_np, 0)
                 store.logp[t] = logp.cpu().numpy()
                 store.values[t] = value.cpu().numpy()
@@ -1003,6 +1038,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 obs, rew, term, trunc, status, info = env.step(a_np)
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
+                if breaker is not None:             # auto-reset slots start new episodes
+                    breaker.reset(done)
                 r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
                 if aux_tg is not None:
                     aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
@@ -1106,6 +1143,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             c["floor_stall"] += fs_n
             es = _episode_stats(ep_this)
             ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
+            lb_st = {}
+            if breaker is not None:
+                lb_n, no_n, cy_n = breaker.pop_counts()
+                lb_st = {"loop_breaks": lb_n, "no_op_actions": no_n, "cycle_revisits": cy_n}
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
                            "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
@@ -1143,7 +1184,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **gpu_memory(device)}
+                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **lb_st,
+                   **gpu_memory(device)}
             metrics.write(row)
             last_sps = round(sps, 1)
             write_status(upd, state)
@@ -1161,6 +1203,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     + (f" | aux win_bce={fmt(sm.get('aux_win_loss'), '.4f')} combat_se="
                        f"{fmt(sm.get('aux_combat_loss'), '.4f')} p_win={fmt(aux_st.get('aux_win_prob_mean'), '.4f')}"
                        if aux_tg is not None else "")
+                    + (f" | loop breaks={lb_st['loop_breaks']} no-ops={lb_st['no_op_actions']} "
+                       f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -1195,6 +1239,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "static_rows": static, "compile_check": compile_check or None,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
         }
+        if breaker is not None:
+            t_lb = breaker.totals()
+            summary["rollout_loop_breaker"] = {k: t_lb[k] for k in ("k", "window", "loop_breaks", "no_op_actions",
+                                                                    "cycle_revisits")}
         atomic_write_json(run / "summary.json", summary)
         return summary
     except BaseException as e:
