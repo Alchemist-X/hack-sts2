@@ -7,10 +7,13 @@ Status: **integrated** (wave E2, 2026-11-01; `sim/specs/integration.md` "E2 inte
 order, capacities and export signatures are final (CONTRACTS.md Part D). The player-view encoder
 (`ObservationEncoder*.cs`, V1) fills every observation table (see the field reference below); `VecEnv`, `StartPool`,
 `CandidateTable` and the exports (V2) step, reset, snapshot and restore slots; the Python package `sts2vec` (V3) loads
-the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `5dbfa09dd9dcb5ed`, 30,942
-bytes/env, 41 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
+the library through hostfxr (or a NativeAOT build) and wraps it. `encoder_version` `3b73317739c650bd`, 35,062
+bytes/env, 43 buffers (E3 train-smoke appended 4 `aux` columns for the protocol progress metric; the floor stall cap
 appended `EndKind.FloorStall`; the player-view schema append of 2026-11-03 appended 6 buffers, "Appended buffers"
-below; integration figures below were measured at `dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
+below; the rewards-screen macros of 2026-11-04 appended `reward_choices` and two candidate kinds, "Rewards-screen
+macros"; the map-routing features of 2026-11-04 appended `map_routes`, and the static card table `card_static` joined
+the schema JSON (not a buffer); integration figures below were measured at
+`dff07a6bc984b119`, 26,710 bytes/env). Measured at integration: 116k env-steps/s (C# bench) and 73k (Python `sts2vec bench`) at
 N = 1024 / 8 threads, A0, random policy (§D7 target ≥ 50k); full grid in `sim/BENCH.md` "E2 integrate".
 
 ABI 2 (2026-11-04, decision-time search): `sts2vec_abi_version`, `sts2vec_branch`, `sts2vec_branch_many`,
@@ -57,7 +60,8 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
   A start id that is not a live entry (never issued, or released) fails the whole call (-1) before anything changes.
   NULL mask = all slots; NULL start_ids = all from the sequence.
 - `step(actions)`: `a < 0` → `NOOP`; `a ∉ [0, cand_n)` (or no run / finished) → `ILLEGAL_ACTION`, slot unchanged;
-  else `RunSim.StepFast(LegalActions()[a])` (`RunSim.Step` with `fast_path: false`; see "Fast path"). Terminal → `terminated`, reward 1 iff Victory; `step_index >= step_cap` →
+  else candidate `a`: `RunSim.StepFast(action)` (`RunSim.Step` with `fast_path: false`; see "Fast path"), or for a
+  rewards-screen macro its two actions in turn ("Rewards-screen macros"; one decision for `step_index` and the caps). Terminal → `terminated`, reward 1 iff Victory; `step_index >= step_cap` →
   `truncated`; floor stall (below) → `truncated` + `FLOOR_STALL`; NotImplemented/NotSupported → `CONTENT_GAP`, other
   exceptions → `SIM_ERROR` (episode ends with `truncated = 1`, reward 0, run discarded, text in
   `sts2vec_last_error(h, slot)`). An encoder exception on a live state ends the episode the same way. Then every
@@ -98,8 +102,10 @@ scripts/vec_publish_aot.sh                       # optional NativeAOT .dylib/.so
   the clones of one branch source, run concurrently: `RunSim.Clone` only reads its source). Verified: 256
   envs × 300 steps on 1 vs 8 threads and two instances give byte-identical buffers after every step and equal
   `StateHash` per slot; 1,024 envs × 200 steps on 1 vs 12 threads likewise.
-- Per-slot scratch: `VecSlot.Legal` (`List<RunAction>`, capacity 64) is refilled by `RunSim.LegalActions(list)` after
-  every change and is the action table `step` indexes; no per-step allocation in VecEnv beyond the sim's own.
+- Per-slot scratch: `VecSlot.Raw` (`List<RunAction>`, capacity 64) is refilled by `RunSim.LegalActions(list)` after
+  every change and `VecSlot.Legal` by `RewardMacros.Fill` (the candidate list, = `Raw` off the rewards screen); `Legal`
+  is the action table `step` indexes; no per-step allocation in VecEnv beyond the sim's own (rewards screens add the
+  Core allocations of `CardRewardAlternative.Generate`).
 - Test hook: `VecEnv.FaultInjector = (slot, action) => Exception?` throws the returned exception in place of
   `RunSim.Step` (classification and auto-reset apply). Null in production. `VecEnv.ForceFastPath = (slot, action) =>
   bool` forces the clone-free step without the predicate (exercises the fail-closed path). Null in production.
@@ -152,10 +158,12 @@ false, runs `Step(a, FastPathAnswerer.Instance)` without the clone. Outputs are 
 
 ### Candidate table (`cand`, `CandidateTable.Fill`)
 
-Row `r < cand_n` is `RunSim.LegalActions()[r]` (same order); rows `>= cand_n` are zero. `cand_n = min(legal, 192)`;
-more legal actions set `CANDIDATE_OVERFLOW` and only the first 192 are selectable (constructible: a PileSelect over a
-250-card draw pile, or the merchant card removal with a 200-card deck). `CandidateTable.ToAction(row)` inverts a row to
-its `RunAction` (kind, A, B).
+Row `r < cand_n` is candidate `r` of the Vec candidate list: `RunSim.LegalActions()[r]` (same order) on every screen
+but the rewards screen, where `RewardMacros.Fill` substitutes the macro rows (next section); rows `>= cand_n` are zero.
+`cand_n = min(candidates, 192)`; more candidates set `CANDIDATE_OVERFLOW` and only the first 192 are selectable
+(constructible: a PileSelect over a 250-card draw pile, or the merchant card removal with a 200-card deck).
+`CandidateTable.ToAction(row)` inverts a row to its (kind, A, B); `RewardMacros.ExpandAll` gives the RunActions a macro
+row runs.
 
 Overflow consequences (tested by `VecTests.Test_VecEnv_PromptTableOverflow` and `Test_VecEnv_RemovalPromptOverflow`):
 
@@ -173,9 +181,57 @@ Overflow consequences (tested by `VecTests.Test_VecEnv_PromptTableOverflow` and 
 | `hand_slot` | A for `PlayCard` (index into `hand`) |
 | `target_slot` | B for `PlayCard` / `UsePotion` when B ≥ 0 (index into `enemies`); −1 for self/none (B = −1) and for pets (B ≤ −3 = `Allies[-2 - B]`: read B) |
 | `potion_slot` | A for `UsePotion` / `DiscardPotion` (index into `potions`) |
-| `option_index` | A for `Travel` (rank of the destination among legal points sorted by (col, row)), `ClaimReward`, `PickRewardCard`, `RewardAlternative`, `BuyEntry`, `ChooseRestOption`, `ChooseEventOption`, `PromptSelect` (index into `prompt_options`) |
-| `card_id` | cards vocab id (0 = none) of the played hand card, of the picked card-reward card, or of a prompt option that is a card (not for Bundle prompts; on grid prompts only ids that are not also relic/potion ids) |
+| `option_index` | A for `Travel` (rank of the destination among legal points sorted by (col, row)), `ClaimReward`, `PickRewardCard`, `RewardAlternative`, `BuyEntry`, `ChooseRestOption`, `ChooseEventOption`, `PromptSelect` (index into `prompt_options`); for the macros `TakeRewardCard` / `TakeRewardAlternative` the `reward_choices` row (the k-th macro row of the list points at row k) |
+| `card_id` | cards vocab id (0 = none) of the played hand card, of the picked card-reward card (`PickRewardCard`, `TakeRewardCard`), or of a prompt option that is a card (not for Bundle prompts; on grid prompts only ids that are not also relic/potion ids) |
 | `target_uid` | `CombatId` of the targeted monster (= `enemies.uid`), 0 = none |
+
+### Rewards-screen macros (deck-building channel, 2026-11-04; `RewardMacros.cs`)
+
+Motivation: the PPO policy of 2026-11-03 never opened a card reward (995 rewards screens, 0 picks): on the old list a
+card needed two decisions (open, then pick) and the cards were invisible until the first one. On the rewards screen
+(loop phase Rewards, no pending prompt) the candidate list is now `RunSim.LegalActions()` with two substitutions:
+
+- `ClaimReward(r)` of an unclaimed card reward becomes one **`TakeRewardCard`** row (kind 21, A = r, B = card index)
+  per offered card, then one **`TakeRewardAlternative`** row (kind 22, A = r, B = alternative index) per alternative
+  the opened screen would offer other than Skip: REROLL (Driftwood) and SACRIFICE (Pael's Wing), predicted with the
+  game's own `CardRewardAlternative.Generate` (pure: its hooks only append to a fresh list). Executing a row runs the
+  game's two clicks with `StepFast` each — `ClaimReward(r)` (opens the screen, game `Rewards/CardReward.cs:592-603`),
+  then `PickRewardCard(B)` / `RewardAlternative(B)` (`:604-700`) — so states, hashes and replays are the game's; after
+  the first click `RewardMacros.RequireOpened` checks the screen of reward r is open with option B on it and otherwise
+  throws, which ends the episode as SIM_ERROR (fail closed; never seen). A macro is one decision: `step_index`,
+  `step_cap` and the floor stall cap count it once; `FastSteps` / `SlowSteps` count its two RunSim steps.
+- `ClaimReward(r)` of a potion reward the game would refuse is dropped: with a full belt `TryToProcure` fails TooFull
+  and `OnSelect` returns false, the reward stays unclaimed (`Rewards/PotionReward.cs:180-191`;
+  `PotionReward.ClaimWouldBeRefused`). Under Sozu the game consumes the reward without a potion (`:192-194`), so that
+  claim stays. Gold, relic, special-card, removal and allowed potion claims keep their one-click `ClaimReward` rows.
+- **No Skip row.** The card screen's Skip is `EndSelectionAndDoNotCompleteReward`
+  (`Entities.CardRewardAlternatives/CardRewardAlternative.cs:67-73`; `OnSelect` returns `rewardComplete = false`,
+  `Rewards/CardReward.cs:660`, `:738`): it closes the screen and the reward stays on the rewards screen, so as a macro it
+  would be a no-op loop. Declining a card is `ProceedRewards` (every unclaimed reward is skipped there, `OnSkipped`).
+- Kept granular: the CardReward phase (reached after a REROLL, when a reward allows more picks, or from a save) lists
+  `PickRewardCard` / `RewardAlternative` (Skip included) as before; every other screen is unchanged. `RunSim`'s own
+  legal actions (and so the play server / LLM channel) are unchanged.
+- Observation: `reward_choices` (appended buffer 41, CAP_REWARD_CHOICES 16) row k = the k-th macro row's target:
+  `reward_index` (= A), `option` (= B), `alt_id` (CardRewardAlt of an alternative row, 0 for a card), then the 22 `hand`
+  columns of the offered card exactly as `card_reward` shows it once opened (`playable`, `playable_reason_id`, `hits`
+  0). Written in the Rewards loop phase; empty while a card screen is open (then `card_reward` holds the cards).
+  More than 16 choices set `TABLE_OVERFLOW`; their macro rows stay selectable with `option_index` past the table (read
+  `card_id`).
+- Hidden information: this makes H7 weaker on purpose (table below): the cards of an unopened card reward are shown on
+  the rewards screen. A human sees them one free click away (open, look, close: the reward stays unclaimed); the one
+  side effect of that peek in the game, the reward no longer listening for relics obtained later (`Player.RelicObtained
+  -=` after the selection ends, `Rewards/CardReward.cs:703`; sim `_listensForRelics`), does not happen here.
+- Candidate-set change: indices recorded before 2026-11-04 (eval `history_actions`, training logs) do not replay on
+  this library once a rewards screen is reached; `encoder_version` changed (`5dbfa09dd9dcb5ed` → `e9baaefc39811631`)
+  and `RunActionKind` gained two members (21 `TakeRewardCard`, 22 `TakeRewardAlternative`), which is a model input of
+  `sim/tools/train`: checkpoints of earlier libraries do not resume on this one.
+- Tests (`VecTests.RewardMacros.cs`): `Test_VecCand_RewardMacroTakesAnOfferedCard` (rows, `reward_choices` = the opened
+  `card_reward` rows column for column, one decision = ClaimReward + PickRewardCard by hash, deck +1),
+  `Test_VecCand_RewardMacroAlternatives` (REROLL leaves the card screen open with new cards; SACRIFICE completes the
+  reward; Skip never listed), `Test_VecCand_RewardPotionClaimNeedsAFreeSlot` (full belt: not listed, the game refuses;
+  free slot or Sozu: listed), `Test_VecCand_RewardMacroFailsClosed`; T4 `Test_VecCand_MatchesLegalActions` checks every
+  macro row against `reward_choices` and steps a shadow run by its expansion (10,000 decision points);
+  `VecEncoderTests.Test_VecEncoder_TreasureAndCardRewardHidden` (74 rewards screens: the cards in `reward_choices`).
 
 ## Bench
 
@@ -309,6 +365,18 @@ int32_t sts2vec_pool_release(int64_t h, const int32_t* entries, int32_t n); // n
   convention (`""` 0, `"?"` 1). Rows beyond a table's count are zero; mask by the matching `*_n` (or id ≠ 0).
 - `playable_reason_id` holds the raw `UnplayableReason` bitmask; `playable_reason_bits` maps names to bits.
 - Count vectors: index `card_id * 2 + min(upgrade, 1)`, length `2 × V_cards`.
+- `card_static` (appended 2026-11-04; `CardStatic.cs`): a static table in the schema JSON, `{"fields": [...], "rows":
+  [[...], ...]}`, one int row per `cards` vocab id (rows 0 / 1 zero), published once rather than per observation so a
+  model can embed a card from its numbers: `ported`, energy / star cost and after one upgrade (−1 X, −2 unplayable /
+  star X), type, rarity, target, keyword mask (and upgraded), max upgrade level, `upgrade_known`, damage / block / hits
+  (base and upgraded), and the first four dynamic vars (`card_vars` ids, base and upgraded values; every "magic number"
+  is one of them). Ported cards are read from a probe `CardInstance` (canonical values, then one `Upgrade()` = the
+  def's `OnUpgrade`); catalog-only cards (`ported` 0) carry their catalog cost / type / rarity / target. Per-instance
+  values as in `hand` (MAD_SCIENCE's type is its Tinker Time choice, None on a fresh card). Python:
+  `schema.card_static` (int32 [V_cards, F]), `schema.card_static_fields`, `schema.card_static_cols()`. Test
+  `VecTests.Test_Vec_CardStaticTable`: 595 card constructors (cost, type, rarity, target) and the damage (152), block
+  (65) and cost (55) changes of the game's `OnUpgrade` bodies agree with `knowledge/source/v0.111.0/cards.jsonl`; the
+  table adds ≈ 40 KB to the schema JSON (74 KB in all) and changes `encoder_version` whenever a card's numbers change.
 - `encoder_version` = XXH64 (seed 0, lower-case hex) of the UTF-8 JSON text with the leading
   `"encoder_version":"…",` member removed (Python: `Schema.verify_version()`).
 
@@ -352,9 +420,12 @@ int32_t sts2vec_pool_release(int64_t h, const int32_t* entries, int32_t n); // n
 | 37 | `draw_marked` | int32 | [32, 6] | card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount (appended; sorted by content) |
 | 38–39 | `discard_order`, `exhaust_order` | int32 | [64, 6] | same columns as `draw_marked`, pile order (appended) |
 | 40 | `event_option_values` | int32 | [8, 9] | value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 (appended; row i = `event_options` row i) |
+| 41 | `reward_choices` | int32 | [16, 25] | reward_index, option, alt_id, then the 22 `hand` columns (appended 2026-11-04; row k = the k-th rewards-screen macro's target, "Rewards-screen macros") |
+| 42 | `map_routes` | int32 | [18, 7, 5] | elites_min, elites_max, rests, shops, boss_dist (appended 2026-11-04; cell [row][col] = `map_nodes` cell, "map_routes" below) |
 
-41 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–40 are appended after the
-signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 30.9 KB per env. New caps (`schema.caps`):
+43 buffers (D3.1 numbers its rows 0–33 and lists `card_reward_alts` inside row 20; rows 35–42 are appended after the
+signal buffers so every earlier buffer keeps its index, shape and bytes). ≈ 35.1 KB per env (`reward_choices` +1,600 B,
+`map_routes` +2,520 B). Caps appended with `reward_choices`: REWARD_CHOICES 16. New caps (`schema.caps`):
 DRAW_MARKED 32, PILE_ORDER 64, EVENT_VALUES 3, EVENT_ITEMS 2; new enum `ItemKind` (vocabulary convention: affliction,
 card, enchantment, potion, relic).
 
@@ -377,7 +448,7 @@ integer the game UI shows.
 | H3 | No future rooms. | Only the current act's `Boss` and `SecondBoss` appear (`boss_id`, `second_boss_id`); the game shows both on the map and the top bar. The map is the current act's map only. |
 | H4/H5 | No odds and no grab bags. | Neither is read. |
 | H6 | The treasure relic is hidden until the chest opens. | `treasure_relic_id` is 0 until `ChestOpened`. |
-| H7 | Card-reward cards are hidden on the rewards screen. | A card reward appears in `rewards` only as `is_card_reward = 1`. `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase. |
+| H7 | Card-reward cards: hidden on the rewards screen until 2026-11-04; since the rewards-screen macros they are shown there (one free click away in the game: opening a card reward and closing it leaves it unclaimed). | `rewards` still names no card (`is_card_reward = 1`); `reward_choices` lists the unopened rewards' cards (and REROLL / SACRIFICE) in the Rewards loop phase; `card_reward` and `card_reward_alts` are written only in the `CardReward` loop phase (the open screen). |
 | H8 | No move ids. | Intents come from `NextMove.Intents` through `PlayerView.Intent` (type, damage, times, card_count). The move's identity and the AI state are never read; `Test_VecEncoder_NoMoveIds` greps the encoder source and checks the rows. |
 | H9/H11 | No monster, encounter or event internals. | `Extra`, `EncounterExtra` and event RNG are not read. An event option is identified by `key_hash` and `ordinal`; `event_option_values` reads only the event members its option text names (the localisation placeholders, `EventOptionVars`), i.e. what the button shows. |
 | H10 | Powers are shown as the UI shows them. | Visibility uses `PlayerView.IsVisibleToPlayer` and amounts use `PlayerView.DisplayAmountToPlayer` (see below). |
@@ -603,7 +674,7 @@ Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative
 | `price` | `GetCost(rs)`. |
 | `stocked` | 1 while the entry is in stock. |
 | `on_sale` | 1 for the sale card. |
-| `affordable` | stocked and price ≤ gold, which is BuyEntry's own rule. |
+| `affordable` | stocked and price ≤ gold (the price label's colour, `Nodes.Screens.Shops/NMerchantPotion.cs:178`). BuyEntry additionally needs a potion to fit: no BuyEntry is listed for a potion while the belt is full or Sozu forbids it (`MerchantRoom.CanBuy`, 2026-11-04), so read the candidates for what is buyable. |
 
 **rest** (row i = `Options[i]` = ChooseRestOption A)
 
@@ -620,6 +691,27 @@ Row i holds the CardRewardAlt vocab id of `Alternatives[i]` (= RewardAlternative
 | `ordinal` | i. |
 | `enabled`, `locked`, `proceed` | Option flags. |
 | `relic_id` | Relic vocab id of the option's relic. |
+
+**map_routes** [row][col] (appended 2026-11-04; the `map_nodes` cell; a cell without a node is a zero row)
+
+Routing features of the drawn map graph, computed from the published `map_nodes` columns themselves (`point_type`,
+`child_mask`; an edge always leads to the next row), so they cannot disagree with them. The act's boss is
+`ActMap.BossMapPoint` (the first Boss row; the A10 second boss follows it). Motivation: the PPO policy of 2026-11-03
+avoided elites when it had a choice but walked into nodes where every option was an elite (0.65 forced elites per Act 1
+on maps where 19 of 20 had an elite-free path): it saw only the next row.
+
+| Column | Meaning |
+| --- | --- |
+| `elites_min`, `elites_max` | Fewest / most Elite rooms on any path from this node to the boss, this node included (0 at the boss; −1 when the boss is not reachable from the node, i.e. the second boss). For a `legal_next` node: the elites the route through it must face / can collect. |
+| `rests`, `shops` | Distinct RestSite / Shop nodes reachable from this node, this node included. |
+| `boss_dist` | Moves from this node to the boss (0 at the boss, −1 when not reachable); every path has this length. |
+
+One pass over the 126 cells from the last row up (children first) with 128-bit reachability sets, allocation-free; the
+purity test's mean encode time stayed at ≈ 44 µs per call (within its run-to-run noise). Not modelled: free travel (`Hook.ShouldAllowFreeTravel`, any node of the next row) — the features
+describe the drawn edges; Unknown (?) rooms are not counted as possible elites. Test:
+`VecEncoderTests.Test_VecEncoder_MapRoutesMatchTheDrawnGraph` (80 distinct maps of all characters at A0 / A10, 14 in act 3:
+every node against a memoised recursion over `map_nodes`, the start node's min / max against an enumeration of all
+6,899 start-to-boss paths); Python `tests/test_map_routes.py` recomputes the table from `map_nodes` over random rollouts.
 
 **prompt_options** (row i = `Options[i]` = PromptSelect A)
 
@@ -713,9 +805,10 @@ parity test below requires every value the walk reaches to resolve.
 | `LeakTest_DrawOrder` | 600 combat points whose draw pile was reshuffled in a clone. The encoded bytes must be identical. |
 | `ParityWithServer` | 300 states (252 in combat). hp, max_hp, gold, energy, max_energy, block, floor and act must match the play server's `ObservationBuilder` JSON. So must the hand's ids, upgrades, costs, playability and hits, and the enemies' slot, uid, id, hp, max_hp, block and intents (type, damage, times, card_count). Also compared: incoming danger and every effective damage against every live enemy (751 values). |
 | `NoMoveIds` | Greps the encoder source for move, AI and RNG identifiers, and checks that the intent rows match the intents' types. |
-| `TreasureAndCardRewardHidden` | 5 closed and then opened chests, and 74 card rewards that are hidden on the Rewards screen and shown in the CardReward phase. |
+| `TreasureAndCardRewardHidden` | 5 closed and then opened chests (relic hidden until opened), and 74 card rewards: on the Rewards screen `rewards` names no card, `card_reward` is empty and `reward_choices` lists exactly the reward's cards; once opened, `card_reward` shows them and `reward_choices` is empty. |
 | `TablesRespectCaps` | A 110-card deck sets `TABLE_OVERFLOW`, writes exactly 96 rows in pickup order and reports `deck_n = 110`. An ordinary state sets no overflow, and its draw counts sum to the pile size. |
 | `AuxProgressColumns` | 10,229 states from 10 healed random runs (24 act starts): aux `act_floor` / `map_row` / `map_col` equal the `global_i` columns, `act_rooms` = `map_nodes`' last row + 1 (values seen 15–18), and `total_floor - act_floor` = the protocol's act start floor at every state. |
+| `MapRoutesMatchTheDrawnGraph` | `map_routes` on 80 distinct maps (all characters, A0 / A10, acts 1–3) equals a memoised recursion over `map_nodes`' point types and child masks at every node; the start node's elite min / max equal those of an explicit enumeration of every start-to-boss path. |
 
 Appended-buffer tests (`sim/Sts2Sim.Tests/VecTests.Append.cs`, class `VecTests`; the purity, leak and server-parity
 tests above also cover the appended columns: no `?` id, marked-draw reshuffles, hand `affliction.amount` /
@@ -904,7 +997,7 @@ scratch, so drive those from one thread.
 
 **Memory per branched slot**: one RunSim (`Clone()` allocates a median 31 KB, p90 47 KB, max 89 KB over 90 states of six
 random runs, `Test_VecBranch_MemoryPerBranchedSlot`; a clone keeps nearly all of it and shares the act map and model
-definitions) plus the slot's 30.9 KB of buffer rows. The next branch, reset or restore of the slot replaces it, so a search
+definitions) plus the slot's 35.1 KB of buffer rows. The next branch, reset or restore of the slot replaces it, so a search
 env's memory stays ≈ N × (60-120 KB) however long the search runs. The old path also kept one pool entry (the same
 RunSim size) per snapshot or determinization, forever.
 
@@ -967,6 +1060,9 @@ faster than one `restore` call per slot. Plain stepping is unchanged (`sts2vec b
   (`SelfConsistencyTests.Test_SelfConsistency_F7_CloneThenStepMatchesStep`, `RewardsTests.Test_Rewards_Claimed*` /
   `Test_Rewards_Clone*`).
 - `hand` has no star-cost column (not in §D3.1); the affliction amount is `hand_x.affliction_amount`.
+- `sim/tools/train`'s model does not read `reward_choices` yet: a `TakeRewardCard` row reaches it through its kind, A/B
+  and `card_id` (card embedding), not through an `option_index` pointer into a table, so upgrades and other per-instance
+  columns of an offered card are invisible to it until the model embeds that buffer.
 - Not appended: the master deck's affliction amounts (deck cards carry `affliction_id` only; afflictions are combat
   marks) and a separate (enchant, affliction) channel for `card_reward` cards.
 - The encoder fails closed: an exception from a Core call (intent damage, card preview, potion rules) ends the

@@ -63,7 +63,7 @@ def test_param_budget(model):
 
 def test_preset_sizes(spec):
     sizes = {name: param_count(Policy(spec, **kw)) for name, kw in PRESETS.items()}
-    assert sizes["smoke"] == 948_750
+    assert sizes["smoke"] == 948_974   # e9baaefc39811631: RunActionKind has 23 members (948,750 with 21)
     assert sizes["small"] < 2_000_000
     assert 10_000_000 <= sizes["large"] <= 20_000_000, sizes
 

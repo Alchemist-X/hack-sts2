@@ -158,7 +158,8 @@ public static class Vocab
     private static IReadOnlyList<(string, IReadOnlyList<string>)> BuildEnums() => new (string, IReadOnlyList<string>)[]
     {
         ("RunPhase", EnumNames<RunPhase>()),
-        ("RunActionKind", EnumNames<RunActionKind>()),
+        // RunSim action kinds, then the Vec-only rewards-screen macro kinds (RewardMacros; values from 21, 2026-11-04).
+        ("RunActionKind", EnumNames<RunActionKind>().Concat(RewardMacros.KindNames).ToArray()),
         ("IntentType", EnumNames<IntentType>()),
         ("MapPointType", EnumNames<MapPointType>()),
         ("RewardType", EnumNames<RewardType>()),

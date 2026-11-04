@@ -18,7 +18,10 @@ Output (the LLM runner's layout, so ``sts2eval report DIR`` re-renders it): ``co
 ``games/<CHARACTER>-<SEED>.summary.json`` (with ``history_actions`` = candidate indices), ``report.json``, ``report.md``.
 
 Replay audit: every game's recorded candidate indices are replayed on a fresh env; result, act, floor and the final
-``StateHash`` must match (``replayable``). This is the determinism guarantee checked on every evaluation.
+``StateHash`` must match (``replayable``). This is the determinism guarantee checked on every evaluation. A
+rewards-screen macro index (TakeRewardCard / TakeRewardAlternative, 2026-11-04) replays like any other: the env lists
+the same candidates and expands the macro to the same two game actions. Indices recorded with a library from before a
+candidate-set change (``server_version`` in the summaries) replay only on that library.
 """
 
 from __future__ import annotations

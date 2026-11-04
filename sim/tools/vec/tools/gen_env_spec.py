@@ -32,7 +32,8 @@ PILE_COLS = [
 ]
 
 # buffer -> (what a row is, [(columns, range, meaning)]). Columns: comma-separated schema field names; "*" = the
-# buffer has no fields (scalar or count vector); "=hand" = exactly the fields of `hand`.
+# buffer has no fields (scalar or count vector); "=hand" = exactly the fields of `hand`; "+hand" = the buffer's last
+# columns are the fields of `hand`.
 # Range tokens: {v:kind} vocabulary id, {e:Enum} enum value, {cv} card_vars id, {prb} playable-reason bitmask,
 # {kw} keyword bitmask, {st} status bits.
 DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
@@ -147,7 +148,7 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("reward_type", "{e:RewardType}", "reward kind"),
         ("amount", ">= 0", "gold amount"),
         ("item_id", "id", "potion / relic / special-card id (vocabulary by reward_type)"),
-        ("is_card_reward", "0/1", "a card reward (its cards stay hidden until opened)"),
+        ("is_card_reward", "0/1", "a card reward (its offered cards: `reward_choices`)"),
     ]),
     "card_reward": ("row i = offered card i (CardReward phase only)", [
         ("=hand", "as hand", "same columns as `hand`; playable, playable_reason_id, hits are 0"),
@@ -175,13 +176,13 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("ordinal", ">= 0", "i"),
     ]),
     "cand": ("THE ACTION SPACE: row r < cand_n = legal action r; rows >= cand_n are 0", [
-        ("kind", "{e:RunActionKind}", "action kind"),
-        ("A, B", "-1/>= 0", "the action's raw arguments (see the Action section)"),
+        ("kind", "{e:RunActionKind}", "action kind (21, 22: the rewards-screen macros TakeRewardCard, TakeRewardAlternative)"),
+        ("A, B", "-1/>= 0", "the action's raw arguments (see the Action section; macros: `rewards` row, card / alternative index)"),
         ("hand_slot", "-1/0..9", "PlayCard: `hand` row"),
         ("target_slot", "-1/0..5", "PlayCard / UsePotion: `enemies` row (-1 = no enemy target)"),
         ("potion_slot", "-1/0..9", "UsePotion / DiscardPotion: `potions` row"),
-        ("option_index", "-1/>= 0", "row in the phase's table: Travel rank, rewards, card_reward, shop, rest, event_options, prompt_options"),
-        ("card_id", "{v:cards}", "card played / picked / selected (0 = none)"),
+        ("option_index", "-1/>= 0", "row in the phase's table: Travel rank, rewards, card_reward, shop, rest, event_options, prompt_options; reward_choices for the macros"),
+        ("card_id", "{v:cards}", "card played / picked / taken / selected (0 = none)"),
         ("target_uid", ">= 0", "`enemies.uid` of the target (0 = none)"),
     ]),
     "cand_n": ("scalar", [("*", "0..192", "number of legal candidates (0 when finished)")]),
@@ -227,7 +228,33 @@ DESCR: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("item_kind_0, item_kind_1", "{e:ItemKind}", "vocabulary of `item_id_k` (0 = none)"),
         ("item_id_0, item_id_1", "id", "the items in text order (first 2; RELIC_TRADER: owned, then new relic)"),
     ]),
+    # appended with the rewards-screen macro candidates (2026-11-04)
+    "reward_choices": ("rewards screen: row k = choice k of the unopened card rewards (each reward's cards, then its REROLL / "
+                       "SACRIFICE), the `option_index` of the k-th TakeRewardCard / TakeRewardAlternative candidate", [
+        ("reward_index", ">= 0", "`rewards` row of the card reward (= the macro's A)"),
+        ("option", ">= 0", "card index or alternative index (= the macro's B)"),
+        ("alt_id", "{e:CardRewardAlt}", "the alternative (0 for a card row)"),
+        ("+hand", "as hand", "the offered card, as `card_reward` shows it once opened (0 for an alternative)"),
+    ]),
+    # appended with the map-routing features (2026-11-04)
+    "map_routes": ("[row][col] = the `map_nodes` cell: routing features of the drawn map graph (child edges); 0 where no node", [
+        ("elites_min, elites_max", "-1/>= 0", "fewest / most Elite rooms on a path from this node to the act's boss (this node included; -1 = boss not reachable)"),
+        ("rests, shops", ">= 0", "rest sites / shops reachable from this node (distinct nodes, this node included)"),
+        ("boss_dist", "-1/>= 0", "moves from this node to the act's boss (0 at the boss; -1 = not reachable, e.g. the second boss)"),
+    ]),
 }
+
+
+# the static card table (schema JSON "card_static", appended 2026-11-04): [(columns, range, meaning)]
+CARD_STATIC_DESCR: list[tuple[str, str, str]] = [
+    ("ported", "0/1", "1 = in the simulator's content; 0 = known only from the catalog (cost, type, rarity, target; rest 0)"),
+    ("cost, cost_upgraded, star_cost, star_cost_upgraded", "-2/-1/>= 0", "energy / star cost of a fresh card and after one upgrade; energy -1 = X, -2 = unplayable; star -1 = none, -2 = X"),
+    ("type, rarity, target, keyword_mask, keyword_mask_upgraded", "{e:CardType}, {e:CardRarity}, {e:TargetType}, {kw}", "card enums (MAD_SCIENCE: type None until Tinker Time); canonical / upgraded keywords"),
+    ("max_upgrade, upgrade_known", ">= 0, 0/1", "upgrade levels; 1 = the upgraded columns come from a probe upgrade"),
+    ("damage, damage_upgraded, block, block_upgraded, hits, hits_upgraded", "-1/>= 0", "Damage (or Calculated / Osty damage) and Block vars, hits per play (-1 = X); base / upgraded"),
+    ("var_id_0, var_id_1, var_id_2, var_id_3, var_val_0, var_val_1, var_val_2, var_val_3, var_val_upgraded_0, var_val_upgraded_1, var_val_upgraded_2, var_val_upgraded_3",
+     "{cv}, int", "the first 4 dynamic vars as in `hand` (every \"magic number\" is one), base / upgraded values"),
+]
 
 
 def _compress(names: list[str]) -> str:
@@ -291,6 +318,12 @@ def render(schema) -> str:
                     raise SystemExit(f"gen_env_spec: {b.name} fields differ from hand")
                 covered += list(b.fields)
                 col = f"{len(b.fields)} columns of `hand`"
+            elif spec == "+hand":
+                hand = tuple(schema["hand"].fields)
+                if tuple(b.fields or ())[-len(hand):] != hand:
+                    raise SystemExit(f"gen_env_spec: {b.name} does not end with the fields of hand")
+                covered += list(hand)
+                col = f"{len(hand)} columns of `hand`"
             else:
                 fs = [f.strip() for f in spec.split(",")]
                 unknown = [f for f in fs if f not in (b.fields or ())]
@@ -307,6 +340,22 @@ def render(schema) -> str:
             dup = sorted({f for f in covered if covered.count(f) > 1})
             if unc or dup:
                 raise SystemExit(f"gen_env_spec: {b.name}: undescribed columns {unc}, described twice {dup}")
+    fields = tuple(getattr(schema, "card_static_fields", ()))
+    if fields:
+        out += ["", f"Static card table (`schema.card_static`, int32 [{schema.card_static.shape[0]}, {len(fields)}]: row = `cards` id; "
+                "published once in the schema JSON as `card_static`, not per observation; rows 0 and 1 are zero; "
+                "`schema.card_static_cols()` names the columns):", "", "| column(s) | range | meaning |", "| --- | --- | --- |"]
+        covered: list[str] = []
+        for spec, rng, meaning in CARD_STATIC_DESCR:
+            fs = [f.strip() for f in spec.split(",")]
+            unknown = [f for f in fs if f not in fields]
+            if unknown:
+                raise SystemExit(f"gen_env_spec: card_static: described columns {unknown} are not in the schema")
+            covered += fs
+            out.append(f"| {_compress(fs)} | {_range(rng, schema)} | {meaning} |")
+        unc = [f for f in fields if f not in covered]
+        if unc:
+            raise SystemExit(f"gen_env_spec: card_static: undescribed columns {unc}")
     out += ["", "Enum values (`schema.vocab.enums[name][value]`):", ""]
     for name, values in schema.vocab.enums.items():
         out.append(f"- `{name}`: " + ", ".join(f"{i} {v or '∅'}" for i, v in enumerate(values)))

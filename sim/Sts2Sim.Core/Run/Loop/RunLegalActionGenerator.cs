@@ -167,11 +167,12 @@ public static class RunLegalActionGenerator
         {
             return;
         }
+        // MerchantRoom.CanBuy: stocked, enough gold, and (potions) a procure that would succeed — the game refuses a potion
+        // purchase with a full belt or under Sozu without changing anything, so that click is not listed.
         var entries = inventory.AllEntries;
         for (int i = 0; i < entries.Count; i++)
         {
-            var entry = entries[i];
-            if (entry.IsStocked && entry.EnoughGold(rs))
+            if (MerchantRoom.CanBuy(rs, entries[i]))
             {
                 buffer.Add(RunAction.Of(RunActionKind.BuyEntry, i));
             }

@@ -208,5 +208,5 @@ def test_cli_refuses_large_preset_on_cpu(tmp_path, capsys):
                "--torch-threads", "2", "--minibatch", "512", "--out", str(tmp_path / "big")])
     assert rc == 2
     out = capsys.readouterr().out
-    assert "refusing to train a 15,804,270-parameter model (preset large) on cpu" in out and "GiB" in out
+    assert "refusing to train a 15,805,070-parameter model (preset large) on cpu" in out and "GiB" in out
     assert not (tmp_path / "big" / "checkpoints").exists()

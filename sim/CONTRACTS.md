@@ -1285,7 +1285,11 @@ caller, in their own branch, and say so in their report.
   sources and all other slots are untouched. `restore_many(slots, entries)` = `restore` for many slots in one call.
 - `step(actions)`: for every slot with `actions[i] >= 0` apply `candidates[i][actions[i]]` (an index outside
   `[0, cand_n[i])` → status `ILLEGAL_ACTION`, slot unchanged, nothing else happens to it); then write *every* slot's
-  observation, candidates and signals. Slots with `actions[i] < 0` are no-ops (status bit `NOOP`).
+  observation, candidates and signals. Slots with `actions[i] < 0` are no-ops (status bit `NOOP`). The candidates are
+  `RunSim.LegalActions()` except on the rewards screen (appended 2026-11-04, `sim/VEC.md` "Rewards-screen macros"):
+  a card reward is listed as one `TakeRewardCard` (21) row per offered card plus one `TakeRewardAlternative` (22) row per
+  REROLL / SACRIFICE, each applied as the game's ClaimReward + PickRewardCard / RewardAlternative in one step (one
+  decision), and a potion claim the game would refuse (full belt) is not listed.
 - **Auto-reset in the same step** (config `auto_reset = true`, default): when a step ends an episode (terminal,
   truncated, content gap or sim error), the step writes `reward`, `terminated`/`truncated`, `status` and the
   `last_episode` block for the finished episode, then immediately resets the slot from its start sequence and writes
@@ -1316,7 +1320,7 @@ that kind (`0` = none/padding, `1` = unknown, real ids from 2). Card identity is
 Capacities (CAP_*): HAND 10 · DECK 96 · RELICS 32 · POTIONS 10 · PLAYER_POWERS 24 · ENEMIES 6 · ENEMY_INTENTS 3 ·
 ENEMY_POWERS 12 · ALLIES 2 · ALLY_POWERS 8 · ORBS 10 · MAP_ROWS 18 · MAP_COLS 7 · REWARDS 8 · CARD_REWARD 4 ·
 CARD_REWARD_ALTS 2 · SHOP 14 · REST 9 · EVENT_OPTIONS 8 · PROMPT_OPTIONS 128 · CANDIDATES 192 · HAND_VARS 4 · appended
-2026-11-03: DRAW_MARKED 32 · PILE_ORDER 64 · EVENT_VALUES 3 · EVENT_ITEMS 2.
+2026-11-03: DRAW_MARKED 32 · PILE_ORDER 64 · EVENT_VALUES 3 · EVENT_ITEMS 2 · appended 2026-11-04: REWARD_CHOICES 16.
 When a table overflows its capacity the first CAP rows are written and the status bit `TABLE_OVERFLOW`
 (candidates: `CANDIDATE_OVERFLOW`) is set for the slot.
 
@@ -1360,6 +1364,8 @@ When a table overflows its capacity the first CAP rows are written and the statu
 | 36 | `draw_marked` | int32 | [DRAW_MARKED, 6] | appended: card_id, upgrade, enchant_id, enchant_amount, affliction_id, affliction_amount of the draw-pile cards with an enchantment or affliction, rows sorted by content (H1) |
 | 37 | `discard_order`, 38 `exhaust_order` | int32 | [PILE_ORDER, 6] | appended: the same columns in pile order (oldest first; the pile screens show it) |
 | 39 | `event_option_values` | int32 | [EVENT_OPTIONS, 9] | appended: value_n, value_0..2, item_n, item_kind_0, item_id_0, item_kind_1, item_id_1 — the numbers and items option i's text names (localisation placeholders resolved on the live event; enum `ItemKind`) |
+| 40 | `reward_choices` | int32 | [REWARD_CHOICES, 3 + HC] | appended 2026-11-04: reward_index, option, alt_id, then the `hand` columns — row k = the target of the k-th rewards-screen macro candidate (the cards of the unopened card rewards, then their REROLL / SACRIFICE) |
+| 41 | `map_routes` | int32 | [MAP_ROWS, MAP_COLS, 5] | appended 2026-11-04: per `map_nodes` cell, elites_min, elites_max (Elite rooms on a path from the node to the act's boss, node included; −1 = unreachable), rests, shops (distinct nodes reachable), boss_dist (moves to the boss) — computed from `map_nodes`' point_type / child_mask |
 
 `HC` and the field orders are published in the schema; the Python side never hard-codes offsets. Appending rule (as
 for `aux` in E3 and the six buffers of 2026-11-03): new data goes into new buffers (or new last columns of `aux`)
@@ -1372,7 +1378,10 @@ appended after the existing ones, so every earlier buffer keeps its index, shape
 "events": [...], "orbs": [...], "enchantments": [...], "afflictions": [...], "acts": [...], "characters": [...],
 "enums": {"RunPhase": [...], "RunActionKind": [...], "IntentType": [...], "MapPointType": [...], "RewardType": [...],
 "ChoicePromptKind": [...], "CardType": [...], "TargetType": [...], "CardRarity": [...], "RestOption": [...],
-"CardRewardAlt": [...], "ShopCategory": [...]}}, "caps": {...}, "card_vars": [...131 names...], "playable_reasons": [...]}`.
+"CardRewardAlt": [...], "ShopCategory": [...]}}, "caps": {...}, "card_vars": [...131 names...], "playable_reasons": [...],
+"card_static": {"fields": [...], "rows": [[...], ...]}}` (`card_static` appended 2026-11-04: one row of static card
+features per `cards` id — costs, enums, keywords, damage / block / hits and the first four vars, base and after one
+upgrade; `sim/VEC.md` "Schema").
 Vocabularies are the registries' `AllIds` (sorted ordinal) with `""` at 0 and `"?"` at 1; cards additionally list the
 `CardCatalog` ids that the registry lacks (unported) so the catalog is version-stable. `V_cards` = `vocab.cards.length`.
 
@@ -1381,7 +1390,9 @@ Vocabularies are the registries' `AllIds` (sorted ordinal) with `""` at 0 and `"
 H1 draw pile as counts only (appended `draw_marked`: its marked cards sorted by content, never in pile order); H2 no
 seed, RNG stream or counter anywhere; H3 no future rooms/events/encounters — the
 current act's boss ids are visible (the map shows them); H4/H5 no odds or grab bags; H6 treasure relic only when
-`ChestOpened`; H7 card-reward cards only in the `CardReward` phase (the rewards list says "card reward"); H8 **no move
+`ChestOpened`; H7 card-reward cards: `card_reward` only in the `CardReward` phase (the rewards list says "card reward"),
+and since 2026-11-04 the unopened rewards' cards in `reward_choices` on the rewards screen (one free click away in the
+game: opening and closing a card reward leaves it unclaimed); H8 **no move
 ids** — intents only (type, damage, times, card_count); H9 no monster/encounter extra state; H10 powers through
 `PlayerView.IsVisible` and `DisplayAmount`; H11 no event internals (appended `event_option_values` reads only the event
 members an option's text names); H13 no instance ids except enemy `uid`

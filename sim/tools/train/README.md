@@ -58,17 +58,21 @@ of the vocabularies and enums it embeds, the RunActionKind / PromptItemKind / Re
 buffers, enums the model does not embed (EndKind, ItemKind) and the aux / last_episode columns (read by name from the
 live schema) may differ; the differences are logged and kept in `config.json` (`resume_compat`), and the next
 checkpoint carries the new spec. Anything else is refused before the env is built (exit 2, every difference listed,
-the run directory untouched). So the Stage-1 checkpoints of `fc2eb34c07bc8513` resume on `5dbfa09dd9dcb5ed` (the
-schema append only added buffers and enum members; `tests/test_resume_compat.py` pins it with that library's spec).
+the run directory untouched). So the Stage-1 checkpoints of `fc2eb34c07bc8513` resumed on `5dbfa09dd9dcb5ed` (the
+schema append only added buffers and enum members). The rewards-screen macros (`e9baaefc39811631`, 2026-11-04,
+`sim/VEC.md` "Rewards-screen macros") added two `RunActionKind` members (`TakeRewardCard`, `TakeRewardAlternative`), a
+model input, so checkpoints of earlier libraries no longer resume on later ones; `tests/test_resume_compat.py` pins
+that refusal with the Stage-1 spec and tests resuming across versions with a synthetic older spec. The model does not
+read the appended `reward_choices` yet: a macro row reaches it through its kind, A/B and `card_id`.
 `sts2train eval` applies the same rule to a checkpoint.
 
 ## Model sizes (`--preset`, or `--d-model --state-dim --depth --heads --ff-mult`)
 
 | Preset | d_model / state / depth / heads | Parameters | Use |
 | --- | --- | --- | --- |
-| `smoke` (= defaults) | 96 / 256 / 0 / – | 948,750 | the 2026-11-02 smoke model (pooled tables concatenated into the state MLP) |
-| `small` | 128 / 256 / 2 / 4 | 1,175,150 | CPU / MPS smokes of the transformer path |
-| `large` | 384 / 768 / 6 / 8 | 15,804,270 | `--device cuda` only (one A100) |
+| `smoke` (= defaults) | 96 / 256 / 0 / – | 948,974 | the 2026-11-02 smoke model (pooled tables concatenated into the state MLP) |
+| `small` | 128 / 256 / 2 / 4 | 1,175,438 | CPU / MPS smokes of the transformer path |
+| `large` | 384 / 768 / 6 / 8 | 15,805,070 | `--device cuda` only (one A100) |
 
 Activation memory (autograd's saved tensors, fp32, worst-case 64 candidate / prompt rows; measured by
 `model.activation_bytes_per_sample` and printed at start-up for the configured minibatch): smoke 0.41 MiB/sample,
@@ -87,7 +91,8 @@ defaults `PYTORCH_MPS_HIGH_WATERMARK_RATIO` to 0.3 (and the low watermark below 
 `depth > 0` adds a pre-LayerNorm transformer trunk (`F.scaled_dot_product_attention`, key padding mask) over 17
 typed table tokens plus one token per hand card, enemy and potion row; the state is read from the global token and the
 mean of the live tokens, and the contextualised hand / enemy / potion rows feed the candidate pointers. Counts are on
-the `fc2eb34c07bc8513` and `5dbfa09dd9dcb5ed` schemas (same model inputs); every size, vocabulary and column index is
+the `e9baaefc39811631` schema (two more `RunActionKind` members than `fc2eb34c07bc8513` / `5dbfa09dd9dcb5ed`, whose
+counts were 948,750 / 1,175,150 / 15,804,270); every size, vocabulary and column index is
 read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
 buffers are ignored).
 
