@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     deadline REAL NOT NULL, last_checked REAL, outcome TEXT, error TEXT,
     UNIQUE(logical_key, attempt)
 );
+CREATE TABLE IF NOT EXISTS research_usage_holds (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    usage_value_cents INTEGER NOT NULL,
+    created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS cost_holds (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
     reserve INTEGER NOT NULL, proven_bound INTEGER NOT NULL,
@@ -425,6 +430,10 @@ class Store:
             held = db.execute(
                 "SELECT job_id,reserve,proven_bound FROM cost_holds WHERE settled_at IS NULL ORDER BY job_id",
             ).fetchall()
+            usage_holds = db.execute(
+                "SELECT h.job_id,j.reserve,h.usage_value_cents FROM research_usage_holds h "
+                "JOIN jobs j ON j.id=h.job_id WHERE j.actual IS NULL ORDER BY h.created"
+            ).fetchall()
             broker = []
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='broker_jobs'").fetchone():
                 broker = db.execute(
@@ -447,13 +456,17 @@ class Store:
                     "reference": snapshot["reference"], "observed_at": snapshot["observed_at"],
                 } if snapshot else None,
                 "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - reserved) / 100,
-                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held,
+                "spent_usd": spent / 100, "spend_complete": not unsettled and not active and not held and not usage_holds,
                 "reserved_usd": reserved / 100,
                 "conservative_budget_held_usd": sum(row["reserve"] for row in held) / 100,
                 "jobs_with_verified_cost_bounds": [
                     {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
                      "proven_upper_bound_usd": row["proven_bound"] / 100}
                     for row in held
+                ],
+                "research_usage_cash_unknown": [
+                    {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
+                     "standard_credit_value_usd": row["usage_value_cents"] / 100} for row in usage_holds
                 ],
                 "access_gate": dict(access) if access else None,
                 "prepared_probes": [

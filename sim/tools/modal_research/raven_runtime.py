@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
-from .agent_runner import AgentRunner, SolTask
+from .agent_runner import AgentRunner, SolTask, _research_input
 from .broker import AgentQueueProvider, GPU_KINDS, RavenBroker, RavenRuntime
 from .contracts import identifier
 from .gateway import AgentBinding
@@ -64,6 +64,35 @@ class SandboxRates:
         return int(((seconds * rate + volume) * 100).to_integral_value(rounding=ROUND_CEILING))
 
 
+@dataclass(frozen=True)
+class ResearchUsagePolicy:
+    """Explicitly bounded invocation policy. This is not a cash-cost upper bound."""
+
+    reference: str
+    account_verification: str
+    valid_until: int
+    reserve_cents: int
+    max_calls: int
+    allowed_event_ids: tuple[str, ...]
+
+    def __post_init__(self):
+        identifier(self.reference)
+        identifier(self.account_verification)
+        if (type(self.valid_until) is not int or type(self.reserve_cents) is not int
+                or self.reserve_cents != 200 or type(self.max_calls) is not int or not 1 <= self.max_calls <= 2
+                or not isinstance(self.allowed_event_ids, (tuple, list))
+                or len(self.allowed_event_ids) != self.max_calls or len(set(self.allowed_event_ids)) != self.max_calls):
+            raise ValueError("invalid finite research allocation")
+        for event in self.allowed_event_ids:
+            identifier(event)
+
+    def allows(self, job, now):
+        return (job.kind == "research" and job.attempt == 1 and job.reserve_cents == self.reserve_cents
+                and now < job.deadline <= self.valid_until and job.deadline - now <= 180
+                and job.payload.get("consumed_event_ids") in ([event] for event in self.allowed_event_ids)
+                and len(_research_input(job.payload)[0].encode()) <= 24_000)
+
+
 def load_runtime(config, *, clock=time.time):
     """Build a runtime only from a trusted on-host file with reviewed bindings."""
     required = {"study_id", "state", "artifacts", "sandbox", "sandbox_identity_verification",
@@ -84,18 +113,26 @@ def load_runtime(config, *, clock=time.time):
         rates = SandboxRates(**config["sandbox_rates"])
     agent = config["agent"]
     runner = None
+    research_policy = None
     if agent is not None:
         required_agent = {"state", "workspaces", "launcher", "bindings", "sol_tasks", "cost_caps", "cost_verification"}
-        if type(agent) is not dict or set(agent) not in (required_agent, required_agent | {"system_identity"}):
+        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy"}):
             raise ValueError("runtime agent requires verified role and spending bindings")
-        identifier(agent["cost_verification"])
+        if agent["cost_caps"]:
+            identifier(agent["cost_verification"])
         if not agent["cost_caps"].keys() <= agent["bindings"].keys():
             raise ValueError("agent spend caps must refer to verified roles")
+        if agent.get("research_usage_policy"):
+            research_policy = ResearchUsagePolicy(**agent["research_usage_policy"])
+            if (set(agent["bindings"]) != {"research"} or agent["bindings"]["research"]["model_id"] != "gpt-6-astra"
+                    or not agent.get("system_identity") or "research" in agent["cost_caps"]
+                    or not 1 <= agent["bindings"]["research"]["max_output_bytes"] <= 16_000):
+                raise ValueError("finite policy requires the no-tool system Astra binding only")
         runner = AgentRunner(
             Path(agent["state"]), Path(agent["workspaces"]), study_id, Path(agent["launcher"]),
             {name: AgentBinding(**value) for name, value in agent["bindings"].items()},
             sol_tasks={name: SolTask(**value) for name, value in agent["sol_tasks"].items()},
-            system_identity=agent.get("system_identity"),
+            system_identity=agent.get("system_identity"), scoped_research=research_policy is not None,
         )
 
     def bound(job):
@@ -106,10 +143,12 @@ def load_runtime(config, *, clock=time.time):
         return None
 
     def authorize(job):
+        if job.kind == "research" and research_policy is not None:
+            return research_policy.allows(job, clock())
         ceiling = bound(job)
         return type(ceiling) is int and 0 < ceiling <= job.reserve_cents
 
-    broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound,
+    broker = RavenBroker(store, artifacts, authorize_spawn=authorize, reserve_bound=bound, research_policy=research_policy,
                          tool_enabled=bool(runner and "sol" in runner.bindings))
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,

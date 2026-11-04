@@ -21,13 +21,14 @@ class DispatchBlocked(ValueError):
 
 
 class Controller:
-    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50, admission_policy=None):
+    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50, admission_policy=None, research_seconds=600):
         self.store = store
         self.backend = backend
         self.artifacts = Path(artifacts)
         self.research_cents = research_cents
         self.sol_cents = sol_cents
         self.admission_policy = admission_policy
+        self.research_seconds = research_seconds
 
     def tick(self):
         owner = uuid4().hex
@@ -78,10 +79,13 @@ class Controller:
             if sum(self.store.ledger(db, experiment)) + reserve > cents(spec["max_cost"]):
                 raise DispatchBlocked("experiment budget limit")
         key = f"{logical}:{attempt}"
-        if self.admission_policy is not None and not self.admission_policy(
-            Job(key, logical, attempt, kind, deadline, reserve, payload)
-        ):
-            raise DispatchBlocked(f"{kind} requires a verified provider and job cost envelope")
+        job = Job(key, logical, attempt, kind, deadline, reserve, payload)
+        if self.admission_policy is not None and not self.admission_policy(job):
+            raise DispatchBlocked(f"{kind} requires an authorized provider and spending policy")
+        if kind == "research" and hasattr(self.backend, "can_plan_research") and not self.backend.can_plan_research(db, job):
+            raise DispatchBlocked("finite research authorization exhausted or event unavailable")
+        if kind in {"train", "eval"} and hasattr(self.backend, "gpu_waits_for_research") and self.backend.gpu_waits_for_research(db):
+            raise DispatchBlocked("waiting for research terminal usage reconciliation")
         db.execute(
             """INSERT INTO jobs (id,logical_key,attempt,kind,experiment_id,event_id,payload,reserve,deadline)
                VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -130,7 +134,7 @@ class Controller:
         try:
             self._create_job(
                 db, f"research-{digest(event['id'])[:32]}", 1, "research", payload,
-                self.research_cents, self.store.clock() + 600, event=event["id"],
+                self.research_cents, self.store.clock() + self.research_seconds, event=event["id"],
             )
         except DispatchBlocked as error:
             db.execute("UPDATE study SET next_wake=?", (str(error),))
@@ -322,7 +326,11 @@ class Controller:
         bound = outcome.cost_bound_cents
         provisional = (actual is None and getattr(self.backend, "verified_cost_bounds", False)
                        and type(bound) is int and 0 < bound <= row["reserve"])
-        if not provisional and (type(actual) is not int or not 0 <= actual <= 10_000_000):
+        usage = outcome.usage_value_cents
+        scoped_usage = (job.kind == "research" and actual is None and outcome.status == "succeeded"
+                        and type(usage) is int and 0 < usage <= row["reserve"]
+                        and hasattr(self.backend, "research_usage_admitted"))
+        if not provisional and not scoped_usage and (type(actual) is not int or not 0 <= actual <= 10_000_000):
             self._quarantine(owner, row, "terminal job cost unresolved")
             return
         error = None
@@ -356,6 +364,8 @@ class Controller:
             error = "invalid_response" if job.kind in {"research", "sol"} else "missing_artifact"
         with self.store.transaction() as db:
             state = self.store.fence(db, owner)
+            if scoped_usage and not self.backend.research_usage_admitted(db, job.key):
+                raise ValueError("research usage is outside its durable admission")
             if provisional:
                 latest = self.backend.authoritative_cost(db, job.key)
                 if latest is not None:
@@ -370,6 +380,8 @@ class Controller:
             db.execute("UPDATE jobs SET state=?,actual=?,outcome=?,error=? WHERE id=?",
                        ("failed" if error else "done", actual, canonical(result) if result else
                         diagnostic, error, job.key))
+            if scoped_usage:
+                db.execute("INSERT INTO research_usage_holds VALUES (?,?,?)", (job.key, usage, self.store.clock()))
             if provisional:
                 db.execute("INSERT INTO cost_holds (job_id,reserve,proven_bound,created) VALUES (?,?,?,?)",
                            (job.key, row["reserve"], bound, self.store.clock()))

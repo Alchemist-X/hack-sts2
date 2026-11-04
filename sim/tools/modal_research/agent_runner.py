@@ -123,12 +123,15 @@ class AgentRunner:
     def __init__(
         self, root: Path, workspaces: Path, study_id: str, launcher: Path,
         bindings: dict[str, AgentBinding], *, sol_tasks: dict[str, SolTask] | None = None,
-        fixture=False, process_identity=linux_process_identity, system_identity=None,
+        fixture=False, process_identity=linux_process_identity, system_identity=None, scoped_research=False,
     ):
         system_execution = SystemServiceExecution(**system_identity) if system_identity is not None else None
         if system_execution is not None and (fixture or Path(root) != system_execution.STATE):
             raise ValueError("system member execution requires its approved root-owned state")
         self.root = _private_directory(root)
+        if type(scoped_research) is not bool or (scoped_research and system_execution is None):
+            raise ValueError("scoped research requires the verified system helper")
+        self.scoped_research = scoped_research
         self.workspaces = (system_execution.workspace_root(workspaces) if system_execution is not None
                            else _private_directory(workspaces))
         if self.root == self.workspaces or self.root in self.workspaces.parents or self.workspaces in self.root.parents:
@@ -214,6 +217,36 @@ class AgentRunner:
         """Read the durable receipt without dispatch or process mutation."""
         return self._outcome(self._load(self._folder(job), self._fingerprint(job)))
 
+    def standard_usage_value(self, job):
+        """Read the exact successful one-turn receipt and estimate purchased credit value."""
+        if not self.scoped_research or job.kind != "research" or self.bindings[job.kind].model_id != "gpt-6-astra":
+            raise ValueError("unbound research usage metering")
+        folder = self._folder(job)
+        record = self._load(folder, self._fingerprint(job))
+        if self._outcome(record).status != "succeeded":
+            raise ValueError("research did not complete successfully")
+        path = folder / "evidence.json"
+        if path.is_symlink() or not 0 < path.stat().st_size <= 2 * PIPE_LIMIT:
+            raise ValueError("missing bounded research usage evidence")
+        evidence = json.loads(path.read_bytes())
+        kinds = [event["type"] for event in evidence["events"]]
+        usage = evidence["usage"]
+        keys = {"input_tokens", "cached_input_tokens", "output_tokens"}
+        if (type(usage) is not dict or set(usage) != keys or evidence["exit_code"] != 0
+                or evidence["terminal"] != ["turn.completed"] or kinds.count("turn.started") != 1
+                or kinds.count("thread.started") != 1 or evidence.get("unrecognized_items", 0)
+                or evidence["commands"] or evidence["diagnostics"]
+                or any(event.get("item_type") not in {None, "agent_message", "reasoning"} for event in evidence["events"])
+                or any(type(value) is not int for value in usage.values())):
+            raise ValueError("research lacks a valid no-tool terminal usage receipt")
+        inputs, cached, outputs = (usage[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens"))
+        if not 0 <= cached <= inputs or not 0 < inputs or not 0 < outputs:
+            raise ValueError("research terminal token usage is inconsistent")
+        # GPT-6 Astra Standard credits per million: 250 / 25 / 1250.
+        # $100 per 2500 purchased credits = 4 cents per credit.
+        units = 4 * ((inputs - cached) * 250 + cached * 25 + outputs * 1250)
+        return (units + 999_999) // 1_000_000
+
     def run(self, job: Job) -> Outcome:
         """Run at most once. Only the broker may hand an admitted job to this method."""
         return self._claim(job, start=True)
@@ -272,6 +305,8 @@ class AgentRunner:
                 if isinstance(self.execution, SystemServiceExecution):
                     os.chown(workspace, self.execution.WORKER_UID, self.execution.WORKER_GID)
                 prompt, schema = _research_input(job.payload)
+                if self.scoped_research and len(prompt.encode()) > 24_000:
+                    raise ValueError("scoped research prompt exceeds 24000 bytes")
             else:
                 workspace = self.workspaces / task.workspace
                 if not workspace.is_dir() or workspace.resolve() != workspace:
@@ -292,13 +327,17 @@ class AgentRunner:
             "--cd", str(workspace), "--skip-git-repo-check", "--ephemeral", "--json",
             "--output-schema", str(folder / "schema.json"), "-",
         ]
-        left = min(job.deadline - time.time(), MAX_SECONDS)
+        limit = 180 if job.kind == "research" and self.scoped_research else MAX_SECONDS
+        left = min(job.deadline - time.time(), limit)
         if left <= 0:
             return self._finish(folder, record, Outcome("failed", 0, error="deadline"))
         deadline = time.monotonic() + left
         try:
             execute = self._execute_fixture if self.execution is None else self.execution.execute
-            exit_code, error, evidence = execute(argv, workspace, prompt, deadline, folder, record)
+            exit_code, error, evidence = execute(
+                argv, workspace, prompt, deadline, folder, record,
+                **({"pipe_limit": 1_000_000} if job.kind == "research" and self.scoped_research else {}),
+            )
         except (OSError, ValueError, subprocess.SubprocessError):
             return self._finish(folder, record, Outcome("failed", error="agent_execution_uncertain"))
         # Raw agent messages exist only in memory. Only schema-validated
@@ -418,7 +457,7 @@ def _record_session(folder, record, session_id):
         raise ValueError("multiple sessions for one agent job")
 
 
-def _capture(process, deadline, evidence, record_session):
+def _capture(process, deadline, evidence, record_session, pipe_limit=PIPE_LIMIT):
     pending = {"stdout": bytearray(), "stderr": bytearray()}
     with selectors.DefaultSelector() as selector:
         for name in pending:
@@ -428,7 +467,7 @@ def _capture(process, deadline, evidence, record_session):
             if left <= 0:
                 return "deadline"
             for key, _ in selector.select(min(left, 0.25)):
-                remaining = PIPE_LIMIT - evidence["bytes"]
+                remaining = pipe_limit - evidence["bytes"]
                 chunk = os.read(key.fd, min(65_536, remaining + 1))
                 if not chunk:
                     selector.unregister(key.fileobj)
@@ -457,11 +496,15 @@ def _event(stream, line, evidence, record_session):
         return
     if not isinstance(event, dict) or type(kind := event.get("type")) is not str or kind not in EVENTS:
         return
+    if kind in {"error", "warning"}:
+        _diagnose(line, evidence)
     item = event.get("item")
     item_type = item.get("type") if isinstance(item, dict) else None
     entry = {"type": kind, "observed_at": time.time()}
     if isinstance(item_type, str) and item_type in ITEM_TYPES:
         entry["item_type"] = item_type
+    elif kind.startswith("item."):
+        evidence["unrecognized_items"] = evidence.get("unrecognized_items", 0) + 1
     if kind == "thread.started" and isinstance(sid := event.get("thread_id"), str) and SESSION.fullmatch(sid):
         record_session(sid)
         entry["session_id"] = sid
@@ -810,7 +853,7 @@ class SystemdExecution:
         finally:
             os.close(directory)
 
-    def execute(self, argv, workspace, prompt, deadline, folder, record):
+    def execute(self, argv, workspace, prompt, deadline, folder, record, *, pipe_limit=PIPE_LIMIT):
         evidence = _evidence()
         if (sys.platform != "linux" or not (self.CGROUP / "cgroup.controllers").is_file()
                 or not os.access(self.SYSTEMD_RUN, os.X_OK) or not os.access(self.SYSTEMCTL, os.X_OK)):
@@ -840,7 +883,7 @@ class SystemdExecution:
                 # This fsync is the guard's only launch signal. The service is
                 # pinned by the file descriptor before model work is possible.
                 _save(folder, "state.json", record)
-                error = _capture(proc, deadline, evidence, lambda sid: _record_session(folder, record, sid))
+                error = _capture(proc, deadline, evidence, lambda sid: _record_session(folder, record, sid), pipe_limit)
                 if not error:
                     try:
                         exit_code = proc.wait(timeout=max(0, min(0.5, deadline - time.monotonic())))
@@ -878,9 +921,11 @@ class SystemServiceExecution(SystemdExecution):
     WORKER_UID = 1001
     WORKER_GID = 1002
     PROJECT_GROUP = 985
+    TASKS = 64  # Raven's pinned Codex needs up to 59 with the verified one-core affinity.
     STATE = Path("/var/lib/sts2-modal-member-runner/agent-state")
     WORKSPACES = Path("/var/lib/sts2-modal-member-runner/workspaces")
-    EXTRA_PROPERTIES = {"CapabilityBoundingSet": "CAP_SETUID CAP_SETGID CAP_SETPCAP", "AllowedCPUs": "0"}
+    EXTRA_PROPERTIES = {"CapabilityBoundingSet": "CAP_SETUID CAP_SETGID CAP_SETPCAP",
+                        "AllowedCPUs": "0", "CPUAffinity": "0"}
 
     def __init__(self, uid, gid, group):
         if (os.geteuid() != 0 or (uid, gid, group) != (self.WORKER_UID, self.WORKER_GID, self.PROJECT_GROUP)):
@@ -895,7 +940,8 @@ class SystemServiceExecution(SystemdExecution):
     def _receipt(cls, props, unit):
         if (set(props.get("CapabilityBoundingSet", "").upper().split())
                 != set(cls.EXTRA_PROPERTIES["CapabilityBoundingSet"].split())
-                or props.get("AllowedCPUs") != cls.EXTRA_PROPERTIES["AllowedCPUs"]):
+                or props.get("AllowedCPUs") != cls.EXTRA_PROPERTIES["AllowedCPUs"]
+                or props.get("CPUAffinity") != cls.EXTRA_PROPERTIES["CPUAffinity"]):
             raise ValueError("unexpected system-agent CPU affinity or capabilities")
         return super()._receipt(props, unit)
 

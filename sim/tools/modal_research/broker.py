@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS broker_jobs (
     claim_proof TEXT, worker_outcome TEXT, outcome TEXT,
     seed_begin INTEGER, seed_end INTEGER, reusable_tail INTEGER,
     error TEXT
+);
+CREATE TABLE IF NOT EXISTS broker_research_usage_admissions (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id)
 );
 CREATE TABLE IF NOT EXISTS broker_cost_envelopes (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
@@ -100,7 +103,7 @@ class RavenBroker:
     fixture = False
     verified_cost_bounds = True
 
-    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None,
+    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, research_policy=None,
                  tool_enabled=False,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
@@ -108,14 +111,32 @@ class RavenBroker:
         self.authorize_spawn = authorize_spawn
         self.verify_cost_bound = verify_cost_bound
         self.reserve_bound = reserve_bound
+        self.research_policy = research_policy
         self.tool_enabled = bool(tool_enabled)
         self.grant_seconds = integer(grant_seconds, 1)
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
         if self.grant_seconds > 60 or self.kill_grace_seconds > 30:
             raise ValueError("unbounded worker lease settings")
-        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound else None)
+        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or research_policy else None,
+                                     research_seconds=180 if research_policy else 600,
+                                     research_cents=research_policy.reserve_cents if research_policy else 25)
         with self.store.transaction() as db:
             db.executescript(SCHEMA)
+
+    def research_usage_admitted(self, db, job_key):
+        return db.execute("SELECT 1 FROM broker_research_usage_admissions WHERE job_id=?", (job_key,)).fetchone() is not None
+
+    def can_plan_research(self, db, job):
+        if self.research_policy is None:
+            return True
+        policy = self.research_policy
+        count = db.execute("SELECT COUNT(*) FROM broker_research_usage_admissions").fetchone()[0]
+        return policy.allows(job, self.store.clock()) and count < policy.max_calls
+
+    def gpu_waits_for_research(self, db):
+        return self.research_policy is not None and db.execute(
+            "SELECT 1 FROM jobs WHERE kind='research' AND state IN ('intent','running','uncertain') LIMIT 1"
+        ).fetchone() is not None
 
     def server_time(self):
         """Clock sample for an authenticated worker's conservative lease translation."""
@@ -128,6 +149,7 @@ class RavenBroker:
         state = self._state(db)
         return (state["mode"] == "local" and row["actual"] is None
                 and row["state"] in {"intent", "running"}
+                and not (row["kind"] in GPU_KINDS and self.gpu_waits_for_research(db))
                 and self.controller._can_submit(db, state, Controller._job(row)))
 
     @staticmethod
@@ -239,8 +261,11 @@ class RavenBroker:
                     if current["state"] == "spawning":
                         self._finish(db, job.key, Outcome("failed", 0, error="cancelled_before_spawn"))
                 return None
+            usage_admission = job.kind == "research" and self.research_policy is not None
+            if usage_admission and not self.can_plan_research(db, job):
+                return None
             bound = self.reserve_bound(job) if self.reserve_bound is not None else None
-            if self.reserve_bound is not None and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
+            if not usage_admission and self.reserve_bound is not None and (type(bound) is not int or not 0 < bound <= job.reserve_cents):
                 return None
             authorized = self.store.clock()
             if job.deadline - authorized <= MAX_SEND_SECONDS:
@@ -253,7 +278,9 @@ class RavenBroker:
             )
             if marked.rowcount != 1:
                 return None
-            if bound is not None:
+            if usage_admission:
+                db.execute("INSERT INTO broker_research_usage_admissions VALUES (?)", (job.key,))
+            elif bound is not None:
                 db.execute("INSERT INTO broker_cost_envelopes VALUES (?,?)", (job.key, bound))
             if job.kind in GPU_KINDS and getattr(provider, "detached", False) is True:
                 detached = self._prepare_detached(db, job, row, launch_token)
@@ -384,6 +411,14 @@ class RavenBroker:
             if job.kind in GPU_KINDS:
                 outcome = self._gpu_outcome(db, current, outcome)
             envelope = db.execute("SELECT upper_cents FROM broker_cost_envelopes WHERE job_id=?", (job.key,)).fetchone()
+            if job.kind == "research" and self.research_usage_admitted(db, job.key) and not actual_known:
+                usage = outcome.usage_value_cents
+                if outcome.status != "succeeded" or type(usage) is not int or not 0 < usage <= job.reserve_cents:
+                    db.execute("UPDATE study SET stopped=COALESCE(stopped,'research usage or terminal proof outside policy')")
+                    self._finish(db, job.key, Outcome("failed", error="research_usage_unverified"))
+                else:
+                    self._finish(db, job.key, self._bounded_outcome(outcome))
+                return True
         materialize = getattr(provider, "materialize", None)
         if job.kind in GPU_KINDS and not detached and outcome.output is not None and materialize is not None:
             try:
@@ -832,6 +867,11 @@ class AgentQueueProvider:
         if row["state"] == "queued":
             return Outcome("running")
         outcome = Outcome(**json.loads(row["outcome"])) if row["outcome"] else self.runner.poll(job)
+        if job.kind == "research" and getattr(self.runner, "scoped_research", False) and outcome.status == "succeeded":
+            try:
+                return replace(outcome, usage_value_cents=self.runner.standard_usage_value(job))
+            except (OSError, ValueError, KeyError, TypeError):
+                return Outcome("failed", error="research_usage_unverified")
         if outcome.status not in TERMINAL or outcome.actual_cents is not None or self.cost_resolver is None:
             return outcome
         # Authoritative billing is separate from token usage and terminal output.
