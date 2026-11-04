@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Validate an sts2train Colab bundle on a linux x86_64 CPU box with plain python and no .NET: install CPU torch if the
 # interpreter has none, then run_train.sh (pip install, `sts2vec check`, a short CPU training run with checkpoints and
-# a protocol eval on std-a0-v1), then check the run directory and print the throughput.
+# a protocol eval on std-a0-v1; with the bundle's saves/ also --start-saves), then check the run directory and print
+# the throughput.
 #
 #   bash smoke_bundle.sh [RUN_DIR] [MINUTES] [THREADS]        (defaults: ./smoke-run, 2, nproc)
 #   docker run --rm -v "$PWD:/w" -w /w python:3.13 bash sts2train-<sha>/smoke_bundle.sh /w/smoke-run 2
@@ -25,9 +26,12 @@ if ! "$PY" -c "import torch" 2> /dev/null; then
 fi
 rm -rf "$RUN_DIR"
 HOURS="$("$PY" -c "print(float('$MINUTES') / 60)")"
+SAVES=()
+if [[ -d "$HERE/saves" ]]; then SAVES=(--start-saves "$HERE/saves" --save-mix 0.5); fi
 T0=$SECONDS
 bash "$HERE/run_train.sh" "$RUN_DIR" "$THREADS" 256 --device cpu --preset small --max-hours "$HOURS" \
-  --rollout 32 --minibatch 2048 --ckpt-every 2 --ckpt-every-min 1 --eval-every 4 --eval-seedset std-a0-v1 --log-every 1
+  --rollout 32 --minibatch 2048 --ckpt-every 2 --ckpt-every-min 1 --eval-every 4 --eval-seedset std-a0-v1 --log-every 1 \
+  ${SAVES[@]+"${SAVES[@]}"}
 echo "== run_train.sh finished in $((SECONDS - T0)) s; checking $RUN_DIR"
 "$PY" - "$RUN_DIR" <<'PY'
 import json, sys
@@ -44,7 +48,15 @@ evals = [json.loads(l) for l in open(run / "evals.jsonl")]
 assert rows and evals and all("error" not in e for e in evals), evals
 assert all(e["replayable"] == e["games"] for e in evals)
 summ = json.loads((run / "summary.json").read_text())
-lib = json.loads((run / "config.json").read_text())["library"]
+conf = json.loads((run / "config.json").read_text())
+lib = conf["library"]
+if conf.get("start_pool"):
+    sp = conf["start_pool"]
+    assert all("save_episodes" in r for r in rows), "metrics rows lack the fresh / save split"
+    print(f"start saves: {sp['unique_saves']} usable of {sp['files_found']} ({sp['skipped']} skipped), "
+          f"{sp['save_entries']} save + {sp['fresh_entries']} fresh entries; save-started episodes "
+          f"{sum(r['save_episodes'] for r in rows)}, fresh {sum(r['fresh_episodes'] for r in rows)}; "
+          f"SIM_ERROR {summ['sim_error']}, CONTENT_GAP {summ['content_gap']}")
 print(f"library: {lib['mode']} {lib['version']} ({lib['path']})")
 print(f"updates {st['update']}, env steps {st['env_steps']:,}, episodes {st['episodes']:,}, "
       f"env-steps/s {summ['env_steps_per_s_session']:,.0f} (env only {summ['env_only_steps_per_s']:,.0f}), "

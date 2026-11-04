@@ -4,14 +4,18 @@
 #   scripts/train/make_colab_bundle.sh                 # AOT .so built on an amd64 Docker host (AOT_HOST, default raven)
 #   AOT_SO=/path/Sts2Sim.Vec.so scripts/train/make_colab_bundle.sh    # reuse a linux-x64 NativeAOT library
 #   scripts/train/make_colab_bundle.sh --aot-only      # only build/fetch the .so (cached under tmp/colab/aot/<key>/)
+#   SAVES_DIR=tmp/train/saves-silent-a9 scripts/train/make_colab_bundle.sh   # also ship start saves (saves/)
 #
-# Everything is taken from the committed HEAD (git archive), never from the working tree. Contents:
+# Everything is taken from the committed HEAD (git archive), never from the working tree, except the optional
+# SAVES_DIR (data, never committed: scripts/train/collect_start_saves.py output). Contents:
 #   lib/Sts2Sim.Vec.so        linux-x64 NativeAOT build of Sts2Sim.Vec (Dockerfile 'aot' stage); no .NET runtime needed
 #   seedsets/*.json           protocol seed sets (sim/tools/eval/seedsets) for the periodic eval (STS2VEC_SEEDSETS)
 #   wheels/*.whl              sts2vec and sts2train-smoke (pure-python wheels, installed with --no-deps)
 #   requirements-colab.txt    numpy (torch is preinstalled on Colab and deliberately not listed)
 #   run_train.sh              pip-installs the wheels, exports STS2VEC_AOT_LIB, runs `sts2vec check`, launches training
 #   smoke_bundle.sh           validates the bundle on an amd64 CPU box (installs CPU torch if missing)
+#   saves/                    only with SAVES_DIR=DIR: DIR's *.save files (relative paths kept) + its manifest.json,
+#                             for `sts2train train --start-saves <bundle>/saves` (run_train.sh prints the path)
 #   manifest.json             git sha, AOT cache key, max GLIBC symbol version of the .so, size + sha256 of every file
 #
 # The .so comes from the Dockerfile's 'aot' stage (`docker build --platform linux/amd64 --target aot`). This Mac has no
@@ -65,6 +69,13 @@ else
   echo "== NativeAOT library: $SO (cached)"
 fi
 if [[ "$AOT_ONLY" == 1 ]]; then echo "$SO"; exit 0; fi
+if [[ -n "${SAVES_DIR:-}" ]]; then
+  SAVES_DIR="$(cd "$SAVES_DIR" 2> /dev/null && pwd)" || { echo "SAVES_DIR=${SAVES_DIR} is not a directory" >&2; exit 1; }
+  if [[ -z "$(find "$SAVES_DIR" -type f -name '*.save' -print -quit)" ]]; then
+    echo "SAVES_DIR=$SAVES_DIR holds no *.save files" >&2
+    exit 1
+  fi
+fi
 
 # ------------------------------------------------------------------------------------------------ bundle tree
 NAME="sts2train-$SHA"
@@ -84,19 +95,40 @@ for f in run_train.sh smoke_bundle.sh requirements-colab.txt; do
   cp "$STAGE/src/scripts/train/$f" "$B/$f"
 done
 chmod 0755 "$B/run_train.sh" "$B/smoke_bundle.sh"
+if [[ -n "${SAVES_DIR:-}" ]]; then
+  # start saves (data): every *.save under SAVES_DIR with its relative path, plus the collector's manifest.json
+  python3 - "$SAVES_DIR" "$B/saves" <<'PY'
+import shutil, sys
+from pathlib import Path
+src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+files = sorted(p for p in src.rglob("*.save") if p.is_file())
+if (src / "manifest.json").is_file():
+    files.append(src / "manifest.json")
+for p in files:
+    q = dst / p.relative_to(src)
+    q.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(p, q)                       # bytes only: no xattrs / AppleDouble files
+n = sum(1 for p in files if p.suffix == ".save")
+b = sum(p.stat().st_size for p in files if p.suffix == ".save")
+print(f"== start saves: {n} files, {b:,} bytes, from {src}")
+PY
+fi
 
 GLIBC="$(cat "$(dirname "$SO")/glibc.txt" 2> /dev/null || echo unknown)"
-python3 - "$B" "$SHA" "$KEY" "$GLIBC" <<'PY'
+python3 - "$B" "$SHA" "$KEY" "$GLIBC" "${SAVES_DIR:-}" <<'PY'
 import hashlib, json, os, sys, time
-root, sha, key, glibc = sys.argv[1:5]
+root, sha, key, glibc, saves_dir = sys.argv[1:6]
 files = {}
 for dp, _, fns in os.walk(root):
     for fn in sorted(fns):
         p = os.path.join(dp, fn)
         with open(p, "rb") as f:
             files[os.path.relpath(p, root)] = {"bytes": os.path.getsize(p), "sha256": hashlib.sha256(f.read()).hexdigest()}
+saves = [v for k, v in files.items() if k.startswith("saves" + os.sep) and k.endswith(".save")]
 manifest = {"bundle": os.path.basename(root), "git_sha": sha, "aot_key": key, "aot_target": "linux-x64 NativeAOT",
             "aot_glibc_max": glibc, "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "saves": {"count": len(saves), "bytes": sum(v["bytes"] for v in saves), "source_dir": saves_dir}
+            if saves else None,
             "files": dict(sorted(files.items()))}
 with open(os.path.join(root, "manifest.json"), "w") as f:
     json.dump(manifest, f, indent=1)
@@ -110,4 +142,5 @@ fi
 COPYFILE_DISABLE=1 tar "${TAR_FLAGS[@]}" -czf "$OUT" -C "$STAGE" "$NAME"
 rm -rf "$STAGE"
 echo "== wrote $OUT ($(du -h "$OUT" | cut -f1), $(wc -c < "$OUT" | tr -d ' ') bytes)"
-tar tzvf "$OUT" | awk '{printf "   %10s  %s\n", $5, $NF}'
+tar tzvf "$OUT" | awk '$NF ~ /\/saves\/.*\.save$/ {n++; b += $5; next} {printf "   %10s  %s\n", $5, $NF}
+  END {if (n) printf "   %10s  %s/saves/*.save (%d files)\n", b, "'"$NAME"'", n}'
