@@ -4,6 +4,7 @@
     sts2train train --preset large --device cuda --envs 2048 --max-hours 6 --eval-every 50 --out RUN_DIR
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
                                                          # (also across encoder versions: model inputs must match)
+    sts2train train --characters SILENT --start-saves SAVES_DIR --save-mix 0.5 ...   # half the starts from saves
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
 
 ``train`` flags that are not given keep the default (fresh run) or the checkpoint's value (``--resume``).
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -62,9 +64,27 @@ def _plot(out: Path) -> None:
         return [sum(v[max(0, i - k + 1):i + 1]) / len(v[max(0, i - k + 1):i + 1]) for i in range(len(v))]
 
     fig, ax = plt.subplots(1, 2, figsize=(11, 4))
-    p = [r["progress_mean"] for r in rows]
-    ax[0].plot(x, p, color="#9db4d6", lw=0.6, label="per update (training episodes)")
-    ax[0].plot(x, smooth(p), color="#1f4e8c", lw=1.4, label=f"rolling mean ({k} updates)")
+    saves = any("save_episodes" in r for r in rows)
+
+    def series(key):            # rolling mean over the updates that finished such episodes (NaN = none yet)
+        v = [r.get(key) for r in rows]
+        out = []
+        for i in range(len(v)):
+            w = [y for y in v[max(0, i - k + 1):i + 1] if y is not None]
+            out.append(sum(w) / len(w) if w else float("nan"))
+        return out
+
+    if saves:                   # --start-saves: fresh starts (comparable to a run without saves) vs save starts
+        ax[0].plot(x, series("fresh_progress_mean"), color="#1f4e8c", lw=1.4,
+                   label=f"fresh starts: progress (rolling {k})")
+        ax[0].plot(x, series("save_progress_mean"), color="#c77d2a", lw=1.1, ls="--",
+                   label="save starts: progress at the end")
+        ax[0].plot(x, series("save_progress_gain_mean"), color="#8a4f0e", lw=1.4,
+                   label="save starts: progress gained")
+    else:
+        p = [r["progress_mean"] for r in rows]
+        ax[0].plot(x, p, color="#9db4d6", lw=0.6, label="per update (training episodes)")
+        ax[0].plot(x, smooth(p), color="#1f4e8c", lw=1.4, label=f"rolling mean ({k} updates)")
     ev = [e for e in evals if e.get("progress_mean") is not None]
     if ev:
         ax[0].plot([e["env_steps"] / 1e6 for e in ev], [e["progress_mean"] for e in ev], "o-", color="#b04a3a",
@@ -73,9 +93,13 @@ def _plot(out: Path) -> None:
     ax[0].set_ylabel("progress v0.2")
     ax[0].legend(frameon=False)
     ax[0].set_title("protocol progress")
-    f = [r.get("floor_mean") or 0.0 for r in rows]
-    ax[1].plot(x, f, color="#a9cfa4", lw=0.6, label="per update")
-    ax[1].plot(x, smooth(f), color="#2e6b2a", lw=1.4, label=f"rolling mean ({k} updates)")
+    if saves:
+        ax[1].plot(x, series("fresh_floor_mean"), color="#2e6b2a", lw=1.4, label=f"fresh starts (rolling {k})")
+        ax[1].plot(x, series("save_floor_mean"), color="#c77d2a", lw=1.4, label="save starts")
+    else:
+        f = [r.get("floor_mean") or 0.0 for r in rows]
+        ax[1].plot(x, f, color="#a9cfa4", lw=0.6, label="per update")
+        ax[1].plot(x, smooth(f), color="#2e6b2a", lw=1.4, label=f"rolling mean ({k} updates)")
     ax[1].set_xlabel("env steps (M)")
     ax[1].set_ylabel("floor reached (finished episodes)")
     ax[1].legend(frameon=False)
@@ -148,6 +172,16 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--pool", type=int, help=f"fresh start pool entries (default {D.pool})")
     g.add_argument("--characters", type=lambda v: tuple(x.strip() for x in v.split(",") if x.strip()),
                    help="comma separated (default all five)")
+    g.add_argument("--start-saves", dest="start_saves",
+                   help="directory of game .save files (searched recursively; scripts/train/collect_start_saves.py) "
+                        "to start episodes from, mixed with --pool fresh starts; unsupported saves are skipped and "
+                        "reported; 'none' turns it off on --resume (default: fresh starts only)")
+    g.add_argument("--save-mix", dest="save_mix", type=float,
+                   help=f"fraction of episode starts from --start-saves, via pool entry weights (default {D.save_mix})")
+    g.add_argument("--save-copies", dest="save_copies", choices=["determinized", "exact"],
+                   help="further pool copies of a save: determinized = same player view, hidden state (draw order, "
+                        f"RNG streams) resampled per copy; exact = every start replays the save's RNG (default "
+                        f"{D.save_copies})")
     g = tr.add_argument_group("PPO")
     for flag, dest, typ in (("--rollout", "rollout", int), ("--epochs", "epochs", int),
                             ("--minibatch", "minibatch", int), ("--lr", "lr", float), ("--gamma", "gamma", float),
@@ -179,6 +213,9 @@ def main(argv=None) -> int:
         resume = given.pop("resume", None)
         if "minutes" in given:
             given["max_hours"] = given.pop("minutes") / 60.0
+        if "start_saves" in given:      # absolute, so a resume from another working directory finds it
+            v = given["start_saves"]
+            given["start_saves"] = None if v.lower() in ("", "none") else os.path.abspath(os.path.expanduser(v))
         if "out" not in given and resume in (None, "auto"):
             if resume == "auto":
                 ap.error("--resume auto needs --out RUN_DIR")

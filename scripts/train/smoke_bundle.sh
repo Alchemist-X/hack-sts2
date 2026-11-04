@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Validate an sts2train Colab bundle on a linux x86_64 CPU box with plain python and no .NET: install CPU torch if the
 # interpreter has none, then run_train.sh (pip install, `sts2vec check`, a short CPU training run with checkpoints,
-# --floor-step-cap 80 and a protocol eval on std-a0-v1), then check the run directory (the cap in effect, the encoder
-# version), check that the bundled library fills the appended observation buffers (event_option_values is resolved by
-# reflection, which a NativeAOT publish could trim), and print the throughput.
+# --floor-step-cap 80 and a protocol eval on std-a0-v1; with the bundle's saves/ also --start-saves --save-mix 0.5),
+# then check the run directory (the cap in effect, the encoder version; with saves the fresh / save split), check that
+# the bundled library fills the appended observation buffers (event_option_values is resolved by reflection, which a
+# NativeAOT publish could trim), and print the throughput.
 #
 #   bash smoke_bundle.sh [RUN_DIR] [MINUTES] [THREADS]        (defaults: ./smoke-run, 2, nproc)
 #   docker run --rm -v "$PWD:/w" -w /w python:3.13 bash sts2train-<sha>/smoke_bundle.sh /w/smoke-run 2
@@ -27,10 +28,12 @@ if ! "$PY" -c "import torch" 2> /dev/null; then
 fi
 rm -rf "$RUN_DIR"
 HOURS="$("$PY" -c "print(float('$MINUTES') / 60)")"
+SAVES=()
+if [[ -d "$HERE/saves" ]]; then SAVES=(--start-saves "$HERE/saves" --save-mix 0.5); fi
 T0=$SECONDS
 bash "$HERE/run_train.sh" "$RUN_DIR" "$THREADS" 256 --device cpu --preset small --max-hours "$HOURS" \
   --rollout 32 --minibatch 2048 --ckpt-every 2 --ckpt-every-min 1 --eval-every 4 --eval-seedset std-a0-v1 \
-  --log-every 1 --floor-step-cap 80
+  --log-every 1 --floor-step-cap 80 ${SAVES[@]+"${SAVES[@]}"}
 echo "== run_train.sh finished in $((SECONDS - T0)) s; checking $RUN_DIR"
 "$PY" - "$RUN_DIR" <<'PY'
 import json, sys
@@ -54,6 +57,18 @@ assert conf["config"]["floor_step_cap"] == 80 and conf.get("env", {}).get("floor
 print(f"library: {lib['mode']} {lib['version']} ({lib['path']}); encoder_version {conf['encoder_version']}")
 print(f"floor_step_cap in effect: {conf['env']['floor_step_cap']} (config.json env; FLOOR_STALL truncations "
       f"{summ.get('floor_stall')}, sim errors {summ['sim_error']}, content gaps {summ['content_gap']})")
+if conf.get("start_pool"):
+    sp = conf["start_pool"]
+    assert conf["config"].get("start_saves"), "config.json config.start_saves is not set"
+    assert all("save_episodes" in r for r in rows), "metrics rows lack the fresh / save split"
+    n_fresh, n_save = sum(r["fresh_episodes"] for r in rows), sum(r["save_episodes"] for r in rows)
+    assert n_fresh and n_save, f"a start group finished no episode: fresh {n_fresh}, save {n_save}"
+    assert summ["sim_error"] == 0 and summ["content_gap"] == 0, (summ["sim_error"], summ["content_gap"])
+    print(f"start saves: {sp['unique_saves']} usable of {sp['files_found']} ({sp['skipped']} skipped), "
+          f"{sp['save_entries']} save + {sp['fresh_entries']} fresh entries (save mix {sp['save_mix_effective']}); "
+          f"finished episodes: save-started {n_save}, fresh {n_fresh}")
+    print("start floor of the usable saves (floor:count): "
+          + " ".join(f"{k}:{v}" for k, v in sp["histograms_unique_saves"]["start_floor"].items()))
 print(f"updates {st['update']}, env steps {st['env_steps']:,}, episodes {st['episodes']:,}, "
       f"env-steps/s {summ['env_steps_per_s_session']:,.0f} (env only {summ['env_only_steps_per_s']:,.0f}), "
       f"time split {summ['time_split_s']}")
