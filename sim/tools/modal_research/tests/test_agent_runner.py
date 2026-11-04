@@ -10,9 +10,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from modal_research.adapters import Job
-from modal_research.agent_runner import AgentRunner, ProcessIdentity, SolTask
+from modal_research.agent_runner import AgentRunner, ProcessIdentity, SolTask, SolTemplate
 from modal_research.contracts import digest
 from modal_research.gateway import AgentBinding
+from modal_research.store import Store
 
 
 FAKE_CLI = r'''
@@ -107,11 +108,11 @@ class AgentRunnerTest(unittest.TestCase):
             "consumed_event_ids": ["event-one"], "evidence_refs": ["event-one"],
         })
 
-    def runner(self, mode="success", *, tasks=None, identity=fixture_identity):
+    def runner(self, mode="success", *, tasks=None, identity=fixture_identity, loader=None):
         self.launcher.write_text(f"#!{sys.executable}\nMODE = {mode!r}\nLAUNCHES = {str(self.launches)!r}\n" + FAKE_CLI)
         self.launcher.chmod(0o700)
         return AgentRunner(self.state, self.workspaces, "study-one", self.launcher, self.bindings,
-                           sol_tasks=tasks, fixture=True, process_identity=identity)
+                           sol_tasks=tasks, sol_task_loader=loader, fixture=True, process_identity=identity)
 
     def record(self, job, filename="state.json"):
         return json.loads((self.state / digest(["study-one", job.key]) / filename).read_text())
@@ -194,6 +195,23 @@ class AgentRunnerTest(unittest.TestCase):
         self.assertEqual(outcome.status, "succeeded")
         self.assertEqual(len(self.record(job, "evidence.json")["artifacts"]["proof.txt"]), 64)
         self.assertTrue(outcome.output["artifact_refs"][0].startswith("sha256:"))
+
+    def test_sol_restart_loads_exact_durable_binding(self):
+        job, tasks = self.sol_job()
+        original = tasks["task-one"]
+        store = Store(self.root / "binding.db", "study-one", "fixture")
+        template = SolTemplate("reviewed-one", "diagnose", (original.workspace,), original.base_commit,
+                               original.artifact_paths, original.test_argv, 1, 30, 128, 16_000,
+                               self.bindings["sol"].verification_ref)
+        with store.transaction() as db:
+            store.bind_sol_task(db, "task-one", job.payload, template)
+        runner = self.runner(loader=store.sol_task)
+        with self.assertRaisesRegex(ValueError, "not approved"):
+            runner.run(replace(job, payload={**job.payload, "description": "different"}))
+        self.assertEqual(runner.run(job).status, "succeeded")
+        restarted = self.runner("empty", loader=store.sol_task)
+        self.assertEqual(restarted.poll(job).status, "succeeded")
+        self.assertEqual(self.launches.read_text().splitlines(), ["started"])
 
     def test_sol_text_cannot_replace_file_or_test_and_diagnostics_are_redacted(self):
         job, tasks = self.sol_job()

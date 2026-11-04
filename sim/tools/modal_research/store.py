@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS study_plan_status (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     blocked_reason TEXT, next_action TEXT
 );
+CREATE TABLE IF NOT EXISTS study_capability_status (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    sol_gap TEXT
+);
+CREATE TABLE IF NOT EXISTS sol_task_bindings (
+    task_id TEXT PRIMARY KEY, workspace TEXT NOT NULL UNIQUE,
+    template_id TEXT NOT NULL, task_json TEXT NOT NULL, created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS approvals (
     reference TEXT PRIMARY KEY, approved_budget INTEGER NOT NULL, execution_cap INTEGER NOT NULL,
     created REAL NOT NULL
@@ -177,6 +185,41 @@ class Store:
         db.execute("INSERT OR IGNORE INTO study_plan_status VALUES (1,NULL,NULL)")
         db.execute("UPDATE study_plan_status SET blocked_reason=?,next_action=? WHERE singleton=1",
                    (blocked_reason, next_action))
+
+    @staticmethod
+    def set_sol_gap(db, gap):
+        db.execute("INSERT OR IGNORE INTO study_capability_status VALUES (1,NULL)")
+        db.execute("UPDATE study_capability_status SET sol_gap=? WHERE singleton=1", (gap,))
+
+    def bind_sol_task(self, db, task_id, payload, template):
+        """Assign one pre-provisioned clean workspace slot to one immutable packet."""
+        from dataclasses import asdict
+
+        from .agent_runner import SolTask
+
+        identifier(task_id)
+        template.validate()
+        if payload.get("task_id") != task_id or payload.get("template_id", template.template_id) != template.template_id:
+            raise ValueError("SOL packet identity differs from reviewed task")
+        used = {row[0] for row in db.execute("SELECT workspace FROM sol_task_bindings")}
+        workspace = next((name for name in template.workspaces if name not in used), None)
+        if workspace is None:
+            raise ValueError("no prepared SOL workspace remains")
+        task = template.bind(payload, workspace)
+        db.execute("INSERT INTO sol_task_bindings VALUES (?,?,?,?,?)",
+                   (task_id, workspace, template.template_id, canonical(asdict(task)), self.clock()))
+        return task
+
+    def sol_task(self, task_id):
+        from .agent_runner import SolTask
+
+        with self.transaction() as db:
+            row = db.execute("SELECT task_json FROM sol_task_bindings WHERE task_id=?", (identifier(task_id),)).fetchone()
+        if row is None:
+            return None
+        task = SolTask(**json.loads(row["task_json"]))
+        task.validate()
+        return task
 
     @contextmanager
     def transaction(self):
@@ -762,6 +805,7 @@ class Store:
             state = db.execute("SELECT * FROM study").fetchone()
             goal = db.execute("SELECT goal_json,source_sha256 FROM study_goal WHERE singleton=1").fetchone()
             plan_status = db.execute("SELECT blocked_reason,next_action FROM study_plan_status WHERE singleton=1").fetchone()
+            capability = db.execute("SELECT sol_gap FROM study_capability_status WHERE singleton=1").fetchone()
             spent, reserved = self.ledger(db)
             active = db.execute(
                 "SELECT id,kind,state,remote_id,deadline FROM jobs WHERE actual IS NULL "
@@ -808,6 +852,7 @@ class Store:
                 "research_goal_source_sha256": goal["source_sha256"] if goal else None,
                 "blocked_reason": plan_status["blocked_reason"] if plan_status else None,
                 "next_action": plan_status["next_action"] if plan_status else None,
+                "sol_capability_gap": capability["sol_gap"] if capability else "no reviewed SOL task template",
                 "approved_budget": None if approved is None else approved / 100,
                 "approval_ref": state["approval_ref"],
                 "execution_cap_usd": None if approved is None else state["execution_cap"] / 100,

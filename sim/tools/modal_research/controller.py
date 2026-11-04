@@ -113,6 +113,9 @@ class Controller:
             self.store.record_job_billing(db, key, *billing)
 
     def _schedule(self, db, state):
+        templates = getattr(self.backend, "sol_templates", {})
+        self.store.set_sol_gap(db, None if self.backend.tool_enabled and templates
+                               else "no reviewed SOL task template")
         if state["stopped"] or state["analysis_paused"]:
             self.store.set_plan_status(db, state["stopped"] or state["analysis_paused"],
                                        "resolve stop or analysis pause")
@@ -215,7 +218,10 @@ class Controller:
             "allowed_experiments": {row["id"]: row["config_hash"] for row in registered},
             "experiment_options": experiment_options,
             "experiment_options_omitted": len(registered) - len(experiment_options),
-            "engineering_task_types": ["diagnose", "implement_frozen_task"] if self.backend.tool_enabled else [],
+            "engineering_task_types": (sorted(getattr(self.backend, "sol_templates", {}))
+                                       if getattr(self.backend, "sol_templates", None)
+                                       else ["diagnose", "implement_frozen_task"] if self.backend.fixture else [])
+            if self.backend.tool_enabled else [],
         }
         goal = db.execute("SELECT goal_json FROM study_goal WHERE singleton=1").fetchone()
         if goal:
@@ -226,6 +232,10 @@ class Controller:
             payload["evidence_origin"] = dict(origin)
         experiment_id = origin["experiment_id"] if origin else payload["event"]["evidence"].get("experiment_id")
         experiment = db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
+        policy = getattr(self.backend, "research_policy", None)
+        if (not self.backend.fixture and (experiment is None or origin is None
+                or policy is None or policy.allowed_event_ids is not None)):
+            payload["engineering_task_types"] = []
         if experiment:
             spec = json.loads(experiment["spec"])
             payload["current_experiment"] = {
@@ -516,9 +526,15 @@ class Controller:
             elif not error and job.kind == "research":
                 result = validate_decision(outcome.output, job.payload)
             elif not error and job.kind == "sol":
-                if type(outcome.output) is not dict or set(outcome.output) != {"summary", "artifact_refs", "task_id"}:
+                if type(outcome.output) is not dict:
                     raise ValueError("invalid SOL result")
                 result = outcome.output
+                template = getattr(self.backend, "sol_templates", {}).get(job.payload["task_type"])
+                expected = {"summary", "artifact_refs", "task_id"}
+                if template is not None:
+                    expected |= {"artifact_manifest", "test_report", "base_commit", "payload_hash"}
+                if set(result) != expected:
+                    raise ValueError("invalid SOL result fields")
                 if result["task_id"] != job.payload["task_id"]:
                     raise ValueError("mismatched SOL task ID")
                 bounded_text(result["summary"], 8000)
@@ -527,6 +543,19 @@ class Controller:
                     raise ValueError("SOL must report artifact references")
                 for ref in refs:
                     bounded_text(ref, 256)
+                if template is not None:
+                    task = self.store.sol_task(job.payload["task_id"])
+                    manifest = result["artifact_manifest"]
+                    if (task is None or task.payload_hash != digest(job.payload)
+                            or task.base_commit != result["base_commit"]
+                            or result["payload_hash"] != task.payload_hash
+                            or type(manifest) is not dict or list(manifest) != list(task.artifact_paths)
+                            or any(type(value) is not str or len(value) != 71 or not value.startswith("sha256:")
+                                   or any(char not in "0123456789abcdef" for char in value[7:])
+                                   for value in manifest.values())
+                            or refs != list(manifest.values())
+                            or result["test_report"] != {"argv_hash": digest(task.test_argv), "exit_code": 0}):
+                        raise ValueError("SOL result is not bound to its approved task")
         except (ValueError, TypeError, KeyError, OSError, AttributeError, RecursionError):
             result = None
             error = "invalid_response" if job.kind in {"research", "sol"} else "missing_artifact"
@@ -593,7 +622,7 @@ class Controller:
                            start_cursor=metadata["cursor"])
         reached_target = result and job.kind == "train" and payload["start_decisions"] >= payload["target_decisions"]
         scoped_research = job.kind == "research" and getattr(self.backend, "research_policy", None) is not None
-        retryable = error == "api" if scoped_research else error in RETRYABLE
+        retryable = (error == "api" if scoped_research else error in RETRYABLE) and job.kind != "sol"
         if job.attempt < 2 and retryable and not reached_target:
             try:
                 self._create_job(db, job.logical_key, job.attempt + 1, job.kind, payload,
@@ -658,14 +687,42 @@ class Controller:
             if action in TRAIN:
                 self._dispatch_experiment(db, action, result)
             elif action == "REQUEST_SOL":
-                if cents(result["reserve_budget_usd"]) < self.sol_cents or not self.backend.tool_enabled:
-                    raise DispatchBlocked("SOL capability or reserve unavailable")
-                task_id = f"sol-{digest(result['decision_id'])[:32]}"
-                payload = {"task_id": task_id, "decision_id": result["decision_id"], **result["engineering_task"]}
-                experiment = json.loads(row["payload"]).get("current_experiment")
-                if experiment:
-                    payload["experiment_id"] = experiment["experiment_id"]
-                self._create_job(db, task_id, 1, "sol", payload, self.sol_cents, self.store.clock() + 900)
+                template = getattr(self.backend, "sol_templates", {}).get(result["engineering_task"]["task_type"])
+                if not self.backend.tool_enabled:
+                    raise DispatchBlocked("SOL capability unavailable")
+                if template is None and self.backend.fixture:
+                    task_id = f"sol-{digest(result['decision_id'])[:32]}"
+                    payload = {"task_id": task_id, "decision_id": result["decision_id"], **result["engineering_task"]}
+                    experiment = json.loads(row["payload"]).get("current_experiment")
+                    if experiment:
+                        payload["experiment_id"] = experiment["experiment_id"]
+                    if cents(result["reserve_budget_usd"]) < self.sol_cents:
+                        raise DispatchBlocked("SOL reserve unavailable")
+                    self._create_job(db, task_id, 1, "sol", payload, self.sol_cents, self.store.clock() + 900)
+                elif (template is None or cents(result["reserve_budget_usd"]) < template.reserve_cents):
+                    raise DispatchBlocked("reviewed SOL template or reserve unavailable")
+                else:
+                    task_id = f"sol-{digest(result['decision_id'])[:32]}"
+                    if not self.backend.fixture and not json.loads(row["payload"]).get("current_experiment"):
+                        raise DispatchBlocked("SOL requires an experiment-bound research event")
+                    payload = {"task_id": task_id, "decision_id": result["decision_id"],
+                               "study_id": state["id"], "template_id": template.template_id,
+                               **result["engineering_task"]}
+                    experiment = json.loads(row["payload"]).get("current_experiment")
+                    if experiment:
+                        payload["experiment_id"] = experiment["experiment_id"]
+                    if len(payload["description"].encode()) > template.description_max_bytes:
+                        raise DispatchBlocked("SOL description exceeds reviewed bound")
+                    db.execute("SAVEPOINT sol_dispatch")
+                    try:
+                        self.store.bind_sol_task(db, task_id, payload, template)
+                        self._create_job(db, task_id, 1, "sol", payload, template.reserve_cents,
+                                         self.store.clock() + template.deadline_seconds)
+                    except (ValueError, DispatchBlocked) as error:
+                        db.execute("ROLLBACK TO SAVEPOINT sol_dispatch")
+                        db.execute("RELEASE SAVEPOINT sol_dispatch")
+                        raise DispatchBlocked(str(error)) from error
+                    db.execute("RELEASE SAVEPOINT sol_dispatch")
             elif action in {"PAUSE", "STOP"}:
                 db.execute("UPDATE study SET stopped=COALESCE(stopped,?)",
                            (f"{action}: {result['action_reason']}",))

@@ -119,10 +119,48 @@ class SolTask:
             raise ValueError("SOL test must be fixed argv")
 
 
+@dataclass(frozen=True)
+class SolTemplate:
+    """Reviewed finite slots and one fixed file/test scope for a task type."""
+
+    template_id: str
+    task_type: str
+    workspaces: tuple[str, ...]
+    base_commit: str
+    artifact_paths: tuple[str, ...]
+    test_argv: tuple[str, ...]
+    reserve_cents: int
+    deadline_seconds: int
+    description_max_bytes: int
+    output_max_bytes: int
+    model_binding_ref: str
+
+    def validate(self):
+        identifier(self.template_id)
+        if (self.task_type not in JOB_TYPES or not 1 <= len(self.workspaces) <= 8
+                or len(set(self.workspaces)) != len(self.workspaces)
+                or type(self.reserve_cents) is not int or not 0 < self.reserve_cents <= 10_000
+                or type(self.deadline_seconds) is not int or not 0 < self.deadline_seconds <= MAX_SECONDS
+                or type(self.description_max_bytes) is not int or not 1 <= self.description_max_bytes <= 4000
+                or type(self.output_max_bytes) is not int or not 1 <= self.output_max_bytes <= 16_000):
+            raise ValueError("invalid finite SOL template")
+        identifier(self.model_binding_ref)
+        for workspace in self.workspaces:
+            SolTask("0" * 64, workspace, self.base_commit, self.artifact_paths, self.test_argv).validate()
+
+    def bind(self, payload, workspace):
+        if workspace not in self.workspaces or payload.get("task_type") != self.task_type:
+            raise ValueError("SOL template does not match task")
+        task = SolTask(digest(payload), workspace, self.base_commit, self.artifact_paths, self.test_argv)
+        task.validate()
+        return task
+
+
 class AgentRunner:
     def __init__(
         self, root: Path, workspaces: Path, study_id: str, launcher: Path,
         bindings: dict[str, AgentBinding], *, sol_tasks: dict[str, SolTask] | None = None,
+        sol_task_loader=None,
         fixture=False, process_identity=linux_process_identity, system_identity=None, scoped_research=False,
         research_instructions="",
     ):
@@ -155,6 +193,9 @@ class AgentRunner:
                 raise ValueError("invalid model ID")
         self.bindings = dict(bindings)
         self.sol_tasks = dict(sol_tasks or {})
+        self.sol_task_loader = sol_task_loader
+        if sol_task_loader is not None and not callable(sol_task_loader):
+            raise ValueError("invalid durable SOL task loader")
         if len({task.workspace for task in self.sol_tasks.values()}) != len(self.sol_tasks):
             raise ValueError("each SOL task requires its own workspace")
         for task_id, task in self.sol_tasks.items():
@@ -188,12 +229,20 @@ class AgentRunner:
                 for ref in refs:
                     identifier(ref)
         else:
-            task = self.sol_tasks.get(identifier(job.payload.get("task_id")))
+            task = self._sol_task(identifier(job.payload.get("task_id")))
             if (not task or job.payload.get("task_type") not in JOB_TYPES
                     or job.payload.get("study_id", self.study_id) != self.study_id
                     or task.payload_hash != digest(job.payload)):
                 raise ValueError("SOL task packet is not approved for this study")
         return digest(asdict(job))
+
+    def _sol_task(self, task_id):
+        task = self.sol_tasks.get(task_id)
+        if task is None and self.sol_task_loader is not None:
+            task = self.sol_task_loader(task_id)
+        if task is not None:
+            task.validate()
+        return task
 
     def _folder(self, job: Job):
         return self.root / digest([self.study_id, job.key])
@@ -309,7 +358,7 @@ class AgentRunner:
         self._finish(folder, record, Outcome("failed", error="agent_execution_uncertain"))
 
     def _run_claimed(self, job, binding, folder, record):
-        task = self.sol_tasks[job.payload["task_id"]] if job.kind == "sol" else None
+        task = self._sol_task(job.payload["task_id"]) if job.kind == "sol" else None
         try:
             if task is None:
                 workspace = self.workspaces / folder.name
@@ -684,6 +733,12 @@ def _accept(job, binding, task, workspace, final_text, exit_code, error, evidenc
         raise ValueError("SOL worktree differs from the approved artifact set")
     if evidence["commands"] != [{"argv_hash": digest(task.test_argv), "exit_code": 0}]:
         raise ValueError("SOL did not complete the single approved test")
+    if (evidence.get("unrecognized_items", 0)
+            or sum(event["type"] == "item.started" and event.get("item_type") == "command_execution"
+                   for event in evidence["events"]) > 1
+            or sum(event["type"] == "item.completed" and event.get("item_type") == "command_execution"
+                   for event in evidence["events"]) != 1):
+        raise ValueError("SOL tool transcript is incomplete")
     hashes = {}
     for relative in task.artifact_paths:
         artifact = workspace / relative
@@ -696,6 +751,10 @@ def _accept(job, binding, task, workspace, final_text, exit_code, error, evidenc
         hashes[relative] = hashlib.sha256(contents).hexdigest()
     evidence["artifacts"] = hashes
     value["artifact_refs"] = [f"sha256:{value}" for value in hashes.values()]
+    value["artifact_manifest"] = {path: f"sha256:{value}" for path, value in hashes.items()}
+    value["test_report"] = {"argv_hash": digest(task.test_argv), "exit_code": 0}
+    value["base_commit"] = task.base_commit
+    value["payload_hash"] = task.payload_hash
     return Outcome("succeeded", output=value)
 
 

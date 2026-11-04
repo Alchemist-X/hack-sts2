@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
-from .agent_runner import AgentRunner, SolTask, _research_input
+from .agent_runner import AgentRunner, SolTask, SolTemplate, _research_input, _changes
 from .artifact_adapter import METRIC_FIELDS
 from .broker import AgentQueueProvider, DetachedGrant, GPU_KINDS, RavenBroker, RavenRuntime
 from .contracts import DIGEST, digest, identifier
@@ -170,6 +170,33 @@ class WorkspaceMetering:
         return quoted.reservation(job, now)
 
 
+def verify_sol_workspaces(store, runner, templates):
+    """Keep used task slots available for receipt recovery across timer restarts."""
+    slots = [workspace for template in templates.values() for workspace in template.workspaces]
+    with store.transaction() as db:
+        bound_rows = db.execute("SELECT workspace,template_id,task_json FROM sol_task_bindings").fetchall()
+    bound_slots = {row["workspace"]: row for row in bound_rows}
+    if set(bound_slots) - set(slots):
+        raise ValueError("durable SOL binding is outside reviewed slots")
+    for template in templates.values():
+        for name in template.workspaces:
+            workspace = runner.workspaces / name
+            bound = bound_slots.get(name)
+            if not workspace.is_dir() or workspace.resolve() != workspace:
+                raise ValueError("SOL template workspace is missing")
+            if bound is not None:
+                task = SolTask(**json.loads(bound["task_json"]))
+                task.validate()
+                if (bound["template_id"] != template.template_id or task.workspace != name
+                        or task.base_commit != template.base_commit
+                        or tuple(task.artifact_paths) != tuple(template.artifact_paths)
+                        or tuple(task.test_argv) != tuple(template.test_argv)):
+                    raise ValueError("durable SOL binding differs from reviewed template")
+            elif (runner.git(workspace, "rev-parse", "HEAD").strip().decode() != template.base_commit
+                  or _changes(workspace, runner.git)):
+                raise ValueError("unused SOL workspace is not at its clean base")
+
+
 def load_runtime(config, *, clock=time.time):
     """Build a runtime only from a trusted on-host file with reviewed bindings."""
     required = {"study_id", "state", "artifacts", "sandbox", "sandbox_identity_verification",
@@ -202,7 +229,7 @@ def load_runtime(config, *, clock=time.time):
     research_policy = None
     if agent is not None:
         required_agent = {"state", "workspaces", "launcher", "bindings", "sol_tasks", "cost_caps", "cost_verification"}
-        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy", "research_instructions", "launcher_sha256"}):
+        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy", "research_instructions", "launcher_sha256", "sol_templates"}):
             raise ValueError("runtime agent requires verified role and spending bindings")
         if agent["cost_caps"]:
             identifier(agent["cost_verification"])
@@ -217,17 +244,46 @@ def load_runtime(config, *, clock=time.time):
             if policy.get("allowed_event_ids") is None:
                 policy["allowed_config_hashes"] = tuple(sandbox.binding.bundle_hashes) if sandbox else ()
             research_policy = ResearchUsagePolicy(**policy, instructions=instructions)
-            if (set(agent["bindings"]) != {"research"} or agent["bindings"]["research"]["model_id"] != "gpt-6-astra"
+            if (not {"research"} <= set(agent["bindings"]) <= {"research", "sol"}
+                    or agent["bindings"]["research"]["model_id"] != "gpt-6-astra"
                     or not agent.get("system_identity") or "research" in agent["cost_caps"]
                     or not 1 <= agent["bindings"]["research"]["max_output_bytes"] <= 16_000):
-                raise ValueError("finite policy requires the no-tool system Astra binding only")
+                raise ValueError("finite policy requires the no-tool system Astra research binding")
+        raw_templates = agent.get("sol_templates", {})
+        if type(raw_templates) is not dict:
+            raise ValueError("SOL templates must be a reviewed mapping")
+        templates = {name: SolTemplate(**value) for name, value in raw_templates.items()}
+        for task_type, template in templates.items():
+            template.validate()
+            if task_type != template.task_type:
+                raise ValueError("SOL template key differs from task type")
+        slots = [workspace for template in templates.values() for workspace in template.workspaces]
+        if len(set(slots)) != len(slots):
+            raise ValueError("SOL workspace slot is shared across templates")
+        if templates:
+            sol = agent["bindings"].get("sol")
+            if (research_policy is None or research_policy.allowed_event_ids is not None
+                    or not agent.get("system_identity") or agent["sol_tasks"] or not sol
+                    or sol["scope"] != "sol-isolated-files-and-tests"
+                    or sol["verification_ref"] == agent["bindings"]["research"]["verification_ref"]
+                    or type(agent["cost_caps"].get("sol")) is not int
+                    or agent["cost_caps"]["sol"] <= 0):
+                raise ValueError("SOL requires isolated project, finite cap and dynamic tasks only")
+            if any(template.model_binding_ref != sol["verification_ref"]
+                   or template.output_max_bytes != sol["max_output_bytes"]
+                   or template.reserve_cents < agent["cost_caps"]["sol"] for template in templates.values()):
+                raise ValueError("SOL template differs from verified role or cost cap")
+        elif "sol" in agent["bindings"] and not agent["sol_tasks"]:
+            raise ValueError("SOL binding without a reviewed task template")
         runner = AgentRunner(
             Path(agent["state"]), Path(agent["workspaces"]), study_id, Path(agent["launcher"]),
             {name: AgentBinding(**value) for name, value in agent["bindings"].items()},
             sol_tasks={name: SolTask(**value) for name, value in agent["sol_tasks"].items()},
+            sol_task_loader=store.sol_task if templates else None,
             system_identity=agent.get("system_identity"), scoped_research=research_policy is not None,
             research_instructions=research_policy.instructions if research_policy else "",
         )
+        verify_sol_workspaces(store, runner, templates)
 
     def estimated(job):
         if not sandbox or not sandbox.supports(job):
@@ -252,8 +308,9 @@ def load_runtime(config, *, clock=time.time):
         billing.update({kind: ("non_modal", role.verification_ref) for kind, role in runner.bindings.items()})
     broker = RavenBroker(store, artifacts, billing_sources=billing, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
                          research_policy=research_policy,
-                         tool_enabled=bool(runner and "sol" in runner.bindings),
+                         tool_enabled=bool(runner and templates),
                          experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None)
+    broker.sol_templates = templates if runner else {}
     queue = AgentQueueProvider(broker, runner) if runner is not None else None
     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,
                         archive_deadline=rates.storage_verified_until if rates else None,
