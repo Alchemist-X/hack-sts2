@@ -117,8 +117,12 @@ class PairPool:
         return self._same("add_save", path)
 
     def warm(self, max_entries: int | None = None) -> int:
-        """Templates created in lane 0's pool (lane 1 creates the same ones)."""
-        return self._both("warm", max_entries)[0]
+        """Both lanes' pools create the same templates, in parallel (one thread per lane: the native warm releases the
+        GIL), so the wall time stays one pool's while the CPU work doubles; -> the count of lane 0's pool."""
+        lanes = self._pair.lanes
+        with ThreadPoolExecutor(max_workers=len(lanes), thread_name_prefix="sts2train-overlap-warm") as ex:
+            futs = [ex.submit(lane.pool.warm, max_entries) for lane in lanes]
+            return [f.result() for f in futs][0]
 
     def release(self, ids) -> int:
         return self._both("release", ids)[0]

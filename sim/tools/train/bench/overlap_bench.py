@@ -3,7 +3,7 @@
     uv run --project sim/tools/train python sim/tools/train/bench/overlap_bench.py --out tmp/bench-overlap \
         --envs 32 --rollout 16 --updates 6 --preset small --threads 4 --torch-threads 2 [--device cuda]
 
-Prints, per mode, the mean over updates 2.. (update 1 = warm-up) of t_env_s, t_infer_s, t_update_s, t_total_s and,
+Prints, per mode, the median (over --repeats interleaved runs) of the median over updates 2.. (update 1 = warm-up) of t_env_s, t_infer_s, t_update_s, t_total_s and,
 for double, t_overlap_wait_s / t_rollout_s, then the A100 projection (README "Rollout overlap"). Writes <out>/bench.json.
 """
 
@@ -28,15 +28,16 @@ def arch(a) -> dict:
     return {"preset": None, "d": d, "s": s, "depth": depth, "heads": heads, "ff_mult": ff}
 
 
-def run(out: Path, mode: str, a) -> dict:
-    given = {"out": str(out / mode), "envs": a.envs, "rollout": a.rollout, "max_updates": a.updates,
+def run(out: Path, mode: str, a, rep: int = 0) -> dict:
+    given = {"out": str(out / f"{mode}-{rep}"), "envs": a.envs, "rollout": a.rollout, "max_updates": a.updates,
              "threads": a.threads, "torch_threads": a.torch_threads, "device": a.device, "preset": a.preset, **arch(a),
              "minibatch": a.minibatch, "epochs": a.epochs, "ckpt_every": 0, "ckpt_every_min": 0, "eval_every": 0,
              "max_hours": 0.5, "log_every": 100, "characters": ("SILENT",), "ascension": 10,
              "start_mode": "stream", "seed": a.seed, "init_seed": a.seed, "sample_seed": a.seed, "overlap": mode}
     train(resolve_config(given), log=lambda m: None)
-    rows = read_jsonl(out / mode / "metrics.jsonl")[1:] or read_jsonl(out / mode / "metrics.jsonl")
-    res = {k: round(statistics.fmean(r[k] for r in rows), 4) for k in KEYS if k in rows[0]}
+    rows = read_jsonl(out / f"{mode}-{rep}" / "metrics.jsonl")
+    rows = rows[1:] or rows
+    res = {k: round(statistics.median(r[k] for r in rows), 4) for k in KEYS if k in rows[0]}
     res["updates_averaged"] = len(rows)
     res["env_steps_update"] = rows[0]["env_steps_update"]
     return res
@@ -57,10 +58,17 @@ def main() -> None:
     p.add_argument("--device", default="cpu")
     p.add_argument("--seed", type=int, default=11)
     p.add_argument("--modes", default="off,double")
+    p.add_argument("--repeats", type=int, default=1)
     a = p.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    res = {m: run(out, m, a) for m in a.modes.split(",")}
+    modes = a.modes.split(",")
+    reps: dict[str, list[dict]] = {m: [] for m in modes}
+    for i in range(a.repeats):                  # interleaved (off, double, off, double ...): shared-host noise
+        for m in modes:
+            reps[m].append(run(out, m, a, i))
+    res = {m: {k: round(statistics.median(r[k] for r in rs), 4) for k in rs[0]} for m, rs in reps.items()}
+    res["repeats"] = reps
     off, dbl = res.get("off"), res.get("double")
     if off and dbl:
         r_env = dbl["t_env_s"] / max(off["t_env_s"], 1e-9)
