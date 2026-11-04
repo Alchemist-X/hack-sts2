@@ -587,3 +587,62 @@ def test_every_library_action_kind_is_mapped():
         assert m.plan[1].key == ("sacrifice",) and tok == "reward 3; alt 1"
     finally:
         tw.close()
+
+
+# ------------------------------------------------------------------------------------------------ 2026-11-04 real-run fixes
+
+def test_relic_reward_without_an_id_matches_by_type():
+    """STS2_MCP's rewards items carry no relic id (BuildRewardsState): ("relic", None) stands for the twin's relic."""
+    s = state("rewards", rewards={"items": [{"index": 0, "type": "card"}, {"index": 1, "type": "gold", "gold_amount": 31},
+                                            {"index": 2, "type": "relic", "description": "打击木人"}],
+                                  "can_proceed": True})
+    assert wire_for(twin("claim_reward", ("relic", "STRIKE_DUMMY"), 2), s) == {"action": "claim_reward", "index": 2}
+    tv = View("rewards", floor=2, detail={"rewards": (("card", None), ("gold", 31), ("relic", "STRIKE_DUMMY"))})
+    assert compare_views(tv, mcp.view_of(s))[0] == []
+    tv.detail["rewards"] = (("card", None), ("gold", 30), ("relic", "STRIKE_DUMMY"))
+    assert [d["field"] for d in compare_views(tv, mcp.view_of(s))[0]] == ["rewards"]
+
+
+def test_event_rewards_screen_closed_by_the_game_is_left_by_the_twin():
+    s = event_state([{"index": 0, "title": "继续", "is_locked": False, "is_proceed": True}])
+    r = Runner.__new__(Runner)
+    leave = twin("leave", ("rewards",), row=1)
+    acts = [twin("discard_potion", ("DROPLET_OF_PRECOGNITION", 0), 0, row=0), leave]
+    assert r.twin_glue(_obs(s), View("rewards"), acts) == ("leave_rewards", leave)
+    pending = acts + [twin("claim_reward", ("gold", 10), 0, row=2)]
+    assert r.twin_glue(_obs(s), View("rewards"), pending) is None       # something left to claim: not auto-closed
+
+
+def test_follow_never_maps_across_screens_and_never_discards_as_a_second_choice():
+    import numpy as np
+    from collections import Counter
+    from nn_twin.twin import Decision
+
+    s = event_state([{"index": 0, "title": "继续", "is_locked": False, "is_proceed": True}])
+    s["player"]["potions"] = [{"id": "DROPLET_OF_PRECOGNITION", "slot": 0, "can_use_in_combat": True}]
+    tacts = [twin("leave", ("rewards",), row=0), twin("discard_potion", ("DROPLET_OF_PRECOGNITION", 0), 0, row=1)]
+    dec = Decision(row=0, probs=np.array([0.9, 0.1]), value=0.0, win_prob=None, combat_hp=None)
+    r = Runner.__new__(Runner)
+    r.mode, r.first_desyncs, r.i, r.stats = "follow", [], 0, Counter()
+    row, act, how = r.choose(_obs(s), tacts, dec, tv_screen="rewards")
+    assert how == "fallback" and act.kind != "discard_potion"           # the twin is on another screen
+    row, act, how = r.choose(_obs(s), tacts, dec, tv_screen="event")
+    assert how == "fallback" or act.kind != "discard_potion"            # a discard is never the stand-in choice
+    assert Runner.second_choices(dec, tacts) == [0]
+    dec2 = Decision(row=1, probs=np.array([0.1, 0.9]), value=0.0, win_prob=None, combat_hp=None)
+    assert Runner.second_choices(dec2, tacts) == [1, 0]                 # ... unless the model wants it most
+
+
+def test_cancel_on_a_preview_is_followed_by_a_second_cancel():
+    """Smith -> pick -> cancel: the sim's PromptCancel closes the selection, the game's cancel on the preview returns to
+    the grid; the runner cancels again (never confirms an upgrade the network cancelled)."""
+    grid_back = grid("upgrade", [card("STRIKE_SILENT", 0), card("FLICK_FLACK", 1)], can_cancel=True)
+    r = Runner.__new__(Runner)
+    r.last_twin_kind = "cancel"
+    why, act = r.real_glue(_obs(grid_back), View("rest"))
+    assert why == "cancel" and act.native == {"action": "cancel_selection"}
+    stuck = grid("upgrade", [card("STRIKE_SILENT", 0)], preview_showing=True, can_confirm=True, can_cancel=False,
+                 selected_count=1)
+    assert r.real_glue(_obs(stuck), View("rest")) is None               # no cancel: never fall through to confirm
+    r.last_twin_kind = "select"
+    assert r.real_glue(_obs(stuck), View("rest"))[0] == "confirm"        # the twin settled on its pick

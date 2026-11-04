@@ -59,6 +59,10 @@ def parse_args(argv=None):
     ap.add_argument("--lookahead", metavar="JSON", help="combat lookahead (needs sts2train.lookahead on this tree)")
     ap.add_argument("--max-decisions", type=int, default=4000)
     ap.add_argument("--stop-floor", type=int, help="stop (without abandoning) once the game reaches this floor")
+    ap.add_argument("--loop-breaker", choices=("on", "off"), default="on",
+                    help="greedy with sts2train's loop breaker (default, as sts2train eval) or the plain argmax")
+    ap.add_argument("--loop-breaker-k", type=int, default=None,
+                    help="returns to one observation before only leave rows stay (default: sts2train's, 3)")
     ap.add_argument("--torch-threads", type=int, default=4)
     ap.add_argument("--settle-timeout", type=float, default=60.0, help="seconds to wait for a settled game frame")
     ap.add_argument("--inject-desync", type=int, metavar="N",
@@ -104,7 +108,8 @@ def main(argv=None) -> int:
     character = args.character.upper()
 
     print(f"loading {args.checkpoint} ...", flush=True)
-    policy = Policy(args.checkpoint, torch_threads=args.torch_threads)
+    policy = Policy(args.checkpoint, torch_threads=args.torch_threads, loop_breaker=args.loop_breaker == "on",
+                    loop_breaker_k=args.loop_breaker_k)
     twin = Twin(content=args.content)
     compat = policy.bind(twin.schema)
     cfg_chars = policy.meta.get("characters") or []
@@ -155,6 +160,7 @@ def main(argv=None) -> int:
             game.close()
     short = {k: summary.get(k) for k in ("decisions", "desync_decisions", "desync_events", "final_mode", "error",
                                          "wall_s", "s_per_decision")}
+    short["loop_breaks"] = (summary.get("counters") or {}).get("loop_breaks", 0)
     short["resyncs"] = summary["resyncs"]["count"]
     short["result"] = summary.get("result")
     if "dry_run_audit" in summary:

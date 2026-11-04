@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .game import Game, GameError, Observation
-from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act
+from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act, screens_compatible
 from .twin import Policy, Twin, TwinError
 
 SEED_CHARS = set("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ")
@@ -76,6 +76,7 @@ class Runner:
         self.since_boundary = 0            # real actions since the last save point (room entry / combat end / ...)
         self.boundary_kind: str | None = None   # the save point just crossed: room / combat_end / event_end
         self.combat_floor: int | None = None
+        self.last_twin_kind: str | None = None  # kind of the twin's last decided step (the cancel glue needs it)
         self.prev_real: View | None = None
         self.last_import_mtime = 0.0
         self.stop = False
@@ -294,6 +295,11 @@ class Runner:
         if tv is None:
             return None
         if real.screen == "prompt" and tv.screen not in SELECTION_SCREENS:
+            if getattr(self, "last_twin_kind", None) == "cancel":
+                # the sim's PromptCancel closes the whole selection; in the game a cancel on a preview (upgrade,
+                # transform, enchant) only goes back to the card grid: cancel again, never confirm
+                cancel = [a for a in acts if a.kind == "cancel"]
+                return ("cancel", cancel[0]) if cancel else None
             conf = [a for a in acts if a.kind == "confirm"]
             if conf:
                 return "confirm", conf[0]
@@ -321,6 +327,12 @@ class Runner:
             if conf:
                 return "confirm", conf[0]
             return "twin_only_prompt", None
+        if tv.screen == "rewards" and real.screen in ("event", "map"):
+            # the game closes an event's rewards screen by itself once everything is claimed; the sim waits for
+            # ProceedRewards
+            rest = [a for a in tacts if a.kind not in ("potion", "discard_potion")]
+            if rest and all(a.kind == "leave" for a in rest):
+                return "leave_rewards", rest[0]
         if tv.screen == "event" and real.screen == "map":
             # the game has already left a finished event (an ancient's save resumes the sim inside it)
             rest = [a for a in tacts if a.kind not in ("potion", "discard_potion")]
@@ -367,8 +379,8 @@ class Runner:
             return match_act(tact.plan[0], racts, [opens[p] for p in sorted(opens)] or None, relaxed=relaxed)
         return match_act(tact, racts, tacts, relaxed=relaxed)
 
-    def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False) -> tuple[int | None, Act | None,
-                                                                                               str]:
+    def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False,
+               tv_screen: str | None = None) -> tuple[int | None, Act | None, str]:
         racts = obs.acts
         if dec is not None and self.mode == "lockstep":
             m = self.map_row(tacts[dec.row], tacts, racts, relaxed=False)
@@ -378,20 +390,28 @@ class Runner:
                 # The states match but the game's interface does not offer this choice (e.g. drinking a potion outside
                 # combat through STS2_MCP): take the best-ranked choice it does offer; the twin takes the same one, so
                 # the two stay in lockstep.
-                for r in dec.ranked():
+                for r in self.second_choices(dec, tacts):
                     m = self.map_row(tacts[r], tacts, racts, relaxed=False)
                     if m is not None:
                         return r, m, "substitute"
             self.enter_follow([{"field": "unmappable", "twin": tacts[dec.row].describe(),
                                 "real": [a.describe() for a in racts][:12]}], obs.view, "choose")
-        if dec is not None:
-            ranked = dec.ranked()
+        # A twin on another screen than the game describes nothing the game can use (screen-independent rows such
+        # as a potion discard would still "map"): the real-side fallback acts until the next save point.
+        if dec is not None and (tv_screen is None or screens_compatible(tv_screen, obs.view.screen)):
+            ranked = self.second_choices(dec, tacts)
             for relaxed in (False, True):
                 for r in ranked:
                     m = self.map_row(tacts[r], tacts, racts, relaxed=relaxed)
                     if m is not None:
                         return r, m, "follow" if not relaxed else "follow_relaxed"
         return None, self.fallback(obs), "fallback"
+
+    @staticmethod
+    def second_choices(dec, tacts: list[Act]) -> list[int]:
+        """The rows in choice order for a substitute / follow choice: a potion discard only when it is the model's
+        own first choice (as a stand-in for another action it would throw a potion away)."""
+        return [r for r in dec.ranked() if r == dec.row or tacts[r].kind != "discard_potion"]
 
     # ------------------------------------------------------------------------------------------------ main loop
 
@@ -510,8 +530,11 @@ class Runner:
         try:
             self.twin.step(row)
         except TwinError as e:
+            row = None
             self.twin_ok = False
             self.enter_follow([{"field": "twin_error", "twin": str(e)[:200], "real": None}], obs.view, "twin_only")
+        if dec is not None:
+            self.policy.commit(row)
         self.stats["twin_only_" + why] += 1
         self.write({"type": "twin_only", "t": _now(), "i": self.i, "why": why, "twin_row": row,
                     "twin_action": act.describe(), "token": token,
@@ -529,7 +552,7 @@ class Runner:
         t_pol = time.perf_counter()
         dec = self.policy.decide(self.twin.obs) if self.twin_ok and tacts else None
         pol_ms = (time.perf_counter() - t_pol) * 1000
-        row, ract, how = self.choose(obs, tacts, dec, in_sync=not hard)
+        row, ract, how = self.choose(obs, tacts, dec, in_sync=not hard, tv_screen=tv.screen if tv else None)
         if ract is None:
             raise Abort(f"no action available on screen {real.screen}")
         twin_act = tacts[row] if row is not None else None
@@ -575,20 +598,28 @@ class Runner:
                          f"the twin does '{tacts[alt].describe()}'")
                 self.stats["injected_desyncs"] += 1
                 row_for_twin = alt
+        stepped = None                     # the row the twin took (the loop breaker records it)
         if row is not None and self.twin_ok:
             t_tw = time.perf_counter()
             try:
                 if res.ok:
-                    self.twin.step(row_for_twin if injected else row)
+                    stepped = row_for_twin if injected else row
+                    self.twin.step(stepped)
                 else:
                     self.stats["exec_failures"] += 1
-                    self.step_twin_if_game_moved(row)
+                    stepped = row if self.step_twin_if_game_moved(row) else None
             except TwinError as e:
+                stepped = None
                 self.twin_ok = False
                 self.enter_follow([{"field": "twin_error", "twin": str(e)[:200], "real": None}], real, "step")
             twin_ms = (time.perf_counter() - t_tw) * 1000
         elif not res.ok:
             self.stats["exec_failures"] += 1
+        if dec is not None:
+            self.policy.commit(stepped)
+            if dec.loop_break and stepped == dec.row:
+                self.stats["loop_breaks"] += 1
+        self.last_twin_kind = tacts[stepped].kind if stepped is not None and stepped < len(tacts) else None
         if how != "greedy":
             self.stats["decisions_" + how] += 1
         self.stats["decisions"] += 1
@@ -600,6 +631,8 @@ class Runner:
                "screen": real.screen, "twin_screen": tv.screen if tv else None,
                "hp": [real.hp, real.max_hp], "gold": real.gold, "energy": real.energy, "mode": self.mode,
                "policy": how, **({"substituted_for": tacts[dec.row].describe()} if how == "substitute" else {}),
+               **({"loop_break": {"model_argmax": tacts[dec.plain].describe(), "p_argmax": round(float(
+                   dec.probs[dec.plain]), 4)}} if (dec is not None and dec.loop_break and row == dec.row) else {}),
                "twin_action": ({"row": row, **twin_act.to_json(), "token": twin_token}
                                               if twin_act is not None else None),
                "real_action": executed, "ok": res.ok, "error": res.error, "notes": res.notes,
@@ -618,13 +651,13 @@ class Runner:
         self.status(rec, twin_act, ract, dec, row)
         self.i += 1
 
-    def step_twin_if_game_moved(self, row: int) -> None:
+    def step_twin_if_game_moved(self, row: int) -> bool:
         """After a failed / unconfirmed execution: step the twin tentatively and keep the step only if the game shows
         the same state now (the action did happen, its confirmation timed out)."""
         try:
             now = self.game.observe()
         except GameError:
-            return
+            return False
         entry = self.twin.env.snapshot(0)
         before = compare_views(self.twin.view(), now.view)[0]
         self.twin.step(row)
@@ -632,15 +665,18 @@ class Runner:
         if len(after) > len(before) or (after and not before):
             self.twin.env.restore(0, entry)
             self.stats["twin_step_reverted"] += 1
-        else:
-            self.stats["twin_step_kept_after_failure"] += 1
-            self.since_boundary += 1
+            return False
+        self.stats["twin_step_kept_after_failure"] += 1
+        self.since_boundary += 1
+        return True
 
     def status(self, rec: dict, twin_act: Act | None, ract: Act, dec, row) -> None:
         hp = rec["hp"]
         what = (twin_act.describe() if twin_act is not None else f"[fallback] {ract.describe()}")
         if rec.get("substituted_for"):
             what += f" [instead of {rec['substituted_for']}: not offered by the game]"
+        if rec.get("loop_break"):
+            what += f" [loop breaker: instead of {rec['loop_break']['model_argmax']}]"
         p = f" p={rec['p']:.2f}" if rec.get("p") is not None else ""
         if rec.get("win_prob") is not None:
             conf = f"通关把握 {rec['win_prob'] * 100:.0f}%"
@@ -689,6 +725,7 @@ class Runner:
              "twin_final_view": self.twin.view().to_json() if self.twin_ok else None,
              "result": result, "error": self.error, "wall_s": round(wall, 1),
              "s_per_decision": round(wall / decisions, 2) if decisions else None,
+             "loop_breaker": self.policy.loop_totals() if hasattr(self.policy, "loop_totals") else None,
              "win_prob": ({"first": self.win_probs[0], "last": self.win_probs[-1], "min": min(self.win_probs),
                            "max": max(self.win_probs)} if self.win_probs else None)}
         if self.audit_tokens:

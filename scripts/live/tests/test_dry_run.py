@@ -107,3 +107,31 @@ def test_random_policy_dry_runs_cover_the_candidate_kinds(play_server, tmp_path,
                     if r["type"] == "decision" and r.get("twin_action")}
     missing = CORE_KINDS - covered
     assert not missing, f"not exercised: {missing} (covered {sorted(covered)})"
+
+
+def test_policy_loop_breaker_masks_a_row_that_led_back(tiny_checkpoint):
+    """Greedy + sts2train's loop breaker: at an observation the twin was already at, the row taken there is masked
+    (here: committed without a step, i.e. a no-op); --loop-breaker off keeps the plain argmax."""
+    from nn_twin.twin import Policy, Twin
+
+    twin = Twin(content="all")
+    try:
+        twin.start_fresh("SILENT", SEED, 10)
+        on = Policy(str(tiny_checkpoint), torch_threads=2)
+        on.bind(twin.schema)
+        assert on.meta["loop_breaker"]["mode"] == "on"
+        d1 = on.decide(twin.obs)
+        on.commit(d1.row)
+        d2 = on.decide(twin.obs)
+        assert d2.plain == d1.row and d2.row != d1.row and d2.loop_break
+        assert d2.ranked()[-1] == d1.row                      # the masked row ranks last for follow / substitute
+        on.commit(d2.row)
+        assert on.loop_totals()["no_op_actions"] == 1
+        off = Policy(str(tiny_checkpoint), torch_threads=2, loop_breaker=False)
+        off.bind(twin.schema)
+        a = off.decide(twin.obs)
+        off.commit(a.row)
+        b = off.decide(twin.obs)
+        assert a.row == b.row and not b.loop_break
+    finally:
+        twin.close()

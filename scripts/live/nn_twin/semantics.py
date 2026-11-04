@@ -164,6 +164,10 @@ def match_act(twin_act: Act, real_acts: list[Act], twin_acts: list[Act] | None =
         same = [r for r in real_acts if r.kind == "card_alt" and r.key == ("skip",)]
     if not same and twin_act.kind == "card_alt" and twin_act.key == ("skip",):
         same = [r for r in real_acts if r.kind == "cancel"]
+    if not same and twin_act.kind == "claim_reward" and len(twin_act.key) == 2:
+        # STS2_MCP describes relic / special-card rewards without their id (McpMod.StateBuilder BuildRewardsState):
+        # a real (type, None) reward stands for any reward of that type
+        same = [r for r in real_acts if r.kind == "claim_reward" and r.key == (twin_act.key[0], None)]
     if not same and relaxed:
         rk = _relaxed_key(twin_act)
         same = [r for r in real_acts if r.kind in kinds and _relaxed_key(r) == rk]
@@ -185,6 +189,12 @@ SELECTION_SCREENS = ("prompt", "card_reward")
 
 def screens_compatible(a: str, b: str) -> bool:
     return a == b or (a in SELECTION_SCREENS and b in SELECTION_SCREENS)
+
+
+def _unknown_items_as_real(twin_rewards, real_rewards):
+    """Rewards whose item the real side cannot name ((type, None): relics, special cards on STS2_MCP) compare by type."""
+    blind = {t for t, item in real_rewards if item is None}
+    return tuple(sorted(((t, None if t in blind else item) for t, item in twin_rewards), key=repr))
 
 
 def compare_views(twin: View, real: View) -> tuple[list[dict], list[dict]]:
@@ -213,7 +223,10 @@ def compare_views(twin: View, real: View) -> tuple[list[dict], list[dict]]:
             diff("hand_order", twin.hand, real.hand, soft)
     if twin.screen == real.screen:
         for k in sorted(set(twin.detail) & set(real.detail)):
-            diff(k, twin.detail[k], real.detail[k])
+            a, b = twin.detail[k], real.detail[k]
+            if k == "rewards":
+                a = _unknown_items_as_real(a, b)
+            diff(k, a, b)
     if twin.terminal != real.terminal and (twin.terminal or real.terminal):
         hard.append({"field": "terminal", "twin": twin.terminal, "real": real.terminal})
     return hard, soft
