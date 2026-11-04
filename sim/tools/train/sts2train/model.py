@@ -11,6 +11,13 @@ concatenated into the state MLP; 948,750 parameters at d = 96, s = 256). ``depth
 trunk over 17 table tokens (the pooled tables, typed) plus one token per hand card, enemy and potion row (typed and
 slot-indexed, padding masked): the state is read from the global token and the mean of all live tokens, and the
 contextualised hand / enemy / potion rows feed the candidate pointers. ``PRESETS`` names the standard sizes.
+
+Optional parts (``MODEL_FLAGS``, off by default; with all of them off this is exactly the model above):
+``aux_heads`` adds a win-probability head and a combat-hp head on the state embedding (``sts2train.heads``;
+``forward(x, aux=True)`` also returns their logits). ``deck_counts`` replaces the mean embedding of the deck and of
+the combat piles by a count-aware bag (each distinct card weighted log(1 + copies)), adds deck count features (size,
+distinct cards, upgraded / enchanted / afflicted cards) and gives the candidate scorer the number of copies of the
+candidate's card in the deck.
 """
 
 from __future__ import annotations
@@ -37,6 +44,12 @@ PRESETS = {
 }
 ARCH_KEYS = ("d", "s", "depth", "heads", "ff_mult")
 ARCH_DEFAULTS = PRESETS["smoke"]
+# Optional parts of the architecture (bool, off = the model above): `aux_heads` = win-probability and combat-hp heads
+# on the state (sts2train.heads); `deck_counts` = count-aware deck / pile pooling (Policy._deck_bag). A checkpoint's
+# "arch" lists the ones that are on; `arch_of` defaults the rest to off.
+MODEL_FLAGS = ("aux_heads", "deck_counts")
+DECK_STATS = 7      # deck_counts: size / distinct / upgraded / enchanted / afflicted counts of the deck (_deck_stats)
+PILE_STATS = 6      # deck_counts: distinct ids and upgraded copies of each combat pile (_piles)
 # (buffer key, table, columns) read together (`Policy._cols`).
 COL_GROUPS = (
     ("relic_num", "relics", ("counter", "used_up", "stack")),
@@ -123,7 +136,8 @@ class Block(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4):
+    def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4,
+                 aux_heads: bool = False, deck_counts: bool = False):
         super().__init__()
         self.spec = spec
         self.d, self.s = d, s
@@ -258,6 +272,19 @@ class Policy(nn.Module):
         pik = spec.enum_names["PromptItemKind"]
         self._pik_card, self._pik_relic, self._pik_potion = pik.index("card"), pik.index("relic"), pik.index("potion")
 
+        # MODEL_FLAGS parts come last: with them off this is the model above parameter for parameter, and with them on
+        # every other parameter starts from the same values (the same draws of the init RNG).
+        self.deck_counts = bool(deck_counts)
+        if self.deck_counts:
+            self.deck_count_proj = nn.Linear(DECK_STATS, d, bias=False)    # added to deck_proj (count-aware bag)
+            self.pile_count_proj = nn.Linear(PILE_STATS, d, bias=False)    # added to pile_proj
+            self.c_copies = nn.Linear(1, d, bias=False)       # candidate scorer: copies of the candidate's card in the deck
+        self.aux_heads = bool(aux_heads)
+        if self.aux_heads:
+            ha = max(s // 4, 16)
+            self.win_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
+            self.combat_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
+
     # ------------------------------------------------------------------------------------------------ tables
 
     def _cols(self, key: str, table: torch.Tensor) -> torch.Tensor:
@@ -285,15 +312,51 @@ class Policy(nn.Module):
         return self.card_mlp(torch.cat(parts, -1))
 
     def _piles(self, x) -> torch.Tensor:
+        """Draw / discard / exhaust piles (card id x {base, upgraded} counts): per pile a bag of card embeddings, its
+        size and upgraded share. Default: the bag is the mean embedding; deck_counts: the count-aware bag
+        sum_id log(1 + copies) x embedding, plus log(1 + distinct ids) and log(1 + upgraded copies) per pile."""
         W = self.card_emb.weight
-        out = []
+        out, extra = [], []
         for name in ("draw_counts", "discard_counts", "exhaust_counts"):
             cnt = x[name].float().view(x[name].shape[0], -1, 2)
             tot = cnt.sum((1, 2))
-            bag = cnt.sum(-1) @ W / tot.clamp_min(1.0).unsqueeze(-1)
+            if self.deck_counts:
+                per_id = cnt.sum(-1)
+                bag = torch.log1p(per_id) @ W
+                extra += [torch.log1p((per_id > 0).sum(1).float()), torch.log1p(cnt[..., 1].sum(1))]
+            else:
+                bag = cnt.sum(-1) @ W / tot.clamp_min(1.0).unsqueeze(-1)
             up = cnt[..., 1].sum(1) / tot.clamp_min(1.0)
             out += [bag, symlog(tot).unsqueeze(-1), up.unsqueeze(-1)]
+        if self.deck_counts:
+            return self.pile_proj(torch.cat(out, -1)) + self.pile_count_proj(torch.stack(extra, -1))
         return self.pile_proj(torch.cat(out, -1))
+
+    def _deck_counts(self, ids: torch.Tensor, dm: torch.Tensor) -> torch.Tensor:
+        """Copies of every card id in the deck: [B, V_cards] float32 (id 0 = padding counts 0)."""
+        cnt = torch.zeros(ids.shape[0], self.card_emb.num_embeddings, dtype=torch.float32, device=ids.device)
+        return cnt.scatter_add_(1, ids.long(), dm.to(torch.float32))
+
+    @staticmethod
+    def _deck_bag(drow: torch.Tensor, k: torch.Tensor, dm: torch.Tensor) -> torch.Tensor:
+        """Count-aware embedding bag of the deck rows: sum_r w_r drow_r with w_r = log(1 + k_r) / k_r, k_r = copies of
+        row r's card id in the deck, so every distinct card adds log(1 + copies) x the mean of its rows (identity,
+        upgrade, enchantment): absolute counts with diminishing returns per copy, not proportions."""
+        k = k.clamp_min(1.0)
+        w = torch.where(dm, torch.log1p(k) / k, torch.zeros_like(k))
+        return (drow * w.unsqueeze(-1).to(drow.dtype)).sum(1)
+
+    def _deck_stats(self, dk: torch.Tensor, dm: torch.Tensor, counts: torch.Tensor) -> torch.Tensor:
+        """[B, DECK_STATS]: log(1 + n), n / 32 (n = deck rows), log(1 + distinct ids), log(1 + upgraded cards), upgraded
+        share, log(1 + enchanted cards), log(1 + afflicted cards)."""
+        dc = self.spec.cols["deck"]
+        n = dm.sum(1).float()
+        n_up = ((dk[..., dc["upgrade"]] > 0) & dm).sum(1).float()
+        n_en = ((dk[..., dc["enchant_id"]] != 0) & dm).sum(1).float()
+        n_af = ((dk[..., dc["affliction_id"]] != 0) & dm).sum(1).float()
+        distinct = (counts > 0).sum(1).float()
+        return torch.stack([torch.log1p(n), n / 32.0, torch.log1p(distinct), torch.log1p(n_up),
+                            n_up / n.clamp_min(1.0), torch.log1p(n_en), torch.log1p(n_af)], -1)
 
     def encode(self, x: dict[str, torch.Tensor]):
         """-> state [B, s], value [B], candidate logits [B, C] (masked), entity tables for pointer gathers."""
@@ -315,14 +378,21 @@ class Policy(nn.Module):
         hand_e = self._cards(hand, torch.cat([x["hand_f"], x["hand_dmg"]], -1))
         hand_m = hand[..., C["hand"]["card_id"]] != 0
 
-        # deck: bag of card embeddings
+        # deck: bag of card embeddings (deck_counts: count-aware bag + count features)
         dk, dc = x["deck"], C["deck"]
         dm = dk[..., dc["card_id"]] != 0
         drow = torch.cat([self.card_emb(dk[..., dc["card_id"]]), self.enchant_emb(dk[..., dc["enchant_id"]]),
                           self.affliction_emb(dk[..., dc["affliction_id"]]),
                           symlog(dk[..., dc["upgrade"]].float()).unsqueeze(-1),
                           symlog(dk[..., dc["enchant_amount"]].float()).unsqueeze(-1)], -1)
-        deck = F.relu(self.deck_proj(masked_mean(drow, dm)))
+        deck_cnt = None
+        if self.deck_counts:
+            ids = dk[..., dc["card_id"]].long()
+            deck_cnt = self._deck_counts(ids, dm)                       # [B, V_cards]
+            deck = F.relu(self.deck_proj(self._deck_bag(drow, deck_cnt.gather(1, ids), dm))
+                          + self.deck_count_proj(self._deck_stats(dk, dm, deck_cnt)))
+        else:
+            deck = F.relu(self.deck_proj(masked_mean(drow, dm)))
         piles = F.relu(self._piles(x))
 
         rl, rc = x["relics"], C["relics"]
@@ -443,7 +513,11 @@ class Policy(nn.Module):
         card32 = self.card32(self.card_emb.weight)                      # [V_cards, 32]
         item = torch.where(other.unsqueeze(-1), self.hash_emb(torch.remainder(iid, HASH_BUCKETS)),
                            self.item_emb(iid.clamp(0, self.item_emb.num_embeddings - 1)))
-        item = torch.where(is_card.unsqueeze(-1), card32[iid.clamp(0, card32.shape[0] - 1).long()], item)
+        # F.embedding, not card32[...]: the gradient of an advanced-indexing read is an index_put_ with accumulate,
+        # which CUDA runs as a sort + one serial pass per run of equal indices (indexing_backward_kernel): with
+        # most rows at id 0 (no prompt / not a card) that pass was ~half of the A100 update. The embedding backward
+        # (embedding_dense_backward: segmented reduction, float accumulation) computes the same gradient.
+        item = torch.where(is_card.unsqueeze(-1), F.embedding(iid.clamp(0, card32.shape[0] - 1).long(), card32), item)
         po_e = self.prompt_mlp(torch.cat([item, self.pitem_emb(kind), symlog(self._cols("prompt_num", po).float()),
                                           (po[..., poc["picked"]] > 0).float().unsqueeze(-1)], -1))
         prompt = masked_mean(po_e, po_m)
@@ -458,6 +532,8 @@ class Policy(nn.Module):
         tables = {"hand": hand_e, "enemies": en_e, "potions": pot_e,
                   "bank": torch.cat([torch.zeros(B, 1, self.d, device=gi.device, dtype=hand_e.dtype), ranks, rw_e, cr_e,
                                      alt_e, sh_e, rs_e, ev_e, po_e], 1)}
+        if deck_cnt is not None:
+            tables["deck_counts"] = deck_cnt
         return state, tables
 
     def _trunk(self, pooled, hand_e, hand_m, en_e, en_m, pot_e, pot_m):
@@ -482,8 +558,12 @@ class Policy(nn.Module):
         state = self.state_mlp(torch.cat([h[:, 0], masked_mean(h, keep)], -1))
         return state, h[:, o:o + H], h[:, o + H:o + H + E], h[:, o + H + E:]
 
-    def forward(self, x: dict[str, torch.Tensor]):
-        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32)."""
+    def forward(self, x: dict[str, torch.Tensor], aux: bool = False):
+        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32); with `aux` (a model with aux_heads)
+        also the heads' logits {"win_logit": [B], "combat_logit": [B]} float32 (sts2train.heads: win_prob =
+        sigmoid(win_logit), combat_hp_pred = sigmoid(combat_logit))."""
+        if aux and not self.aux_heads:
+            raise ValueError("forward(aux=True) needs a model built with aux_heads=True")
         state, tables = self.encode(x)
         value = self.value_head(state).squeeze(-1)
         cand, cc = x["cand"], self.spec.cols["cand"]
@@ -506,20 +586,29 @@ class Policy(nn.Module):
         opt_ok = (off > 0) & (oi >= 0) & (oi < size)
         opt_p = gather_rows(bank, torch.where(opt_ok, off + oi, torch.zeros_like(oi))) * opt_ok.unsqueeze(-1).to(bank.dtype)
         cid = cand[..., cc["card_id"]].clamp(0, self.card_emb.num_embeddings - 1).long()
-        card_t = self.c_card(self.card_emb.weight)                       # [V_cards, d]
+        card_t = self.c_card(self.card_emb.weight)                       # [V_cards, d] (F.embedding read: see card32)
         num = torch.stack([symlog(cand[..., cc["A"]].float()), symlog(cand[..., cc["B"]].float()),
                            hand_ok.float(), tgt_ok.float(), pot_ok.float(), opt_ok.float()], -1)
-        h1 = F.relu(self.c_kind(kind) + self.c_num(num) + hand_p + tgt_p + pot_p + opt_p + card_t[cid]
-                    + self.c_state(state).unsqueeze(1))
+        pre = self.c_kind(kind) + self.c_num(num) + hand_p + tgt_p + pot_p + opt_p + F.embedding(cid, card_t) \
+            + self.c_state(state).unsqueeze(1)
+        if self.deck_counts:        # copies of the candidate's card (picked / bought / selected / played) in the deck
+            pre = pre + self.c_copies(torch.log1p(tables["deck_counts"].gather(1, cid)).unsqueeze(-1))
+        h1 = F.relu(pre)
         h2 = F.relu(self.c_l2(h1))
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)
         valid = torch.arange(Cn, device=cand.device).view(1, -1) < x["cand_n"].view(-1, 1)
         logits = logits.float().masked_fill(~valid, NEG)          # float32 even under autocast
+        if aux:
+            return logits, value.float(), {"win_logit": self.win_head(state).squeeze(-1).float(),
+                                           "combat_logit": self.combat_head(state).squeeze(-1).float()}
         return logits, value.float()
 
     @property
     def arch(self) -> dict:
-        return {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
+        """Size knobs + the MODEL_FLAGS that are on (a model without them reports exactly the five knobs)."""
+        a = {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
+        a.update({k: True for k in MODEL_FLAGS if getattr(self, k)})
+        return a
 
 
 def param_count(m: nn.Module) -> int:
@@ -567,6 +656,17 @@ def activation_bytes_per_sample(model: nn.Module, spec: ModelSpec, rows: int = 6
 
 
 def arch_of(config: dict | None) -> dict:
-    """The architecture kwargs of ``Policy`` from a (checkpoint) config; missing keys = the smoke model."""
+    """The architecture kwargs of ``Policy`` from a (checkpoint) arch / config; missing size keys = the smoke model,
+    missing MODEL_FLAGS = off."""
     config = config or {}
-    return {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}
+    out = {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}
+    out.update({k: bool(config.get(k, False)) for k in MODEL_FLAGS})
+    return out
+
+
+def model_arch(cfg) -> dict:
+    """``Policy`` kwargs of a TrainConfig: the size knobs plus the MODEL_FLAGS that are on (the record config.json and
+    the log line show)."""
+    a = {k: getattr(cfg, k) for k in ARCH_KEYS}
+    a.update({k: True for k in MODEL_FLAGS if getattr(cfg, k, False)})
+    return a

@@ -17,6 +17,9 @@ uv run --project sim/tools/train sts2train train --preset large --device cuda --
 # the local smoke (a Mac is a smoke box: smoke/small presets, <= 256 envs, minibatch <= 512, <= 6 threads)
 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 uv run --project sim/tools/train sts2train train --device mps --preset small \
     --envs 256 --minibatch 512 --threads 6 --torch-threads 6 --max-hours 0.05 --eval-every 10 --out tmp/train/mps-smoke
+# the training-signal flags (all off by default; see "Training-signal flags")
+uv run --project sim/tools/train sts2train train --preset large --device cuda --amp --envs 2048 --max-hours 6 \
+    --aux-heads --deck-counts --acq-shaping --eval-every 50 --out tmp/train/run2                # GPU box only
 # resume: newest checkpoint of the run dir; the checkpoint's config is kept, flags given here override it
 uv run --project sim/tools/train sts2train train --resume auto --out tmp/train/run1 --max-hours 6
 uv run --project sim/tools/train sts2train train --resume tmp/train/run1/checkpoints/ckpt-0000500.pt
@@ -36,9 +39,9 @@ uv run --project sim/tools/train sts2train plot tmp/train/run1           # curve
 | File | Content |
 | --- | --- |
 | `status.json` | rewritten atomically after every update: `state` (running / finished / stopped / aborted / error), `stop_reason`, `update`, `env_steps`, `episodes`, `wins`, `wall_s`, `env_steps_per_s`, `recent` (progress / win rate / floor over the last 20 updates), `best_eval`, `last_eval`, `last_checkpoint`, `updated_at` |
-| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves") |
-| `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean |
-| `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
+| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags") |
+| `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
+| `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
 | `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save) |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
@@ -74,6 +77,9 @@ A100 use `--amp` (bf16 autocast, roughly half), `--grad-checkpoint` (recompute t
 1.71 MiB/sample, ≈ 6.8 GiB at 4096, at the cost of one more trunk forward) and/or `--minibatch 2048`; on CUDA the
 trainer warns when the estimate exceeds 70 % of the free GPU memory.
 
+`--deck-counts` adds 14 × d_model parameters (smoke +1,344 = +0.14 %, small +1,792, large +5,376 = +0.03 %),
+`--aux-heads` adds two heads of hidden width state / 4 (smoke / small +33,026, large +295,682 = +1.9 %).
+
 Local-size guard: on `cpu` / `mps` the trainer refuses (exit 2, with the activation estimate) a model above 3,000,000
 parameters or the `large` preset unless `--allow-big-local` is given (never inherited by `--resume`). On `mps` it
 defaults `PYTORCH_MPS_HIGH_WATERMARK_RATIO` to 0.3 (and the low watermark below it) unless they are set.
@@ -94,6 +100,16 @@ minibatch or a rollout step: row cuts come from host-side cand_n / prompt_option
 device index buffers (a Python-list index uploads the list, a stream sync per call), every epoch's minibatch indices
 go up in one copy, the statistics come back once per update, the sampling distribution skips its argument validation
 and CUDA uploads go through pinned memory.
+
+The candidate scorer's card read (`card_t[cid]`, a [V_cards, d] table projected from the card embeddings) and the
+prompt options' card read (`card32[iid]`) are `F.embedding` lookups. As advanced-indexing reads their backward was an
+`index_put_` with accumulate, which CUDA runs as a sort plus one serial pass over each run of equal indices
+(`indexing_backward_kernel`); most rows carry id 0 (non-card candidates, padding, samples without a prompt), so on the
+A100 profile of 2026-11-03 (large preset, minibatch 2048, bf16) those two calls took 114 of the update's 244 ms. The
+embedding backward (`embedding_dense_backward`: sorted segments reduced in parallel, float accumulation) computes the
+same gradient: on the cpu with one thread the loss and every gradient are bit-identical to the indexing reads
+(`tests/test_perf.py`, which also asserts that the backward runs no `_index_put_impl_`); on several cpu threads only
+the summation order of the old atomic accumulation differs (< 2e-9).
 
 `--compile default` wraps the minibatch forward + PPO loss (backward through AOTAutograd) and the rollout forward in
 `torch.compile` (inductor: fused elementwise / reduction kernels); `--compile reduce-overhead` adds CUDA graphs (no
@@ -118,14 +134,15 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
 | Module | Content |
 | --- | --- |
 | `features.py` | `ModelSpec` (vocab / enum sizes, column maps, shapes, encoder_version from the published schema; stored in checkpoints), `check_spec_compat` (may a checkpoint's spec drive this library: model inputs identical), `obs_to_device` / `obs_to_torch` (the 27 buffers the model reads; `cand` / `prompt_options` cut to the rows the batch needs), `RolloutStore` ([T, N, ...] tensors on the training device in source dtypes, 643 MiB at 32 × 1024 with 64 candidate / prompt rows; minibatches are gathered on the device) |
-| `model.py` | `Policy`: id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; optional transformer trunk; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head. `PRESETS` |
+| `heads.py` | `--aux-heads`: `AuxTargets` (per-window targets and masks of the win-probability / combat-hp heads), `aux_losses`, `HEAD_OUTPUTS` (the definitions checkpoints record) |
+| `model.py` | `Policy`: id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; optional transformer trunk; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head. `PRESETS`; `MODEL_FLAGS` (`aux_heads`, `deck_counts`: optional parts, created last) |
 | `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), `ppo_loss` / `MinibatchUpdater` / `InferenceRunner` (the update step and rollout forward, eager or compiled) and `check_compiled`, checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
 | `bench.py` | `sts2train bench-update`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
-| `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return) |
+| `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`) |
 | `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` metrics) |
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
-| `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md` |
+| `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
 
 Objective (`objective.py`, `--objective`): the default `protocol` rewards each step with the change of the protocol
 v0.2 progress metric (§4.2 of `docs/sts2-bench-protocol-v0.2-2026-11-01.md`: per-act normalised, `sts2vec.protocol.compute`,
@@ -138,6 +155,51 @@ real episodes against the evaluator's bookkeeping). `win` is the contract's rewa
 truncated, status `FLOOR_STALL`, scored like the protocol's `stuck`) when the installed sts2vec supports it; otherwise
 it is an error rather than a silent no-op. Unset, the env's default applies: 80 (`sts2vec.FLOOR_STEP_CAP`, the
 evaluator's `stuck` rule) on a library that implements the cap. The cap in effect is in `config.json` `env`.
+
+## Training-signal flags (`--aux-heads`, `--deck-counts`, `--acq-shaping`)
+
+Motivated by the 2026-11-03 trajectory diagnosis of the Silent plateau (the policy never takes card rewards; the critic
+valued "take a card" at +0.00004 against a measured +0.0185 progress; lambda 0.95 over 32-step windows truncates the
+credit; the deck was a mean of card-id embeddings). All three are off by default; off, the trainer computes exactly
+what it computed before (`tests/test_perf.py` runs the e80ea22 loop with them given explicitly off). Whether they
+help is an experiment, not something the tests show.
+
+- **`--aux-heads`** (architecture; `--aux-coef` 0.1, `--aux-bootstrap` on): two heads on the state embedding next to the
+  unchanged value head (`heads.py`). `win_prob` = sigmoid(win logit), binary cross-entropy to the episode outcome
+  (Victory 1, Defeat 0); `combat_hp_pred` = sigmoid(combat logit), squared error to hp / max_hp when the current combat
+  ends (a combat ends when `aux.is_combat` drops, `aux.combats_won` grows or the episode ends; a death in it = 0), for
+  states in combat only. Targets per rollout window (`heads.AuxTargets`): outcomes seen inside the window are exact;
+  truncated episodes (step cap, floor cap, sim errors) and combats a truncation cut are masked; episodes / combats still
+  running at the window end get the head's own prediction at the state after the window (the n-step bootstrap the
+  value head uses; `--no-aux-bootstrap` masks them, leaving only the last ≤ `--rollout` steps before an outcome).
+  Losses are masked minibatch means, added to the PPO loss times `--aux-coef`; they train the shared encoder.
+  Metrics: `aux_win_loss`, `aux_combat_loss`, `aux_win_frac` / `aux_combat_frac` (minibatch share with a target),
+  `aux_win_targets` / `aux_win_exact` / `aux_win_target_mean`, the same for combat, `aux_win_prob_mean` /
+  `aux_combat_pred_mean` (the heads at the state after the window). Checkpoints record `arch.aux_heads` and `heads`;
+  `sts2train eval` (and the periodic eval) writes `win_prob` (one value per `history_actions` entry: the "通关把握"
+  readout), `combat_hp_pred` (null outside combat), `win_prob_first` / `win_prob_last` into
+  `games/<KEY>.summary.json`, lists the heads in `config.json` and prints `head_readout`.
+- **`--deck-counts`** (architecture): the deck becomes a count-aware embedding bag: rows weighted log(1 + k) / k (k =
+  copies of the row's card id), so each distinct card adds log(1 + copies) × the mean of its rows (identity, upgrade,
+  enchantment), plus 7 count features (log(1 + n), n / 32, log(1 + distinct), log(1 + upgraded), upgraded share,
+  log(1 + enchanted), log(1 + afflicted)); each combat pile's bag is sum_id log(1 + copies) × embedding (plus distinct
+  ids and upgraded copies); the candidate scorer gets log(1 + copies of the candidate's card in the deck). The schema
+  has no static per-card numbers for deck rows (id, upgrade, enchantment, affliction only); hand and card-reward rows
+  keep their full numeric features.
+- **`--acq-shaping`** (`--acq-deck-coef` 0.003, `--acq-relic-coef` 0.01, `--acq-upgrade-coef` 0.004): potential-based
+  shaping on top of the objective (`objective.AcqShaping`): phi(s) = deck_coef × min(deck_n − 10, 12) + relic_coef ×
+  relic_n + upgrade_coef × (summed upgrade levels), phi = 0 after a terminal or truncation, F = gamma × phi(s') −
+  phi(s) per step. An episode's shaping telescopes to −phi(first observation), so the optimal policy is unchanged;
+  acquisitions are paid when taken. PPO's returns / advantages use the shaped reward; `reward_mean`, `return_mean`,
+  `fresh_*` / `save_*` and every progress number stay the objective's, and the shaping is logged apart:
+  `reward_mean_shaped`, `shaping_mean` (per step), `shaped_return_mean`, `shaping_return_mean` (finished episodes),
+  `acq_potential_mean`; episode records carry `shaping` / `shaped_return`. Evaluations never see it.
+
+`--aux-heads` and `--deck-counts` are part of the architecture: a run resumes only with the setting its checkpoint
+was trained with (other values are refused before the env starts, like the size flags), and their modules are created
+after all others, so a model with a flag on starts every other parameter from the same initial values as without it.
+`--acq-shaping` and the coefficients are objective settings and may change on resume. `bench-update --deck-counts
+--aux-heads` times the flagged model / loss.
 
 ## Start saves (`--start-saves DIR --save-mix R`)
 

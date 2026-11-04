@@ -27,6 +27,9 @@ from sts2train.startpool import start_pool_from_config, uses_start_saves
 
 TINY_TRUNK = {"d": 64, "s": 128, "depth": 1, "heads": 4, "ff_mult": 2}
 MAX_ROWS = 64
+# the trainer's optional signal flags given explicitly off (their other knobs set to non-defaults: unused when off)
+FLAGS_OFF = {"aux_heads": False, "aux_coef": 0.7, "aux_bootstrap": False, "deck_counts": False,
+             "acq_shaping": False, "acq_deck_coef": 0.5, "acq_relic_coef": 0.5, "acq_upgrade_coef": 0.5}
 
 
 @pytest.fixture(scope="module")
@@ -77,6 +80,44 @@ def test_col_groups_match_list_indexing(schema_spec):
         t = torch.from_numpy(obs[buf])
         assert torch.equal(m._cols(key, t), t[..., [spec.cols[buf][k] for k in names]]), key
     assert not any(k.startswith("_ix_") for k in m.state_dict()), "index buffers must stay out of checkpoints"
+
+
+@pytest.mark.parametrize("arch", [{}, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_card_reads_match_indexing_and_skip_index_put(schema_spec, one_thread, monkeypatch, arch):
+    """The candidate / prompt-option card reads go through F.embedding (embedding_dense_backward) instead of advanced
+    indexing, whose backward is an index_put_ with accumulate (on CUDA a serial pass per run of equal ids: ~47 % of
+    the A100 large-preset update): the PPO loss and every gradient are bit-identical to the indexing reads of
+    bf005c7 (cpu, one thread), and the backward runs no aten::_index_put_impl_."""
+    import types
+
+    from torch.profiler import ProfilerActivity, profile
+
+    import sts2train.model as M
+
+    spec, dtypes = schema_spec
+    store = _store(spec, dtypes, 1, 48, seed=11, max_cand=40, max_prompt=30)
+    idx = np.arange(48)
+    args = (store.batch(idx), *[a_[torch.from_numpy(idx)] for a_ in _targets(store)])
+    torch.manual_seed(0)
+    m = Policy(spec, **arch)
+
+    def run():
+        m.zero_grad(set_to_none=True)
+        loss, _ = ppo_loss(m, *args, clip=0.2, vf_coef=0.5, ent_coef=0.01)
+        loss.backward()
+        return loss.detach(), {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None}
+
+    with profile(activities=[ProfilerActivity.CPU]) as prof:
+        loss_e, grads_e = run()
+    ops = {e.key for e in prof.key_averages()}
+    assert "aten::embedding_dense_backward" in ops and "aten::_index_put_impl_" not in ops
+    indexing = types.SimpleNamespace(**{k: getattr(F, k) for k in dir(F) if not k.startswith("__")})
+    indexing.embedding = lambda i, table: table[i]               # the bf005c7 reads: card_t[cid], card32[iid]
+    monkeypatch.setattr(M, "F", indexing)
+    loss_i, grads_i = run()
+    assert torch.equal(loss_e, loss_i)
+    assert sorted(grads_e) == sorted(grads_i) and {"card_emb.weight", "c_card.weight", "card32.weight"} <= set(grads_e)
+    assert all(torch.equal(grads_e[k], grads_i[k]) for k in grads_e)
 
 
 def _legacy_update(model, opt, store, targets, rng, cfg):
@@ -261,11 +302,13 @@ def _head_train(cfg):
         env.close()
 
 
-@pytest.mark.parametrize("arch", [{}, TINY_TRUNK], ids=["smoke", "trunk"])
+@pytest.mark.parametrize("arch", [{}, TINY_TRUNK, FLAGS_OFF], ids=["smoke", "trunk", "flags-off"])
 def test_train_default_path_reproduces_head_loop(tmp_path, one_thread, arch):
     """The default path (compile off, no static rows) with fresh starts only (no --start-saves): `train()` on a real
     env reproduces the trainer loop as of e80ea22 (`_head_train`) bit for bit: same weights, Adam state and
-    per-update statistics after three updates of two epochs, each epoch ending in a short minibatch."""
+    per-update statistics after three updates of two epochs, each epoch ending in a short minibatch. "flags-off"
+    gives the optional signal flags (aux heads, deck counts, acquisition shaping) explicitly off: still the e80ea22
+    loop."""
     given = {**arch, "out": str(tmp_path / "run"), "envs": 16, "threads": 2, "pool": 8, "rollout": 8,
              "minibatch": 40, "epochs": 2, "max_updates": 3, "ckpt_every": 0, "ckpt_every_min": 0, "eval_every": 0,
              "baseline_steps": 0, "torch_threads": 1, "max_hours": 0.5, "seed": 3}
@@ -452,3 +495,9 @@ def test_bench_update_cli(tmp_path, capsys):
     assert r["mode"] == "off" and r["update_ms"] > 0 and r["update_loss_finite"] and len(r["profile"]["ops"]) == 5
     rc = main(["bench-update", "--preset", "large", "--device", "cpu", "--minibatch", "4096", "--steps", "1"])
     assert rc == 2 and "GiB" in capsys.readouterr().out
+    rc = main(["bench-update", "--d-model", "32", "--state-dim", "64", "--depth", "1", "--heads", "2", "--ff-mult", "2",
+               "--device", "cpu", "--minibatch", "32", "--envs", "16", "--steps", "1", "--warmup", "1",
+               "--infer-steps", "1", "--torch-threads", "2", "--deck-counts", "--aux-heads", "--json", str(out)])
+    assert rc == 0 and "deck-counts aux-heads" in capsys.readouterr().out
+    r = json.loads(out.read_text())["results"][0]
+    assert r["arch"]["deck_counts"] and r["arch"]["aux_heads"] and r["update_loss_finite"]

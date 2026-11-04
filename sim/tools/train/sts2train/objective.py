@@ -13,6 +13,8 @@ Truncated episodes (step cap, floor step cap) end with the progress of their las
 ``capped`` / ``stuck`` games.
 
 ``win``: the env's own reward (1 at a Victory terminal, else 0; CONTRACTS.md D5).
+``AcqShaping`` (``--acq-shaping``, any objective): potential-based shaping for deck size, relics and upgrades on top
+of the objective's reward; the trainer logs it apart, and episode returns / progress stay the objective's.
 ``shaped``: LEGACY smoke objective: ``win`` + delta(total_floor) / ``shaped_floors`` per step (floor count, not the
 protocol metric; it allows stall loops; kept for reproducing the 2026-11-02 smoke).
 """
@@ -124,3 +126,55 @@ class EpisodeRewards:
         self.ret[done] = 0.0
         self._mark_starts(done, start_entry)        # auto-reset: the next episodes' first observations
         return r.astype(np.float32), finished
+
+
+ACQ_DEFAULTS = {"deck": 0.003, "relic": 0.01, "upgrade": 0.004}
+
+
+class AcqShaping:
+    """Potential-based acquisition shaping (``--acq-shaping``), added to the objective's reward.
+
+    Potential of an observation: ``phi = c_deck * min(deck_n - 10, 12) + c_relic * relic_n + c_upgrade * upgrades``
+    (``aux.deck_n``, ``aux.relic_n``; upgrades = the summed upgrade levels of the deck's cards), and 0 after a terminal
+    or a truncation. Per step the shaping reward is ``F = gamma * phi(s') - phi(s)`` (``phi(s') = 0`` when the step ended
+    the episode), so it telescopes: with gamma = 1 an episode's shaping sums to ``phi(last) - phi(first) = -phi(first)``
+    (a constant of its start state), and the optimal policy is unchanged (Ng et al. 1999); taking a card / relic /
+    upgrade is paid immediately and the debt falls due at the end.
+
+    ``reset(aux, deck)`` after ``env.reset()``; ``step(done, aux, deck)`` after every ``env.step`` with the new
+    observation (the next episode's first one for a finished slot) -> ``(F float32 [N], shaping sums of the episodes
+    that ended {slot: sum})``."""
+
+    def __init__(self, aux_fields, deck_cols: dict, num_envs: int, gamma: float = 1.0, *,
+                 deck: float = ACQ_DEFAULTS["deck"], relic: float = ACQ_DEFAULTS["relic"],
+                 upgrade: float = ACQ_DEFAULTS["upgrade"]):
+        a = {f: i for i, f in enumerate(aux_fields)}
+        missing = [f for f in ("deck_n", "relic_n") if f not in a]
+        if missing:
+            raise ValueError(f"the library's aux block lacks {missing} (needed by --acq-shaping)")
+        self._deck_n, self._relic_n = a["deck_n"], a["relic_n"]
+        self._cid, self._up = deck_cols["card_id"], deck_cols["upgrade"]
+        self.gamma = float(gamma)
+        self.coefs = (float(deck), float(relic), float(upgrade))
+        self.phi = np.zeros(num_envs, dtype=np.float64)       # potential of each slot's current observation
+        self.sum = np.zeros(num_envs, dtype=np.float64)       # shaping accumulated in each slot's current episode
+
+    def potential(self, aux: np.ndarray, deck: np.ndarray) -> np.ndarray:
+        c_deck, c_relic, c_up = self.coefs
+        upgrades = (deck[..., self._up].astype(np.float64) * (deck[..., self._cid] != 0)).sum(1)
+        return (c_deck * np.minimum(aux[:, self._deck_n].astype(np.float64) - 10.0, 12.0)
+                + c_relic * aux[:, self._relic_n].astype(np.float64) + c_up * upgrades)
+
+    def reset(self, aux: np.ndarray, deck: np.ndarray) -> None:
+        self.phi = self.potential(aux, deck)
+        self.sum[:] = 0.0
+
+    def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray) -> tuple[np.ndarray, dict[int, float]]:
+        done = np.asarray(done, dtype=bool)
+        nxt = self.potential(aux, deck)
+        f = np.where(done, 0.0, self.gamma * nxt) - self.phi
+        self.sum += f
+        ended = {int(i): float(self.sum[i]) for i in np.flatnonzero(done)}
+        self.sum[done] = 0.0
+        self.phi = nxt
+        return f.astype(np.float32), ended
