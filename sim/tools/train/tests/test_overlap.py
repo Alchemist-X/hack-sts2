@@ -180,12 +180,14 @@ def test_double_sampling_is_reproducible_and_keeps_the_batch(tmp_path):
     assert _strip(r1) == _strip(r2) and e1 == e2 and s1["weights_hash"] == s2["weights_hash"]
     assert [r["env_steps_update"] for r in r0] == [r["env_steps_update"] for r in r1] == [12 * 16] * 3
     for eps in (e0, e1):
-        ended = [e for e in eps if e.get("kind", "episode") == "episode" and e.get("seed_n") is not None]
+        ended = [e for e in eps if e["result"] not in ("dropped", "start_failed") and e.get("n") is not None]
         assert ended
         by_slot: dict = {}
         for e in ended:
-            by_slot.setdefault(e["slot"], []).append(e["seed_n"])
+            by_slot.setdefault(e["slot"], []).append(e["n"])
         assert all(v == sorted(v) for v in by_slot.values())
+        ns = [e["n"] for e in ended]
+        assert len(ns) == len(set(ns))          # every stream seed is played by one slot at most
 
 
 def test_double_pool_mode_runs(tmp_path):
