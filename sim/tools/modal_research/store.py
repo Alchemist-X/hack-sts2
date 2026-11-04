@@ -211,7 +211,9 @@ class Store:
         identifier(decision_id)
         identifier(category)
         reserve = cents(reserve_usd)
-        max_reserve, max_seconds = (10, 600) if category == "env_cpu_validation" else (100, 180)
+        max_reserve, max_seconds = {
+            "env_cpu_validation": (10, 600), "gpu_smoke": (200, 1200),
+        }.get(category, (100, 180))
         if not 0 < reserve <= max_reserve or type(seconds) is not int or not 0 < seconds <= max_seconds:
             raise ValueError("access probe exceeds local authorization envelope")
         payload = canonical({"decision_id": decision_id, "category": category, "seconds": seconds,
@@ -225,6 +227,13 @@ class Store:
                 if tuple(old) != (payload, reserve):
                     raise ValueError("probe key already used with different parameters")
                 return
+            if category == "gpu_smoke" and db.execute(
+                """SELECT 1 FROM jobs WHERE
+                   (kind='access_probe' AND json_extract(payload,'$.category')='gpu_smoke'
+                    AND (state IN ('external_prepared','external_reserved') OR error='gpu_receipt_unknown'))
+                   OR (kind IN ('train','eval') AND state IN ('intent','running','uncertain'))"""
+            ).fetchone():
+                raise ValueError("another GPU operation is active or launch receipt is unresolved")
             spent, reserved = self.ledger(db)
             platform = self.platform_headroom(state, spent)
             if (state["approved_budget"] is None or platform is None
@@ -255,6 +264,53 @@ class Store:
             db.execute("UPDATE jobs SET state='external_reserved',deadline=? WHERE id=?",
                        (self.clock() + seconds, key))
 
+    def gpu_smoke_step(self, key, step, binding):
+        """A paid step is written before its sole application-level provider call."""
+        identifier(key)
+        if step not in {"stage", "launch", "inspect"}:
+            raise ValueError("invalid GPU smoke operation")
+        with self.transaction() as db:
+            state = db.execute("SELECT * FROM study").fetchone()
+            row = db.execute("SELECT * FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
+            if (not row or json.loads(row["payload"])["category"] != "gpu_smoke"
+                    or row["state"] not in {"external_reserved", "external_finished_cost_unknown"}):
+                raise ValueError("GPU smoke requires its own operational reservation")
+            previous = db.execute("SELECT payload FROM events WHERE id=?", (f"{key}-stage",)).fetchone()
+            if previous and json.loads(previous["payload"]) != binding:
+                raise ValueError("GPU smoke packet differs from durable intent")
+            if step == "inspect":
+                if not previous:
+                    raise ValueError("GPU smoke has no durable provider intent")
+                return dict(row)
+            now = self.clock()
+            spent, reserved = self.ledger(db)
+            platform = self.platform_headroom(state, spent)
+            minimum_time = 500 if step == "launch" else 60
+            if (row["state"] != "external_reserved" or row["deadline"] - now < minimum_time
+                    or state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
+                    or platform is None or spent + reserved > min(state["approved_budget"], state["execution_cap"])
+                    or reserved > platform):
+                raise ValueError("GPU smoke lacks current authorization, budget or time")
+            if step == "stage":
+                if previous:
+                    raise ValueError("stage already attempted; reconcile without starting again")
+            else:
+                if not previous or row["submit_started"]:
+                    raise ValueError("launch already attempted or packet was never staged")
+                db.execute("UPDATE jobs SET submit_started=1,error='gpu_receipt_unknown' WHERE id=?", (key,))
+            self.append_event(db, f"{key}-{step}", f"gpu_smoke_{step}",
+                              binding if step == "stage" else {**binding, "worker_deadline": int(now) + 480}, now)
+            return {**dict(row), "worker_deadline": int(now) + 480}
+
+    def gpu_smoke_receipt(self, key, remote_id):
+        identifier(remote_id)
+        with self.transaction() as db:
+            row = db.execute("SELECT payload,submit_started,remote_id FROM jobs WHERE id=?", (key,)).fetchone()
+            if (not row or json.loads(row["payload"])["category"] != "gpu_smoke" or not row["submit_started"]
+                    or row["remote_id"] not in (None, remote_id)):
+                raise ValueError("GPU sandbox receipt does not match an immutable launch")
+            db.execute("UPDATE jobs SET remote_id=?,error=NULL WHERE id=?", (remote_id, key))
+
     def finish_access_probe(self, key, result):
         identifier(key)
         required = {"status", "session_ids", "report_ref"}
@@ -263,10 +319,11 @@ class Store:
         if "details" in result and (type(result["details"]) is not dict or len(canonical(result["details"])) > 4000):
             raise ValueError("access probe detail exceeds evidence bounds")
         environment = result["status"] in {"blocked_prelaunch", "env_verified", "env_failed"}
-        if not environment and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
+        gpu = result["status"] in {"gpu_stage_failed", "gpu_verified", "gpu_failed", "gpu_receipt_unknown"}
+        if not (environment or gpu) and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
             raise ValueError("unknown access probe status")
         session_ids = result["session_ids"]
-        if type(session_ids) is not list or (len(session_ids) != 0 if environment else not 1 <= len(session_ids) <= 2):
+        if type(session_ids) is not list or (len(session_ids) != 0 if environment or gpu else not 1 <= len(session_ids) <= 2):
             raise ValueError("access probe session IDs do not match the probe type")
         for session in result["session_ids"]:
             identifier(session)
@@ -277,11 +334,15 @@ class Store:
             old = db.execute("SELECT state,outcome,payload FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
             if not old:
                 raise ValueError("unknown access probe reservation")
-            if environment != (json.loads(old["payload"])["category"] == "env_cpu_validation"):
+            category = json.loads(old["payload"])["category"]
+            if environment != (category == "env_cpu_validation") or gpu != (category == "gpu_smoke"):
                 raise ValueError("probe evidence category does not match the reservation")
             if old["state"] == "external_finished_cost_unknown":
                 previous = json.loads(old["outcome"])
                 if previous == result:
+                    return
+                if gpu and previous["status"] == "gpu_receipt_unknown" and result["status"] in {"gpu_verified", "gpu_failed"}:
+                    db.execute("UPDATE jobs SET outcome=? WHERE id=?", (outcome, key))
                     return
                 if "details" in previous or "details" not in result or any(previous[key] != result[key] for key in required):
                     raise ValueError("access probe result already finalized")
