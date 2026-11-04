@@ -285,7 +285,7 @@ class Store:
             now = self.clock()
             spent, reserved = self.ledger(db)
             platform = self.platform_headroom(state, spent)
-            minimum_time = 500 if step == "launch" else 60
+            minimum_time = 320 if step == "launch" else 380
             if (row["state"] != "external_reserved" or row["deadline"] - now < minimum_time
                     or state["stopped"] or state["analysis_paused"] or state["approved_budget"] is None
                     or platform is None or spent + reserved > min(state["approved_budget"], state["execution_cap"])
@@ -295,12 +295,14 @@ class Store:
                 if previous:
                     raise ValueError("stage already attempted; reconcile without starting again")
             else:
-                if not previous or row["submit_started"]:
-                    raise ValueError("launch already attempted or packet was never staged")
+                if not previous or row["submit_started"] or db.execute(
+                    "SELECT 1 FROM jobs WHERE kind IN ('train','eval') AND state IN ('intent','running','uncertain')"
+                ).fetchone():
+                    raise ValueError("launch already attempted, concurrent GPU job, or packet was never staged")
                 db.execute("UPDATE jobs SET submit_started=1,error='gpu_receipt_unknown' WHERE id=?", (key,))
             self.append_event(db, f"{key}-{step}", f"gpu_smoke_{step}",
-                              binding if step == "stage" else {**binding, "worker_deadline": int(now) + 480}, now)
-            return {**dict(row), "worker_deadline": int(now) + 480}
+                              binding if step == "stage" else {**binding, "worker_deadline": int(now) + 300}, now)
+            return {**dict(row), "worker_deadline": int(now) + 300}
 
     def gpu_smoke_receipt(self, key, remote_id):
         identifier(remote_id)
@@ -331,12 +333,14 @@ class Store:
             raise ValueError("invalid access probe report reference")
         outcome = canonical(result)
         with self.transaction() as db:
-            old = db.execute("SELECT state,outcome,payload FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
+            old = db.execute("SELECT state,outcome,payload,remote_id,submit_started FROM jobs WHERE id=? AND kind='access_probe'", (key,)).fetchone()
             if not old:
                 raise ValueError("unknown access probe reservation")
             category = json.loads(old["payload"])["category"]
             if environment != (category == "env_cpu_validation") or gpu != (category == "gpu_smoke"):
                 raise ValueError("probe evidence category does not match the reservation")
+            if result["status"] == "gpu_verified" and not (old["remote_id"] and old["submit_started"]):
+                raise ValueError("verified GPU evidence requires a durable Sandbox receipt")
             if old["state"] == "external_finished_cost_unknown":
                 previous = json.loads(old["outcome"])
                 if previous == result:
