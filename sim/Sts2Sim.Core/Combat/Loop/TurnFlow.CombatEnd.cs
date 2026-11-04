@@ -24,6 +24,8 @@ public static partial class CombatLoop
 
     private static void EndCombatInternal(CombatState cs)
     {
+        // Combat/CombatManager.cs:1650: turnsTaken = localPlayer.PlayerCombatState.TurnNumber, before IsInProgress = false.
+        cs.TurnsTakenAtCombatEnd = cs.Player.TurnNumber;
         cs.IsInProgress = false;
         cs.Outcome = CombatOutcome.Victory;
         cs.PlayersTakingExtraTurn.Clear();
