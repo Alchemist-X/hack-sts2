@@ -136,6 +136,9 @@ class Controller:
             "study_id": state["id"],
             "expected_state_version": state["version"],
             "consumed_event_ids": [event["id"]],
+            "handled_event_ids": [row["event_id"] for row in db.execute(
+                "SELECT event_id FROM decisions ORDER BY rowid DESC LIMIT 16"
+            )],
             "evidence_refs": [event["id"]],
             "event": {"kind": event["kind"], "evidence": json.loads(event["payload"])},
             "budget": {

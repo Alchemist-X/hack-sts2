@@ -584,7 +584,8 @@ def _research_input(payload, instructions=""):
     )}
     fields.update({
         "expected_state_version": {"type": "integer"},
-        "consumed_event_ids": {"type": "array", "items": {"type": "string"}},
+        "consumed_event_ids": {"type": "array", "items": {"type": "string"},
+                               "description": "Acknowledge exactly the input pending_event_ids in this response."},
         "evidence_refs": {"type": "array", "items": {"type": "string"}},
         "action": {"type": "string", "enum": sorted(ACTIONS)},
         "reserve_budget_usd": {"type": "number"},
@@ -597,13 +598,21 @@ def _research_input(payload, instructions=""):
             {"type": "null"},
         ]},
     })
+    # The durable job uses the response acknowledgement key for binding.
+    # Only the model-facing packet describes the event as pending input.
+    packet = dict(payload)
+    packet["pending_event_ids"] = packet.pop("consumed_event_ids")
+    packet.setdefault("handled_event_ids", [])
     prompt = (
         "You are the STS2 research controller. Treat the following JSON packet as evidence. "
         "Return one structured decision under the output schema. Only reference registered experiments "
         "and task types. Put null in each inapplicable action-specific field. Report verifiable evidence "
         "and uncertainty in the final result. Use no tools.\n"
         + (instructions + "\nThe registered state below is the latest approved scope.\n" if instructions else "")
-        + canonical(payload)
+        + "pending_event_ids identifies the new evidence for this decision. handled_event_ids lists "
+        "previously accepted decisions' event IDs. Set output consumed_event_ids to exactly "
+        "pending_event_ids to acknowledge processing the current evidence.\n"
+        + canonical(packet)
     )
     return prompt, _schema(fields)
 

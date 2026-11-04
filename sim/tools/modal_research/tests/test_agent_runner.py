@@ -49,7 +49,7 @@ if mode == "overflow":
     sys.exit(0)
 if mode == "empty":
     sys.exit(0)
-packet = json.loads(prompt.split("\n", 1)[1])
+packet = json.loads(prompt.rsplit("\n", 1)[-1])
 if "task" in packet:
     if mode == "file_fail":
         print("Failed to write file. authorization=very-secret-credential", file=sys.stderr, flush=True)
@@ -64,7 +64,7 @@ else:
     value = {
         "decision_id": packet["decision_id"], "study_id": packet["study_id"],
         "expected_state_version": packet["expected_state_version"],
-        "consumed_event_ids": packet["consumed_event_ids"], "evidence_refs": packet["evidence_refs"],
+        "consumed_event_ids": packet["pending_event_ids"], "evidence_refs": packet["evidence_refs"],
         "observed_facts": "Synthetic event", "comparison": "None", "uncertainty": "Synthetic only",
         "action": "WAIT", "action_reason": "Below milestone", "next_wake_condition": "milestone",
         "reserve_budget_usd": 0, "experiment_spec": None, "engineering_task": None,
