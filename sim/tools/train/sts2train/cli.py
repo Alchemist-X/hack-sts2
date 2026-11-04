@@ -1,5 +1,6 @@
-"""sts2train CLI (also installed as ``sts2train-smoke``): ``train`` (PPO), ``eval`` (protocol v0.2 NN entry point),
-``plot`` (curves of a run directory).
+"""sts2train CLI (also installed as ``sts2train-smoke``): ``train`` (PPO), ``eval`` (protocol v0.2 NN entry point; exit
+1 when the replay audit fails, like ``sts2vec eval``), ``plot`` (curves of a run directory), ``bench-update``
+(synthetic timing of the PPO update and the rollout forward).
 
     sts2train train --preset large --device cuda --envs 2048 --max-hours 6 --eval-every 50 --out RUN_DIR
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
@@ -311,7 +312,12 @@ def main(argv=None) -> int:
         h = rep["headline"]
         print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                           "wins": h["wins"], "games": h["games"], "results": h["results"],
-                          "floor_mean": h["floor_mean"], "act_reached": h["act_reached"]}, indent=1))
+                          "floor_mean": h["floor_mean"], "act_reached": h["act_reached"],
+                          "replayable": h["replayable"]}, indent=1))
+        if h["replayable"] != h["games"]:      # the replay audit failed: the score is not reproducible (sts2vec eval)
+            print(f"error: replay audit failed: {h['replayable']}/{h['games']} games replayable (report.md lists "
+                  f"them)", file=sys.stderr, flush=True)
+            return 1
         return 0
     if a.cmd == "plot":
         _plot(Path(a.out))

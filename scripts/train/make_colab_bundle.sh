@@ -6,8 +6,9 @@
 #   scripts/train/make_colab_bundle.sh --aot-only      # only build/fetch the .so (cached under tmp/colab/aot/<key>/)
 #   SAVES_DIR=tmp/train/saves-silent-a9 scripts/train/make_colab_bundle.sh   # also ship start saves (saves/)
 #
-# Everything is taken from the committed HEAD (git archive), never from the working tree, except the optional
-# SAVES_DIR (data, never committed: scripts/train/collect_start_saves.py output). Contents:
+# Everything is taken from the commit HEAD points at when the script starts (resolved once into REV, so a commit made
+# while the AOT library builds cannot mislabel the bundle; git archive), never from the working tree, except the
+# optional SAVES_DIR (data, never committed: scripts/train/collect_start_saves.py output). Contents:
 #   lib/Sts2Sim.Vec.so        linux-x64 NativeAOT build of Sts2Sim.Vec (Dockerfile 'aot' stage); no .NET runtime needed
 #   seedsets/*.json           protocol seed sets (sim/tools/eval/seedsets) for the periodic eval (STS2VEC_SEEDSETS)
 #   wheels/*.whl              sts2vec and sts2train-smoke (pure-python wheels, installed with --no-deps)
@@ -31,13 +32,14 @@ AOT_REMOTE_DIR="${AOT_REMOTE_DIR:-/data/raven/hack-sts2/tmp/colab-aot}"
 AOT_ONLY=0
 [[ "${1:-}" == "--aot-only" ]] && AOT_ONLY=1
 
-SHA="$(git rev-parse --short=10 HEAD)"
+REV="$(git rev-parse --verify "HEAD^{commit}")"    # every later step reads this commit, never HEAD again
+SHA="$(git rev-parse --short=10 "$REV")"
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   echo "note: the working tree has uncommitted changes; the bundle is built from HEAD ($SHA) only" >&2
 fi
 # cache key of the native library: the trees it is built from
-KEY="$(git rev-parse HEAD:sim/Sts2Sim.Core HEAD:sim/Sts2Sim.Vec HEAD:Dockerfile HEAD:scripts/vec_publish_aot.sh \
-       | git hash-object --stdin | cut -c1-12)"
+KEY="$(git rev-parse "${REV}:sim/Sts2Sim.Core" "${REV}:sim/Sts2Sim.Vec" "${REV}:Dockerfile" \
+       "${REV}:scripts/vec_publish_aot.sh" | git hash-object --stdin | cut -c1-12)"
 AOT_DIR="$REPO/tmp/colab/aot/$KEY"
 SO="${AOT_SO:-$AOT_DIR/Sts2Sim.Vec.so}"
 
@@ -45,7 +47,7 @@ build_aot_remote() {
   local rdir="$AOT_REMOTE_DIR/$KEY"
   echo "== building the linux-x64 NativeAOT library on $AOT_HOST:$rdir (Dockerfile --target aot, key $KEY)"
   mkdir -p "$AOT_DIR"
-  git archive --format=tar.gz HEAD sim knowledge/source docker scripts/vec_publish_aot.sh Dockerfile .dockerignore \
+  git archive --format=tar.gz "$REV" sim knowledge/source docker scripts/vec_publish_aot.sh Dockerfile .dockerignore \
     | ssh "$AOT_HOST" "rm -rf '$rdir' && mkdir -p '$rdir/src' && tar xzf - -C '$rdir/src'"
   local t0=$SECONDS
   # shellcheck disable=SC2029
@@ -83,7 +85,7 @@ STAGE="$REPO/tmp/colab/stage"
 B="$STAGE/$NAME"
 rm -rf "$STAGE"
 mkdir -p "$B/lib" "$B/seedsets" "$B/wheels" "$STAGE/src"
-git archive HEAD sim/tools/vec sim/tools/train sim/tools/eval/seedsets scripts/train | tar xf - -C "$STAGE/src"
+git archive "$REV" sim/tools/vec sim/tools/train sim/tools/eval/seedsets scripts/train | tar xf - -C "$STAGE/src"
 
 cp "$SO" "$B/lib/Sts2Sim.Vec.so"
 cp "$STAGE/src/sim/tools/eval/seedsets/"*.json "$B/seedsets/"
@@ -115,9 +117,9 @@ PY
 fi
 
 GLIBC="$(cat "$(dirname "$SO")/glibc.txt" 2> /dev/null || echo unknown)"
-python3 - "$B" "$SHA" "$KEY" "$GLIBC" "${SAVES_DIR:-}" <<'PY'
+python3 - "$B" "$SHA" "$KEY" "$GLIBC" "${SAVES_DIR:-}" "$REV" <<'PY'
 import hashlib, json, os, sys, time
-root, sha, key, glibc, saves_dir = sys.argv[1:6]
+root, sha, key, glibc, saves_dir, rev = sys.argv[1:7]
 files = {}
 for dp, _, fns in os.walk(root):
     for fn in sorted(fns):
@@ -125,7 +127,8 @@ for dp, _, fns in os.walk(root):
         with open(p, "rb") as f:
             files[os.path.relpath(p, root)] = {"bytes": os.path.getsize(p), "sha256": hashlib.sha256(f.read()).hexdigest()}
 saves = [v for k, v in files.items() if k.startswith("saves" + os.sep) and k.endswith(".save")]
-manifest = {"bundle": os.path.basename(root), "git_sha": sha, "aot_key": key, "aot_target": "linux-x64 NativeAOT",
+manifest = {"bundle": os.path.basename(root), "git_sha": sha, "git_rev": rev, "aot_key": key,
+            "aot_target": "linux-x64 NativeAOT",
             "aot_glibc_max": glibc, "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "saves": {"count": len(saves), "bytes": sum(v["bytes"] for v in saves), "source_dir": saves_dir}
             if saves else None,

@@ -6,7 +6,8 @@ protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory ter
 ``shaped`` (LEGACY, ``--shaped``) = ``win`` + delta(total_floor) / 48 per step, the 2026-11-02 smoke objective.
 
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
-progress), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states; the env restarts from fresh episodes),
+progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
+the env restarts from fresh episodes),
 ``metrics.jsonl`` (one row per update), ``status.json`` (rewritten every update), periodic protocol evaluation on a
 seed set (``sts2vec.evaluate`` through ``sts2train.evaluate``) into ``evals/``, a wall-clock budget (``max_hours``),
 graceful stop on SIGINT / SIGTERM (checkpoint, then exit), bf16 autocast on CUDA behind ``amp``. Layout of the run
@@ -381,6 +382,33 @@ def random_baseline(env: VecEnv, tracker: ProgressTracker, steps: int, seed: int
     return {"steps": steps, "episodes": len(eps), "floor_mean": float(np.mean([e["floor"] for e in eps])) if eps else None,
             "progress_mean": float(np.mean(prog)) if prog else None, "wins": sum(e["win"] for e in eps),
             "sim_error_or_gap": errs, **split}
+
+
+def best_skip_reason(row: dict | None) -> str | None:
+    """Why an eval row cannot become ``best_eval`` / ``best.pt`` (None = it can): the evaluation failed (``error``), it
+    has no progress mean, not every game's history replayed (``replayable`` != ``games``: the replay audit failed, so
+    the score is not reproducible), or a game ended ``crashed`` (SIM_ERROR / CONTENT_GAP) or ``error`` (a live slot
+    without candidates). Among the remaining rows the highest ``progress_mean`` is best."""
+    if not row:
+        return "no eval"
+    if row.get("error"):
+        return f"evaluation failed: {row['error']}"
+    if row.get("progress_mean") is None:
+        return "no progress mean"
+    games, replayable = row.get("games"), row.get("replayable")
+    if not games or replayable != games:
+        return f"replay audit: {replayable}/{games} games replayable"
+    bad = [f"{n} {k}" for k in ("crashed", "error") if (n := int((row.get("results") or {}).get(k) or 0))]
+    return f"games ended {', '.join(bad)}" if bad else None
+
+
+def is_new_best(row: dict, best: dict | None) -> bool:
+    """Whether eval `row` replaces `best` as ``best_eval`` / ``best.pt``: `row` is clean (`best_skip_reason`) and there
+    is no clean best yet (none, or one kept from before this rule that is not clean) or `row` has a higher
+    ``progress_mean`` (a tie keeps the earlier one)."""
+    if best_skip_reason(row) is not None:
+        return False
+    return best is None or best_skip_reason(best) is not None or row["progress_mean"] > best["progress_mean"]
 
 
 def _mean(xs) -> float | None:
@@ -803,14 +831,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "replayable": h.get("replayable"), "weights_hash": weights_hash(model),
                    "checkpoint": _rel(last_ckpt_path, run), "dir": _rel(out, run),
                    "seconds": round(time.monotonic() - t, 2)}
+            skip = best_skip_reason(row)
+            if skip:
+                row["best_skip"] = skip
             evals.write(row)
             last_eval = row
-            if best_eval is None or (row["progress_mean"] or 0) > (best_eval.get("progress_mean") or 0):
+            if is_new_best(row, best_eval):          # best.pt: the clean eval with the highest progress
                 best_eval = row
                 ckpts.mark_best(last_ckpt_path)
-            log(f"[eval u{upd}] {cfg.eval_seedset}: progress {row['progress_mean']:.4f} "
+            pm = row["progress_mean"]
+            log(f"[eval u{upd}] {cfg.eval_seedset}: progress {'n/a' if pm is None else format(pm, '.4f')} "
                 f"wins {row['wins']}/{row['games']} floor {row['floor_mean']} ({row['seconds']:.1f} s)"
-                + (" *best*" if best_eval is row else ""))
+                + (" *best*" if best_eval is row else "") + (f" [not eligible for best.pt: {skip}]" if skip else ""))
             return row
 
         recent: deque = deque(maxlen=20)
