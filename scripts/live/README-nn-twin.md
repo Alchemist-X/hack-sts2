@@ -1,0 +1,179 @@
+# 看训练好的网络打真游戏（twin lockstep）
+
+`scripts/live/nn_twin_play.py` 让一个 `sts2train` checkpoint 在**真实的** Slay the Spire 2 里打一局，你在旁边看。
+网络从不直接读游戏画面：
+
+```
+真实游戏 ──STS2_MCP──▶ 状态 + 合法动作 ──┐
+                                          ├─ 逐项对比（层、幕、HP、金币、能量、格挡、手牌、敌人、药水、遗物、当前画面内容）
+模拟器孪生（同一种子 / 游戏存档）─────────┘
+      │ checkpoint 读孪生的观测，选一个候选行
+      ▼
+按“含义”映射到游戏的候选（牌 id + 升级 + 目标 combat_id、地图坐标、奖励身份、商品、休息选项……）
+      ▼
+在游戏里执行（等提交证据 + 静默帧），孪生走同一行
+```
+
+孪生和游戏一旦对不上（desync），runner 进入 **follow 模式**：继续用孪生的观测给网络打分，取排名最高、且能映射到
+游戏里的动作；什么都映射不上时用一个确定性的兜底动作（日志里标 `fallback`，不算网络的决策）；到游戏下一个存档点
+（进房间 / 战斗胜利后的奖励 / 先古之民事件结束）就用游戏自己的 `current_run.save` 重新播种孪生（resync），对上就回到
+lockstep。
+
+## 已验证到什么程度（2026-11-04 夜）
+
+checkpoint：s3c `best.pt`（encoder `5dbfa09dd9dcb5ed`，15.8M 参数，静默猎手 A10 训练，sim 评测 progress 0.156、
+平均 9 层、0 胜；没有 `--aux-heads`，所以状态行显示 critic 值 `V` 而不是通关把握）。种子 `TW1NA10S01`。
+
+- **Dry run**（模拟器 play server 当替身，两个独立进程）：整局 256 个决策，第 17 层首领 LAGAVULIN_MATRIARCH 战败，
+  0 desync；孪生自己行号推出的 token 与替身按含义匹配到的 token 256/256 相同，替身的 history 与 runner 发出的完全
+  一致；3.2 秒。
+- **真实游戏**（无头实例：`scripts/headless_provision.sh` + `headless_launch.sh`，锁定的带 eval API 的 MCP 构建，
+  录像器关闭，与你的 Steam 安装、存档、录像目录完全隔离）：
+  - 纯 lockstep：255 个决策，**0 desync，0 resync**，游戏结果与 dry run 完全相同（第 17 层被
+    LAGAVULIN_MATRIARCH_BOSS 击败，score 340），逐个决策的动作、概率、HP 与 dry run 一致；UI glue 20 次（19 次多选
+    确认，1 次离开宝箱房），孪生单边 1 次（模拟器的显式开箱，游戏里宝箱自己开）；503 秒，约 2 秒/决策（推理
+    9 ms，执行中位 1.4 s）。
+  - `--anchor room --inject-desync 100`：每个存档点都从游戏存档重新播种孪生，并在第 100 个决策故意让孪生走另一步。
+    23 次导入：22 次导入后与游戏完全一致（16 次进房间、5 次战后奖励、1 次涅奥结束），1 次被导入器拒绝（第 8 层
+    战后存档带 `extra_rewards`——小偷偷走的金币——已知不支持），runner 保留原孪生继续；注入的 desync 在第 6 层战斗
+    中出现（能量/敌人 HP/手牌），follow 模式打完这场战斗，战后奖励存档 resync 成功回到 lockstep。
+- 单元测试 35 个：每种候选类型的映射（MCP 状态形状来自 E3 农场的 v0.111.0 记录）、视图对比、UI glue 规则、
+  play-server token 解码；集成测试 2 个：带 aux heads 的小 checkpoint dry run（验证 win_prob 记录），5 个随机策略
+  整局（商店、休息、事件、奖励、药水、多选、卡包）。
+
+## 你早上要做的（推荐：可见的隔离实例）
+
+不碰你的 Steam 安装和存档，用今晚验证过的同一个 MCP 构建，只是把窗口打开。
+
+```bash
+cd /Users/Aincrad/dev-proj/hack-sts2/.claude/worktrees/train-live-twin    # 或合并后的主检出
+# 一次性：模拟器与训练环境
+dotnet build sim/Sts2Sim.sln -c Release
+uv sync --project sim/tools/train
+
+# 1. 隔离实例（headless-instances/inst1：自己的 HOME、端口 15601；解锁从你的存档只读复制）
+scripts/headless_provision.sh 1            # 已做过可跳过；会重建锁定的 MCP（sha256 校验）
+scripts/headless_launch.sh 1 --visible     # 有窗口的那一个；不加 --visible 就是无头
+
+# 2. 开跑：runner 用 eval API 自己开一局带种子的标准局，然后开始下
+nice -n 10 uv run --project sim/tools/train python scripts/live/nn_twin_play.py \
+    --checkpoint <你的 best.pt> --character SILENT --ascension 10 --seed TW1NA10S01 \
+    --port 15601 --start-run \
+    --save-root "$PWD/headless-instances/inst1/home/Library/Application Support/SlayTheSpire2" \
+    --out output/nn-twin/$(date +%Y%m%d-%H%M)-silent-a10
+
+# 3. 结束后停实例
+scripts/headless_launch.sh 1 --stop
+```
+
+`--visible` 今晚没有跑过（屏幕关着），它和无头模式的唯一区别是不传 Godot 的 `--headless`，隔离方式完全一样。
+
+## 用你自己的游戏（Steam）
+
+```bash
+cd /Users/Aincrad/dev-proj/hack-sts2
+scripts/mcp_mod.sh on        # 必须用主检出的脚本：.mcp-stashed/ 在主检出
+```
+
+1. 从 Steam 启动游戏（带 mod 加载）。
+2. 开一局**标准模式**静默猎手进阶 10。标准模式在原版游戏里不能填种子——不用填：runner 从
+   `current_run.save` 读出这一局的种子，孪生用同一个种子开局。（自定义模式能填种子，但它不是标准局，存档导入会拒绝，
+   不要用。）在涅奥的第一个画面（还没点任何选项）启动 runner 最好；已经过了第 1 层也行，runner 会导入当前存档，但必须
+   停在房间开头。
+3. 运行：
+
+   ```bash
+   cd /Users/Aincrad/dev-proj/hack-sts2/.claude/worktrees/train-live-twin
+   nice -n 10 uv run --project sim/tools/train python scripts/live/nn_twin_play.py \
+       --checkpoint <你的 best.pt> --character SILENT --ascension 10 \
+       --out output/nn-twin/$(date +%Y%m%d-%H%M)-mine
+   ```
+
+   默认端口 15526（`.mcp-stashed/STS2_MCP.conf`），默认存档根 `~/Library/Application Support/SlayTheSpire2`。
+4. 打完（或中途停）以后**一定要**：
+
+   ```bash
+   cd /Users/Aincrad/dev-proj/hack-sts2 && scripts/mcp_mod.sh off && scripts/mcp_mod.sh status
+   ```
+
+   录像器一直装着，这一局会被录下来；它的 manifest 的 mods 列表里有 STS2_MCP，靠这个和人类局区分。
+
+**风险（没验证）**：`.mcp-stashed/` 里的 `STS2_MCP.dll` 是 2026-07-14 的 v0.107.1 兼容构建（`0.4.0+v0107`，sha256
+`fa24a144…`），没有 eval API，也没有 selection-state 补丁，现在的游戏是 v0.111.0。它在 v0.111.0 上能否加载、多选界面能否
+确认都没测过。runner 连不上（`no STS2_MCP answer on port 15526`）或卡在多选确认时，改用上面的隔离实例。补丁版 MCP
+（`scripts/build_selection_mcp.sh`）按项目规定不能装进你的游戏。
+
+## 看什么
+
+每个决策一行状态（终端和 `<out>/status.log`）：
+
+```
+#0027 A1 F03 combat      HP 56/81 E3 | play STRIKE_SILENT -> u1 TOADPOLE p=0.35 | V +0.12 | sync
+      · glue confirm: confirm selection
+```
+
+序号、幕、层、画面、HP、能量 | 网络选的动作（孪生的说法）和它的概率 | `通关把握 xx%`（checkpoint 带 `--aux-heads`
+的胜率头时）否则 `V`（critic 价值：期望协议回报，不是概率）| `sync` / `DESYNC 字段…` / `follow`。缩进的 `·` 行是
+只在一边存在的 UI 步骤（事件对话翻页、游戏需要而模拟器不需要的“确认”按钮、宝箱房离开、模拟器的显式开箱）。
+
+- `<out>/trajectory.jsonl`：每条记录一行。`type` = `start` / `decision` / `glue` / `twin_only` / `resync` / `error`。
+  决策记录：`act` `floor` `screen` `hp` `mode`（lockstep/follow）`policy`（greedy / substitute / follow /
+  follow_relaxed / fallback，见下）、
+  `twin_action`（行号、语义、play-server token）、`real_action`（发给 MCP 的 JSON）、`p`、`win_prob`、`value`、
+  `top5`（前五个候选及概率）、`desync`（字段、孪生值、游戏值）、`ms`（观察/推理/执行耗时）、`twin_hash`。
+- `<out>/summary.json`：决策数、desync 决策数、前几次 desync 详情（层、画面、字段）、resync 次数和结果、各策略来源
+  的决策数、计数器、最终画面、`result`（eval API 的 run_result）、耗时。
+- `<out>/saves/`：重新播种孪生时用的存档副本（原存档只读）。
+- `policy`：`greedy` = 网络的首选，原样执行；`substitute` = 两边状态一致，但游戏接口不提供网络的首选（例如在
+  非战斗画面喝药水，STS2_MCP 不开放），改用网络排名最高、游戏提供的那个，孪生走同一步，仍是 lockstep（状态行
+  标 `[instead of …]`）；`follow` / `follow_relaxed` = desync 之后网络排名最高的可映射动作（relaxed 忽略升级）；
+  `fallback` = 什么都映射不上时的确定性兜底，不是网络的选择。
+- 暂停：`touch <out>/PAUSE`（删掉继续），这期间可以手动操作游戏，但回来时要停在 runner 离开时的同一个决策点，
+  否则下一步会 desync，等下一个存档点再对齐。停止：Ctrl-C（做完当前一步，写 summary）。
+
+## desync 是什么意思
+
+孪生（模拟器）和游戏在同一个决策点上看到的东西不一样。常见原因：
+
+1. **模拟器移植误差**：E3 农场 39 局的结论是每决策 99.5–99.9% 一致；未解决的 7 个分歧见
+   `sim/specs/diff-report-e3-farm-2026-11-02.md` §4（PUNCH_OFF 事件开战、GAMBLING_CHIP 回合开始选牌的阶段名、
+   STRATAGEM 牌堆选择的顺序、链式重放里开局手牌哪张打击被升级、链式战斗后的回合计数等）。
+2. **解锁差异**：模拟器默认全解锁（`UnlockProfile.All`）；你的档如果有没解锁的卡/遗物，奖励池可能不同。从游戏存档
+   resync 之后孪生用的是存档里的真实解锁状态。
+3. **执行没被确认**：动作发出去了但游戏没在超时内给出提交证据（`EXEC-FAIL`）；runner 会试着让孪生也走这一步，
+   比对后决定保留还是撤回。
+
+desync 之后网络仍然在玩（follow 模式），只是孪生可能已经和游戏不是同一局面。战斗中途没有存档，所以**战斗内的
+desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其余画面在下一个房间开头对齐。`--anchor room` 让 runner 在每个
+存档点都从游戏存档重新播种（即使没 desync），换来解锁/隐藏状态与游戏一致，代价是不再检验模拟器的长链一致性。
+
+## 已知限制
+
+- 战斗内不能重新同步（游戏只在房间边界写存档）；follow 模式下的映射是“同一张牌 + 同一个目标”，手牌不同就可能退到
+  兜底动作。
+- `--lookahead`：`sts2train.lookahead` 不在这棵树上（`train/lookahead` 分支未合并），而且它的镜像环境只会从新种子重放，
+  跟不上存档 resync，所以本 runner 只做贪心。
+- 宏动作 `TakeRewardCard` / `TakeRewardAlternative`（`train/env-deckbuild` 分支）已按“先领奖励、再选牌/替代项”的两步计划
+  支持，但这棵树的 schema 里还没有，只有单元测试覆盖。
+- 原版 MCP 的事件对话翻页、确认按钮等纯 UI 步骤由 runner 自动点（日志里的 glue），不经过网络。
+- 非战斗画面只能丢药水（`discard_potion`，协议文档写明可用），不能喝：网络在那里想喝药水时按 `substitute` 处理。
+- `--inject-desync N`（只用于测试）：第 N 个决策让孪生故意走另一步，用来验证 follow 和存档 resync。
+- 卡牌/遗物名字在游戏里是本地化的（中文界面），runner 只用 id 比对，不受影响。
+- 速度约 2 秒/决策（游戏动画 + 提交证据 + 静默窗口，网络推理只占 10 ms）：s3c 这样死在第一幕首领的局约 8 分钟，
+  打穿三幕（约 1500 个决策）约 50 分钟。
+- 导入器不支持带 `extra_rewards` 的战后存档（例如小偷偷了金币的战斗）：这类存档点上 resync 失败，孪生保持原状，
+  等下一个存档点。
+
+## 开发者：dry run 与测试
+
+```bash
+dotnet run -c Release --project sim/Sts2Sim.Server -- --port 8765 --no-crash-log &   # 或 scripts/sim_server.sh
+nice -n 10 uv run --project sim/tools/train python scripts/live/nn_twin_play.py --checkpoint best.pt \
+    --seed TW1NA10S01 --character SILENT --ascension 10 --out tmp/nn-twin/dry --dry-run-server http://127.0.0.1:8765
+nice -n 10 uv run --project sim/tools/train pytest -q scripts/live/tests
+```
+
+代码：`scripts/live/nn_twin/`——`semantics.py`（语义动作、视图、匹配、对比）、`twin.py`（模拟器槽位 + checkpoint
+策略 + 候选解码）、`mcp.py`（真实游戏：复用 `scripts/sts2_action_executor.py` 的 `request` / `wait_settled` /
+`settled_state` 和 `sts2rec/legal_actions.py` 的 `derive_legal_actions`）、`standin.py`（play server 替身）、
+`runner.py`（lockstep 主循环）。
