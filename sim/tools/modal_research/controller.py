@@ -94,6 +94,8 @@ class Controller:
             raise DispatchBlocked(f"{kind} requires an authorized provider and spending policy")
         if kind == "research" and hasattr(self.backend, "can_plan_research") and not self.backend.can_plan_research(db, job):
             raise DispatchBlocked("finite research authorization exhausted or event unavailable")
+        if kind == "sol" and hasattr(self.backend, "can_plan_sol") and not self.backend.can_plan_sol(db, job):
+            raise DispatchBlocked("finite SOL usage authorization exhausted or task unavailable")
         if kind in {"train", "eval"}:
             if self.store.external_gpu_conflicts(db, experiment):
                 raise DispatchBlocked("external GPU reservation lacks independent scope")
@@ -505,7 +507,14 @@ class Controller:
         scoped_unverified = (job.kind == "research" and actual is None and outcome.status == "failed"
                              and outcome.error == "research_usage_unverified"
                              and getattr(self.backend, "research_policy", None) is not None)
-        if not (provisional or scoped_usage or scoped_unverified or reservation_only) and (
+        sol_admitted = (job.kind == "sol" and actual is None
+                        and getattr(self.backend, "sol_usage_policy", None) is not None
+                        and hasattr(self.backend, "sol_usage_admitted"))
+        sol_scoped = (sol_admitted and (outcome.status == "succeeded"
+                      and self.backend.sol_usage_policy.valid_usage(outcome.usage_tokens)
+                      or outcome.status == "failed" and outcome.error in {
+                          "sol_usage_unverified", "sol_usage_over_limit"}))
+        if not (provisional or scoped_usage or scoped_unverified or reservation_only or sol_scoped) and (
             type(actual) is not int or not 0 <= actual <= 10_000_000
         ):
             self._quarantine(owner, row, "terminal job cost unresolved")
@@ -513,7 +522,7 @@ class Controller:
         error = None
         result = None
         if outcome.status == "failed":
-            error = outcome.error if (scoped_unverified or isinstance(outcome.error, str)
+            error = outcome.error if (scoped_unverified or sol_scoped or isinstance(outcome.error, str)
                                       and outcome.error in RETRYABLE) else "worker"
         try:
             if job.kind in {"train", "eval"} and (not error or (job.kind == "train" and outcome.output is not None)):
@@ -563,6 +572,8 @@ class Controller:
             state = self.store.fence(db, owner)
             if (scoped_usage or scoped_unverified) and not self.backend.research_usage_admitted(db, job.key):
                 raise ValueError("research usage is outside its durable admission")
+            if sol_scoped and not self.backend.sol_usage_admitted(db, job.key):
+                raise ValueError("SOL usage is outside its durable admission")
             if reservation_only and self.backend.conservative_reserved(db, job.key) != estimate:
                 raise ValueError("conservative reservation is outside its durable admission")
             if provisional:
@@ -581,6 +592,10 @@ class Controller:
                         diagnostic, error, job.key))
             if scoped_usage or (scoped_unverified and type(usage) is int and usage > 0):
                 db.execute("INSERT INTO research_usage_holds VALUES (?,?,?)", (job.key, usage, self.store.clock()))
+            if sol_scoped:
+                db.execute("INSERT INTO sol_usage_holds VALUES (?,?,?)",
+                           (job.key, canonical(outcome.usage_tokens) if outcome.usage_tokens else None,
+                            self.store.clock()))
             if reservation_only:
                 db.execute("INSERT INTO conservative_holds VALUES (?,?,?)", (job.key, estimate, self.store.clock()))
             if provisional:

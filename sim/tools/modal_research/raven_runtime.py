@@ -119,6 +119,48 @@ class ResearchUsagePolicy:
                 and len(_research_input(job.payload, self.instructions)[0].encode()) <= 24_000)
 
 
+@dataclass(frozen=True)
+class SolUsagePolicy:
+    """One member-account SOL call; reserve remains unknown cash, not a bound."""
+
+    reference: str
+    account_verification: str
+    template_id: str
+    reserve_cents: int
+    deadline_seconds: int
+    max_input_tokens: int
+    max_output_tokens: int
+    max_calls: int = 1
+
+    def __post_init__(self):
+        for value in (self.reference, self.account_verification, self.template_id):
+            identifier(value)
+        if (type(self.reserve_cents) is not int or not 0 < self.reserve_cents <= 10_000
+                or type(self.deadline_seconds) is not int or not 0 < self.deadline_seconds <= 900
+                or type(self.max_input_tokens) is not int or not 0 < self.max_input_tokens <= 250_000
+                or type(self.max_output_tokens) is not int or not 0 < self.max_output_tokens <= 50_000
+                or type(self.max_calls) is not int or self.max_calls != 1):
+            raise ValueError("SOL usage policy must be one finite member call")
+
+    def allows(self, job, now):
+        return (job.kind == "sol" and job.attempt == 1 and job.reserve_cents == self.reserve_cents
+                and 0 < job.deadline - now <= self.deadline_seconds
+                and job.payload.get("template_id") == self.template_id)
+
+    def valid_usage(self, usage):
+        if type(usage) is not dict:
+            return False
+        keys = {"input_tokens", "cached_input_tokens", "output_tokens"}
+        optional = {"cache_write_input_tokens", "reasoning_output_tokens"}
+        if not keys <= usage.keys() <= keys | optional or any(type(value) is not int for value in usage.values()):
+            return False
+        inputs, cached, outputs = (usage[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens"))
+        return (0 < inputs <= self.max_input_tokens and 0 <= cached <= inputs
+                and 0 < outputs <= self.max_output_tokens
+                and 0 <= usage.get("cache_write_input_tokens", 0) <= inputs
+                and 0 <= usage.get("reasoning_output_tokens", 0) <= outputs)
+
+
 class WorkspaceMetering:
     """Refresh read-only usage/quotes on a configured cadence; expired data gates only Modal sends."""
 
@@ -227,9 +269,10 @@ def load_runtime(config, *, clock=time.time):
     agent = config["agent"]
     runner = None
     research_policy = None
+    sol_policy = None
     if agent is not None:
         required_agent = {"state", "workspaces", "launcher", "bindings", "sol_tasks", "cost_caps", "cost_verification"}
-        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy", "research_instructions", "launcher_sha256", "sol_templates"}):
+        if type(agent) is not dict or not (required_agent <= set(agent) <= required_agent | {"system_identity", "research_usage_policy", "research_instructions", "launcher_sha256", "sol_templates", "sol_usage_policy"}):
             raise ValueError("runtime agent requires verified role and spending bindings")
         if agent["cost_caps"]:
             identifier(agent["cost_verification"])
@@ -262,17 +305,23 @@ def load_runtime(config, *, clock=time.time):
             raise ValueError("SOL workspace slot is shared across templates")
         if templates:
             sol = agent["bindings"].get("sol")
+            if agent.get("sol_usage_policy") is not None:
+                sol_policy = SolUsagePolicy(**agent["sol_usage_policy"])
             if (research_policy is None or research_policy.allowed_event_ids is not None
                     or not agent.get("system_identity") or agent["sol_tasks"] or not sol
                     or sol["scope"] != "sol-isolated-files-and-tests"
+                    or sol["model_id"] != "gpt-6-sol"
                     or sol["verification_ref"] == agent["bindings"]["research"]["verification_ref"]
-                    or type(agent["cost_caps"].get("sol")) is not int
-                    or agent["cost_caps"]["sol"] <= 0):
-                raise ValueError("SOL requires isolated project, finite cap and dynamic tasks only")
+                    or "sol" in agent["cost_caps"] or sol_policy is None):
+                raise ValueError("SOL requires isolated project and finite member usage policy")
             if any(template.model_binding_ref != sol["verification_ref"]
                    or template.output_max_bytes != sol["max_output_bytes"]
-                   or template.reserve_cents < agent["cost_caps"]["sol"] for template in templates.values()):
-                raise ValueError("SOL template differs from verified role or cost cap")
+                   or template.reserve_cents != sol_policy.reserve_cents
+                   or template.deadline_seconds != sol_policy.deadline_seconds
+                   or template.template_id != sol_policy.template_id for template in templates.values()):
+                raise ValueError("SOL template differs from verified role or usage allocation")
+        elif agent.get("sol_usage_policy") is not None:
+            raise ValueError("SOL member policy requires a reviewed task template")
         elif "sol" in agent["bindings"] and not agent["sol_tasks"]:
             raise ValueError("SOL binding without a reviewed task template")
         runner = AgentRunner(
@@ -299,6 +348,8 @@ def load_runtime(config, *, clock=time.time):
     def authorize(job):
         if job.kind == "research" and research_policy is not None:
             return research_policy.allows(job, clock())
+        if job.kind == "sol" and sol_policy is not None:
+            return sol_policy.allows(job, clock())
         ceiling = estimated(job) if job.kind in GPU_KINDS else bound(job)
         return type(ceiling) is int and 0 < ceiling <= job.reserve_cents
 
@@ -307,7 +358,7 @@ def load_runtime(config, *, clock=time.time):
     if runner:
         billing.update({kind: ("non_modal", role.verification_ref) for kind, role in runner.bindings.items()})
     broker = RavenBroker(store, artifacts, billing_sources=billing, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
-                         research_policy=research_policy,
+                         research_policy=research_policy, sol_usage_policy=sol_policy,
                          tool_enabled=bool(runner and templates),
                          experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None)
     broker.sol_templates = templates if runner else {}

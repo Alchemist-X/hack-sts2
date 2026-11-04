@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS broker_jobs (
 CREATE TABLE IF NOT EXISTS broker_research_usage_admissions (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id)
 );
+CREATE TABLE IF NOT EXISTS broker_sol_usage_admissions (
+    job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id)
+);
 CREATE TABLE IF NOT EXISTS broker_conservative_reservations (
     job_id TEXT PRIMARY KEY REFERENCES broker_jobs(job_id),
     estimate_cents INTEGER NOT NULL
@@ -108,7 +111,7 @@ class RavenBroker:
     verified_cost_bounds = True
     isolate_gpu_uncertainty = True
 
-    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None,
+    def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None, sol_usage_policy=None,
                  tool_enabled=False, experiment_reserve_limits=None, billing_sources=None,
                  grant_seconds=30, kill_grace_seconds=10):
         self.store = store
@@ -118,6 +121,7 @@ class RavenBroker:
         self.reserve_bound = reserve_bound
         self.conservative_reserve = conservative_reserve
         self.research_policy = research_policy
+        self.sol_usage_policy = sol_usage_policy
         self.experiment_reserve_limits = experiment_reserve_limits or {}
         self.billing_sources = billing_sources or {}
         self.tool_enabled = bool(tool_enabled)
@@ -125,7 +129,7 @@ class RavenBroker:
         self.kill_grace_seconds = integer(kill_grace_seconds, 1)
         if self.grant_seconds > 60 or self.kill_grace_seconds > 30:
             raise ValueError("unbounded worker lease settings")
-        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or conservative_reserve or research_policy else None,
+        self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or conservative_reserve or research_policy or sol_usage_policy else None,
                                      research_seconds=180 if research_policy else 600,
                                      research_cents=research_policy.reserve_cents if research_policy else 25)
         with self.store.transaction() as db:
@@ -133,6 +137,22 @@ class RavenBroker:
 
     def research_usage_admitted(self, db, job_key):
         return db.execute("SELECT 1 FROM broker_research_usage_admissions WHERE job_id=?", (job_key,)).fetchone() is not None
+
+    def sol_usage_admitted(self, db, job_key):
+        return db.execute("SELECT 1 FROM broker_sol_usage_admissions WHERE job_id=?", (job_key,)).fetchone() is not None
+
+    def can_plan_sol(self, db, job):
+        policy = self.sol_usage_policy
+        if policy is None:
+            return True  # fixture and older bounded SOL paths retain their policy
+        task_id = job.payload.get("task_id")
+        row = db.execute("SELECT template_id,task_json FROM sol_task_bindings WHERE task_id=?", (task_id,)).fetchone()
+        template = self.sol_templates.get(job.payload.get("task_type"))
+        return (policy.allows(job, self.store.clock()) and row is not None
+                and template is not None and row["template_id"] == template.template_id == policy.template_id
+                and json.loads(row["task_json"])["payload_hash"] == digest(job.payload)
+                and db.execute("SELECT COUNT(*) FROM broker_sol_usage_admissions").fetchone()[0] < policy.max_calls
+                and db.execute("SELECT COUNT(*) FROM jobs WHERE kind='sol' AND id<>?", (job.key,)).fetchone()[0] < policy.max_calls)
 
     @staticmethod
     def conservative_reserved(db, job_key):
@@ -303,8 +323,11 @@ class RavenBroker:
                     if current["state"] == "spawning":
                         self._finish(db, job.key, Outcome("failed", 0, error="cancelled_before_spawn"))
                 return None
-            usage_admission = job.kind == "research" and self.research_policy is not None
-            if usage_admission and not self.can_plan_research(db, job):
+            research_admission = job.kind == "research" and self.research_policy is not None
+            sol_admission = job.kind == "sol" and self.sol_usage_policy is not None
+            usage_admission = research_admission or sol_admission
+            if (research_admission and not self.can_plan_research(db, job)
+                    or sol_admission and not self.can_plan_sol(db, job)):
                 return None
             estimated = job.kind in GPU_KINDS and self.conservative_reserve is not None
             bound = (self.conservative_reserve(job) if estimated else
@@ -325,7 +348,8 @@ class RavenBroker:
             if marked.rowcount != 1:
                 return None
             if usage_admission:
-                db.execute("INSERT INTO broker_research_usage_admissions VALUES (?)", (job.key,))
+                table = "broker_research_usage_admissions" if research_admission else "broker_sol_usage_admissions"
+                db.execute(f"INSERT INTO {table} VALUES (?)", (job.key,))
             elif estimated:
                 db.execute("INSERT INTO broker_conservative_reservations VALUES (?,?)", (job.key, bound))
             elif bound is not None:
@@ -494,6 +518,20 @@ class RavenBroker:
                     self._finish(db, job.key, self._bounded_outcome(outcome))
                 else:
                     self._finish(db, job.key, Outcome("failed", error="research_usage_unverified"))
+                return True
+            if job.kind == "sol" and self.sol_usage_admitted(db, job.key):
+                usage = outcome.usage_tokens
+                known_no_launch = (outcome.status == "failed" and type(actual) is int and actual == 0
+                                   and outcome.error in {"cancelled_before_agent_start", "agent_preflight", "deadline"})
+                valid = self.sol_usage_policy.valid_usage(usage) if self.sol_usage_policy else False
+                if known_no_launch:
+                    self._finish(db, job.key, self._bounded_outcome(outcome))
+                elif outcome.status == "succeeded" and valid and actual is None:
+                    self._finish(db, job.key, self._bounded_outcome(outcome))
+                else:
+                    reason = "sol_usage_over_limit" if type(usage) is dict and not valid else "sol_usage_unverified"
+                    self.store.pause_provider(db, "member_models", job.key, reason, self.store.clock())
+                    self._finish(db, job.key, Outcome("failed", error=reason, usage_tokens=usage if valid else None))
                 return True
         materialize = getattr(provider, "materialize", None)
         if job.kind in GPU_KINDS and not detached and outcome.output is not None and materialize is not None:
@@ -962,6 +1000,11 @@ class AgentQueueProvider:
                 issue = None
             if issue in MODEL_PROVIDER_ISSUES:
                 return Outcome("failed", error=issue)
+        if job.kind == "sol" and self.broker.sol_usage_policy is not None and outcome.status == "succeeded":
+            try:
+                return replace(outcome, usage_tokens=self.runner.sol_usage_receipt(job))
+            except (OSError, ValueError, KeyError, TypeError):
+                return Outcome("failed", error="sol_usage_unverified")
         if job.kind == "research" and getattr(self.runner, "scoped_research", False) and outcome.status == "succeeded":
             try:
                 return replace(outcome, usage_value_cents=self.runner.standard_usage_value(job))

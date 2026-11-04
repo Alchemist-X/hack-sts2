@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS research_usage_holds (
     usage_value_cents INTEGER NOT NULL,
     created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sol_usage_holds (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    usage_json TEXT,
+    created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS cost_holds (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
     reserve INTEGER NOT NULL, proven_bound INTEGER NOT NULL,
@@ -838,6 +843,10 @@ class Store:
                 "SELECT h.job_id,j.reserve,h.usage_value_cents FROM research_usage_holds h "
                 "JOIN jobs j ON j.id=h.job_id WHERE j.actual IS NULL ORDER BY h.created"
             ).fetchall()
+            sol_usage_holds = db.execute(
+                "SELECT h.job_id,j.reserve,h.usage_json FROM sol_usage_holds h "
+                "JOIN jobs j ON j.id=h.job_id WHERE j.actual IS NULL ORDER BY h.created"
+            ).fetchall()
             broker = []
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='broker_jobs'").fetchone():
                 broker = db.execute(
@@ -895,6 +904,11 @@ class Store:
                 "research_usage_cash_unknown": [
                     {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
                      "standard_credit_value_usd": row["usage_value_cents"] / 100} for row in usage_holds
+                ],
+                "sol_usage_cash_unknown": [
+                    {"id": row["job_id"], "reserved_usd": row["reserve"] / 100,
+                     "terminal_usage_tokens": json.loads(row["usage_json"]) if row["usage_json"] else None}
+                    for row in sol_usage_holds
                 ],
                 "access_gate": dict(access) if access else None,
                 "prepared_probes": [

@@ -308,6 +308,39 @@ class AgentRunner:
         units = 4 * ((inputs - cached) * 250 + cached * 25 + outputs * 1250)
         return (units + 999_999) // 1_000_000
 
+    def sol_usage_receipt(self, job):
+        """Verify one completed, bounded SOL turn without assigning a cash value."""
+        if job.kind != "sol" or self.bindings[job.kind].model_id != "gpt-6-sol":
+            raise ValueError("unbound SOL usage metering")
+        folder = self._folder(job)
+        record = self._load(folder, self._fingerprint(job))
+        if self._outcome(record).status != "succeeded":
+            raise ValueError("SOL did not complete successfully")
+        path = folder / "evidence.json"
+        if path.is_symlink() or not 0 < path.stat().st_size <= 2 * PIPE_LIMIT:
+            raise ValueError("missing bounded SOL usage evidence")
+        evidence = json.loads(path.read_bytes())
+        kinds = [event["type"] for event in evidence["events"]]
+        usage = evidence["usage"]
+        keys = {"input_tokens", "cached_input_tokens", "output_tokens"}
+        optional = {"cache_write_input_tokens", "reasoning_output_tokens"}
+        task = self._sol_task(job.payload["task_id"])
+        if (type(usage) is not dict or not keys <= usage.keys() <= keys | optional
+                or any(type(value) is not int for value in usage.values())
+                or evidence["exit_code"] != 0 or evidence["terminal"] != ["turn.completed"]
+                or kinds.count("turn.started") != 1 or kinds.count("thread.started") != 1
+                or evidence.get("unrecognized_items", 0) or evidence["diagnostics"]
+                or any(kind in {"warning", "error"} for kind in kinds)
+                or task is None or evidence["commands"] != [
+                    {"argv_hash": digest(task.test_argv), "exit_code": 0}]):
+            raise ValueError("SOL lacks a valid one-turn tool and usage receipt")
+        inputs, cached, outputs = (usage[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens"))
+        if (not 0 < inputs or not 0 <= cached <= inputs or not 0 < outputs
+                or not 0 <= usage.get("cache_write_input_tokens", 0) <= inputs
+                or not 0 <= usage.get("reasoning_output_tokens", 0) <= outputs):
+            raise ValueError("SOL terminal token usage is inconsistent")
+        return usage
+
     def run(self, job: Job) -> Outcome:
         """Run at most once. Only the broker may hand an admitted job to this method."""
         return self._claim(job, start=True)
