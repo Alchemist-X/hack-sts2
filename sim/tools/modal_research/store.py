@@ -327,7 +327,15 @@ class Store:
         if not (environment or gpu) and result["status"] not in {"no_terminal_evidence", "model_not_found", "verified", "failed", "tool_sandbox_failed"}:
             raise ValueError("unknown access probe status")
         session_ids = result["session_ids"]
-        if type(session_ids) is not list or (len(session_ids) != 0 if environment or gpu else not 1 <= len(session_ids) <= 2):
+        details = result.get("details", {})
+        no_session = (result["status"] == "no_terminal_evidence" and session_ids == []
+                      and {"session_id", "job_id", "invocation_id", "exit_code"} <= details.keys()
+                      and details["session_id"] is None and type(details["exit_code"]) is int)
+        if no_session:
+            identifier(details["job_id"])
+            identifier(details["invocation_id"])
+        if type(session_ids) is not list or (len(session_ids) != 0 if environment or gpu or no_session
+                                             else not 1 <= len(session_ids) <= 2):
             raise ValueError("access probe session IDs do not match the probe type")
         for session in result["session_ids"]:
             identifier(session)
