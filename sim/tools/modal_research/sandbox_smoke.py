@@ -329,9 +329,12 @@ def worker(packet, cutoff, packet_hash):
 
 def _binding(directory, packet):
     suffix = digest(packet["reservation"])[:12]
-    return {"task": packet["task"], "packet_hash": file_digest(directory / "packet.json"), "image": REGISTRY,
-            "app": f"sts2-a10-smoke-{suffix}", "volume": f"sts2-a10-smoke-{suffix}", "name": f"smoke-{suffix}",
-            "profile": PROFILE, "environment": "main"}
+    binding = {"task": packet["task"], "packet_hash": file_digest(directory / "packet.json"), "image": REGISTRY,
+               "app": f"sts2-a10-smoke-{suffix}", "volume": f"sts2-a10-smoke-{suffix}", "name": f"smoke-{suffix}",
+               "profile": PROFILE, "environment": "main"}
+    if packet["task"] == TASKS[2]:
+        binding["decision_id"] = "checkpoint-publication-fix-20261104-021"
+    return binding
 
 
 def _alarm(seconds):

@@ -275,7 +275,7 @@ class Store:
             if (not row or json.loads(row["payload"])["category"] != "gpu_smoke"
                     or row["state"] not in {"external_reserved", "external_finished_cost_unknown"}):
                 raise ValueError("GPU smoke requires its own operational reservation")
-            if binding.get("task") != json.loads(row["payload"])["decision_id"]:
+            if binding.get("decision_id", binding.get("task")) != json.loads(row["payload"])["decision_id"]:
                 raise ValueError("GPU packet is outside its authorized decision")
             previous = db.execute("SELECT payload FROM events WHERE id=?", (f"{key}-stage",)).fetchone()
             if previous and json.loads(previous["payload"]) != binding:
