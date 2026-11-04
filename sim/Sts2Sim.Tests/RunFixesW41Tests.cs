@@ -171,6 +171,22 @@ public static class RunFixesW41Tests
         Assert.Equal(0, RunImporter.MissingProperties(extra.GetType(), cardProps).Count);
     }
 
+    public static void Test_RunFixesW41_CosmeticPetSkinSavedPropertiesMap()
+    {
+        // BYRDPIP / PAELS_LEGION [SavedProperty] string Skin (Models.Relics/Byrdpip.cs, PaelsLegion.cs): cosmetic (rolled
+        // on pickup from a model-seeded Rng), but a save holding it was unsupported ("saved properties Skin are not
+        // mapped") until the sim defs held it.
+        foreach (var (id, skin) in new[] { ("BYRDPIP", "version3"), ("PAELS_LEGION", "spikes") })
+        {
+            var relic = RelicRegistry.Create(id);
+            var props = new SavedProperties { Strings = { new("Skin", skin) } };
+            Assert.Equal(0, RunImporter.MissingProperties(relic.GetType(), props).Count, id);
+            RunImporter.FillProperties(relic, props);
+            var exported = Assert.NotNull(RunExporter.ToSavedProperties(relic));
+            Assert.SequenceEqual(new[] { new KeyValuePair<string, string>("Skin", skin) }, exported.Strings);
+        }
+    }
+
     public static void Test_RunFixesW41_FixtureSaveWithGiryaAndSpoilsMapIsSupported()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "run_save_a8_silent_boss1.save");

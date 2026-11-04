@@ -20,6 +20,9 @@ public sealed class Byrdpip : RelicModel
 
     public override bool SpawnsPets => true;
 
+    // [SavedProperty] Skin (Models.Relics/Byrdpip.cs): cosmetic pet skin ("version1".."version4"), held so saves import it.
+    public string Skin { get; set; } = "version1";
+
     public override void AfterObtained(RunState rs)
     {
         var cs = rs.Combat;

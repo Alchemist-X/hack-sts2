@@ -11,10 +11,12 @@
 # Always passes --resume auto (newest checkpoint under RUN_DIR; a fresh run if there is none), so re-running the same
 # command after a disconnect continues the run; flags given here override the checkpoint's. RUN_DIR gets the trainer's
 # files (status.json, metrics.jsonl, checkpoints/, evals/, train.log) plus sts2vec-check.txt.
+# A bundle built with SAVES_DIR=... carries start saves in saves/: add `--start-saves <bundle dir>/saves [--save-mix R]`
+# (the path is printed below and exported as STS2TRAIN_SAVES; a resumed run keeps the path of its first session).
 # Environment: PYTHON (default python3), SKIP_INSTALL=1 (wheels already installed), SKIP_CHECK=1.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ $# -lt 1 || "$1" == -h || "$1" == --help ]]; then sed -n '2,16p' "$0"; exit 2; fi
+if [[ $# -lt 1 || "$1" == -h || "$1" == --help ]]; then sed -n '2,18p' "$0"; exit 2; fi
 RUN_DIR="$1"; shift
 THREADS=12
 ENVS=""
@@ -39,6 +41,11 @@ PY
 export STS2VEC_AOT_LIB="$HERE/lib/Sts2Sim.Vec.so"     # sts2vec loads the NativeAOT library: no CLR, no dotnet
 export STS2VEC_SEEDSETS="$HERE/seedsets"               # protocol seed sets for the periodic eval (std-a0-v1, ...)
 export STS2TRAIN_BUNDLE="$(basename "$HERE")"           # recorded in RUN_DIR/config.json
+if [[ -d "$HERE/saves" ]]; then
+  export STS2TRAIN_SAVES="$HERE/saves"
+  echo "== bundle start saves: $(find "$HERE/saves" -type f -name '*.save' | wc -l | tr -d ' ') files;" \
+    "use them with --start-saves $STS2TRAIN_SAVES"
+fi
 mkdir -p "$RUN_DIR"
 if [[ "${SKIP_CHECK:-0}" != 1 ]]; then
   echo "== sts2vec check (library $STS2VEC_AOT_LIB)"

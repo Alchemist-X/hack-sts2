@@ -125,6 +125,23 @@ public sealed class PotionReward : Reward
         }
     }
 
+    /// <summary>
+    /// True when claiming this reward now would be refused: <c>PotionCmd.TryToProcure</c> fails with TooFull (a full belt) and
+    /// <c>OnSelect</c> returns false, so the reward stays unclaimed and nothing is gained (game Rewards/PotionReward.cs:180-191).
+    /// A procure veto (Sozu, NotAllowed) is no refusal: the game consumes the reward without a potion (:192-194). Pure; a
+    /// potion id that is not ported answers false (claiming it fails the way it always did).
+    /// </summary>
+    public bool ClaimWouldBeRefused(RunState rs)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        if (SuccessfullySelected || Player.HasOpenPotionSlot)
+        {
+            return false;
+        }
+        var potion = Potion ?? (PotionId != null && PotionRegistry.Models.Contains(PotionId) ? PotionRegistry.Create(PotionId) : null);
+        return potion != null && PotionCmd.ProcureCheck(rs, potion, Player) == PotionProcureFailureReason.TooFull;
+    }
+
     protected override bool OnSelect(RunState rs)
     {
         var potion = Potion ??= RewardRngs.CreatePotion(PotionId!);

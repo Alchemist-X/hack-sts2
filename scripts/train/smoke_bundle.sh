@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Validate an sts2train Colab bundle on a linux x86_64 CPU box with plain python and no .NET: install CPU torch if the
 # interpreter has none, then run_train.sh (pip install, `sts2vec check`, a short CPU training run with checkpoints,
-# --floor-step-cap 80 and a protocol eval on std-a0-v1), then check the run directory (the cap in effect, the encoder
-# version), check that the bundled library fills the appended observation buffers (event_option_values is resolved by
-# reflection, which a NativeAOT publish could trim), and print the throughput.
+# --floor-step-cap 80 and a protocol eval on std-a0-v1; with the bundle's saves/ also --start-saves --save-mix 0.5),
+# then check the run directory (the cap in effect, the encoder version; with saves the fresh / save split), check that
+# the bundled library fills the appended observation buffers (event_option_values is resolved by reflection, which a
+# NativeAOT publish could trim; reward_choices matches the rewards-screen macro candidates, map_routes the map nodes),
+# publishes the card_static table and has the ABI 2 search exports, and print the throughput.
 #
-#   bash smoke_bundle.sh [RUN_DIR] [MINUTES] [THREADS]        (defaults: ./smoke-run, 2, nproc)
+#   bash smoke_bundle.sh [RUN_DIR] [MINUTES] [THREADS]        (defaults: ./smoke-run, 2, nproc; THREADS = env worker
+#                                                             threads and torch threads)
 #   docker run --rm -v "$PWD:/w" -w /w python:3.13 bash sts2train-<sha>/smoke_bundle.sh /w/smoke-run 2
 #
 # It installs into the current interpreter: run it in a throwaway container or venv. Exit 0 = the bundle works.
@@ -27,10 +30,12 @@ if ! "$PY" -c "import torch" 2> /dev/null; then
 fi
 rm -rf "$RUN_DIR"
 HOURS="$("$PY" -c "print(float('$MINUTES') / 60)")"
+SAVES=()
+if [[ -d "$HERE/saves" ]]; then SAVES=(--start-saves "$HERE/saves" --save-mix 0.5); fi
 T0=$SECONDS
 bash "$HERE/run_train.sh" "$RUN_DIR" "$THREADS" 256 --device cpu --preset small --max-hours "$HOURS" \
   --rollout 32 --minibatch 2048 --ckpt-every 2 --ckpt-every-min 1 --eval-every 4 --eval-seedset std-a0-v1 \
-  --log-every 1 --floor-step-cap 80
+  --log-every 1 --floor-step-cap 80 --torch-threads "$THREADS" ${SAVES[@]+"${SAVES[@]}"}
 echo "== run_train.sh finished in $((SECONDS - T0)) s; checking $RUN_DIR"
 "$PY" - "$RUN_DIR" <<'PY'
 import json, sys
@@ -54,6 +59,18 @@ assert conf["config"]["floor_step_cap"] == 80 and conf.get("env", {}).get("floor
 print(f"library: {lib['mode']} {lib['version']} ({lib['path']}); encoder_version {conf['encoder_version']}")
 print(f"floor_step_cap in effect: {conf['env']['floor_step_cap']} (config.json env; FLOOR_STALL truncations "
       f"{summ.get('floor_stall')}, sim errors {summ['sim_error']}, content gaps {summ['content_gap']})")
+if conf.get("start_pool"):
+    sp = conf["start_pool"]
+    assert conf["config"].get("start_saves"), "config.json config.start_saves is not set"
+    assert all("save_episodes" in r for r in rows), "metrics rows lack the fresh / save split"
+    n_fresh, n_save = sum(r["fresh_episodes"] for r in rows), sum(r["save_episodes"] for r in rows)
+    assert n_fresh and n_save, f"a start group finished no episode: fresh {n_fresh}, save {n_save}"
+    assert summ["sim_error"] == 0 and summ["content_gap"] == 0, (summ["sim_error"], summ["content_gap"])
+    print(f"start saves: {sp['unique_saves']} usable of {sp['files_found']} ({sp['skipped']} skipped), "
+          f"{sp['save_entries']} save + {sp['fresh_entries']} fresh entries (save mix {sp['save_mix_effective']}); "
+          f"finished episodes: save-started {n_save}, fresh {n_fresh}")
+    print("start floor of the usable saves (floor:count): "
+          + " ".join(f"{k}:{v}" for k, v in sp["histograms_unique_saves"]["start_floor"].items()))
 print(f"updates {st['update']}, env steps {st['env_steps']:,}, episodes {st['episodes']:,}, "
       f"env-steps/s {summ['env_steps_per_s_session']:,.0f} (env only {summ['env_only_steps_per_s']:,.0f}), "
       f"time split {summ['time_split_s']}")
@@ -62,27 +79,47 @@ print(f"checkpoints: {[p.name for p in ck]} + best.pt={(run / 'checkpoints' / 'b
                                                       f"({e['games']} games, {e['seconds']} s)" for e in evals))
 print("smoke_bundle: OK")
 PY
-echo "== appended observation buffers under the bundled library (256 envs x 400 random steps)"
+echo "== appended observation buffers, card_static and ABI 2 under the bundled library (256 envs x 400 random steps)"
 STS2VEC_AOT_LIB="$HERE/lib/Sts2Sim.Vec.so" "$PY" - "$THREADS" <<'PY'
-# The six buffers appended after last_episode (sim/ENV_SPEC.md §5, 35..40) must exist with their documented shapes and
-# be filled. event_option_values resolves each option's placeholders by reflection over the event models
+# The buffers appended after last_episode (sim/ENV_SPEC.md §5, 35..42) must exist with their documented shapes and be
+# filled. event_option_values resolves each option's placeholders by reflection over the event models
 # (Sts2Sim.Vec/EventOptionVars.cs); a NativeAOT publish that trimmed those members would leave it all zero.
+# reward_choices has one row per rewards-screen macro candidate (TakeRewardCard / TakeRewardAlternative; listed while
+# no prompt is pending); map_routes has routing features exactly at map_nodes' nodes. The schema carries card_static;
+# an exact ABI 2 branch copies its source (same state hash).
 import sys
 import numpy as np
 from sts2vec import PoolSpec, VecEnv, random_actions
 SHAPES = {"global_x": (2,), "hand_x": (10, 2), "draw_marked": (32, 6), "discard_order": (64, 6),
-          "exhaust_order": (64, 6), "event_option_values": (8, 9)}
+          "exhaust_order": (64, 6), "event_option_values": (8, 9), "reward_choices": (16, 25), "map_routes": (18, 7, 5)}
 pool = PoolSpec(count=256, seed_prefix="APPENDCHK")
 with VecEnv(256, threads=int(sys.argv[1]), seed_text="APPENDCHK", pool=pool) as env:
     S = env.schema
     for name, shape in SHAPES.items():
         assert tuple(S[name].shape) == shape and env.buffers[name].dtype == np.int32, (name, S[name].shape)
+    cs = S.card_static
+    assert cs.shape == (len(S.vocab.cards), len(S.card_static_fields)) and int(cs.any(axis=1).sum()) > 500, cs.shape
+    assert env.abi_version >= 2 and env.supports_branch and env.supports_restore_many, env.abi_version
     E, X, G = S.cols("event_option_values"), S.cols("global_x"), S.cols("global_i")
+    kind, point = S.cols("cand").kind, S.cols("map_nodes").point_type
+    macro = [S.vocab.enums["RunActionKind"].index_of(k) for k in ("TakeRewardCard", "TakeRewardAlternative")]
+    prompt_kind = S.vocab.enums["RunPhase"].index_of("Prompt")
     rng = np.random.default_rng(0)
     obs = env.reset()
     n = dict(event_option_rows=0, with_numbers=0, with_items=0, numbers_nonzero=0, ancient_shown=0,
-             discard_rows=0, exhaust_rows=0, draw_marked_rows=0, hand_x_nonzero=0)
+             discard_rows=0, exhaust_rows=0, draw_marked_rows=0, hand_x_nonzero=0, reward_choice_rows=0,
+             macro_candidates=0, map_route_cells=0)
     for _ in range(400):
+        live = np.arange(obs["cand"].shape[1]) < obs["cand_n"][:, None]
+        n_macro = (np.isin(obs["cand"][:, :, kind], macro) & live).sum(axis=1)
+        rows = (obs["reward_choices"] != 0).any(axis=2).sum(axis=1)
+        prompt = obs["global_i"][:, G.decision_kind] == prompt_kind
+        assert (prompt | (rows == np.minimum(n_macro, 16))).all(), "reward_choices rows != rewards-screen macros"
+        routes = (obs["map_routes"] != 0).any(axis=3)
+        assert not (routes & (obs["map_nodes"][..., point] == 0)).any(), "map_routes filled where map_nodes has no node"
+        n["reward_choice_rows"] += int(rows.sum())
+        n["macro_candidates"] += int(n_macro.sum())
+        n["map_route_cells"] += int(routes.sum())
         ev = obs["event_option_values"]
         n["event_option_rows"] += int((np.arange(ev.shape[1]) < obs["global_i"][:, G.event_option_n, None]).sum())
         n["with_numbers"] += int((ev[:, :, E.value_n] > 0).sum())
@@ -94,10 +131,14 @@ with VecEnv(256, threads=int(sys.argv[1]), seed_text="APPENDCHK", pool=pool) as 
         n["draw_marked_rows"] += int((obs["draw_marked"][:, :, 0] > 1).sum())
         n["hand_x_nonzero"] += int(obs["hand_x"].any(axis=2).sum())
         obs, *_ = env.step(random_actions(rng, obs["cand_n"]))
-    print(f"   {env.lib.mode} {env.lib.version()}: " + ", ".join(f"{k} {v:,}" for k, v in n.items()))
-missing = [k for k in ("with_numbers", "with_items", "numbers_nonzero", "ancient_shown", "discard_rows") if not n[k]]
+    env.branch(0, [1], determinized=False)
+    assert env.state_hash([0])[0] == env.state_hash([1])[0] != 0, "an exact branch differs from its source"
+    print(f"   {env.lib.mode} {env.lib.version()} (ABI {env.abi_version}): "
+          + ", ".join(f"{k} {v:,}" for k, v in n.items()) + f"; card_static {cs.shape[0]} x {cs.shape[1]}")
+missing = [k for k in ("with_numbers", "with_items", "numbers_nonzero", "ancient_shown", "discard_rows",
+                       "reward_choice_rows", "map_route_cells") if not n[k]]
 assert not missing, f"appended buffers not filled under this library: {missing}"
-print("appended buffers: OK")
+print("appended buffers, card_static, ABI 2 branch: OK")
 PY
 echo "== raw env throughput on this box (sts2vec bench, random policy, NativeAOT library, 1024 envs x $THREADS threads)"
 STS2VEC_AOT_LIB="$HERE/lib/Sts2Sim.Vec.so" "$PY" -m sts2vec.cli bench --envs 1024 --threads "$THREADS" --steps 500 \

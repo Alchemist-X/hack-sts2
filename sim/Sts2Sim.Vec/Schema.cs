@@ -41,6 +41,10 @@ public static class Caps
     /// <summary>Items per row of <c>event_option_values</c>.</summary>
     public const int EventItems = 2;
 
+    // Appended with the rewards-screen macro candidates (deck-building channel, 2026-11-04).
+    /// <summary>Rows of <c>reward_choices</c>: the cards and alternatives of the unopened card rewards on the rewards screen.</summary>
+    public const int RewardChoices = 16;
+
     public static readonly IReadOnlyList<(string Name, int Value)> All = new[]
     {
         ("HAND", Hand), ("DECK", Deck), ("RELICS", Relics), ("POTIONS", Potions), ("PLAYER_POWERS", PlayerPowers),
@@ -49,6 +53,7 @@ public static class Caps
         ("CARD_REWARD", CardReward), ("CARD_REWARD_ALTS", CardRewardAlts), ("SHOP", Shop), ("REST", Rest),
         ("EVENT_OPTIONS", EventOptions), ("PROMPT_OPTIONS", PromptOptions), ("CANDIDATES", Candidates), ("HAND_VARS", HandVars),
         ("DRAW_MARKED", DrawMarked), ("PILE_ORDER", PileOrder), ("EVENT_VALUES", EventValues), ("EVENT_ITEMS", EventItems),
+        ("REWARD_CHOICES", RewardChoices),
     };
 }
 
@@ -108,7 +113,11 @@ public static class Buf
     public const int DiscardOrder = 38;
     public const int ExhaustOrder = 39;
     public const int EventOptionValues = 40;
-    public const int Count = 41;
+    // Appended with the rewards-screen macro candidates (2026-11-04).
+    public const int RewardChoices = 41;
+    // Appended with the map-routing features (2026-11-04).
+    public const int MapRoutes = 42;
+    public const int Count = 43;
 
     /// <summary>Buffers the observation encoder owns (zero-filled + written per encode). The rest are env signals.</summary>
     public static readonly int[] Observation =
@@ -116,7 +125,7 @@ public static class Buf
         GlobalI, GlobalF, Hand, HandF, HandDmg, Deck, DrawCounts, DiscardCounts, ExhaustCounts, Relics, Potions,
         PowersPlayer, Orbs, Enemies, EnemyIntents, EnemyPowers, Allies, AllyPowers, MapNodes, Rewards, CardReward,
         CardRewardAlts, Shop, Rest, EventOptions, PromptOptions, Aux,
-        GlobalX, HandX, DrawMarked, DiscardOrder, ExhaustOrder, EventOptionValues,
+        GlobalX, HandX, DrawMarked, DiscardOrder, ExhaustOrder, EventOptionValues, RewardChoices, MapRoutes,
     };
 }
 
@@ -183,6 +192,21 @@ public static class Schema
     /// <summary><c>event_option_values</c> (row i = <c>event_options</c> row i).</summary>
     public static readonly string[] EventOptionValueFields =
         { "value_n", "value_0", "value_1", "value_2", "item_n", "item_kind_0", "item_id_0", "item_kind_1", "item_id_1" };
+
+    /// <summary>
+    /// <c>reward_choices</c> (appended 2026-11-04): row k = choice k of the unopened card rewards on the rewards screen
+    /// (<see cref="RewardMacros.Choices"/>; the option_index of the k-th TakeRewardCard / TakeRewardAlternative candidate):
+    /// reward_index (the <c>rewards</c> row), option (card index or alternative index), alt_id (CardRewardAlt of an
+    /// alternative, 0 for a card), then the <c>hand</c> columns of the card (0 for an alternative).
+    /// </summary>
+    public static readonly string[] RewardChoiceFields = new[] { "reward_index", "option", "alt_id" }.Concat(HandFields).ToArray();
+
+    /// <summary>
+    /// <c>map_routes</c> (appended 2026-11-04): per <c>map_nodes</c> cell, routing features of the visible map graph (child
+    /// edges): fewest / most Elite rooms on a path from the node to the act's boss (node included; -1 = boss unreachable),
+    /// distinct rest sites / shops reachable (node included), moves to the boss (-1 = unreachable).
+    /// </summary>
+    public static readonly string[] MapRouteFields = { "elites_min", "elites_max", "rests", "shops", "boss_dist" };
 
     public static int GI => GlobalIFields.Length;
     public static int GF => GlobalFFields.Length;
@@ -289,6 +313,8 @@ public static class Schema
             new BufferSpec("discard_order", "int32", new[] { Caps.PileOrder, PileCardFields.Length }, PileCardFields),
             new BufferSpec("exhaust_order", "int32", new[] { Caps.PileOrder, PileCardFields.Length }, PileCardFields),
             new BufferSpec("event_option_values", "int32", new[] { Caps.EventOptions, EventOptionValueFields.Length }, EventOptionValueFields),
+            new BufferSpec("reward_choices", "int32", new[] { Caps.RewardChoices, RewardChoiceFields.Length }, RewardChoiceFields),
+            new BufferSpec("map_routes", "int32", new[] { Caps.MapRows, Caps.MapCols, MapRouteFields.Length }, MapRouteFields),
         };
         if (list.Length != Buf.Count)
         {
@@ -303,7 +329,7 @@ public static class Schema
         Indented = false,
     };
 
-    /// <summary>The schema JSON without the encoder_version member: <c>{"buffers":…,"vocab":…,"caps":…,"card_vars":…,"playable_reasons":…,"playable_reason_bits":…}</c>.</summary>
+    /// <summary>The schema JSON without the encoder_version member: <c>{"buffers":…,"vocab":…,"caps":…,"card_vars":…,"playable_reasons":…,"playable_reason_bits":…,"card_static":…}</c>.</summary>
     internal static string BuildBody()
     {
         using var ms = new MemoryStream();
@@ -361,6 +387,22 @@ public static class Schema
             {
                 w.WriteNumber(name, bit);
             }
+            w.WriteEndObject();
+
+            // appended 2026-11-04: the static card features, one row per cards vocab id (CardStatic)
+            w.WriteStartObject("card_static");
+            WriteStrings(w, "fields", CardStatic.Fields);
+            w.WriteStartArray("rows");
+            foreach (var row in CardStatic.Rows)
+            {
+                w.WriteStartArray();
+                foreach (int v in row)
+                {
+                    w.WriteNumberValue(v);
+                }
+                w.WriteEndArray();
+            }
+            w.WriteEndArray();
             w.WriteEndObject();
             w.WriteEndObject();
         }
@@ -505,4 +547,19 @@ public static class EvValCol
 
     /// <summary>Columns per item (item_kind_k, item_id_k).</summary>
     public const int ItemStride = 2;
+}
+
+/// <summary>reward_choices columns (appended 2026-11-04); the card's <c>hand</c> columns start at <see cref="Card"/>.</summary>
+public static class RcCol
+{
+    private static int C(string n) => Schema.Col(Schema.RewardChoiceFields, n);
+    public static readonly int RewardIndex = C("reward_index"), Option = C("option"), AltId = C("alt_id"), Card = C("card_id");
+}
+
+/// <summary>map_routes columns (appended 2026-11-04; cell [row][col] = <c>map_nodes</c> cell).</summary>
+public static class MrCol
+{
+    private static int C(string n) => Schema.Col(Schema.MapRouteFields, n);
+    public static readonly int ElitesMin = C("elites_min"), ElitesMax = C("elites_max"), Rests = C("rests"), Shops = C("shops"),
+        BossDist = C("boss_dist");
 }

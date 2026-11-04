@@ -5,8 +5,17 @@ Objectives (``sts2train.objective``): ``protocol`` (default) = per-step change o
 protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory terminal, else 0; CONTRACTS.md D5);
 ``shaped`` (LEGACY, ``--shaped``) = ``win`` + delta(total_floor) / 48 per step, the 2026-11-02 smoke objective.
 
+``aux_heads`` (``--aux-heads``, off by default) adds a win-probability head and a combat-hp head on the state
+(``sts2train.heads``: targets per rollout window, masked BCE / squared error weighted ``aux_coef``); the policy, value
+head and PPO loss are unchanged. ``deck_counts`` (``--deck-counts``) switches the deck / pile encoders to count-aware
+pooling (``model.Policy._deck_bag``). ``acq_shaping`` (``--acq-shaping``) adds potential-based shaping for deck size,
+relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``reward_mean`` / ``return_mean`` /
+progress stay the objective's, the shaping is logged apart). With these flags off the trainer computes exactly what
+it computed before.
+
 Long-run machinery: checkpoints every N updates and every M minutes (atomic, last K kept, ``best.pt`` by eval
-progress), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states; the env restarts from fresh episodes),
+progress among clean evals: ``best_skip_reason``), ``--resume <ckpt>|auto`` (model, optimizer, counters, RNG states;
+the env restarts from fresh episodes),
 ``metrics.jsonl`` (one row per update), ``status.json`` (rewritten every update), periodic protocol evaluation on a
 seed set (``sts2vec.evaluate`` through ``sts2train.evaluate``) into ``evals/``, a wall-clock budget (``max_hours``),
 graceful stop on SIGINT / SIGTERM (checkpoint, then exit), bf16 autocast on CUDA behind ``amp``. Layout of the run
@@ -17,10 +26,21 @@ The model reads every shape, vocabulary size and column index from the env's pub
 ``encoder_version``) trains unchanged. ``--resume`` accepts a checkpoint whose spec differs from the library's only
 outside the model's inputs (``features.check_spec_compat``: the 27 input buffers' shapes and column maps, the vocabulary
 and embedded-enum sizes, the pointer enums' members and card_vars must be identical; encoder_version, appended buffers
-and enums the model does not embed may differ) and refuses any other checkpoint before the env is built; config.json
-records both encoder versions. ``floor_step_cap`` is passed to ``VecEnv`` only when set, and only if this sts2vec's
-``VecEnv`` accepts it (unset = the env's default: 80 with a library that implements the cap); the cap in effect is
-recorded in config.json (``env.floor_step_cap``) and FLOOR_STALL truncations are counted per update.
+and enums the model does not embed may differ) or, among the inputs, only by embedded enums that gained members at
+their end ("widened": their embedding tables keep the checkpoint's rows, the new rows and their Adam moments start at
+zero), and refuses any other checkpoint before the env is built; config.json records both encoder versions and the
+compat record (``resume_compat.model_inputs`` identical / widened, ``widened_enums``). ``floor_step_cap`` is passed to
+``VecEnv`` only when set, and only if this sts2vec's ``VecEnv`` accepts it (unset = the env's default: 80 with a
+library that implements the cap); the cap in effect is recorded in config.json (``env.floor_step_cap``) and
+FLOOR_STALL truncations are counted per update.
+
+Speed (``sts2train bench-update`` measures it): the update and the rollout run without host<->device syncs inside a
+minibatch / step (row cuts from host-side counts, minibatch indices uploaded once per epoch, statistics copied back
+once per update, no distribution argument validation, pinned asynchronous uploads on CUDA). ``compile`` =
+``default`` / ``reduce-overhead`` wraps the minibatch forward + loss (``MinibatchUpdater``) and the rollout forward
+(``InferenceRunner``) in ``torch.compile`` (``reduce-overhead`` adds CUDA graphs); it implies ``static_rows`` (the
+candidate / prompt-option tables always ``max_rows`` wide, so shapes never change). The default, ``compile = off``
+without static rows, computes exactly what the trainer computed before these changes.
 """
 
 from __future__ import annotations
@@ -32,6 +52,7 @@ import os
 import platform
 import signal
 import socket
+import sys
 import threading
 import time
 from collections import deque
@@ -45,15 +66,22 @@ import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
 
-from .features import ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, obs_to_device
-from .model import ARCH_KEYS, PRESETS, Policy, activation_bytes_per_sample, arch_of, param_count
-from .objective import OBJECTIVES, EpisodeRewards
+from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
+                       obs_to_device, widen_spec)
+from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
+from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
+                    widened_tensors)
+from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
+from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
 
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
 FLOOR_STALL = STATUS.get("FLOOR_STALL", 0)   # truncated by the env's floor_step_cap (0 with an sts2vec without it)
 CKPT_FORMAT = 2
+COMPILE_MODES = ("off", "default", "reduce-overhead")
+STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
+NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
 
@@ -68,11 +96,18 @@ class TrainConfig:
     ascension: int = 0
     pool: int = 2048
     characters: tuple = ALL_CHARACTERS
+    start_saves: str | None = None  # directory of game .save files (recursive) to start episodes from (startpool.py)
+    save_mix: float = 0.5           # fraction of episode starts from start_saves (pool entry multiplicities)
+    save_copies: str = "determinized"   # further copies of a save: determinized (hidden state resampled) | exact
     # objective
     objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
     shaped: bool = False            # LEGACY flag: same as objective="shaped" (delta(total_floor) / shaped_floors)
     shaped_floors: float = 48.0
+    acq_shaping: bool = False       # potential-based acquisition shaping on top of the objective (objective.AcqShaping)
+    acq_deck_coef: float = 0.003    # potential per deck card above 10 (at most 12 of them)
+    acq_relic_coef: float = 0.01    # potential per relic
+    acq_upgrade_coef: float = 0.004  # potential per upgrade level in the deck
     # PPO
     rollout: int = 32
     epochs: int = 2
@@ -92,9 +127,16 @@ class TrainConfig:
     depth: int = 0                  # transformer trunk blocks (0 = the original pooled-concat model)
     heads: int = 4
     ff_mult: int = 4
+    deck_counts: bool = False       # count-aware deck / pile pooling + deck count features (architecture)
+    # auxiliary heads (sts2train.heads; architecture: part of the checkpoint's arch)
+    aux_heads: bool = False         # win-probability + combat-hp heads on the state, trained with the PPO loss
+    aux_coef: float = 0.1           # weight of their losses (masked BCE + masked squared error)
+    aux_bootstrap: bool = True      # episodes / combats still running at the window end: target = the head there
     # runtime
     device: str = "cpu"             # cpu | mps | cuda[:i] | auto
     amp: bool = False               # bf16 autocast (CUDA only)
+    compile: str = "off"            # off | default | reduce-overhead: torch.compile of the update + rollout forwards
+    static_rows: bool | None = None  # cand / prompt_options always max_rows wide (None = on iff compile != off)
     grad_ckpt: bool = False         # recompute the trunk blocks in backward (less activation memory, more compute)
     allow_big_local: bool = False   # override the cpu / mps size guard (never inherited from a checkpoint)
     torch_threads: int = 0          # 0 = min(os.cpu_count(), 16)
@@ -138,7 +180,26 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         out.objective = "shaped"
     if out.objective not in OBJECTIVES:
         raise ValueError(f"objective {out.objective!r}: expected one of {OBJECTIVES}")
+    if not 0.0 <= float(out.save_mix) <= 1.0 or out.save_copies not in ("determinized", "exact"):
+        raise ValueError(f"save_mix {out.save_mix} must be in [0, 1] and save_copies {out.save_copies!r} one of "
+                         "determinized / exact")
+    if out.compile not in COMPILE_MODES:
+        raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
+    if out.compile == "reduce-overhead" and out.static_rows is False:
+        raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
+    if not float(out.aux_coef) >= 0.0:
+        raise ValueError(f"aux_coef {out.aux_coef} must be >= 0")
     return out
+
+
+def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
+    """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then AUX_STAT_NAMES with
+    aux_heads."""
+    return STAT_NAMES + (AUX_STAT_NAMES if cfg.aux_heads else ())
+
+
+def use_static_rows(cfg: TrainConfig) -> bool:
+    return cfg.compile != "off" if cfg.static_rows is None else bool(cfg.static_rows)
 
 
 def config_dict(cfg: TrainConfig) -> dict:
@@ -161,15 +222,32 @@ def save_checkpoint(path: Path, model: Policy, spec: ModelSpec, cfg: TrainConfig
     wh = weights_hash(model)
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
     atomic_torch_save({"format": CKPT_FORMAT, "spec": spec.to_json(), "model": state, "config": config_dict(cfg),
-                       "arch": model.arch, "weights_hash": wh, **extra}, path)
+                       "arch": model.arch, "weights_hash": wh, **head_record(model), **extra}, path)
     return wh
 
 
-def load_checkpoint(path, device="cpu") -> tuple[Policy, ModelSpec, dict]:
+def head_record(model: Policy) -> dict:
+    """{"heads": {output: definition}} for a model with aux heads (what `sts2train eval` can read out), else {}."""
+    return {"heads": dict(HEAD_OUTPUTS)} if getattr(model, "aux_heads", False) else {}
+
+
+def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tuple[Policy, ModelSpec, dict]:
+    """A checkpoint's model on `device` (eval mode), its spec and the checkpoint dict.
+
+    With `library` (the spec of the library the model will run on) the checkpoint must pass
+    `features.check_spec_compat` (raises `SpecMismatch` otherwise) and ``ck["spec_compat"]`` holds the record; when it
+    widens embedded enums, the model is built from `features.widen_spec` (the checkpoint's spec with the library's
+    sizes of those enums) and loads the checkpoint through `model.widen_state_dict` (old rows kept, new rows zero)."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
     spec = ModelSpec.from_json(ck["spec"])
+    widened: dict = {}
+    if library is not None:
+        ck["spec_compat"] = check_spec_compat(spec, library, what="evaluate")
+        widened = ck["spec_compat"]["widened_enums"]
+        if widened:
+            spec = widen_spec(spec, library, widened)
     model = Policy(spec, **arch_of(ck.get("arch") or ck.get("config")))
-    model.load_state_dict(ck["model"])
+    model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     model.to(device).eval()
     return model, spec, ck
 
@@ -181,21 +259,49 @@ def make_checkpoint(model: Policy, opt: torch.optim.Optimizer, spec: ModelSpec, 
             "model": {k: v.detach().cpu() for k, v in model.state_dict().items()}, "weights_hash": weights_hash(model),
             "optimizer": opt.state_dict(), "updates": int(counters.get("updates", 0)),
             "env_steps": int(counters.get("env_steps", 0)), "counters": dict(counters), "rng": _rng_state(rng, device),
-            "params": param_count(model), "encoder_version": spec.encoder_version, "saved_at": _now_iso(), **extra}
+            "params": param_count(model), "encoder_version": spec.encoder_version, "saved_at": _now_iso(),
+            **head_record(model), **extra}
 
 
 def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | None, rng: np.random.Generator | None,
-                       device: torch.device, lr: float | None = None) -> None:
+                       device: torch.device, lr: float | None = None, widened=None) -> None:
     """Load weights (strict: parameter shapes must match), optimizer state (moved to the parameters' device) and RNG
-    states from a `make_checkpoint` dict."""
-    model.load_state_dict(ck["model"])
+    states from a `make_checkpoint` dict. `widened` (enum names, `features.check_spec_compat`'s "widened_enums"): the
+    model was built with those enums grown by appended members; their embedding tables take the checkpoint's rows and
+    zero rows for the new members (`model.widen_state_dict`), and so do those tables' Adam moments (steps kept)."""
+    widened = sorted(widened or ())
+    model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     if opt is not None and ck.get("optimizer"):
-        opt.load_state_dict(ck["optimizer"])
+        opt.load_state_dict(widen_optimizer_state(ck["optimizer"], ck["model"], model, widened) if widened
+                            else ck["optimizer"])
         if lr is not None:
             for g in opt.param_groups:
                 g["lr"] = lr
     if rng is not None:
         _set_rng_state(rng, ck.get("rng"), device)
+
+
+def widen_optimizer_state(opt_state: dict, ck_model: dict, model: Policy, widened) -> dict:
+    """A checkpoint's optimizer state_dict (one parameter group over ``model.parameters()``, as `train` builds it) for
+    `model` after `widen_state_dict`: each per-parameter tensor of a widened embedding table that has the checkpoint's
+    shape (Adam's exp_avg / exp_avg_sq) gets zero rows for the new members; scalars (step) are kept."""
+    names = [n for n, _ in model.named_parameters()]
+    params = dict(model.named_parameters())
+    out = dict(opt_state)
+    out["state"] = dict(opt_state["state"])
+    for key in widened_tensors(widened):
+        i = names.index(key)
+        if i not in out["state"]:
+            continue
+        old_shape, new_shape = tuple(ck_model[key].shape), tuple(params[key].shape)
+        per = dict(out["state"][i])
+        for k, v in per.items():
+            if torch.is_tensor(v) and tuple(v.shape) == old_shape:
+                w = v.new_zeros(new_shape)
+                w[: old_shape[0]] = v
+                per[k] = w
+        out["state"][i] = per
+    return out
 
 
 def _rng_state(rng: np.random.Generator, device: torch.device) -> dict:
@@ -227,9 +333,10 @@ def _set_rng_state(rng: np.random.Generator, st: dict, device: torch.device) -> 
 
 
 def env_kwargs(cfg: TrainConfig, seed_text: str, env_cls=VecEnv) -> dict:
-    """VecEnv keyword arguments; `floor_step_cap` only when set, and an error if this VecEnv does not take it."""
-    pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension, count=cfg.pool,
-                    seed_prefix=f"TRAIN{cfg.seed}")
+    """VecEnv keyword arguments; `floor_step_cap` only when set, and an error if this VecEnv does not take it. With
+    `start_saves` the pool starts empty: `startpool.start_pool_from_config` adds the fresh and save entries."""
+    pool = PoolSpec(characters=tuple(cfg.characters), ascension=cfg.ascension,
+                    count=0 if uses_start_saves(cfg) else cfg.pool, seed_prefix=f"TRAIN{cfg.seed}")
     kw = dict(threads=cfg.threads or os.cpu_count() or 8, step_cap=cfg.step_cap, auto_reset=True, seed_text=seed_text,
               pool=pool, pool_cache=max(4096, cfg.pool))
     if cfg.floor_step_cap is not None:
@@ -250,13 +357,21 @@ def effective_floor_step_cap(env) -> int:
 def resume_compat(resume: dict, log=print) -> dict:
     """Check a resume checkpoint's spec against the library sts2vec loads (before any env exists, so a refused resume
     leaves the run directory untouched): `features.check_spec_compat`, raising `SpecMismatch` with every difference in
-    the model's inputs. Returns the compat record for config.json."""
+    the model's inputs. Returns the compat record for config.json (``model_inputs`` identical / widened)."""
     compat = check_spec_compat(resume["spec"], ModelSpec.from_schema(schema_of(load())), what="resume")
-    if compat["other_differences"]:
+    if compat["other_differences"] or compat["widened_enums"]:
+        inputs = "identical"
+        if compat["widened_enums"]:
+            inputs = (f"identical except for widened enums: {describe_widened(compat['widened_enums'])} (the "
+                      "checkpoint's embedding rows are kept, the new rows start at zero)")
         log(f"resume across encoder versions: checkpoint {compat['checkpoint_encoder_version']} -> library "
-            f"{compat['library_encoder_version']}; the model's inputs are identical; other differences (not read by "
-            f"the model): {'; '.join(compat['other_differences'])}")
+            f"{compat['library_encoder_version']}; the model's inputs are {inputs}; other differences (not read by "
+            f"the model): {'; '.join(compat['other_differences']) or 'none'}")
     return compat
+
+
+class CompiledMismatchError(RuntimeError):
+    """The torch.compile'd update / forward computes something else than eager (`check_compiled`)."""
 
 
 class BigLocalRunError(RuntimeError):
@@ -322,23 +437,58 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def random_baseline(env: VecEnv, tracker: ProgressTracker, steps: int, seed: int) -> dict:
-    """Uniform-random policy on the training env (same pool/tracker): finished-episode floor and progress."""
+def random_baseline(env: VecEnv, tracker: ProgressTracker, steps: int, seed: int, starts=None) -> dict:
+    """Uniform-random policy on the training env (same pool/tracker): finished-episode floor and progress (split by
+    fresh / save start when `starts`, the trainer's StartPool, is given)."""
     rng = np.random.default_rng(seed)
     obs = env.reset()
     tracker.observe(obs["aux"])
+    start = env.info()["start_entry"].copy()
     eps = []
     errs = 0
     for _ in range(steps):
         obs, rew, term, trunc, status, info = env.step(random_actions(rng, obs["cand_n"]))
         done = (term | trunc).astype(bool)
         errs += int(np.count_nonzero(status & ERR_BITS))
-        eps += tracker.finished(done, info["last_episode"])
+        fin = tracker.finished(done, info["last_episode"])
+        for e in fin:
+            e["start_entry"] = int(start[e["slot"]])
+        eps += fin
         tracker.observe(obs["aux"])
+        start = info["start_entry"].copy()
     prog = [e["progress"] for e in eps if e["progress"] is not None]
+    split = {k: v for k, v in split_stats(eps, starts).items() if k.split("_", 1)[1] in
+             ("episodes", "wins", "progress_mean", "floor_mean")}
     return {"steps": steps, "episodes": len(eps), "floor_mean": float(np.mean([e["floor"] for e in eps])) if eps else None,
             "progress_mean": float(np.mean(prog)) if prog else None, "wins": sum(e["win"] for e in eps),
-            "sim_error_or_gap": errs}
+            "sim_error_or_gap": errs, **split}
+
+
+def best_skip_reason(row: dict | None) -> str | None:
+    """Why an eval row cannot become ``best_eval`` / ``best.pt`` (None = it can): the evaluation failed (``error``), it
+    has no progress mean, not every game's history replayed (``replayable`` != ``games``: the replay audit failed, so
+    the score is not reproducible), or a game ended ``crashed`` (SIM_ERROR / CONTENT_GAP) or ``error`` (a live slot
+    without candidates). Among the remaining rows the highest ``progress_mean`` is best."""
+    if not row:
+        return "no eval"
+    if row.get("error"):
+        return f"evaluation failed: {row['error']}"
+    if row.get("progress_mean") is None:
+        return "no progress mean"
+    games, replayable = row.get("games"), row.get("replayable")
+    if not games or replayable != games:
+        return f"replay audit: {replayable}/{games} games replayable"
+    bad = [f"{n} {k}" for k in ("crashed", "error") if (n := int((row.get("results") or {}).get(k) or 0))]
+    return f"games ended {', '.join(bad)}" if bad else None
+
+
+def is_new_best(row: dict, best: dict | None) -> bool:
+    """Whether eval `row` replaces `best` as ``best_eval`` / ``best.pt``: `row` is clean (`best_skip_reason`) and there
+    is no clean best yet (none, or one kept from before this rule that is not clean) or `row` has a higher
+    ``progress_mean`` (a tie keeps the earlier one)."""
+    if best_skip_reason(row) is not None:
+        return False
+    return best is None or best_skip_reason(best) is not None or row["progress_mean"] > best["progress_mean"]
 
 
 def _mean(xs) -> float | None:
@@ -356,6 +506,218 @@ def _episode_stats(eps: list[dict]) -> dict:
             "progress_median": float(np.median(prog)) if prog else None,
             "floor_mean": _mean([e["floor"] for e in eps]), "return_mean": _mean([e["return"] for e in eps]),
             "steps_per_episode": _mean([e["steps"] for e in eps]), "act_reached": dict(sorted(acts.items()))}
+
+
+# ------------------------------------------------------------------------------------------------ PPO step
+
+
+def _autocast(amp: bool):
+    return torch.autocast("cuda", dtype=torch.bfloat16) if amp else contextlib.nullcontext()
+
+
+def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
+             madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
+             ent_coef: float, amp: bool = False, aux: tuple | None = None,
+             aux_coef: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
+    """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
+    and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
+    `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
+    losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
+    heads = None
+    with _autocast(amp):
+        if aux is None:
+            logits, v = model(xb)
+        else:
+            logits, v, heads = model(xb, aux=True)
+    logp_all = F.log_softmax(logits, -1)
+    newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
+    ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
+    ratio = (newlogp - oldlogp).exp()
+    pg = -torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv).mean()
+    vclip = vold + (v - vold).clamp(-clip, clip)
+    vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
+    loss = pg + vf_coef * vl - ent_coef * ent
+    if heads is not None:
+        wl, cl, wf, cf_ = aux_losses(heads, *aux)
+        loss = loss + aux_coef * (wl + cl)
+    with torch.no_grad():
+        kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
+        cf = ((ratio - 1).abs() > clip).float().mean()
+    if heads is not None:
+        return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(), wl.detach(),
+                                  cl.detach(), wf, cf_])
+    return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()])
+
+
+def _macos_inductor_openmp() -> None:
+    """macOS: inductor's CPU kernels would link Homebrew's libomp next to the libomp torch already loaded, and the
+    second OpenMP runtime aborts the process (OMP Error #15). With OMP_PREFIX set, inductor takes omp.h from there and
+    leaves the OpenMP symbols to the runtime already in the process."""
+    if sys.platform != "darwin" or "OMP_PREFIX" in os.environ:
+        return
+    for prefix in ("/opt/homebrew/opt/libomp", "/usr/local/opt/libomp"):
+        if os.path.exists(os.path.join(prefix, "include", "omp.h")):
+            os.environ["OMP_PREFIX"] = prefix
+            return
+
+
+def compile_fn(fn, mode: str, static: bool = True):
+    """`torch.compile(fn)` for `mode` default / reduce-overhead, None for off. `static` (fixed input shapes): a new
+    shape recompiles rather than switching to dynamic kernels; otherwise shapes that change between calls become
+    dynamic after the first recompile."""
+    if mode == "off":
+        return None
+    if mode not in COMPILE_MODES:
+        raise ValueError(f"compile {mode!r}: expected one of {COMPILE_MODES}")
+    _macos_inductor_openmp()
+    return torch.compile(fn, mode=None if mode == "default" else mode, dynamic=False if static else None)
+
+
+def _cudagraphs(mode: str, device: torch.device) -> bool:
+    return mode == "reduce-overhead" and device.type == "cuda"
+
+
+class MinibatchUpdater:
+    """One PPO minibatch step: forward + loss (`ppo_loss`, eager or `torch.compile`d), backward, grad-norm clip,
+    optimizer step. Returns the step's statistics (`STAT_NAMES`) as a float32 device tensor: nothing here waits for
+    the device, so consecutive minibatches queue back to back.
+
+    `compiled=False` runs the eager function (the trainer uses it for a short last minibatch, whose shape would
+    otherwise recompile the static-shape graph). Outputs of a CUDA-graph replay are overwritten by the next replay,
+    so the returned statistics are a fresh tensor and gradients are cleared before the forward.
+
+    With `cfg.aux_heads` the six PPO tensors are followed by the aux heads' four (win_y, win_m, combat_y, combat_m)
+    and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`)."""
+
+    def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
+                 device: torch.device | str):
+        self.model, self.opt = model, opt
+        self.max_grad_norm = float(cfg.max_grad_norm)
+        clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
+        self.coefs = (vf_coef, ent_coef)
+        self.aux = bool(getattr(cfg, "aux_heads", False))
+        aux_coef = float(getattr(cfg, "aux_coef", 0.0))
+
+        if self.aux:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold, win_y, win_m, combat_y, combat_m):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef)
+        else:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp)
+
+        self.eager = loss_fn
+        self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
+        self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
+
+    def loss(self, *args, compiled: bool = True):
+        """`args` = (xb, act, oldlogp, madv, vret, vold[, win_y, win_m, combat_y, combat_m])."""
+        if compiled and self.compiled is not None:
+            if self.cudagraphs:
+                torch.compiler.cudagraph_mark_step_begin()
+            return self.compiled(*args)
+        return self.eager(*args)
+
+    def __call__(self, *args, compiled: bool = True) -> torch.Tensor:
+        self.opt.zero_grad(set_to_none=True)
+        loss, st = self.loss(*args, compiled=compiled)
+        loss.backward()
+        gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+        self.opt.step()
+        if self.aux:
+            return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
+        return torch.cat([st, gn.detach().float().view(1)])
+
+
+def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: bool = False) -> dict:
+    """Eager vs compiled forward + backward of one minibatch `args` (no optimizer step; gradients are cleared after):
+    the loss and every parameter's gradient norm. With CUDA graphs the compiled side runs three times (warm-up,
+    record, replay) and the replay is compared. `ok` is False when the compiled path computes something else (beyond
+    bf16 / TF32 rounding): a backend bug must stop a run rather than train it on wrong gradients.
+
+    The loss difference is measured against the magnitude of its terms (|policy| + vf * |value| + ent * |entropy|; the
+    total can cancel to ~0), a parameter's gradient-norm difference against its norm floored at a fraction of the
+    global norm (1e-3 fp32, 3e-3 TF32, 1e-2 bf16): gradients that are rounding noise (c_bias.bias: the loss is
+    invariant to a per-sample logit shift) must not fail the check, while a wrong gradient anywhere above that floor
+    does."""
+    model, opt = updater.model, updater.opt
+    names, params = zip(*model.named_parameters())
+    res = {}
+    for kind, repeats in (("eager", 1), ("compiled", 3 if updater.cudagraphs else 1)):
+        for _ in range(repeats):
+            opt.zero_grad(set_to_none=True)
+            loss, st = updater.loss(*args, compiled=kind == "compiled")
+            loss.backward()
+            gn = torch.stack([(p.grad if p.grad is not None else torch.zeros_like(p)).detach().float().norm()
+                              for p in params])
+            res[kind] = (st.detach().cpu().numpy().astype(np.float64), gn.cpu().numpy().astype(np.float64))
+    opt.zero_grad(set_to_none=True)
+    (se, ge), (sc, gc) = res["eager"], res["compiled"]
+    i = {k: STAT_NAMES.index(k) for k in ("entropy", "value_loss", "policy_loss", "loss")}
+    vf_coef, ent_coef = updater.coefs
+    scale = max(abs(se[i["loss"]]), abs(se[i["policy_loss"]]) + vf_coef * abs(se[i["value_loss"]])
+                + ent_coef * abs(se[i["entropy"]]), 1e-6)
+    loss_rel = float(abs(sc[i["loss"]] - se[i["loss"]]) / scale)
+    g_e, g_c = float(np.sqrt((ge ** 2).sum())), float(np.sqrt((gc ** 2).sum()))
+    floor = (1e-2 if amp else 3e-3 if tf32 else 1e-3) * g_e
+    grel = np.abs(gc - ge) / np.maximum(ge, max(floor, 1e-12))
+    worst = int(np.argmax(grel)) if len(grel) else 0
+    tol_loss = 1e-2 if (amp or tf32) else 1e-4
+    tol_grad = 0.25 if amp else 0.05 if tf32 else 1e-3
+    out = {"loss_eager": float(se[i["loss"]]), "loss_compiled": float(sc[i["loss"]]), "loss_rel": loss_rel,
+           "grad_norm_eager": g_e, "grad_norm_compiled": g_c, "worst_param": names[worst],
+           "worst_param_grad_rel": float(grel[worst]) if len(grel) else 0.0, "tol_loss": tol_loss,
+           "tol_grad": tol_grad, "replayed": updater.cudagraphs}
+    out["ok"] = bool(loss_rel <= tol_loss and out["worst_param_grad_rel"] <= tol_grad)
+    return out
+
+
+def check_compiled_forward(runner: "InferenceRunner", x: dict[str, torch.Tensor], *, amp: bool,
+                           tf32: bool = False) -> dict:
+    """Eager vs compiled rollout forward on `x`: largest difference of the live logits / values relative to their
+    scale (with CUDA graphs: the third, replayed, call)."""
+    le, ve = runner.forward(x, compiled=False)
+    for _ in range(3 if runner.cudagraphs else 1):
+        lc, vc = runner.forward(x)
+    live = le > NEG_LIVE
+    scale_l = float(le[live].abs().max().clamp_min(1.0)) if bool(live.any()) else 1.0
+    dl = float((lc - le)[live].abs().max()) / scale_l if bool(live.any()) else 0.0
+    dv = float((vc - ve).abs().max()) / float(ve.abs().max().clamp_min(1.0))
+    tol = 5e-2 if amp else 1e-2 if tf32 else 1e-4
+    return {"logits_rel": dl, "value_rel": dv, "tol": tol, "ok": bool(dl <= tol and dv <= tol)}
+
+
+class InferenceRunner:
+    """The rollout's policy forward (no grad; bf16 autocast when `amp`; eager or `torch.compile`d) and the action
+    sampling: `sample(x)` -> (actions, log-probs, values) on the device. The categorical distribution skips its
+    argument validation (two device syncs per step); the samples and log-probs are the validated ones'."""
+
+    def __init__(self, model: Policy, amp: bool, compile_mode: str = "off", device: torch.device | str = "cpu", *,
+                 static: bool = True):
+        self.model = model
+
+        def forward(x):
+            with _autocast(amp):
+                return model(x)
+
+        self.eager = forward
+        self.compiled = compile_fn(forward, compile_mode, static)
+        self.cudagraphs = _cudagraphs(compile_mode, torch.device(device))
+
+    def forward(self, x: dict[str, torch.Tensor], *, compiled: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+        with torch.no_grad():
+            if compiled and self.compiled is not None:
+                if self.cudagraphs:
+                    torch.compiler.cudagraph_mark_step_begin()
+                return self.compiled(x)
+            return self.eager(x)
+
+    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True):
+        logits, value = self.forward(x, compiled=compiled)
+        dist = torch.distributions.Categorical(logits=logits, validate_args=False)
+        a = dist.sample()
+        return a, dist.log_prob(a), value
 
 
 # ------------------------------------------------------------------------------------------------ run planning
@@ -385,7 +747,7 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
         raise ValueError(f"{ck_path} is a weights-only checkpoint (no optimizer / counters); it cannot be resumed")
     cfg = resolve_config(given, ck.get("config") if ck else None)
     if ck is not None:
-        want, have = arch_of(ck.get("arch") or ck.get("config")), {k: getattr(cfg, k) for k in ARCH_KEYS}
+        want, have = arch_of(ck.get("arch") or ck.get("config")), arch_of(config_dict(cfg))
         if want != have:
             raise ValueError(f"architecture {have} differs from the checkpoint's {want}; drop the model flags to resume")
     elif CheckpointManager(cfg.out).latest() is not None:
@@ -411,7 +773,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-    autocast = (lambda: torch.autocast("cuda", dtype=torch.bfloat16)) if amp else contextlib.nullcontext
+    static = use_static_rows(cfg)
     torch.manual_seed(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
 
@@ -437,7 +799,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             raise SpecMismatch(f"the env loaded encoder_version {spec.encoder_version}, the resume check saw "
                                f"{compat['library_encoder_version']}")
         floor_cap = effective_floor_step_cap(env)
-        arch = {k: getattr(cfg, k) for k in ARCH_KEYS}
+        starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
+        arch = model_arch(cfg)                             # size knobs + the optional parts that are on
         model = Policy(spec, **arch)                       # on the CPU until the size guard has passed
         model.grad_ckpt = bool(cfg.grad_ckpt)
         n_params = param_count(model)
@@ -463,21 +826,43 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
+        shaper = None
+        if cfg.acq_shaping:
+            shaper = AcqShaping(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, deck=cfg.acq_deck_coef,
+                                relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
+            log(f"acquisition shaping: phi = {cfg.acq_deck_coef} x min(deck - 10, 12) + {cfg.acq_relic_coef} x relics + "
+                f"{cfg.acq_upgrade_coef} x upgrades (0 at episode end), F = gamma phi(s') - phi(s) added to the "
+                f"{cfg.objective} reward; reward_mean / return_mean / progress stay unshaped")
+        aux_tg = None
+        if cfg.aux_heads:
+            aux_tg = AuxTargets(spec.aux_fields, env.schema["last_episode"].fields, cfg.rollout, cfg.envs,
+                                bootstrap=cfg.aux_bootstrap)
+            log(f"aux heads: win_prob (BCE to the episode outcome) + combat_hp_pred (squared error), weight "
+                f"{cfg.aux_coef}; running episodes / combats at the window end: "
+                + ("bootstrapped from the heads" if cfg.aux_bootstrap else "masked"))
 
         baseline = None
         if cfg.baseline_steps and resume is None:
             t = time.monotonic()
             tracker = ProgressTracker(spec.aux_fields, env.schema["last_episode"].fields, cfg.envs, cfg.ascension)
-            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1)
+            baseline = random_baseline(env, tracker, cfg.baseline_steps, cfg.seed + 1, starts)
             baseline["seconds"] = round(time.monotonic() - t, 2)
             log(f"random baseline ({cfg.baseline_steps} steps x {cfg.envs}): {baseline}")
 
         model = model.to(device)
         opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
         if resume is not None:
-            restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr)
-            log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})")
-        log(f"device: {device}" + (" [bf16 autocast]" if amp else "") + (" [trunk checkpointing]" if cfg.grad_ckpt else ""))
+            restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr, widened=compat["widened_enums"])
+            log(f"resumed from {resume_path} at update {upd0:,} ({c['env_steps']:,} env steps, session {c['sessions']})"
+                + (f"; widened {describe_widened(compat['widened_enums'])}" if compat["widened_enums"] else ""))
+        updater = MinibatchUpdater(model, opt, cfg, amp, device)
+        runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
+        tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
+        compile_check: dict = {}            # eager vs compiled, once per session (first rollout step / minibatch)
+        log(f"device: {device}" + (" [bf16 autocast]" if amp else "")
+            + (" [trunk checkpointing]" if cfg.grad_ckpt else "")
+            + (f" [torch.compile {cfg.compile}: the first update compiles]" if cfg.compile != "off" else "")
+            + (f" [static rows: cand / prompt_options {cfg.max_rows} wide]" if static else ""))
 
         dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
         store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device)
@@ -502,11 +887,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         sessions = list(prev_cfg.get("sessions", []))[: c["sessions"] - 1]
         sessions.append({"session": c["sessions"], "started_at": _now_iso(), "update_start": upd0,
                          "resumed_from": str(resume_path) if resume_path else None, "host": socket.gethostname(),
-                         "pid": os.getpid(), "device": str(device), "amp": amp, "torch": torch.__version__,
+                         "pid": os.getpid(), "device": str(device), "amp": amp, "compile": cfg.compile,
+                         "static_rows": static, "torch": torch.__version__,
                          "cuda_device": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
                          "python": platform.python_version(), "cpu_count": os.cpu_count(), "env_threads": env.threads,
                          "bundle": os.environ.get("STS2TRAIN_BUNDLE"), "encoder_version": spec.encoder_version,
-                         "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None})
+                         "checkpoint_encoder_version": compat["checkpoint_encoder_version"] if compat else None,
+                         "model_inputs": compat["model_inputs"] if compat else None,
+                         "widened_enums": compat["widened_enums"] if compat else None})
         from sts2vec.evaluate import repo_sha
 
         atomic_write_json(run / "config.json", {
@@ -516,7 +904,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "library": {"path": str(env.lib.path), "mode": env.lib.mode, "version": env.lib.version()},
             "env": {"step_cap": cfg.step_cap, "floor_step_cap": floor_cap,
                     "floor_step_cap_supported": bool(getattr(env.schema, "supports_floor_step_cap", False))},
-            "repo_sha": repo_sha(), "sessions": sessions})
+            "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None})
 
         stop = {"signal": None}
 
@@ -566,14 +954,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "replayable": h.get("replayable"), "weights_hash": weights_hash(model),
                    "checkpoint": _rel(last_ckpt_path, run), "dir": _rel(out, run),
                    "seconds": round(time.monotonic() - t, 2)}
+            skip = best_skip_reason(row)
+            if skip:
+                row["best_skip"] = skip
             evals.write(row)
             last_eval = row
-            if best_eval is None or (row["progress_mean"] or 0) > (best_eval.get("progress_mean") or 0):
+            if is_new_best(row, best_eval):          # best.pt: the clean eval with the highest progress
                 best_eval = row
                 ckpts.mark_best(last_ckpt_path)
-            log(f"[eval u{upd}] {cfg.eval_seedset}: progress {row['progress_mean']:.4f} "
+            pm = row["progress_mean"]
+            log(f"[eval u{upd}] {cfg.eval_seedset}: progress {'n/a' if pm is None else format(pm, '.4f')} "
                 f"wins {row['wins']}/{row['games']} floor {row['floor_mean']} ({row['seconds']:.1f} s)"
-                + (" *best*" if best_eval is row else ""))
+                + (" *best*" if best_eval is row else "") + (f" [not eligible for best.pt: {skip}]" if skip else ""))
             return row
 
         recent: deque = deque(maxlen=20)
@@ -595,7 +987,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 "recent": {"updates": len(recent), "episodes": r_eps,
                            "progress_mean": (sum(x["progress_sum"] for x in recent) / r_eps) if r_eps else None,
                            "win_rate": (sum(x["wins"] for x in recent) / r_eps) if r_eps else None,
-                           "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None},
+                           "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None,
+                           **recent_view(recent)},
                 "best_eval": best_eval, "last_eval": last_eval,
                 "last_checkpoint": _rel(last_ckpt_path, run),
                 "last_checkpoint_update": last_ckpt_upd if last_ckpt_upd >= 0 else None,
@@ -604,7 +997,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 "pid": os.getpid(), "host": socket.gethostname(), "updated_at": _now_iso()})
 
         obs = env.reset()
-        rewards.reset(obs["aux"])
+        rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        r_obj = None
+        if shaper is not None:
+            shaper.reset(obs["aux"], obs["deck"])
+            r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)     # the objective's reward (unshaped)
         train_start = time.monotonic()
         last_ckpt_t = train_start
         last_update_s = 0.0
@@ -634,13 +1031,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             for t in range(cfg.rollout):
                 t0 = time.monotonic()
                 cand_n = obs["cand_n"].copy()
-                x = obs_to_device(obs, device, max_rows=cfg.max_rows)
-                with torch.no_grad(), autocast():
-                    logits, value = model(x)
-                dist = torch.distributions.Categorical(logits=logits)
-                a = dist.sample()
-                logp = dist.log_prob(a)
-                store.put(t, x)
+                if aux_tg is not None:
+                    aux_tg.before(t, obs["aux"])
+                x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+                if runner.compiled is not None and "forward" not in compile_check:
+                    compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
+                    log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
+                        f"{chk['value_rel']:.2e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}")
+                    if not chk["ok"]:
+                        raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
+                                                    f"rerun with --compile off")
+                a, logp, value = runner.sample(x)
+                store.put(t, x, obs)
                 a_np = a.cpu().numpy().astype(np.int32)
                 valid = cand_n > 0
                 a_np[~valid] = -1
@@ -652,7 +1054,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 obs, rew, term, trunc, status, info = env.step(a_np)
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
-                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"])
+                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                if aux_tg is not None:
+                    aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
+                if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
+                    f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
+                    for e in fin:
+                        e["shaping"] = ended.get(e["slot"], 0.0)
+                        e["shaped_return"] = e["return"] + e["shaping"]
+                    r_obj[t] = r
+                    r = r + f_acq
                 store.rewards[t] = r
                 store.dones[t] = done
                 se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
@@ -671,9 +1082,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 ep_this += fin
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
-            with torch.no_grad(), autocast():
-                _, last_v = model(obs_to_device(obs, device, max_rows=cfg.max_rows))
+            x_last = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+            _, last_v = runner.forward(x_last)
             last_v = last_v.cpu().numpy()
+            aux_np, aux_st = (), {}
+            if aux_tg is not None:                  # the heads at the state after the window (bootstrap targets)
+                with torch.no_grad(), _autocast(amp):
+                    _, _, hb = model(x_last, aux=True)
+                win_b, cmb_b = (torch.sigmoid(hb[k]).cpu().numpy() for k in ("win_logit", "combat_logit"))
+                *aux_np, aux_st = aux_tg.targets(win_b, cmb_b)
+                in_cmb = obs["aux"][:, spec.aux_fields.index("is_combat")] != 0
+                aux_st.update(aux_win_prob_mean=float(win_b.mean()),
+                              aux_combat_pred_mean=float(cmb_b[in_cmb].mean()) if in_cmb.any() else None)
             infer_s += time.monotonic() - t0
             adv = np.zeros_like(store.rewards)
             gae = np.zeros(cfg.envs, dtype=np.float32)
@@ -685,7 +1105,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 adv[t] = gae
             ret = adv + store.values
 
-            # PPO update (minibatches gathered on the device)
+            # PPO update: minibatches gathered on the device; every epoch's minibatch indices go up in one copy, row
+            # cuts come from host counts and the statistics come back once, so the minibatches queue without a sync
             t_up = time.monotonic()
             model.train()
             idx_all = np.flatnonzero(store.valid.reshape(-1))
@@ -695,41 +1116,31 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             d_act, d_logp = to(store.actions.reshape(-1)), to(store.logp.reshape(-1))
             d_adv = to(((f_adv - a_mean) / a_std).astype(np.float32))
             d_ret, d_val = to(ret.reshape(-1)), to(store.values.reshape(-1))
-            stats = []
-            for _ in range(cfg.epochs):
-                perm = rng.permutation(idx_all)
-                for k in range(0, len(perm), cfg.minibatch):
-                    mb = to(np.sort(perm[k:k + cfg.minibatch]))
-                    xb = store.batch(mb)
-                    with autocast():
-                        logits, v = model(xb)
-                    logp_all = F.log_softmax(logits, -1)
-                    act = d_act[mb]
-                    newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
-                    ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
-                    oldlogp = d_logp[mb]
-                    ratio = (newlogp - oldlogp).exp()
-                    madv = d_adv[mb]
-                    pg = -torch.min(ratio * madv, ratio.clamp(1 - cfg.clip, 1 + cfg.clip) * madv).mean()
-                    vret, vold = d_ret[mb], d_val[mb]
-                    vclip = vold + (v - vold).clamp(-cfg.clip, cfg.clip)
-                    vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
-                    loss = pg + cfg.vf_coef * vl - cfg.ent_coef * ent
-                    opt.zero_grad(set_to_none=True)
-                    loss.backward()
-                    gn = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-                    opt.step()
-                    with torch.no_grad():
-                        kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
-                        cf = ((ratio - 1).abs() > cfg.clip).float().mean()
-                    st = torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(),
-                                      gn.detach().float()]).cpu().numpy()
-                    stats.append(st)
-                    if not np.isfinite(st[5]):
-                        raise FloatingPointError(f"non-finite loss at update {upd + 1}")
+            mbs = [np.sort(perm[k:k + cfg.minibatch]) for perm in (rng.permutation(idx_all) for _ in range(cfg.epochs))
+                   for k in range(0, len(perm), cfg.minibatch)]
+            d_mbs = torch.split(to(np.concatenate(mbs)), [len(m) for m in mbs]) if mbs else ()
+            d_aux = tuple(to(a_.reshape(-1)) for a_ in aux_np)      # win_y, win_m, combat_y, combat_m (aux heads)
+
+            def mb_args(mb_h, mb):
+                return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
+                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux))
+
+            if updater.compiled is not None and "update" not in compile_check and mbs \
+                    and len(mbs[0]) == cfg.minibatch:
+                compile_check["update"] = chk = check_compiled(updater, mb_args(mbs[0], d_mbs[0]), amp=amp, tf32=tf32)
+                log(f"compiled minibatch update vs eager: loss {chk['loss_compiled']:.6g} vs {chk['loss_eager']:.6g} "
+                    f"(rel {chk['loss_rel']:.2e}, tol {chk['tol_loss']:g}), worst parameter gradient norm "
+                    f"{chk['worst_param']} rel {chk['worst_param_grad_rel']:.2e} (tol {chk['tol_grad']:g}): "
+                    f"{'OK' if chk['ok'] else 'MISMATCH'}")
+                if not chk["ok"]:
+                    raise CompiledMismatchError(f"the compiled PPO update disagrees with eager ({chk}); rerun with "
+                                                f"--compile off")
+            stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch) for mb_h, mb in zip(mbs, d_mbs)]
+            stats = torch.stack(stats).cpu().numpy() if stats else None
             update_s = time.monotonic() - t_up
-            sm = dict(zip(("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm"),
-                          (float(x) for x in np.mean(stats, 0)))) if stats else {}
+            if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
+                raise FloatingPointError(f"non-finite loss at update {upd + 1}")
+            sm = dict(zip(stat_names(cfg), (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
             ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
@@ -745,9 +1156,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             c["overflow_cand"] += over_n
             c["floor_stall"] += fs_n
             es = _episode_stats(ep_this)
+            ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
-                           "floor_sum": sum(e["floor"] for e in ep_this)})
+                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
 
             # checkpoint / eval
             t_ck = time.monotonic()
@@ -773,15 +1185,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
-                   "episodes_total": c["episodes"], **es,
-                   "reward_mean": float(store.rewards.reshape(-1)[idx_all].mean()) if len(idx_all) else None,
+                   "episodes_total": c["episodes"], **es, **ss,
+                   "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
+                   if len(idx_all) else None,
                    **sm, "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   **gpu_memory(device)}
+                   **aux_st, **shaping_stats(store.rewards, r_obj, idx_all, ep_this, shaper), **gpu_memory(device)}
             metrics.write(row)
             last_sps = round(sps, 1)
             write_status(upd, state)
@@ -791,6 +1204,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"env={env_s:.2f}s infer={infer_s:.2f}s upd={update_s:.2f}s eps={len(ep_this)} "
                     f"prog={fmt(es['progress_mean'], '.4f')} floor={fmt(es['floor_mean'], '.2f')} wins={es['wins']} "
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
+                    + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
+                       f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
+                       f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")
+                    + (f" | shaped ret={fmt(row.get('shaped_return_mean'), '.4f')} shaping/step="
+                       f"{fmt(row.get('shaping_mean'), '.5f')}" if shaper is not None else "")
+                    + (f" | aux win_bce={fmt(sm.get('aux_win_loss'), '.4f')} combat_se="
+                       f"{fmt(sm.get('aux_combat_loss'), '.4f')} p_win={fmt(aux_st.get('aux_win_prob_mean'), '.4f')}"
+                       if aux_tg is not None else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -821,6 +1242,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "episodes": c["episodes"], "wins": c["wins"], "sim_error": c["sim_error"],
             "content_gap": c["content_gap"], "illegal": c["illegal"], "cand_over_max_rows": c["overflow_cand"],
             "floor_stall": c["floor_stall"], "errors": errors_seen, "best_eval": best_eval, "last_eval": last_eval,
+            "start_pool": starts.summary(brief=True) if starts else None, "compile": cfg.compile,
+            "static_rows": static, "compile_check": compile_check or None,
             "last_checkpoint": str(last_ckpt_path) if last_ckpt_path else None,
         }
         atomic_write_json(run / "summary.json", summary)
@@ -840,6 +1263,21 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             with contextlib.suppress(Exception):
                 signal.signal(sg, h)
         env.close()
+
+
+def shaping_stats(rewards: np.ndarray, r_obj: np.ndarray | None, idx_all: np.ndarray, eps: list[dict],
+                  shaper: AcqShaping | None) -> dict:
+    """Metrics of --acq-shaping ({} without it): the mean shaped reward PPO trained on and the mean shaping per step
+    (valid steps of the window), the finished episodes' shaped return and shaping sum, the mean potential now."""
+    if shaper is None:
+        return {}
+    shaped = rewards.reshape(-1)[idx_all]
+    obj = r_obj.reshape(-1)[idx_all]
+    return {"reward_mean_shaped": float(shaped.mean()) if len(shaped) else None,
+            "shaping_mean": float((shaped - obj).mean()) if len(shaped) else None,
+            "shaped_return_mean": _mean([e["shaped_return"] for e in eps if "shaped_return" in e]),
+            "shaping_return_mean": _mean([e["shaping"] for e in eps if "shaping" in e]),
+            "acq_potential_mean": float(shaper.phi.mean())}
 
 
 def _rel(p: Path | None, run: Path) -> str | None:

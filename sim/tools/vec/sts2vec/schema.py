@@ -161,6 +161,10 @@ class Schema:
     playable_reasons: list[str]
     playable_reason_bits: dict[str, int] = field(default_factory=dict)
     by_name: dict[str, BufferSpec] = field(default_factory=dict)
+    # static card features (schema append 2026-11-04): row = cards vocab id, columns = card_static_fields; empty
+    # ((0, 0), ()) for a library built before the append
+    card_static: np.ndarray = field(default_factory=lambda: np.zeros((0, 0), dtype=np.int32))
+    card_static_fields: tuple[str, ...] = ()
 
     @staticmethod
     def from_json(text: str) -> "Schema":
@@ -182,6 +186,12 @@ class Schema:
         s.by_name = {b.name: b for b in buffers}
         if len(s.by_name) != len(buffers):
             raise ValueError("schema has duplicate buffer names")
+        cs = raw.get("card_static")
+        if cs is not None:
+            s.card_static_fields = tuple(cs["fields"])
+            s.card_static = np.asarray(cs["rows"], dtype=np.int32).reshape(len(cs["rows"]), len(s.card_static_fields))
+            if s.card_static.shape[0] != len(s.vocab.cards):
+                raise ValueError(f"card_static has {s.card_static.shape[0]} rows, the cards vocabulary {len(s.vocab.cards)}")
         return s
 
     def __getitem__(self, name: str) -> BufferSpec:
@@ -220,6 +230,12 @@ class Schema:
     def cols(self, buffer: str) -> Columns:
         """``H = schema.cols("hand"); obs["hand"][..., H.card_id]``."""
         return self[buffer].cols()
+
+    def card_static_cols(self) -> Columns:
+        """``K = schema.card_static_cols(); schema.card_static[obs["deck"][..., D.card_id], K.damage]`` (static card table)."""
+        if not self.card_static_fields:
+            raise KeyError("this library publishes no card_static table (built before 2026-11-04)")
+        return Columns("card_static", self.card_static_fields)
 
     @property
     def supports_floor_step_cap(self) -> bool:

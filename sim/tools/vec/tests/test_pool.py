@@ -108,12 +108,21 @@ def test_add_save_missing_file_raises(tmp_path):
         assert len(env.pool) == 0
 
 
-def test_add_save_fixture_starts_at_rewards_with_three_candidates(full):
+def test_add_save_fixture_starts_at_rewards_with_five_candidates(full):
+    # 3 legal actions at the fixture's rewards screen; the card reward's ClaimReward is listed as one TakeRewardCard row
+    # per offered card (rewards-screen macros, 2026-11-04), each pointing at its reward_choices row
     with VecEnv(1, threads=1, pool=PoolSpec.saves(FIXTURE_SAVE)) as env:
         obs = env.reset()
         phases = env.schema.vocab.enums["RunPhase"]
         assert phases.name(obs["global_i"][0, env.schema.col("global_i", "phase")]) == "Rewards"
-        assert int(obs["cand_n"][0]) == 3, env.candidates(0)
+        assert int(obs["cand_n"][0]) == 5, env.candidates(0)
+        rows = env.candidates(0)
+        takes = [r for r in rows if r["kind"] == "TakeRewardCard"]
+        assert len(takes) == 3 and [r["option_index"] for r in takes] == [0, 1, 2]
+        rc = env.schema.cols("reward_choices")
+        for r in takes:
+            row = obs["reward_choices"][0, r["option_index"]]
+            assert row[rc.reward_index] == r["A"] and row[rc.option] == r["B"] and row[rc.card_id] == r["card_id"] >= 2
 
 
 def test_pool_warm_creates_templates_ahead(full):

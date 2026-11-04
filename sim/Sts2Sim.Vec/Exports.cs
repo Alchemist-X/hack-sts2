@@ -11,10 +11,22 @@ namespace Sts2Sim.Vec;
 /// The C ABI (CONTRACTS.md §D5). Frozen names and signatures. Every export catches every exception: errors return -1
 /// (sts2vec_create: -1 as int64) with the text available from sts2vec_last_error; per-slot problems go to <c>status</c>.
 /// Managed method name = PascalCase of the export name without the "sts2vec_" prefix (the hostfxr loader relies on it).
+/// Locking: every export that touches an env (except sts2vec_pool_count and sts2vec_last_error, which only read) holds a
+/// lock on that env for the whole call, so calls on one env from several threads serialise (a branch issued while
+/// another thread steps waits for the step to return, and vice versa); different envs never contend.
 /// </summary>
 public static unsafe class Exports
 {
     public const string Prefix = "sts2vec/";
+
+    /// <summary>
+    /// <c>sts2vec_abi_version()</c>. 1 = every build before that export existed (the 14 frozen exports, plus
+    /// pool_warm / clone_determinized / floor_step_cap, detected by export presence and the schema as before); 2 = adds
+    /// sts2vec_abi_version, sts2vec_branch, sts2vec_branch_many, sts2vec_restore_many, sts2vec_pool_release and released
+    /// pool entries.
+    /// Bump it with every later ABI addition or semantic change.
+    /// </summary>
+    public const int CurrentAbiVersion = 2;
 
     private static readonly ConcurrentDictionary<long, VecEnv> Envs = new();
     private static long _nextHandle;
@@ -231,6 +243,116 @@ public static unsafe class Exports
         }
     }
 
+    // int32_t sts2vec_abi_version(void);   additive (ABI 2)
+    // The ABI version of this build (CurrentAbiVersion); a library without the export is ABI 1.
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_abi_version")]
+    public static int AbiVersion() => CurrentAbiVersion;
+
+    // int32_t sts2vec_branch(int64_t h, int32_t src_slot, const int32_t* dst_slots, int32_t n, int32_t mode, uint64_t seed,
+    //                        void** buffers);   additive (ABI 2)
+    // In one call, every dst_slots[j] gets a copy of src_slot's live state (mode 0: exact clone; 1: determinized with seed
+    // BranchSeed(seed, j)) without a pool entry, starts a new episode (RESET, new episode id, step index 0, start_entry -1,
+    // last_episode untouched) and has its observation, candidates and signals written; other slots are untouched. 0 or -1.
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_branch")]
+    public static int Branch(long h, int srcSlot, int* dstSlots, int n, int mode, ulong seed, void** buffers)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            if (n < 0 || n > env.NumEnvs || (n > 0 && dstSlots == null))
+            {
+                throw new ArgumentException($"branch needs 0 <= n <= {env.NumEnvs} and non-null dst_slots when n > 0 (got n = {n})");
+            }
+            lock (env)
+            {
+                env.Branch(srcSlot, new ReadOnlySpan<int>(dstSlots, n), (BranchMode)mode, seed, buffers);
+            }
+            return 0;
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
+    // int32_t sts2vec_branch_many(int64_t h, const int32_t* src_slots, const int32_t* dst_slots, int32_t n, int32_t mode,
+    //                             uint64_t seed, void** buffers);   additive (ABI 2)
+    // sts2vec_branch for n (src, dst) pairs in one call (many roots: one parallel region, one encode per source); the
+    // destination at position j uses BranchSeed(seed, j). A destination may not be a source of the same call. 0 or -1.
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_branch_many")]
+    public static int BranchMany(long h, int* srcSlots, int* dstSlots, int n, int mode, ulong seed, void** buffers)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            if (n < 0 || n > env.NumEnvs || (n > 0 && (srcSlots == null || dstSlots == null)))
+            {
+                throw new ArgumentException($"branch_many needs 0 <= n <= {env.NumEnvs} and non-null src_slots/dst_slots when n > 0 (got n = {n})");
+            }
+            lock (env)
+            {
+                env.BranchMany(new ReadOnlySpan<int>(srcSlots, n), new ReadOnlySpan<int>(dstSlots, n), (BranchMode)mode, seed, buffers);
+            }
+            return 0;
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
+    // int32_t sts2vec_restore_many(int64_t h, const int32_t* slots, const int32_t* entries, int32_t n, void** buffers);
+    // additive (ABI 2): sts2vec_restore for n (slot, entry) pairs under one lock, in parallel; 0 or -1 (nothing changed).
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_restore_many")]
+    public static int RestoreMany(long h, int* slots, int* entries, int n, void** buffers)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            if (n < 0 || n > env.NumEnvs || (n > 0 && (slots == null || entries == null)))
+            {
+                throw new ArgumentException($"restore_many needs 0 <= n <= {env.NumEnvs} and non-null slots/entries when n > 0 (got n = {n})");
+            }
+            lock (env)
+            {
+                env.RestoreMany(new ReadOnlySpan<int>(slots, n), new ReadOnlySpan<int>(entries, n), buffers);
+            }
+            return 0;
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
+    // int32_t sts2vec_pool_release(int64_t h, const int32_t* entries, int32_t n);   additive (ABI 2)
+    // Releases n live pool entries (all or nothing): their templates are dropped, pool_count and the start sequence no
+    // longer include them, and their ids are never reused (using one is an error). Returns n, or -1 (nothing released).
+    [UnmanagedCallersOnly(EntryPoint = "sts2vec_pool_release")]
+    public static int PoolRelease(long h, int* entries, int n)
+    {
+        VecEnv? env = null;
+        try
+        {
+            env = Get(h);
+            if (n < 0 || (n > 0 && entries == null))
+            {
+                throw new ArgumentException($"pool_release needs n >= 0 and non-null entries when n > 0 (got n = {n})");
+            }
+            lock (env)
+            {
+                return env.ReleaseEntries(new ReadOnlySpan<int>(entries, n));
+            }
+        }
+        catch (Exception e)
+        {
+            return Fail(env, e);
+        }
+    }
+
     // int32_t sts2vec_restore(int64_t h, int32_t slot, int32_t entry, void** buffers);
     [UnmanagedCallersOnly(EntryPoint = "sts2vec_restore")]
     public static int Restore(long h, int slot, int entry, void** buffers)
@@ -364,7 +486,8 @@ public static unsafe class Exports
 
     /// <summary>
     /// Names of every export, in §D5 order (the Python loader resolves exactly these). The frozen scaffold set comes first;
-    /// exports added later are appended (E2c: sts2vec_pool_warm; then sts2vec_clone_determinized).
+    /// exports added later are appended (E2c: sts2vec_pool_warm; then sts2vec_clone_determinized; ABI 2:
+    /// sts2vec_abi_version, sts2vec_branch, sts2vec_branch_many, sts2vec_restore_many, sts2vec_pool_release).
     /// </summary>
     public static readonly IReadOnlyList<string> ExportNames = new[]
     {
@@ -372,6 +495,7 @@ public static unsafe class Exports
         "sts2vec_pool_add_fresh", "sts2vec_pool_add_save", "sts2vec_pool_count", "sts2vec_snapshot", "sts2vec_restore",
         "sts2vec_reset", "sts2vec_step", "sts2vec_state_hash", "sts2vec_last_error",
         "sts2vec_pool_warm", "sts2vec_clone_determinized",
+        "sts2vec_abi_version", "sts2vec_branch", "sts2vec_branch_many", "sts2vec_restore_many", "sts2vec_pool_release",
     };
 
     /// <summary>The managed method behind an export: "sts2vec_pool_add_fresh" → "PoolAddFresh".</summary>

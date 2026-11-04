@@ -7,10 +7,14 @@
 previous ``aux`` plus ``last_episode`` (win / act / floor) exactly like ``ProgressTracker``. The rewards of an episode
 telescope: they sum to ``progress(final) - progress(first observation) (+ win_bonus on a win)``, and a fresh run
 starts at progress 0 (act 1, no room cleared), so the return of a fresh episode is its protocol progress (+ bonus).
+An episode started from a save (``--start-saves``, ``sts2train.startpool``) starts at the progress of the save's
+state, so its return is the progress gained from there (``progress_gain`` of the finished-episode record).
 Truncated episodes (step cap, floor step cap) end with the progress of their last state, as the protocol scores
 ``capped`` / ``stuck`` games.
 
 ``win``: the env's own reward (1 at a Victory terminal, else 0; CONTRACTS.md D5).
+``AcqShaping`` (``--acq-shaping``, any objective): potential-based shaping for deck size, relics and upgrades on top
+of the objective's reward; the trainer logs it apart, and episode returns / progress stay the objective's.
 ``shaped``: LEGACY smoke objective: ``win`` + delta(total_floor) / ``shaped_floors`` per step (floor count, not the
 protocol metric; it allows stall loops; kept for reproducing the 2026-11-02 smoke).
 """
@@ -37,10 +41,15 @@ def state_progress(act_index: int, total_floor: int, act_floor: int, act_rooms: 
 class EpisodeRewards:
     """Per-slot reward of one objective plus finished-episode bookkeeping for a VecEnv with auto-reset.
 
-    Call ``reset(aux)`` after ``env.reset()`` and ``step(env_reward, done, last_episode, aux)`` after every
-    ``env.step`` (``aux`` = the new observation's aux block). ``step`` returns ``(reward float32 [N], finished)``
-    where ``finished`` is ``ProgressTracker.finished`` (one dict per ended episode: slot, win, floor, act, steps,
-    end_kind and the protocol progress fields) with ``return`` (the episode's summed objective reward) added.
+    Call ``reset(aux[, start_entry])`` after ``env.reset()`` and ``step(env_reward, done, last_episode, aux[,
+    start_entry])`` after every ``env.step`` (``aux`` = the new observation's aux block, ``start_entry`` =
+    ``info["start_entry"]``). ``step`` returns ``(reward float32 [N], finished)`` where ``finished`` is
+    ``ProgressTracker.finished`` (one dict per ended episode: slot, win, floor, act, steps, end_kind and the protocol
+    progress fields) with ``return`` (the episode's summed objective reward) added, plus the episode's start:
+    ``start_entry`` (the pool entry it started from; -1 when no ``start_entry`` was passed), ``start_floor``,
+    ``start_act`` (1-based), ``start_progress`` (protocol progress of its first observation: 0 for a fresh run, the
+    save's progress for a save start) and ``progress_gain`` = ``progress - start_progress`` (for the protocol
+    objective: the return without the win bonus).
     """
 
     def __init__(self, objective: str, aux_fields, last_episode_fields, num_envs: int, ascension: int = 0,
@@ -57,6 +66,11 @@ class EpisodeRewards:
         self.progress = np.zeros(num_envs, dtype=np.float64)   # progress of each slot's current state
         self._key = np.full((num_envs, 4), -1, dtype=np.int64)  # tracker.prev row `progress` was computed from
         self.ret = np.zeros(num_envs, dtype=np.float64)        # objective return of each slot's current episode
+        # first observation of each slot's current episode (a save start begins mid-run)
+        self.start_entry = np.full(num_envs, -1, dtype=np.int64)
+        self.start_progress = np.zeros(num_envs, dtype=np.float64)
+        self.start_floor = np.zeros(num_envs, dtype=np.int64)
+        self.start_act = np.ones(num_envs, dtype=np.int64)
 
     def _refresh(self) -> None:
         prev = self.tracker.prev           # act_index, total_floor, act_floor, act_rooms of the latest observation
@@ -66,14 +80,25 @@ class EpisodeRewards:
             self.progress[i] = state_progress(pa, ptot, pfl, prooms, self.ascension)
         self._key[changed] = prev[changed]
 
-    def reset(self, aux: np.ndarray) -> None:
+    def _mark_starts(self, slots: np.ndarray, start_entry: np.ndarray | None) -> None:
+        """Record the current observation of `slots` (bool mask) as their episodes' first observation."""
+        prev = self.tracker.prev
+        self.start_progress[slots] = self.progress[slots]
+        self.start_floor[slots] = prev[slots, 1]
+        self.start_act[slots] = prev[slots, 0] + 1
+        if start_entry is not None:
+            self.start_entry[slots] = np.asarray(start_entry, dtype=np.int64)[slots]
+
+    def reset(self, aux: np.ndarray, start_entry: np.ndarray | None = None) -> None:
         self.tracker.observe(aux)
         self._key[:] = -1
         self._refresh()
         self.ret[:] = 0.0
+        self.start_entry[:] = -1
+        self._mark_starts(np.ones(self.n, dtype=bool), start_entry)
 
     def step(self, env_reward: np.ndarray, done: np.ndarray, last_episode: np.ndarray,
-             aux: np.ndarray) -> tuple[np.ndarray, list[dict]]:
+             aux: np.ndarray, start_entry: np.ndarray | None = None) -> tuple[np.ndarray, list[dict]]:
         done = np.asarray(done, dtype=bool)
         old_p = self.progress.copy()
         old_floor = self.tracker.prev[:, 1].copy()
@@ -93,6 +118,63 @@ class EpisodeRewards:
                 r += (floor_now - old_floor) / self.shaped_floors
         self.ret += r
         for e in finished:
-            e["return"] = float(self.ret[e["slot"]])
+            i = e["slot"]
+            e["return"] = float(self.ret[i])
+            e.update(start_entry=int(self.start_entry[i]), start_floor=int(self.start_floor[i]),
+                     start_act=int(self.start_act[i]), start_progress=float(self.start_progress[i]))
+            e["progress_gain"] = None if e.get("progress") is None else float(e["progress"]) - e["start_progress"]
         self.ret[done] = 0.0
+        self._mark_starts(done, start_entry)        # auto-reset: the next episodes' first observations
         return r.astype(np.float32), finished
+
+
+ACQ_DEFAULTS = {"deck": 0.003, "relic": 0.01, "upgrade": 0.004}
+
+
+class AcqShaping:
+    """Potential-based acquisition shaping (``--acq-shaping``), added to the objective's reward.
+
+    Potential of an observation: ``phi = c_deck * min(deck_n - 10, 12) + c_relic * relic_n + c_upgrade * upgrades``
+    (``aux.deck_n``, ``aux.relic_n``; upgrades = the summed upgrade levels of the deck's cards), and 0 after a terminal
+    or a truncation. Per step the shaping reward is ``F = gamma * phi(s') - phi(s)`` (``phi(s') = 0`` when the step ended
+    the episode), so it telescopes: with gamma = 1 an episode's shaping sums to ``phi(last) - phi(first) = -phi(first)``
+    (a constant of its start state), and the optimal policy is unchanged (Ng et al. 1999); taking a card / relic /
+    upgrade is paid immediately and the debt falls due at the end.
+
+    ``reset(aux, deck)`` after ``env.reset()``; ``step(done, aux, deck)`` after every ``env.step`` with the new
+    observation (the next episode's first one for a finished slot) -> ``(F float32 [N], shaping sums of the episodes
+    that ended {slot: sum})``."""
+
+    def __init__(self, aux_fields, deck_cols: dict, num_envs: int, gamma: float = 1.0, *,
+                 deck: float = ACQ_DEFAULTS["deck"], relic: float = ACQ_DEFAULTS["relic"],
+                 upgrade: float = ACQ_DEFAULTS["upgrade"]):
+        a = {f: i for i, f in enumerate(aux_fields)}
+        missing = [f for f in ("deck_n", "relic_n") if f not in a]
+        if missing:
+            raise ValueError(f"the library's aux block lacks {missing} (needed by --acq-shaping)")
+        self._deck_n, self._relic_n = a["deck_n"], a["relic_n"]
+        self._cid, self._up = deck_cols["card_id"], deck_cols["upgrade"]
+        self.gamma = float(gamma)
+        self.coefs = (float(deck), float(relic), float(upgrade))
+        self.phi = np.zeros(num_envs, dtype=np.float64)       # potential of each slot's current observation
+        self.sum = np.zeros(num_envs, dtype=np.float64)       # shaping accumulated in each slot's current episode
+
+    def potential(self, aux: np.ndarray, deck: np.ndarray) -> np.ndarray:
+        c_deck, c_relic, c_up = self.coefs
+        upgrades = (deck[..., self._up].astype(np.float64) * (deck[..., self._cid] != 0)).sum(1)
+        return (c_deck * np.minimum(aux[:, self._deck_n].astype(np.float64) - 10.0, 12.0)
+                + c_relic * aux[:, self._relic_n].astype(np.float64) + c_up * upgrades)
+
+    def reset(self, aux: np.ndarray, deck: np.ndarray) -> None:
+        self.phi = self.potential(aux, deck)
+        self.sum[:] = 0.0
+
+    def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray) -> tuple[np.ndarray, dict[int, float]]:
+        done = np.asarray(done, dtype=bool)
+        nxt = self.potential(aux, deck)
+        f = np.where(done, 0.0, self.gamma * nxt) - self.phi
+        self.sum += f
+        ended = {int(i): float(self.sum[i]) for i in np.flatnonzero(done)}
+        self.sum[done] = 0.0
+        self.phi = nxt
+        return f.astype(np.float32), ended

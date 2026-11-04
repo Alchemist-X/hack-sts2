@@ -10,6 +10,19 @@ namespace Sts2Sim.Vec;
 /// <summary>config.pool.fresh (CONTRACTS.md §D4): <c>Count</c> entries, character = Characters[i % n], seed "&lt;SeedPrefix&gt;-&lt;character&gt;-&lt;i&gt;".</summary>
 public sealed record FreshPoolSpec(IReadOnlyList<string> Characters, int Ascension = 0, int Count = 4096, string SeedPrefix = "TRAIN", string Act1 = RunConfig.RandomAct1);
 
+/// <summary>How <see cref="VecEnv.Branch"/> copies the source slot's state (<c>sts2vec_branch</c> <c>mode</c>).</summary>
+public enum BranchMode
+{
+    /// <summary>0: an exact copy, <c>RunSim.Clone()</c> (same <c>StateHash</c>; steps exactly like the source).</summary>
+    Exact = 0,
+
+    /// <summary>
+    /// 1: <c>RunSim.CloneDeterminized(VecEnv.BranchSeed(seed, j))</c> for the destination at position j: the same player view,
+    /// hidden state (draw order, RNG streams, run queues) resampled per destination.
+    /// </summary>
+    Determinized = 1,
+}
+
 /// <summary>
 /// Env configuration (§D5 config_json). JSON keys are snake_case; unknown keys are rejected.
 /// <c>FloorStepCap</c> (<c>floor_step_cap</c>, appended): truncate an episode after this many non-combat decisions on one
@@ -175,20 +188,46 @@ public sealed class VecSlot
     /// </summary>
     public int FloorSteps { get; internal set; }
 
-    /// <summary>LegalActions() at the last observation; candidate i = Legal[i].</summary>
+    /// <summary>
+    /// The Vec candidate list at the last observation; candidate i = Legal[i]: <see cref="Raw"/> with the rewards-screen
+    /// macro substitutions (<see cref="RewardMacros.Fill"/>), elsewhere equal to it.
+    /// </summary>
     internal List<RunAction> Legal { get; } = new(64);
+
+    /// <summary>RunSim.LegalActions() at the last observation (scratch for <see cref="Legal"/>).</summary>
+    internal List<RunAction> Raw { get; } = new(64);
 }
 
 /// <summary>
 /// Batched environment (CONTRACTS.md §D2; owner of the game-logic bodies: V2). All calls are batch calls over the slots;
 /// buffers are caller-owned (<see cref="Schema.Buffers"/> order). Per-slot problems go to <c>status</c>; methods throw only
-/// on invalid arguments (the exports turn that into -1 + last_error).
+/// on invalid arguments (the exports turn that into -1 + last_error). Not thread-safe: one call at a time (the exports
+/// serialise every call on an env with a lock on it); each call fans out over the slots on its own worker threads.
 /// </summary>
 public sealed unsafe class VecEnv
 {
+    /// <summary>
+    /// The buffers a branch copies from its first destination to the others: every buffer except the per-slot signals
+    /// and bookkeeping (reward, terminated, truncated, status, episode, last_episode), i.e. everything
+    /// <c>Observe</c> writes (the observation tables, cand, cand_n), including buffers appended later.
+    /// </summary>
+    private static readonly int[] BranchCopy = Enumerable.Range(0, Buf.Count)
+        .Where(k => k is not (Buf.Reward or Buf.Terminated or Buf.Truncated or Buf.Status or Buf.Episode or Buf.LastEpisode))
+        .ToArray();
+
     private readonly int[] _actions;
     private readonly byte[] _mask;
     private readonly int[] _starts;
+    private readonly int[] _pairSlots;
+    private readonly int[] _pairEntries;
+    private readonly int[] _pairSources;
+    private readonly int[] _pairRef;
+    private readonly int[] _pairOthers;
+    private readonly int[] _refOfSource;
+    private readonly bool[] _refOk;
+    private readonly bool[] _seen;
+    private readonly bool[] _isSource;
+    private readonly SlotStatus[] _pairStatus;
     private int _threads;
 
     public VecEnv(VecConfig config)
@@ -208,6 +247,17 @@ public sealed unsafe class VecEnv
         _actions = new int[NumEnvs];
         _mask = new byte[NumEnvs];
         _starts = new int[NumEnvs];
+        _pairSlots = new int[NumEnvs];
+        _pairEntries = new int[NumEnvs];
+        _pairSources = new int[NumEnvs];
+        _pairRef = new int[NumEnvs];
+        _pairOthers = new int[NumEnvs];
+        _refOfSource = new int[NumEnvs];
+        Array.Fill(_refOfSource, -1);
+        _refOk = new bool[NumEnvs];
+        _seen = new bool[NumEnvs];
+        _isSource = new bool[NumEnvs];
+        _pairStatus = new SlotStatus[NumEnvs];
         if (config.Pool is { } fresh)
         {
             for (int i = 0; i < fresh.Count; i++)
@@ -292,20 +342,20 @@ public sealed unsafe class VecEnv
     /// <summary>
     /// Restarts every slot with mask[i] != 0 from pool entry startIds[i] (or its start sequence when &lt; 0) and writes those
     /// slots' observations and signals; other slots' buffers are untouched. Empty spans mean "all slots" / "all -1".
+    /// A masked-in start id that is not a live entry (never issued, or released) fails the call before anything changes.
     /// </summary>
     public void Reset(ReadOnlySpan<byte> mask, ReadOnlySpan<int> startIds, void** buffers)
     {
         RequireBuffers(buffers);
         if (mask.Length != 0 && mask.Length != NumEnvs) throw new ArgumentException($"mask has {mask.Length} entries, expected {NumEnvs}");
         if (startIds.Length != 0 && startIds.Length != NumEnvs) throw new ArgumentException($"start_ids has {startIds.Length} entries, expected {NumEnvs}");
-        int count = Pool.Count;
         for (int i = 0; i < NumEnvs; i++)
         {
             _mask[i] = mask.Length == 0 ? (byte)1 : mask[i];
             _starts[i] = startIds.Length == 0 ? -1 : startIds[i];
-            if (_mask[i] != 0 && _starts[i] >= count)
+            if (_mask[i] != 0 && _starts[i] >= 0 && Pool.Problem(_starts[i]) is { } why)
             {
-                throw new ArgumentOutOfRangeException(nameof(startIds), $"start_ids[{i}] = {_starts[i]} but the pool has {count} entries");
+                throw new ArgumentOutOfRangeException(nameof(startIds), $"start_ids[{i}] = {_starts[i]}: {why}");
             }
         }
         nint table = (nint)buffers;
@@ -328,14 +378,263 @@ public sealed unsafe class VecEnv
         ForEachSlot(i => StepSlot(i, _actions[i], (void**)table));
     }
 
-    /// <summary>Resets one slot from one pool entry (E4 search) and writes that slot's observation.</summary>
+    /// <summary>Resets one slot from one live pool entry (E4 search) and writes that slot's observation.</summary>
     public void Restore(int slot, int entry, void** buffers)
     {
         RequireBuffers(buffers);
         RequireSlot(slot);
-        if ((uint)entry >= (uint)Pool.Count) throw new ArgumentOutOfRangeException(nameof(entry), $"pool entry {entry} does not exist (count {Pool.Count})");
+        Pool.Require(entry);
         ResetSlot(slot, entry, buffers);
     }
+
+    /// <summary>
+    /// Batched <see cref="Restore"/> (<c>sts2vec_restore_many</c>): restarts slot <c>slots[j]</c> from pool entry
+    /// <c>entries[j]</c> for every j, in parallel on the env's threads, and writes those slots' observations and signals
+    /// (status RESET, a new episode id, step index 0, start_entry = the entry; last_episode untouched). Other slots are
+    /// untouched. Validated before anything changes: equal lengths, every slot in range and listed once, every entry live.
+    /// The slots are distinct, so the result equals restoring the pairs one by one in any order.
+    /// </summary>
+    public void RestoreMany(ReadOnlySpan<int> slots, ReadOnlySpan<int> entries, void** buffers)
+    {
+        RequireBuffers(buffers);
+        if (slots.Length != entries.Length)
+        {
+            throw new ArgumentException($"slots has {slots.Length} entries but entries has {entries.Length}");
+        }
+        RequireDistinctSlots(slots, "slots", null);
+        for (int j = 0; j < entries.Length; j++)
+        {
+            if (Pool.Problem(entries[j]) is { } why)
+            {
+                throw new ArgumentException($"entries[{j}] = {entries[j]}: {why}");
+            }
+        }
+        int n = slots.Length;
+        slots.CopyTo(_pairSlots);
+        entries.CopyTo(_pairEntries);
+        nint table = (nint)buffers;
+        ForEach(n, j => ResetSlot(_pairSlots[j], _pairEntries[j], (void**)table));
+    }
+
+    /// <summary>
+    /// Branches slot <paramref name="src"/> into the slots <paramref name="dsts"/> (<c>sts2vec_branch</c>): destination j gets
+    /// its own copy of the source's live state, pending prompts included (<see cref="BranchMode.Exact"/>:
+    /// <c>RunSim.Clone()</c>; <see cref="BranchMode.Determinized"/>: <c>RunSim.CloneDeterminized(BranchSeed(seed, j))</c>),
+    /// without a pool entry, and starts a new episode on it: status RESET, a new episode id, step index 0, start_entry -1
+    /// (no pool entry holds the start), floor stall count 0; last_episode untouched. The destinations' observations,
+    /// candidates and signals are written in this call, as <see cref="Reset"/> writes the slots it restarts; the source
+    /// slot and every other slot are untouched (state and buffer rows). Same as <see cref="BranchMany"/> with
+    /// <paramref name="src"/> repeated for every destination.
+    /// </summary>
+    public void Branch(int src, ReadOnlySpan<int> dsts, BranchMode mode, ulong seed, void** buffers)
+    {
+        RequireBuffers(buffers);
+        RequireSlot(src);
+        if (Slots[src].Sim == null)
+        {
+            throw new InvalidOperationException($"slot {src} holds no run");
+        }
+        if (dsts.Length > NumEnvs)
+        {
+            throw new ArgumentException($"dst_slots has {dsts.Length} entries but the env has {NumEnvs} slots");
+        }
+        Array.Fill(_pairSources, src, 0, dsts.Length);
+        dsts.CopyTo(_pairSlots);
+        BranchPairs(dsts.Length, mode, seed, buffers);
+    }
+
+    /// <summary>
+    /// Batched <see cref="Branch"/> (<c>sts2vec_branch_many</c>): destination <c>dsts[j]</c> gets a copy of the live state of
+    /// <c>srcs[j]</c> (exact, or determinized with <c>BranchSeed(seed, j)</c>, j = the position in this call), with the same
+    /// per-destination result as <see cref="Branch"/>. One call branches many roots: every clone of the call runs in one
+    /// parallel region, and each distinct source's view is encoded once. Validated before anything changes: equal
+    /// lengths, every source in range and holding a run, every destination in range, listed once and not a source of
+    /// this call.
+    /// <para>The clones run in parallel on the env's threads (<c>RunSim.Clone</c> only reads its source; several clones of
+    /// one source run concurrently). The observation of each source is encoded once, for its first destination (on that
+    /// destination's own clone), and copied to the source's other destinations: exact for exact clones and, for
+    /// determinized clones, by their player-view contract (identical observation bytes; sim/VEC.md "Determinized
+    /// clones"). A clone that throws (not expected) is a per-slot SIM_ERROR / CONTENT_GAP.</para>
+    /// </summary>
+    public void BranchMany(ReadOnlySpan<int> srcs, ReadOnlySpan<int> dsts, BranchMode mode, ulong seed, void** buffers)
+    {
+        RequireBuffers(buffers);
+        if (srcs.Length != dsts.Length)
+        {
+            throw new ArgumentException($"src_slots has {srcs.Length} entries but dst_slots has {dsts.Length}");
+        }
+        if (dsts.Length > NumEnvs)
+        {
+            throw new ArgumentException($"dst_slots has {dsts.Length} entries but the env has {NumEnvs} slots");
+        }
+        srcs.CopyTo(_pairSources);
+        dsts.CopyTo(_pairSlots);
+        BranchPairs(dsts.Length, mode, seed, buffers);
+    }
+
+    /// <summary>
+    /// The branch of <c>_pairSources[j]</c> into <c>_pairSlots[j]</c> for j &lt; n (both filled by the caller):
+    /// validation, then phase 1 (parallel) clones every destination and encodes each source's first destination, then
+    /// phase 2 copies those reference views to the other destinations.
+    /// </summary>
+    private void BranchPairs(int n, BranchMode mode, ulong seed, void** buffers)
+    {
+        if (mode is not (BranchMode.Exact or BranchMode.Determinized))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode), $"mode must be 0 (exact) or 1 (determinized), got {(int)mode}");
+        }
+        int others = 0;
+        try
+        {
+            for (int j = 0; j < n; j++)
+            {
+                int src = _pairSources[j];
+                if ((uint)src >= (uint)NumEnvs)
+                {
+                    throw new ArgumentOutOfRangeException("src_slots", $"src_slots[{j}] = {src} outside 0..{NumEnvs - 1}");
+                }
+                var sim = Slots[src].Sim ?? throw new InvalidOperationException($"src_slots[{j}]: slot {src} holds no run");
+                if (sim.IsPoisoned)
+                {
+                    throw new InvalidOperationException($"src_slots[{j}]: slot {src} holds a poisoned run");
+                }
+                _isSource[src] = true;
+            }
+            RequireDistinctSlots(_pairSlots.AsSpan(0, n), "dst_slots", _isSource);
+            // the reference destination of each source: its first destination in call order
+            for (int j = 0; j < n; j++)
+            {
+                int src = _pairSources[j];
+                if (_refOfSource[src] < 0)
+                {
+                    _refOfSource[src] = j;
+                }
+                else
+                {
+                    _pairOthers[others++] = j;
+                }
+                _pairRef[j] = _refOfSource[src];
+            }
+        }
+        finally
+        {
+            for (int j = 0; j < n; j++)
+            {
+                int src = _pairSources[j];
+                if ((uint)src < (uint)NumEnvs)
+                {
+                    _isSource[src] = false;
+                    _refOfSource[src] = -1;
+                }
+            }
+        }
+        if (n == 0)
+        {
+            return;
+        }
+        nint table = (nint)buffers;
+        bool determinized = mode == BranchMode.Determinized;
+        // phase 1: every destination clones its source; a reference destination is also encoded (its source's view)
+        ForEach(n, j =>
+        {
+            var s = Slots[_pairSlots[j]];
+            var source = Slots[_pairSources[j]].Sim!;
+            var st = SlotStatus.Reset;
+            BeginBranchEpisode(s);
+            try
+            {
+                var sim = determinized ? source.CloneDeterminized(BranchSeed(seed, j)) : source.Clone();
+                s.Sim = sim;
+                s.FloorSeen = sim.State.TotalFloor;
+            }
+            catch (Exception e)
+            {
+                st |= StatusClassifier.Classify(e);
+                s.LastError = e.ToString();
+                s.Sim = null;
+            }
+            if (_pairRef[j] == j)
+            {
+                var b = new SlotBuffers((void**)table, s.Index);
+                bool cloned = s.Sim != null;
+                try
+                {
+                    if (!Observe(s, b, ref st))
+                    {
+                        s.Sim = null;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Fault(s, b, e, ref st);
+                }
+                _refOk[j] = cloned && s.Sim != null;
+                WriteSignals(s, b, 0f, 0, 0, st);
+            }
+            _pairStatus[j] = st;
+        });
+        // phase 2: every other destination takes its reference's view (rows, candidates, legal list); a destination whose
+        // clone failed, or whose reference failed, is encoded on its own
+        void Copy(int k)
+        {
+            int j = _pairOthers[k];
+            int r = _pairRef[j];
+            var s = Slots[_pairSlots[j]];
+            var b = new SlotBuffers((void**)table, s.Index);
+            var st = _pairStatus[j];
+            try
+            {
+                if (s.Sim != null && _refOk[r])
+                {
+                    var from = Slots[_pairSlots[r]];
+                    CopyBranchView((void**)table, from.Index, s.Index);
+                    s.Legal.Clear();
+                    s.Legal.AddRange(from.Legal);
+                    s.CandN = from.CandN;
+                    st |= from.Status & (SlotStatus.TableOverflow | SlotStatus.CandidateOverflow);
+                }
+                else if (!Observe(s, b, ref st))
+                {
+                    s.Sim = null;
+                }
+            }
+            catch (Exception e)
+            {
+                Fault(s, b, e, ref st);
+            }
+            WriteSignals(s, b, 0f, 0, 0, st);
+        }
+        if (others <= BranchSerialCopies)
+        {
+            for (int k = 0; k < others; k++)
+            {
+                Copy(k);
+            }
+        }
+        else
+        {
+            ForEach(others, Copy);
+        }
+    }
+
+    /// <summary>Phase 2 of a branch copies serially up to this many rows (a ≈ 35 KB copy costs less than waking workers).</summary>
+    private const int BranchSerialCopies = 2;
+
+    /// <summary>
+    /// The determinization seed of the destination at position <paramref name="index"/> of a <see cref="Branch"/> call with
+    /// <paramref name="seed"/>: the SplitMix64 finaliser of <c>seed + (index + 1) * 0x9E3779B97F4A7C15</c> (mod 2^64).
+    /// Position-based, so a branch is reproducible whichever slots it writes; Python: <c>sts2vec.branch_seed</c>.
+    /// </summary>
+    public static ulong BranchSeed(ulong seed, int index)
+    {
+        ulong z = unchecked(seed + 0x9E3779B97F4A7C15UL * (ulong)(index + 1));
+        z = unchecked((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL);
+        z = unchecked((z ^ (z >> 27)) * 0x94D049BB133111EBUL);
+        return z ^ (z >> 31);
+    }
+
+    /// <summary>Releases pool entries (<c>sts2vec_pool_release</c>, <see cref="StartPool.Release"/>); returns the number released.</summary>
+    public int ReleaseEntries(ReadOnlySpan<int> ids) => Pool.Release(ids);
 
     /// <summary>Adds a pool entry holding a Clone() of the slot's current state (prompts included); returns its id.</summary>
     public int Snapshot(int slot)
@@ -426,26 +725,17 @@ public sealed unsafe class VecEnv
                 {
                     bool nonCombat = !InCombat(s.Sim);
                     var act = s.Legal[action];
-                    if (FaultInjector?.Invoke(i, act) is { } injected)
+                    if (RewardMacros.IsMacro(act.Kind))
                     {
-                        throw injected;
-                    }
-                    if (ForceFastPath?.Invoke(i, act) == true)
-                    {
-                        s.FastSteps++;
-                        s.Sim.StepFastUnchecked(act);
-                    }
-                    else if (Config.FastPath && s.Sim.StepFast(act))
-                    {
-                        s.FastSteps++;
+                        // one decision, the game's two clicks: open the card reward, then take the card / alternative
+                        var (open, choose) = RewardMacros.Expand(act);
+                        Apply(s, i, open);
+                        RewardMacros.RequireOpened(s.Sim, act);
+                        Apply(s, i, choose);
                     }
                     else
                     {
-                        if (!Config.FastPath)
-                        {
-                            s.Sim.Step(act);
-                        }
-                        s.SlowSteps++;
+                        Apply(s, i, act);
                     }
                     s.StepIndex++;
                     if (nonCombat)
@@ -522,6 +812,33 @@ public sealed unsafe class VecEnv
         WriteSignals(s, b, reward, terminated, truncated, st);
     }
 
+    /// <summary>Runs one RunSim action on the slot (fault injection, fast path or the cloning tape path; counts the path).</summary>
+    private void Apply(VecSlot s, int i, RunAction act)
+    {
+        var sim = s.Sim!;
+        if (FaultInjector?.Invoke(i, act) is { } injected)
+        {
+            throw injected;
+        }
+        if (ForceFastPath?.Invoke(i, act) == true)
+        {
+            s.FastSteps++;
+            sim.StepFastUnchecked(act);
+        }
+        else if (Config.FastPath && sim.StepFast(act))
+        {
+            s.FastSteps++;
+        }
+        else
+        {
+            if (!Config.FastPath)
+            {
+                sim.Step(act);
+            }
+            s.SlowSteps++;
+        }
+    }
+
     /// <summary>Starts a new episode on the slot from <paramref name="entry"/> or (entry &lt; 0) the slot's start sequence.</summary>
     private void StartSlot(VecSlot s, int entry, ref SlotStatus st)
     {
@@ -529,20 +846,20 @@ public sealed unsafe class VecEnv
         s.Finished = false;
         s.CandN = 0;
         s.Legal.Clear();
+        s.Raw.Clear();
         s.StepIndex = 0;
         s.FloorSeen = -1;
         s.FloorSteps = 0;
         st |= SlotStatus.Reset;
-        int count = Pool.Count;
         if (entry < 0)
         {
-            if (count == 0)
+            entry = Pool.SequenceEntry(s.SlotSeed + (ulong)s.EpisodeCount);
+            if (entry < 0)
             {
                 st |= SlotStatus.PoolEmpty;
                 s.StartEntry = -1;
                 return;
             }
-            entry = (int)((s.SlotSeed + (ulong)s.EpisodeCount) % (ulong)count);
         }
         s.EpisodeId = s.EpisodeCount * NumEnvs + s.Index + 1;
         s.EpisodeCount++;
@@ -595,7 +912,8 @@ public sealed unsafe class VecEnv
             ObservationEncoder.Encode(s.Sim, b, ref st);
             if (!s.Finished)
             {
-                s.Sim.LegalActions(s.Legal);
+                s.Sim.LegalActions(s.Raw);
+                RewardMacros.Fill(s.Sim, s.Raw, s.Legal);
             }
             s.CandN = CandidateTable.Fill(s.Sim, s.Legal, b.Cand, out bool overflow);
             if (overflow)
@@ -677,6 +995,85 @@ public sealed unsafe class VecEnv
         catch (Exception)
         {
             // buffers unusable; nothing more to do
+        }
+    }
+
+    /// <summary>A branch destination starts a new episode: the counters of <see cref="StartSlot"/>, no pool entry (start_entry -1).</summary>
+    private void BeginBranchEpisode(VecSlot s)
+    {
+        s.Sim = null;
+        s.Finished = false;
+        s.CandN = 0;
+        s.Legal.Clear();
+        s.Raw.Clear();
+        s.StepIndex = 0;
+        s.FloorSeen = -1;
+        s.FloorSteps = 0;
+        s.EpisodeId = s.EpisodeCount * NumEnvs + s.Index + 1;
+        s.EpisodeCount++;
+        s.StartEntry = -1;
+    }
+
+    /// <summary>Copies slot <paramref name="from"/>'s rows of every <see cref="BranchCopy"/> buffer to slot <paramref name="to"/>.</summary>
+    private static void CopyBranchView(void** buffers, int from, int to)
+    {
+        foreach (int k in BranchCopy)
+        {
+            BufferView.Bytes(buffers, k, from).CopyTo(BufferView.Bytes(buffers, k, to));
+        }
+    }
+
+    /// <summary>Runs body(0..count-1) on up to <c>threads</c> workers (inline when one thread or one item).</summary>
+    private void ForEach(int count, Action<int> body)
+    {
+        if (_threads <= 1 || count <= 1)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                body(i);
+            }
+            return;
+        }
+        Parallel.For(0, count, new ParallelOptions { MaxDegreeOfParallelism = _threads }, body);
+    }
+
+    /// <summary>Every slot in range, listed once and not marked in <paramref name="sources"/> (null: none); throws naming the first problem.</summary>
+    private void RequireDistinctSlots(ReadOnlySpan<int> slots, string what, bool[]? sources)
+    {
+        if (slots.Length > NumEnvs)
+        {
+            throw new ArgumentException($"{what} has {slots.Length} entries but the env has {NumEnvs} slots");
+        }
+        var seen = _seen;
+        try
+        {
+            for (int j = 0; j < slots.Length; j++)
+            {
+                int s = slots[j];
+                if ((uint)s >= (uint)NumEnvs)
+                {
+                    throw new ArgumentOutOfRangeException(what, $"{what}[{j}] = {s} outside 0..{NumEnvs - 1}");
+                }
+                if (sources != null && sources[s])
+                {
+                    throw new ArgumentException($"{what}[{j}] = {s} is a source slot of this call");
+                }
+                if (seen[s])
+                {
+                    throw new ArgumentException($"{what}[{j}] = {s} is listed twice");
+                }
+                seen[s] = true;
+            }
+        }
+        finally
+        {
+            foreach (int s in slots)
+            {
+                if ((uint)s < (uint)NumEnvs)
+                {
+                    seen[s] = false;
+                }
+            }
         }
     }
 

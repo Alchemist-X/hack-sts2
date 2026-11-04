@@ -12,7 +12,7 @@ namespace Sts2Sim.Tests;
 /// Player-view observation encoder tests (CONTRACTS.md §D7 T2/T3, owner V1): purity, the draw-order leak test, parity
 /// with the play server's observation, no move ids, hidden treasure / card-reward contents, table capacities.
 /// </summary>
-public static class VecEncoderTests
+public static partial class VecEncoderTests
 {
     private static readonly string[] Characters = { "IRONCLAD", "SILENT", "DEFECT", "REGENT", "NECROBINDER" };
 
@@ -488,12 +488,35 @@ public static class VecEncoderTests
                         continue;
                     }
                     EncodeInto(sim, nb, out _);
-                    Assert.True(nb.All<int>(Buf.CardReward).ToArray().All(v => v == 0), "H7: no card-reward cards in the Rewards phase");
-                    Assert.True(nb.All<int>(Buf.CardRewardAlts).ToArray().All(v => v == 0), "H7: no card-reward alternatives in the Rewards phase");
+                    Assert.True(nb.All<int>(Buf.CardReward).ToArray().All(v => v == 0), "card_reward is the open card screen only");
+                    Assert.True(nb.All<int>(Buf.CardRewardAlts).ToArray().All(v => v == 0), "card_reward_alts is the open card screen only");
                     var row = nb.All<int>(Buf.Rewards).Slice(i * 4, 4);
                     Assert.Equal((int)RewardType.Card, row[0]);
                     Assert.Equal(1, row[3]);
                     Assert.Equal(0, row[2], "the card reward row names no card");
+                    // H7 since 2026-11-04 (rewards-screen macros): the cards of an unopened card reward are one free click
+                    // away (opening the screen and closing it leaves the reward unclaimed, game Rewards/CardReward.cs:660,
+                    // :738), so reward_choices lists them on the rewards screen (the TakeRewardCard targets)
+                    var rc = nb.All<int>(Buf.RewardChoices);
+                    int rw = Schema.RewardChoiceFields.Length;
+                    var listed = new List<int>();
+                    int rows = 0;
+                    for (int k = 0; k < Caps.RewardChoices; k++)
+                    {
+                        if (rc[k * rw + RcCol.Card] != 0 || rc[k * rw + RcCol.AltId] != 0)
+                        {
+                            rows++;
+                        }
+                        if (rc[k * rw + RcCol.RewardIndex] == i && rc[k * rw + RcCol.AltId] == 0 && rc[k * rw + RcCol.Card] != 0)
+                        {
+                            listed.Add(rc[k * rw + RcCol.Card]);
+                            Assert.Equal(listed.Count - 1, rc[k * rw + RcCol.Option], "reward_choices.option = card index");
+                        }
+                    }
+                    if (rows < Caps.RewardChoices)
+                    {
+                        Assert.SequenceEqual(cardReward.Cards.Select(c => Vocab.Card(c.Card.Id)), listed, "reward_choices lists the unopened card reward's cards");
+                    }
                     rewardsHidden++;
                     var claim = sim.Clone();
                     claim.Step(RunAction.Of(RunActionKind.ClaimReward, i));
@@ -502,6 +525,7 @@ public static class VecEncoderTests
                         continue;
                     }
                     EncodeInto(claim, nb, out _);
+                    Assert.True(nb.All<int>(Buf.RewardChoices).ToArray().All(v => v == 0), "no reward_choices while the card screen is open");
                     var open = RunLegalActionGenerator.OpenCardReward(claim.State, claim.Loop)!;
                     var cr = nb.All<int>(Buf.CardReward);
                     for (int c = 0; c < Math.Min(open.Cards.Count, Caps.CardReward); c++)
@@ -531,7 +555,7 @@ public static class VecEncoderTests
             }
             return -1;
         });
-        Console.WriteLine($"     hidden info: treasure closed {treasureClosed} / opened {treasureOpened}; card rewards hidden {rewardsHidden} / shown {cardRewardShown}");
+        Console.WriteLine($"     hidden info: treasure closed {treasureClosed} / opened {treasureOpened}; card rewards on the rewards screen {rewardsHidden} (cards in reward_choices) / opened {cardRewardShown}");
         Assert.True(treasureOpened >= 3, $"only {treasureOpened} treasure chests checked");
         Assert.True(cardRewardShown >= 10, $"only {cardRewardShown} card rewards checked");
     }

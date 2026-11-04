@@ -95,7 +95,17 @@ public static unsafe partial class VecTests
             if (Has(RunActionKind.UsePotion) && NextUnit(ref box[0]) < 0.15) return Pick(RunActionKind.UsePotion);
             return Pick(RunActionKind.EndTurn);
         }
-        if (Has(RunActionKind.ClaimReward)) return NextUnit(ref box[0]) < 0.9 || !Has(RunActionKind.ProceedRewards) ? Pick(RunActionKind.ClaimReward) : Pick(RunActionKind.ProceedRewards);
+        // rewards screen: claim (90 %) — a one-click claim, or (the card reward's macro rows) take an offered card — else proceed
+        bool takeCard = Has(RewardMacros.TakeRewardCard);
+        if (Has(RunActionKind.ClaimReward) || takeCard)
+        {
+            if (!Has(RunActionKind.ProceedRewards) || NextUnit(ref box[0]) < 0.9)
+            {
+                return takeCard && (!Has(RunActionKind.ClaimReward) || NextUnit(ref box[0]) < 0.5)
+                    ? Pick(RewardMacros.TakeRewardCard) : Pick(RunActionKind.ClaimReward);
+            }
+            return Pick(RunActionKind.ProceedRewards);
+        }
         if (Has(RunActionKind.ProceedRewards)) return Pick(RunActionKind.ProceedRewards);
         if (Has(RunActionKind.PickRewardCard) && NextUnit(ref box[0]) < 0.85) return Pick(RunActionKind.PickRewardCard);
         if (Has(RunActionKind.BuyEntry) && NextUnit(ref box[0]) < 0.6) return Pick(RunActionKind.BuyEntry);
@@ -345,11 +355,18 @@ public static unsafe partial class VecTests
                     shadowEpisode[i] = env.Slots[i].EpisodeId;
                     Assert.Equal(shadow[i]!.StateHash(), env.StateHash(i), $"slot {i}: fresh episode = its start entry");
                 }
-                var legal = sim.LegalActions().ToList();
+                // the Vec candidate list: LegalActions() itself, except on the rewards screen (RewardMacros)
+                var raw = sim.LegalActions().ToList();
+                var legal = RewardMacros.Candidates(sim);
+                if (!RewardMacros.IsRewardsScreen(sim))
+                {
+                    Assert.SequenceEqual(raw, legal, $"slot {i}: off the rewards screen the candidates are LegalActions()");
+                }
                 int candN = nb.All<int>(Buf.CandN)[i];
                 Assert.Equal(Math.Min(legal.Count, Caps.Candidates), candN, $"slot {i} cand_n");
                 Assert.Equal(legal.Count > Caps.Candidates, ((SlotStatus)nb.All<int>(Buf.Status)[i]).HasFlag(SlotStatus.CandidateOverflow));
                 var cs = sim.State.Combat;
+                int macroRow = 0;
                 for (int r = 0; r < candN; r++)
                 {
                     var row = CandRow(nb, i, r);
@@ -359,7 +376,44 @@ public static unsafe partial class VecTests
                     Assert.Equal(a.A, row[CandCol.A]);
                     Assert.Equal(a.B, row[CandCol.B]);
                     Assert.Equal(a, CandidateTable.ToAction(row));
+                    if (RewardMacros.IsMacro(a.Kind))
+                    {
+                        // TakeRewardCard / TakeRewardAlternative: the card reward's ClaimReward is legal, the row points at
+                        // reward_choices row k (= the k-th macro row), which names reward A and its option B
+                        Assert.True(sim.IsLegal(RunAction.Of(RunActionKind.ClaimReward, a.A)), $"macro {a}: its ClaimReward is legal");
+                        Assert.True(raw.Contains(RunAction.Of(RunActionKind.ClaimReward, a.A)));
+                        Assert.Equal(macroRow, row[CandCol.OptionIndex], $"{a} option_index");
+                        var rc = nb.Slot(i).RewardChoices;
+                        int w = Schema.RewardChoiceFields.Length;
+                        if (macroRow < Caps.RewardChoices)
+                        {
+                            Assert.Equal(a.A, rc[macroRow * w + RcCol.RewardIndex], $"{a} reward_choices.reward_index");
+                            Assert.Equal(a.B, rc[macroRow * w + RcCol.Option], $"{a} reward_choices.option");
+                            Assert.Equal(row[CandCol.CardId], rc[macroRow * w + RcCol.Card], $"{a} reward_choices.card_id");
+                        }
+                        var cr = (CardReward)RunLegalActionGenerator.TopRewards(sim.State)!.Rewards[a.A];
+                        if (a.Kind == RewardMacros.TakeRewardCard)
+                        {
+                            Assert.Equal(Vocab.Card(cr.Cards[a.B].Card.Id), row[CandCol.CardId], $"{a} card_id");
+                            Assert.True(row[CandCol.CardId] >= 2, $"{a} card_id is a real id");
+                        }
+                        else
+                        {
+                            Assert.Equal(0, row[CandCol.CardId]);
+                            if (macroRow < Caps.RewardChoices)
+                            {
+                                Assert.True(rc[macroRow * w + RcCol.AltId] >= 2, $"{a}: reward_choices.alt_id");
+                                Assert.NotEqual(Vocab.CardRewardAlt(CardRewardAlternative.SkipId), rc[macroRow * w + RcCol.AltId], "Skip is never a macro");
+                            }
+                        }
+                        Assert.Equal(-1, row[CandCol.HandSlot]);
+                        Assert.Equal(-1, row[CandCol.PotionSlot]);
+                        Assert.Equal(-1, row[CandCol.TargetSlot]);
+                        macroRow++;
+                        continue;
+                    }
                     Assert.True(sim.IsLegal(a), $"candidate {a} is legal");
+                    Assert.True(raw.Contains(a), $"candidate {a} is a legal action");
                     bool play = a.Kind == RunActionKind.PlayCard;
                     bool potion = a.Kind is RunActionKind.UsePotion or RunActionKind.DiscardPotion;
                     Assert.Equal(play ? a.A : -1, row[CandCol.HandSlot], $"{a} hand_slot");
@@ -389,7 +443,10 @@ public static unsafe partial class VecTests
                 checkedPoints++;
                 if (actions[i] >= 0)
                 {
-                    shadow[i]!.Step(legal[actions[i]]);
+                    foreach (var x in RewardMacros.ExpandAll(legal[actions[i]]))
+                    {
+                        shadow[i]!.Step(x);
+                    }
                     stepped[i] = true;
                 }
             }
@@ -404,7 +461,7 @@ public static unsafe partial class VecTests
             }
         }
         Assert.True(steppedCompared > 9_000, $"compared {steppedCompared}");
-        foreach (var k in new[] { RunActionKind.PlayCard, RunActionKind.EndTurn, RunActionKind.Travel })
+        foreach (var k in new[] { RunActionKind.PlayCard, RunActionKind.EndTurn, RunActionKind.Travel, RewardMacros.TakeRewardCard })
         {
             Assert.True(kinds.Contains(k), $"saw {k}");
         }
@@ -609,18 +666,26 @@ public static unsafe partial class VecTests
             Assert.Equal(StartKind.Save, env.Pool[entry].Kind);
             using var nb = new NativeBuffers(2);
             env.Reset(default, new[] { entry, entry }, nb.Table);
+            // 3 legal actions; the card reward's ClaimReward is listed as one TakeRewardCard row per offered card
+            var cands = RewardMacros.Candidates(direct.Sim!);
+            Assert.Equal(3, direct.Sim!.LegalActions().Count, $"{content}: legal actions at the fixture's rewards screen");
+            Assert.Equal(5, cands.Count, $"{content}: Vec candidates at the fixture's rewards screen");
+            Assert.Equal(3, cands.Count(a => a.Kind == RewardMacros.TakeRewardCard));
             for (int i = 0; i < 2; i++)
             {
                 var s = nb.Slot(i);
                 Assert.Equal((int)RunPhase.Rewards, s.GlobalI[GI.Phase], $"{content}: phase");
-                Assert.Equal(3, s.CandN, $"{content}: candidates at the fixture's rewards screen");
+                Assert.Equal(cands.Count, s.CandN, $"{content}: candidates at the fixture's rewards screen");
                 Assert.Equal(direct.Sim!.StateHash(), env.StateHash(i), $"{content}: hash equals RunImporter.FromSave");
                 Assert.Equal((long)entry, s.Episode[EpisodeCol.StartEntry]);
             }
             env.Step(new[] { 0, 0 }, nb.Table);
             Assert.Equal(env.StateHash(0), env.StateHash(1), "two slots from one save step identically");
             var c = direct.Sim!.Clone();
-            c.Step(c.LegalActions()[0]);
+            foreach (var a in RewardMacros.ExpandAll(cands[0]))
+            {
+                c.Step(a);
+            }
             Assert.Equal(c.StateHash(), env.StateHash(0));
         }
 

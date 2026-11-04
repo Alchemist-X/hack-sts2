@@ -45,8 +45,27 @@ public sealed class MerchantRoom : AbstractRoom
         {
             return false;
         }
-        var entry = entries[entryIndex];
-        return entry.IsStocked && entry.EnoughGold(rs);
+        return CanBuy(rs, entries[entryIndex]);
+    }
+
+    /// <summary>
+    /// The shop's purchase rule (the <c>BuyEntry</c> legality): the entry is stocked, the player has the gold
+    /// (game Entities.Merchant/MerchantEntry.cs:312-321), and the purchase itself would go through. Only a potion purchase
+    /// can be refused after those checks: <c>MerchantPotionEntry.OnTryPurchase</c> procures the potion first and, when
+    /// <c>PotionCmd.TryToProcure</c> fails (full belt → TooFull, Sozu → NotAllowed), raises PurchaseFailed
+    /// (FailureSpace / FailureForbidden) and returns without spending gold or clearing the entry
+    /// (Entities.Merchant/MerchantPotionEntry.cs:203-216; the UI only wiggles the slot, Nodes.Screens.Shops/NMerchantSlot.cs:425).
+    /// Such a click changes nothing, so it is not a legal action.
+    /// </summary>
+    public static bool CanBuy(RunState rs, MerchantEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(rs);
+        ArgumentNullException.ThrowIfNull(entry);
+        if (!entry.IsStocked || !entry.EnoughGold(rs))
+        {
+            return false;
+        }
+        return entry is not MerchantPotionEntry { Model: { } potion } || PotionCmd.CanProcure(rs, potion, entry.Player);
     }
 
     public bool TryPurchase(RunState rs, int entryIndex)

@@ -21,6 +21,10 @@ public static unsafe partial class VecTests
         "cand", "cand_n", "reward", "terminated", "truncated", "status", "episode", "aux", "last_episode",
         // appended (player-view schema append, docs/parity-audit-2026-11-02.md §5.2)
         "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
+        // appended with the rewards-screen macro candidates (2026-11-04)
+        "reward_choices",
+        // appended with the map-routing features (2026-11-04)
+        "map_routes",
     };
 
     public static void Test_Vec_SchemaJsonRoundTrips()
@@ -41,7 +45,7 @@ public static unsafe partial class VecTests
 
         var buffers = root.GetProperty("buffers").EnumerateArray().ToList();
         Assert.Equal(Buf.Count, buffers.Count);
-        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts + 6 appended)");
+        Assert.Equal(BufferOrder.Length, buffers.Count, "buffer count (34 numbered rows of D3.1 + card_reward_alts + 6 + 2 appended)");
         int vCards = root.GetProperty("vocab").GetProperty("cards").GetArrayLength();
         for (int k = 0; k < buffers.Count; k++)
         {
@@ -83,7 +87,13 @@ public static unsafe partial class VecTests
         {
             Assert.True(enums.GetProperty(e).GetArrayLength() > 0, e);
         }
-        Assert.Equal(21, enums.GetProperty("RunActionKind").GetArrayLength());
+        // 21 RunSim action kinds, then the 2 Vec-only rewards-screen macro kinds (RewardMacros)
+        var kinds = enums.GetProperty("RunActionKind").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Equal(23, kinds.Count);
+        Assert.Equal(21, RewardMacros.FirstMacroKind);
+        Assert.Equal("PromptCancel", kinds[20]);
+        Assert.SequenceEqual(new[] { "TakeRewardCard", "TakeRewardAlternative" }, kinds.Skip(RewardMacros.FirstMacroKind));
+        Assert.Equal(RewardMacros.KindCount, kinds.Count);
         Assert.Equal(11, enums.GetProperty("RunPhase").GetArrayLength());
         Assert.Equal(Caps.Candidates, root.GetProperty("caps").GetProperty("CANDIDATES").GetInt32());
         Assert.Equal(Caps.All.Count, root.GetProperty("caps").EnumerateObject().Count());
@@ -109,6 +119,11 @@ public static unsafe partial class VecTests
         delegate* unmanaged<long, int*, void**, int> step = &Exports.Step;
         delegate* unmanaged<long, int*, int, ulong*, int> stateHash = &Exports.StateHash;
         delegate* unmanaged<long, int, byte*, int, int> lastError = &Exports.LastError;
+        delegate* unmanaged<int> abiVersion = &Exports.AbiVersion;
+        delegate* unmanaged<long, int, int*, int, int, ulong, void**, int> branch = &Exports.Branch;
+        delegate* unmanaged<long, int*, int*, int, int, ulong, void**, int> branchMany = &Exports.BranchMany;
+        delegate* unmanaged<long, int*, int*, int, void**, int> restoreMany = &Exports.RestoreMany;
+        delegate* unmanaged<long, int*, int, int> poolRelease = &Exports.PoolRelease;
 
         string LastGlobal()
         {
@@ -149,6 +164,12 @@ public static unsafe partial class VecTests
         Assert.Equal(-1, stateHash(bad, &one, 1, &h64));
         Assert.Equal(-1, lastError(bad, -1, null, 0));
         Assert.True(LastGlobal().Contains("invalid handle", StringComparison.Ordinal), LastGlobal());
+        Assert.Equal(-1, branch(bad, 0, &one, 1, 0, 0, null));
+        Assert.Equal(-1, branchMany(bad, &one, &one, 1, 0, 0, null));
+        Assert.Equal(-1, restoreMany(bad, &one, &one, 1, null));
+        Assert.Equal(-1, poolRelease(bad, &one, 1));
+        Assert.True(LastGlobal().Contains("invalid handle", StringComparison.Ordinal), LastGlobal());
+        Assert.Equal(Exports.CurrentAbiVersion, abiVersion());
 
         // malformed config
         long Create(string cfg)
@@ -291,14 +312,20 @@ public static unsafe partial class VecTests
         Assert.Equal(7, LastEpCol.LastEncounterId);
         Assert.Equal(9, AuxCol.IsCombat);
         Assert.Equal(13, AuxCol.ActRooms);
-        Assert.Equal(Buf.Count - 6, Buf.GlobalX);
-        Assert.Equal(Buf.Count - 1, Buf.EventOptionValues);
+        Assert.Equal(Buf.Count - 8, Buf.GlobalX);
+        Assert.Equal(Buf.Count - 3, Buf.EventOptionValues);
+        Assert.Equal(Buf.Count - 2, Buf.RewardChoices);
+        Assert.Equal(Buf.Count - 1, Buf.MapRoutes);
+        Assert.SequenceEqual(Schema.Buffers[Buf.MapNodes].Shape[..2], Schema.Buffers[Buf.MapRoutes].Shape[..2], "map_routes cells = map_nodes cells");
+        Assert.Equal(3 + Schema.HC, Schema.Buffers[Buf.RewardChoices].Shape[1]);
+        Assert.Equal(Caps.RewardChoices, Schema.Buffers[Buf.RewardChoices].Shape[0]);
+        Assert.SequenceEqual(Schema.HandFields, Schema.RewardChoiceFields.Skip(RcCol.Card));
         Assert.Equal(Schema.HC, Schema.Buffers[Buf.Hand].Shape[1]);
         Assert.Equal(Caps.Hand, Schema.Buffers[Buf.HandX].Shape[0]);
         Assert.Equal(Caps.EventOptions, Schema.Buffers[Buf.EventOptionValues].Shape[0]);
         Assert.Equal(EvValCol.Value0 + Caps.EventValues, EvValCol.ItemN);
         Assert.Equal(Schema.EventOptionValueFields.Length, EvValCol.ItemKind0 + Caps.EventItems * EvValCol.ItemStride);
-        foreach (int k in new[] { Buf.GlobalX, Buf.HandX, Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder, Buf.EventOptionValues })
+        foreach (int k in new[] { Buf.GlobalX, Buf.HandX, Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder, Buf.EventOptionValues, Buf.RewardChoices, Buf.MapRoutes })
         {
             Assert.True(Buf.Observation.Contains(k), $"{Schema.Buffers[k].Name} is an observation buffer");
         }
@@ -310,8 +337,10 @@ public static unsafe partial class VecTests
                 .Cast<System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute>().Single();
             Assert.Equal(name, attr.EntryPoint);
         }
-        Assert.Equal(16, Exports.ExportNames.Count);
-        Assert.Equal("sts2vec_pool_warm", Exports.ExportNames[^2], "exports added after the scaffold freeze are appended");
-        Assert.Equal("sts2vec_clone_determinized", Exports.ExportNames[^1], "exports added after the scaffold freeze are appended");
+        Assert.Equal(21, Exports.ExportNames.Count);
+        Assert.SequenceEqual(new[] { "sts2vec_pool_warm", "sts2vec_clone_determinized", "sts2vec_abi_version", "sts2vec_branch",
+            "sts2vec_branch_many", "sts2vec_restore_many", "sts2vec_pool_release" }, Exports.ExportNames.Skip(14),
+            "exports added after the scaffold freeze are appended");
+        Assert.Equal(2, Exports.CurrentAbiVersion);
     }
 }
