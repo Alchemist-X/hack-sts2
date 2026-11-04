@@ -118,11 +118,37 @@ public static class ActionMapper
         return null;
     }
 
-    public static int ResolvePick(ChoicePrompt prompt, IReadOnlyList<int> picked, ChoosePick pick, out FieldDiff? diff)
+    // `deck_index` (the exporter, from the saves around the room: sts2rec diff_export_v2.resolve_deck_picks_from_saves)
+    // names the master-deck card a DeckCard pick acted on, which the recorder does not log; among copies it decides the
+    // deck order and so every later opening shuffle. The prompt's options carry the card instance.
+    public static int ResolvePick(ChoicePrompt prompt, IReadOnlyList<int> picked, ChoosePick pick, out FieldDiff? diff, IReadOnlyList<CardInstance>? deck = null)
     {
         diff = null;
         var options = prompt.Options;
         string? id = pick.CardId != null ? RunScreenProjector.StripCategory(pick.CardId) : null;
+        if (pick.DeckIndex is int deckIndex && deck != null)
+        {
+            if (deckIndex < 0 || deckIndex >= deck.Count)
+            {
+                diff = new FieldDiff("action.picks.deck_index", deckIndex, deck.Count, DiffSeverity.Hard, "deck index outside the sim deck (sim value = deck size)");
+                return -1;
+            }
+            var card = deck[deckIndex];
+            for (int i = 0; i < options.Count; i++)
+            {
+                if (options[i].InstanceId == card.InstanceId && !picked.Contains(i))
+                {
+                    if (id != null && !string.Equals(options[i].ModelId, id, StringComparison.Ordinal))
+                    {
+                        diff = new FieldDiff("action.picks.card_id", id, options[i].ModelId, DiffSeverity.Hard, $"the sim deck card at {deckIndex}");
+                        return -1;
+                    }
+                    return i;
+                }
+            }
+            diff = new FieldDiff("action.picks.deck_index", deckIndex, card.Id, DiffSeverity.Hard, "the sim deck card at this index is not an option of the prompt");
+            return -1;
+        }
         if (pick.Index is int index)
         {
             if (index < 0 || index >= options.Count)
@@ -171,7 +197,7 @@ public static class ActionMapper
             {
                 return new FieldDiff("action.picks", picks.Count, picked.Count, DiffSeverity.Hard, "the sim prompt completed before every oracle pick was made");
             }
-            int option = ResolvePick(prompt, drv.PendingPicks, picks[k], out var diff);
+            int option = ResolvePick(prompt, drv.PendingPicks, picks[k], out var diff, drv.Run is { } run && run.State.Players.Count > 0 ? run.State.Players[0].Deck : null);
             if (diff != null)
             {
                 return diff;

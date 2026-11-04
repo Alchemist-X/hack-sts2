@@ -18,7 +18,7 @@ import pytest
 
 from sts2rec.cli import main
 from sts2rec.diff_bundle import CardNameMap, SimRegistry
-from sts2rec.diff_export import ExportError, export_bundles
+from sts2rec.diff_export import ExportError, PartStreams, export_bundles
 from sts2rec.diff_export_v2 import (
     RUN_LAYER_SOURCES,
     ContentRegistry,
@@ -26,9 +26,12 @@ from sts2rec.diff_export_v2 import (
     RoomWindow,
     _event_option_index,
     _shop_slot,
+    LineageContext,
     card_reward_closed_by_skip,
+    deck_edit_positions,
     export_bundles_v2,
     hoist_combat_starting_event_options,
+    resolve_deck_picks_from_saves,
     prompt_open_state,
     reason_class_v2,
     resolve_card_picks,
@@ -548,4 +551,51 @@ def test_card_reward_selection_closed_by_skip_before_the_pick() -> None:
     assert card_reward_closed_by_skip(pick(595, 1), [pick(597, 2), reward]) is None, "an offered card, not an alternative"
     assert card_reward_closed_by_skip(pick(595, 3), [pick(597, 2), taken(599, can_skip=False, can_reroll=True)]) is None, "REROLL"
     assert card_reward_closed_by_skip(pick(595, 3), [proceed, pick(597, 2), reward]) is None, "only Index choices in between"
+
+
+def test_deck_edit_positions_follow_the_deck_operations() -> None:
+    S, S1, D, J = ("STRIKE_IRONCLAD", 0, None), ("STRIKE_IRONCLAD", 1, None), ("DEFEND_IRONCLAD", 0, None), ("JUGGLING", 0, None)
+    # An upgrade changes its card in place (farm K4P3FWUZYN f12 SMITH: the second Strike).
+    assert deck_edit_positions([S, S, S, D], [S, S1, S, D]) == {1: "modified"}
+    # A transform removes the original and appends the replacement (Commands/CardCmd.cs:2061-2064; 545XJP726S f7
+    # AROMA_OF_CHAOS transformed the upgraded Strike).
+    assert deck_edit_positions([S, S, S1, S, D], [S, S, S, D, J]) == {2: "removed"}
+    # Removing one of identical copies: any copy gives the same deck.
+    assert list(deck_edit_positions([S, S, D], [S, D]).values()) == ["removed"]
+    assert deck_edit_positions([S, D], [S, D, J]) == {}
+    assert deck_edit_positions([S], [D]) == {0: "removed"}
+
+
+def _deck_save(path: Path, deck: list[tuple[str, int]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cards = [{"id": f"CARD.{cid}", "floor_added_to_deck": 1, **({"current_upgrade_level": up} if up else {})} for cid, up in deck]
+    path.write_text(json.dumps({"players": [{"deck": cards}]}), encoding="utf-8")
+
+
+def test_ambiguous_deck_picks_are_resolved_from_the_saves_around_the_room(tmp_path: Path) -> None:
+    part = tmp_path / "1793604345-K4P3FWUZYN"
+    _deck_save(part / "native" / "saves" / "001544.save", [("STRIKE_IRONCLAD", 0)] * 3 + [("DEFEND_IRONCLAD", 0)])
+    _deck_save(part / "native" / "saves" / "001556.save", [("STRIKE_IRONCLAD", 0), ("STRIKE_IRONCLAD", 1), ("STRIKE_IRONCLAD", 0), ("DEFEND_IRONCLAD", 0)])
+    ctx = LineageContext(lineage="L", parts=[PartStreams(path=part, manifest=None)], raw_manifests=[], vocabulary=None, registry=None,  # type: ignore[arg-type]
+                         options=None, character="IRONCLAD", ascension=0, game_version="v0.111.0")  # type: ignore[arg-type]
+    for seq in (1544, 1556):
+        ctx.anchors.append({"id": f"a{seq}", "kind": "room_entry", "seq": seq, "ref": f"{part.name}/native/saves/{seq:06d}.save", "part_index": 0})
+    smith = {"index": None, "card_id": "STRIKE_IRONCLAD", "upgraded": False, "resolved_by": "deck_multiset", "deck_index": None}
+    rest = {"id": "s27", "kind": "room", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []}, "decisions": [
+        {"oracle": {"action_seq": 1548}, "action": {"type": "rest_option", "option_id": "SMITH"}},
+        {"oracle": {"action_seq": 1547}, "action": {"type": "choose", "context": "rest", "choice_type": "DeckCard", "picks": [smith]}},
+    ]}
+    walk = {"id": "s28", "kind": "map", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []},
+            "decisions": [{"oracle": {"action_seq": 1550}, "action": {"type": "map_move"}}]}
+    ctx.segments += [rest, walk]
+    resolve_deck_picks_from_saves(ctx)
+    assert smith["deck_index"] == 1 and smith["upgraded"] is False and smith["resolved_by"] == "save_deck_diff"
+    assert rest["notes"] and "STRIKE_IRONCLAD@1" in rest["notes"][0]
+    # Another room's decision between the saves: the diff is not this room's alone.
+    other = dict(smith, deck_index=None, resolved_by="deck_multiset")
+    rest["decisions"][1]["action"]["picks"] = [other]
+    ctx.segments.insert(1, {"id": "sX", "kind": "room", "part": part.name, "notes": [], "eligibility": {"eligible": True, "reasons": []},
+                            "decisions": [{"oracle": {"action_seq": 1549}, "action": {"type": "shop_buy"}}]})
+    resolve_deck_picks_from_saves(ctx)
+    assert other["deck_index"] is None
 

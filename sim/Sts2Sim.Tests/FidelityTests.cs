@@ -125,5 +125,29 @@ public static class FidelityTests
         Assert.Null(miss);
         Assert.Equal(5, ActionMapper.PicksByIdentity(action, discard)[0].Index, "non-draw grids keep the recorded index");
     }
+
+    public static void Test_Fidelity_DeckPicksResolveByTheSavedDeckIndex()
+    {
+        // The recorder logs a DeckCard pick by id; the exporter names the deck card from the saves around the room
+        // (sts2rec diff_export_v2.resolve_deck_picks_from_saves). Farm K4P3FWUZYN f12 SMITH upgraded deck[1] (the f13 save),
+        // the first-copy rule upgraded deck[0], and the f13 opening shuffle put the upgraded Strike elsewhere.
+        var sim = RunSim.NewRun(new RunConfig("FIDDECK01", "IRONCLAD", 0));
+        var deck = sim.State.Players[0].Deck;
+        var strikes = Enumerable.Range(0, deck.Count).Where(i => deck[i].Id == "STRIKE_IRONCLAD").ToList();
+        Assert.True(strikes.Count >= 2);
+        var options = strikes.Select(i => new ChoiceOption(deck[i].InstanceId, deck[i].Id, deck[i].UpgradeLevel)).ToList();
+        var prompt = new ChoicePrompt(ChoicePromptKind.DeckUpgrade, "REST_SITE:SMITH", "SMITH", -1, PileType.Deck, options, 1, 1, false, false, false, false, ChoiceResultType.CombatCard);
+        var second = new ChoosePick(null, strikes[1], null, "STRIKE_IRONCLAD", false);
+        Assert.Equal(1, ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second, out var none, deck));
+        Assert.Null(none);
+        Assert.Equal(0, ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second, out _), "without the deck: the first copy");
+        ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second with { CardId = "DEFEND_IRONCLAD" }, out var wrongId, deck);
+        Assert.Equal("action.picks.card_id", wrongId?.Path);
+        int defend = Enumerable.Range(0, deck.Count).First(i => deck[i].Id == "DEFEND_IRONCLAD");
+        ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second with { DeckIndex = defend, CardId = null }, out var notOffered, deck);
+        Assert.Equal("action.picks.deck_index", notOffered?.Path);
+        ActionMapper.ResolvePick(prompt, Array.Empty<int>(), second with { DeckIndex = deck.Count }, out var outside, deck);
+        Assert.Equal("action.picks.deck_index", outside?.Path);
+    }
 }
 

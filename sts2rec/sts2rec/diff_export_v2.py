@@ -1172,6 +1172,175 @@ def bind_save_anchors(ctx: LineageContext) -> None:
         segment["eligibility"]["reasons"] = [r for r in reasons if not _is_start_reason(r)]
 
 
+DeckCardKey = tuple[str, int, str | None]
+
+
+def _save_deck(ctx: LineageContext, anchor: Mapping[str, Any], cache: dict[str, list[DeckCardKey] | None]) -> list[DeckCardKey] | None:
+    """The local player's deck in a save anchor, in deck order: (id, upgrade level, enchantment)."""
+    if anchor["id"] in cache:
+        return cache[anchor["id"]]
+    deck: list[DeckCardKey] | None = None
+    part_index = anchor.get("part_index")
+    ref = str(anchor.get("ref") or "")
+    if part_index is not None and "/" in ref:
+        path = ctx.parts[part_index].path / ref.split("/", 1)[1]
+        try:
+            save = json.loads(path.read_text(encoding="utf-8"))
+            players = save.get("players") if isinstance(save, Mapping) else None
+            cards = players[0].get("deck") if isinstance(players, list) and players and isinstance(players[0], Mapping) else None
+            if isinstance(cards, list):
+                deck = [
+                    (
+                        strip_prefix(str(c.get("id")), "CARD."),
+                        _int_or_none(c.get("current_upgrade_level")) or 0,
+                        json.dumps(c.get("enchantment"), sort_keys=True) if c.get("enchantment") else None,
+                    )
+                    for c in cards
+                    if isinstance(c, Mapping)
+                ]
+        except (OSError, ValueError):
+            deck = None
+    cache[anchor["id"]] = deck
+    return deck
+
+
+def deck_edit_positions(before: Sequence[DeckCardKey], after: Sequence[DeckCardKey]) -> dict[int, str] | None:
+    """Positions of ``before`` that a room removed or changed in place, from a minimal alignment with ``after``.
+
+    The master deck keeps its order: an upgrade or an enchantment changes a card in place (same id), a transform removes
+    the original and appends the replacement (Commands/CardCmd.cs:2017-2024, :2061-2064 ``AddInternal`` without an index
+    for the deck pile), a removal removes, a new card is appended. Kept cards cost 0, a removal or an in-place change 1,
+    each appended card 1; None when no alignment exists.
+    """
+    n, m = len(before), len(after)
+    inf = n + m + 1
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    move: list[list[str | None]] = [[None] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            c = cost[i][j]
+            if c >= inf:
+                continue
+            if i < n and j < m and before[i][0] == after[j][0]:
+                step, kind = (0, "kept") if before[i] == after[j] else (1, "modified")
+                if c + step < cost[i + 1][j + 1]:
+                    cost[i + 1][j + 1] = c + step
+                    move[i + 1][j + 1] = kind
+            if i < n and c + 1 < cost[i + 1][j]:
+                cost[i + 1][j] = c + 1
+                move[i + 1][j] = "removed"
+    best = min(range(m + 1), key=lambda j: (cost[n][j] + (m - j), -j))
+    if cost[n][best] >= inf:
+        return None
+    edits: dict[int, str] = {}
+    i, j = n, best
+    while i > 0:
+        kind = move[i][j]
+        if kind == "removed":
+            edits[i - 1] = kind
+            i -= 1
+        elif kind in ("kept", "modified"):
+            if kind == "modified":
+                edits[i - 1] = kind
+            i -= 1
+            j -= 1
+        else:
+            return None
+    return edits
+
+
+def resolve_deck_picks_from_saves(ctx: LineageContext) -> None:
+    """Name the deck card of an ambiguous DeckCard pick from the R1 saves around its room.
+
+    The recorder logs a deck pick by card id only (recorder_gap:choice_identity), so among copies the exporter took the
+    first candidate; but the copy decides the deck order, and the deck order decides the opening shuffle of every later
+    combat (farm K4P3FWUZYN f12: SMITH upgraded the second Strike, the sim the first, and the f13 opening hand differed;
+    545XJP726S f7 AROMA_OF_CHAOS transformed the upgraded Strike, the exporter's pick was a plain one). The save written
+    before the room and the next save after its last decision bracket the room's deck changes; ``deck_edit_positions``
+    finds the cards it removed or changed, and each ambiguous pick (its id held by more than one deck card) takes the
+    changed position with its id: ``deck_index`` (index in the deck when the prompt opened), ``upgraded`` from the save,
+    ``index`` cleared (the harness resolves the card by ``deck_index``). Skipped when another segment's decisions fall
+    between the saves, or the picks and the changed cards of an id do not pair up one to one.
+    """
+    saves_by_part: dict[int, list[Mapping[str, Any]]] = {}
+    for anchor in ctx.anchors:
+        if anchor.get("kind") in SAVE_ANCHOR_KINDS and anchor.get("seq") is not None and anchor.get("part_index") is not None:
+            saves_by_part.setdefault(anchor["part_index"], []).append(anchor)
+    for saves in saves_by_part.values():
+        saves.sort(key=lambda a: a["seq"])
+    part_of = {ctx.part_name(i): i for i in range(len(ctx.parts))}
+    decision_seqs: dict[int, list[tuple[int, str, str | None]]] = {}
+    for segment in ctx.segments:
+        part_index = part_of.get(segment.get("part"))
+        for d in segment["decisions"]:
+            seq = (d.get("oracle") or {}).get("action_seq")
+            if part_index is not None and isinstance(seq, int):
+                decision_seqs.setdefault(part_index, []).append((seq, segment["id"], (d.get("action") or {}).get("type")))
+    cache: dict[str, list[DeckCardKey] | None] = {}
+    for segment in ctx.segments:
+        if segment["kind"] != "room":
+            continue
+        picks_by_decision = [
+            (d, [p for p in d["action"].get("picks") or () if isinstance(p, dict) and p.get("card_id")])
+            for d in segment["decisions"]
+            if (d.get("action") or {}).get("type") == "choose" and d["action"].get("choice_type") == "DeckCard"
+        ]
+        picks_by_decision = [(d, picks) for d, picks in picks_by_decision if picks]
+        part_index = part_of.get(segment.get("part"))
+        seqs = [(d.get("oracle") or {}).get("action_seq") for d in segment["decisions"]]
+        seqs = [x for x in seqs if isinstance(x, int)]
+        if not picks_by_decision or part_index is None or not seqs:
+            continue
+        saves = saves_by_part.get(part_index, [])
+        before_save = next((a for a in reversed(saves) if a["seq"] < min(seqs)), None)
+        after_save = next((a for a in saves if a["seq"] > max(seqs)), None)
+        if before_save is None or after_save is None:
+            continue
+        foreign = [
+            (seq, sid) for seq, sid, kind in decision_seqs.get(part_index, ())
+            if before_save["seq"] < seq < after_save["seq"] and sid != segment["id"] and kind not in ("map_move", "next_act")
+        ]
+        if foreign:
+            continue
+        before = _save_deck(ctx, before_save, cache)
+        after = _save_deck(ctx, after_save, cache)
+        edits = deck_edit_positions(before, after) if before is not None and after is not None else None
+        if edits is None:
+            continue
+        ids_before = Counter(card[0] for card in before)
+        ambiguous = [p for _, picks in picks_by_decision for p in picks if ids_before.get(p["card_id"], 0) > 1]
+        if not ambiguous:
+            continue
+        wanted = Counter(p["card_id"] for _, picks in picks_by_decision for p in picks)
+        changed: dict[str, list[int]] = {}
+        for position in sorted(edits):
+            changed.setdefault(before[position][0], []).append(position)
+        resolved: list[str] = []
+        removed_earlier: list[int] = []
+        for _, picks in picks_by_decision:
+            removed_now: list[int] = []
+            for pick in picks:
+                card_id = pick["card_id"]
+                positions = changed.get(card_id) or []
+                if ids_before.get(card_id, 0) <= 1 or len(positions) != wanted[card_id]:
+                    continue
+                position = positions.pop(0)
+                pick["deck_index"] = position - sum(1 for r in removed_earlier if r < position)
+                pick["upgraded"] = before[position][1] > 0
+                pick["index"] = None
+                pick["resolved_by"] = "save_deck_diff"
+                resolved.append(f"{card_id}@{position}")
+                if edits[position] == "removed":
+                    removed_now.append(position)
+            removed_earlier += removed_now
+        if resolved:
+            segment["notes"].append(f"deck picks resolved from saves {before_save['id']}..{after_save['id']}: {', '.join(resolved)}")
+            if all(p.get("resolved_by") == "save_deck_diff" for p in ambiguous):
+                reasons = segment["eligibility"]["reasons"]
+                segment["eligibility"]["reasons"] = [r for r in reasons if r != "recorder_gap:choice_identity"]
+
+
 def _floor_summary(window: RoomWindow) -> dict[str, Any] | None:
     summaries = [e for e in window.events if e.entry == "floor_summary" and isinstance(e.data, Mapping)]
     if not summaries:
@@ -1990,6 +2159,7 @@ def build_lineage_bundle(
 
     attach_mcr_anchors(ctx, combat_parts)
     bind_save_anchors(ctx)
+    resolve_deck_picks_from_saves(ctx)
     for segment in ctx.segments:
         segment.pop("room_seq", None)
         reasons = segment["eligibility"]["reasons"]
