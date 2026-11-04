@@ -18,7 +18,12 @@ Search (``LookaheadConfig``). Only where a game is live, in combat (``global_i.i
   stream resampled), seed ``u64(sha256(f"{seed}:{key}:{n}:{r}"))`` with ``n`` the game's decision index (actions taken
   so far), shared by all candidates of that ``r`` (common random numbers). Exact ``snapshot`` is never used: it would
   read the true draw order;
-- one batched ``reset(mask, start_ids)`` restores every rollout slot of the round; step 0 applies the candidate, then
+- the rollout slots of a round start from those roots in one go. ABI 2 libraries (``env.supports_branch``): one
+  determinized ``branch`` per root (seed = ``inv_branch_seed`` of the determinization seed, so the root is exactly
+  ``clone_determinized(shadow, seed)``), then one exact ``branch`` fan-out from each root slot to its other candidate
+  slots; no pool entry. Exact branches only ever copy a rollout root, never a shadow (checked on every call). Older
+  libraries: ``clone_determinized`` pool entries and one batched ``reset(mask, start_ids)``. Both paths give the same
+  states (test); step 0 applies the candidate, then
   the model's greedy action on the rows still running (one batched forward per step over all games; byte-identical
   model inputs are evaluated once; trailing hand / enemy / potion rows that no row of the batch occupies or points
   at are cut (``trim_padding``): the model masks them, so only float rounding changes, as with any batch change);
@@ -31,9 +36,9 @@ Search (``LookaheadConfig``). Only where a game is live, in combat (``global_i.i
   (``value+hp``, ``hp``); P = protocol v0.2 progress of the state (``objective.state_progress``), V = the value head;
   mean over the valid determinizations; argmax over the candidates, ties (within ``TIE_EPS``) -> the greedy choice,
   no valid candidate -> greedy;
-- the shadows then advance with the chosen actions. Every clone is a pool entry (~22-33 KB) that only closing the env
-  frees: when the pool exceeds ``pool_budget`` the search env is rebuilt and every game's history replayed (state hash
-  and observation of every shadow checked against the old env).
+- the shadows then advance with the chosen actions. On the pool path every clone is a pool entry (~22-33 KB) that only
+  closing the env frees: when the pool exceeds ``pool_budget`` the search env is rebuilt and every game's history
+  replayed (state hash and observation of every shadow checked against the old env); the branch path never grows it.
 
 ExIt hook: ``record`` (a callable, or ``evaluate_lookahead(record=True)`` -> ``searches.jsonl`` in the run directory)
 receives one dict per searched decision: game ``key``, decision index ``n`` (the state is the game's start replayed
@@ -70,7 +75,7 @@ from sts2vec import protocol as PG
 from sts2vec.evaluate import FLOOR_STEP_CAP, STEP_CAP
 from sts2vec.evaluate import evaluate as vec_evaluate
 
-from .features import USED_BUFFERS, ModelSpec, bind_spec, check_spec_compat, obs_to_torch
+from .features import USED_BUFFERS, ModelSpec, bind_spec, check_spec_compat, describe_widened, obs_to_torch
 from .objective import state_progress
 
 ALGO = "la-v1"                       # bump when the search semantics change (part of the policy hash)
@@ -136,6 +141,29 @@ class LookaheadConfig:
 def det_seed(seed: int, key: str, n: int, r: int) -> int:
     """The determinization seed of game `key` at its decision `n`, sample `r` (uint64; batch- and slot-independent)."""
     return int.from_bytes(hashlib.sha256(f"{int(seed)}:{key}:{int(n)}:{int(r)}".encode()).digest()[:8], "little")
+
+
+_M64 = (1 << 64) - 1
+_GOLDEN, _MIX1, _MIX2 = 0x9E3779B97F4A7C15, 0xBF58476D1CE4E5B9, 0x94D049BB133111EB
+
+
+def _unxorshift(y: int, k: int) -> int:
+    x = y
+    for _ in range(64 // k + 1):
+        x = y ^ (x >> k)
+    return x & _M64
+
+
+def inv_branch_seed(target: int) -> int:
+    """The `seed` with ``sts2vec.env.branch_seed(seed, 0) == target``: ``env.branch(src, [d], determinized=True,
+    seed=inv_branch_seed(t))`` puts into ``d`` exactly ``clone_determinized(src, t)`` (the SplitMix64 finaliser is a
+    bijection; this undoes it and the position-0 offset)."""
+    z = _unxorshift(int(target) & _M64, 31)
+    z = (z * pow(_MIX2, -1, 1 << 64)) & _M64
+    z = _unxorshift(z, 27)
+    z = (z * pow(_MIX1, -1, 1 << 64)) & _M64
+    z = _unxorshift(z, 30)
+    return (z - _GOLDEN) & _M64
 
 
 def _new_stats() -> dict:
@@ -210,6 +238,8 @@ class LookaheadPolicy:
         self.N = self.M * (1 + (self.cfg.K * self.cfg.R if self.cfg.K >= 2 else 0))
         self.hist: list[list[int]] = [[] for _ in range(self.M)]
         self.env = self._build_env()
+        self._branch = bool(getattr(self.env, "supports_branch", False))
+        self.stats["api"] = "branch" if self._branch else "pool"
         S = self.env.schema
         self.G, self.CC, self.E, self.AX = S.cols("global_i"), S.cols("cand"), S.cols("enemies"), S.cols("aux")
         kinds = S.vocab.enums["RunActionKind"]
@@ -407,28 +437,42 @@ class LookaheadPolicy:
         plans = [(g, c) for g, c in plans if len(c) >= 2]
         if not plans:
             return a
-        # roots (R determinized clones per game) and one batched restore of every rollout slot of the round
-        t0 = time.perf_counter()
-        slot_game, first, roots = [], [], []
+        # R determinized roots per game, every rollout slot of the round started from its root
+        slot_game, first, seeds, root_pos = [], [], [], []
         for g, cands in plans:
             n_dec = len(self.hist[g])
             for r in range(R):
-                root = env.clone_determinized(g, det_seed(cfg.seed, self.keys[g], n_dec, r))
+                root_pos.append(len(first))                 # the root's own slot = its first candidate's
+                seeds.append((g, det_seed(cfg.seed, self.keys[g], n_dec, r), len(cands)))
                 slot_game += [g] * len(cands)
                 first += cands
-                roots += [root] * len(cands)
-        T["clone"] += time.perf_counter() - t0
         U = len(first)
         used = np.arange(M, M + U)
         slot_game = np.asarray(slot_game)
         first = np.asarray(first, np.int32)
-        mask = np.zeros(N, np.uint8)
-        mask[used] = 1
-        start = np.full(N, -1, np.int32)
-        start[used] = roots
-        t0 = time.perf_counter()
-        o = env.reset(mask=mask, start_ids=start)
-        T["restore"] += time.perf_counter() - t0
+        if self._branch:
+            t0 = time.perf_counter()
+            for (g, sd, _), pos in zip(seeds, root_pos):
+                env.branch(g, [M + pos], determinized=True, seed=inv_branch_seed(sd))
+            T["clone"] += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            src = np.concatenate([np.full(n - 1, M + pos) for (_, _, n), pos in zip(seeds, root_pos)])
+            dst = np.concatenate([np.arange(M + pos + 1, M + pos + n) for (_, _, n), pos in zip(seeds, root_pos)])
+            if not (src >= M).all():                        # an exact copy of a shadow would read the true hidden state
+                raise RuntimeError("lookahead: exact branch from a shadow slot")
+            o = env.branch(src, dst, determinized=False)
+            T["restore"] += time.perf_counter() - t0
+        else:
+            t0 = time.perf_counter()
+            roots = np.concatenate([np.full(n, env.clone_determinized(g, sd)) for g, sd, n in seeds])
+            T["clone"] += time.perf_counter() - t0
+            mask = np.zeros(N, np.uint8)
+            mask[used] = 1
+            start = np.full(N, -1, np.int32)
+            start[used] = roots
+            t0 = time.perf_counter()
+            o = env.reset(mask=mask, start_ids=start)
+            T["restore"] += time.perf_counter() - t0
         st["searched"] += len(plans)
         st["candidates"] += sum(len(c) for _, c in plans)
         st["clones"] += len(plans) * R
@@ -562,13 +606,16 @@ class LookaheadPolicy:
 
 
 def _load(checkpoint, cfg: LookaheadConfig, dll=None, log=print):
+    """The checkpoint's model for the loaded library (``ppo.load_checkpoint(library=...)``: refused with SpecMismatch
+    unless the model inputs are identical or only widened, as ``sts2train eval``)."""
     from .ppo import load_checkpoint
 
-    model, spec, ck = load_checkpoint(checkpoint, cfg.device)
-    compat = check_spec_compat(spec, ModelSpec.from_schema(schema_of(load(dll))), what="evaluate")
-    if compat["other_differences"]:
+    model, spec, ck = load_checkpoint(checkpoint, cfg.device, library=ModelSpec.from_schema(schema_of(load(dll))))
+    compat = ck.get("spec_compat") or check_spec_compat(spec, ModelSpec.from_schema(schema_of(load(dll))))
+    if compat["other_differences"] or compat.get("widened_enums"):
         log(f"note: checkpoint encoder_version {compat['checkpoint_encoder_version']}, library "
-            f"{compat['library_encoder_version']}: the model's inputs are identical")
+            f"{compat['library_encoder_version']}: model inputs {compat.get('model_inputs', 'identical')}"
+            + (f" ({describe_widened(compat['widened_enums'])}, new rows zero)" if compat.get("widened_enums") else ""))
     bind_spec(spec)
     return model, spec, ck, compat
 

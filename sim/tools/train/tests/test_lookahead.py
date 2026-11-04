@@ -125,6 +125,21 @@ def test_determinized_clone_same_view_resampled_hidden_state(combat_env):
     assert h3 != h1                             # another seed -> another clone
 
 
+def test_branch_with_inverse_seed_is_the_determinized_clone(combat_env):
+    """ABI 2: branch(src, [d], determinized=True, seed=inv_branch_seed(t)) == restore(d', clone_determinized(src, t)),
+    and an exact branch of that root copies it bit for bit (the lookahead's two-step root + fan-out)."""
+    env, _, _, _ = combat_env
+    if not env.supports_branch:
+        pytest.skip("library without ABI 2 branch")
+    t = 0xDEADBEEF12345
+    env.restore(7, env.clone_determinized(0, t))
+    env.branch(0, [4], determinized=True, seed=L.inv_branch_seed(t))
+    env.branch(np.array([4]), np.array([5]), determinized=False)
+    assert _same_view(env, 0, 4) == [] and _same_view(env, 4, 5) == [] and _same_view(env, 4, 7) == []
+    h0, h4, h5, h7 = env.state_hash([0, 4, 5, 7])
+    assert h4 == h7 == h5 != h0
+
+
 def test_restore_counters_and_slot_reuse_after_defeat(combat_env):
     """A slot that finished an episode (defeat by always ending the turn) is restored: step index 0, status RESET,
     last_episode not rewritten, the exact root state again."""
@@ -162,6 +177,9 @@ def test_shadow_sync_through_the_evaluator(runs):
     assert rep["headline"]["games"] == rep["headline"]["replayable"] == 4
     assert st["desyncs"] == 0 and st["sync_checks"] == st["live_decisions"] > 0
     assert st["searched"] > 0 and st["restores"] >= 2 * st["searched"] and st["rollout_errors"] == 0
+    assert st["api"] == ("branch" if load().supports_branch else "pool")
+    if st["api"] == "branch":
+        assert st["pool_max"] == 4 and st["rebuilds"] == 0           # nothing accumulates
     assert st["outcomes"]["turn"] > 0 and st["outcomes"]["horizon"] <= st["restores"]
     cfg = json.loads((run / "config.json").read_text())
     assert cfg["policy"] == "nn:tiny.pt+la(8,1,turn,honest)"
@@ -184,24 +202,36 @@ def test_rerun_is_identical(runs, ckpt, tmp_path):
         assert a[k] == b[k], k
 
 
-def test_honest_mode_never_snapshots(ckpt, tmp_path, monkeypatch):
-    clones = []
-    real = VecEnv.clone_determinized
+def test_honest_mode_never_copies_the_true_state(ckpt, tmp_path, monkeypatch):
+    """No exact snapshot of anything, no exact branch of a shadow (slots < number of games): every root is a
+    determinized clone of a shadow, with one fresh seed per (game, decision, r)."""
+    roots, exact_srcs = [], []
+    real_clone, real_branch = VecEnv.clone_determinized, VecEnv.branch
 
     def no_snapshot(self, slot):
         raise AssertionError("the lookahead called snapshot (exact clone): not honest")
 
-    def counting(self, slot, seed):
-        clones.append(seed)
-        return real(self, slot, seed)
+    def counting_clone(self, slot, seed):
+        roots.append((int(slot), int(seed)))
+        return real_clone(self, slot, seed)
+
+    def watching_branch(self, src, dsts, determinized=True, seed=0, **kw):
+        if determinized:
+            roots.append((int(src), int(seed)))
+        else:
+            exact_srcs.extend(np.atleast_1d(src).tolist())
+        return real_branch(self, src, dsts, determinized=determinized, seed=seed, **kw)
 
     monkeypatch.setattr(VecEnv, "snapshot", no_snapshot)
-    monkeypatch.setattr(VecEnv, "clone_determinized", counting)
+    monkeypatch.setattr(VecEnv, "clone_determinized", counting_clone)
+    monkeypatch.setattr(VecEnv, "branch", watching_branch)
     cfg = L.LookaheadConfig(K=4, R=2, H=40, horizon="combat", threads=2)
     rep = L.evaluate_lookahead(SS4, ckpt, tmp_path / "honest", cfg, log=quiet)
     assert rep["headline"]["replayable"] == 4
-    assert len(clones) == 2 * stats(tmp_path / "honest")["searched"] > 0
-    assert len(set(clones)) == len(clones)      # one fresh determinization seed per (game, decision, r)
+    assert len(roots) == 2 * stats(tmp_path / "honest")["searched"] > 0
+    assert all(src < len(SS4["games"]) for src, _ in roots)          # roots come from the shadows ...
+    assert all(src >= len(SS4["games"]) for src in exact_srcs)        # ... exact copies only from rollout roots
+    assert len({sd for _, sd in roots}) == len(roots)
 
 
 class EndTurnModel(torch.nn.Module):
@@ -227,18 +257,22 @@ def test_defeat_is_latched_and_slots_are_reused(spec):
     ctx = PolicyContext(schema=S, num_envs=1, live=np.ones(1, bool), keys=["SILENT-LKDEF1"], ascension=10)
     pol._init(ctx)
     env = pol.env
-    log, real_step, real_reset = [], env.step, env.reset
+    log, real_step, real_reset, real_branch = [], env.step, env.reset, env.branch
 
     def step(actions, **kw):
         out = real_step(actions, **kw)
         log.append(("step", np.array(actions, copy=True), out[2].copy()))
         return out
 
-    def reset(mask=None, start_ids=None, **kw):
-        log.append(("reset", None if mask is None else np.array(mask, copy=True), None))
+    def reset(mask=None, start_ids=None, **kw):                    # a round's start (pool path)
+        log.append(("start", None, None))
         return real_reset(mask=mask, start_ids=start_ids, **kw)
 
-    env.step, env.reset = step, reset
+    def branch(src, dsts, **kw):                                   # a round's start (ABI 2 path)
+        log.append(("start", None, None))
+        return real_branch(src, dsts, **kw)
+
+    env.step, env.reset, env.branch = step, reset, branch
     rounds = 0
     for _ in range(400):
         obs = {k: v[:1].copy() for k, v in env.obs.items()}   # the shadow's rows stand in for the evaluator's
@@ -255,7 +289,7 @@ def test_defeat_is_latched_and_slots_are_reused(spec):
     assert st["changed"] == 0                                  # all Q = 0: ties go to the greedy choice
     dead: set[int] = set()
     for kind, a, term in log:
-        if kind == "reset":
+        if kind == "start":
             dead = set()                                       # a new round restores the rollout slots
             continue
         for s in (1, 2):
@@ -264,13 +298,21 @@ def test_defeat_is_latched_and_slots_are_reused(spec):
                 dead.add(s)
 
 
-def test_forced_rebuild_equals_no_rebuild(runs, ckpt, tmp_path):
+def test_pool_path_and_forced_rebuild_equal_the_default(runs, ckpt, tmp_path, monkeypatch):
+    """The pre-ABI-2 path (clone_determinized pool entries + batched reset, rebuilt from the histories when the pool
+    passes pool_budget) plays exactly like the default path (ABI 2 branch, no pool entries)."""
+    default = stats(runs / "la")
+    monkeypatch.setattr(VecEnv, "supports_branch", property(lambda self: False))
+    L.evaluate_lookahead(SS4, ckpt, tmp_path / "pool", TURN, log=quiet)
     cfg = L.LookaheadConfig(K=8, R=1, H=12, horizon="turn", threads=2, pool_budget=4 + 25)
     L.evaluate_lookahead(SS4, ckpt, tmp_path / "rebuild", cfg, log=quiet)
-    st = stats(tmp_path / "rebuild")
-    assert st["rebuilds"] >= 3 and st["desyncs"] == 0
-    assert histories(tmp_path / "rebuild") == histories(runs / "la")
-    assert st["changed"] == stats(runs / "la")["changed"]
+    for name in ("pool", "rebuild"):
+        st = stats(tmp_path / name)
+        assert st["api"] == "pool" and st["desyncs"] == 0
+        assert histories(tmp_path / name) == histories(runs / "la")
+        for k in ("searched", "changed", "restores", "forwards", "env_steps", "outcomes"):
+            assert st[k] == default[k], (name, k)
+    assert stats(tmp_path / "rebuild")["rebuilds"] >= 3 and stats(tmp_path / "pool")["rebuilds"] == 0
 
 
 # ------------------------------------------------------------------------------------------------ analysis, data
