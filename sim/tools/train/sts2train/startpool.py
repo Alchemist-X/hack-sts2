@@ -22,9 +22,10 @@ a seeded order (sha256 of seed, round and the save's sha256), not in file order.
 
 Bookkeeping: ``EpisodeRewards`` records the pool entry, floor, act and protocol progress of each episode's first
 observation; ``split_stats`` reports fresh- and save-started episodes separately (``fresh_*`` / ``save_*`` keys of
-``metrics.jsonl``). A save-started episode's protocol ``progress`` is the run's absolute progress at its end (what the
-evaluator would score); its return is ``progress - start_progress`` (+ the win bonus), reported as
-``save_progress_gain_mean``.
+``metrics.jsonl``), and with ``--harvest`` (``sts2train.harvest``) the episodes started from self-anchors (pool ids
+``>= harvest.base``) as a third group (``harvest_*``), so ``fresh_*`` keeps meaning "started from a fresh entry". A
+save-started episode's protocol ``progress`` is the run's absolute progress at its end (what the evaluator would
+score); its return is ``progress - start_progress`` (+ the win bonus), reported as ``save_progress_gain_mean``.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from sts2vec import STATUS, VecEnv
 from sts2vec.errors import Sts2VecError
 from sts2vec.pool import ALL_CHARACTERS
 
+from .harvest import KINDS
 from .objective import state_progress
 
 FRESH, SAVE = 0, 1
@@ -360,22 +362,42 @@ def _m(xs) -> float | None:
     return float(np.mean(xs)) if len(xs) else None
 
 
-def split_stats(eps: list[dict], pool: StartPool | None) -> dict:
-    """``fresh_*`` / ``save_*`` keys of a metrics row from finished-episode dicts (``EpisodeRewards.step``); {} when
-    the pool has no saves. ``save_progress_mean`` is the absolute protocol progress at the end of save-started
-    episodes, ``save_progress_gain_mean`` = end - start progress (their return without the win bonus)."""
-    if pool is None:
+def _group_stats(name: str, g: list[dict]) -> dict:
+    n, wins = len(g), sum(1 for e in g if e["win"])
+    return {f"{name}_episodes": n, f"{name}_wins": wins, f"{name}_win_rate": wins / n if n else None,
+            f"{name}_progress_mean": _m([e["progress"] for e in g if e.get("progress") is not None]),
+            f"{name}_floor_mean": _m([e["floor"] for e in g]),
+            f"{name}_return_mean": _m([e["return"] for e in g if "return" in e]),
+            f"{name}_steps_mean": _m([e["steps"] for e in g if "steps" in e])}
+
+
+def _cleared(e: dict) -> bool:
+    """The episode got past its first room: a win, or a final floor above its start floor (``harvest_clear_rate``)."""
+    return bool(e["win"]) or ("start_floor" in e and int(e["floor"]) > int(e["start_floor"]))
+
+
+def split_stats(eps: list[dict], pool: StartPool | None, harvest=None) -> dict:
+    """``fresh_*`` / ``save_*`` (and with `harvest`, a ``harvest.Harvester``, ``harvest_*``) keys of a metrics row
+    from finished-episode dicts (``EpisodeRewards.step``); {} when there are neither saves nor anchors. An episode is
+    an anchor start when its ``start_entry`` is ``>= harvest.base``, a save start when the pool's layout says so, a
+    fresh start otherwise (without saves: every entry below ``base``), so ``fresh_*`` stays comparable with a run
+    without saves / anchors. ``save_progress_mean`` is the absolute protocol progress at the end of save-started
+    episodes, ``save_progress_gain_mean`` = end - start progress (their return without the win bonus); the same for
+    ``harvest_*``, plus ``harvest_start_share`` (anchor starts / finished episodes), and per ring kind
+    ``harvest_episodes_<kind>`` / ``harvest_clear_rate_<kind>`` (share of those episodes that got past their first
+    room: a win or a final floor above the start floor)."""
+    if pool is None and harvest is None:
         return {}
-    is_save = pool.is_save([e.get("start_entry", -1) for e in eps]) if eps else np.zeros(0, dtype=bool)
-    groups = {"fresh": [e for e, s in zip(eps, is_save) if not s], "save": [e for e, s in zip(eps, is_save) if s]}
+    starts = np.asarray([e.get("start_entry", -1) for e in eps], dtype=np.int64)
+    anchor = harvest.is_anchor(starts) if harvest is not None else np.zeros(len(eps), dtype=bool)
+    is_save = (pool.is_save(starts) if pool is not None and len(eps) else np.zeros(len(eps), dtype=bool)) & ~anchor
+    groups = {"fresh": [e for e, s, a in zip(eps, is_save, anchor) if not s and not a],
+              "save": [e for e, s in zip(eps, is_save) if s]}
+    if harvest is not None:
+        groups["harvest"] = [e for e, a in zip(eps, anchor) if a]
     out: dict = {}
     for name, g in groups.items():
-        n, wins = len(g), sum(1 for e in g if e["win"])
-        out.update({f"{name}_episodes": n, f"{name}_wins": wins, f"{name}_win_rate": wins / n if n else None,
-                    f"{name}_progress_mean": _m([e["progress"] for e in g if e.get("progress") is not None]),
-                    f"{name}_floor_mean": _m([e["floor"] for e in g]),
-                    f"{name}_return_mean": _m([e["return"] for e in g if "return" in e]),
-                    f"{name}_steps_mean": _m([e["steps"] for e in g if "steps" in e])})
+        out.update(_group_stats(name, g))
     s = groups["save"]
     acts: dict[int, list] = {}
     for e in s:
@@ -390,38 +412,63 @@ def split_stats(eps: list[dict], pool: StartPool | None) -> dict:
         "save_gain_by_start_act": {a: _m([e["progress_gain"] for e in v if e.get("progress_gain") is not None])
                                    for a, v in sorted(acts.items())},
     })
+    if harvest is not None:
+        h = groups["harvest"]
+        out.update({
+            "harvest_start_share": len(h) / len(eps) if eps else None,
+            "harvest_start_progress_mean": _m([e["start_progress"] for e in h if "start_progress" in e]),
+            "harvest_progress_gain_mean": _m([e["progress_gain"] for e in h if e.get("progress_gain") is not None]),
+            "harvest_start_floor_mean": _m([e["start_floor"] for e in h if "start_floor" in e]),
+            "harvest_floors_gained_mean": _m([e["floor"] - e["start_floor"] for e in h if "start_floor" in e]),
+            "harvest_act_reached": dict(sorted(Counter(e["act"] for e in h).items())),
+        })
+        codes = harvest.kind_of([e["start_entry"] for e in h]) if h else np.zeros(0, dtype=np.int8)
+        for k in harvest.kinds:
+            sel = [e for e, c in zip(h, codes) if int(c) == KINDS.index(k)]
+            out[f"harvest_episodes_{k}"] = len(sel)
+            out[f"harvest_clear_rate_{k}"] = _m([float(_cleared(e)) for e in sel])
     return out
 
 
-def recent_sums(eps: list[dict], pool: StartPool | None) -> dict:
+def recent_sums(eps: list[dict], pool: StartPool | None, harvest=None) -> dict:
     """Per-update sums for the status file's rolling window (``recent_view``)."""
-    if pool is None:
+    if pool is None and harvest is None:
         return {}
-    st = split_stats(eps, pool)
+    st = split_stats(eps, pool, harvest)
     out = {}
-    for name in ("fresh", "save"):
+    for name in ("fresh", "save") + (("harvest",) if harvest is not None else ()):
         n = st[f"{name}_episodes"]
         out[f"{name}_episodes"] = n
         out[f"{name}_wins"] = st[f"{name}_wins"]
         out[f"{name}_progress_sum"] = (st[f"{name}_progress_mean"] or 0.0) * n
     n = st["save_episodes"]
     out["save_gain_sum"] = (st["save_progress_gain_mean"] or 0.0) * n
+    if harvest is not None:
+        n = st["harvest_episodes"]
+        out["harvest_gain_sum"] = (st["harvest_progress_gain_mean"] or 0.0) * n
     return out
 
 
 def recent_view(recent) -> dict:
-    """fresh / save progress, win rate (and save progress gain) over a window of ``recent_sums`` rows."""
+    """fresh / save (/ harvest) progress, win rate (and save / harvest progress gain, the anchor start share) over a
+    window of ``recent_sums`` rows."""
     rows = [r for r in recent if "fresh_episodes" in r]
     if not rows:
         return {}
+    names = ("fresh", "save") + (("harvest",) if any("harvest_episodes" in r for r in rows) else ())
     out = {}
-    for name in ("fresh", "save"):
-        n = sum(r[f"{name}_episodes"] for r in rows)
+    for name in names:
+        n = sum(r.get(f"{name}_episodes", 0) for r in rows)
         out[f"{name}_episodes"] = n
-        out[f"{name}_progress_mean"] = sum(r[f"{name}_progress_sum"] for r in rows) / n if n else None
-        out[f"{name}_win_rate"] = sum(r[f"{name}_wins"] for r in rows) / n if n else None
+        out[f"{name}_progress_mean"] = sum(r.get(f"{name}_progress_sum", 0.0) for r in rows) / n if n else None
+        out[f"{name}_win_rate"] = sum(r.get(f"{name}_wins", 0) for r in rows) / n if n else None
     n = out["save_episodes"]
     out["save_progress_gain_mean"] = sum(r["save_gain_sum"] for r in rows) / n if n else None
+    if "harvest_episodes" in out:
+        n = out["harvest_episodes"]
+        out["harvest_progress_gain_mean"] = sum(r.get("harvest_gain_sum", 0.0) for r in rows) / n if n else None
+        tot = sum(out[f"{x}_episodes"] for x in names)
+        out["harvest_start_share"] = n / tot if tot else None
     return out
 
 
