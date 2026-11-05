@@ -136,3 +136,10 @@
 - 第三轮（`docs/round3-plan-2026-11-05.md`）：C/D 各自结束后自动起跑 E（GPU A，κ=0.1）与 F（GPU B，对照），从 A 的 u7664 终点各 +2000 update，
   约 11-06 02:00–03:00 起跑、11:00–12:00 结束；东京保活盯 `w8-e` / `w8-f` 日志。
 - 运行时轮换守护（本机 `rotate/watch_rotate.sh`）在轮换时会重启分段驱动 + 第二轮与第三轮的包装脚本。
+
+## 18:40 更新：第三轮改为探索修复（E′ 对照 F′）
+
+- 行为审计发现策略从不锻造、从不删牌（概率 0，采样碰不到），且早于宏动作（u764 前）。wave 9 合入：rollout 期对指定决策类型做 ε 探索
+  （`--explore-kinds / --explore-eps / --explore-logp`），eps=0 逐位相同；包 `sts2train-57b85d8f0d`。
+- 第三轮改版 v2（`docs/round3-plan-2026-11-05.md`）：E′ = 探索修复（火堆 + 删牌，eps 0.3，policy 对数概率）对照 F′ = 纯续训；
+  包装脚本 `launch_e.sh` / `launch_f.sh` 已替换，日志 `runs/w9-e|w9-f.driver.log`，东京保活已改盯这两份日志。HP 塑形顺延到第四轮。
