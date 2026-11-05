@@ -85,6 +85,8 @@ class View:
     relics: tuple | None = None        # sorted relic ids
     detail: dict = field(default_factory=dict)   # screen content: map_options, event, card_reward, shop, ...
     terminal: str | None = None        # "victory" / "defeat" once the run is over
+    picked: int | None = None          # a selection screen's pick count where the side publishes it (never compared;
+                                       # prompt macros check it before the game's confirm, macros.play_prompt_commit)
 
     def to_json(self) -> dict:
         d = {k: v for k, v in self.__dict__.items() if v is not None and k != "detail"}

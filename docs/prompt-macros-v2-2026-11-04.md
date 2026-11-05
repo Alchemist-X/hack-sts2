@@ -122,10 +122,12 @@ merge commit `77acd78`，无冲突（两侧只在 `sim/VEC.md` / `sim/tools/trai
   两侧相同、`model_inputs identical`、无 widened enums、`config_diff` = macros / out / max_updates、rng ok；续训后选中 REMOVE 宏 2 次。
 - 日志（本机）：scratchpad `w4/r1-main.log`（套件 + C# + twin + 默认路径；其中 macros-all 段因探针脚本 bug 失败，已修复重跑）、
   `w4/r2-all.log`（macros-all + 续训）、`w4/r0-base-default.log`（079979f 基线）。
-- 孪生（H）：`--macros checkpoint` 时 SMITH / REMOVE 房间宏在真游戏中按逐步校验的点击序列执行；**`prompt` 宏未映射**：
-  Vec 层的"选满自动确认"在真游戏侧没有对应的 confirm 点击，`all` checkpoint 在真游戏上会在第一个此类提示处 desync
-  并 fail closed（孪生停用、fallback）。补法：孪生把 `prompt` 开时的 PromptSelect 行解码为 `(select, confirm?)` 计划，
-  仅当孪生的环境在该步离开了此提示时才在真游戏点 confirm。
+- 孪生（H）：`--macros checkpoint` 时 SMITH / REMOVE 房间宏在真游戏中按逐步校验的点击序列执行。**`prompt` 宏（W5
+  2026-11-05，分支 `train/w5-twin-prompt`）已映射**：孪生把 PromptSelect 行解码为 `(select, confirm?)`，仅当孪生的环境
+  在该步提交了此提示（离开 / 进入另一个提示）时才在真游戏点 confirm（游戏已自己关掉则不点）；DONE / DECLINE = 游戏的
+  确认 / 跳过（DECLINE 不映射到可取消站点的取消）；宏开时出现取消行即 fail closed；MACRO_FALLBACK 走原始 SMITH / 删牌行
+  + 无取消提示。play server 替身 `--macros all` dry run 0 desync（`scripts/live/README-nn-twin.md` “prompt 宏”）。
+  **仍未在真实游戏上跑过**：真游戏哪些提示自己关闭、哪些需要确认键，要看第一次真机运行的 `prompt_macro.steps`。
 - Colab 包：`tmp/colab/sts2train-d21adf4ad8.tar.gz`（7,232,705 B，sha256 ef377b832caf02c4f00219b42c3320606d7133553661c596bb2f769bce49fde7，
   git_rev d21adf4，148 saves of saves-silent-a9）；aot_key 03f89cc37d4f 与 G 相同，复用 G 在 raven 上的 NativeAOT 构建
   （`lib/Sts2Sim.Vec.so` 13,844,424 B，sha256 997bb8a0fa6c7b49445192c1acfdb836f2a59bff0e9180f10a39b1cc7b0e7053，GLIBC_2.34）。

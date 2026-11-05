@@ -64,10 +64,11 @@ def parse_args(argv=None):
     ap.add_argument("--loop-breaker-k", type=int, default=None,
                     help="returns to one observation before only leave rows stay (default: sts2train's, 3)")
     ap.add_argument("--macros", default="checkpoint",
-                    help="the twin's room macros (sim/VEC.md 'Room macros'): 'checkpoint' (default) = the checkpoint's "
-                         "training env's (config.macros, as sts2train eval does), 'none' = off, or a list such as "
-                         "'rest,shop'. A macro row is played in the game as its clicks, each checked "
-                         "(nn_twin/macros.py)")
+                    help="the twin's macros (sim/VEC.md 'Room macros', 'Prompt macros v2'): 'checkpoint' (default) = "
+                         "the checkpoint's training env's (config.macros, as sts2train eval does), 'none' = off, or a "
+                         "list such as 'rest,shop' / 'all' (= rest,shop,prompt). A macro row is played in the game as "
+                         "its clicks, each checked; with prompt, a pick that completes a selection is followed by the "
+                         "game's confirm (nn_twin/macros.py)")
     ap.add_argument("--torch-threads", type=int, default=4)
     ap.add_argument("--settle-timeout", type=float, default=60.0, help="seconds to wait for a settled game frame")
     ap.add_argument("--inject-desync", type=int, metavar="N",
@@ -121,7 +122,7 @@ def main(argv=None) -> int:
         macros = "" if args.macros.strip().lower() in ("", "none", "off") else args.macros
     twin = Twin(content=args.content, macros=macros or None)
     if twin.macros:
-        print(f"twin room macros: {','.join(twin.macros)}", flush=True)
+        print(f"twin macros: {','.join(twin.macros)}", flush=True)
     compat = policy.bind(twin.schema)
     cfg_chars = policy.meta.get("characters") or []
     if cfg_chars and character not in [str(c).upper() for c in cfg_chars]:

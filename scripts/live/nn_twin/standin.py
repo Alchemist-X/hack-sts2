@@ -90,6 +90,8 @@ def view_of(o: dict) -> View:
             d["treasure_relic"] = t.get("relic")
     elif screen == "prompt":
         pr = o.get("prompt") or {}
+        if isinstance(pr.get("picked"), list):
+            v.picked = len(pr["picked"])
         if not pr.get("picked") and pr.get("kind") != "Bundle":
             d["prompt_options"] = tuple(sorted((x.get("id"), norm_upgrade(x.get("upgraded")))
                                                for x in pr.get("options") or [] if x.get("id") is not None))

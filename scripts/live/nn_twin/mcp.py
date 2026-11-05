@@ -124,9 +124,22 @@ def view_of(state: dict, terminal: str | None = None) -> View:
         block = state.get(st) or {}
         cards = _items(block, "cards") or _items(block, "relics")
         picked = block.get("selected_count") or len(block.get("selected_cards") or [])
+        if isinstance(block.get("selected_count"), int):
+            v.picked = block["selected_count"]
+        elif isinstance(block.get("selected_cards"), list):
+            v.picked = len(block["selected_cards"])
         if cards and not picked and st != "bundle_select":
             d["prompt_options"] = tuple(sorted((c.get("id"), norm_upgrade(c.get("is_upgraded"))) for c in cards))
     return v
+
+
+def _is_selected(state: dict, card: dict) -> bool:
+    """A card of a selection screen that is already selected (``is_selected`` / the grid's ``selected_indices``)."""
+    if card.get("is_selected") is True:
+        return True
+    block = state.get(state.get("state_type")) or {}
+    sel = block.get("selected_indices") if isinstance(block, dict) else None
+    return isinstance(sel, list) and card.get("index") is not None and card.get("index") in sel
 
 
 def acts_of(state: dict) -> list[Act]:
@@ -189,6 +202,10 @@ def acts_of(state: dict) -> list[Act]:
         elif name == "advance_dialogue":
             out.append(Act("advance", (), None, wire, "advance dialogue"))
         elif name in ("combat_select_card", "select_card"):
+            if _is_selected(state, cand):
+                # a card already selected: selecting it again deselects it. The sim has no deselect (its picks are
+                # monotone), so no twin pick may pair with it (a k-pick's later picks pair among the unselected cards)
+                continue
             out.append(Act("select", (cid, up), cand.get("index"), wire, f"select {cid}{'+' if up else ''}"))
         elif name == "select_relic":
             out.append(Act("select", (cid, 0), cand.get("index"), wire, f"select relic {cid}"))

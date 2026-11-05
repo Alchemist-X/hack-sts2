@@ -31,6 +31,23 @@ that differ only in an enchantment are not told apart by either the view or the 
 
 Information parity: a macro only exposes what the game's own screens show the player before the choice (the deck, the
 rest option, the shop's removal price); the grid check compares exactly the cards the game's grid offers.
+
+Prompt macros (``--macros all`` = ``rest,shop,prompt``; sim/Sts2Sim.Vec/PromptMacros.cs, docs/prompt-macros-v2-2026-11-04.md)
+keep the published row kinds, so they are not ``macro`` Acts: a ``PromptSelect`` row stays a ``select`` and the plan
+is decided by the twin's own env after its step (``prompt_committed``):
+
+  PromptSelect(A)            game: select option A (paired by key + rank, as every select); then, only when the twin's
+                             env committed the prompt in that step (it left the prompt, or stands in another one:
+                             exactly-1, the k-th pick of exactly-k, the N-th pick of up-to-N, the last pick of an
+                             unordered prompt), the game's confirm (``play_prompt_commit``) -- skipped when the game
+                             closed the selection itself, a failure when it still shows the picks and offers no confirm
+  PromptConfirm, picks >= 1  DONE: the game's confirm
+  PromptConfirm, 0 picks     DECLINE: the game's confirm / skip; never the game's cancel of a cancelable site (cancel
+                             goes back to the screen that opened the prompt, which the twin did not do) -- the same
+                             rule with prompt macros off (``Runner.map_row``)
+  PromptCancel               never listed with prompt macros on; a candidate table that shows one fails closed
+  MACRO_FALLBACK (512)       the rest / shop expansion would exceed 64 rows: the plain SMITH / removal row, then the
+                             prompt rows above (no cancel)
 """
 
 from __future__ import annotations
@@ -41,6 +58,9 @@ from dataclasses import dataclass, field
 from .semantics import Act, match_act
 
 ROOM_ABORT_SCREENS = ("prompt",)
+
+# sts2vec STATUS["MACRO_FALLBACK"] (sim/Sts2Sim.Vec/Status.cs; tests pin the value against the library)
+MACRO_FALLBACK = 512
 
 
 @dataclass(frozen=True)
@@ -282,4 +302,103 @@ def play_plan(macro: Act, observe, execute, *, relaxed: bool = False, first_acts
                                   "status": "ok" if res.ok else f"failed: {res.error}"})
                 if not res.ok:
                     break
+    return run
+
+
+# ------------------------------------------------------------------------------------------------ prompt macros
+
+@dataclass(frozen=True)
+class PromptMarker:
+    """The twin's pending prompt, read from ``global_i`` (``Twin.prompt_marker``; None = no prompt pending)."""
+
+    picked: int                 # prompt_picked
+    site: int                   # prompt_site_hash (low 32 bits of XXH64(SiteId))
+    needs_confirm: bool = True  # prompt_needs_confirm: the sim's prompt waits for a confirm after its last pick
+    lo: int = 0                 # prompt_min
+    hi: int = 0                 # prompt_max
+
+
+def prompt_committed(before: PromptMarker | None, after: PromptMarker | None) -> bool:
+    """Did a PromptSelect step commit its prompt? Read from the twin's env alone, never guessed from the row: the
+    twin stood in a prompt before the step and now stands in none, in another prompt (another site), or in one whose
+    pick count is not ``before.picked + 1`` (a new prompt of the same site starts again at 0)."""
+    if before is None:
+        return False
+    if after is None:
+        return True
+    return after.site != before.site or after.picked != before.picked + 1
+
+
+def is_true_cancel(act: Act) -> bool:
+    """The game's cancel of a cancelable selection (back to the screen that opened it), as opposed to a skip button:
+    STS2_MCP ``cancel_selection`` / ``cancel_bundle_selection``, the play server's ``cancel`` token."""
+    n = act.native
+    if isinstance(n, dict):
+        return n.get("action") in ("cancel_selection", "cancel_bundle_selection")
+    return act.kind == "cancel" and str(n).strip() == "cancel"
+
+
+def pending_selection(view) -> bool:
+    """The game's selection screen shows picks made (or their preview): no ``prompt_options`` in its view, which both
+    sides publish only before the first pick (bundles never publish them)."""
+    return view.screen == "prompt" and "prompt_options" not in view.detail
+
+
+@dataclass
+class PromptRun:
+    """The outcome of the confirm step of a committed prompt pick."""
+
+    ok: bool = True
+    status: str = ""                                 # confirmed / closed_by_game / next_prompt / failed
+    executed: list = field(default_factory=list)
+    wires: list = field(default_factory=list)
+    steps: list = field(default_factory=list)
+    failure: dict | None = None
+    error: str | None = None
+
+
+def play_prompt_commit(observe, execute, *, twin_in_prompt: bool, twin_picked: int | None = None) -> PromptRun:
+    """After a PromptSelect the twin's env committed: send the game's confirm if the game still shows the selection.
+
+    - the game left the selection screen: it closed the selection on the pick itself (nothing to send);
+    - it shows a selection with picks made and offers a confirm: send it (it must be accepted) -- but only when the
+      game's pick count (``View.picked``, where it publishes one) is the twin's ``twin_picked``: a count that differs
+      (a select whose effect was not the twin's) fails closed instead of being confirmed;
+    - it shows a fresh selection (no picks) while the twin also stands in a new prompt: the game moved on as well;
+    - anything else (picks made, no confirm; a selection the twin has left): failure -- the caller fails closed."""
+    run = PromptRun()
+    obs = observe()
+    screen = obs.view.screen
+    rec = {"act": "confirm selection", "screen": screen}
+    run.steps.append(rec)
+    if screen != "prompt":
+        rec["status"] = run.status = "closed_by_game"
+        return run
+    conf = [a for a in obs.acts if a.kind == "confirm"]
+    if pending_selection(obs.view) and conf and twin_picked is not None and obs.view.picked is not None \
+            and obs.view.picked != twin_picked:
+        rec["status"] = run.status = "failed"
+        run.ok = False
+        run.error = f"prompt commit: the game shows {obs.view.picked} picks, the twin made {twin_picked}"
+        run.failure = {"field": "prompt_picked", "twin": twin_picked, "real": obs.view.picked}
+        return run
+    if pending_selection(obs.view) and conf:
+        res = execute(conf[0])
+        run.executed.append(conf[0].to_json())
+        run.wires.append(res.wire)
+        rec["status"] = "ok" if res.ok else f"failed: {res.error}"
+        if not res.ok:
+            run.ok, run.status, run.error = False, "failed", f"prompt confirm: {res.error}"
+            run.failure = {"field": "prompt_commit", "twin": "confirm selection", "real": str(res.error)[:200]}
+            return run
+        run.status = "confirmed"
+        return run
+    if not pending_selection(obs.view) and twin_in_prompt:
+        rec["status"] = run.status = "next_prompt"
+        return run
+    rec["status"] = run.status = "failed"
+    run.ok = False
+    run.error = "prompt commit: the game's selection is still open and cannot be confirmed"
+    run.failure = {"field": "prompt_commit", "twin": "confirm selection" if not twin_in_prompt else "next prompt",
+                   "real": [a.describe() for a in obs.acts][:12]}
     return run

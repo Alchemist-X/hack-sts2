@@ -26,6 +26,10 @@ is stepped with the same row. Twin act keys (the other sides build the same keys
                                        ChooseRestOption / BuyEntry with B = deck row d >= 0): plan = rest ("SMITH",) /
                                        buy ("card_removal", None), select (card_id, upgraded) pos = d, confirm; expect =
                                        every macro row's ((card_id, upgraded), d) of that screen (the game's grid)
+
+Prompt macros (``Twin(macros="all")`` / ``"rest,shop,prompt"``): the prompt rows keep their kinds (select / confirm;
+no cancel row is ever listed); whether a select also needs the game's confirm is read from the twin's env after its
+step (``prompt_marker`` before / after, ``macros.prompt_committed``; the runner plays it, macros.py "Prompt macros").
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .macros import PromptMarker
 from .semantics import Act, View, norm_alt, norm_reward_type, norm_shop_category, norm_upgrade
 
 SCREEN_OF_PHASE = {"Map": "map", "Combat": "combat", "Rewards": "rewards", "CardReward": "card_reward",
@@ -218,9 +223,10 @@ class Twin:
     """One simulator slot (``auto_reset=False``, no step or stall caps) and its decoding into Views and Acts."""
 
     def __init__(self, *, content: str = "all", macros=None, dll=None):
-        """``macros``: the room macros of the checkpoint's training env (``"rest,shop"``; None / "" = off, the
-        candidate lists of every earlier build). A model trained with them must see them: its SMITH / removal rows
-        mean "upgrade / remove this card" (sim/VEC.md "Room macros")."""
+        """``macros``: the macros of the checkpoint's training env (``"rest,shop"``, ``"all"`` = ``"rest,shop,prompt"``;
+        None / "" = off, the candidate lists of every earlier build). A model trained with them must see them: its
+        SMITH / removal rows mean "upgrade / remove this card" (sim/VEC.md "Room macros"), and with ``prompt`` a pick
+        that completes a selection also confirms it (sim/VEC.md "Prompt macros v2")."""
         from sts2vec import STATUS, PoolSpec, VecEnv
 
         self.STATUS = STATUS
@@ -228,6 +234,8 @@ class Twin:
         self.env = VecEnv(1, threads=1, step_cap=1_000_000, auto_reset=False, content=content,
                           pool=PoolSpec(count=0), floor_step_cap=0, dll=dll, **extra)
         self.macros = tuple(getattr(self.env, "macros", ()) or ())
+        self.prompt_macros = "prompt" in self.macros
+        self.last_status = 0
         self.content = content
         s = self.env.schema
         self.schema = s
@@ -292,7 +300,33 @@ class Twin:
             names = [k for k, v in S.items() if v and st & v]
             raise TwinError(f"twin step {row} -> status {names}: {self.env.last_error(0)[:300]}")
         self.steps += 1
+        self.last_status = st
         return st
+
+    def prompt_marker(self) -> PromptMarker | None:
+        """The pending prompt of the twin's env (None: no prompt pending), for ``macros.prompt_committed``."""
+        if self.phase_name() != "Prompt":
+            return None
+        return PromptMarker(picked=self.g("prompt_picked"), site=self.g("prompt_site_hash"),
+                            needs_confirm=bool(self.g("prompt_needs_confirm")), lo=self.g("prompt_min"),
+                            hi=self.g("prompt_max"))
+
+    def prompt_copy_rank(self, act: Act) -> tuple[int, int] | None:
+        """For a later pick (``prompt_picked`` > 0) of a PromptSelect row: (rank of its option among the prompt's
+        unpicked options of the same key, by option index; how many there are). The sim lists only options above its
+        last pick, STS2_MCP every unselected copy, so the runner pairs later picks by this rank (``Runner.later_pick``).
+        None: not a later pick, or the option is not found."""
+        if act.kind != "select" or act.pos is None or self.phase_name() != "Prompt" or not self.g("prompt_picked"):
+            return None
+        same = []
+        for i, o in sorted(self._prompt_options().items()):
+            if o["kind"] in ("card", "relic", "potion") and o["item"] is not None:
+                key = (o["item"], o["upgraded"])
+            else:
+                key = (o["kind"],)
+            if key == act.key and (not o["picked"] or i == act.pos):
+                same.append(i)
+        return (same.index(act.pos), len(same)) if act.pos in same else None
 
     # ---------------------------------------------------------------------------------------- names
 

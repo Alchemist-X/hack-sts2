@@ -11,7 +11,8 @@ Per decision:
   5. the network scores the twin's candidates; in lockstep the greedy row must map exactly onto a game candidate, in
      follow mode the best-ranked row that maps is taken (exact, then ignoring upgrades), and when nothing maps a
      deterministic real-side fallback acts (logged as such, never as the network's);
-  6. execute in the game, step the twin with the same row, log.
+  6. execute in the game, step the twin with the same row, log; with prompt macros (``--macros all``) a select whose
+     twin step committed the prompt is followed by the game's confirm (macros.py "Prompt macros").
 """
 
 from __future__ import annotations
@@ -24,7 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .game import Game, GameError, Observation
-from .macros import map_open, play_plan
+from .macros import (MACRO_FALLBACK, is_true_cancel, map_open, pending_selection, play_plan, play_prompt_commit,
+                     prompt_committed)
 from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act, screens_compatible
 from .twin import Policy, Twin, TwinError
 
@@ -367,12 +369,43 @@ class Runner:
         others = [a for a in acts if a.kind not in ("potion", "discard_potion")]
         return (others or acts or [None])[0]
 
+    @property
+    def prompt_macros(self) -> bool:
+        return bool(getattr(getattr(self, "twin", None), "prompt_macros", False))
+
     def map_row(self, tact: Act, tacts: list[Act], racts: list[Act], relaxed: bool) -> Act | None:
         if tact.kind == "macro":
             # the macro's first act (macros.SPECS: a card reward pairs by rank, SMITH / the removal by meaning); the
             # rest of its plan is played and checked step by step in decide()
             return map_open(tact, tacts, racts, relaxed)
-        return match_act(tact, racts, tacts, relaxed=relaxed)
+        if self.prompt_macros and tact.kind == "select" and not relaxed:
+            m = self.later_pick(tact, racts)
+            if m is not None:
+                return m
+        m = match_act(tact, racts, tacts, relaxed=relaxed)
+        if m is not None and tact.kind == "confirm" and tact.key == ("empty",) and is_true_cancel(m):
+            # DECLINE (PromptConfirm at 0 picks), prompt macros on or off: it exists only where the game's own prompt
+            # allows declining (its confirm / skip button); the cancel of a cancelable site goes back to the screen
+            # that opened the prompt instead. A skippable choose-a-card screen publishes its cancel and its skip
+            # together: DECLINE is the skip; a screen that offers only the cancel leaves DECLINE unmapped. (The
+            # PromptCancel row, listed only with prompt macros off, still maps to the game's cancel.)
+            skips = [r for r in racts if (r.kind == "cancel" and not is_true_cancel(r))
+                     or (r.kind == "card_alt" and r.key == ("skip",))]
+            return skips[0] if skips else None
+        return m
+
+    def later_pick(self, tact: Act, racts: list[Act]) -> Act | None:
+        """A k-pick's later pick of a card with same-key copies: the sim lists only the options above its last pick,
+        STS2_MCP lists every unselected copy. Pair by the copy's rank among the twin's unpicked options of that key
+        (``Twin.prompt_copy_rank``) when the game lists exactly those copies; None = the plain rank pairing."""
+        rank_of = getattr(self.twin, "prompt_copy_rank", None)
+        cr = rank_of(tact) if rank_of is not None else None
+        if cr is None:
+            return None
+        rank, n = cr
+        same = sorted((r for r in racts if r.kind in ("select", "pick_card") and r.key == tact.key),
+                      key=lambda a: (a.pos is None, a.pos if a.pos is not None else 0))
+        return same[rank] if len(same) == n and rank < n else None
 
     def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False,
                tv_screen: str | None = None) -> tuple[int | None, Act | None, str]:
@@ -523,7 +556,7 @@ class Runner:
         row = act.native
         token = self.twin.row_to_token(row) if self.audit_tokens else None
         try:
-            self.twin.step(row)
+            self.count_status(self.twin.step(row))
         except TwinError as e:
             row = None
             self.twin_ok = False
@@ -537,8 +570,20 @@ class Runner:
                     "real_screen": obs.view.screen})
         self.say(f"      · twin only ({why}): {act.describe()}")
 
+    def count_status(self, st) -> None:
+        if isinstance(st, int) and st & MACRO_FALLBACK:
+            self.stats["twin_macro_fallback"] += 1
+
     def decide(self, obs: Observation, tv: View | None, tacts: list[Act]) -> None:
         real = obs.view
+        if self.prompt_macros and self.twin_ok and any(a.kind == "cancel" for a in tacts):
+            # prompt macros never list a PromptCancel row (PromptMacros.Apply); a table that shows one is not the env
+            # the model was trained on: fail closed (fallback until a save point re-seeds the twin)
+            self.stats["prompt_cancel_rows"] += 1
+            self.enter_follow([{"field": "prompt_cancel_row", "twin": [a.describe() for a in tacts][:12],
+                                "real": real.screen}], real, "prompt_macro")
+            self.twin_ok = False
+            tv, tacts = None, []
         hard, soft = compare_views(tv, real) if tv is not None else ([{"field": "twin", "twin": None,
                                                                          "real": "unavailable"}], [])
         if hard:
@@ -587,7 +632,6 @@ class Runner:
                     # grid the twin does not have): the twin cannot follow it. Fallback play until the next save point
                     # re-seeds it.
                     self.twin_ok = False
-        real_wire = wires[0] if len(wires) == 1 else "; ".join(str(w) for w in wires)   # a macro: its plan's wires
         # step the twin with the same row (--inject-desync: deliberately with another one, to exercise follow + resync)
         twin_ms = 0.0
         injected = None
@@ -603,22 +647,38 @@ class Runner:
                 self.stats["injected_desyncs"] += 1
                 row_for_twin = alt
         stepped = None                     # the row the twin took (the loop breaker records it)
+        # prompt macros: a select is (select, confirm?) -- the confirm is due when the twin's env commits the prompt
+        prompt_pre = (self.twin.prompt_marker() if (self.prompt_macros and self.twin_ok and row is not None
+                                                     and not injected and twin_act is not None
+                                                     and twin_act.kind == "select") else None)
+        prompt_rec = None
         if row is not None and self.twin_ok and not skip_twin_step:
             t_tw = time.perf_counter()
             try:
                 if res.ok:
                     stepped = row_for_twin if injected else row
-                    self.twin.step(stepped)
+                    self.count_status(self.twin.step(stepped))
+                    if prompt_pre is not None and self.twin_ok:
+                        prompt_rec = self.prompt_commit(prompt_pre, executed, wires)
                 else:
                     self.stats["exec_failures"] += 1
-                    stepped = row if self.step_twin_if_game_moved(row) else None
+                    if prompt_pre is not None:
+                        stepped, prompt_rec = self.prompt_select_after_failure(row, prompt_pre, executed, wires)
+                    else:
+                        stepped = row if self.step_twin_if_game_moved(row) else None
             except TwinError as e:
                 stepped = None
                 self.twin_ok = False
                 self.enter_follow([{"field": "twin_error", "twin": str(e)[:200], "real": None}], real, "step")
             twin_ms = (time.perf_counter() - t_tw) * 1000
+            if prompt_rec is not None:
+                if prompt_rec.get("committed") and prompt_pre.needs_confirm and twin_token is not None:
+                    twin_token += "; confirm"          # the sim's own confirm click inside the macro step
+                if prompt_rec.get("failure"):
+                    res.ok, res.error = False, prompt_rec["error"]
         elif not res.ok:
             self.stats["exec_failures"] += 1
+        real_wire = wires[0] if len(wires) == 1 else "; ".join(str(w) for w in wires)   # a macro: its plan's wires
         if dec is not None:
             self.policy.commit(stepped)
             if dec.loop_break and stepped == dec.row:
@@ -641,6 +701,7 @@ class Runner:
                                               if twin_act is not None else None),
                "real_action": executed, "ok": res.ok, "error": res.error, "notes": res.notes,
                **({"macro": macro_rec} if macro_rec is not None else {}),
+               **({"prompt_macro": prompt_rec} if prompt_rec is not None else {}),
                "p": round(float(dec.probs[row]), 4) if (dec is not None and row is not None) else None,
                "win_prob": round(dec.win_prob, 4) if (dec is not None and dec.win_prob is not None) else None,
                "combat_hp_pred": round(dec.combat_hp, 4) if (dec is not None and dec.combat_hp is not None) else None,
@@ -655,6 +716,66 @@ class Runner:
             self.win_probs.append(rec["win_prob"])
         self.status(rec, twin_act, ract, dec, row)
         self.i += 1
+
+    def prompt_commit(self, pre, executed: list, wires: list) -> dict:
+        """After a prompt-macro select (game and twin both picked): when the twin's env committed the prompt, play the
+        game's confirm (``macros.play_prompt_commit``); a failure fails closed (twin disabled, fallback until a save
+        point). -> the decision record's ``prompt_macro`` field."""
+        after = self.twin.prompt_marker()
+        committed = prompt_committed(pre, after)
+        rec = {"committed": committed, "picked": pre.picked, "needs_confirm": pre.needs_confirm,
+               "bounds": [pre.lo, pre.hi]}
+        self.stats["prompt_selects"] += 1
+        if not committed:
+            return rec
+        self.stats["prompt_commits"] += 1
+        pr = play_prompt_commit(self.observe, self.game.execute, twin_in_prompt=after is not None,
+                                twin_picked=pre.picked + 1)
+        executed += pr.executed
+        wires += pr.wires
+        self.executed_tokens += pr.wires
+        self.since_boundary += len(pr.wires)
+        rec.update(status=pr.status, steps=pr.steps)
+        self.stats["prompt_commit_" + pr.status] += 1
+        if pr.failure is not None:
+            rec.update(failure=pr.failure, error=pr.error)
+            self.stats["prompt_commit_failures"] += 1
+            self.enter_follow([pr.failure], self.observe().view, "prompt_macro")
+            self.twin_ok = False
+        return rec
+
+    def prompt_select_after_failure(self, row: int, pre, executed: list, wires: list) -> tuple[int | None, dict | None]:
+        """A prompt-macro select the game reported as failed / unconfirmed. The twin's step may commit (and confirm)
+        the prompt, so the generic tentative step (``step_twin_if_game_moved``) would compare a twin that left the
+        prompt with a game that shows the pick unconfirmed, revert, and leave the game one pick ahead unseen (both
+        sides publish their options only before the first pick). Read the game's pick count instead:
+        - still ``pre.picked`` (no count published and no picks shown = 0): the select did not happen, the twin
+          stays unstepped;
+        - ``pre.picked + 1``: it did; step the twin and play the commit (``prompt_commit``: the game's confirm when
+          the twin's env committed);
+        - the game left the selection screen: the generic tentative step decides;
+        - anything else (another count, or none published): fail closed (fallback until a save point).
+        -> (the row the twin took or None, the decision record's ``prompt_macro`` field or None)"""
+        try:
+            now = self.game.observe().view
+        except GameError:
+            return None, None
+        if now.screen != "prompt":
+            if not self.step_twin_if_game_moved(row):
+                return None, None
+            return row, self.prompt_commit(pre, executed, wires)
+        game_picked = now.picked if now.picked is not None else (None if pending_selection(now) else 0)
+        if game_picked == pre.picked:
+            return None, None
+        if game_picked == pre.picked + 1:
+            self.count_status(self.twin.step(row))
+            self.stats["twin_step_kept_after_failure"] += 1
+            self.since_boundary += 1
+            return row, self.prompt_commit(pre, executed, wires)
+        self.stats["prompt_select_failures"] += 1
+        self.enter_follow([{"field": "prompt_picked", "twin": pre.picked + 1, "real": game_picked}], now, "prompt_macro")
+        self.twin_ok = False
+        return None, None
 
     def step_twin_if_game_moved(self, row: int) -> bool:
         """After a failed / unconfirmed execution: step the twin tentatively and keep the step only if the game shows
