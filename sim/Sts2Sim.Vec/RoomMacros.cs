@@ -15,6 +15,16 @@ public enum RoomMacroSet
 
     /// <summary><c>shop</c>: the shop's card removal is one decision per removable deck card.</summary>
     Shop = 2,
+
+    /// <summary>
+    /// <c>prompt</c> (W4 2026-11-04, <see cref="PromptMacros"/>): every pending choice prompt lists no PromptCancel row, a
+    /// pick that leaves Confirm as the only way on confirms in the same step, and the rest / shop macro rows fall back to
+    /// the plain open row when they would push the list past <see cref="PromptMacros.MaxRows"/>.
+    /// </summary>
+    Prompt = 4,
+
+    /// <summary><c>all</c>: rest, shop and prompt.</summary>
+    All = Rest | Shop | Prompt,
 }
 
 /// <summary>
@@ -45,9 +55,9 @@ public enum RoomMacroSet
 /// </summary>
 public static class RoomMacros
 {
-    public static readonly IReadOnlyList<(string Name, RoomMacroSet Flag)> Names = new[] { ("rest", RoomMacroSet.Rest), ("shop", RoomMacroSet.Shop) };
+    public static readonly IReadOnlyList<(string Name, RoomMacroSet Flag)> Names = new[] { ("rest", RoomMacroSet.Rest), ("shop", RoomMacroSet.Shop), ("prompt", RoomMacroSet.Prompt) };
 
-    /// <summary>Parses <c>rest</c> / <c>shop</c> names (case-insensitive; empty = none).</summary>
+    /// <summary>Parses <c>rest</c> / <c>shop</c> / <c>prompt</c> names and the alias <c>all</c> (case-insensitive; empty = none).</summary>
     public static RoomMacroSet Parse(IEnumerable<string> names)
     {
         ArgumentNullException.ThrowIfNull(names);
@@ -59,10 +69,15 @@ public static class RoomMacros
             {
                 continue;
             }
+            if (name == "all")
+            {
+                set |= RoomMacroSet.All;
+                continue;
+            }
             var hit = Names.FirstOrDefault(n => n.Name == name);
             if (hit.Name == null)
             {
-                throw new ArgumentException($"unknown macro \"{raw}\" (known: {string.Join(", ", Names.Select(n => n.Name))})");
+                throw new ArgumentException($"unknown macro \"{raw}\" (known: {string.Join(", ", Names.Select(n => n.Name))}, all)");
             }
             set |= hit.Flag;
         }
@@ -80,8 +95,16 @@ public static class RoomMacros
     /// (after <see cref="RewardMacros.Fill"/>, which leaves rest-site and shop screens unchanged). No-op for
     /// <see cref="RoomMacroSet.None"/> and on every other screen.
     /// </summary>
-    public static void Apply(RunSim sim, List<RunAction> cands, RoomMacroSet set)
+    public static void Apply(RunSim sim, List<RunAction> cands, RoomMacroSet set) => Apply(sim, cands, set, int.MaxValue, out _);
+
+    /// <summary>
+    /// <see cref="Apply(RunSim, List{RunAction}, RoomMacroSet)"/> with a row cap: when the substitution would leave more
+    /// than <paramref name="maxRows"/> candidates the plain open row stays (the game's sequential flow) and
+    /// <paramref name="fellBack"/> is true. <c>int.MaxValue</c> = no cap (the rest / shop behaviour of W3).
+    /// </summary>
+    public static void Apply(RunSim sim, List<RunAction> cands, RoomMacroSet set, int maxRows, out bool fellBack)
     {
+        fellBack = false;
         ArgumentNullException.ThrowIfNull(sim);
         ArgumentNullException.ThrowIfNull(cands);
         if (set == RoomMacroSet.None || sim.HasPendingChoice || sim.IsTerminal)
@@ -97,7 +120,7 @@ public static class RoomMacros
         var deck = player.Deck;
         if ((set & RoomMacroSet.Rest) != 0 && sim.Loop.Phase == RunPhase.RestSite && RoomStack.CurrentRoom(rs) is RestSiteRoom room)
         {
-            int smith = -1;
+            int smith = -1, smithRow = -1;
             for (int j = 0; j < cands.Count; j++)
             {
                 var a = cands[j];
@@ -105,12 +128,20 @@ public static class RoomMacros
                     && room.Options[a.A] is SmithRestSiteOption { SmithCount: 1 })
                 {
                     smith = a.A;
+                    smithRow = j;
                     cands.RemoveAt(j);
                     break;
                 }
             }
             if (smith >= 0)
             {
+                int add = deck.Count(c => c.IsUpgradable);
+                if (cands.Count + add > maxRows)
+                {
+                    cands.Insert(smithRow, RunAction.Of(RunActionKind.ChooseRestOption, smith));
+                    fellBack = true;
+                    return;
+                }
                 for (int d = 0; d < deck.Count; d++)
                 {
                     if (deck[d].IsUpgradable)
@@ -124,19 +155,27 @@ public static class RoomMacros
                  && RoomStack.CurrentRoom(rs) is MerchantRoom { Inventory: { } inventory })
         {
             var entries = inventory.AllEntries;
-            int removal = -1;
+            int removal = -1, removalRow = -1;
             for (int j = 0; j < cands.Count; j++)
             {
                 var a = cands[j];
                 if (a.Kind == RunActionKind.BuyEntry && a.B < 0 && (uint)a.A < (uint)entries.Count && entries[a.A] is MerchantCardRemovalEntry)
                 {
                     removal = a.A;
+                    removalRow = j;
                     cands.RemoveAt(j);
                     break;
                 }
             }
             if (removal >= 0)
             {
+                int add = deck.Count(c => c.IsRemovable);
+                if (cands.Count + add > maxRows)
+                {
+                    cands.Insert(removalRow, RunAction.Of(RunActionKind.BuyEntry, removal));
+                    fellBack = true;
+                    return;
+                }
                 for (int d = 0; d < deck.Count; d++)
                 {
                     if (deck[d].IsRemovable)

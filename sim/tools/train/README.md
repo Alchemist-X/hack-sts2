@@ -634,6 +634,16 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --m
 uv run --project sim/tools/train sts2train eval --seedset silent-a10-dev-v1 --checkpoint RUN_DIR/checkpoints/last.pt
 ```
 
+### Prompt macros v2 (`--macros all`)
+
+`--macros all` (= `rest,shop,prompt`; sim/VEC.md "Prompt macros v2", docs/prompt-macros-v2-2026-11-04.md) adds to
+the room macros: no `PromptCancel` row at any prompt, and a pick that completes the selection confirms in the same
+step (exactly-k = k picks, up-to-N = picks + a DONE row, DECLINE only where the game's prompt allows 0). Same spec and
+`encoder_version` as off, so any checkpoint resumes with it; the rest / shop rows fall back to the plain open row past
+64 candidates (status `MACRO_FALLBACK`). Cycle counting over every screen and prompt kind (counting only):
+`CycleDetector(spec, scope="all")` (`sts2train/cycles.py`; the trainer's own detector and `--cycle-cost` stay on the
+rest / shop scope).
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash

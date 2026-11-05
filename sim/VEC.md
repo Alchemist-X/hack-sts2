@@ -283,6 +283,34 @@ of a `Macros = None` env equals the default env's; Python `make_config` leaves t
   `sim/tools/vec/tests/test_room_macros.py`, `sim/tools/train/tests/test_train_macros.py` (no rest / shop cycle in a
   300-step 64-slot random run with macros; the same run without them closes one).
 
+### Prompt macros v2 (opt-in, W4 2026-11-04; `PromptMacros.cs`, config `macros` ∋ `prompt` / `all`)
+
+Inventory, design choices and tests: docs/prompt-macros-v2-2026-11-04.md. `macros` takes a third name `prompt` and the
+alias `all` (= `rest,shop,prompt`; Python `VecEnv(macros="all")`, trainer `--macros all`). **Off is the default**
+(every list and buffer as before); `rest,shop` alone keeps the W3 behaviour above exactly.
+
+- No `PromptCancel` row at any pending prompt (kept only if a prompt listed nothing else; never seen). The port's four
+  cancelable sites (`PromptSites.RoomSources`: SMITH, COOK, merchant removal, RemoveCard reward) all cancel back to
+  the identical screen; every other prompt (combat effects, events, relics, potions) is non-cancelable and its picks
+  are monotone, so no other prompt can loop.
+- A `PromptSelect` row runs the game's pick and, when the same prompt is still pending and its only non-cancel legal
+  action is `PromptConfirm`, the confirm click in the same step (`PromptMacros.ExecuteSelect`). Exactly-1 = one
+  decision; exactly-k = k decisions committing at the k-th pick; up-to-N = picks plus the explicit **DONE** row; the
+  `PromptConfirm` row at zero picks (MinSelect 0 / CanSkip) is the explicit **DECLINE**. Rows are the game's own legal
+  picks over the prompt's options, which the game filtered (HAND_TRICK: skills; deck prompts: IsUpgradable /
+  IsRemovable / IsTransformable / CanEnchant): nothing added, nothing hidden revealed.
+- Exactly-k is sequential, not one row per combination: the candidate table has one `card_id` per row, so combination
+  rows would widen the spec; the progress is observable (`prompt_options.picked`, `global_i.prompt_picked`).
+- Row cap: with `prompt` on, the rest / shop macro rows fall back to the plain SMITH / removal row when the expansion
+  would list more than `PromptMacros.MaxRows` = 64 candidates (status bit **`MACRO_FALLBACK` = 512**, appended); the
+  prompt that follows has no cancel and confirms at the pick.
+- Schema / spec: unchanged (same kinds and columns; `encoder_version` equal on / off; `check_spec_compat` identical,
+  `sim/tools/train/tests/test_prompt_macros.py`). An older build rejects the name: `unknown macro "prompt"`.
+- Tests: C# `VecTests.PromptMacros.cs` (state-hash equality with the manual click sequences for HAND_TRICK, PURITY,
+  HIDDEN_DAGGERS, COOK, the SMITH fallback; selectability; soak with no cancel row); Python
+  `sim/tools/vec/tests/test_prompt_macros.py`, `sim/tools/train/tests/test_prompt_macros.py` (64 slots x 2,000
+  random steps, `CycleDetector(scope="all")`: 0 cycles of any kind with `all`).
+
 ## Bench
 
 ```bash

@@ -136,7 +136,7 @@ class TrainConfig:
     threads: int = 0                # env worker threads (0 = os.cpu_count())
     step_cap: int = 3000
     floor_step_cap: int | None = None   # VecEnv pass-through (stall truncation) when set and supported
-    macros: str = ""                # VecEnv room macros, "rest,shop" (sim/VEC.md "Room macros"; "" = off); also the evals
+    macros: str = ""                # VecEnv macros, "rest,shop" / "rest,shop,prompt" (= all; sim/VEC.md; "" = off); also the evals
     ascension: int = 0
     pool: int = 2048
     characters: tuple = ALL_CHARACTERS
