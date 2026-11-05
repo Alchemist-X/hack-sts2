@@ -99,3 +99,9 @@ wave 8 合入（`e2548db`，κ=0 逐位相同，train 237 / vec 132 / eval 84）
 
 用户要求看"它学到了什么"而不只是分数：构筑方向（小刀 / 毒 / 弃牌流）、弃牌机制是否被利用、环境是否把可弃的牌展示出来、好局如何到 Act 2 boss（避精英？）、火堆行为。
 **行动**：工作流 `behaviour-audit`（Opus）：raven 上回放 A 的 pinned-0005064 在 dev-128 的 128 局并逐决策落盘（与官方评测逐种子核对），然后两路分析：行为审计（`docs/diag-2026-11-05/behaviour-audit-a-u5064.md`）与环境信息对等检查（`env-information-check.md`）。此后每轮读数都附行为审计。
+
+## 16:45 EST（第 10 轮）
+
+**观察**：A u5488（dev-128 u5300 0.425、u5400 0.406），B u6884（u6700 0.432、u6800 0.448）；ab-512 不变。余额 446.1。守护无事件。boss 战 HP 叶子网格 a 完成、b 进行中；行为审计回放进行中。
+**判断**：A 的 u5400 0.406 是单点下沿（CI 上界 0.435 仍覆盖平台），不改变判断。
+**行动**：无新启动。用户问 CPU 规模化：结论——单线 12→48 vCPU 约 1.4×，配合 8192 并行局约 3×，真正价值是一晚 4–8 条线并行；GCP 形态是 8 卡机（g2-standard-96 / a2-highgpu-8g）；先做 1 台 g2-standard-32 吞吐实测再定。奇巧 = Sly 关键词（Reflex / Tactician / Ricochet / Flick Flack / Abrasive / Untouchable 自带；Hand Trick / Master Planner 赋予），落盘后做专项统计。
