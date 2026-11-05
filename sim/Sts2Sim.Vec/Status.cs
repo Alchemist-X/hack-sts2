@@ -26,6 +26,12 @@ public enum SlotStatus
     /// on one floor without the floor advancing (truncated, reward 0; <c>last_episode.end_kind</c> = FloorStall).
     /// </summary>
     FloorStall = 256,
+    /// <summary>
+    /// Appended (prompt macros, W4 2026-11-04): with config <c>macros</c> ∋ <c>prompt</c>, this observation's rest / shop
+    /// macro rows were replaced by the plain open row because the expansion would list more than
+    /// <see cref="PromptMacros.MaxRows"/> candidates (the sequential no-cancel prompt follows). Never set with the macros off.
+    /// </summary>
+    MacroFallback = 512,
 }
 
 /// <summary>How an episode ended (<c>last_episode.end_kind</c>; enum list <c>EndKind</c> in the schema).</summary>

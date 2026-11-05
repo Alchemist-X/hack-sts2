@@ -30,7 +30,9 @@ public enum BranchMode
 /// protocol evaluator's <c>stuck</c> limit (docs/sts2-bench-protocol-v0.2-2026-11-01.md §5).
 /// <c>Macros</c> (<c>macros</c>, appended W3 2026-11-04): the room macro candidates to list (<see cref="RoomMacros"/>), a JSON
 /// array of names (<c>["rest", "shop"]</c>) or one comma-separated string; absent / empty = none (the candidate lists of
-/// every earlier build).
+/// every earlier build). W4 2026-11-04: <c>prompt</c> (<see cref="PromptMacros"/>: no PromptCancel rows, a complete pick
+/// confirms in the same step, the rest / shop rows capped at 64 with a sequential fallback) and the alias <c>all</c> =
+/// rest, shop, prompt.
 /// </summary>
 public sealed record VecConfig(
     int NumEnvs,
@@ -115,7 +117,7 @@ public sealed record VecConfig(
         JsonValueKind.String => RoomMacros.Parse((v.GetString() ?? "").Split(',')),
         JsonValueKind.Array => RoomMacros.Parse(v.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String
             ? e.GetString() ?? "" : throw new ArgumentException("config.macros entries must be strings"))),
-        _ => throw new ArgumentException("config.macros must be an array of names (\"rest\", \"shop\") or a comma-separated string"),
+        _ => throw new ArgumentException("config.macros must be an array of names (\"rest\", \"shop\", \"prompt\", \"all\") or a comma-separated string"),
     };
 
     private static FreshPoolSpec ParsePool(JsonElement pool)
@@ -605,7 +607,7 @@ public sealed unsafe class VecEnv
                     s.Legal.Clear();
                     s.Legal.AddRange(from.Legal);
                     s.CandN = from.CandN;
-                    st |= from.Status & (SlotStatus.TableOverflow | SlotStatus.CandidateOverflow);
+                    st |= from.Status & (SlotStatus.TableOverflow | SlotStatus.CandidateOverflow | SlotStatus.MacroFallback);
                 }
                 else if (!Observe(s, b, ref st))
                 {
@@ -739,7 +741,12 @@ public sealed unsafe class VecEnv
                 {
                     bool nonCombat = !InCombat(s.Sim);
                     var act = s.Legal[action];
-                    if (Config.Macros != RoomMacroSet.None && RoomMacros.IsMacro(act))
+                    if ((Config.Macros & RoomMacroSet.Prompt) != 0 && act.Kind == RunActionKind.PromptSelect && s.Sim.HasPendingChoice)
+                    {
+                        // one decision: the game's pick, plus its Confirm click when that is the only way on
+                        PromptMacros.ExecuteSelect(s.Sim, act, a => Apply(s, i, a));
+                    }
+                    else if (Config.Macros != RoomMacroSet.None && RoomMacros.IsMacro(act))
                     {
                         // one decision, the game's three clicks: open the SMITH / removal prompt, pick the card, confirm
                         RoomMacros.Execute(s.Sim, act, a => Apply(s, i, a));
@@ -933,9 +940,9 @@ public sealed unsafe class VecEnv
             {
                 s.Sim.LegalActions(s.Raw);
                 RewardMacros.Fill(s.Sim, s.Raw, s.Legal);
-                if (Config.Macros != RoomMacroSet.None)
+                if (Config.Macros != RoomMacroSet.None && PromptMacros.ApplyAll(s.Sim, s.Legal, Config.Macros))
                 {
-                    RoomMacros.Apply(s.Sim, s.Legal, Config.Macros);
+                    st |= SlotStatus.MacroFallback;
                 }
             }
             s.CandN = CandidateTable.Fill(s.Sim, s.Legal, b.Cand, out bool overflow);

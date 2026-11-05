@@ -273,15 +273,46 @@ of a `Macros = None` env equals the default env's; Python `make_config` leaves t
   behavioural only: the old "SMITH" row stood for "open the prompt", the new rows stand for "upgrade this card".
 - Replays: `history_actions` index the candidate list, so a game recorded with macros replays only with the same
   macros (`sts2vec.evaluate` records `limits.macros` and its replay audit uses them; `sts2train eval` defaults to the
-  checkpoint's `config.macros`). Not covered: the real-game twin (`scripts/live/nn_twin`) and the combat lookahead's
-  search env have no macro mapping (a macro-trained model plays them on the raw candidates); the play server / LLM
-  channel uses `RunSim.LegalActions()` and is unaffected.
+  checkpoint's `config.macros`). The real-game twin (`scripts/live/nn_twin`, W4) lists the checkpoint's macros and
+  plays a macro row in the game as its clicks, checking the screen and the grid after each (`nn_twin/macros.py`).
+  The twin does not map the `prompt` macros yet (the Vec layer's confirm-on-complete has no game click on the twin side,
+  so an `all` checkpoint desyncs at the first such prompt and the twin fails closed).
+  Not covered: the combat lookahead's search env has no macro mapping (a macro-trained model plays it on the raw
+  candidates); the play server / LLM channel uses `RunSim.LegalActions()` and is unaffected.
 - A config of an older library without the key: `sts2vec_create` fails with `unknown config key "macros"`.
 - Tests: C# `VecTests.RoomMacros.cs` (`Test_VecConfig_MacrosParse`, `Test_VecCand_RoomMacroSmithUpgradesOneCard`,
   `Test_VecCand_RoomMacroShopRemovalPaysThePrice`, `Test_VecEnv_RoomMacrosSoak`: 32 play-biased slots x 4000 steps,
   no SIM_ERROR, macros taken in both rooms, never at the SMITH / removal prompt); Python
   `sim/tools/vec/tests/test_room_macros.py`, `sim/tools/train/tests/test_train_macros.py` (no rest / shop cycle in a
   300-step 64-slot random run with macros; the same run without them closes one).
+
+### Prompt macros v2 (opt-in, W4 2026-11-04; `PromptMacros.cs`, config `macros` ∋ `prompt` / `all`)
+
+Inventory, design choices and tests: docs/prompt-macros-v2-2026-11-04.md. `macros` takes a third name `prompt` and the
+alias `all` (= `rest,shop,prompt`; Python `VecEnv(macros="all")`, trainer `--macros all`). **Off is the default**
+(every list and buffer as before); `rest,shop` alone keeps the W3 behaviour above exactly.
+
+- No `PromptCancel` row at any pending prompt (kept only if a prompt listed nothing else; never seen). The port's four
+  cancelable sites (`PromptSites.RoomSources`: SMITH, COOK, merchant removal, RemoveCard reward) all cancel back to
+  the identical screen; every other prompt (combat effects, events, relics, potions) is non-cancelable and its picks
+  are monotone, so no other prompt can loop.
+- A `PromptSelect` row runs the game's pick and, when the same prompt is still pending and its only non-cancel legal
+  action is `PromptConfirm`, the confirm click in the same step (`PromptMacros.ExecuteSelect`). Exactly-1 = one
+  decision; exactly-k = k decisions committing at the k-th pick; up-to-N = picks plus the explicit **DONE** row; the
+  `PromptConfirm` row at zero picks (MinSelect 0 / CanSkip) is the explicit **DECLINE**. Rows are the game's own legal
+  picks over the prompt's options, which the game filtered (HAND_TRICK: skills; deck prompts: IsUpgradable /
+  IsRemovable / IsTransformable / CanEnchant): nothing added, nothing hidden revealed.
+- Exactly-k is sequential, not one row per combination: the candidate table has one `card_id` per row, so combination
+  rows would widen the spec; the progress is observable (`prompt_options.picked`, `global_i.prompt_picked`).
+- Row cap: with `prompt` on, the rest / shop macro rows fall back to the plain SMITH / removal row when the expansion
+  would list more than `PromptMacros.MaxRows` = 64 candidates (status bit **`MACRO_FALLBACK` = 512**, appended); the
+  prompt that follows has no cancel and confirms at the pick.
+- Schema / spec: unchanged (same kinds and columns; `encoder_version` equal on / off; `check_spec_compat` identical,
+  `sim/tools/train/tests/test_prompt_macros.py`). An older build rejects the name: `unknown macro "prompt"`.
+- Tests: C# `VecTests.PromptMacros.cs` (state-hash equality with the manual click sequences for HAND_TRICK, PURITY,
+  HIDDEN_DAGGERS, COOK, the SMITH fallback; selectability; soak with no cancel row); Python
+  `sim/tools/vec/tests/test_prompt_macros.py`, `sim/tools/train/tests/test_prompt_macros.py` (64 slots x 2,000
+  random steps, `CycleDetector(scope="all")`: 0 cycles of any kind with `all`).
 
 ## Bench
 

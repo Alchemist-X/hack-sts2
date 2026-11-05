@@ -19,7 +19,8 @@ POOL = PoolSpec(characters=("SILENT",), ascension=10, count=256)
 
 
 def test_macros_config_and_parse(lib):
-    assert MACRO_NAMES == ("rest", "shop")
+    assert MACRO_NAMES == ("rest", "shop", "prompt")
+    assert parse_macros("all") == ("rest", "shop", "prompt") and parse_macros("shop,ALL") == MACRO_NAMES
     assert parse_macros(None) == () and parse_macros("") == () and parse_macros("none") == ()
     assert parse_macros("shop,REST") == ("rest", "shop") and parse_macros(["shop", "shop"]) == ("shop",)
     with pytest.raises(ValueError, match="unknown macro"):

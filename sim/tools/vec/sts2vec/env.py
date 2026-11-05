@@ -92,8 +92,11 @@ class VecEnv:
     ``macros`` (None / "rest,shop" / ("rest", "shop"); default off): room macro candidates — at a rest site one
     ``ChooseRestOption(A, B=deck card)`` row per upgradable card in place of SMITH, in a shop one ``BuyEntry(A, B=deck
     card)`` row per removable card in place of the card removal, each running open → select → confirm in one step
-    (sim/VEC.md "Room macros"; ``self.macros`` = the normalised names). Off, the config and every output are those of
-    a build without the option.
+    (sim/VEC.md "Room macros"; ``self.macros`` = the normalised names). ``prompt`` (W4; sim/VEC.md "Prompt macros
+    v2"): every pending prompt lists no PromptCancel row and a pick that completes the selection also confirms it in
+    the same step; with it the rest / shop rows fall back to the plain open row past 64 candidates (status
+    ``MACRO_FALLBACK``). ``"all"`` = rest, shop, prompt. Off, the config and every output are those of a build without
+    the option.
     ``dll`` picks the library (default: ``STS2VEC_AOT_LIB`` / ``STS2VEC_DLL`` / the Release build; see ``sts2vec.loader``).
     """
 
@@ -133,6 +136,9 @@ class VecEnv:
             if self.macros and "macros" in text:
                 text += (f" [{self._lib.path} was built before the room macros (config key 'macros'); rebuild it "
                          "(dotnet build sim/Sts2Sim.sln -c Release) or drop macros]")
+            elif self.macros and "unknown macro" in text:
+                text += (f" [{self._lib.path} was built before this macro name (prompt / all: W4 2026-11-04); rebuild "
+                         "it or use rest,shop]")
             raise Sts2VecError(f"sts2vec_create: {text}")
         self._h = int(h)
         self.pool = Pool(self)

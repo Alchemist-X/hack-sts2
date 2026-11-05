@@ -22,6 +22,10 @@ is stepped with the same row. Twin act keys (the other sides build the same keys
   confirm / cancel  ()
   macro          (kind, A, B)          TakeRewardCard / TakeRewardAlternative (rewards screen, twin side only): plan =
                                        claim_reward ("card", None), then pick_card (card_id, upgraded) / card_alt (alt,)
+                 ("SMITH" | "REMOVE", card_id, upgraded, d)   room macros (``Twin(macros="rest,shop")``; rows
+                                       ChooseRestOption / BuyEntry with B = deck row d >= 0): plan = rest ("SMITH",) /
+                                       buy ("card_removal", None), select (card_id, upgraded) pos = d, confirm; expect =
+                                       every macro row's ((card_id, upgraded), d) of that screen (the game's grid)
 """
 
 from __future__ import annotations
@@ -93,6 +97,8 @@ class Policy:
                      "arch": ck.get("arch"), "aux_heads": self.aux,
                      "characters": (ck.get("config") or {}).get("characters"),
                      "ascension": (ck.get("config") or {}).get("ascension"),
+                     # the room macros of its training env (sts2train.evaluate.checkpoint_macros; "" = off)
+                     "macros": str(((ck.get("config") or {}).get("macros")) or ""),
                      "best_eval": {k: (ck.get("best_eval") or {}).get(k) for k in
                                    ("seedset", "progress_mean", "win_rate", "floor_mean", "update")}
                      if ck.get("best_eval") else None}
@@ -211,12 +217,17 @@ class RandomPolicy:
 class Twin:
     """One simulator slot (``auto_reset=False``, no step or stall caps) and its decoding into Views and Acts."""
 
-    def __init__(self, *, content: str = "all", dll=None):
+    def __init__(self, *, content: str = "all", macros=None, dll=None):
+        """``macros``: the room macros of the checkpoint's training env (``"rest,shop"``; None / "" = off, the
+        candidate lists of every earlier build). A model trained with them must see them: its SMITH / removal rows
+        mean "upgrade / remove this card" (sim/VEC.md "Room macros")."""
         from sts2vec import STATUS, PoolSpec, VecEnv
 
         self.STATUS = STATUS
+        extra = {"macros": macros} if macros else {}
         self.env = VecEnv(1, threads=1, step_cap=1_000_000, auto_reset=False, content=content,
-                          pool=PoolSpec(count=0), floor_step_cap=0, dll=dll)
+                          pool=PoolSpec(count=0), floor_step_cap=0, dll=dll, **extra)
+        self.macros = tuple(getattr(self.env, "macros", ()) or ())
         self.content = content
         s = self.env.schema
         self.schema = s
@@ -309,6 +320,37 @@ class Twin:
         rows = self.obs["hand"][0]
         return [(self.card(int(r[hc["card_id"]])), norm_upgrade(r[hc["upgrade"]]))
                 for r in rows[:self.g("hand_n")] if int(r[hc["card_id"]]) > 0]
+
+    def _deck(self) -> list[tuple[str, int, int]]:
+        """Master deck rows -> (card_id, upgraded 0/1, cards vocab id), in deck order (the ``deck`` buffer)."""
+        dc = self.schema.cols("deck")
+        rows = self.obs["deck"][0]
+        return [(self.card(int(r[dc["card_id"]])), norm_upgrade(r[dc["upgrade"]]), int(r[dc["card_id"]]))
+                for r in rows[:self.g("deck_n")]]
+
+    def _is_curse(self, card_vocab_id: int) -> bool:
+        s = self.schema
+        if not getattr(s, "card_static_fields", ()) or not 0 <= card_vocab_id < s.card_static.shape[0]:
+            return False
+        try:
+            return self.E["CardType"].name(int(s.card_static[card_vocab_id, s.card_static_cols()["type"]])) == "Curse"
+        except (KeyError, IndexError):
+            return False
+
+    def _room_macro_rows(self, kind: str) -> list[int]:
+        """The deck rows B of this screen's room macro rows of `kind` (ChooseRestOption / BuyEntry with B >= 0)."""
+        cc = self.c["cand"]
+        k = self.kinds.index_of(kind)
+        return sorted(int(r[cc["B"]]) for r in self.obs["cand"][0][:self.cand_n]
+                      if int(r[cc["kind"]]) == k and int(r[cc["B"]]) >= 0)
+
+    def _prompt_order(self, kind: str, rows: list[int]) -> list[int]:
+        """The order in which the game's DeckUpgrade / DeckRemove prompt lists the macro's deck rows: deck order;
+        the removal puts curses first (``RoomPrompts.FromDeckForRemoval``)."""
+        if kind != "BuyEntry":
+            return rows
+        deck = self._deck()
+        return sorted(rows, key=lambda d: (not (d < len(deck) and self._is_curse(deck[d][2])), d))
 
     def _enemies(self) -> dict[int, tuple]:
         """enemies row -> (uid, monster_id, hp, block) for live enemies."""
@@ -509,6 +551,8 @@ class Twin:
             alts = lazy("alts", self._alts)
             alt = alts[oi] if 0 <= oi < len(alts) else f"#{oi}"
             return Act("card_alt", (alt,), oi, j, f"card reward: {alt}")
+        if kind in ("ChooseRestOption", "BuyEntry") and b >= 0:
+            return self._room_macro(j, kind, a, b, oi, lazy)
         if kind == "BuyEntry":
             cat, item, price, _, up = lazy("shop", self._shop).get(oi, ("?", None, 0, 0, 0))
             return Act("buy", (cat, item), oi, j, f"buy {cat} {item or ''} ({price}g)".replace("  ", " "))
@@ -587,6 +631,26 @@ class Twin:
         choose = Act("card_alt", (alt,), b, None, f"card reward: {alt}")
         return Act("macro", ("TakeRewardAlternative", a, b), b, j, f"reward {a}: {alt}", plan=(open_act, choose))
 
+    def _room_macro(self, j, kind, a, b, oi, lazy) -> Act:
+        """Room macros (``RoomMacros``, ``--macros rest,shop``): ChooseRestOption(A = SMITH, B = d) / BuyEntry(A = card
+        removal, B = d) upgrade / remove deck card d in one decision. In the game: open the SMITH / removal screen,
+        select the card, confirm. ``expect`` = the grid the game must open: every macro row's card of this screen
+        (they are exactly the upgradable / removable deck cards, the filters of the game's prompt)."""
+        deck = lazy("deck", self._deck)
+        rows = lazy("room:" + kind, lambda: self._room_macro_rows(kind))
+        cid, up, _ = deck[b] if 0 <= b < len(deck) else ("?", 0, 0)
+        expect = tuple(((deck[d][0], deck[d][1]), d) for d in rows if d < len(deck))
+        sel = Act("select", (cid, up), b, None, f"select {cid}{'+' if up else ''}")
+        confirm = Act("confirm", (), None, None, "confirm selection")
+        if kind == "ChooseRestOption":
+            opt = lazy("rest", self._rest).get(oi, ("SMITH", 0))[0]
+            open_act = Act("rest", (opt,), oi, None, f"rest: {opt}")
+            return Act("macro", ("SMITH", cid, up, b), b, j, f"smith {cid}{'+' if up else ''} (deck {b})",
+                       plan=(open_act, sel, confirm), expect=expect)
+        open_act = Act("buy", ("card_removal", None), oi, None, "buy card_removal")
+        return Act("macro", ("REMOVE", cid, up, b), b, j, f"remove {cid}{'+' if up else ''} (deck {b})",
+                   plan=(open_act, sel, confirm), expect=expect)
+
     # ---------------------------------------------------------------------------------------- tokens
 
     def row_to_token(self, row: int) -> str:
@@ -622,6 +686,12 @@ class Twin:
             alts = self._alts()
             alt = alts[a] if 0 <= a < len(alts) else ""
             return {"skip": "skip", "reroll": "reroll"}.get(alt, f"alt {a}")
+        if kind in ("ChooseRestOption", "BuyEntry") and b >= 0:
+            # a room macro: the play server has no macro rows, so it is the game's three clicks -- the prompt option
+            # of deck card b is its rank in the prompt's order of the screen's macro rows
+            order = self._prompt_order(kind, self._room_macro_rows(kind))
+            pick = order.index(b) if b in order else -1
+            return f"{'rest ' + str(a) if kind == 'ChooseRestOption' else 'remove'}; pick {pick}; confirm"
         if kind == "BuyEntry":
             return "remove" if self._shop().get(a, ("",))[0] == "card_removal" else f"buy {a}"
         if kind in ("LeaveShop", "LeaveRestSite", "LeaveEvent"):

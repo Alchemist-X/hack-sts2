@@ -30,6 +30,7 @@ class Status(enum.IntFlag):
     RESET = 64
     POOL_EMPTY = 128
     FLOOR_STALL = 256  # appended: truncated by floor_step_cap (non-combat decisions on one floor)
+    MACRO_FALLBACK = 512  # appended (W4): macros ∋ prompt and the rest / shop macro rows would exceed 64 -> plain open row
 
 
 # name -> bit (kept as a plain dict for numpy-friendly use: ``status & STATUS["RESET"]``)
