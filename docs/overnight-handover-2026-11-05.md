@@ -71,3 +71,10 @@
 - 新包 `sts2train-bd6d6f6863.tar.gz`（AOT 同 `03f89cc37d4f`，库逐字节相同；raven 容器冒烟通过）已放到两台 VM 与桶 `bundles/`，
   第二轮 C / D 的包装脚本已换成 `launch_c2.sh` / `launch_d2.sh`（只改包路径）。过夜线 A / B 不变（仍是 w3m 包，无新字段）。
 - 回来后的第一份诊断可以直接用 C / D 的 `evals/endpoint/*/summary` 与 `episodes.jsonl` 回答"死在哪、进 boss 时血量多少、卡组什么样"。
+
+## 03:05 更新：分叉已发生
+
+- M 到 u3064，dev-128 关 breaker **0.404 [0.378, 0.430]**（64/128 进二幕，0 通关），新最佳。`pinned-0003064.pt` 07:57Z 进桶。
+- 02:56 EST 线 A 分叉开训（`runs/w3m-a`，gcs_sync 已起）；02:58 线 B 取到同一 checkpoint 开训（`runs/w3m-b`）。
+- wave 7 合入并推送（`c4109be`）：`scripts/analysis/death_profile.py` + `scripts/colab/r2_compare.sh N`（第二轮一键读数，
+  见 `docs/round2-plan-2026-11-05.md` "读结果"）。
