@@ -114,7 +114,7 @@ DECK_KEYS = ("deck", "deck_n", "deck_size", "final_deck_n")
 RELIC_KEYS = ("relic_n", "relic_count", "relics", "final_relic_n")
 # training flags shown on the card, grouped (the JSON keeps the whole config)
 FLAG_GROUPS = (
-    ("objective", ("objective", "win_bonus", "acq_shaping", "cycle_cost")),
+    ("objective", ("objective", "win_bonus", "acq_shaping", "hp_shaping_coef", "cycle_cost")),
     ("starts", ("characters", "ascension", "pool", "start_saves", "save_mix", "save_copies", "harvest", "harvest_prob",
                 "harvest_max_per_step", "harvest_start_share")),
     ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "vf_coef", "ent_coef",

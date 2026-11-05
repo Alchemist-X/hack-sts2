@@ -15,6 +15,8 @@ Truncated episodes (step cap, floor step cap) end with the progress of their las
 ``win``: the env's own reward (1 at a Victory terminal, else 0; CONTRACTS.md D5).
 ``AcqShaping`` (``--acq-shaping``, any objective): potential-based shaping for deck size, relics and upgrades on top
 of the objective's reward; the trainer logs it apart, and episode returns / progress stay the objective's.
+``HpShaping`` (``--hp-shaping-coef KAPPA``, any objective): potential-based HP shaping, phi = KAPPA * hp / max_hp
+(0 at an episode end); composes with ``AcqShaping`` (``ShapingSet``), logged apart the same way.
 ``shaped``: LEGACY smoke objective: ``win`` + delta(total_floor) / ``shaped_floors`` per step (floor count, not the
 protocol metric; it allows stall loops; kept for reproducing the 2026-11-02 smoke).
 """
@@ -131,7 +133,41 @@ class EpisodeRewards:
 ACQ_DEFAULTS = {"deck": 0.003, "relic": 0.01, "upgrade": 0.004}
 
 
-class AcqShaping:
+class _PotentialShaping:
+    """Potential-based shaping over a potential ``phi`` of an observation: per step ``F = gamma * phi(s') - phi(s)``
+    with ``phi(s') = 0`` when the step ended the episode (terminal or truncation; ``s'`` is then the next episode's
+    first observation, whose potential becomes the slot's new ``phi``). With gamma = 1 an episode's shaping telescopes
+    to ``phi(last) - phi(first) = -phi(first)`` (Ng et al. 1999: the optimal policy is unchanged).
+
+    ``reset(aux, deck)`` after ``env.reset()`` (and at the start of every training session, a resume included: the
+    potential is read from the session's first observations, so no shaping step crosses a session boundary);
+    ``step(done, aux, deck)`` after every ``env.step`` with the new observation -> ``(F float32 [N], shaping sums of
+    the episodes that ended {slot: sum})``. Subclasses define ``potential(aux, deck) -> float64 [N]``."""
+
+    def __init__(self, num_envs: int, gamma: float = 1.0):
+        self.gamma = float(gamma)
+        self.phi = np.zeros(num_envs, dtype=np.float64)       # potential of each slot's current observation
+        self.sum = np.zeros(num_envs, dtype=np.float64)       # shaping accumulated in each slot's current episode
+
+    def potential(self, aux: np.ndarray, deck: np.ndarray) -> np.ndarray:   # pragma: no cover - abstract
+        raise NotImplementedError
+
+    def reset(self, aux: np.ndarray, deck: np.ndarray) -> None:
+        self.phi = self.potential(aux, deck)
+        self.sum[:] = 0.0
+
+    def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray) -> tuple[np.ndarray, dict[int, float]]:
+        done = np.asarray(done, dtype=bool)
+        nxt = self.potential(aux, deck)
+        f = np.where(done, 0.0, self.gamma * nxt) - self.phi
+        self.sum += f
+        ended = {int(i): float(self.sum[i]) for i in np.flatnonzero(done)}
+        self.sum[done] = 0.0
+        self.phi = nxt
+        return f.astype(np.float32), ended
+
+
+class AcqShaping(_PotentialShaping):
     """Potential-based acquisition shaping (``--acq-shaping``), added to the objective's reward.
 
     Potential of an observation: ``phi = c_deck * min(deck_n - 10, 12) + c_relic * relic_n + c_upgrade * upgrades``
@@ -152,12 +188,10 @@ class AcqShaping:
         missing = [f for f in ("deck_n", "relic_n") if f not in a]
         if missing:
             raise ValueError(f"the library's aux block lacks {missing} (needed by --acq-shaping)")
+        super().__init__(num_envs, gamma)
         self._deck_n, self._relic_n = a["deck_n"], a["relic_n"]
         self._cid, self._up = deck_cols["card_id"], deck_cols["upgrade"]
-        self.gamma = float(gamma)
         self.coefs = (float(deck), float(relic), float(upgrade))
-        self.phi = np.zeros(num_envs, dtype=np.float64)       # potential of each slot's current observation
-        self.sum = np.zeros(num_envs, dtype=np.float64)       # shaping accumulated in each slot's current episode
 
     def potential(self, aux: np.ndarray, deck: np.ndarray) -> np.ndarray:
         c_deck, c_relic, c_up = self.coefs
@@ -165,16 +199,96 @@ class AcqShaping:
         return (c_deck * np.minimum(aux[:, self._deck_n].astype(np.float64) - 10.0, 12.0)
                 + c_relic * aux[:, self._relic_n].astype(np.float64) + c_up * upgrades)
 
+
+class HpShaping(_PotentialShaping):
+    """Potential-based HP shaping (``--hp-shaping-coef KAPPA``), added to the objective's reward.
+
+    Potential of a live observation: ``phi = KAPPA * aux.hp / aux.max_hp`` (0 when ``max_hp <= 0``), 0 after a terminal
+    or a truncation (death, win, step cap, floor stall). Per step ``F = gamma * phi(s') - phi(s)``: with gamma = 1 a
+    step that loses 20% of max HP pays ``-0.2 KAPPA``, a heal / rest pays it back, and a max-HP change moves the ratio
+    only. An episode's HP shaping telescopes to ``-KAPPA * hp_0 / max_hp_0`` (its first observation; ``-KAPPA`` for a
+    fresh start at full HP), whatever happens in between: at a death the final step pays ``-phi(last)``, at a win it
+    pays back ``-KAPPA * hp_T / max_hp_T`` (terminal potential 0, the conventional form; the optimal policy is
+    unchanged). A harvest-anchor / save start begins from the restored state's ratio (the env's next observation of
+    the slot), never from the previous episode's value."""
+
+    def __init__(self, aux_fields, num_envs: int, gamma: float = 1.0, *, coef: float):
+        a = {f: i for i, f in enumerate(aux_fields)}
+        missing = [f for f in ("hp", "max_hp") if f not in a]
+        if missing:
+            raise ValueError(f"the library's aux block lacks {missing} (needed by --hp-shaping-coef)")
+        super().__init__(num_envs, gamma)
+        self._hp, self._max = a["hp"], a["max_hp"]
+        self.coef = float(coef)
+
+    def potential(self, aux: np.ndarray, deck: np.ndarray | None = None) -> np.ndarray:
+        hp = aux[:, self._hp].astype(np.float64)
+        mx = aux[:, self._max].astype(np.float64)
+        ratio = np.divide(hp, mx, out=np.zeros_like(hp), where=mx > 0)
+        return self.coef * ratio
+
+
+class ShapingSet:
+    """The trainer's shaping: the potential-based parts that are on (``acq`` = ``AcqShaping``, ``hp`` = ``HpShaping``),
+    summed. Same interface as one part (``reset`` / ``step`` / ``phi``); with one part ``step`` returns that part's
+    ``F`` unchanged (so ``--acq-shaping`` alone trains on exactly the rewards it did before ``HpShaping`` existed).
+    Potential-based terms compose: the sum is the shaping of the summed potential. Per part it keeps the episode sums
+    of the last step (``ended_parts[name]`` {slot: sum}) and the window totals since ``pop_window`` (sum, slot-steps)."""
+
+    def __init__(self, parts: dict):
+        self.parts = {k: v for k, v in parts.items() if v is not None}
+        if not self.parts:
+            raise ValueError("ShapingSet needs at least one part")
+        self.ended_parts: dict[str, dict[int, float]] = {k: {} for k in self.parts}
+        self._win = {k: [0.0, 0] for k in self.parts}
+
+    @property
+    def phi(self) -> np.ndarray:
+        ps = list(self.parts.values())
+        return ps[0].phi if len(ps) == 1 else sum(p.phi for p in ps)
+
+    def part_phi(self, name: str) -> np.ndarray:
+        return self.parts[name].phi
+
     def reset(self, aux: np.ndarray, deck: np.ndarray) -> None:
-        self.phi = self.potential(aux, deck)
-        self.sum[:] = 0.0
+        for p in self.parts.values():
+            p.reset(aux, deck)
+        self.ended_parts = {k: {} for k in self.parts}
 
     def step(self, done: np.ndarray, aux: np.ndarray, deck: np.ndarray) -> tuple[np.ndarray, dict[int, float]]:
-        done = np.asarray(done, dtype=bool)
-        nxt = self.potential(aux, deck)
-        f = np.where(done, 0.0, self.gamma * nxt) - self.phi
-        self.sum += f
-        ended = {int(i): float(self.sum[i]) for i in np.flatnonzero(done)}
-        self.sum[done] = 0.0
-        self.phi = nxt
-        return f.astype(np.float32), ended
+        fs, ended = [], {}
+        for k, p in self.parts.items():
+            f, e = p.step(done, aux, deck)
+            fs.append(f)
+            self.ended_parts[k] = e
+            w = self._win[k]
+            w[0] += float(f.sum(dtype=np.float64))
+            w[1] += int(f.size)
+            for i, v in e.items():
+                ended[i] = ended.get(i, 0.0) + v
+        return (fs[0] if len(fs) == 1 else np.sum(fs, axis=0, dtype=np.float32)), ended
+
+    def pop_window(self) -> dict[str, tuple[float, int]]:
+        out = {k: (w[0], w[1]) for k, w in self._win.items()}
+        self._win = {k: [0.0, 0] for k in self.parts}
+        return out
+
+
+def annotate_shaping(fin: list[dict], ended: dict[int, float], shaper, lo: int = 0) -> None:
+    """Shaping fields of the finished episodes `fin` (their ``slot`` = local slot + `lo`): ``shaping`` (all parts),
+    ``shaped_return`` = ``return`` + ``shaping`` and, with ``HpShaping`` on, ``hp_shaping``."""
+    hp = shaper.ended_parts.get("hp") if isinstance(shaper, ShapingSet) else None
+    for e in fin:
+        e["shaping"] = ended.get(e["slot"] - lo, 0.0)
+        e["shaped_return"] = e["return"] + e["shaping"]
+        if hp is not None:
+            e["hp_shaping"] = hp.get(e["slot"] - lo, 0.0)
+
+
+def make_shaper(aux_fields, deck_cols: dict, num_envs: int, gamma: float, *, acq: bool, acq_coefs: dict,
+                hp_coef: float) -> ShapingSet | None:
+    """The trainer's shaping for `num_envs` slots, or None when no part is on (``acq`` off and ``hp_coef`` == 0: the
+    trainer's rewards are then exactly the objective's)."""
+    parts = {"acq": AcqShaping(aux_fields, deck_cols, num_envs, gamma, **acq_coefs) if acq else None,
+             "hp": HpShaping(aux_fields, num_envs, gamma, coef=hp_coef) if float(hp_coef) != 0.0 else None}
+    return ShapingSet(parts) if any(v is not None for v in parts.values()) else None

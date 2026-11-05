@@ -149,7 +149,8 @@ def test_pool_pair_lane_a_matches_one_env():
 
 
 @pytest.mark.parametrize("extra", [{}, {"cycle_cost": 0.05, "acq_shaping": True, "rollout_loop_breaker": True,
-                                        "aux_heads": True}], ids=["plain", "flags"])
+                                        "aux_heads": True}, {"hp_shaping_coef": 0.1},
+                                   {"hp_shaping_coef": 0.1, "acq_shaping": True}], ids=["plain", "flags", "hp", "hp-acq"])
 def test_double_reproduces_off_under_a_greedy_policy(tmp_path, monkeypatch, extra):
     """Deterministic (greedy) policy, stream mode, episodes ending in the window (step cap 24): --overlap double gives
     the same actions, so the same metrics (all but timings; floats to rounding), the same episodes.jsonl (slot, seed,
@@ -162,8 +163,13 @@ def test_double_reproduces_off_under_a_greedy_policy(tmp_path, monkeypatch, extr
     assert all("t_overlap_wait_s" in r and "t_rollout_s" in r for r in r1)
     assert not any("t_overlap_wait_s" in r for r in r0)
     _same_rows(r0, r1)
-    assert [{k: v for k, v in e.items() if k not in ("return", "shaped_return", "shaping")} for e in e0] == \
-        [{k: v for k, v in e.items() if k not in ("return", "shaped_return", "shaping")} for e in e1]
+    floats = ("return", "shaped_return", "shaping", "hp_shaping")
+    assert [{k: v for k, v in e.items() if k not in floats} for e in e0] == \
+        [{k: v for k, v in e.items() if k not in floats} for e in e1]
+    for a, b in zip(e0, e1):                    # the episode returns (unshaped) to rounding
+        assert (a["return"] is None) == (b["return"] is None)
+        if a["return"] is not None:
+            assert b["return"] == pytest.approx(a["return"], abs=1e-5)
     assert c0 == c1
     w0, w1 = _weights(s0), _weights(s1)
     assert sorted(w0) == sorted(w1)

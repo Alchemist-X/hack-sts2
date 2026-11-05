@@ -10,7 +10,9 @@ protocol progress (+ bonus); ``win`` = the contract's reward (1 at a Victory ter
 head and PPO loss are unchanged. ``deck_counts`` (``--deck-counts``) switches the deck / pile encoders to count-aware
 pooling (``model.Policy._deck_bag``). ``acq_shaping`` (``--acq-shaping``) adds potential-based shaping for deck size,
 relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``reward_mean`` / ``return_mean`` /
-progress stay the objective's, the shaping is logged apart). ``rollout_loop_breaker`` (``--rollout-loop-breaker``)
+progress stay the objective's, the shaping is logged apart); ``hp_shaping_coef`` (``--hp-shaping-coef``) adds
+potential-based HP shaping phi = coef x hp / max_hp the same way (``objective.HpShaping``, 0 = off: rewards are then
+bit-identical to a build without it). ``rollout_loop_breaker`` (``--rollout-loop-breaker``)
 applies the evaluation's loop breaker (``sts2train.loopbreak``) to the rollout sampling: back at an observation of its
 last 64 decisions (a no-op or a cycle) a slot gives probability 0 to the candidates it took there (the stored
 log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled).
@@ -106,7 +108,7 @@ from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
 from .loopbreak import LoopBreaker
 from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
                     widened_tensors)
-from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
+from .objective import OBJECTIVES, EpisodeRewards, annotate_shaping, make_shaper
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
 from .overlap import OVERLAP_MODES, LaneStreamEnv, OverlapRollout, VecPair
@@ -166,6 +168,7 @@ class TrainConfig:
     acq_deck_coef: float = 0.003    # potential per deck card above 10 (at most 12 of them)
     acq_relic_coef: float = 0.01    # potential per relic
     acq_upgrade_coef: float = 0.004  # potential per upgrade level in the deck
+    hp_shaping_coef: float = 0.0    # potential-based HP shaping phi = coef x hp / max_hp (0 = off; objective.HpShaping)
     # PPO
     rollout: int = 32
     epochs: int = 2
@@ -322,6 +325,9 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
             raise ValueError(f"--harvest with --overlap {out.overlap} is not supported: anchors are clones in one "
                              "env's pool and anchor starts restore them into any slot, while the two overlap lanes "
                              "have separate pools (run --harvest with --overlap off)")
+    out.hp_shaping_coef = float(out.hp_shaping_coef)
+    if not (out.hp_shaping_coef >= 0.0 and np.isfinite(out.hp_shaping_coef)):
+        raise ValueError(f"hp_shaping_coef {out.hp_shaping_coef} must be a finite number >= 0 (0 = off)")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -1217,13 +1223,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
-        shaper = None
+        acq_coefs = {"deck": cfg.acq_deck_coef, "relic": cfg.acq_relic_coef, "upgrade": cfg.acq_upgrade_coef}
+        hp_coef = float(cfg.hp_shaping_coef)
+        shaper = make_shaper(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, acq=bool(cfg.acq_shaping),
+                             acq_coefs=acq_coefs, hp_coef=hp_coef)
         if cfg.acq_shaping:
-            shaper = AcqShaping(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, deck=cfg.acq_deck_coef,
-                                relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
             log(f"acquisition shaping: phi = {cfg.acq_deck_coef} x min(deck - 10, 12) + {cfg.acq_relic_coef} x relics + "
                 f"{cfg.acq_upgrade_coef} x upgrades (0 at episode end), F = gamma phi(s') - phi(s) added to the "
                 f"{cfg.objective} reward; reward_mean / return_mean / progress stay unshaped")
+        if hp_coef:
+            log(f"HP shaping: phi = {hp_coef:g} x hp / max_hp (0 at episode end), F = gamma phi(s') - phi(s) added to the "
+                f"{cfg.objective} reward (an episode's HP shaping telescopes to -{hp_coef:g} x hp0 / max_hp0); "
+                f"reward_mean / return_mean / progress stay unshaped")
         aux_tg = None
         if cfg.aux_heads:
             aux_tg = AuxTargets(spec.aux_fields, env.schema["last_episode"].fields, cfg.rollout, cfg.envs,
@@ -1250,9 +1261,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 return {"rewards": EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, n,
                                                   cfg.ascension, win_bonus=cfg.win_bonus,
                                                   shaped_floors=cfg.shaped_floors),
-                        "shaper": AcqShaping(spec.aux_fields, spec.cols["deck"], n, cfg.gamma, deck=cfg.acq_deck_coef,
-                                             relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
-                        if cfg.acq_shaping else None,
+                        "shaper": make_shaper(spec.aux_fields, spec.cols["deck"], n, cfg.gamma,
+                                              acq=bool(cfg.acq_shaping), acq_coefs=acq_coefs, hp_coef=hp_coef),
                         "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k) if cfg.rollout_loop_breaker else None,
                         "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name),
                         "run_stats": RunStats(env.schema, n) if cfg.episodes_log else None}
@@ -1657,9 +1667,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
                     if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
                         f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
-                        for e in fin:
-                            e["shaping"] = ended.get(e["slot"], 0.0)
-                            e["shaped_return"] = e["return"] + e["shaping"]
+                        annotate_shaping(fin, ended, shaper)
                         r_obj[t] = r
                         r = r + f_acq
                     # --- sts2train.cycles hook: did this transition close a verified UI revisit cycle (cost once) ---
@@ -2026,18 +2034,29 @@ def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | 
 
 
 def shaping_stats(rewards: np.ndarray, r_obj: np.ndarray | None, idx_all: np.ndarray, eps: list[dict],
-                  shaper: AcqShaping | None) -> dict:
-    """Metrics of --acq-shaping ({} without it): the mean shaped reward PPO trained on and the mean shaping per step
-    (valid steps of the window), the finished episodes' shaped return and shaping sum, the mean potential now."""
+                  shaper) -> dict:
+    """Metrics of the shaping ({} without --acq-shaping / --hp-shaping-coef): the mean shaped reward PPO trained on
+    and the mean shaping per step (valid steps of the window; all parts), the finished episodes' shaped return and
+    shaping sum, the mean acquisition potential now (with --acq-shaping); with HP shaping: ``hp_shaping_mean`` (per
+    slot-step of the window), ``hp_shaping_sum`` (the window's total), ``hp_shaping_return_mean`` (finished
+    episodes' HP shaping sums) and ``hp_potential_mean`` (now)."""
     if shaper is None:
         return {}
     shaped = rewards.reshape(-1)[idx_all]
     obj = r_obj.reshape(-1)[idx_all]
-    return {"reward_mean_shaped": float(shaped.mean()) if len(shaped) else None,
-            "shaping_mean": float((shaped - obj).mean()) if len(shaped) else None,
-            "shaped_return_mean": _mean([e["shaped_return"] for e in eps if "shaped_return" in e]),
-            "shaping_return_mean": _mean([e["shaping"] for e in eps if "shaping" in e]),
-            "acq_potential_mean": float(shaper.phi.mean())}
+    out = {"reward_mean_shaped": float(shaped.mean()) if len(shaped) else None,
+           "shaping_mean": float((shaped - obj).mean()) if len(shaped) else None,
+           "shaped_return_mean": _mean([e["shaped_return"] for e in eps if "shaped_return" in e]),
+           "shaping_return_mean": _mean([e["shaping"] for e in eps if "shaping" in e])}
+    win = shaper.pop_window()
+    if "acq" in shaper.parts:
+        out["acq_potential_mean"] = float(shaper.part_phi("acq").mean())
+    if "hp" in shaper.parts:
+        s_hp, n_hp = win["hp"]
+        out.update(hp_shaping_mean=s_hp / n_hp if n_hp else None, hp_shaping_sum=s_hp,
+                   hp_shaping_return_mean=_mean([e["hp_shaping"] for e in eps if "hp_shaping" in e]),
+                   hp_potential_mean=float(shaper.part_phi("hp").mean()))
+    return out
 
 
 def _rel(p: Path | None, run: Path) -> str | None:
