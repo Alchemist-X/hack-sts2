@@ -15,13 +15,14 @@
 #
 # Env knobs: STS=/content/sts2 (gcs_sync.py + key live there), BUCKET, WAIT_RUN (the source run whose trainer must have
 # exited first; default the FORK_CKPT's run dir), WAIT_MAX_S (default 14400), ENDS (segment ends, tests only),
+# MACROS (default rest,shop; none = the stop-and-revert lines A0 / B0 of the plan §5.1),
 # TRAIN / EV (stand-ins for tests), SYNC=0 (no GCS loop), EVALS=0 (no endpoint evals: the overlap preflight).
 set -u
 B=$1; RUN=$2; L=$3; FORK=$4; OVERLAP=${5:-off}
 STS=${STS:-/content/sts2}; BUCKET=${BUCKET:-gomoku-zero-20260816-ai-sts2train}
 TRAIN=${TRAIN:-"bash $B/run_train.sh"}; EV=${EV:-"python3 -m sts2train.cli"}
 DEV=${DEV:-silent-a10-dev-v1}; AB=${AB:-silent-a10-ab-v1}
-FORK_U=${FORK_U:-3064}; LAST=${LAST:-7664}
+FORK_U=${FORK_U:-3064}; LAST=${LAST:-7664}; MACROS=${MACROS:-rest,shop}
 ENDS=${ENDS:-"3564 4064 4564 5064 5564 6064 6564 7064 7564 7664"}
 WAIT_RUN=${WAIT_RUN:-$(dirname "$(dirname "$FORK")")}; WAIT_MAX_S=${WAIT_MAX_S:-14400}
 log() { echo "$(date -u '+%F %T') w3m-$L: $*"; }
@@ -44,7 +45,7 @@ FLAGS=(--start-mode stream --seed-stream-prefix SP1 --env-seed 1 --init-seed 1 -
        --eval-every 100 --eval-seedset silent-a10-v1 --loop-breaker on
        --ckpt-every 25 --ckpt-every-min 15 --keep-ckpts 60 --max-hours 3 --log-every 1
        --cycle-cost 0.01
-       --macros rest,shop
+       --macros "$MACROS"
        --ent-coef-final 0.005 --ent-anneal-updates $((LAST - FORK_U)) --ent-anneal-start $FORK_U
        --eval-at-every 100 --pin-every 100 --eval-at "$EVAL_AT")
 if [ "$L" = a ]; then
@@ -113,12 +114,12 @@ for END in $ENDS; do
   [ "${EVALS:-1}" = 1 ] || continue
   # confirmatory ab-512 greedy-off of the segment's pinned checkpoint; under evals/ so gcs_sync mirrors it
   run_eval "$(printf '%s/evals/endpoint/u%07d-ab512-greedy-off' "$RUN" "$END")" report.json --seedset "$AB" \
-    --checkpoint "$CK" --policy greedy --breaker off --macros rest,shop || log "ab-512 eval at u$END failed (continuing)"
+    --checkpoint "$CK" --policy greedy --breaker off --macros "$MACROS" || log "ab-512 eval at u$END failed (continuing)"
 done
 [ "${EVALS:-1}" = 1 ] || { log "done (EVALS=0)"; exit 0; }
 CK=$(printf '%s/checkpoints/pinned-%07d.pt' "$RUN" "$LAST")
 run_eval "$(printf '%s/evals/endpoint/u%07d-ab512-greedy-on' "$RUN" "$LAST")" report.json --seedset "$AB" \
-  --checkpoint "$CK" --policy greedy --breaker on --macros rest,shop
+  --checkpoint "$CK" --policy greedy --breaker on --macros "$MACROS"
 run_eval "$(printf '%s/evals/endpoint/u%07d-dev128-sample-off' "$RUN" "$LAST")" repeats.json --seedset "$DEV" \
-  --checkpoint "$CK" --policy sample --breaker off --sample-seed 1 --repeats 3 --macros rest,shop
+  --checkpoint "$CK" --policy sample --breaker off --sample-seed 1 --repeats 3 --macros "$MACROS"
 log "done"
