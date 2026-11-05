@@ -99,7 +99,9 @@ in a widened checkpoint until trained), A/B and `card_id`. `sts2train eval` appl
 | --- | --- | --- | --- |
 | `smoke` (= defaults) | 96 / 256 / 0 / – | 948,974 | the 2026-11-02 smoke model (pooled tables concatenated into the state MLP) |
 | `small` | 128 / 256 / 2 / 4 | 1,175,438 | CPU / MPS smokes of the transformer path |
-| `large` | 384 / 768 / 6 / 8 | 15,805,070 | `--device cuda` only (one A100) |
+| `mid` | 192 / 384 / 3 / 6 | 2,827,406 | the self-play v2 line's size (2,904,208 with `--deck-counts --aux-heads`) |
+| `mid-deep` | 192 / 384 / 6 / 6 | 4,161,998 | twice the trunk depth of `mid` (4,238,800 with `--deck-counts --aux-heads`); `--device cuda` |
+| `large` | 384 / 768 / 6 / 8 | 15,805,070 | `--device cuda` only (one A100; 16,106,128 with `--deck-counts --aux-heads`) |
 
 Activation memory (autograd's saved tensors, fp32, worst-case 64 candidate / prompt rows; measured by
 `model.activation_bytes_per_sample` and printed at start-up for the configured minibatch): smoke 0.41 MiB/sample,
@@ -110,6 +112,10 @@ trainer warns when the estimate exceeds 70 % of the free GPU memory.
 
 `--deck-counts` adds 14 × d_model parameters (smoke +1,344 = +0.14 %, small +1,792, large +5,376 = +0.03 %),
 `--aux-heads` adds two heads of hidden width state / 4 (smoke / small +33,026, large +295,682 = +1.9 %).
+
+A resume cannot change the architecture: `--resume` of a `mid` run with `--preset large` (or `mid-deep`, or any
+model flag that differs from the checkpoint's `arch`) exits 2 naming the checkpoint, both architectures and the
+differing knobs; start the bigger model as a fresh run with a new `--out`.
 
 Local-size guard: on `cpu` / `mps` the trainer refuses (exit 2, with the activation estimate) a model above 3,000,000
 parameters or the `large` preset unless `--allow-big-local` is given (never inherited by `--resume`). On `mps` it
@@ -122,6 +128,33 @@ the `3b73317739c650bd` schema (since `e9baaefc39811631` two more `RunActionKind`
 `5dbfa09dd9dcb5ed`, whose counts were 948,750 / 1,175,150 / 15,804,270); every size, vocabulary and column index is
 read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
 buffers are ignored).
+
+## Long-run flags (`--ent-coef-final`, `--eval-at-every`, `--pin-every`)
+
+All off by default; off, the trainer computes and logs exactly what it did before (no `t_eval_at_s` column, a
+constant `ent_coef`, no extra checkpoint files).
+
+- **Entropy schedule** (`--ent-coef A --ent-coef-final X --ent-anneal-updates N [--ent-anneal-start U]`): update
+  `u` (1-based, absolute) uses `A + (X - A) * clamp((u - 1 - U) / N, 0, 1)`, i.e. `A` at update `U + 1`, linear to
+  `X` at update `U + N + 1`, then `X`. `U` defaults to the update count at the start of the session that first sets
+  the schedule; the resolved `U` is stored in the config, so `--resume` continues the schedule where it was
+  (`--ent-coef-final none` turns an inherited schedule off). Both `--ent-coef-final` and `--ent-anneal-updates >= 1`
+  are needed (one alone exits 2). Every metrics row carries the value in effect as `ent_coef`. The coefficient is a
+  0-d device tensor set in place before each update, so a compiled loss is not recompiled per value.
+- **Periodic fixed endpoints** (`--eval-at-every N`): every N updates (absolute update numbers, so a resume keeps the
+  grid) runs the `--eval-at` protocol: `--eval-at-seedset` in every `--eval-at-modes` mode, one `evals.jsonl` row per
+  mode (`mode`, `eval_at`), the weights kept as `checkpoints/pinned-<N>.pt`, never selecting `best.pt`. It combines
+  with explicit `--eval-at` updates. With either on, metrics rows carry `t_eval_at_s` (the share of `t_eval_s` spent
+  in these evals).
+- **Pinned checkpoints** (`--pin-every N`): every N updates the checkpoint of that update (written if the regular
+  cadence did not) is copied to `checkpoints/pinned-<N>.pt`. `--keep-ckpts K` prunes only `ckpt-*.pt`; `best.pt`
+  and `pinned-*.pt` are never pruned and never taken by `--resume auto`.
+
+```bash
+# a long cuda run: entropy 0.02 -> 0.005 over 400 updates, dev-128 greedy-on / greedy-off every 50, weights every 100
+uv run --project sim/tools/train sts2train train ... --ent-coef 0.02 --ent-coef-final 0.005 --ent-anneal-updates 400 \
+    --eval-at-every 50 --eval-at-seedset silent-a10-dev-v1 --eval-at-modes greedy-on,greedy-off --pin-every 100
+```
 
 ## Speed (`--compile`, `--static-rows`, `bench-update`)
 

@@ -169,7 +169,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--ckpt-every", dest="ckpt_every", type=int, help=f"checkpoint every N updates (default {D.ckpt_every})")
     g.add_argument("--ckpt-every-min", dest="ckpt_every_min", type=float,
                    help=f"and every M minutes (default {D.ckpt_every_min})")
-    g.add_argument("--keep-ckpts", dest="keep_ckpts", type=int, help=f"keep the last K (default {D.keep_ckpts})")
+    g.add_argument("--keep-ckpts", dest="keep_ckpts", type=int,
+                   help=f"keep the last K ckpt-*.pt (default {D.keep_ckpts}); best.pt and pinned-*.pt are never pruned")
+    g.add_argument("--pin-every", dest="pin_every", type=int,
+                   help="also keep checkpoints/pinned-<N>.pt every N updates, never pruned (default 0 = off)")
     g.add_argument("--eval-every", dest="eval_every", type=int,
                    help="protocol eval every E updates (default 0 = off); also once at the end of a budget-ended session")
     g.add_argument("--eval-seedset", dest="eval_seedset", help=f"(default {D.eval_seedset})")
@@ -182,6 +185,9 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="fixed-endpoint evaluations at these absolute update numbers: --eval-at-seedset in every "
                         "--eval-at-modes mode into evals/u<N>/<mode>/, one evals.jsonl row per mode (mode, eval_at), "
                         "the checkpoint kept as checkpoints/pinned-<N>.pt; they never select best.pt (default none)")
+    g.add_argument("--eval-at-every", dest="eval_at_every", type=int, metavar="N",
+                   help="also run the --eval-at protocol every N updates (pinned checkpoint, one row per mode; the "
+                        "metrics rows carry its wall cost as t_eval_at_s; default 0 = off)")
     g.add_argument("--eval-at-seedset", dest="eval_at_seedset", help=f"(default {D.eval_at_seedset})")
     g.add_argument("--eval-at-modes", dest="eval_at_modes", metavar="MODES",
                    help="comma-separated greedy-on / greedy-off / sample-on / sample-off (default "
@@ -295,7 +301,19 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                             ("--ent-coef", "ent_coef", float), ("--max-grad-norm", "max_grad_norm", float),
                             ("--max-rows", "max_rows", int)):
         g.add_argument(flag, dest=dest, type=typ, help=f"(default {getattr(D, dest)})")
+    g.add_argument("--ent-coef-final", dest="ent_coef_final", type=_float_or_none, metavar="X",
+                   help="entropy schedule: anneal --ent-coef linearly to X over --ent-anneal-updates updates, then keep "
+                        "X ('none' turns a resumed schedule off; default off = constant --ent-coef)")
+    g.add_argument("--ent-anneal-updates", dest="ent_anneal_updates", type=int, metavar="N",
+                   help="length of the entropy schedule in updates (with --ent-coef-final; 0 = off)")
+    g.add_argument("--ent-anneal-start", dest="ent_anneal_start", type=int, metavar="U",
+                   help="the schedule starts after absolute update U (default: this session's first update; a resume "
+                        "keeps the checkpoint's start)")
     return tr
+
+
+def _float_or_none(v: str):
+    return None if str(v).strip().lower() in ("none", "") else float(v)
 
 
 def _bench_parser(sub) -> argparse.ArgumentParser:

@@ -159,6 +159,12 @@ class TrainConfig:
     clip: float = 0.2
     vf_coef: float = 0.5
     ent_coef: float = 0.01
+    # entropy schedule (off = constant ent_coef): linear from ent_coef to ent_coef_final over ent_anneal_updates
+    # updates starting after absolute update ent_anneal_start (None = the first session's start that enables it; the
+    # resolved start is stored in the config, so a resume continues the schedule); see ent_coef_at
+    ent_coef_final: float | None = None
+    ent_anneal_updates: int = 0
+    ent_anneal_start: int | None = None
     max_grad_norm: float = 0.5
     max_rows: int = 64              # training candidate / prompt-option rows (actions restricted to j < min(cand_n, 64))
     # model (sts2train.model.PRESETS)
@@ -196,7 +202,8 @@ class TrainConfig:
     # checkpoints / logs / eval
     ckpt_every: int = 50            # updates (0 = off)
     ckpt_every_min: float = 15.0    # minutes (0 = off)
-    keep_ckpts: int = 3
+    keep_ckpts: int = 3             # newest ckpt-*.pt kept; best.pt / pinned-*.pt are never pruned
+    pin_every: int = 0              # also keep checkpoints/pinned-<N>.pt every N updates (0 = off; never pruned)
     eval_every: int = 0             # updates (0 = off); a final eval also runs when a budget ends the session
     eval_seedset: str = "std-a0-v1"
     eval_threads: int = 0           # 0 = min(os.cpu_count(), 8)
@@ -209,6 +216,7 @@ class TrainConfig:
     eval_at_seedset: str = "silent-a10-dev-v1"
     eval_at_modes: tuple = ("greedy-on", "greedy-off", "sample-off")
     eval_at_sample_seed: int = 1    # sample-mode play RNG seed of the eval_at evaluations (one play per game)
+    eval_at_every: int = 0          # also run the eval_at protocol every N updates (0 = off)
     no_best: bool = False           # never select best.pt (the periodic eval only monitors)
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
@@ -284,7 +292,57 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         parse_mode(m)                       # ValueError on an unknown mode
     if out.eval_at and not out.eval_at_modes:
         raise ValueError("eval_at is set but eval_at_modes is empty")
+    for k in ("eval_at_every", "pin_every"):
+        if int(getattr(out, k)) < 0:
+            raise ValueError(f"{k} {getattr(out, k)} must be >= 0 (0 = off)")
+        setattr(out, k, int(getattr(out, k)))
+    if out.eval_at_every and not out.eval_at_modes:
+        raise ValueError("eval_at_every is set but eval_at_modes is empty")
+    resolve_ent_schedule(out, given)
     return out
+
+
+def ent_schedule_on(cfg) -> bool:
+    return getattr(cfg, "ent_coef_final", None) is not None and int(getattr(cfg, "ent_anneal_updates", 0) or 0) > 0
+
+
+def resolve_ent_schedule(out: TrainConfig, given: dict) -> None:
+    """Validate the entropy schedule (in place). Both --ent-coef-final and --ent-anneal-updates (>= 1) turn it on; one
+    without the other is refused. An inherited ent_anneal_start of a resumed schedule that this session turns off is
+    dropped; an explicit --ent-anneal-start without a schedule is refused."""
+    final, n = out.ent_coef_final, int(out.ent_anneal_updates or 0)
+    if "ent_coef_final" in given and final is None and "ent_anneal_updates" not in given:
+        n = 0                               # --ent-coef-final none: a resumed schedule off
+    if n < 0:
+        raise ValueError(f"ent_anneal_updates {n} must be >= 0")
+    out.ent_anneal_updates = n
+    if (final is None) != (n == 0):
+        raise ValueError("the entropy schedule needs both --ent-coef-final X and --ent-anneal-updates N >= 1 "
+                         f"(got ent_coef_final {final}, ent_anneal_updates {n})")
+    if final is not None:
+        out.ent_coef_final = float(final)
+        if not (np.isfinite(out.ent_coef_final) and out.ent_coef_final >= 0.0):
+            raise ValueError(f"ent_coef_final {final} must be a finite number >= 0")
+    if out.ent_anneal_start is not None:
+        if final is None:
+            if "ent_anneal_start" in given:
+                raise ValueError("--ent-anneal-start needs --ent-coef-final and --ent-anneal-updates")
+            out.ent_anneal_start = None     # inherited from a resumed schedule this session turns off
+        elif int(out.ent_anneal_start) < 0:
+            raise ValueError(f"ent_anneal_start {out.ent_anneal_start} must be an update number >= 0")
+        else:
+            out.ent_anneal_start = int(out.ent_anneal_start)
+
+
+def ent_coef_at(cfg, update: int) -> float:
+    """The entropy coefficient of (1-based) update `update`: cfg.ent_coef without a schedule; with one, linear from
+    ent_coef (updates <= ent_anneal_start + 1) to ent_coef_final (updates > ent_anneal_start + ent_anneal_updates):
+    ent_coef + (final - ent_coef) * clamp((update - 1 - start) / N, 0, 1)."""
+    if not ent_schedule_on(cfg):
+        return float(cfg.ent_coef)
+    start = int(cfg.ent_anneal_start or 0)
+    frac = min(max((int(update) - 1 - start) / int(cfg.ent_anneal_updates), 0.0), 1.0)
+    return float(cfg.ent_coef) + (float(cfg.ent_coef_final) - float(cfg.ent_coef)) * frac
 
 
 def resolve_seeds(out: TrainConfig, given: dict, base: dict | None) -> None:
@@ -319,7 +377,7 @@ def eval_seedsets(cfg) -> list[str]:
     """The seed sets a run evaluates on: ``eval_seedset`` (with ``eval_every``) and ``eval_at_seedset`` (with
     ``eval_at``); the blind-set gate and the isolation guard's extra sets."""
     out = [cfg.eval_seedset] if getattr(cfg, "eval_every", 0) else []
-    if getattr(cfg, "eval_at", ()) and cfg.eval_at_seedset not in out:
+    if (getattr(cfg, "eval_at", ()) or getattr(cfg, "eval_at_every", 0)) and cfg.eval_at_seedset not in out:
         out.append(cfg.eval_at_seedset)
     return out
 
@@ -804,6 +862,9 @@ class MinibatchUpdater:
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
         self.coefs = (vf_coef, ent_coef)
+        self.ent_t = None
+        if ent_schedule_on(cfg):        # a 0-d device tensor updated in place (set_ent_coef): no recompile per value
+            self.ent_t = ent_coef = torch.tensor(ent_coef, dtype=torch.float32, device=device)
         self.aux = bool(getattr(cfg, "aux_heads", False))
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
@@ -819,6 +880,13 @@ class MinibatchUpdater:
         self.eager = loss_fn
         self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
         self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
+
+    def set_ent_coef(self, v: float) -> None:
+        """The entropy schedule's coefficient for the next minibatches (only with a schedule: ent_schedule_on)."""
+        if self.ent_t is None:
+            raise RuntimeError("set_ent_coef needs an entropy schedule (ent_coef_final + ent_anneal_updates)")
+        self.ent_t.fill_(float(v))
+        self.coefs = (self.coefs[0], float(v))
 
     def loss(self, *args, compiled: bool = True):
         """`args` = (xb, act, oldlogp, madv, vret, vold[, win_y, win_m, combat_y, combat_m])."""
@@ -961,7 +1029,13 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
     if ck is not None:
         want, have = arch_of(ck.get("arch") or ck.get("config")), arch_of(config_dict(cfg))
         if want != have:
-            raise ValueError(f"architecture {have} differs from the checkpoint's {want}; drop the model flags to resume")
+            diff = {k: (want[k], have[k]) for k in want if want[k] != have.get(k)}
+            raise ValueError(
+                f"architecture mismatch: the checkpoint {ck_path} was trained as {want}, this run would build {have} "
+                f"(differs in {', '.join(f'{k} {a} -> {b}' for k, (a, b) in diff.items())})"
+                + (f"; --preset {given['preset']} sets {PRESETS[given['preset']]}" if given.get("preset") else "")
+                + ". A resume cannot change the architecture (the weights and Adam state are shaped by it): drop the "
+                "model / preset flags to resume, or start a fresh run with a new --out")
     elif CheckpointManager(cfg.out).latest() is not None:
         raise ValueError(f"{cfg.out} already holds checkpoints: pass --resume auto (continue) or a new --out")
     return cfg, ck, ck_path
@@ -985,7 +1059,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
                   if cfg.eval_every else None)
     blind_eval_at = (check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
-                     if cfg.eval_at else None)     # --eval-at: the same gate (sts2train.cycles x isolation)
+                     if cfg.eval_at or cfg.eval_at_every else None)     # --eval-at(-every): the same gate (sts2train.cycles x isolation)
     guard = IsolationGuard.from_seedsets(extra=eval_seedsets(cfg))
     if cfg.start_mode == "pool":
         isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
@@ -1017,6 +1091,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         best_eval = None
     c["sessions"] += 1
     upd0 = c["updates"]
+    ent_sched = ent_schedule_on(cfg)
+    if ent_sched and cfg.ent_anneal_start is None:  # counted from this session's first update; stored -> resumes go on
+        cfg.ent_anneal_start = upd0
 
     if cfg.start_mode == "stream":      # the env's own start sequence is never used (no auto-reset, empty pool)
         seed_text = f"SPENV{seed_of(cfg, 'env_seed')}"
@@ -1114,6 +1191,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             log(f"fixed-endpoint evals at updates {sorted(eval_at)}: {cfg.eval_at_seedset} x {list(cfg.eval_at_modes)}"
                 + (" (sample seed " + str(cfg.eval_at_sample_seed) + ")" if any(m.startswith("sample")
                                                                              for m in cfg.eval_at_modes) else ""))
+        if cfg.eval_at_every:
+            log(f"periodic fixed-endpoint evals every {cfg.eval_at_every} updates: {cfg.eval_at_seedset} x "
+                f"{list(cfg.eval_at_modes)} (checkpoints pinned)")
+        if cfg.pin_every:
+            log(f"pinned checkpoints every {cfg.pin_every} updates (checkpoints/pinned-<N>.pt, never pruned)")
+        if ent_sched:
+            log(f"entropy schedule: {cfg.ent_coef:g} -> {cfg.ent_coef_final:g} linear over updates "
+                f"{cfg.ent_anneal_start + 1}..{cfg.ent_anneal_start + cfg.ent_anneal_updates + 1} (then constant); this "
+                f"session starts at {ent_coef_at(cfg, upd0 + 1):.6g}")
         if cfg.no_best:
             log("--no-best: no evaluation selects best.pt")
         # ---
@@ -1530,6 +1616,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             # PPO update: minibatches gathered on the device; every epoch's minibatch indices go up in one copy, row
             # cuts come from host counts and the statistics come back once, so the minibatches queue without a sync
             t_up = time.monotonic()
+            if ent_sched:
+                ent_now = ent_coef_at(cfg, upd + 1)
+                updater.set_ent_coef(ent_now)
             model.train()
             idx_all = np.flatnonzero(store.valid.reshape(-1))
             f_adv = adv.reshape(-1)
@@ -1602,12 +1691,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     (cfg.ckpt_every_min and now - last_ckpt_t >= cfg.ckpt_every_min * 60):
                 save(upd)
                 last_ckpt_t = time.monotonic()
+            if cfg.pin_every and upd % cfg.pin_every == 0:     # --pin-every: kept regardless of --keep-ckpts
+                if last_ckpt_upd != upd:
+                    save(upd)
+                    last_ckpt_t = time.monotonic()
+                ckpts.pin(last_ckpt_path, upd)
             ckpt_s = time.monotonic() - t_ck
             t_ev = time.monotonic()
             if cfg.eval_every and upd % cfg.eval_every == 0:
                 run_eval(upd)
-            if upd in eval_at:
+            t_ev_at = time.monotonic()
+            if upd in eval_at or (cfg.eval_at_every and upd % cfg.eval_at_every == 0):
                 run_eval_at(upd)
+            eval_at_s = time.monotonic() - t_ev_at
             eval_s = time.monotonic() - t_ev
             t_end = time.monotonic()
             iter_s = t_end - t_iter
@@ -1627,10 +1723,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    **sm, "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
+                   **({"t_eval_at_s": round(eval_at_s, 3)} if eval_at or cfg.eval_at_every else {}),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
                    "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   "ent_coef": cfg.ent_coef, "vf_coef": cfg.vf_coef, "clip": cfg.clip, "session": c["sessions"],
+                   "ent_coef": ent_now if ent_sched else cfg.ent_coef, "vf_coef": cfg.vf_coef, "clip": cfg.clip, "session": c["sessions"],
                    "session_update": upd - upd0, "starts_update": tu["starts"], "starts_total": c["starts"],
                    **track.metrics(), "dropped_total": c["dropped"],
                    **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
@@ -1654,6 +1751,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"env={env_s:.2f}s infer={infer_s:.2f}s upd={update_s:.2f}s eps={len(ep_this)} "
                     f"prog={fmt(es['progress_mean'], '.4f')} floor={fmt(es['floor_mean'], '.2f')} wins={es['wins']} "
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
+                    + (f" ent_coef={ent_now:.5f}" if ent_sched else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")

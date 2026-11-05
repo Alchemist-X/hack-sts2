@@ -64,7 +64,8 @@ def test_param_budget(model):
 def test_preset_sizes(spec):
     sizes = {name: param_count(Policy(spec, **kw)) for name, kw in PRESETS.items()}
     # since e9baaefc39811631 RunActionKind has 23 members (21 before: 948,750 / 1,175,150 / 15,804,270)
-    assert sizes == {"smoke": 948_974, "small": 1_175_438, "large": 15_805_070}, sizes
+    assert sizes == {"smoke": 948_974, "small": 1_175_438, "mid": 2_827_406, "mid-deep": 4_161_998,
+                     "large": 15_805_070}, sizes
 
 
 @pytest.mark.parametrize("arch", [None, TINY_TRUNK], ids=["smoke", "trunk"])
