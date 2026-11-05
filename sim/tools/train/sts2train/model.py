@@ -37,11 +37,15 @@ N_TABLES = 17
 
 # Architecture presets (d_model, state width, trunk depth / heads / FFN multiplier) -> parameter count on the
 # 3b73317739c650bd schema (RunActionKind with the two rewards-screen macro kinds, 23 members): smoke 948,974 (the
-# 2026-11-02 smoke model), small 1,175,438, large 15,805,070; with 21 kinds (fc2eb34c07bc8513 / 5dbfa09dd9dcb5ed)
-# 948,750 / 1,175,150 / 15,804,270.
+# 2026-11-02 smoke model), small 1,175,438, mid 2,827,406 (the self-play v2 line's size; 2,904,208 with --deck-counts
+# --aux-heads), mid-deep 4,161,998 (4,238,800), large 15,805,070 (16,106,128); with 21 kinds (fc2eb34c07bc8513 /
+# 5dbfa09dd9dcb5ed) smoke / small / large 948,750 / 1,175,150 / 15,804,270. Above LOCAL_PARAM_LIMIT (3M: mid-deep,
+# large) cpu / mps training needs --allow-big-local (sts2train.ppo.check_local_size).
 PRESETS = {
     "smoke": {"d": 96, "s": 256, "depth": 0, "heads": 4, "ff_mult": 4},
     "small": {"d": 128, "s": 256, "depth": 2, "heads": 4, "ff_mult": 4},
+    "mid": {"d": 192, "s": 384, "depth": 3, "heads": 6, "ff_mult": 4},
+    "mid-deep": {"d": 192, "s": 384, "depth": 6, "heads": 6, "ff_mult": 4},
     "large": {"d": 384, "s": 768, "depth": 6, "heads": 8, "ff_mult": 4},
 }
 ARCH_KEYS = ("d", "s", "depth", "heads", "ff_mult")

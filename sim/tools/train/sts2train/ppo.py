@@ -13,9 +13,12 @@ relics and upgrades to the reward PPO trains on (``objective.AcqShaping``; ``rew
 progress stay the objective's, the shaping is logged apart). ``rollout_loop_breaker`` (``--rollout-loop-breaker``)
 applies the evaluation's loop breaker (``sts2train.loopbreak``) to the rollout sampling: back at an observation of its
 last 64 decisions (a no-op or a cycle) a slot gives probability 0 to the candidates it took there (the stored
-log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled). With these
-flags off the trainer computes exactly what it computed before. The periodic eval's greedy policy runs with the loop
-breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
+log-probs are the masked distribution's, so PPO's ratio is taken against the policy that actually sampled).
+``harvest`` (``--harvest boss:N,elite:N,act2:N``) adds self-anchor starts (``sts2train.harvest``): determinized clones
+of the policy's own boss / elite / act-2 combat entries in fresh-started episodes, kept as live pool entries in FIFO
+rings, which the env's auto-reset start sequence then starts episodes from (``harvest_*`` metrics; ``fresh_*`` counts
+fresh-entry starts only). With these flags off the trainer computes exactly what it computed before. The periodic
+eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
 ``TRAIN<env_seed>`` pool, bit for bit the earlier trainer) or ``stream`` (``sts2train.seedstream``: every episode from a
@@ -96,6 +99,7 @@ from .cycles import update_stats as cycle_update_stats
 from .episodes import EPISODE_HOOKS, EpisodeLog
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
                        obs_to_device, widen_spec)
+from .harvest import Harvester, format_harvest, parse_harvest
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
 from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
 from .loopbreak import LoopBreaker
@@ -104,6 +108,7 @@ from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model
 from .objective import OBJECTIVES, AcqShaping, EpisodeRewards
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
+from .overlap import OVERLAP_MODES, LaneStreamEnv, OverlapRollout, VecPair
 from .seedstream import (START_MODES, PoolStarts, SeedStream, StreamEnv, lookahead_of, max_lookahead,
                          stream_prefix)
 from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
@@ -119,6 +124,9 @@ RNG_SCHEMES = ("legacy", "decoupled")
 SEED_FIELDS = ("init_seed", "sample_seed", "env_seed", "start_seed")
 NOT_INHERITED = ("allow_big_local", "allow_blind", "blind_purpose")   # never taken from a checkpoint's config
 MPS_HIGH_WATERMARK = "0.3"          # default PYTORCH_MPS_HIGH_WATERMARK_RATIO (a 24 GB Mac is a smoke box)
+
+
+DEFAULT_HARVEST_START_SHARE = 0.33     # --harvest in --start-mode stream without --harvest-start-share
 
 
 @dataclass
@@ -137,9 +145,16 @@ class TrainConfig:
                                             # 1.25 x an update's starts; 0 = none: NewRun in the step)
     stream_prefetch: bool = True    # stream: create the lookahead's templates in a thread during the PPO update (else
                                     # synchronously once per update)
+    overlap: str = "off"            # off | double: env stepping of one half of the slots overlaps the other half's
+                                    # policy forward (sts2train.overlap; two lane VecEnvs); a runtime knob
     start_saves: str | None = None  # directory of game .save files (recursive) to start episodes from (startpool.py)
     save_mix: float = 0.5           # fraction of episode starts from start_saves (pool entry multiplicities)
     save_copies: str = "determinized"   # further copies of a save: determinized (hidden state resampled) | exact
+    harvest: str = ""               # self-anchor rings "boss:N,elite:N,act2:N[,any:N]" ("" = off; sts2train.harvest)
+    harvest_prob: float = 0.25      # probability of keeping a detected combat entry as an anchor
+    harvest_max_per_step: int = 64  # anchors captured per env step at most
+    harvest_start_share: float | None = None    # stream mode: share of finished slots started from a live anchor
+                                                # (None = 0.33 with --harvest in stream mode; pool mode: not used)
     # objective
     objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
@@ -159,6 +174,12 @@ class TrainConfig:
     clip: float = 0.2
     vf_coef: float = 0.5
     ent_coef: float = 0.01
+    # entropy schedule (off = constant ent_coef): linear from ent_coef to ent_coef_final over ent_anneal_updates
+    # updates starting after absolute update ent_anneal_start (None = the first session's start that enables it; the
+    # resolved start is stored in the config, so a resume continues the schedule); see ent_coef_at
+    ent_coef_final: float | None = None
+    ent_anneal_updates: int = 0
+    ent_anneal_start: int | None = None
     max_grad_norm: float = 0.5
     max_rows: int = 64              # training candidate / prompt-option rows (actions restricted to j < min(cand_n, 64))
     # model (sts2train.model.PRESETS)
@@ -196,7 +217,8 @@ class TrainConfig:
     # checkpoints / logs / eval
     ckpt_every: int = 50            # updates (0 = off)
     ckpt_every_min: float = 15.0    # minutes (0 = off)
-    keep_ckpts: int = 3
+    keep_ckpts: int = 3             # newest ckpt-*.pt kept; best.pt / pinned-*.pt are never pruned
+    pin_every: int = 0              # also keep checkpoints/pinned-<N>.pt every N updates (0 = off; never pruned)
     eval_every: int = 0             # updates (0 = off); a final eval also runs when a budget ends the session
     eval_seedset: str = "std-a0-v1"
     eval_threads: int = 0           # 0 = min(os.cpu_count(), 8)
@@ -209,6 +231,7 @@ class TrainConfig:
     eval_at_seedset: str = "silent-a10-dev-v1"
     eval_at_modes: tuple = ("greedy-on", "greedy-off", "sample-off")
     eval_at_sample_seed: int = 1    # sample-mode play RNG seed of the eval_at evaluations (one play per game)
+    eval_at_every: int = 0          # also run the eval_at protocol every N updates (0 = off)
     no_best: bool = False           # never select best.pt (the periodic eval only monitors)
     log_every: int = 10
     baseline_steps: int = 0         # uniform-random steps on the same env before training (0 = skip)
@@ -245,6 +268,19 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
                          "determinized / exact")
     if out.compile not in COMPILE_MODES:
         raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
+    out.harvest = format_harvest(parse_harvest(out.harvest))      # canonical spec, "" = off; raises on a bad spec
+    if not 0.0 < float(out.harvest_prob) <= 1.0:
+        raise ValueError(f"harvest_prob {out.harvest_prob} must be in (0, 1]")
+    if int(out.harvest_max_per_step) < 1:
+        raise ValueError(f"harvest_max_per_step {out.harvest_max_per_step} must be >= 1")
+    if out.harvest_start_share is not None:
+        if not 0.0 <= float(out.harvest_start_share) <= 1.0:
+            raise ValueError(f"harvest_start_share {out.harvest_start_share} must be in [0, 1]")
+        if out.start_mode != "stream" and given.get("harvest_start_share") is not None:
+            raise ValueError("--harvest-start-share applies to --start-mode stream only (pool mode: anchors take the "
+                             "env's auto-reset start sequence)")
+    if out.harvest and out.start_mode == "stream" and out.harvest_start_share is None:
+        out.harvest_start_share = DEFAULT_HARVEST_START_SHARE
     if out.compile == "reduce-overhead" and out.static_rows is False:
         raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
     if not float(out.aux_coef) >= 0.0:
@@ -272,6 +308,18 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         stream_prefix(out)                  # validates an explicit prefix / the SP<env_seed> default
     elif "seed_stream_prefix" in given and given["seed_stream_prefix"]:
         raise ValueError("--seed-stream-prefix applies to --start-mode stream only")
+    if out.overlap not in OVERLAP_MODES:
+        raise ValueError(f"overlap {out.overlap!r}: expected one of {OVERLAP_MODES}")
+    if out.overlap != "off":
+        if int(out.envs) < 2:
+            raise ValueError(f"--overlap {out.overlap} needs --envs >= 2 (got {out.envs})")
+        if uses_start_saves(out):
+            raise ValueError(f"--overlap {out.overlap} takes fresh pools / the seed stream only: --start-saves must be "
+                             "none (save copies are made through slot restores of one env)")
+        if out.harvest:
+            raise ValueError(f"--harvest with --overlap {out.overlap} is not supported: anchors are clones in one "
+                             "env's pool and anchor starts restore them into any slot, while the two overlap lanes "
+                             "have separate pools (run --harvest with --overlap off)")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -284,7 +332,57 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         parse_mode(m)                       # ValueError on an unknown mode
     if out.eval_at and not out.eval_at_modes:
         raise ValueError("eval_at is set but eval_at_modes is empty")
+    for k in ("eval_at_every", "pin_every"):
+        if int(getattr(out, k)) < 0:
+            raise ValueError(f"{k} {getattr(out, k)} must be >= 0 (0 = off)")
+        setattr(out, k, int(getattr(out, k)))
+    if out.eval_at_every and not out.eval_at_modes:
+        raise ValueError("eval_at_every is set but eval_at_modes is empty")
+    resolve_ent_schedule(out, given)
     return out
+
+
+def ent_schedule_on(cfg) -> bool:
+    return getattr(cfg, "ent_coef_final", None) is not None and int(getattr(cfg, "ent_anneal_updates", 0) or 0) > 0
+
+
+def resolve_ent_schedule(out: TrainConfig, given: dict) -> None:
+    """Validate the entropy schedule (in place). Both --ent-coef-final and --ent-anneal-updates (>= 1) turn it on; one
+    without the other is refused. An inherited ent_anneal_start of a resumed schedule that this session turns off is
+    dropped; an explicit --ent-anneal-start without a schedule is refused."""
+    final, n = out.ent_coef_final, int(out.ent_anneal_updates or 0)
+    if "ent_coef_final" in given and final is None and "ent_anneal_updates" not in given:
+        n = 0                               # --ent-coef-final none: a resumed schedule off
+    if n < 0:
+        raise ValueError(f"ent_anneal_updates {n} must be >= 0")
+    out.ent_anneal_updates = n
+    if (final is None) != (n == 0):
+        raise ValueError("the entropy schedule needs both --ent-coef-final X and --ent-anneal-updates N >= 1 "
+                         f"(got ent_coef_final {final}, ent_anneal_updates {n})")
+    if final is not None:
+        out.ent_coef_final = float(final)
+        if not (np.isfinite(out.ent_coef_final) and out.ent_coef_final >= 0.0):
+            raise ValueError(f"ent_coef_final {final} must be a finite number >= 0")
+    if out.ent_anneal_start is not None:
+        if final is None:
+            if "ent_anneal_start" in given:
+                raise ValueError("--ent-anneal-start needs --ent-coef-final and --ent-anneal-updates")
+            out.ent_anneal_start = None     # inherited from a resumed schedule this session turns off
+        elif int(out.ent_anneal_start) < 0:
+            raise ValueError(f"ent_anneal_start {out.ent_anneal_start} must be an update number >= 0")
+        else:
+            out.ent_anneal_start = int(out.ent_anneal_start)
+
+
+def ent_coef_at(cfg, update: int) -> float:
+    """The entropy coefficient of (1-based) update `update`: cfg.ent_coef without a schedule; with one, linear from
+    ent_coef (updates <= ent_anneal_start + 1) to ent_coef_final (updates > ent_anneal_start + ent_anneal_updates):
+    ent_coef + (final - ent_coef) * clamp((update - 1 - start) / N, 0, 1)."""
+    if not ent_schedule_on(cfg):
+        return float(cfg.ent_coef)
+    start = int(cfg.ent_anneal_start or 0)
+    frac = min(max((int(update) - 1 - start) / int(cfg.ent_anneal_updates), 0.0), 1.0)
+    return float(cfg.ent_coef) + (float(cfg.ent_coef_final) - float(cfg.ent_coef)) * frac
 
 
 def resolve_seeds(out: TrainConfig, given: dict, base: dict | None) -> None:
@@ -319,7 +417,7 @@ def eval_seedsets(cfg) -> list[str]:
     """The seed sets a run evaluates on: ``eval_seedset`` (with ``eval_every``) and ``eval_at_seedset`` (with
     ``eval_at``); the blind-set gate and the isolation guard's extra sets."""
     out = [cfg.eval_seedset] if getattr(cfg, "eval_every", 0) else []
-    if getattr(cfg, "eval_at", ()) and cfg.eval_at_seedset not in out:
+    if (getattr(cfg, "eval_at", ()) or getattr(cfg, "eval_at_every", 0)) and cfg.eval_at_seedset not in out:
         out.append(cfg.eval_at_seedset)
     return out
 
@@ -804,6 +902,9 @@ class MinibatchUpdater:
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
         self.coefs = (vf_coef, ent_coef)
+        self.ent_t = None
+        if ent_schedule_on(cfg):        # a 0-d device tensor updated in place (set_ent_coef): no recompile per value
+            self.ent_t = ent_coef = torch.tensor(ent_coef, dtype=torch.float32, device=device)
         self.aux = bool(getattr(cfg, "aux_heads", False))
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
@@ -819,6 +920,13 @@ class MinibatchUpdater:
         self.eager = loss_fn
         self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
         self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
+
+    def set_ent_coef(self, v: float) -> None:
+        """The entropy schedule's coefficient for the next minibatches (only with a schedule: ent_schedule_on)."""
+        if self.ent_t is None:
+            raise RuntimeError("set_ent_coef needs an entropy schedule (ent_coef_final + ent_anneal_updates)")
+        self.ent_t.fill_(float(v))
+        self.coefs = (self.coefs[0], float(v))
 
     def loss(self, *args, compiled: bool = True):
         """`args` = (xb, act, oldlogp, madv, vret, vold[, win_y, win_m, combat_y, combat_m])."""
@@ -961,7 +1069,13 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
     if ck is not None:
         want, have = arch_of(ck.get("arch") or ck.get("config")), arch_of(config_dict(cfg))
         if want != have:
-            raise ValueError(f"architecture {have} differs from the checkpoint's {want}; drop the model flags to resume")
+            diff = {k: (want[k], have[k]) for k in want if want[k] != have.get(k)}
+            raise ValueError(
+                f"architecture mismatch: the checkpoint {ck_path} was trained as {want}, this run would build {have} "
+                f"(differs in {', '.join(f'{k} {a} -> {b}' for k, (a, b) in diff.items())})"
+                + (f"; --preset {given['preset']} sets {PRESETS[given['preset']]}" if given.get("preset") else "")
+                + ". A resume cannot change the architecture (the weights and Adam state are shaped by it): drop the "
+                "model / preset flags to resume, or start a fresh run with a new --out")
     elif CheckpointManager(cfg.out).latest() is not None:
         raise ValueError(f"{cfg.out} already holds checkpoints: pass --resume auto (continue) or a new --out")
     return cfg, ck, ck_path
@@ -985,7 +1099,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     blind_eval = (check_blind_eval(cfg.eval_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
                   if cfg.eval_every else None)
     blind_eval_at = (check_blind_eval(cfg.eval_at_seedset, allow_blind=cfg.allow_blind, purpose=cfg.blind_purpose)
-                     if cfg.eval_at else None)     # --eval-at: the same gate (sts2train.cycles x isolation)
+                     if cfg.eval_at or cfg.eval_at_every else None)     # --eval-at(-every): the same gate (sts2train.cycles x isolation)
     guard = IsolationGuard.from_seedsets(extra=eval_seedsets(cfg))
     if cfg.start_mode == "pool":
         isolation = check_legacy_pool(cfg, guard)          # raises IsolationError
@@ -1017,6 +1131,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         best_eval = None
     c["sessions"] += 1
     upd0 = c["updates"]
+    ent_sched = ent_schedule_on(cfg)
+    if ent_sched and cfg.ent_anneal_start is None:  # counted from this session's first update; stored -> resumes go on
+        cfg.ent_anneal_start = upd0
 
     if cfg.start_mode == "stream":      # the env's own start sequence is never used (no auto-reset, empty pool)
         seed_text = f"SPENV{seed_of(cfg, 'env_seed')}"
@@ -1024,14 +1141,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         start_seed = seed_of(cfg, "start_seed")
         seed_text = f"PPO{start_seed}" if resume is None else f"PPO{start_seed}R{upd0}"
     compat = resume_compat(resume, log) if resume is not None else None   # raises SpecMismatch
-    env = VecEnv(cfg.envs, **env_kwargs(cfg, seed_text))
+    env = (VecEnv if cfg.overlap == "off" else VecPair)(cfg.envs, **env_kwargs(cfg, seed_text))
     old_handlers: dict = {}
+    ov = None                           # --overlap double: the lane rollout (sts2train.overlap)
     try:
         if cfg.start_mode == "stream":
             stream = SeedStream(stream_prefix(cfg), cfg.characters, cfg.ascension, guard=guard,
                                 state=(resume or {}).get("seed_stream"))
-            env = StreamEnv(env, stream, lookahead=lookahead_of(cfg), prefetch=cfg.stream_prefetch,
-                            adaptive=cfg.stream_lookahead is None)
+            env = (StreamEnv if cfg.overlap == "off" else LaneStreamEnv)(
+                env, stream, lookahead=lookahead_of(cfg), prefetch=cfg.stream_prefetch,
+                adaptive=cfg.stream_lookahead is None)
             if stream.resumed_prefix and stream.resumed_prefix != stream.prefix:
                 log(f"seed stream: prefix {stream.resumed_prefix} -> {stream.prefix}; the counter continues at "
                     f"{stream.state.next}")
@@ -1044,6 +1163,14 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
         track = env if cfg.start_mode == "stream" else PoolStarts(env, starts, (resume or {}).get("start_counts"))
         carried_stream = (resume or {}).get("seed_stream") if cfg.start_mode == "pool" else None
+        harvester = None                                   # self-anchor starts (--harvest; rings start empty)
+        if cfg.harvest:
+            harvester = Harvester(env, parse_harvest(cfg.harvest), prob=cfg.harvest_prob,
+                                  max_per_step=cfg.harvest_max_per_step, seed=cfg.seed, starts=starts, log=log,
+                                  stream=cfg.start_mode == "stream", state=(resume or {}).get("harvest"))
+            if cfg.start_mode == "stream":                 # finished slots start from a live anchor at this share
+                env.attach_anchors(harvester, cfg.harvest_start_share, seed=cfg.seed)
+            log(harvester.describe())
         arch = model_arch(cfg)                             # size knobs + the optional parts that are on
         with init_rng(cfg):                                # decoupled: the init has its own generator (init_seed)
             model = Policy(spec, **arch)                   # on the CPU until the size guard has passed
@@ -1109,11 +1236,36 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         cyc_cost = float(cfg.cycle_cost)
         log("UI revisit cycles (RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> back to the same observation): "
             + (f"cost {cyc_cost} on the trainer's reward of each closing transition" if cyc_cost else "counted only"))
+        if cfg.overlap != "off":         # per-lane trackers (per-slot independent); the composites replace the full ones
+            def lane_trackers(n: int) -> dict:
+                return {"rewards": EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, n,
+                                                  cfg.ascension, win_bonus=cfg.win_bonus,
+                                                  shaped_floors=cfg.shaped_floors),
+                        "shaper": AcqShaping(spec.aux_fields, spec.cols["deck"], n, cfg.gamma, deck=cfg.acq_deck_coef,
+                                             relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
+                        if cfg.acq_shaping else None,
+                        "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k) if cfg.rollout_loop_breaker else None,
+                        "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name)}
+
+            ov = OverlapRollout(env, lane_trackers, aux_full=aux_tg)
+            cycles, breaker = ov.cycles, ov.breaker
+            shaper = ov.shaper
+            log(f"overlap {cfg.overlap}: lanes {[hi - lo for lo, hi in ov.pair.bounds]} (two VecEnvs); the env step of "
+                f"one lane runs in a worker thread while the other lane's forward runs")
         eval_at = set(cfg.eval_at)
         if eval_at:
             log(f"fixed-endpoint evals at updates {sorted(eval_at)}: {cfg.eval_at_seedset} x {list(cfg.eval_at_modes)}"
                 + (" (sample seed " + str(cfg.eval_at_sample_seed) + ")" if any(m.startswith("sample")
                                                                              for m in cfg.eval_at_modes) else ""))
+        if cfg.eval_at_every:
+            log(f"periodic fixed-endpoint evals every {cfg.eval_at_every} updates: {cfg.eval_at_seedset} x "
+                f"{list(cfg.eval_at_modes)} (checkpoints pinned)")
+        if cfg.pin_every:
+            log(f"pinned checkpoints every {cfg.pin_every} updates (checkpoints/pinned-<N>.pt, never pruned)")
+        if ent_sched:
+            log(f"entropy schedule: {cfg.ent_coef:g} -> {cfg.ent_coef_final:g} linear over updates "
+                f"{cfg.ent_anneal_start + 1}..{cfg.ent_anneal_start + cfg.ent_anneal_updates + 1} (then constant); this "
+                f"session starts at {ent_coef_at(cfg, upd0 + 1):.6g}")
         if cfg.no_best:
             log("--no-best: no evaluation selects best.pt")
         # ---
@@ -1173,6 +1325,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if infl is not None:
                 rows = [{"slot": a, "n": b, "seed_text": t, "steps": k} for a, b, t, k in
                         zip(infl["slot"], infl["n"], infl["seed_text"], infl["steps"])]
+                for r_, sk in zip(rows, infl.get("start_kind") or ()):      # --harvest in stream mode
+                    r_["start_kind"] = sk
                 episodes_log.write_special(upd0, c["sessions"], rows, "dropped")
                 dropped_now = len(rows)
             else:                       # a checkpoint from before the in-flight record: every slot was running
@@ -1221,7 +1375,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
             "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
             else isolation, "seed_stream": track.record(), "blind_eval": blind_eval,
-            "blind_eval_at": blind_eval_at})
+            "blind_eval_at": blind_eval_at,
+            "harvest": harvester.record() if harvester is not None else None})
 
         stop = {"signal": None}
 
@@ -1241,6 +1396,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 extra = {"seed_stream": track.state_dict()}
             else:                       # a pool session keeps a stream's counter for a later stream session
                 extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))
+            if harvester is not None:   # the run's harvest counters (the rings are not kept: a resume starts empty)
+                extra["harvest"] = harvester.state_dict()
             state = make_checkpoint(model, opt, spec, cfg, dict(c, updates=upd), rng, device, best_eval=best_eval,
                                     last_eval=last_eval, inflight=track.inflight(), **extra)
             last_ckpt_path = ckpts.save(state, upd)
@@ -1375,6 +1532,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                            "win_rate": (sum(x["wins"] for x in recent) / r_eps) if r_eps else None,
                            "floor_mean": (sum(x["floor_sum"] for x in recent) / r_eps) if r_eps else None,
                            **recent_view(recent)},
+                **({"harvest_live": harvester.live()} if harvester is not None else {}),
                 "best_eval": best_eval, "last_eval": last_eval,
                 "last_checkpoint": _rel(last_ckpt_path, run),
                 "last_checkpoint_update": last_ckpt_upd if last_ckpt_upd >= 0 else None,
@@ -1386,12 +1544,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         hooks_on = bool(EPISODE_HOOKS) or bool(episode_hooks)
         obs = env.reset()
         track.count_starts(None, env.info())           # pool mode: the reset's starts (stream: counted itself)
-        rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        if ov is None:
+            rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+        if harvester is not None:                       # --harvest is refused with --overlap double
+            harvester.reset(obs, env.info()["start_entry"])
         r_obj = None
         if shaper is not None:
-            shaper.reset(obs["aux"], obs["deck"])
+            if ov is None:
+                shaper.reset(obs["aux"], obs["deck"])
             r_obj = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)     # the objective's reward (unshaped)
-        cycles.observe(obs, episode_ids=env.info()["episode_id"])          # --- sts2train.cycles: first observations
+        if ov is None:
+            cycles.observe(obs, episode_ids=env.info()["episode_id"])      # --- sts2train.cycles: first observations
+        else:
+            ov.reset()                                                      # every lane's trackers
         cyc_r = None
         if cyc_cost:                                                        # the cycle cost charged per step
             cyc_r = np.zeros((cfg.rollout, cfg.envs), dtype=np.float32)
@@ -1423,82 +1588,105 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             env_s = infer_s = 0.0
             n_steps = se_n = cg_n = il_n = over_n = fs_n = 0
             model.eval()
-            for t in range(cfg.rollout):
-                t0 = time.monotonic()
-                cand_n = obs["cand_n"].copy()
-                if aux_tg is not None:
-                    aux_tg.before(t, obs["aux"])
-                x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
-                if runner.compiled is not None and "forward" not in compile_check:
-                    compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
-                    log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
-                        f"{chk['value_rel']:.2e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}")
-                    if not chk["ok"]:
-                        raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
-                                                    f"rerun with --compile off")
-                if breaker is None:
-                    a, logp, value = runner.sample(x)
-                else:                               # obs is still this step's (the env steps below)
-                    a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg))
-                store.put(t, x, obs)
-                a_np = a.cpu().numpy().astype(np.int32)
-                valid = cand_n > 0
-                a_np[~valid] = -1
-                if breaker is not None:
-                    breaker.commit(a_np)
-                cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
-                store.actions[t] = np.maximum(a_np, 0)
-                store.logp[t] = logp.cpu().numpy()
-                store.values[t] = value.cpu().numpy()
-                store.valid[t] = valid
-                t1 = time.monotonic()
-                obs, rew, term, trunc, status, info = env.step(a_np)
-                t2 = time.monotonic()
-                done = (term | trunc).astype(bool)
-                if breaker is not None:             # auto-reset slots start new episodes
-                    breaker.reset(done)
-                r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
-                if done.any():
-                    track.count_starts(done, info)          # pool mode: the auto-reset starts
-                if fin:
-                    track.annotate(fin)                     # seed_text / seed_n of each ended episode
-                    if hooks_on:
+            ov_st = None
+            if ov is None:
+                for t in range(cfg.rollout):
+                    t0 = time.monotonic()
+                    cand_n = obs["cand_n"].copy()
+                    if aux_tg is not None:
+                        aux_tg.before(t, obs["aux"])
+                    x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+                    if runner.compiled is not None and "forward" not in compile_check:
+                        compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
+                        log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
+                            f"{chk['value_rel']:.2e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}")
+                        if not chk["ok"]:
+                            raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
+                                                        f"rerun with --compile off")
+                    if breaker is None:
+                        a, logp, value = runner.sample(x)
+                    else:                               # obs is still this step's (the env steps below)
+                        a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg))
+                    store.put(t, x, obs)
+                    a_np = a.cpu().numpy().astype(np.int32)
+                    valid = cand_n > 0
+                    a_np[~valid] = -1
+                    if breaker is not None:
+                        breaker.commit(a_np)
+                    cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
+                    store.actions[t] = np.maximum(a_np, 0)
+                    store.logp[t] = logp.cpu().numpy()
+                    store.values[t] = value.cpu().numpy()
+                    store.valid[t] = valid
+                    t1 = time.monotonic()
+                    obs, rew, term, trunc, status, info = env.step(a_np)
+                    t2 = time.monotonic()
+                    done = (term | trunc).astype(bool)
+                    if harvester is not None:           # combat entries of fresh-started episodes -> anchors
+                        harvester.step(obs, done, info["start_entry"], status, upd + 1, t)
+                    if breaker is not None:             # auto-reset slots start new episodes
+                        breaker.reset(done)
+                    r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                    if done.any():
+                        track.count_starts(done, info)          # pool mode: the auto-reset starts
+                    if fin:
+                        track.annotate(fin)                     # seed_text / seed_n of each ended episode
+                        if hooks_on:
+                            for e in fin:
+                                e["update"], e["t"] = upd + 1, t
+                                e["fields"] = EPISODE_HOOKS.fields(e, episode_hooks)
+                    if aux_tg is not None:
+                        aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
+                    if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
+                        f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
                         for e in fin:
-                            e["update"], e["t"] = upd + 1, t
-                            e["fields"] = EPISODE_HOOKS.fields(e, episode_hooks)
-                if aux_tg is not None:
-                    aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
-                if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart
-                    f_acq, ended = shaper.step(done, obs["aux"], obs["deck"])
-                    for e in fin:
-                        e["shaping"] = ended.get(e["slot"], 0.0)
-                        e["shaped_return"] = e["return"] + e["shaping"]
-                    r_obj[t] = r
-                    r = r + f_acq
-                # --- sts2train.cycles hook: did this transition close a verified UI revisit cycle (cost once) ---
-                closed = cycles.after_step(obs, done, fin, episode_ids=info["episode_id"], t=t)
-                if cyc_r is not None:
-                    if shaper is None:
+                            e["shaping"] = ended.get(e["slot"], 0.0)
+                            e["shaped_return"] = e["return"] + e["shaping"]
                         r_obj[t] = r
-                    cyc_r[t] = np.float32(cyc_cost) * closed
-                    r = r - cyc_r[t]
-                # ---
-                store.rewards[t] = r
-                store.dones[t] = done
-                se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
-                cg = int(np.count_nonzero(status & STATUS["CONTENT_GAP"]))
-                il = int(np.count_nonzero(status & STATUS["ILLEGAL_ACTION"]))
-                if se or cg:
-                    for slot, text in env.slot_errors().items():
-                        key = text.splitlines()[0][:160] if text else "?"
-                        errors_seen[key] = errors_seen.get(key, 0) + 1
-                se_n, cg_n, il_n = se_n + se, cg_n + cg, il_n + il
-                fs_n += int(np.count_nonzero(status & FLOOR_STALL)) if FLOOR_STALL else 0
-                over_n += int(np.count_nonzero(cand_n > cfg.max_rows))
-                n_steps += int(np.count_nonzero(valid))
-                infer_s += t1 - t0
-                env_s += t2 - t1
-                ep_this += fin
+                        r = r + f_acq
+                    # --- sts2train.cycles hook: did this transition close a verified UI revisit cycle (cost once) ---
+                    closed = cycles.after_step(obs, done, fin, episode_ids=info["episode_id"], t=t)
+                    if cyc_r is not None:
+                        if shaper is None:
+                            r_obj[t] = r
+                        cyc_r[t] = np.float32(cyc_cost) * closed
+                        r = r - cyc_r[t]
+                    # ---
+                    store.rewards[t] = r
+                    store.dones[t] = done
+                    se = int(np.count_nonzero(status & STATUS["SIM_ERROR"]))
+                    cg = int(np.count_nonzero(status & STATUS["CONTENT_GAP"]))
+                    il = int(np.count_nonzero(status & STATUS["ILLEGAL_ACTION"]))
+                    if se or cg:
+                        for slot, text in env.slot_errors().items():
+                            key = text.splitlines()[0][:160] if text else "?"
+                            errors_seen[key] = errors_seen.get(key, 0) + 1
+                    se_n, cg_n, il_n = se_n + se, cg_n + cg, il_n + il
+                    fs_n += int(np.count_nonzero(status & FLOOR_STALL)) if FLOOR_STALL else 0
+                    over_n += int(np.count_nonzero(cand_n > cfg.max_rows))
+                    n_steps += int(np.count_nonzero(valid))
+                    infer_s += t1 - t0
+                    env_s += t2 - t1
+                    ep_this += fin
+            else:                               # --overlap double: lanes A / B, env step and forward overlapped
+                def check_forward(x_):
+                    if runner.compiled is not None and "forward" not in compile_check:
+                        compile_check["forward"] = chk = check_compiled_forward(runner, x_, amp=amp, tf32=tf32)
+                        log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
+                            f"{chk['value_rel']:.2e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}")
+                        if not chk["ok"]:
+                            raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
+                                                        f"rerun with --compile off")
+
+                ov_st = ov.rollout(upd=upd, store=store, runner=runner, device=device, max_rows=cfg.max_rows,
+                                   static=static, track=track, steps=cfg.rollout, cycle_cost=cyc_cost, r_obj=r_obj,
+                                   cyc_r=cyc_r, hooks_on=hooks_on, episode_hooks=episode_hooks,
+                                   episode_fields=EPISODE_HOOKS.fields, errors_seen=errors_seen,
+                                   check_forward=check_forward if runner.compiled is not None else None)
+                env_s, infer_s = ov_st["env_s"], ov_st["infer_s"]
+                n_steps, se_n, cg_n, il_n = ov_st["n_steps"], ov_st["se_n"], ov_st["cg_n"], ov_st["il_n"]
+                over_n, fs_n, ep_this = ov_st["over_n"], ov_st["fs_n"], ov_st["ep_this"]
+                obs = env.obs
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
             x_last = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
@@ -1530,6 +1718,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             # PPO update: minibatches gathered on the device; every epoch's minibatch indices go up in one copy, row
             # cuts come from host counts and the statistics come back once, so the minibatches queue without a sync
             t_up = time.monotonic()
+            if ent_sched:
+                ent_now = ent_coef_at(cfg, upd + 1)
+                updater.set_ent_coef(ent_now)
             model.train()
             idx_all = np.flatnonzero(store.valid.reshape(-1))
             f_adv = adv.reshape(-1)
@@ -1581,7 +1772,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             tu = track.pop_update()
             c["starts"] += tu["starts"]
             es = _episode_stats(ep_this)
-            ss = split_stats(ep_this, starts)            # fresh_* / save_* ({} without --start-saves)
+            ss = split_stats(ep_this, starts, harvester)  # fresh_* / save_* / harvest_* ({} without saves / anchors)
+            hs = harvester.pop_stats() if harvester is not None else {}
             lb_st = {}
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
@@ -1593,7 +1785,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 cycle_log.write({"update": upd, **ev})
             recent.append({"episodes": len(ep_this), "wins": es["wins"],
                            "progress_sum": sum(e["progress"] or 0.0 for e in ep_this),
-                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts)})
+                           "floor_sum": sum(e["floor"] for e in ep_this), **recent_sums(ep_this, starts, harvester)})
 
             # checkpoint / eval
             t_ck = time.monotonic()
@@ -1602,12 +1794,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     (cfg.ckpt_every_min and now - last_ckpt_t >= cfg.ckpt_every_min * 60):
                 save(upd)
                 last_ckpt_t = time.monotonic()
+            if cfg.pin_every and upd % cfg.pin_every == 0:     # --pin-every: kept regardless of --keep-ckpts
+                if last_ckpt_upd != upd:
+                    save(upd)
+                    last_ckpt_t = time.monotonic()
+                ckpts.pin(last_ckpt_path, upd)
             ckpt_s = time.monotonic() - t_ck
             t_ev = time.monotonic()
             if cfg.eval_every and upd % cfg.eval_every == 0:
                 run_eval(upd)
-            if upd in eval_at:
+            t_ev_at = time.monotonic()
+            if upd in eval_at or (cfg.eval_at_every and upd % cfg.eval_at_every == 0):
                 run_eval_at(upd)
+            eval_at_s = time.monotonic() - t_ev_at
             eval_s = time.monotonic() - t_ev
             t_end = time.monotonic()
             iter_s = t_end - t_iter
@@ -1621,21 +1820,27 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
-                   "episodes_total": c["episodes"], **es, **ss,
+                   "episodes_total": c["episodes"], **es, **ss, **hs,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
                    if len(idx_all) else None,
                    **sm, "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
+                   **({"t_eval_at_s": round(eval_at_s, 3)} if eval_at or cfg.eval_at_every else {}),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
-                   "t_total_s": round(iter_s, 3), "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
+                   "t_total_s": round(iter_s, 3),
+                   **({"t_overlap_wait_s": round(ov_st["wait_s"], 3), "t_rollout_s": round(ov_st["rollout_s"], 3)}
+                      if ov_st is not None else {}),
+                   "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
                    "cand_over_max_rows": over_n, "floor_stall": fs_n, "lr": opt.param_groups[0]["lr"],
-                   "ent_coef": cfg.ent_coef, "vf_coef": cfg.vf_coef, "clip": cfg.clip, "session": c["sessions"],
+                   "ent_coef": ent_now if ent_sched else cfg.ent_coef, "vf_coef": cfg.vf_coef, "clip": cfg.clip, "session": c["sessions"],
                    "session_update": upd - upd0, "starts_update": tu["starts"], "starts_total": c["starts"],
                    **track.metrics(), "dropped_total": c["dropped"],
                    **({"stream_start_failed": tu["start_failed"], "t_stream_s": round(tu["t_restart"], 3),
                        "t_prefetch_s": round(tu["t_prefetch"], 3), "t_prefetch_wait_s": round(tu["t_prefetch_wait"], 3)}
                       if cfg.start_mode == "stream" else {}),
+                   **({"anchor_starts_update": tu["anchor_starts"], "anchor_start_failed": tu["anchor_start_failed"]}
+                      if "anchor_starts" in tu else {}),
                    **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
                                              ep_this, shaper), **lb_st, **cy_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
@@ -1654,6 +1859,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"env={env_s:.2f}s infer={infer_s:.2f}s upd={update_s:.2f}s eps={len(ep_this)} "
                     f"prog={fmt(es['progress_mean'], '.4f')} floor={fmt(es['floor_mean'], '.2f')} wins={es['wins']} "
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
+                    + (f" ent_coef={ent_now:.5f}" if ent_sched else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")
@@ -1666,6 +1872,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
                     + f" | ui cycles={cy_st['cycles_total']} eps={cy_st['episodes_with_cycle']}"
                     + (f" cost={cy_st['cycle_cost_total']:.3f}" if cyc_cost else "")
+                    + (f" | harvest +{hs['harvest_captured']} -{hs['harvest_released']} live "
+                       + ",".join(f"{k}:{hs[f'harvest_live_{k}']}" for k in harvester.kinds)
+                       + f" eps={ss['harvest_episodes']} gain={fmt(ss['harvest_progress_gain_mean'], '.4f')} share "
+                       f"step={fmt(hs['harvest_step_share'], '.3f')} ep={fmt(ss['harvest_start_share'], '.3f')}"
+                       if harvester is not None else "")
                     + (f" gpu_peak={row.get('gpu_mem_peak_mb')}MB" if device.type == "cuda" else ""))
 
         # session end: checkpoint, final eval (budget stops only), status, summary
@@ -1714,6 +1925,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "episodes_log_rows": episodes_log.rows,
             "cycles": {**cycles.totals_dict(), "cost": cyc_cost, "run_total": c["cycles"]},
         }
+        if harvester is not None:
+            summary["harvest"] = harvester.totals()
+        if ov is not None:
+            summary["overlap"] = {"mode": cfg.overlap, "lanes": [hi - lo for lo, hi in ov.pair.bounds],
+                                  **{k + "_s": round(v, 2) for k, v in ov.totals.items()}}
         if breaker is not None:
             t_lb = breaker.totals()
             summary["rollout_loop_breaker"] = {k: t_lb[k] for k in ("k", "window", "loop_breaks", "no_op_actions",
@@ -1734,6 +1950,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         for sg, h in old_handlers.items():
             with contextlib.suppress(Exception):
                 signal.signal(sg, h)
+        if ov is not None:
+            with contextlib.suppress(Exception):
+                ov.close()
         env.close()
 
 

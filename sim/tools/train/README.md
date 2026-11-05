@@ -52,13 +52,13 @@ uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset si
 | File | Content |
 | --- | --- |
 | `status.json` | rewritten atomically after every update: `state` (running / finished / stopped / aborted / error), `stop_reason`, `update`, `env_steps`, `episodes`, `wins`, `wall_s`, `env_steps_per_s`, `recent` (progress / win rate / floor over the last 20 updates), `best_eval`, `last_eval`, `last_checkpoint`, `updated_at` |
-| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker"); always the UI revisit cycle counts `cycles_total` / `cycles_rest` / `cycles_shop` / `cycle_steps` / `cycles_rejected` / `episodes_with_cycle` / `cycle_max_per_episode` / `cycle_cost_total` and `reward_sum_trained` (the reward PPO trained on, summed over the update's valid steps; see "UI revisit cycles") |
+| `metrics.jsonl` | one row per update: env steps, episodes, finished-episode `progress_mean` / `win_rate` / `floor_mean` / `return_mean` / `act_reached`, `policy_loss`, `value_loss`, `entropy`, `approx_kl`, `clipfrac`, `grad_norm`, `explained_variance`, `env_steps_per_s`, time split `t_env_s` / `t_infer_s` / `t_update_s` / `t_ckpt_s` / `t_eval_s` / `t_other_s`, error counts, `floor_stall` (episodes truncated by the floor step cap this update), `gpu_mem_*_mb` (CUDA / MPS); with `--start-saves` also the `fresh_*` / `save_*` split (see "Start saves"), with `--harvest` the `harvest_*` keys and in stream mode `anchor_starts_update` / `anchor_start_failed` (see "Self-anchor starts"); with `--aux-heads` the `aux_*` keys, with `--acq-shaping` the shaping keys (see "Training-signal flags"), with `--rollout-loop-breaker` `loop_breaks` / `no_op_actions` / `cycle_revisits` (see "Loop breaker"); always the UI revisit cycle counts `cycles_total` / `cycles_rest` / `cycles_shop` / `cycle_steps` / `cycles_rejected` / `episodes_with_cycle` / `cycle_max_per_episode` / `cycle_cost_total` and `reward_sum_trained` (the reward PPO trained on, summed over the update's valid steps; see "UI revisit cycles") |
 | `evals.jsonl`, `evals/u<update>/` | every `--eval-every` updates and once at the end of a budget-ended session: `sts2vec.evaluate` on `--eval-seedset` (default `std-a0-v1`) with the live model, greedy; each row has the headline (`progress_mean`, CI, wins, floor, results, replayable) and the checkpoint it was taken at; `best_skip` (why the row cannot be `best.pt`) when it is not clean; the greedy policy runs with the loop breaker (`--loop-breaker off` turns it off) and the row carries `loop_breaker`, `loop_breaks`, `no_op_actions`, `cycle_revisits`; a model with `--aux-heads` also writes per-decision `win_prob` / `combat_hp_pred` into each game summary |
 | `cycles.jsonl` | one row per UI revisit cycle closed in a rollout (`update`, rollout step `t`, `slot`, `episode`, room `phase`, `prompt`, `act`, `floor`, `len`, `step` = the episode's decision index, `path` / `actions`); each finished episode's count is the `cycles` field of its `episodes.jsonl` row |
 | `evals/u<update>/<mode>/` | `--eval-at` runs: one protocol run directory per mode (`greedy-on`, `greedy-off`, `sample-off`), one `evals.jsonl` row each with `mode`, `eval_at`, `stuck`, `cycles`, `games_with_cycle`, `loop_breaks`; the weights stay in `checkpoints/pinned-<update>.pt` |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
-| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`, and since 2026-11-04 `given` (the command line's explicit flags), `config_diff` ({key: [checkpoint, this session]}), `seeds`, `rng_restored` ({numpy, torch, cuda: ok / failed / absent / reseeded}), `adam_step`, `init_weights_hash` (fresh runs), `start_mode`, `seed_stream_next`, `dropped_at_start`, `best_eval_source`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save); `start_mode`, `seeds`, `isolation` (checked holdout sets, collisions), `seed_stream` (see "Start modes, seeds and isolation") |
-| `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind`, `cycles` (UI revisit cycles the episode closed, `sts2train.cycles`; null on `dropped` / `start_failed` rows) + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
+| `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`, and since 2026-11-04 `given` (the command line's explicit flags), `config_diff` ({key: [checkpoint, this session]}), `seeds`, `rng_restored` ({numpy, torch, cuda: ok / failed / absent / reseeded}), `adam_step`, `init_weights_hash` (fresh runs), `start_mode`, `seed_stream_next`, `dropped_at_start`, `best_eval_source`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save); `harvest` (with `--harvest`: rings, probability, per-step cap, base pool size, start mode, the capture rule); `start_mode`, `seeds`, `isolation` (checked holdout sets, collisions), `seed_stream` (see "Start modes, seeds and isolation") |
+| `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind`, `cycles` (UI revisit cycles the episode closed, `sts2train.cycles`; null on `dropped` / `start_failed` rows), `start_kind` (only with `--harvest` in stream mode: `stream` / `anchor:<kind>`) + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
 | `blind-access.jsonl` | one row per allowed evaluation on a frozen blind seed set (`--allow-blind --purpose`): utc, weights hash, seed set, purpose |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval, `seeds`, `starts`, `dropped_total`, `inflight_at_end`, `seed_stream` with the stream's timing, `isolation`) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
@@ -99,7 +99,9 @@ in a widened checkpoint until trained), A/B and `card_id`. `sts2train eval` appl
 | --- | --- | --- | --- |
 | `smoke` (= defaults) | 96 / 256 / 0 / – | 948,974 | the 2026-11-02 smoke model (pooled tables concatenated into the state MLP) |
 | `small` | 128 / 256 / 2 / 4 | 1,175,438 | CPU / MPS smokes of the transformer path |
-| `large` | 384 / 768 / 6 / 8 | 15,805,070 | `--device cuda` only (one A100) |
+| `mid` | 192 / 384 / 3 / 6 | 2,827,406 | the self-play v2 line's size (2,904,208 with `--deck-counts --aux-heads`) |
+| `mid-deep` | 192 / 384 / 6 / 6 | 4,161,998 | twice the trunk depth of `mid` (4,238,800 with `--deck-counts --aux-heads`); `--device cuda` |
+| `large` | 384 / 768 / 6 / 8 | 15,805,070 | `--device cuda` only (one A100; 16,106,128 with `--deck-counts --aux-heads`) |
 
 Activation memory (autograd's saved tensors, fp32, worst-case 64 candidate / prompt rows; measured by
 `model.activation_bytes_per_sample` and printed at start-up for the configured minibatch): smoke 0.41 MiB/sample,
@@ -110,6 +112,10 @@ trainer warns when the estimate exceeds 70 % of the free GPU memory.
 
 `--deck-counts` adds 14 × d_model parameters (smoke +1,344 = +0.14 %, small +1,792, large +5,376 = +0.03 %),
 `--aux-heads` adds two heads of hidden width state / 4 (smoke / small +33,026, large +295,682 = +1.9 %).
+
+A resume cannot change the architecture: `--resume` of a `mid` run with `--preset large` (or `mid-deep`, or any
+model flag that differs from the checkpoint's `arch`) exits 2 naming the checkpoint, both architectures and the
+differing knobs; start the bigger model as a fresh run with a new `--out`.
 
 Local-size guard: on `cpu` / `mps` the trainer refuses (exit 2, with the activation estimate) a model above 3,000,000
 parameters or the `large` preset unless `--allow-big-local` is given (never inherited by `--resume`). On `mps` it
@@ -122,6 +128,33 @@ the `3b73317739c650bd` schema (since `e9baaefc39811631` two more `RunActionKind`
 `5dbfa09dd9dcb5ed`, whose counts were 948,750 / 1,175,150 / 15,804,270); every size, vocabulary and column index is
 read from the library's schema at start-up, so a library with extra observation buffers trains unchanged (unused
 buffers are ignored).
+
+## Long-run flags (`--ent-coef-final`, `--eval-at-every`, `--pin-every`)
+
+All off by default; off, the trainer computes and logs exactly what it did before (no `t_eval_at_s` column, a
+constant `ent_coef`, no extra checkpoint files).
+
+- **Entropy schedule** (`--ent-coef A --ent-coef-final X --ent-anneal-updates N [--ent-anneal-start U]`): update
+  `u` (1-based, absolute) uses `A + (X - A) * clamp((u - 1 - U) / N, 0, 1)`, i.e. `A` at update `U + 1`, linear to
+  `X` at update `U + N + 1`, then `X`. `U` defaults to the update count at the start of the session that first sets
+  the schedule; the resolved `U` is stored in the config, so `--resume` continues the schedule where it was
+  (`--ent-coef-final none` turns an inherited schedule off). Both `--ent-coef-final` and `--ent-anneal-updates >= 1`
+  are needed (one alone exits 2). Every metrics row carries the value in effect as `ent_coef`. The coefficient is a
+  0-d device tensor set in place before each update, so a compiled loss is not recompiled per value.
+- **Periodic fixed endpoints** (`--eval-at-every N`): every N updates (absolute update numbers, so a resume keeps the
+  grid) runs the `--eval-at` protocol: `--eval-at-seedset` in every `--eval-at-modes` mode, one `evals.jsonl` row per
+  mode (`mode`, `eval_at`), the weights kept as `checkpoints/pinned-<N>.pt`, never selecting `best.pt`. It combines
+  with explicit `--eval-at` updates. With either on, metrics rows carry `t_eval_at_s` (the share of `t_eval_s` spent
+  in these evals).
+- **Pinned checkpoints** (`--pin-every N`): every N updates the checkpoint of that update (written if the regular
+  cadence did not) is copied to `checkpoints/pinned-<N>.pt`. `--keep-ckpts K` prunes only `ckpt-*.pt`; `best.pt`
+  and `pinned-*.pt` are never pruned and never taken by `--resume auto`.
+
+```bash
+# a long cuda run: entropy 0.02 -> 0.005 over 400 updates, dev-128 greedy-on / greedy-off every 50, weights every 100
+uv run --project sim/tools/train sts2train train ... --ent-coef 0.02 --ent-coef-final 0.005 --ent-anneal-updates 400 \
+    --eval-at-every 50 --eval-at-seedset silent-a10-dev-v1 --eval-at-modes greedy-on,greedy-off --pin-every 100
+```
 
 ## Speed (`--compile`, `--static-rows`, `bench-update`)
 
@@ -161,6 +194,48 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
     --modes off,default
 ```
 
+## Rollout overlap (`--overlap off|double`)
+
+`--overlap off` (default) is the serial rollout: per step, the forward of all N slots, then the env step of all N
+slots. `--overlap double` splits the slots into two lanes `[0, N/2)` / `[N/2, N)`, each its own native `VecEnv`
+(`sts2train/overlap.py`: `VecPair`, both lanes writing into one N-slot buffer set), and runs one lane's env step in a
+worker thread while the main thread runs the other lane's bookkeeping + forward (the native step releases the GIL):
+
+    worker:  step A(t)              | step B(t)              | step A(t+1) ...
+    main:    post B(t-1), pre B(t)  | post A(t), pre A(t+1)  | post B(t), pre B(t+1) ...
+
+The store receives the same [T, N] batch; GAE, the bootstrap forward (all N slots, one call), the update and every
+metric are unchanged. The per-slot trackers (rewards, acquisition shaping, loop breaker, cycle detector) run per lane
+with global slot numbers; the aux-head targets write through column views. Stream mode (`LaneStreamEnv`) hands seeds out
+in the order one N-slot env would (A(t) then B(t) = ascending slots), and episode ids are mapped to the one-env
+numbering, so under a deterministic policy `double` reproduces `off` (tests/test_overlap.py: same actions, metrics,
+episodes.jsonl, cycles.jsonl, stream counter and weights to float rounding, also with `--cycle-cost --acq-shaping
+--rollout-loop-breaker --aux-heads`). With sampling the actions differ only because the sampler draws per lane (same
+distribution, different RNG consumption). Pool mode works (fresh pools; lane B's slot start offsets come from the seed
+text `<seed>~L1`: same start distribution, other assignment); `--start-saves` is refused, and so is `--harvest`
+(anchors are clones in one env's pool and anchor starts restore them into any slot; the lanes have separate pools, so
+self-anchor runs use `--overlap off`). Both lanes' pools hold every
+stream entry, so template creation (`pool.warm`, during the update) costs twice the CPU, run in parallel per lane.
+
+Metrics (only with `double`): `t_env_s` = summed native step time of both lanes (overlapped, so `t_other_s` goes
+negative), `t_infer_s` = the main thread's pre phases + bootstrap, `t_overlap_wait_s` = main thread blocked on the
+worker, `t_rollout_s` = the rollout's wall time; summary.json `overlap`.
+
+Measured (Huginn testbox, 6 CPUs shared with other jobs, no GPU; `bench/overlap_bench.py`, stream mode, medians of
+updates 2-6, 3 interleaved repeats): 64 slots, rollout 16, d32 model, 2 env + 2 torch threads: off env 0.12 s, infer
+0.51 s, update 0.97 s, total 1.95 s per update; double env 0.18 s, infer 0.85 s, wait 0.003 s, rollout 0.88 s, total
+3.35 s. On a CPU box `double` loses: the forward is CPU work there and the env phase it can hide is small, while a
+half-batch forward costs ~0.85 of a full one (infer ratio 1.7 for the two halves) and env threads compete with torch
+threads. The gain needs a GPU forward and env ~ infer, as on the A100 (env 2.4 s, infer 2.7 s, update 3.2 s per
+update = 8.3 s): double ~ max(2.4 x r_env, 2.7 x r_inf) + 3.2, i.e. 5.9 s (1.41x) at r_inf = 1, 6.8 s (1.22x) at
+1.35, no gain at r_inf >= 1.9, where r_inf = (lane A + lane B forward time) / one full-batch forward on the GPU. Measure
+r_inf before adopting it (`--device cuda` on the Colab bundle):
+
+```bash
+python sim/tools/train/bench/overlap_bench.py --device cuda --envs 1024 --rollout 32 --updates 6 --preset small \
+    --threads 10 --torch-threads 2 --minibatch 4096 --epochs 2 --repeats 2 --out tmp/bench-overlap-a100
+```
+
 ## Pieces
 
 | Module | Content |
@@ -172,7 +247,8 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
 | `bench.py` | `sts2train bench-update`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
 | `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`) |
-| `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` metrics) |
+| `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` / `harvest_*` metrics) |
+| `harvest.py` | `--harvest`: `parse_harvest` (ring spec), `Harvester` (captures determinized clones of combat entries of fresh- / stream-started episodes into per-kind FIFO rings of live pool entries, releases the overflow, per-update `harvest_*` counters); stream-mode anchor starts: `seedstream.StreamEnv.attach_anchors` |
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
 | `evaluate.py` | thin wrapper over `sts2vec.evaluate`: greedy policy of a live model (`evaluate_model`, used during training) or a checkpoint (`evaluate`, `sts2train eval`, which exits 1 when the replay audit fails, as `sts2vec eval`); one pool entry and one slot per seed, protocol limits (step_cap 1200 → `capped`, floor_step_cap 80 non-combat steps → `stuck`), the LLM runner's run-dir layout + `report.md`; the loop breaker's counts in the game summaries / report.json (`write_loop_stats`); with aux heads the per-decision readouts in the game summaries (`HeadLog`) |
 | `loopbreak.py` | `LoopBreaker` (the greedy eval policy's no-op / cycle breaker, optionally the rollout sampling's) and `ObsDigest` (vectorised 64-bit digest of the model-read buffers per slot) |
@@ -356,6 +432,68 @@ uv run --project sim/tools/train sts2train train --characters SILENT --ascension
 
 Training restricts actions to the first 64 candidates (`--max-rows`; rare overflow is counted as `cand_over_max_rows`);
 eval passes every candidate row.
+
+## Self-anchor starts (`--harvest`)
+
+Training episodes can also start from determinized clones of the policy's own combat entries (`sts2train/harvest.py`;
+off by default, and with it off the trainer computes exactly what it did before). The self-play v2 line uses it in
+stream mode:
+
+```bash
+uv run --project sim/tools/train sts2train train --start-mode stream ... \
+    --harvest boss:1536,elite:512,act2:1024 --harvest-prob 0.25 --harvest-start-share 0.33
+# pool mode (the legacy fixed pool, optionally with saves): the anchors join the auto-reset sequence
+uv run --project sim/tools/train sts2train train ... --harvest boss:1536,elite:512,act2:1024 --harvest-prob 0.25
+```
+
+- **Capture.** At a combat's first decision (`aux.is_combat` 0 -> 1 inside a running episode, never at an episode's
+  first observation) of an episode that started from a fresh pool entry (pool mode) or a stream seed (stream mode) --
+  never a save or another anchor -- the trainer keeps `env.clone_determinized(slot, seed)` as a pool entry: the same
+  player view (byte for byte on the model's 27 input buffers) with the hidden state resampled (draw order, RNG
+  streams, monster AI, relic bag, event order). Kind by the map cell flagged `current`: Boss -> `boss`, Elite ->
+  `elite`, any other combat in act 2+ -> `act2`; `any` takes every combat no other ring takes, the act-1 hallway
+  included (tests / smoke). A kind without its own ring falls back to `act2` (act 2+), then `any`. Slots with
+  SIM_ERROR / CONTENT_GAP or no legal action are skipped. A candidate is kept with probability `--harvest-prob`, at
+  most `--harvest-max-per-step` per env step and a ring's size per ring and step; the clone seed is derived from
+  (seed, update, step, slot).
+- **Rings.** Per-kind FIFO rings of live entries; a full ring releases its oldest entries (one `env.pool.release`
+  call per step, sts2vec ABI 2; ids are never reused). A slot already running from a released anchor plays on (the
+  slot holds its own state).
+- **Starts, stream mode.** After a step, every slot whose episode ended draws u ~ U(0, 1) (one draw per ended slot,
+  ascending slot order, from a generator seeded from the trainer seed and the stream counter at the session start);
+  with u < `--harvest-start-share` (default 0.33 with `--harvest`) and at least one live anchor, the slot restarts
+  from an anchor drawn uniformly from the live ones (`restore_many`), else from the next stream seed. An anchor start
+  consumes no stream index: `seeds_used_total == starts_total == seed_stream_next` keeps holding, stream indices are
+  never reused, and the isolation guard (which checks stream seed texts as they are generated) never sees an anchor
+  -- an anchor derives from a stream seed the guard already passed. The anchor stays live after the start (only its
+  ring's FIFO releases it). A failed anchor start (SIM_ERROR / CONTENT_GAP or no legal action) falls back to the
+  stream (`anchor_start_failed`). The session's first reset takes stream seeds only (the rings are empty).
+  `--harvest-start-share` is refused in pool mode.
+- **Starts, pool mode.** Nothing schedules them: the env's auto-reset sequence (`(slot_seed + k) mod len(pool)` over
+  the live entries in id order) runs over the anchors, which form one contiguous block at its end, so they take a
+  share of the *slots* (about live anchors / live entries), not a fixed share of the episodes.
+- **Metrics.** `fresh_*` counts only episodes started from fresh entries / stream seeds (comparable with a run
+  without anchors), `save_*` the save starts and `harvest_*` the anchor starts: the same keys plus
+  `harvest_start_share` (anchor-started / finished episodes), `harvest_progress_gain_mean`, `harvest_start_floor_mean`,
+  `harvest_floors_gained_mean` and per ring kind `harvest_episodes_<kind>` / `harvest_clear_rate_<kind>` (the episode
+  won or left its start floor). Per update: `harvest_candidates`, `harvest_captured` / `harvest_released` (also
+  `_<kind>`), `harvest_live` / `harvest_live_<kind>`, `harvest_clone_s` (seconds in clone + release),
+  `harvest_step_share` (decisions in anchor-started episodes / all decisions), `harvest_starts` /
+  `harvest_starts_in_combat`, `harvest_captured_run` / `harvest_starts_run` (over every session); in stream mode also
+  `anchor_starts_update` / `anchor_start_failed`. Anchor episodes are shorter than fresh ones, so
+  `harvest_start_share` runs above `harvest_step_share`. `episodes.jsonl` (stream mode): `start_kind` `stream` or
+  `anchor:<kind>`; an anchor row has `n` null and the `seed_text` of the stream episode it was cloned from.
+  config.json `harvest` records the rings, probability, cap, start mode and the rule (`seed_stream.anchor_share` the
+  share), summary.json `harvest` the session totals, status.json `harvest_live` the ring sizes; the log line shows
+  captured / released / live, the anchor episodes' progress gain and both shares.
+- **Resume.** The spec is part of the config: `--resume` keeps it, `--harvest off` turns it off, and a checkpoint from
+  before the flag resumes with it off. Anchors live in the training process, so every session starts with empty
+  rings; the checkpoint's `harvest` block carries the run counters (`sessions`, `captured`, `anchor_starts`, ...),
+  and its `inflight` record lists anchor episodes too (their `dropped` rows carry `start_kind`).
+- **Information parity.** Anchors are training-only start points; the clone is determinized and shows exactly the
+  source's observation; evaluation (fresh seeds, single pass, greedy + loop breaker) is unchanged. Determinization
+  keeps the pre-rolled encounter queues, later bosses and unopened rewards, and every start of one anchor replays its
+  one sampled hidden state (which the policy never observes).
 
 ## Loop breaker (`--loop-breaker`, `--rollout-loop-breaker`)
 

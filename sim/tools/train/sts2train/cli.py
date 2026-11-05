@@ -8,6 +8,8 @@ weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard`
     sts2train train --resume auto --out RUN_DIR          # continue from the newest checkpoint in RUN_DIR
                                                          # (also across encoder versions: model inputs must match)
     sts2train train --characters SILENT --start-saves SAVES_DIR --save-mix 0.5 ...   # half the starts from saves
+    sts2train train ... --harvest boss:1536,elite:512,act2:1024 --harvest-prob 0.25  # self-anchor starts
+    sts2train train --start-mode stream ... --harvest boss:1536,elite:512,act2:1024 --harvest-start-share 0.33
     sts2train eval --seedset std-a0-v1 --checkpoint RUN_DIR/checkpoints/best.pt --out EVAL_DIR
     sts2train eval ... --loop-breaker off                # the plain argmax (no-op loops run into the floor cap)
     sts2train report-card --checkpoint CKPT --out CARD_DIR [--seedsets silent-a10-v1,...] [--lookahead-dir DIR ...]
@@ -90,6 +92,9 @@ def _plot(out: Path) -> None:
                    label="save starts: progress at the end")
         ax[0].plot(x, series("save_progress_gain_mean"), color="#8a4f0e", lw=1.4,
                    label="save starts: progress gained")
+        if any("harvest_episodes" in r for r in rows):
+            ax[0].plot(x, series("harvest_progress_gain_mean"), color="#5b3a8c", lw=1.2, ls=":",
+                       label="self-anchor starts: progress gained")
     else:
         p = [r["progress_mean"] for r in rows]
         ax[0].plot(x, p, color="#9db4d6", lw=0.6, label="per update (training episodes)")
@@ -169,7 +174,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--ckpt-every", dest="ckpt_every", type=int, help=f"checkpoint every N updates (default {D.ckpt_every})")
     g.add_argument("--ckpt-every-min", dest="ckpt_every_min", type=float,
                    help=f"and every M minutes (default {D.ckpt_every_min})")
-    g.add_argument("--keep-ckpts", dest="keep_ckpts", type=int, help=f"keep the last K (default {D.keep_ckpts})")
+    g.add_argument("--keep-ckpts", dest="keep_ckpts", type=int,
+                   help=f"keep the last K ckpt-*.pt (default {D.keep_ckpts}); best.pt and pinned-*.pt are never pruned")
+    g.add_argument("--pin-every", dest="pin_every", type=int,
+                   help="also keep checkpoints/pinned-<N>.pt every N updates, never pruned (default 0 = off)")
     g.add_argument("--eval-every", dest="eval_every", type=int,
                    help="protocol eval every E updates (default 0 = off); also once at the end of a budget-ended session")
     g.add_argument("--eval-seedset", dest="eval_seedset", help=f"(default {D.eval_seedset})")
@@ -182,6 +190,9 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="fixed-endpoint evaluations at these absolute update numbers: --eval-at-seedset in every "
                         "--eval-at-modes mode into evals/u<N>/<mode>/, one evals.jsonl row per mode (mode, eval_at), "
                         "the checkpoint kept as checkpoints/pinned-<N>.pt; they never select best.pt (default none)")
+    g.add_argument("--eval-at-every", dest="eval_at_every", type=int, metavar="N",
+                   help="also run the --eval-at protocol every N updates (pinned checkpoint, one row per mode; the "
+                        "metrics rows carry its wall cost as t_eval_at_s; default 0 = off)")
     g.add_argument("--eval-at-seedset", dest="eval_at_seedset", help=f"(default {D.eval_at_seedset})")
     g.add_argument("--eval-at-modes", dest="eval_at_modes", metavar="MODES",
                    help="comma-separated greedy-on / greedy-off / sample-on / sample-off (default "
@@ -261,6 +272,11 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "env's default (80 with a library that implements the cap); the cap in effect is recorded "
                         "in config.json env.floor_step_cap")
     g.add_argument("--ascension", type=int, help=f"(default {D.ascension})")
+    g.add_argument("--overlap", choices=["off", "double"],
+                   help="off (default): the rollout steps all slots, then runs the forward. double: two lane envs "
+                        "of envs/2 slots; one lane's env step runs in a worker thread while the other lane's forward "
+                        "runs (sts2train.overlap; same batch, GAE and update; t_overlap_wait_s / t_rollout_s in "
+                        "metrics); --start-saves refused")
     g.add_argument("--start-mode", dest="start_mode", choices=["pool", "stream"],
                    help="pool (default): episodes start from a fixed pool of --pool fresh seeds "
                         "TRAIN<env_seed>-<C>-<i> (+ --start-saves); refused when it holds a frozen eval seed set's "
@@ -288,6 +304,22 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="further pool copies of a save: determinized = same player view, hidden state (draw order, "
                         f"RNG streams) resampled per copy; exact = every start replays the save's RNG (default "
                         f"{D.save_copies})")
+    g = tr.add_argument_group("self-anchor starts (sts2train.harvest)")
+    g.add_argument("--harvest", metavar="SPEC",
+                   help="ring sizes kind:N,... with kind boss / elite / act2 / any (e.g. "
+                        "boss:1536,elite:512,act2:1024): at a combat's first decision in a fresh-started training "
+                        "episode, keep a determinized clone "
+                        "(same player view, hidden state resampled) as a live pool entry in that kind's FIFO ring; the "
+                        "env's auto-reset start sequence starts episodes from them. any = every other combat "
+                        "(tests / smoke). 'off' turns it off on --resume (default off)")
+    g.add_argument("--harvest-prob", dest="harvest_prob", type=float,
+                   help=f"probability of keeping a detected combat entry (default {D.harvest_prob})")
+    g.add_argument("--harvest-max-per-step", dest="harvest_max_per_step", type=int,
+                   help=f"anchors captured per env step at most (default {D.harvest_max_per_step})")
+    g.add_argument("--harvest-start-share", dest="harvest_start_share", type=float,
+                   help="--start-mode stream: probability that a finished slot starts from a uniformly drawn live "
+                        "anchor instead of the next stream seed (default 0.33 with --harvest; pool mode: not used, "
+                        "the anchors take the auto-reset sequence's share)")
     g = tr.add_argument_group("PPO")
     for flag, dest, typ in (("--rollout", "rollout", int), ("--epochs", "epochs", int),
                             ("--minibatch", "minibatch", int), ("--lr", "lr", float), ("--gamma", "gamma", float),
@@ -295,7 +327,19 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                             ("--ent-coef", "ent_coef", float), ("--max-grad-norm", "max_grad_norm", float),
                             ("--max-rows", "max_rows", int)):
         g.add_argument(flag, dest=dest, type=typ, help=f"(default {getattr(D, dest)})")
+    g.add_argument("--ent-coef-final", dest="ent_coef_final", type=_float_or_none, metavar="X",
+                   help="entropy schedule: anneal --ent-coef linearly to X over --ent-anneal-updates updates, then keep "
+                        "X ('none' turns a resumed schedule off; default off = constant --ent-coef)")
+    g.add_argument("--ent-anneal-updates", dest="ent_anneal_updates", type=int, metavar="N",
+                   help="length of the entropy schedule in updates (with --ent-coef-final; 0 = off)")
+    g.add_argument("--ent-anneal-start", dest="ent_anneal_start", type=int, metavar="U",
+                   help="the schedule starts after absolute update U (default: this session's first update; a resume "
+                        "keeps the checkpoint's start)")
     return tr
+
+
+def _float_or_none(v: str):
+    return None if str(v).strip().lower() in ("none", "") else float(v)
 
 
 def _bench_parser(sub) -> argparse.ArgumentParser:
@@ -532,6 +576,9 @@ def main(argv=None) -> int:
         if "start_saves" in given:      # absolute, so a resume from another working directory finds it
             v = given["start_saves"]
             given["start_saves"] = None if v.lower() in ("", "none") else os.path.abspath(os.path.expanduser(v))
+        if "harvest" in given:          # "off" / "none" turn it off (on --resume)
+            v = str(given["harvest"]).strip()
+            given["harvest"] = "" if v.lower() in ("", "off", "none") else v
         if "out" not in given and resume in (None, "auto"):
             if resume == "auto":
                 ap.error("--resume auto needs --out RUN_DIR")

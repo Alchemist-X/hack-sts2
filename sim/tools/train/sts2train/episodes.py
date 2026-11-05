@@ -16,6 +16,9 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
   (a stream seed whose template / first observation failed).
 - ``progress``: protocol v0.2 progress at the end (what ``sts2vec eval`` would score); ``return``: the objective's
   summed reward (unshaped).
+- ``start_kind`` (only with ``--harvest`` in ``--start-mode stream``): ``stream`` (a stream seed) or
+  ``anchor:<kind>`` (a self-anchor of ring ``kind``, ``sts2train.harvest``; ``seed_text`` is then the seed text of the
+  stream episode the anchor was cloned from and ``n`` null, so ``n`` keeps listing stream indices only).
 - ``cycles``: the verified UI revisit cycles (``sts2train.cycles``: rest-site / shop prompt -> cancel back to the same
   observation) the episode closed, counted with or without ``--cycle-cost`` (null on ``dropped`` / ``start_failed``
   rows); the per-cycle rows (path, room, floor) are in ``cycles.jsonl``.
@@ -47,7 +50,7 @@ from .runlog import JsonlWriter
 
 END_RESULT = {2: "trunc", 3: "error", 4: "error", 5: "stall"}     # EndKind (sim/Sts2Sim.Vec/Status.cs) -> result
 BASE_KEYS = ("update", "session", "slot", "seed_text", "n", "result", "act", "floor", "steps", "progress", "return",
-             "end_kind", "cycles")
+             "end_kind", "cycles", "start_kind")
 
 EpisodeHook = Callable[[dict], "Mapping | None"]
 
@@ -128,6 +131,8 @@ class EpisodeLog:
                    "n": e.get("seed_n"), "result": episode_result(e), "act": e.get("act"), "floor": e.get("floor"),
                    "steps": e.get("steps"), "progress": _r(e.get("progress")), "return": _r(e.get("return")),
                    "end_kind": e.get("end_kind"), "cycles": int(e.get("cycles", 0))}
+            if "start_kind" in e:
+                row["start_kind"] = e["start_kind"]
             row.update(e.get("fields") or {})
             self._write(row)
 
@@ -141,6 +146,8 @@ class EpisodeLog:
                    "progress": None, "return": None, "end_kind": None, "cycles": None}
             if r.get("reason"):
                 row["reason"] = r["reason"]
+            if r.get("start_kind"):
+                row["start_kind"] = r["start_kind"]
             self._write(row)
 
     def close(self) -> None:

@@ -336,6 +336,19 @@ class RolloutStore:
         self.cand_n_h[t] = obs["cand_n"]
         self.prompt_n_h[t] = obs["global_i"][:, self._prompt_col]
 
+    def put_rows(self, t: int, lo: int, hi: int, x: dict[str, torch.Tensor], obs: dict[str, np.ndarray]) -> None:
+        """`put` for slots [lo, hi) of step t (``--overlap double``: one lane's rows; same padding rule)."""
+        for name in USED_BUFFERS:
+            dst, src = self.obs[name][t, lo:hi], x[name]
+            if name in ROW_TRUNCATED:
+                w = min(src.shape[1], dst.shape[1])
+                dst[:, :w].copy_(src[:, :w])
+                dst[:, w:].zero_()
+            else:
+                dst.copy_(src)
+        self.cand_n_h[t, lo:hi] = obs["cand_n"]
+        self.prompt_n_h[t, lo:hi] = obs["global_i"][:, self._prompt_col]
+
     def put_obs(self, t: int, obs: dict[str, np.ndarray]) -> None:
         self.put(t, obs_to_device(obs, self.device, max_rows=self.max_rows), obs)
 
