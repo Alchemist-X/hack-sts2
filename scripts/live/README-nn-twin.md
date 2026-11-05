@@ -259,7 +259,9 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
 - 测试：`scripts/live/tests/test_prompt_macros.py`（假 MCP：exactly-1 手牌选择 HAND_TRICK 型、exactly-2 事件变形、
   up-to-N 的 DONE 与第 N 张自动确认、DECLINE = 跳过、DECLINE 不变成取消、取消行 fail closed、MACRO_FALLBACK 的 SMITH
   路径、三种 desync fail closed）；`test_dry_run.py` 的 `--macros all` 随机策略 dry run 与 `nn_twin_play --macros all`
-  checkpoint dry run（0 desync、token 全同）。
+  checkpoint dry run（0 desync、token 全同）。随机策略 dry run（SILENT 20 局 + IRONCLAD 11 局）里提交的选择 114 次：
+  113 次替身在选中时自己关掉提示（`closed_by_game`），1 次（IRONCLAD C0VER35 第 4 层的“至多 2 张”手牌选择，需手动确认）
+  按 `pick j; confirm` 执行——需确认的提示在随机打法里很少见，这条路径主要靠单元测试。
 - **还没覆盖 / 没验证**：没在真实游戏里跑过；真实游戏的手牌选择在选中后是否把牌移出 `cards`、哪些提示游戏自己关闭、
   哪些要确认键，都只按 v0.111.0 的状态形状推断（规则对两种情况都成立，但要看第一次真机运行的 `prompt_macro.steps`）；
   同 id + 升级的副本仍按名次配对（手牌里费用被临时改过的副本分不出来）；一次升级多张的休息点（SmithCount ≠ 1）照旧走
