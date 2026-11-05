@@ -92,7 +92,7 @@ the episode's end, so pool / stream / `--harvest` anchor starts and resumed sess
 `dropped` rows without these fields) start empty. `--deck-counts` changes only the model: the `deck` buffer is always
 observed, so the fields do not depend on it. Cost: one gather of a few global_i columns, a count over the deck's
 upgrade column and the potion slots and a gather of the current map node per slot per rollout step (numpy over all
-slots), plus a dict per boss entry; ~+150 bytes per row. Eval summaries also get `fights` (below) and a filled
+slots), plus a dict per boss entry: ~0.8 ms per step at 2,048 slots (about 0.5% of the env step, measured in the testbox), ~+155 bytes per row (~360 in all). Eval summaries also get `fights` (below) and a filled
 `death.room_type` (it was always null). Readers keep working on rows / summaries without the keys (`report-card`
 reads `deck` / `relics` at death when present).
 

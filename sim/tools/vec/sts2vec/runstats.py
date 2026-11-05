@@ -99,18 +99,19 @@ class RunStats:
         m = len(rows)
         if m == 0:
             return
+        sel = slice(None) if live is None else rows         # basic slicing (no copy) when every slot decides
         snap = np.full((m, 12), -1, dtype=np.int64)
         for j, c in enumerate(self._g):
             if c >= 0:
-                snap[:, j] = gi[rows, c]
+                snap[:, j] = gi[sel, c]
         if self._up >= 0 and self._g[3] >= 0:
             d = int(min(self._deck_rows, max(0, int(snap[:, _DECK].max()))))
-            snap[:, _UPG] = np.count_nonzero(obs["deck"][rows, :d, self._up] > 0, axis=1) if d else 0
+            snap[:, _UPG] = np.count_nonzero(obs["deck"][sel, :d, self._up] > 0, axis=1) if d else 0
         if self._pot >= 0:
-            snap[:, _POT] = np.count_nonzero(obs["potions"][rows, :, self._pot] > 0, axis=1)
+            snap[:, _POT] = np.count_nonzero(obs["potions"][sel, :, self._pot] > 0, axis=1)
         pt = np.zeros(m, dtype=np.int64)
         if self._pt >= 0 and self._row >= 0 and self._col >= 0 and "map_nodes" in obs:
-            r, c = gi[rows, self._row].astype(np.int64), gi[rows, self._col].astype(np.int64)
+            r, c = gi[sel, self._row].astype(np.int64), gi[sel, self._col].astype(np.int64)
             R, C = self._map_shape
             ok = (r >= 0) & (r < R) & (c >= 0) & (c < C)
             pt = np.where(ok, obs["map_nodes"][rows, np.clip(r, 0, R - 1), np.clip(c, 0, C - 1), self._pt], 0)
@@ -121,7 +122,7 @@ class RunStats:
         combat = snap[:, _COMBAT] > 0
         res[combat] = RES_COMBAT
         if self._phase >= 0 and len(self._room_phase_ids):
-            ph = gi[rows, self._phase].astype(np.int64)
+            ph = gi[sel, self._phase].astype(np.int64)
             rp = (res == 0) & np.isin(ph, self._room_phase_ids)
             res[rp] = 2 + ph[rp]
         snap[:, _RES] = res

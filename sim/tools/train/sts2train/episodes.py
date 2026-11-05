@@ -32,7 +32,7 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
 
 A resume in the same run directory drops the rows past the checkpoint's update and that update's ``dropped`` rows
 (the resumed session writes them again), like metrics.jsonl, so repeated resumes never duplicate a row. Size: ~170
-bytes per row without the run-state fields, ~320 with them (about 110 / 210 KB per update at 2,048 envs x 64 steps);
+bytes per row without the run-state fields, ~360 with them (about 110 / 230 KB per update at 2,048 envs x 64 steps);
 ``--no-episodes-log`` turns the file off.
 
 Hooks (``EPISODE_HOOKS``, a process-wide registry; ``train(..., episode_hooks=[...])`` adds per-call ones): a hook is
