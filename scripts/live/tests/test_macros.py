@@ -28,13 +28,13 @@ def _w(wire) -> str:
 
 
 class FakeMcp(Game):
-    """STS2_MCP stand-in: `states` name -> MCP state; `moves` (state name, wire) -> next state name."""
+    """STS2_MCP stand-in: `states` name -> MCP state; `moves` [((state name, wire), next state name), ...]."""
 
     name = "fake-mcp"
 
     def __init__(self, states: dict, moves: dict, start: str):
         self.states, self.cur, self.sent = states, start, []
-        self.moves = {(s, _w(w)): nxt for (s, w), nxt in moves.items()}
+        self.moves = {(s, _w(w)): nxt for (s, w), nxt in moves}
 
     def observe(self) -> Observation:
         s = self.states[self.cur]
@@ -80,11 +80,11 @@ def smith_game():
               "preview": upgrade_grid(cards, preview_showing=True, can_confirm=True, selected_count=1,
                                       selected_indices=[1]),
               "done": rest_state(can_proceed=True)}
-    moves = {("rest", {"action": "choose_rest_option", "index": 1}): "grid",
-             ("grid", {"action": "select_card", "index": 1}): "preview",
-             ("grid", {"action": "cancel_selection"}): "rest",
-             ("preview", {"action": "confirm_selection"}): "done",
-             ("preview", {"action": "cancel_selection"}): "grid"}
+    moves = [(("rest", {"action": "choose_rest_option", "index": 1}), "grid"),
+             (("grid", {"action": "select_card", "index": 1}), "preview"),
+             (("grid", {"action": "cancel_selection"}), "rest"),
+             (("preview", {"action": "confirm_selection"}), "done"),
+             (("preview", {"action": "cancel_selection"}), "grid")]
     return FakeMcp(states, moves, "rest")
 
 
@@ -185,11 +185,11 @@ def shop_game(order=("CLUMSY", "STRIKE_SILENT", "STRIKE_SILENT", "DEFEND_SILENT"
               "preview": grid("select", cards, preview_showing=True, can_confirm=True, can_cancel=True,
                               selected_count=1),
               "after": shop_state()}
-    moves = {("shop", {"action": "shop_purchase", "index": 13}): "grid",
-             ("grid", {"action": "cancel_selection"}): "shop",
-             ("preview", {"action": "confirm_selection"}): "after"}
+    moves = [(("shop", {"action": "shop_purchase", "index": 13}), "grid"),
+             (("grid", {"action": "cancel_selection"}), "shop"),
+             (("preview", {"action": "confirm_selection"}), "after")]
     for i in range(len(order)):
-        moves[("grid", {"action": "select_card", "index": i})] = "preview"
+        moves.append((("grid", {"action": "select_card", "index": i}), "preview"))
     return FakeMcp(states, moves, "shop")
 
 
@@ -225,9 +225,9 @@ def test_k_pick_selects_are_resolved_once_on_the_grid():
     g2 = grid("transform", cards, min_select=2, max_select=2, selected_count=2, selected_indices=[0, 1],
               preview_showing=True, can_confirm=True)
     game = FakeMcp({"g0": g0, "g1": g1, "g2": g2, "done": state("event", event={"event_id": "X", "options": []})},
-                   {("g0", {"action": "select_card", "index": 0}): "g1",
-                    ("g1", {"action": "select_card", "index": 1}): "g2",
-                    ("g2", {"action": "confirm_selection"}): "done"}, "g0")
+                   [(("g0", {"action": "select_card", "index": 0}), "g1"),
+                    (("g1", {"action": "select_card", "index": 1}), "g2"),
+                    (("g2", {"action": "confirm_selection"}), "done")], "g0")
     sel = [twin("select", ("STRIKE_SILENT", 0), 0, row=None), twin("select", ("STRIKE_SILENT", 0), 1, row=None)]
     m = Act("macro", ("TRANSFORM_K", 0, 1), None, 3, "transform 2", (*sel, twin("confirm", row=None)),
             ((("STRIKE_SILENT", 0), 0), (("STRIKE_SILENT", 0), 1), (("DEFEND_SILENT", 0), 2)))
@@ -249,7 +249,7 @@ def test_k_pick_trailing_confirm_is_optional_when_the_game_closes_the_selection(
     cards = [card("STRIKE_SILENT", 0), card("DEFEND_SILENT", 1)]
     g0 = grid("simple_select", cards, min_select=1, max_select=1)
     game = FakeMcp({"g0": g0, "done": state("event", event={"event_id": "X", "options": []})},
-                   {("g0", {"action": "select_card", "index": 1}): "done"}, "g0")
+                   [(("g0", {"action": "select_card", "index": 1}), "done")], "g0")
     m = Act("macro", ("PICK_1",), None, 0, "pick 1", (twin("select", ("DEFEND_SILENT", 0), 1, row=None),
                                                      twin("confirm", row=None)))
     assert game.execute(map_open(m, [m], game.observe().acts, False)).ok

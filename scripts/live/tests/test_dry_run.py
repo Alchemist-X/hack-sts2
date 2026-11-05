@@ -138,7 +138,7 @@ def test_policy_loop_breaker_masks_a_row_that_led_back(tiny_checkpoint):
         twin.close()
 
 
-@pytest.mark.parametrize("seeds", [(11, 12, 13, 14, 28)])
+@pytest.mark.parametrize("seeds", [(11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 28)])
 def test_room_macro_dry_runs_play_smith_and_removal_as_their_clicks(play_server, tmp_path, seeds):
     """The twin with ``--macros rest,shop`` (the play server has no macros): every SMITH / removal macro row the random
     policy takes is played as the server's three tokens (open, pick, confirm), checked step by step, with no desync;
