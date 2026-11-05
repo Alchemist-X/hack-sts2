@@ -242,9 +242,9 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
 | 孪生的行 | 游戏里的点击 |
 | --- | --- |
 | `PromptSelect(A)`，孪生这一步**没**提交（exactly-k 的前 k−1 张、up-to-N 未满） | 只选这张牌（按 key + 名次配对，同其他选牌） |
-| `PromptSelect(A)`，孪生这一步提交了（离开了提示，或站在另一个提示里：`global_i.prompt_picked` 不是原来 +1 / `prompt_site_hash` 变了）——exactly-1、exactly-k 的第 k 张、up-to-N 的第 N 张、无序提示选到末尾 | 选这张牌，然后：游戏仍显示已选的牌且有确认键 → 点确认；游戏已自己关掉选择 → 不点（`closed_by_game`）；两边都进了新提示 → 不点（`next_prompt`）；其余（已选、无确认键；孪生已离开而游戏是新的未选提示；确认被拒）→ **fail closed** |
+| `PromptSelect(A)`，孪生这一步提交了（离开了提示，或站在另一个提示里：`global_i.prompt_picked` 不是原来 +1 / `prompt_site_hash` 变了）——exactly-1、exactly-k 的第 k 张、up-to-N 的第 N 张、无序提示选到末尾 | 选这张牌，然后：游戏仍显示已选的牌且有确认键 → 点确认；游戏已自己关掉选择 → 不点（`closed_by_game`）；两边都进了新提示 → 不点（`next_prompt`）；游戏显示的已选张数（`View.picked`）不等于孪生的 picked+1 → 不点，**fail closed**（`prompt_picked`）；其余（已选、无确认键；孪生已离开而游戏是新的未选提示；确认被拒）→ **fail closed** |
 | `PromptConfirm`，已有选牌（DONE） | 游戏的确认 |
-| `PromptConfirm`，0 张（DECLINE，只在游戏允许时列出） | 游戏的确认 / 跳过键；**绝不**映射到可取消站点的“取消”（那会回到打开提示的画面）——游戏只给取消时这行不映射（同步时换成游戏提供的次优行，否则 follow） |
+| `PromptConfirm`，0 张（DECLINE，只在游戏允许时列出） | 游戏的确认 / 跳过键（可跳过的 choose 画面同时给 `cancel_selection` 和 `skip_card_selection`：取跳过）；**绝不**映射到可取消站点的“取消”（那会回到打开提示的画面）——游戏只给取消时这行不映射（同步时换成游戏提供的次优行，否则 follow） |
 | `PromptCancel` | 宏开时不该出现；候选表里一出现就 fail closed（`prompt_cancel_row`，孪生停用、兜底到下一个存档点） |
 | 休息点 / 商店 `MACRO_FALLBACK`（status 512，宏行会超过 64 行） | 原始 `SMITH` / 删牌行（普通 `rest` / `buy` 映射）+ 上面的无取消提示行；计数器 `twin_macro_fallback` |
 
@@ -252,7 +252,8 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
   `twin.prompt_macros`；`Twin.prompt_marker()` 读 `prompt_picked / prompt_site_hash / prompt_needs_confirm / min / max`。
   dry run 的 token：提交且孪生提示需要确认时是 `pick j; confirm`，否则 `pick j`（与 play server 的历史逐条相等）。
 - 游戏侧：STS2_MCP 的网格里已选的牌还在，再选一次就是取消选择；`mcp.acts_of` 不再把已选的牌（`is_selected` /
-  `selected_indices`）列为可选，k 张选择的后几张只在未选的牌里按名次配对（模拟器没有取消选择）。
+  `selected_indices`）列为可选，k 张选择的后几张只在未选的牌里配对（模拟器没有取消选择）：模拟器只列出上一张之后的选项，所以按孪生这张在**全部未选的同 key 选项**里的名次配对（`Twin.prompt_copy_rank` / `Runner.later_pick`；游戏列出的同 key 张数与之不同时退回普通名次配对）。
+- 选牌执行报失败（确认超时）时：读游戏的已选张数——没变 → 孪生不走；+1 → 孪生走这一步并照常提交 / 点确认；离开了选择 → 普通的试走；其余 → fail closed（`prompt_picked`，计数器 `prompt_select_failures`）。
 - 决策记录多一个 `prompt_macro` 字段：`committed`、`picked`、`needs_confirm`、`bounds`，提交时还有 `status`、`steps`、
   `failure`；计数器 `prompt_selects`、`prompt_commits`、`prompt_commit_confirmed / closed_by_game / next_prompt / failed`、
   `prompt_commit_failures`、`prompt_cancel_rows`。
@@ -264,7 +265,7 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
   按 `pick j; confirm` 执行——需确认的提示在随机打法里很少见，这条路径主要靠单元测试。
 - **还没覆盖 / 没验证**：没在真实游戏里跑过；真实游戏的手牌选择在选中后是否把牌移出 `cards`、哪些提示游戏自己关闭、
   哪些要确认键，都只按 v0.111.0 的状态形状推断（规则对两种情况都成立，但要看第一次真机运行的 `prompt_macro.steps`）；
-  同 id + 升级的副本仍按名次配对（手牌里费用被临时改过的副本分不出来）；一次升级多张的休息点（SmithCount ≠ 1）照旧走
+  同 id + 升级的副本按（未选副本中的）名次配对（手牌里费用被临时改过的副本分不出来）；一次升级多张的休息点（SmithCount ≠ 1）照旧走
   原始提示；combat lookahead 没有宏映射。
 
 ## 开发者：dry run 与测试

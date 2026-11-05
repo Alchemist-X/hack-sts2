@@ -311,6 +311,23 @@ class Twin:
                             needs_confirm=bool(self.g("prompt_needs_confirm")), lo=self.g("prompt_min"),
                             hi=self.g("prompt_max"))
 
+    def prompt_copy_rank(self, act: Act) -> tuple[int, int] | None:
+        """For a later pick (``prompt_picked`` > 0) of a PromptSelect row: (rank of its option among the prompt's
+        unpicked options of the same key, by option index; how many there are). The sim lists only options above its
+        last pick, STS2_MCP every unselected copy, so the runner pairs later picks by this rank (``Runner.later_pick``).
+        None: not a later pick, or the option is not found."""
+        if act.kind != "select" or act.pos is None or self.phase_name() != "Prompt" or not self.g("prompt_picked"):
+            return None
+        same = []
+        for i, o in sorted(self._prompt_options().items()):
+            if o["kind"] in ("card", "relic", "potion") and o["item"] is not None:
+                key = (o["item"], o["upgraded"])
+            else:
+                key = (o["kind"],)
+            if key == act.key and (not o["picked"] or i == act.pos):
+                same.append(i)
+        return (same.index(act.pos), len(same)) if act.pos in same else None
+
     # ---------------------------------------------------------------------------------------- names
 
     def card(self, cid: int) -> str:

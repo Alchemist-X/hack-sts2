@@ -356,11 +356,13 @@ class PromptRun:
     error: str | None = None
 
 
-def play_prompt_commit(observe, execute, *, twin_in_prompt: bool) -> PromptRun:
+def play_prompt_commit(observe, execute, *, twin_in_prompt: bool, twin_picked: int | None = None) -> PromptRun:
     """After a PromptSelect the twin's env committed: send the game's confirm if the game still shows the selection.
 
     - the game left the selection screen: it closed the selection on the pick itself (nothing to send);
-    - it shows a selection with picks made and offers a confirm: send it (it must be accepted);
+    - it shows a selection with picks made and offers a confirm: send it (it must be accepted) -- but only when the
+      game's pick count (``View.picked``, where it publishes one) is the twin's ``twin_picked``: a count that differs
+      (a select whose effect was not the twin's) fails closed instead of being confirmed;
     - it shows a fresh selection (no picks) while the twin also stands in a new prompt: the game moved on as well;
     - anything else (picks made, no confirm; a selection the twin has left): failure -- the caller fails closed."""
     run = PromptRun()
@@ -372,6 +374,13 @@ def play_prompt_commit(observe, execute, *, twin_in_prompt: bool) -> PromptRun:
         rec["status"] = run.status = "closed_by_game"
         return run
     conf = [a for a in obs.acts if a.kind == "confirm"]
+    if pending_selection(obs.view) and conf and twin_picked is not None and obs.view.picked is not None \
+            and obs.view.picked != twin_picked:
+        rec["status"] = run.status = "failed"
+        run.ok = False
+        run.error = f"prompt commit: the game shows {obs.view.picked} picks, the twin made {twin_picked}"
+        run.failure = {"field": "prompt_picked", "twin": twin_picked, "real": obs.view.picked}
+        return run
     if pending_selection(obs.view) and conf:
         res = execute(conf[0])
         run.executed.append(conf[0].to_json())

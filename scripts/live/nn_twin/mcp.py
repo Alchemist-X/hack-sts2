@@ -124,6 +124,10 @@ def view_of(state: dict, terminal: str | None = None) -> View:
         block = state.get(st) or {}
         cards = _items(block, "cards") or _items(block, "relics")
         picked = block.get("selected_count") or len(block.get("selected_cards") or [])
+        if isinstance(block.get("selected_count"), int):
+            v.picked = block["selected_count"]
+        elif isinstance(block.get("selected_cards"), list):
+            v.picked = len(block["selected_cards"])
         if cards and not picked and st != "bundle_select":
             d["prompt_options"] = tuple(sorted((c.get("id"), norm_upgrade(c.get("is_upgraded"))) for c in cards))
     return v

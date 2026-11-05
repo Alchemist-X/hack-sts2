@@ -10,13 +10,16 @@ except `test_twin_prompt_macros_on_the_library` (skips without the Release build
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
+from nn_twin import mcp
+from nn_twin.game import ExecResult
 from nn_twin.macros import MACRO_FALLBACK, PromptMarker, is_true_cancel, pending_selection, prompt_committed
 from nn_twin.runner import Runner
 from nn_twin.semantics import Act, View
-from nn_twin.twin import Decision
+from nn_twin.twin import Decision, Twin
 from test_macros import FakeMcp, smith_game
 from test_mapping import card, combat_state, grid, state, twin
 
@@ -29,8 +32,10 @@ def pview(*options, picked=False):
 
 
 class Frame:
-    def __init__(self, view, acts, marker=None, status=0):
+    def __init__(self, view, acts, marker=None, status=0, options=None):
         self.view, self.acts, self.marker, self.status = view, acts, marker, status
+        # the prompt's whole option table (``Twin._prompt_options``: index -> kind / item / upgraded / picked)
+        self.options = options
 
 
 class PromptTwin:
@@ -63,6 +68,19 @@ class PromptTwin:
 
     def row_to_token(self, row):
         return None
+
+    # the real Twin.prompt_copy_rank, on this frame's option table
+    prompt_copy_rank = Twin.prompt_copy_rank
+
+    def phase_name(self):
+        return "Prompt" if self.frame.marker is not None else "Combat"
+
+    def g(self, name):
+        assert name == "prompt_picked"
+        return self.frame.marker.picked if self.frame.marker is not None else 0
+
+    def _prompt_options(self):
+        return self.frame.options or {}
 
 
 class RowsPolicy:
@@ -440,3 +458,155 @@ def test_twin_prompt_macros_on_the_library():
             assert tw.prompt_macros is on
         finally:
             tw.close()
+
+
+# ------------------------------------------------------------------------------------------------ review fixes (w5)
+
+FIXTURE = Path(__file__).resolve().parents[3] / "sts2rec" / "tests" / "fixtures" / "live_frictions"
+
+
+def test_decline_on_a_skippable_choose_screen_that_also_publishes_cancel(tmp_path):
+    """A choose-a-card screen publishes can_cancel and can_skip together (the real STS2_MCP fixture; the recorder's
+    passive builder sets can_cancel = can_skip): DECLINE is its skip, never refused and never a substituted pick."""
+    raw = json.loads((FIXTURE / "card_select_choose.json").read_text())
+    cs = raw["card_select"]
+    assert cs["screen_type"] == "choose" and cs["can_cancel"] and cs["can_skip"] and not cs["can_confirm"]
+    racts = mcp.acts_of(raw)
+    assert [a.native["action"] for a in racts if a.kind == "cancel"] == ["cancel_selection", "skip_card_selection"]
+    decline = twin("confirm", ("empty",), row=0)
+    probe = runner(tmp_path, FakeMcp({"g": raw}, [], "g"), choose_twin([decline]), [], name="probe")
+    assert probe.map_row(decline, [decline], racts, relaxed=False).native == {"action": "skip_card_selection"}
+    # the decision, end to end on a scripted screen of the same shape
+    cards = [card("PRODUCTION", 0), card("ULTIMATE_DEFEND", 1)]
+    game = FakeMcp({"g": grid("choose", cards, can_cancel=True, can_skip=True),
+                    "e": state("event", event={"event_id": "X"})},
+                   [(("g", {"action": "skip_card_selection"}), "e")], "g")
+    tw = choose_twin([sel("PRODUCTION", 0, 0), sel("ULTIMATE_DEFEND", 1, 1), twin("confirm", ("empty",), row=2)])
+    r = runner(tmp_path, game, tw, [2])
+    step(r, game, tw)
+    assert game.sent == [{"action": "skip_card_selection"}] and tw.steps == [2]
+    rec = records(tmp_path)[-1]
+    assert rec["policy"] == "greedy" and r.mode == "lockstep" and r.twin_ok
+
+
+def test_relic_skip_is_a_decline_too(tmp_path):
+    r = runner(tmp_path, FakeMcp({}, [], None), choose_twin([]), [], name="probe")
+    relics = state("relic_select", relic_select={"relics": [{"index": 0, "id": "ANCHOR"}], "can_skip": True})
+    decline = twin("confirm", ("empty",), row=0)
+    assert r.map_row(decline, [decline], mcp.acts_of(relics), relaxed=False).native == \
+        {"action": "skip_relic_selection"}
+
+
+class FlakyMcp(FakeMcp):
+    """FakeMcp whose `flaky` wires move the game but report a failure (the commit witness timed out)."""
+
+    def __init__(self, *a, flaky=(), **kw):
+        super().__init__(*a, **kw)
+        self.flaky = {_w(w) for w in flaky}
+
+    def execute(self, act):
+        res = super().execute(act)
+        if res.ok and _w(act.native) in self.flaky:
+            return ExecResult(False, act.native, "timeout: no commit witness")
+        return res
+
+
+def flaky_hand_trick(moved=True):
+    cards = [card("SURVIVOR", 0), card("BLADE_DANCE", 1)]
+    pick = {"action": "combat_select_card", "card_index": 1}
+    states = {"hs0": hand_select(cards),
+              "hs1": hand_select([card("SURVIVOR", 0)], selected_cards=[{"index": 1}], can_confirm=True),
+              "cb": combat_state()}
+    moves = [(("hs1", {"action": "combat_confirm_selection"}), "cb")]
+    if moved:
+        moves.append((("hs0", pick), "hs1"))
+    game = FlakyMcp(states, moves, "hs0", flaky=[pick] if moved else [])
+    return game
+
+
+def test_failed_but_executed_select_still_commits_the_prompt(tmp_path):
+    """The game took the pick but its select reported a failure: the twin's PromptSelect (which commits and confirms
+    in one step) is kept and the game's confirm is played, instead of a reverted twin one pick behind the game."""
+    game, tw = flaky_hand_trick(), hand_trick_twin()
+    r = runner(tmp_path, game, tw, [1])
+    step(r, game, tw)
+    assert game.sent == [{"action": "combat_select_card", "card_index": 1}, {"action": "combat_confirm_selection"}]
+    assert game.cur == "cb" and tw.steps == [1] and r.twin_ok and r.mode == "lockstep"
+    rec = records(tmp_path)[-1]
+    assert rec["prompt_macro"]["committed"] and rec["prompt_macro"]["status"] == "confirmed"
+    assert r.stats["exec_failures"] == 1 and r.stats["twin_step_kept_after_failure"] == 1
+
+
+def test_failed_select_that_did_not_happen_leaves_the_twin_unstepped(tmp_path):
+    game, tw = flaky_hand_trick(moved=False), hand_trick_twin()
+    r = runner(tmp_path, game, tw, [1])
+    step(r, game, tw)
+    assert game.sent == [{"action": "combat_select_card", "card_index": 1}] and game.cur == "hs0"
+    assert tw.steps == [] and r.twin_ok and "prompt_macro" not in records(tmp_path)[-1]
+
+
+def test_failed_select_with_an_unexpected_pick_count_fails_closed(tmp_path):
+    game, tw = flaky_hand_trick(), hand_trick_twin()
+    game.states["hs1"] = hand_select([], selected_cards=[{"index": 0}, {"index": 1}], can_confirm=True)
+    r = runner(tmp_path, game, tw, [1])
+    step(r, game, tw)
+    assert game.sent == [{"action": "combat_select_card", "card_index": 1}]          # no confirm
+    assert tw.steps == [] and not r.twin_ok and r.mode == "follow"
+    assert r.first_desyncs[0]["fields"][0]["field"] == "prompt_picked" and r.stats["prompt_select_failures"] == 1
+
+
+def test_commit_with_a_game_pick_count_unlike_the_twins_fails_closed(tmp_path):
+    """Up to 2 (min 0): the twin's 2nd pick commits, but the game shows 1 pick (a select that did not add one) with
+    its confirm enabled: the confirm is not sent; the twin is disabled."""
+    game, tw = purity_game(), purity_twin()
+    game.states["h2"] = hand_select([card("DEFEND_SILENT", 1), card("NEUTRALIZE", 2)],
+                                    selected_cards=[{"index": 0}], can_confirm=True)
+    r = runner(tmp_path, game, tw, [0, 0])
+    step(r, game, tw)
+    step(r, game, tw)
+    assert game.sent == [{"action": "combat_select_card", "card_index": 0},
+                         {"action": "combat_select_card", "card_index": 1}]
+    assert not r.twin_ok and r.mode == "follow" and r.stats["prompt_commit_failures"] == 1
+    rec = records(tmp_path)[-1]
+    assert rec["prompt_macro"]["status"] == "failed" and rec["prompt_macro"]["failure"]["field"] == "prompt_picked"
+    assert mcp.view_of(game.states["h2"]).picked == 1 and mcp.view_of(game.states["h0"]).picked == 0
+
+
+def _opts(*cards, picked=()):
+    return {i: {"kind": "card", "item": c, "upgraded": 0, "picked": int(i in picked), "ordinal": i}
+            for i, c in enumerate(cards)}
+
+
+def test_later_pick_pairs_the_same_copy_as_the_twin(tmp_path):
+    """Discard 2 from [Strike0, Strike1, Defend, Strike2]: the twin picks Strike1, then Strike2 (the sim lists only the
+    options above its last pick: [Defend, Strike2]). The game lists every unselected copy ([Strike0, Strike2]); the
+    second pick is Strike2 (its rank among the unpicked Strikes), not Strike0."""
+    hand = ["STRIKE_SILENT", "STRIKE_SILENT", "DEFEND_SILENT", "STRIKE_SILENT"]
+    cards = [card(c, i) for i, c in enumerate(hand)]
+    rest = [c for c in cards if c["index"] != 1]
+    states = {"h0": hand_select(cards), "h1": hand_select(rest, selected_cards=[{"index": 1}]),
+              "h2": hand_select([rest[0], rest[1]], selected_cards=[{"index": 1}, {"index": 3}], can_confirm=True),
+              "cb": combat_state()}
+    game = FakeMcp(states, [(("h0", {"action": "combat_select_card", "card_index": 1}), "h1"),
+                            (("h1", {"action": "combat_select_card", "card_index": 3}), "h2"),
+                            (("h2", {"action": "combat_confirm_selection"}), "cb")], "h0")
+
+    def m(k):
+        return PromptMarker(picked=k, site=44, needs_confirm=True, lo=2, hi=2)
+
+    p0 = Frame(pview(*((c, 0) for c in hand)), [sel(c, i, i) for i, c in enumerate(hand)], m(0), options=_opts(*hand))
+    p1 = Frame(pview(picked=True), [sel("DEFEND_SILENT", 2, 0), sel("STRIKE_SILENT", 3, 1)], m(1),
+               options=_opts(*hand, picked=(1,)))
+    tw = PromptTwin({"p0": p0, "p1": p1, "c": combat_frame()}, {("p0", 1): "p1", ("p1", 1): "c"}, "p0")
+    assert tw.prompt_copy_rank(p0.acts[1]) is None                       # a first pick: the plain rank pairing
+    r = runner(tmp_path, game, tw, [1, 1])
+    step(r, game, tw)
+    assert tw.prompt_copy_rank(p1.acts[1]) == (1, 2)
+    step(r, game, tw)
+    assert game.sent == [{"action": "combat_select_card", "card_index": 1},
+                         {"action": "combat_select_card", "card_index": 3}, {"action": "combat_confirm_selection"}]
+    assert game.cur == "cb" and r.twin_ok and r.mode == "lockstep" and r.stats["prompt_commit_confirmed"] == 1
+    # a side that lists only the options above the last pick (the play server stand-in) keeps the plain pairing
+    tw.cur = "p1"
+    standin_like = [Act("select", ("STRIKE_SILENT", 0), 3, "pick 3")]
+    assert r.map_row(p1.acts[1], p1.acts, standin_like, relaxed=False).native == "pick 3"
