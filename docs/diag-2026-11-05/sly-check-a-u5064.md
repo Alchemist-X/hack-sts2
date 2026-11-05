@@ -15,10 +15,10 @@
 | **有奇巧可选时选了奇巧牌** | **76 / 83 = 92%** |
 | 弃的是诅咒 / 状态牌 | 293 / 1,947（15%；Ascender's Bane 202、Clumsy 33、Wound 12…） |
 | 最常弃的牌 | Strike 758、Defend 548、Ascender's Bane 202、Flick Flack 70（即奇巧触发）、Bouncing Flask 33 |
-| Hand Trick / Master Planner 打出 | 0 / 0（从未进牌组） |
+| Hand Trick / Master Planner 打出 | 本脚本按 `discard_payoff` 字段计为 0，**有误**：行为审计按出牌记录数得 Hand Trick 打出 87 次（12 局最终牌组里有它），且被它赋予奇巧的牌 56 次里 41 次又被手动打掉；Master Planner 0 |
 
 **结论**
-1. 奇巧触发**会用**：手里有奇巧牌时 92% 的弃牌选它，Flick Flack 被弃 70 次都是触发。机制被理解了。
+1. 奇巧触发**会用**：手里有奇巧牌时 92% 的弃牌选它，Flick Flack 被弃 70 次都是触发。但同一张 Flick Flack 又被手动付费打出 157 次，Hand Trick 赋予奇巧后 41/56 仍手动打出——"该弃不该打"这一层没学到。
 2. 但**不围绕它构筑**：128 局只有 1 张 Tactician、0 张 Reflex；奇巧牌 97% 的战斗决策里根本不在手上。弃牌出口倒是很常用（生存者、投掷匕首）。
 3. 弃牌选择大体合理：优先弃 Strike / Defend 和诅咒；弃 Bouncing Flask 33 次值得再看（毒构筑的核心牌）。
 4. 环境侧：手牌行带奇巧位（模型读到）；**弃牌提示的选项行不带关键词位**（模型只能靠卡牌嵌入识别）——92% 的命中率说明目前够用，但这是信息对等里可以补齐的一处（`env-information-check.md` 会给结论）。
