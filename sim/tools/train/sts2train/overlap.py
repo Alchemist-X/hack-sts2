@@ -57,6 +57,7 @@ from sts2vec import STATUS, VecEnv
 from sts2vec.schema import Buffers
 
 from .features import obs_to_device
+from .objective import annotate_shaping
 from .seedstream import ERR_BITS, StreamEnv
 
 OVERLAP_MODES = ("off", "double")
@@ -458,12 +459,30 @@ class LaneBreakers:
 
 
 class LaneShapers:
+    """The trainer's view of the lanes' ``objective.ShapingSet``s: ``phi`` / ``part_phi`` over global slots,
+    ``parts`` (the names that are on) and ``pop_window`` (per-part window totals summed over the lanes)."""
+
     def __init__(self, lanes: list[Lane]):
         self.lanes = lanes
 
     @property
+    def parts(self) -> dict:
+        return self.lanes[0].shaper.parts
+
+    @property
     def phi(self) -> np.ndarray:
         return np.concatenate([L.shaper.phi for L in self.lanes])
+
+    def part_phi(self, name: str) -> np.ndarray:
+        return np.concatenate([L.shaper.part_phi(name) for L in self.lanes])
+
+    def pop_window(self) -> dict[str, tuple[float, int]]:
+        out: dict[str, tuple[float, int]] = {}
+        for L in self.lanes:
+            for k, (sm, n) in L.shaper.pop_window().items():
+                s0, n0 = out.get(k, (0.0, 0))
+                out[k] = (s0 + sm, n0 + n)
+        return out
 
 
 # ------------------------------------------------------------------------------------------------ the rollout
@@ -574,9 +593,7 @@ class OverlapRollout:
                 L.aux_tg.after(t, term, trunc, info["last_episode"], o["aux"])
             if L.shaper is not None:
                 f_acq, ended = L.shaper.step(done, o["aux"], o["deck"])
-                for e in fin:
-                    e["shaping"] = ended.get(e["slot"] - lo, 0.0)
-                    e["shaped_return"] = e["return"] + e["shaping"]
+                annotate_shaping(fin, ended, L.shaper, lo=lo)
                 r_obj[t, lo:hi] = r
                 r = r + f_acq
             ended_c = L.cycles.finish(done)                     # = CycleDetector.after_step, local slots

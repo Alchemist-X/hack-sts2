@@ -249,6 +249,13 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--acq-deck-coef", dest="acq_deck_coef", type=float, help=f"(default {D.acq_deck_coef})")
     g.add_argument("--acq-relic-coef", dest="acq_relic_coef", type=float, help=f"(default {D.acq_relic_coef})")
     g.add_argument("--acq-upgrade-coef", dest="acq_upgrade_coef", type=float, help=f"(default {D.acq_upgrade_coef})")
+    g.add_argument("--hp-shaping-coef", dest="hp_shaping_coef", type=float, metavar="KAPPA",
+                   help="potential-based HP shaping added to the objective's reward: phi = KAPPA x hp / max_hp for a "
+                        "live state, 0 at the end of an episode (death, win, truncation), F = gamma phi(s') - phi(s) per "
+                        "step (losing 20%% of max HP pays -0.2 KAPPA; an episode's HP shaping telescopes to -KAPPA x "
+                        "hp0 / max_hp0); composes with --acq-shaping; logged apart (hp_shaping_mean / "
+                        "hp_shaping_return_mean); on --resume a checkpoint trained without it resumes with 0 unless "
+                        "given (default 0 = off)")
     g.add_argument("--rollout-loop-breaker", dest="rollout_loop_breaker", action=argparse.BooleanOptionalAction,
                    help="apply the eval's loop breaker to the rollout sampling: back at an observation of its last "
                         "64 decisions a slot samples with probability 0 for the candidates taken there (stored "

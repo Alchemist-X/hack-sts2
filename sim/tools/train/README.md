@@ -276,7 +276,7 @@ python sim/tools/train/bench/overlap_bench.py --device cuda --envs 1024 --rollou
 | `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), `ppo_loss` / `MinibatchUpdater` / `InferenceRunner` (the update step and rollout forward, eager or compiled) and `check_compiled`, checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
 | `bench.py` | `sts2train bench-update`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
-| `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`) |
+| `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`), `HpShaping` (`--hp-shaping-coef`), `ShapingSet` |
 | `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` / `harvest_*` metrics) |
 | `harvest.py` | `--harvest`: `parse_harvest` (ring spec), `Harvester` (captures determinized clones of combat entries of fresh- / stream-started episodes into per-kind FIFO rings of live pool entries, releases the overflow, per-update `harvest_*` counters); stream-mode anchor starts: `seedstream.StreamEnv.attach_anchors` |
 | `progress.py` | `ProgressTracker`: protocol v0.2 progress of finished auto-reset episodes from the previous call's `aux` (act_floor, act_rooms) + `last_episode`, via `sts2vec.protocol.compute` (the evaluator's copy of `sts2eval.progress.compute`, pinned to it by sts2vec's tests) |
@@ -335,11 +335,30 @@ help is an experiment, not something the tests show.
   `fresh_*` / `save_*` and every progress number stay the objective's, and the shaping is logged apart:
   `reward_mean_shaped`, `shaping_mean` (per step), `shaped_return_mean`, `shaping_return_mean` (finished episodes),
   `acq_potential_mean`; episode records carry `shaping` / `shaped_return`. Evaluations never see it.
+- **`--hp-shaping-coef KAPPA`** (default 0 = off; wave 8): potential-based HP shaping on top of the objective
+  (`objective.HpShaping`), built exactly like `--acq-shaping` and summed with it when both are on
+  (`objective.ShapingSet`; potential-based terms compose). phi(s) = KAPPA × hp / max_hp of a live observation (`aux.hp`
+  / `aux.max_hp`; 0 when max_hp is 0), phi = 0 after any episode end (death, win, step cap, floor stall), F = gamma ×
+  phi(s') − phi(s) per step. With gamma 1: losing 20% of max HP on a step pays −0.2 KAPPA (KAPPA 0.1: −0.02, about one
+  room's +0.0196), healing pays it back, a max-HP change (relic, event) moves only the ratio. An episode's HP shaping
+  telescopes to −KAPPA × hp0 / max_hp0 of its first observation, whatever happens in between: at a death the last step
+  pays −phi(last live state), at a win the terminal pays back −KAPPA × hp_T / max_hp_T (the conventional terminal-0
+  form, so the optimal policy is unchanged). The potential is (re)initialised at the first observation of every
+  episode: the session's first observations (`reset`, a resume included: no shaping step crosses a session boundary),
+  and at every auto-reset the next episode's first observation, which for a harvest anchor / save start is the
+  restored state's hp / max_hp; under `--overlap double` every lane keeps its own. Logged apart like the acquisition
+  shaping: `reward_mean_shaped`, `shaping_mean`, `shaped_return_mean`, `shaping_return_mean` (all parts) plus
+  `hp_shaping_mean` (per slot-step of the window), `hp_shaping_sum` (window total), `hp_shaping_return_mean` (finished
+  episodes) and `hp_potential_mean`; episode records carry `hp_shaping`; episodes.jsonl `return`, `reward_mean`,
+  `return_mean` and every progress number stay the objective's. Coef 0 builds no shaping part, so a run is
+  bit-identical to one without the flag. The coefficient is recorded in the checkpoint config, config.json and the
+  report card's objective group; `--resume` of a checkpoint trained without it (no key) resumes at 0 unless
+  `--hp-shaping-coef` is given, a checkpoint trained with it keeps its value unless overridden.
 
 `--aux-heads` and `--deck-counts` are part of the architecture: a run resumes only with the setting its checkpoint
 was trained with (other values are refused before the env starts, like the size flags), and their modules are created
 after all others, so a model with a flag on starts every other parameter from the same initial values as without it.
-`--acq-shaping` and the coefficients are objective settings and may change on resume. `bench-update --deck-counts
+`--acq-shaping`, `--hp-shaping-coef` and the coefficients are objective settings and may change on resume. `bench-update --deck-counts
 --aux-heads` times the flagged model / loss.
 
 ## Start modes, seeds and isolation (`--start-mode`, `--init-seed` / `--sample-seed` / `--env-seed`, blind sets)
