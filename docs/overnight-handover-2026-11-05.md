@@ -50,3 +50,15 @@
 - **wave 5 在跑**（Opus，远端测试）：孪生对 `prompt` 宏的映射，分支 `train/w5-twin-prompt`，工作树
   `.claude/worktrees/train-w5-twin-prompt`；完成后需要集成进本分支（若本机 06:00 前没完成，分支上有提交即可接着做）。
 - 预算：01:00 余额 619.6；过夜两线约 235 单位、第二轮约 75 单位；到 11-06 05:30 预计余额约 300。24 小时窗口内约 300 单位，低于 400 上限。
+
+## 02:15 更新
+
+- M u2764 固定评测 dev-128 关 breaker 0.390 [0.368, 0.413]（63/128 进二幕），与 u2264 的 0.389 持平：最近 500 update 趋平。
+  看 A/B 的 u3564 / u4064 段终点是否继续平——若平，下一轮的杠杆要换（见死亡分析）。
+- 死亡分析 `docs/diag-2026-11-05/death-analysis-m-u2264.md`（2593f7b）：128 局全部战斗死亡；Act 1 boss 占 32%（到达者 38.7% 死亡），
+  Act 2 第 4–8 间 + Act 1 boss 房合计 61%；`DECIMILLIPEDE_ELITE` 12.5% 为最大单一杀手；Act 2 boss 到达 9 局全灭。
+  日志缺 HP / 卡组 / 房间类型（`death.room_type` 恒为 null 是 bug）→ wave 6 在补（分支 `train/w6-episode-fields`，Opus，远端门禁，零行为改动）。
+- wave 5 已合入 PR 分支（`970b178`，已推送）：孪生可在真游戏上执行 `--macros all` 的提示宏；DECLINE 在两种模式下都映射成 skip。
+  合并提交全套远端门禁通过（build、train 215、vec 131、eval 84、live 101）。**还没在真游戏上跑过**；第一次真跑要看 `prompt_macro.steps`
+  确认哪些 STS2_MCP 提示在最后一次选择后自动关闭。
+- 东京保活脚本已加固（超时强杀、文件捕获、失败重试）并重启，07:11Z 起两台 ping 正常。
