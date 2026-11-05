@@ -38,6 +38,13 @@ layout; a replay audit re-plays every game's candidate indices on a fresh env (r
 must match). Options: `--out DIR` (default `tmp/eval/vec-<policy>-<seedset>-<time>`), `--threads`, `--seed` (policy
 RNGs), `--step-cap`, `--floor-step-cap`. Exit status 1 when a replay fails.
 
+Every game summary also carries the run state at the end (`sts2vec.runstats`, 2026-11-05, logging only): `hp`,
+`max_hp`, `deck` (size), `upgraded`, `relics`, `gold`, `potions`, `killer` (the encounter of the fight a death
+happened in), `boss_entry` (`[{act, floor, hp, max_hp, boss}]` per act-boss room entered), `room` (the final room's
+kind; also `death.room_type`, null before 2026-11-05) and `fights` (`[{floor, act, room, enemies, encounter,
+hp_before, max_hp_before, result, hp_after, max_hp}]` per combat, `result` won / lost / unfinished); the definitions
+are in `sim/tools/train/README.md` "Run-state fields". Summaries without these keys still load in every report.
+
 ## Write your own policy in 20 lines
 
 A policy is `act(obs, ctx) -> int array (N,)`: one candidate index (row of `obs["cand"][i]`, `< obs["cand_n"][i]`) per

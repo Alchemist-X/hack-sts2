@@ -108,8 +108,9 @@ ENDINGS = (
     ("aborted", "aborted"),
     ("unknown", "no result recorded"),
 )
-# summary keys read for "deck size / relics at death" (top level or under `death`); sts2vec eval records none of them
-DECK_KEYS = ("deck_n", "deck_size", "final_deck_n")
+# summary keys read for "deck size / relics at death" (top level or under `death`); sts2vec eval records ``deck`` /
+# ``relics`` since 2026-11-05 (sts2vec.runstats), older summaries none of them
+DECK_KEYS = ("deck", "deck_n", "deck_size", "final_deck_n")
 RELIC_KEYS = ("relic_n", "relic_count", "relics", "final_relic_n")
 # training flags shown on the card, grouped (the JSON keeps the whole config)
 FLAG_GROUPS = (

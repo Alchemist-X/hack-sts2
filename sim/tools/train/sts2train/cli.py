@@ -205,8 +205,9 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--best", dest="no_best", action="store_false", help="undo --no-best on --resume")
     g.add_argument("--log-every", dest="log_every", type=int, help=f"stdout line every N updates (default {D.log_every})")
     g.add_argument("--episodes-log", dest="episodes_log", action=argparse.BooleanOptionalAction,
-                   help="RUN_DIR/episodes.jsonl: one row per episode (seed, result, act, floor, steps, progress; "
-                        "sts2train.episodes; default on)")
+                   help="RUN_DIR/episodes.jsonl: one row per episode (seed, result, act, floor, steps, progress, "
+                        "and the run state at the end: hp, max_hp, deck, upgraded, relics, gold, potions, killer, "
+                        "boss_entry, room; sts2train.episodes / sts2vec.runstats; default on)")
     g.add_argument("--allow-blind", dest="allow_blind", action="store_true",
                    help="let the periodic eval use a seed set with games of a frozen blind set (refused otherwise; "
                         "needs --purpose; never inherited by a resume); logged to RUN_DIR/blind-access.jsonl")

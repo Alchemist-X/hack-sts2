@@ -405,6 +405,7 @@ class Lane:
         self.shaper = trackers.get("shaper")
         self.breaker = trackers.get("breaker")
         self.cycles = trackers["cycles"]
+        self.run_stats = trackers.get("run_stats")         # sts2vec.runstats (episodes.jsonl fields) or None
         self.aux_tg = aux_view(aux_full, lo, hi) if aux_full is not None else None
         self.cand_n = None
         self.valid = None
@@ -470,8 +471,8 @@ class LaneShapers:
 
 class OverlapRollout:
     """The ``--overlap double`` rollout (module docstring). `env` = a ``VecPair`` or a ``LaneStreamEnv`` over one;
-    `make_trackers(n)` -> {"rewards", "shaper", "breaker", "cycles"} for a lane of n slots; `aux_full` = the
-    trainer's ``AuxTargets`` (or None)."""
+    `make_trackers(n)` -> {"rewards", "shaper", "breaker", "cycles", optional "run_stats"} for a lane of n slots;
+    `aux_full` = the trainer's ``AuxTargets`` (or None)."""
 
     def __init__(self, env, make_trackers, *, aux_full=None):
         self.stream = isinstance(env, LaneStreamEnv)
@@ -539,6 +540,8 @@ class OverlapRollout:
             if L.breaker is not None:
                 L.breaker.commit(a_np)
             L.cycles.commit(a_np, o)
+            if L.run_stats is not None:                     # the observation decided at (before this lane's step)
+                L.run_stats.observe(o)
             store.actions[t, L.lo:L.hi] = np.maximum(a_np, 0)
             store.logp[t, L.lo:L.hi] = logp.cpu().numpy()
             store.values[t, L.lo:L.hi] = value.cpu().numpy()
@@ -565,6 +568,8 @@ class OverlapRollout:
                     for e in fin:
                         e["update"], e["t"] = upd + 1, t
                         e["fields"] = episode_fields(e, episode_hooks)
+                if L.run_stats is not None:                 # global slots in fin: offset = the lane's first slot
+                    L.run_stats.attach(fin, info["last_episode"], offset=lo)
             if L.aux_tg is not None:
                 L.aux_tg.after(t, term, trunc, info["last_episode"], o["aux"])
             if L.shaper is not None:

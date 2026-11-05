@@ -22,10 +22,18 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
 - ``cycles``: the verified UI revisit cycles (``sts2train.cycles``: rest-site / shop prompt -> cancel back to the same
   observation) the episode closed, counted with or without ``--cycle-cost`` (null on ``dropped`` / ``start_failed``
   rows); the per-cycle rows (path, room, floor) are in ``cycles.jsonl``.
+- Run state at the end (finished episodes, since 2026-11-05; ``sts2vec.runstats.RunStats``, attached by the rollout
+  loops, not a hook; absent on older rows): ``hp`` / ``max_hp`` (``last_episode.final_hp`` / ``final_max_hp``: 0 at a
+  death), ``deck`` (size), ``upgraded`` (upgraded deck cards), ``relics``, ``gold``, ``potions`` (filled slots) at the
+  last decision, ``killer`` (encounter id of the fight a death happened in, else null), ``boss_entry`` ([{act, floor,
+  hp, max_hp, boss}] per act-boss room entered, hp at the fight's first decision) and ``room`` (the final room's kind:
+  MapPointType of the current node, an Unknown node resolved to Monster / Event / Shop / Treasure / RestSite). Read
+  from the observation decided at before the step that ended the episode, never the auto-reset successor's.
 
 A resume in the same run directory drops the rows past the checkpoint's update and that update's ``dropped`` rows
 (the resumed session writes them again), like metrics.jsonl, so repeated resumes never duplicate a row. Size: ~170
-bytes per row (about 110 KB per update at 2,048 envs x 64 steps); ``--no-episodes-log`` turns the file off.
+bytes per row without the run-state fields, ~320 with them (about 110 / 210 KB per update at 2,048 envs x 64 steps);
+``--no-episodes-log`` turns the file off.
 
 Hooks (``EPISODE_HOOKS``, a process-wide registry; ``train(..., episode_hooks=[...])`` adds per-call ones): a hook is
 ``fn(episode) -> dict | None`` and is called once per finished episode, in the rollout step the episode ended in
