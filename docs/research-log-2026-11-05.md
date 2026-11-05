@@ -139,3 +139,9 @@ wave 8 合入（`e2548db`，κ=0 逐位相同，train 237 / vec 132 / eval 84）
 ## 18:40 EST（第 15 轮）：wave 9 落地，第三轮改版 v2
 
 wave 9 合入（`--explore-kinds/--explore-eps/--explore-logp`，评审后默认 decoupled；本轮用 `policy` 模式以求最快救活）。第三轮改为 **E′ = 探索修复（ChooseRestOption + BuyEntry:remove，eps 0.3）对照 F′ = 纯续训**，从 A 的 u7664 终点各 +2000 update；判据：配对 E′−F′ + 行为判据（锻造率、删牌数、训练期 P(SMITH) ≥ 0.2）。HP 塑形顺延第四轮。
+
+## 18:45 EST（第 16 轮）
+
+**观察**：A u6028（dev-128 u5900 0.434、u6000 0.442）；B u7436（u7300 0.427、u7400 0.450）；余额 419.1。sts2b 运行时 24.0 小时仍在线。E′/F′ 包装脚本在两台 GPU 上等待（日志 w9-e / w9-f）。
+**判断**：A 的下滑簇已回到平台；B 约 19:15 到 u7664。
+**行动**：等 u7664 官方读数（B）与 C/D 起跑；wave 9 合并门禁通过后推送。
