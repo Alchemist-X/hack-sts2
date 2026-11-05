@@ -62,3 +62,12 @@
   合并提交全套远端门禁通过（build、train 215、vec 131、eval 84、live 101）。**还没在真游戏上跑过**；第一次真跑要看 `prompt_macro.steps`
   确认哪些 STS2_MCP 提示在最后一次选择后自动关闭。
 - 东京保活脚本已加固（超时强杀、文件捕获、失败重试）并重启，07:11Z 起两台 ping 正常。
+
+## 03:30 更新
+
+- wave 6 合入 PR 分支（`bd6d6f6`）：训练对局行与评测摘要新增 hp / max_hp / deck / upgraded / relics / gold / potions / killer /
+  boss_entry / room，评测摘要另有 fights 列表，`death.room_type` 修复；零行为改动（三组冒烟 weights_hash 与基线相同），
+  成本约 0.6 ms / rollout step。合并提交的全套远端门禁结果见本节末。
+- 新包 `sts2train-bd6d6f6863.tar.gz`（AOT 同 `03f89cc37d4f`，库逐字节相同；raven 容器冒烟通过）已放到两台 VM 与桶 `bundles/`，
+  第二轮 C / D 的包装脚本已换成 `launch_c2.sh` / `launch_d2.sh`（只改包路径）。过夜线 A / B 不变（仍是 w3m 包，无新字段）。
+- 回来后的第一份诊断可以直接用 C / D 的 `evals/endpoint/*/summary` 与 `episodes.jsonl` 回答"死在哪、进 boss 时血量多少、卡组什么样"。
