@@ -569,7 +569,8 @@ def test_commit_with_a_game_pick_count_unlike_the_twins_fails_closed(tmp_path):
     assert not r.twin_ok and r.mode == "follow" and r.stats["prompt_commit_failures"] == 1
     rec = records(tmp_path)[-1]
     assert rec["prompt_macro"]["status"] == "failed" and rec["prompt_macro"]["failure"]["field"] == "prompt_picked"
-    assert mcp.view_of(game.states["h2"]).picked == 1 and mcp.view_of(game.states["h0"]).picked == 0
+    assert mcp.view_of(game.states["h2"]).picked == 1 and mcp.view_of(game.states["h0"]).picked is None
+    assert mcp.view_of(grid("transform", [card("STRIKE_SILENT", 0)], selected_count=0)).picked == 0
 
 
 def _opts(*cards, picked=()):

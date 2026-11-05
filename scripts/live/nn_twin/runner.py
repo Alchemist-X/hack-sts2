@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .game import Game, GameError, Observation
-from .macros import MACRO_FALLBACK, is_true_cancel, map_open, play_plan, play_prompt_commit, prompt_committed
+from .macros import (MACRO_FALLBACK, is_true_cancel, map_open, pending_selection, play_plan, play_prompt_commit,
+                     prompt_committed)
 from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act, screens_compatible
 from .twin import Policy, Twin, TwinError
 
@@ -747,7 +748,8 @@ class Runner:
         the prompt, so the generic tentative step (``step_twin_if_game_moved``) would compare a twin that left the
         prompt with a game that shows the pick unconfirmed, revert, and leave the game one pick ahead unseen (both
         sides publish their options only before the first pick). Read the game's pick count instead:
-        - still ``pre.picked``: the select did not happen, the twin stays unstepped;
+        - still ``pre.picked`` (no count published and no picks shown = 0): the select did not happen, the twin
+          stays unstepped;
         - ``pre.picked + 1``: it did; step the twin and play the commit (``prompt_commit``: the game's confirm when
           the twin's env committed);
         - the game left the selection screen: the generic tentative step decides;
@@ -761,15 +763,16 @@ class Runner:
             if not self.step_twin_if_game_moved(row):
                 return None, None
             return row, self.prompt_commit(pre, executed, wires)
-        if now.picked == pre.picked:
+        game_picked = now.picked if now.picked is not None else (None if pending_selection(now) else 0)
+        if game_picked == pre.picked:
             return None, None
-        if now.picked == pre.picked + 1:
+        if game_picked == pre.picked + 1:
             self.count_status(self.twin.step(row))
             self.stats["twin_step_kept_after_failure"] += 1
             self.since_boundary += 1
             return row, self.prompt_commit(pre, executed, wires)
         self.stats["prompt_select_failures"] += 1
-        self.enter_follow([{"field": "prompt_picked", "twin": pre.picked + 1, "real": now.picked}], now, "prompt_macro")
+        self.enter_follow([{"field": "prompt_picked", "twin": pre.picked + 1, "real": game_picked}], now, "prompt_macro")
         self.twin_ok = False
         return None, None
 
