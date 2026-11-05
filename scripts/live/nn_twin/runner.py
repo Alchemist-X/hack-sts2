@@ -370,7 +370,7 @@ class Runner:
 
     @property
     def prompt_macros(self) -> bool:
-        return bool(getattr(self.twin, "prompt_macros", False))
+        return bool(getattr(getattr(self, "twin", None), "prompt_macros", False))
 
     def map_row(self, tact: Act, tacts: list[Act], racts: list[Act], relaxed: bool) -> Act | None:
         if tact.kind == "macro":

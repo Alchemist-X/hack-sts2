@@ -176,7 +176,7 @@ def test_room_macro_dry_runs_play_smith_and_removal_as_their_clicks(play_server,
     print("room macros played:", dict(Counter(done)))
 
 
-@pytest.mark.parametrize("seeds", [(11, 12, 13, 14, 15, 16, 17, 18, 28)])
+@pytest.mark.parametrize("seeds", [tuple(range(11, 51))])
 def test_prompt_macro_dry_runs_confirm_only_when_the_twin_committed(play_server, tmp_path, seeds):
     """The twin with ``--macros all`` (rest, shop, prompt; the play server has none): no cancel row is ever listed;
     a PromptSelect the twin's env committed (exactly-1, the k-th of exactly-k, the N-th of up-to-N) is played as the
@@ -217,6 +217,7 @@ def test_prompt_macro_dry_runs_confirm_only_when_the_twin_committed(play_server,
             if pm is not None:
                 assert r["ok"] and "failure" not in pm, r
                 status[pm.get("status", "open")] += 1
+                status[f"needs_confirm={pm['needs_confirm']} committed={pm['committed']}"] += 1
                 assert len(r["real_action"]) == (2 if pm.get("status") == "confirmed" else 1)
     assert status["confirmed"] > 0, status
     print("prompt macro selects:", dict(status))
