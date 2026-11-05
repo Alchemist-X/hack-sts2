@@ -6,10 +6,10 @@
 
 | 运行时 | 任务 | 起止 | 驱动脚本 / 日志（VM 上） |
 | --- | --- | --- | --- |
-| `sts2train`（GPU A） | 主线 M：C1 续训 u764→u3064（循环成本 0.01，无宏动作）。00:42 因 --max-hours 6 在约 u2560 停下，01:00 用 `resume_sp3.sh` 续到 u3064 | 18:42 → 约 02:15 | `/content/sts2/runs/sp3-main`，`sp3-main.launch.log` |
-| `sts2train`（GPU A） | 过夜线 A：从 M 的 `pinned-0003064.pt` 分叉，+宏动作（rest,shop）+熵退火 0.02→0.005，u3064→u7664（+6 亿步，每 500 update 固定评测 + ab-512 关 breaker） | 约 02:15 → 约 13:30 | `w3m-src/scripts/colab/w3m_line.sh … a …`，日志 `/content/sts2/runs/w3m-a.driver.log`，run `/content/sts2/runs/w3m-a` |
+| `sts2train`（GPU A） | 主线 M：C1 续训 u764→u3064（循环成本 0.01，无宏动作）。00:42 因 --max-hours 6 在约 u2560 停下，01:00 用 `resume_sp3.sh` 续到 u3064 | 18:42 → 约 02:55 | `/content/sts2/runs/sp3-main`，`sp3-main.launch.log` |
+| `sts2train`（GPU A） | 过夜线 A：从 M 的 `pinned-0003064.pt` 分叉，+宏动作（rest,shop）+熵退火 0.02→0.005，u3064→u7664（+6 亿步，每 500 update 固定评测 + ab-512 关 breaker） | 约 02:55 → 约 19:30–20:00 | `w3m-src/scripts/colab/w3m_line.sh … a …`，日志 `/content/sts2/runs/w3m-a.driver.log`，run `/content/sts2/runs/w3m-a` |
 | `sts2b`（GPU B） | 复验 R：种子 2 的 W0′→C0′→C1′→终点比较 | 18:45 → 约 23:00 | `sp2r_serial.sh`，`sp2r_serial.log`，比较结果 `/content/sts2/runs/cmp/*.txt` |
-| `sts2b`（GPU B） | 过夜线 B：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33），同一分叉点 | 约 23:10 启动等待，02:15 后开训 → 约 14:15 | `w3m_line.sh … b …`，日志 `/content/sts2/runs/w3m-b.driver.log`，run `/content/sts2/runs/w3m-b` |
+| `sts2b`（GPU B） | 过夜线 B：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33），同一分叉点 | 约 23:10 启动等待，约 03:00 开训 → 约 20:30–21:30 | `w3m_line.sh … b …`，日志 `/content/sts2/runs/w3m-b.driver.log`，run `/content/sts2/runs/w3m-b` |
 
 两条过夜线的官方读数在 u7664；判据见 `docs/w3m-overnight-plan-2026-11-04.md`（宏动作回退规则：A 的 u3564、u4064 都显著低于 M 的 u3064 则回退；B 的止损规则：从 u4064 起连续两点 B−A 的区间全在 0 以下则停 B；≥0.60/≥0.10 是目标不是承诺）。
 
@@ -34,3 +34,19 @@
 
 - M 在 00:42 因 `--max-hours 6` 提前停止（约 u2560），01:00 已续训到 u3064（预计 02:15 到达）；线 A 驱动因等待超时（4 小时）退出，已用 WAIT_MAX_S=28800 重启；线 B 的分叉 checkpoint 等待窗口改为 10 小时。两条过夜线预计 02:15 起跑，A 约 13:30、B 约 14:15 结束。
 - 主线 M 的 u2264 固定评测：dev-128 关 breaker 0.389 [0.364, 0.413]，65/128 进入第二幕，0 通关，为目前最佳。
+
+## 01:30 更新（时间线修正 + 第二轮已武装）
+
+- **时间线修正**：M 续训实测 12.4 s/update（固定评测只要 24 s 一次，可忽略），M 到 u3064 约 **02:55 EST**；
+  线 A 4600 update ≈ 16 h → 约 **19:30–20:00 EST** 结束，线 B（harvest 略慢）约 **20:30–21:30**。官方读数 u7664 因此在
+  用户回来（15:00）之后；15:00 时 A 大约在 u6500。
+- 01:00 那次对线 B 等待脚本的重启实际没有存活（ssh 退出时被带走），01:08 已重新以 `setsid nohup` 启动并核实在跑
+  （`w3m-b.driver.log` 每分钟一行 waiting，`w3m_fetch.py` 进程在）。
+- **第二轮已武装为自动接续**（`docs/round2-plan-2026-11-05.md`，预注册）：A 结束后 GPU A 自动跑 C（A 终点 + `--macros all`），
+  B 结束后 GPU B 自动跑 D（A 终点 + `rest,shop`，对照），各 +1500 update，约 11-06 01:30–03:00 EST 结束，合计约 75 单位。
+  东京保活现在盯 `w4-c.driver.log` / `w4-d.driver.log`。取消方法见该文档。
+- wave-4 包（`sts2train-d21adf4ad8`，AOT `03f89cc37d4f`）已解包到两台 VM 的 `/content/sts2/` 并放进桶 `bundles/`；
+  驱动脚本 `scripts/colab/w3m_line.sh` 加了 `ENT0`/`ENT1`/`TAG` 旋钮（`6175dc8`，默认不变），VM 上在 `/content/sts2/w5-src/`。
+- **wave 5 在跑**（Opus，远端测试）：孪生对 `prompt` 宏的映射，分支 `train/w5-twin-prompt`，工作树
+  `.claude/worktrees/train-w5-twin-prompt`；完成后需要集成进本分支（若本机 06:00 前没完成，分支上有提交即可接着做）。
+- 预算：01:00 余额 619.6；过夜两线约 235 单位、第二轮约 75 单位；到 11-06 05:30 预计余额约 300。24 小时窗口内约 300 单位，低于 400 上限。
