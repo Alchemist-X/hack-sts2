@@ -354,8 +354,10 @@ class CycleDetector:
         k = self.kind_names[int(row[self.C["kind"]])]
         oi = int(row[self.C["option_index"]])
         try:
-            # a room macro row (env macros; B = the deck card) ends in ":<card>"
-            card = (":" + self._card(int(row[self.C["card_id"]]))) if int(row[self.C["B"]]) >= 0 else ""
+            # a room macro row (env macros: B = the deck row >= 0, card_id = its card) ends in ":<card>"; a game
+            # ChooseRestOption / BuyEntry row has B = -1 and card_id 0, so its label is the one of earlier builds
+            cid = int(row[self.C["card_id"]])
+            card = (":" + self._card(cid)) if cid > 0 and int(row[self.C["B"]]) >= 0 else ""
             if k == "ChooseRestOption" and 0 <= oi < obs["rest"].shape[1] and self.rest_names:
                 return "rest:" + self.rest_names[int(obs["rest"][s, oi, self.R["option_id"]])] + card
             if k == "BuyEntry" and 0 <= oi < obs["shop"].shape[1] and self.shop_names:
