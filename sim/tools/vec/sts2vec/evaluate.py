@@ -37,6 +37,8 @@ import numpy as np
 from . import protocol as PG
 from .env import FLOOR_STEP_CAP, VecEnv
 from .policies import PolicyContext, game_rng, resolve
+from .runstats import FIELDS as RUN_FIELDS
+from .runstats import RunStats
 from .schema import STATUS
 
 STEP_CAP = 1200
@@ -168,8 +170,17 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
         actions_log: list[list[int]] = [[] for _ in range(n)]
         t_games = np.zeros(n)
         end_hash = np.zeros(n, dtype=np.uint64)
+        stats = RunStats(schema, n, fights=True)        # logging only: the run-state fields of each game's summary
 
-        def finish(i: int, res: str, act0: int, floor: int, **extra) -> None:
+        def finish(i: int, res: str, act0: int, floor: int, le=None, **extra) -> None:
+            if le is None:                              # no step ended it: the slot's current row (fields from the
+                le = np.zeros(len(LE), dtype=np.int64)  # last decision, hp / max_hp from it too)
+                le[LE.final_hp] = int(obs["global_i"][i, G.hp])
+                le[LE.final_max_hp] = int(obs["global_i"][i, G.max_hp])
+                le[LE.end_kind] = -1
+            extra.update(stats.end(i, le, win=res == "win"))
+            if extra.get("death") is not None:          # the final room's kind (RunStats "room")
+                extra["death"]["room_type"] = extra["room"]
             d = PG.compute(res, act0 + 1, floor, ss["ascension"], starts[i], rooms[i])
             result[i] = dict(d, result=res, act=act0 + 1, floor=floor,
                              act_start_floor={str(k): v for k, v in sorted(starts[i].items())},
@@ -187,12 +198,14 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
                 if int(aux[i, AX.act_rooms]) > 0:
                     rooms[i][act] = int(aux[i, AX.act_rooms])
             for i in np.flatnonzero((~done) & (obs["cand_n"] <= 0)):
+                stats.observe(obs, np.arange(n) == i)
                 finish(int(i), "error", int(aux[i, AX.act_index]), int(floor[i]),
                        error="non-terminal slot with cand_n = 0")
             if done.all():
                 break
             live = ~done
             ctx.live = live
+            stats.observe(obs, live)                     # the observation these slots decide at (before the step)
             a = np.asarray(fn(obs, ctx))
             if a.shape != (n,):
                 raise ValueError(f"policy {policy_name} returned shape {a.shape}, expected ({n},)")
@@ -225,7 +238,7 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
                     enc = int(le[LE.last_encounter_id])
                     extra["death"] = {"floor": int(le[LE.floor]), "act": int(le[LE.act]) + 1, "room_type": None,
                                       "enemies": [schema.vocab.encounters.name(enc)] if enc > 0 else []}
-                finish(int(i), res, int(le[LE.act]), int(le[LE.floor]), **extra)
+                finish(int(i), res, int(le[LE.act]), int(le[LE.floor]), le=le, **extra)
         wall = time.monotonic() - t_start
         encoder_version = schema.encoder_version
     finally:
@@ -257,7 +270,8 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
              "act_start_floor": r.get("act_start_floor"), "act_rooms": r.get("act_rooms"),
              "progress_pct": round(100.0 * (r.get("floor") or 0) / PG.full_run_floors(ss["ascension"]), 2),
              "history_actions": actions_log[i], "final_state_hash": f"{int(end_hash[i]):016x}",
-             "replayable": bool(replay_ok[i]), "server_version": env_version, **(summary_extra or {})}
+             "replayable": bool(replay_ok[i]), "server_version": env_version,
+             **{k: r.get(k) for k in RUN_FIELDS}, "fights": r.get("fights"), **(summary_extra or {})}
         s.update(PG.compute(s["result"], s["act"], s["floor"], ss["ascension"], s["act_start_floor"], s["act_rooms"]))
         with open(out / "games" / f"{keys[i]}.summary.json", "w", encoding="utf-8") as f:
             json.dump(s, f, ensure_ascii=False, indent=1)

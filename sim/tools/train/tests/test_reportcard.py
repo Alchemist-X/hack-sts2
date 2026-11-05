@@ -312,7 +312,10 @@ def test_real_card_matches_the_eval_report(real_card):
     assert rnd["policy"] == "random" and Path(rnd["dir"]).parent == real_card["tmp"] / "baselines"
     assert sum(e["games"] for e in nn["endings"].values()) == 2
     md = (real_card["tmp"] / "card" / "model-card.md").read_text()
-    assert "Deck and relics at death" not in md                     # sts2vec eval records neither: omitted
+    games = (Path(nn["dir"]) / "games").glob("*.summary.json")
+    losses = any(json.loads(p.read_text()).get("result") == "loss" for p in games)
+    # sts2vec eval records deck / relics since 2026-11-05 (sts2vec.runstats): shown when a game was lost
+    assert ("Deck and relics at death" in md) == losses
     assert "No readout: the checkpoint has no aux heads" in md
 
 

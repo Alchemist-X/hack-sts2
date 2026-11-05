@@ -93,6 +93,7 @@ import torch
 import torch.nn.functional as F
 from sts2vec import STATUS, PoolSpec, VecEnv, load, random_actions, schema_of
 from sts2vec.pool import ALL_CHARACTERS
+from sts2vec.runstats import RunStats
 
 from .cycles import CycleDetector
 from .cycles import update_stats as cycle_update_stats
@@ -1239,6 +1240,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 f"the rows that leave the screen stay (when legal)")
         # --- UI revisit cycles (sts2train.cycles): counted in every rollout; --cycle-cost charges the closing step ---
         cycles = CycleDetector(spec, cfg.envs, card_name=env.schema.vocab.cards.name)   # the library's spec
+        # --- run-state fields of episodes.jsonl (sts2vec.runstats; logging only, off with --no-episodes-log) ---
+        run_stats = RunStats(env.schema, cfg.envs) if cfg.episodes_log else None
         cyc_cost = float(cfg.cycle_cost)
         log("UI revisit cycles (RestSite / Shop -> DeckUpgrade / DeckRemove prompt -> back to the same observation): "
             + (f"cost {cyc_cost} on the trainer's reward of each closing transition" if cyc_cost else "counted only"))
@@ -1251,10 +1254,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                              relic=cfg.acq_relic_coef, upgrade=cfg.acq_upgrade_coef)
                         if cfg.acq_shaping else None,
                         "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k) if cfg.rollout_loop_breaker else None,
-                        "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name)}
+                        "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name),
+                        "run_stats": RunStats(env.schema, n) if cfg.episodes_log else None}
 
             ov = OverlapRollout(env, lane_trackers, aux_full=aux_tg)
             cycles, breaker = ov.cycles, ov.breaker
+            run_stats = None                    # per lane (OverlapRollout)
             shaper = ov.shaper
             log(f"overlap {cfg.overlap}: lanes {[hi - lo for lo, hi in ov.pair.bounds]} (two VecEnvs); the env step of "
                 f"one lane runs in a worker thread while the other lane's forward runs")
@@ -1623,6 +1628,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     if breaker is not None:
                         breaker.commit(a_np)
                     cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
+                    if run_stats is not None:           # episodes.jsonl fields: the observation decided at (pre-step)
+                        run_stats.observe(obs)
                     store.actions[t] = np.maximum(a_np, 0)
                     store.logp[t] = logp.cpu().numpy()
                     store.values[t] = value.cpu().numpy()
@@ -1644,6 +1651,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                             for e in fin:
                                 e["update"], e["t"] = upd + 1, t
                                 e["fields"] = EPISODE_HOOKS.fields(e, episode_hooks)
+                    if run_stats is not None and fin:   # from the pre-step snapshot + last_episode (not obs: the
+                        run_stats.attach(fin, info["last_episode"])     # successors' first observations)
                     if aux_tg is not None:
                         aux_tg.after(t, term, trunc, info["last_episode"], obs["aux"])
                     if shaper is not None:              # shaping: PPO trains on r + F, the logs keep r apart

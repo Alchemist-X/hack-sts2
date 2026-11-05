@@ -58,7 +58,7 @@ uv run --project sim/tools/train python -m sts2train.lookahead eval --seedset si
 | `evals/u<update>/<mode>/` | `--eval-at` runs: one protocol run directory per mode (`greedy-on`, `greedy-off`, `sample-off`), one `evals.jsonl` row each with `mode`, `eval_at`, `stuck`, `cycles`, `games_with_cycle`, `loop_breaks`; the weights stay in `checkpoints/pinned-<update>.pt` |
 | `checkpoints/ckpt-<update>.pt` | every `--ckpt-every` updates and every `--ckpt-every-min` minutes (tmp file + fsync + rename), the last `--keep-ckpts`; weights, Adam state, counters, RNG states, `spec`, config, `arch` (size knobs plus `aux_heads` / `deck_counts` when on), `heads` (output definitions, `--aux-heads` only), `weights_hash`; `best.pt` = the checkpoint of the best clean eval so far (highest `progress_mean` among evals that ran, replayed every game — `replayable == games` — and had no `crashed` / `error` game: `ppo.best_skip_reason`) |
 | `config.json` | resolved config (incl. `start_saves` / `save_mix` / `save_copies`), architecture, parameter count, library path / version, `encoder_version` (this session's library) and `checkpoint_encoder_version` + `resume_compat` (the checkpoint it resumed from, `model_inputs` identical / widened and `widened_enums`; `null` for a fresh run), `env` (`step_cap`, the `floor_step_cap` in effect, 0 = off), one entry per session (host, device, torch, resumed from, both encoder versions, `model_inputs` / `widened_enums`, and since 2026-11-04 `given` (the command line's explicit flags), `config_diff` ({key: [checkpoint, this session]}), `seeds`, `rng_restored` ({numpy, torch, cuda: ok / failed / absent / reseeded}), `adam_step`, `init_weights_hash` (fresh runs), `start_mode`, `seed_stream_next`, `dropped_at_start`, `best_eval_source`); `start_pool` (with `--start-saves`, rebuilt every session: entry counts, effective mix, skipped files and reasons, start floor / act / phase / ascension histograms, one row per usable save); `harvest` (with `--harvest`: rings, probability, per-step cap, base pool size, start mode, the capture rule); `start_mode`, `seeds`, `isolation` (checked holdout sets, collisions), `seed_stream` (see "Start modes, seeds and isolation") |
-| `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind`, `cycles` (UI revisit cycles the episode closed, `sts2train.cycles`; null on `dropped` / `start_failed` rows), `start_kind` (only with `--harvest` in stream mode: `stream` / `anchor:<kind>`) + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
+| `episodes.jsonl` | one row per training episode: `update`, `session`, `slot`, `seed_text`, `n` (stream index), `result` (win / death / trunc / stall / error; `dropped` and `start_failed` rows too), `act`, `floor`, `steps`, `progress`, `return`, `end_kind`, `cycles` (UI revisit cycles the episode closed, `sts2train.cycles`; null on `dropped` / `start_failed` rows), `start_kind` (only with `--harvest` in stream mode: `stream` / `anchor:<kind>`), the run state at the end (since 2026-11-05, "Run-state fields" below: `hp`, `max_hp`, `deck`, `upgraded`, `relics`, `gold`, `potions`, `killer`, `boss_entry`, `room`; absent on older rows and on `dropped` / `start_failed` rows) + the fields of registered hooks (`sts2train.episodes`); a resume drops the rows past the checkpoint; `--no-episodes-log` turns it off |
 | `blind-access.jsonl` | one row per allowed evaluation on a frozen blind seed set (`--allow-blind --purpose`): utc, weights hash, seed set, purpose |
 | `summary.json` | written when a session ends (stop reason, throughput and time split, totals, best / last eval, `seeds`, `starts`, `dropped_total`, `inflight_at_end`, `seed_stream` with the stream's timing, `isolation`) |
 | `train.log` | the CLI's log lines with timestamps, appended by every session |
@@ -72,6 +72,36 @@ episodes are logged as `dropped`. `best_eval` / `last_eval` are recomputed from 
 `evals.jsonl` (rows up to the checkpoint's update, the session's eval seed set): a checkpoint is written before its
 own update's eval, so the values stored in it lag by one eval (Q9); a fork into a new directory reads the source run's
 file. A fresh run into a directory that already holds checkpoints is refused.
+
+**Run-state fields** (`sts2vec.runstats.RunStats`, 2026-11-05; logging only: actions, RNG streams and weights are
+unchanged, the 3-update pool / stream smokes keep their `weights_hash`). Every finished episode's `episodes.jsonl` row
+and every `sts2train eval` / `sts2vec eval` game summary (`games/<KEY>.summary.json`) carry:
+
+| Key | Meaning |
+| --- | --- |
+| `hp`, `max_hp` | at the end (`last_episode.final_hp` / `final_max_hp`): 0 at a death; meaningful for win / trunc / stall |
+| `deck`, `upgraded`, `relics`, `gold`, `potions` | deck size, deck cards with an upgrade, relic count, gold, filled potion slots at the episode's last decision |
+| `room` | the final room's kind: the `MapPointType` of the current map node (`Monster`, `Elite`, `Boss`, `RestSite`, `Shop`, `Treasure`, `Ancient`); an `Unknown` node resolved by what was seen on that floor (a fight -> `Monster`, else `Event` / `Shop` / `Treasure` / `RestSite`); null before the first map move |
+| `killer` | the encounter id of the fight a death happened in (`last_episode.last_encounter_id`); null for other endings and for a death outside combat |
+| `boss_entry` | `[{act, floor, hp, max_hp, boss}]`, one per act-boss room entered (Boss map node with a combat running), hp at the fight's first decision, `boss` = its encounter id (`boss_id`, or `second_boss_id` for a double-boss act's second boss) |
+
+They are read from the observation the slot decided at before the step that ended the episode (`RunStats.observe`
+next to the cycle detector's `commit`, in both rollout loops and per `--overlap double` lane), never from the
+observation after it, which with auto-reset is already the successor's first one; the per-episode state is cleared at
+the episode's end, so pool / stream / `--harvest` anchor starts and resumed sessions (whose in-flight episodes are
+`dropped` rows without these fields) start empty. `--deck-counts` changes only the model: the `deck` buffer is always
+observed, so the fields do not depend on it. Cost: one gather of a few global_i columns, a count over the deck's
+upgrade column and the potion slots and a gather of the current map node per slot per rollout step (numpy over all
+slots), plus a dict per boss entry: ~0.8 ms per step at 2,048 slots (about 0.5% of the env step, measured in the testbox), ~+155 bytes per row (~360 in all). Eval summaries also get `fights` (below) and a filled
+`death.room_type` (it was always null). Readers keep working on rows / summaries without the keys (`report-card`
+reads `deck` / `relics` at death when present).
+
+Eval summaries' `fights`: one `{floor, act, room, enemies, encounter, hp_before, max_hp_before, result, hp_after,
+max_hp}` per combat in order: `enemies` = monster ids present at the first decision, `encounter` = the encounter id
+of a boss fight or of the lost fight (null otherwise: the observation carries no encounter id during a fight; the
+monster set identifies it), `result` `won` / `lost` / `unfinished` (capped / stuck in it), `hp_after` / `max_hp` at
+the first decision after the fight (the final values at a death). So "is encounter X killing more because more games
+reach it or because it is beaten less often" is the count of its fights against its `lost` ones.
 
 Resume across library versions: a checkpoint resumes on a library with another `encoder_version` when the model's
 inputs are identical (`features.check_spec_compat`): shape and column map of each of the 27 buffers it reads, the sizes
