@@ -137,20 +137,25 @@ class PoolSpec:
                 for i in range(self.count)]
 
 
-# Room macro names of config_json ``macros`` (sim/Sts2Sim.Vec/RoomMacros.cs; W3 2026-11-04).
-MACRO_NAMES = ("rest", "shop")
+# Macro names of config_json ``macros`` (sim/Sts2Sim.Vec/RoomMacros.cs, rest / shop W3 2026-11-04;
+# sim/Sts2Sim.Vec/PromptMacros.cs, prompt W4 2026-11-04). "all" = every name.
+MACRO_NAMES = ("rest", "shop", "prompt")
+MACRO_ALIASES = {"all": MACRO_NAMES}
 
 
 def parse_macros(macros) -> tuple[str, ...]:
-    """Normalised room macro names (``MACRO_NAMES`` order, no duplicates) of ``macros``: None / "" / "none" = (),
-    a comma-separated string ("rest,shop") or an iterable of names. ValueError for an unknown name."""
+    """Normalised macro names (``MACRO_NAMES`` order, no duplicates) of ``macros``: None / "" / "none" = (),
+    a comma-separated string ("rest,shop", "all") or an iterable of names. ValueError for an unknown name."""
     if macros is None:
         return ()
     items = macros.split(",") if isinstance(macros, str) else list(macros)
     names = {str(m).strip().lower() for m in items} - {"", "none", "off"}
+    for alias, members in MACRO_ALIASES.items():
+        if alias in names:
+            names = (names - {alias}) | set(members)
     bad = sorted(names - set(MACRO_NAMES))
     if bad:
-        raise ValueError(f"unknown macro(s) {', '.join(bad)} (known: {', '.join(MACRO_NAMES)})")
+        raise ValueError(f"unknown macro(s) {', '.join(bad)} (known: {', '.join(MACRO_NAMES)}, all)")
     return tuple(m for m in MACRO_NAMES if m in names)
 
 

@@ -269,7 +269,9 @@ def _train_parser(sub) -> argparse.ArgumentParser:
     g.add_argument("--macros", dest="macros",
                    help="VecEnv room macros, comma-separated (sim/VEC.md 'Room macros'): rest = SMITH is one candidate "
                         "per upgradable deck card (pick + confirm in one step), shop = the card removal is one "
-                        "candidate per removable card (price as before); no cancel path. Also used by the periodic / "
+                        "candidate per removable card (price as before); no cancel path; prompt = no PromptCancel row at "
+                        "any prompt and a pick that completes the selection confirms in the same step (sim/VEC.md "
+                        "'Prompt macros v2'); all = rest,shop,prompt. Also used by the periodic / "
                         "--eval-at evals and recorded in the checkpoint (sts2train eval plays with it). The schema and "
                         "encoder_version are unchanged, so any checkpoint can resume with it on (default off)")
     g.add_argument("--floor-step-cap", dest="floor_step_cap", type=int,
@@ -543,7 +545,7 @@ def main(argv=None) -> int:
     ev.add_argument("--repeats", type=int, default=1,
                     help="sample: plays per game; > 1 writes OUT/r<k>/ per repeat and OUT/repeats.json (default 1)")
     ev.add_argument("--macros", default=None,
-                    help="env room macros (rest, shop; comma-separated; 'none' = off). Default: the checkpoint's "
+                    help="env macros (rest, shop, prompt, all; comma-separated; 'none' = off). Default: the checkpoint's "
                          "training config (TrainConfig.macros), so a model plays the candidate lists it learned on")
     ev.add_argument("--chunk", default=None, metavar="I/N",
                     help="play only the I-th of N equal slices of the seed set (config.json parent_seedset records "

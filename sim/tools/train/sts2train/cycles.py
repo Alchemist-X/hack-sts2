@@ -37,6 +37,15 @@ whose arrival here closed a cycle), ``commit(actions, obs)`` with the actions ta
 ``env.step`` (ends the finished episodes, puts each one's count in its ``finished`` dict as ``cycles``, observes the
 new observations) -> the closing mask of that transition. ``pop()`` -> counts and events since the last call (per
 update), ``slot_totals()`` (per game in an evaluation). No masking: the detector never changes an action.
+
+Scope ``"all"`` (W4 2026-11-04, prompt macros v2; ``CycleDetector(..., scope="all")``, counting only, never used by
+the trainer's cost): the same revisit rule widened to every screen and every prompt kind. Anchors are all deciding
+observations that are not UI screens (combat included); UI screens are every ``Prompt`` decision (any
+``prompt_kind``, in or out of combat) and the ``CardReward`` phase (the opened card-reward screen, whose Skip returns
+to the rewards screen). A cycle closes when an anchor's full digest equals an earlier anchor's of the same episode and
+floor within ``window`` decisions and every decision in between (at least one) was a UI screen; no prompt check is
+applied (any zero-progress excursion through UI screens counts). Counts: ``cycles``, ``cycles_rest``,
+``cycles_shop`` and ``cycles_other`` (every other anchor phase: events, rewards, combat, map, ...).
 """
 
 from __future__ import annotations
@@ -60,6 +69,8 @@ UI_BUFFERS = ("prompt_options", "cand", "cand_n")
 WINDOW = 64
 REJECT_REASONS = ("no_op", "unverified_prompt", "room_change")
 COUNT_KEYS = ("cycles", "cycles_rest", "cycles_shop", "cycle_steps") + tuple(f"rejected_{r}" for r in REJECT_REASONS)
+SCOPES = ("room", "all")
+UI_PHASES_ALL = ("Prompt", "CardReward")     # scope "all": the UI screens of an excursion
 ANCHOR, PROMPT = 1, 2
 # chain entry fields
 _D, _CORE, _CLS, _OK, _ACT, _LAB, _PH, _PK, _STEP = range(9)
@@ -103,9 +114,13 @@ class CycleDetector:
     makes the logged paths readable. `keep_events`: also keep every slot's events (``slot_totals``; evaluation)."""
 
     def __init__(self, spec: ModelSpec, num_envs: int | None = None, *, window: int = WINDOW, card_name=None,
-                 keep_events: bool = False):
+                 keep_events: bool = False, scope: str = "room"):
         if int(window) < 2:
             raise ValueError(f"cycle window {window} must be >= 2")
+        if scope not in SCOPES:
+            raise ValueError(f"cycle scope {scope!r} is not one of {SCOPES}")
+        self.scope = scope
+        self.count_keys = COUNT_KEYS + (("cycles_other",) if scope == "all" else ())
         G = spec.cols["global_i"]
         self._dk, self._floor = G["decision_kind"], G["total_floor"]
         self._act, self._pk, self._combat = G["act_index"], G["prompt_kind"], G["is_combat"]
@@ -119,6 +134,7 @@ class CycleDetector:
         self.shop_names = list(en.get("ShopCategory") or [])
         self.anchor_ids = np.array([self.phase_names.index(p) for p in ANCHOR_PHASES])
         self.prompt_phase = self.phase_names.index("Prompt")
+        self.ui_phase_ids = np.array([self.phase_names.index(p) for p in UI_PHASES_ALL if p in self.phase_names])
         self.prompt_kind_ids = np.array([self.pkind_names.index(k) for k in PROMPT_KINDS if k in self.pkind_names])
         self.prompt_action_ids = np.array([self.kind_names.index(k) for k in PROMPT_ACTIONS])
         self.select_id = self.kind_names.index("PromptSelect")
@@ -151,6 +167,7 @@ class CycleDetector:
         self.slot_cycles = np.zeros(n, dtype=np.int64)  # cycles over every episode of the slot (eval: the game)
         self.slot_rest = np.zeros(n, dtype=np.int64)
         self.slot_shop = np.zeros(n, dtype=np.int64)
+        self.slot_other = np.zeros(n, dtype=np.int64)
         self.slot_events: list[list[dict]] = [[] for _ in range(n)]
 
     def _clear(self, s: int) -> None:
@@ -191,6 +208,9 @@ class CycleDetector:
             dec &= np.asarray(live, dtype=bool)
         calm = gi[:, self._combat] == 0
         dk = gi[:, self._dk]
+        if self.scope == "all":
+            ui = dec & np.isin(dk, self.ui_phase_ids)
+            return dec, dec & ~ui, ui
         room = dec & calm & np.isin(dk, self.anchor_ids)
         prompt = dec & calm & (dk == self.prompt_phase) & np.isin(gi[:, self._pk], self.prompt_kind_ids)
         return dec, room, prompt
@@ -239,8 +259,14 @@ class CycleDetector:
         step = int(self.decisions[s])
         if not is_room:
             anchor = next((e for e in reversed(ch) if e[_CLS] == ANCHOR), None)
-            ok = anchor is not None and anchor[_CORE] == c and self.verify_prompt(obs, s)
-            ch.append([d, c, PROMPT, ok, -1, None, "Prompt", self.pkind_names[int(gi[s, self._pk])], step])
+            if self.scope == "all":
+                ok = anchor is not None
+                ph = self.phase_names[int(gi[s, self._dk])]
+                pk = self.pkind_names[int(gi[s, self._pk])] if ph == "Prompt" else ph
+            else:
+                ok = anchor is not None and anchor[_CORE] == c and self.verify_prompt(obs, s)
+                ph, pk = "Prompt", self.pkind_names[int(gi[s, self._pk])]
+            ch.append([d, c, PROMPT, ok, -1, None, ph, pk, step])
             if len(ch) > self.window:
                 del ch[: len(ch) - self.window]
             return False
@@ -270,6 +296,7 @@ class CycleDetector:
     def _record(self, s: int, seg: list, floor: int, act: int, step: int, episode_ids, tag) -> None:
         phase = seg[0][_PH]
         rest = phase == "RestSite"
+        room = "rest" if rest else "shop" if phase == "Shop" or self.scope == "room" else "other"
         ev = {**tag, "slot": s, "phase": phase,
               "prompt": sorted({e[_PK] for e in seg[1:] if e[_PK]}), "act": act, "floor": floor, "len": len(seg),
               "step": step, "path": [e[_LAB] if e[_LAB] is not None else str(e[_ACT]) for e in seg],
@@ -277,11 +304,11 @@ class CycleDetector:
         if episode_ids is not None:
             ev["episode"] = int(np.asarray(episode_ids)[s])
         self.totals["cycles"] += 1
-        self.totals["cycles_rest" if rest else "cycles_shop"] += 1
+        self.totals[f"cycles_{room}"] += 1
         self.totals["cycle_steps"] += len(seg)
         self.ep_cycles[s] += 1
         self.slot_cycles[s] += 1
-        (self.slot_rest if rest else self.slot_shop)[s] += 1
+        {"rest": self.slot_rest, "shop": self.slot_shop, "other": self.slot_other}[room][s] += 1
         self.events.append(ev)
         if self.keep_events:
             self.slot_events[s].append(ev)
@@ -376,20 +403,21 @@ class CycleDetector:
     def pop(self) -> tuple[dict, list[dict]]:
         """(counts since the previous call: COUNT_KEYS, the events since the previous call)."""
         cur = Counter(self.totals)
-        d = {k: int(cur.get(k, 0) - self._popped.get(k, 0)) for k in COUNT_KEYS}
+        d = {k: int(cur.get(k, 0) - self._popped.get(k, 0)) for k in self.count_keys}
         self._popped = cur
         ev, self.events = self.events, []
         return d, ev
 
     def totals_dict(self) -> dict:
-        return {k: int(self.totals.get(k, 0)) for k in COUNT_KEYS}
+        return {k: int(self.totals.get(k, 0)) for k in self.count_keys}
 
     def slot_totals(self) -> list[dict]:
         """Per slot (an evaluation's game): cycles, by room, and the events (with `keep_events`)."""
         if self.n == 0:
             return []
         return [{"cycles": int(self.slot_cycles[s]), "cycles_rest": int(self.slot_rest[s]),
-                 "cycles_shop": int(self.slot_shop[s]), "cycle_events": list(self.slot_events[s])}
+                 "cycles_shop": int(self.slot_shop[s]), "cycle_events": list(self.slot_events[s]),
+                 **({"cycles_other": int(self.slot_other[s])} if self.scope == "all" else {})}
                 for s in range(self.n)]
 
 

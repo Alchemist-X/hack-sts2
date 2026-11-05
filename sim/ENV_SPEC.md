@@ -279,7 +279,7 @@ Enum values (`schema.vocab.enums[name][value]`):
 - `EndKind`: 0 None, 1 Terminal, 2 Truncated, 3 ContentGap, 4 SimError, 5 FloorStall
 - `ItemKind`: 0 ∅, 1 ?, 2 affliction, 3 card, 4 enchantment, 5 potion, 6 relic
 
-Status bits (`status`, `sts2vec.STATUS`): `OK` 0, `NOOP` 1, `ILLEGAL_ACTION` 2, `CONTENT_GAP` 4, `SIM_ERROR` 8, `CANDIDATE_OVERFLOW` 16, `TABLE_OVERFLOW` 32, `RESET` 64, `POOL_EMPTY` 128, `FLOOR_STALL` 256.
+Status bits (`status`, `sts2vec.STATUS`): `OK` 0, `NOOP` 1, `ILLEGAL_ACTION` 2, `CONTENT_GAP` 4, `SIM_ERROR` 8, `CANDIDATE_OVERFLOW` 16, `TABLE_OVERFLOW` 32, `RESET` 64, `POOL_EMPTY` 128, `FLOOR_STALL` 256, `MACRO_FALLBACK` 512.
 
 <!-- END GENERATED -->
 
