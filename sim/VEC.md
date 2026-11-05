@@ -273,9 +273,10 @@ of a `Macros = None` env equals the default env's; Python `make_config` leaves t
   behavioural only: the old "SMITH" row stood for "open the prompt", the new rows stand for "upgrade this card".
 - Replays: `history_actions` index the candidate list, so a game recorded with macros replays only with the same
   macros (`sts2vec.evaluate` records `limits.macros` and its replay audit uses them; `sts2train eval` defaults to the
-  checkpoint's `config.macros`). Not covered: the real-game twin (`scripts/live/nn_twin`) and the combat lookahead's
-  search env have no macro mapping (a macro-trained model plays them on the raw candidates); the play server / LLM
-  channel uses `RunSim.LegalActions()` and is unaffected.
+  checkpoint's `config.macros`). The real-game twin (`scripts/live/nn_twin`, W4) lists the checkpoint's macros and
+  plays a macro row in the game as its clicks, checking the screen and the grid after each (`nn_twin/macros.py`).
+  Not covered: the combat lookahead's search env has no macro mapping (a macro-trained model plays it on the raw
+  candidates); the play server / LLM channel uses `RunSim.LegalActions()` and is unaffected.
 - A config of an older library without the key: `sts2vec_create` fails with `unknown config key "macros"`.
 - Tests: C# `VecTests.RoomMacros.cs` (`Test_VecConfig_MacrosParse`, `Test_VecCand_RoomMacroSmithUpgradesOneCard`,
   `Test_VecCand_RoomMacroShopRemovalPaysThePrice`, `Test_VecEnv_RoomMacrosSoak`: 32 play-biased slots x 4000 steps,

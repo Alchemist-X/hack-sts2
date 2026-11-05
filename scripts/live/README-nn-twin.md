@@ -192,6 +192,47 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
 - 导入器不支持带 `extra_rewards` 的战后存档（例如小偷偷了金币的战斗）：这类存档点上 resync 失败，孪生保持原状，
   等下一个存档点。
 
+## 宏动作（macro）：一个决策，游戏里几次点击（W4 2026-11-04）
+
+模拟器的 Vec 层可以把“打开一个画面 → 选牌 → 确认”这样的多步选择列成**一个候选**（宏动作），网络一步选完，不再在
+逐步选择的画面之间来回（docs/diag-2026-11-04/q4-loopbreaker.md 的循环）。真实游戏没有这种一步动作，runner 把宏动作
+按它的点击顺序在游戏里执行，每一步都检查游戏到了预期画面：
+
+| 宏 | 孪生的行 | 游戏里的点击（每步检查） |
+| --- | --- | --- |
+| `TakeRewardCard` / `TakeRewardAlternative` | 奖励页（库自带） | 点开第 k 个卡牌奖励（按名次配对）→ 选那张牌 / REROLL / SACRIFICE |
+| `SMITH` | 休息处 `ChooseRestOption(A, B = 牌组第 d 张)`（`--macros rest`） | 选 SMITH → 升级网格（网格必须与孪生的可升级牌完全相同）→ 选第 d 张牌 → 确认预览 |
+| `REMOVE` | 商店 `BuyEntry(A, B = d)`（`--macros shop`） | 买删牌服务 → 删牌网格（同上检查，诅咒排在最前）→ 选第 d 张牌 → 确认 |
+
+- 孪生按 checkpoint 训练时的宏开 env：`--macros checkpoint`（默认，读 checkpoint 的 `config.macros`，和
+  `sts2train eval` 一样），`--macros none` 关，或显式 `--macros rest,shop`。不开宏的 checkpoint 的路径与之前完全一样
+  （`Twin()` 不传 `macros`）。`config.json` 记 `twin_macros`。
+- 执行规则在 `scripts/live/nn_twin/macros.py` 的表 `SPECS` 里（宏名 → 每个点击的 `Step`：游戏必须显示的画面、是否
+  可选、是否在这一步检查网格；`open` = 第一步怎么配对；`abort` = 检查失败时是否用游戏的取消键退回房间）。孪生把宏行
+  解码成 `Act("macro", (名字, …), plan=(点击…), expect=((牌, 孪生位置), …))`（`twin.py`），runner 在
+  `decide()` 里调 `macros.play_plan`。新的宏（owner G 的 `--macros all`：战斗内手牌选择、选一张牌、事件的多张变形 /
+  删除 / 升级）只要在 `SPECS` 里登记名字；没登记的名字用 `generic_spec`（每步必需、第一个选牌帧检查网格、末尾的确认
+  可选——游戏可能在最后一张牌选中时自己关掉选择）。
+- **选牌只解析一次**：在第一个选牌帧（in-prompt 宏是点击之前的那一帧）按“同一张牌（id + 升级）的第 j 个副本”把计划里
+  的每个选择配到游戏网格的 `index`，之后每步只检查那个 `index` 还在提供。不能每步重新匹配：STS2_MCP 的多选网格里已选
+  的牌还在，再选一次就是取消选择。牌的身份 = 网格位置；STS2_MCP 不给实例 id，所以同一张牌的副本按顺序配对——两边的
+  顺序都来自牌组（`RoomPrompts.FromDeckForUpgrade` 牌组顺序；`FromDeckForRemoval` 诅咒在前，其余牌组顺序）。只在附魔上
+  不同的两张副本，视图和接口都分不出来（已知限制）。
+- 检查失败（打开后不是选牌画面、网格与孪生不同、该点的不在）：记一次 `macro_step` / `macro_grid` desync（记录里的
+  `macro.failure`），runner 不让孪生走这一步；SMITH / REMOVE 会先按游戏的取消键退回休息处 / 商店（`macro.aborted`，
+  此时游戏和孪生都停在房间里，什么都没选，进 follow 模式），奖励宏和没退回的情况停用孪生、兜底动作打到下一个存档点
+  再重新播种。follow 模式下不比网格，选牌按 id 配对（副本不够时取第一张）。
+- 决策记录多一个 `macro` 字段：`name`、每步的 `steps`（动作、当时的画面、`ok` / `skipped` / `failed`）、`failure`、
+  `aborted`；`real_action` 是全部点击。summary 的计数器：`macros`、`macro_failures`、`macro_aborts`。
+- 信息对等：宏只用游戏在这个选择前给玩家看的东西（牌组、休息选项、删牌价格）；网格检查比的正是游戏网格上的牌。
+- 验证到什么程度：单元测试（假的 MCP 传输：按 v0.111.0 的状态形状写的脚本化状态 + 以 wire 为键的转移表，发出意外的
+  wire 就报错）覆盖 SMITH（副本按名次、网格不同 → 取消退回、打开后没到网格、预览不能确认 → 两次取消）、REMOVE（诅咒
+  在前的顺序、删牌不可用时不映射）、两张牌的变形（选择一次解析，不会对同一 index 点两次）、末尾可选的确认、runner 的
+  lockstep 和 abort 路径、孪生的宏行解码与 token；集成测试：`--macros rest,shop` 的孪生 + 随机策略对 play server 替身
+  （替身没有宏，所以宏 = 它的三个 token）整局 dry run，0 desync、token 全同。**没有在真实游戏里跑过**（今晚不能开游戏）：
+  真实游戏里升级 / 删牌网格的顺序是否与牌组顺序一致、删牌确认是否总有预览，都还要第一次真机运行来确认（看
+  `macro.steps` 和 `macro_grid` desync）。
+
 ## 开发者：dry run 与测试
 
 ```bash

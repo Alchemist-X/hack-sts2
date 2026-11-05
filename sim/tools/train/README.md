@@ -627,7 +627,9 @@ in the checkpoint's config (a resume keeps it unless `--macros` is given again; 
   inputs). Old behaviour is bit for bit unchanged without the flag (`tests/test_perf.py` default-path tests).
 - Rows are appended after the screen's other candidates; with `max_rows` 64 a deck larger than about 45 cards can
   push the last macro rows past the training cut in a shop (counted in `cand_over_max_rows`).
-- Not covered: the real-game twin and the combat lookahead have no macro mapping (they play raw candidates).
+- The real-game twin (`scripts/live/nn_twin_play.py`, `--macros checkpoint` by default) lists the checkpoint's macros
+  and plays each macro row in the game as its clicks, checked step by step (`scripts/live/nn_twin/macros.py`,
+  README-nn-twin.md "宏动作"). Not covered: the combat lookahead has no macro mapping (it plays raw candidates).
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop ...

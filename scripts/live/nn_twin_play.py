@@ -63,6 +63,11 @@ def parse_args(argv=None):
                     help="greedy with sts2train's loop breaker (default, as sts2train eval) or the plain argmax")
     ap.add_argument("--loop-breaker-k", type=int, default=None,
                     help="returns to one observation before only leave rows stay (default: sts2train's, 3)")
+    ap.add_argument("--macros", default="checkpoint",
+                    help="the twin's room macros (sim/VEC.md 'Room macros'): 'checkpoint' (default) = the checkpoint's "
+                         "training env's (config.macros, as sts2train eval does), 'none' = off, or a list such as "
+                         "'rest,shop'. A macro row is played in the game as its clicks, each checked "
+                         "(nn_twin/macros.py)")
     ap.add_argument("--torch-threads", type=int, default=4)
     ap.add_argument("--settle-timeout", type=float, default=60.0, help="seconds to wait for a settled game frame")
     ap.add_argument("--inject-desync", type=int, metavar="N",
@@ -110,7 +115,13 @@ def main(argv=None) -> int:
     print(f"loading {args.checkpoint} ...", flush=True)
     policy = Policy(args.checkpoint, torch_threads=args.torch_threads, loop_breaker=args.loop_breaker == "on",
                     loop_breaker_k=args.loop_breaker_k)
-    twin = Twin(content=args.content)
+    if args.macros == "checkpoint":
+        macros = policy.meta.get("macros") or ""
+    else:
+        macros = "" if args.macros.strip().lower() in ("", "none", "off") else args.macros
+    twin = Twin(content=args.content, macros=macros or None)
+    if twin.macros:
+        print(f"twin room macros: {','.join(twin.macros)}", flush=True)
     compat = policy.bind(twin.schema)
     cfg_chars = policy.meta.get("characters") or []
     if cfg_chars and character not in [str(c).upper() for c in cfg_chars]:
@@ -146,7 +157,7 @@ def main(argv=None) -> int:
 
     config = {"started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "argv": sys.argv,
               "args": vars(args), "game": game_desc, "checkpoint": policy.meta, "spec_compat": compat,
-              "twin_content": args.content, "encoder_version": twin.schema.encoder_version, **repo_state()}
+              "twin_content": args.content, "twin_macros": list(twin.macros), "encoder_version": twin.schema.encoder_version, **repo_state()}
     (out / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=1, default=str))
 
     runner = Runner(game, twin, policy, out, character=character, ascension=args.ascension, seed=seed,
