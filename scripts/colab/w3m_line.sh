@@ -15,7 +15,8 @@
 #
 # Env knobs: STS=/content/sts2 (gcs_sync.py + key live there), BUCKET, WAIT_RUN (the source run whose trainer must have
 # exited first; default the FORK_CKPT's run dir), WAIT_MAX_S (default 14400), ENDS (segment ends, tests only),
-# MACROS (default rest,shop; none = the stop-and-revert lines A0 / B0 of the plan §5.1),
+# MACROS (default rest,shop; none = the stop-and-revert lines A0 / B0 of the plan §5.1), ENT0 / ENT1 (entropy
+# anneal endpoints, default 0.02 -> 0.005; a continuation line sets both to the value it continues at),
 # TRAIN / EV (stand-ins for tests), SYNC=0 (no GCS loop), EVALS=0 (no endpoint evals: the overlap preflight).
 set -u
 B=$1; RUN=$2; L=$3; FORK=$4; OVERLAP=${5:-off}
@@ -23,6 +24,7 @@ STS=${STS:-/content/sts2}; BUCKET=${BUCKET:-gomoku-zero-20260816-ai-sts2train}
 TRAIN=${TRAIN:-"bash $B/run_train.sh"}; EV=${EV:-"python3 -m sts2train.cli"}
 DEV=${DEV:-silent-a10-dev-v1}; AB=${AB:-silent-a10-ab-v1}
 FORK_U=${FORK_U:-3064}; LAST=${LAST:-7664}; MACROS=${MACROS:-rest,shop}
+ENT0=${ENT0:-0.02}; ENT1=${ENT1:-0.005}   # entropy anneal ENT0 -> ENT1 over the line (ENT0 = ENT1: constant)
 ENDS=${ENDS:-"3564 4064 4564 5064 5564 6064 6564 7064 7564 7664"}
 WAIT_RUN=${WAIT_RUN:-$(dirname "$(dirname "$FORK")")}; WAIT_MAX_S=${WAIT_MAX_S:-14400}
 log() { echo "$(date -u '+%F %T') w3m-$L: $*"; }
@@ -39,14 +41,14 @@ FLAGS=(--start-mode stream --seed-stream-prefix SP1 --env-seed 1 --init-seed 1 -
        --acq-upgrade-coef 0.012
        --d-model 192 --state-dim 384 --depth 3 --heads 6 --ff-mult 4 --deck-counts --aux-heads --aux-coef 0.1
        --rollout 64 --epochs 1 --minibatch 4096 --lr 3e-4 --gamma 1.0 --lam 0.99 --clip 0.2 --vf-coef 0.5
-       --ent-coef 0.02 --max-grad-norm 0.5 --max-rows 64 --step-cap 3000 --floor-step-cap 80
+       --ent-coef "$ENT0" --max-grad-norm 0.5 --max-rows 64 --step-cap 3000 --floor-step-cap 80
        --device cuda --amp --compile default
        --no-best --eval-at-seedset "$DEV" --eval-at-modes greedy-on,greedy-off
        --eval-every 100 --eval-seedset silent-a10-v1 --loop-breaker on
        --ckpt-every 25 --ckpt-every-min 15 --keep-ckpts 60 --max-hours 3 --log-every 1
        --cycle-cost 0.01
        --macros "$MACROS"
-       --ent-coef-final 0.005 --ent-anneal-updates $((LAST - FORK_U)) --ent-anneal-start $FORK_U
+       --ent-coef-final "$ENT1" --ent-anneal-updates $((LAST - FORK_U)) --ent-anneal-start $FORK_U
        --eval-at-every 100 --pin-every 100 --eval-at "$EVAL_AT")
 if [ "$L" = a ]; then
   FLAGS+=(--overlap "$OVERLAP")
