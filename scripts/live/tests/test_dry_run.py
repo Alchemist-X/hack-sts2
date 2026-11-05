@@ -176,8 +176,13 @@ def test_room_macro_dry_runs_play_smith_and_removal_as_their_clicks(play_server,
     print("room macros played:", dict(Counter(done)))
 
 
-@pytest.mark.parametrize("seeds", [tuple(range(11, 51))])
-def test_prompt_macro_dry_runs_confirm_only_when_the_twin_committed(play_server, tmp_path, seeds):
+# (character, seed k): random play rarely reaches a prompt that waits for a confirm (most are combat hand selects that
+# close on their last pick); IRONCLAD C0VER35 reaches an up-to-2 hand select (min 0, manual confirm) on floor 4.
+PROMPT_RUNS = tuple(("SILENT", k) for k in range(11, 31)) + tuple(("IRONCLAD", k) for k in range(30, 41))
+
+
+@pytest.mark.parametrize("runs", [PROMPT_RUNS])
+def test_prompt_macro_dry_runs_confirm_only_when_the_twin_committed(play_server, tmp_path, runs):
     """The twin with ``--macros all`` (rest, shop, prompt; the play server has none): no cancel row is ever listed;
     a PromptSelect the twin's env committed (exactly-1, the k-th of exactly-k, the N-th of up-to-N) is played as the
     server's ``pick j; confirm`` when the server's prompt still waits for its confirm, else as ``pick j``; the twin's
@@ -188,16 +193,16 @@ def test_prompt_macro_dry_runs_confirm_only_when_the_twin_committed(play_server,
     from nn_twin.twin import RandomPolicy, Twin
 
     status = Counter()
-    for k in seeds:
+    for ch, k in runs:
         seed = f"C0VER{k:02d}"
         twin = Twin(content="all", macros="all")
         assert twin.macros == ("rest", "shop", "prompt") and twin.prompt_macros
         policy = RandomPolicy(seed=k)
         policy.bind(twin.schema)
-        game = PlayServerGame(play_server, seed=seed, character="SILENT", ascension=10, content="all")
-        out = tmp_path / f"p{k}"
+        game = PlayServerGame(play_server, seed=seed, character=ch, ascension=10, content="all")
+        out = tmp_path / f"p-{ch}-{k}"
         try:
-            s = Runner(game, twin, policy, out, character="SILENT", ascension=10, seed=seed,
+            s = Runner(game, twin, policy, out, character=ch, ascension=10, seed=seed,
                        max_decisions=700, audit_tokens=True, log=lambda *_: None).run()
         finally:
             twin.close()
