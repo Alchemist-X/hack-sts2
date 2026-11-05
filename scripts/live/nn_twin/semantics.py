@@ -18,7 +18,8 @@ SCREENS = ("combat", "prompt", "card_reward", "rewards", "map", "event", "shop",
            "other")
 
 # Act kinds. `advance` exists on the real side only (event dialogue); `macro` on the twin side only (rewards-screen
-# macro rows of newer sim builds, executed on the real side as a plan of two acts).
+# macro rows, and the rest-site / shop room macros of ``--macros rest,shop``, executed on the real side as a plan of
+# acts checked step by step: ``macros.py``).
 KINDS = ("play", "end_turn", "potion", "discard_potion", "travel", "claim_reward", "leave", "pick_card", "card_alt",
          "buy", "rest", "open_chest", "take_relic", "event_option", "select", "confirm", "cancel", "advance", "macro",
          "other")
@@ -38,6 +39,8 @@ class Act:
     native the side's executable form: twin candidate row (int), MCP wire dict, play-server token
     label  human-readable text
     plan   for kind "macro": the acts to run on the other side, in order
+    expect for kind "macro" with a selection screen: the options that screen must show, ((key, twin_pos), ...)
+           (``macros.py``: the grid check and the rank pairing of the plan's selects)
     """
 
     kind: str
@@ -46,6 +49,7 @@ class Act:
     native: Any = None
     label: str = ""
     plan: tuple = ()
+    expect: tuple = ()
 
     def describe(self) -> str:
         return self.label or f"{self.kind}{list(self.key) if self.key else ''}"
@@ -58,6 +62,8 @@ class Act:
             d["native"] = self.native
         if self.plan:
             d["plan"] = [a.to_json() for a in self.plan]
+        if self.expect:
+            d["expect_n"] = len(self.expect)
         return d
 
 

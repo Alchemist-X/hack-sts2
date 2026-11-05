@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .game import Game, GameError, Observation
+from .macros import map_open, play_plan
 from .semantics import SELECTION_SCREENS, Act, View, compare_views, match_act, screens_compatible
 from .twin import Policy, Twin, TwinError
 
@@ -368,15 +369,9 @@ class Runner:
 
     def map_row(self, tact: Act, tacts: list[Act], racts: list[Act], relaxed: bool) -> Act | None:
         if tact.kind == "macro":
-            if not tact.plan:
-                return None
-            # The first step opens card reward A. Card rewards are identical claims on both sides, so they pair by rank:
-            # A's rank among the twin's unclaimed card rewards (one open act per distinct A of the macro rows).
-            opens: dict = {}
-            for t in tacts:
-                if t.kind == "macro" and t.plan:
-                    opens.setdefault(t.plan[0].pos, t.plan[0])
-            return match_act(tact.plan[0], racts, [opens[p] for p in sorted(opens)] or None, relaxed=relaxed)
+            # the macro's first act (macros.SPECS: a card reward pairs by rank, SMITH / the removal by meaning); the
+            # rest of its plan is played and checked step by step in decide()
+            return map_open(tact, tacts, racts, relaxed)
         return match_act(tact, racts, tacts, relaxed=relaxed)
 
     def choose(self, obs: Observation, tacts: list[Act], dec, in_sync: bool = False,
@@ -564,25 +559,34 @@ class Runner:
         self.executed_tokens.append(res.wire)
         if res.ok:
             self.since_boundary += 1      # counted here: a macro whose later step fails has still moved the game
+        macro_rec = None
+        skip_twin_step = False
         if res.ok and twin_act is not None and twin_act.kind == "macro":
-            for sub in twin_act.plan[1:]:
-                nxt = self.observe()
-                m = match_act(sub, nxt.acts, None, relaxed=self.mode == "follow")
-                if m is None:
-                    # The opened card reward is not the twin's (hidden state the views cannot compare before the open):
-                    # the twin cannot follow this screen. Fallback play until the next save point re-seeds it.
-                    res.ok, res.error = False, f"macro step {sub.describe()} not available"
-                    self.enter_follow([{"field": "macro_step", "twin": sub.describe(),
-                                        "real": [a.describe() for a in nxt.acts][:12]}], nxt.view, "macro")
+            # the rest of the plan, each act checked against the screen the game reached (macros.play_plan)
+            mr = play_plan(twin_act, self.observe, self.game.execute, relaxed=self.mode == "follow",
+                           first_acts=obs.acts)
+            executed += mr.executed
+            wires += mr.wires
+            self.executed_tokens += mr.wires
+            macro_rec = {"name": twin_act.key[0] if twin_act.key else None, "steps": mr.steps,
+                         **({"failure": mr.failure} if mr.failure else {}), **({"aborted": True} if mr.aborted else {})}
+            self.stats["macros"] += 1
+            if not mr.ok:
+                res.ok, res.error = False, mr.error
+                self.stats["macro_failures"] += 1
+            if mr.failure is not None:
+                where = self.observe().view if not mr.aborted else real
+                self.enter_follow([mr.failure], where, "macro")
+                if mr.aborted:
+                    # backed out of the opened screen with the game's cancel: the game stands where the twin does
+                    # (nothing chosen), but the screen it opened was not the twin's -- follow, twin unstepped
+                    skip_twin_step = True
+                    self.stats["macro_aborts"] += 1
+                else:
+                    # The opened screen is not the twin's (hidden state the views cannot compare before the open, or a
+                    # grid the twin does not have): the twin cannot follow it. Fallback play until the next save point
+                    # re-seeds it.
                     self.twin_ok = False
-                    break
-                r2 = self.game.execute(m)
-                executed.append(m.to_json())
-                wires.append(r2.wire)
-                self.executed_tokens.append(r2.wire)
-                if not r2.ok:
-                    res.ok, res.error = False, r2.error
-                    break
         real_wire = wires[0] if len(wires) == 1 else "; ".join(str(w) for w in wires)   # a macro: its plan's wires
         # step the twin with the same row (--inject-desync: deliberately with another one, to exercise follow + resync)
         twin_ms = 0.0
@@ -599,7 +603,7 @@ class Runner:
                 self.stats["injected_desyncs"] += 1
                 row_for_twin = alt
         stepped = None                     # the row the twin took (the loop breaker records it)
-        if row is not None and self.twin_ok:
+        if row is not None and self.twin_ok and not skip_twin_step:
             t_tw = time.perf_counter()
             try:
                 if res.ok:
@@ -636,6 +640,7 @@ class Runner:
                "twin_action": ({"row": row, **twin_act.to_json(), "token": twin_token}
                                               if twin_act is not None else None),
                "real_action": executed, "ok": res.ok, "error": res.error, "notes": res.notes,
+               **({"macro": macro_rec} if macro_rec is not None else {}),
                "p": round(float(dec.probs[row]), 4) if (dec is not None and row is not None) else None,
                "win_prob": round(dec.win_prob, 4) if (dec is not None and dec.win_prob is not None) else None,
                "combat_hp_pred": round(dec.combat_hp, 4) if (dec is not None and dec.combat_hp is not None) else None,

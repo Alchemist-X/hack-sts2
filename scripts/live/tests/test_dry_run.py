@@ -7,6 +7,7 @@ TakeRewardAlternative; the play server has no macros) is its plan's tokens, '; '
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 import pytest
 
@@ -135,3 +136,41 @@ def test_policy_loop_breaker_masks_a_row_that_led_back(tiny_checkpoint):
         assert a.row == b.row and not b.loop_break
     finally:
         twin.close()
+
+
+@pytest.mark.parametrize("seeds", [(11, 12, 13, 14, 28)])
+def test_room_macro_dry_runs_play_smith_and_removal_as_their_clicks(play_server, tmp_path, seeds):
+    """The twin with ``--macros rest,shop`` (the play server has no macros): every SMITH / removal macro row the random
+    policy takes is played as the server's three tokens (open, pick, confirm), checked step by step, with no desync;
+    the twin's own token for the row (``rest A; pick j; confirm`` / ``remove; pick j; confirm``, the removal's j in the
+    prompt's curse-first order) equals what the stand-in matched."""
+    from nn_twin.runner import Runner
+    from nn_twin.standin import PlayServerGame
+    from nn_twin.twin import RandomPolicy, Twin
+
+    done = []
+    for k in seeds:
+        seed = f"C0VER{k:02d}"
+        twin = Twin(content="all", macros="rest,shop")
+        assert twin.macros == ("rest", "shop")
+        policy = RandomPolicy(seed=k)
+        policy.bind(twin.schema)
+        game = PlayServerGame(play_server, seed=seed, character="SILENT", ascension=10, content="all")
+        out = tmp_path / f"m{k}"
+        try:
+            s = Runner(game, twin, policy, out, character="SILENT", ascension=10, seed=seed,
+                       max_decisions=700, audit_tokens=True, log=lambda *_: None).run()
+        finally:
+            twin.close()
+            game.close()
+        assert s["desync_decisions"] == 0, s["first_desyncs"]
+        assert s["dry_run_audit"]["token_mismatches"] == 0, s["dry_run_audit"]["first_mismatches"]
+        assert s["dry_run_audit"]["history_equal"] is True
+        assert s["error"] is None or "max-decisions" in s["error"]
+        for r in _records(out):
+            if r["type"] == "decision" and r.get("macro") and r["macro"]["name"] in ("SMITH", "REMOVE"):
+                assert r["ok"] and "failure" not in r["macro"], r["macro"]
+                assert len(r["real_action"]) == 3 and r["mode"] == "lockstep"
+                done.append(r["macro"]["name"])
+    assert done, f"no SMITH / removal macro taken over seeds {seeds}"
+    print("room macros played:", dict(Counter(done)))
