@@ -275,6 +275,8 @@ of a `Macros = None` env equals the default env's; Python `make_config` leaves t
   macros (`sts2vec.evaluate` records `limits.macros` and its replay audit uses them; `sts2train eval` defaults to the
   checkpoint's `config.macros`). The real-game twin (`scripts/live/nn_twin`, W4) lists the checkpoint's macros and
   plays a macro row in the game as its clicks, checking the screen and the grid after each (`nn_twin/macros.py`).
+  The twin does not map the `prompt` macros yet (the Vec layer's confirm-on-complete has no game click on the twin side,
+  so an `all` checkpoint desyncs at the first such prompt and the twin fails closed).
   Not covered: the combat lookahead's search env has no macro mapping (a macro-trained model plays it on the raw
   candidates); the play server / LLM channel uses `RunSim.LegalActions()` and is unaffected.
 - A config of an older library without the key: `sts2vec_create` fails with `unknown config key "macros"`.

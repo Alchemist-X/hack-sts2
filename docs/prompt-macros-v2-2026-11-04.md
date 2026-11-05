@@ -101,3 +101,28 @@ finishing, and only the game's selectable options are listed. Spec unchanged; de
   提示推进：`Run/Loop/RunSim.cs` `StepPrompt`（未完成的选牌只追加到 Picks，提示对象不变）。
 - 宏实现：`sim/Sts2Sim.Vec/PromptMacros.cs`、`RoomMacros.cs`（`Apply(..., maxRows, out fellBack)`）、`VecEnv.cs`
   （Observe / StepSlot）、`Status.cs`（`MacroFallback = 512`）；检测器：`sim/tools/train/sts2train/cycles.py`（`scope`）。
+
+## W4 合入与验收 / Integration (branch `train/w4`, final)
+
+`train/w4` = `079979f` + `train/w4-prompt-macros`（owner G，`76a96ac`）+ `train/w4-twin-macros`（owner H，`948997a`），
+merge commit `77acd78`，无冲突（两侧只在 `sim/VEC.md` / `sim/tools/train/README.md` 的不同段落各有改动）。远端 testbox
+（`scripts/test_remote.sh`，raven）在 `77acd78` 上：
+
+- 全套件：train 215 passed、vec 131 passed、eval 84 passed；live twin `scripts/live/tests` 74 passed；C# `Macro Vec Choice`
+  115/115（含 G 的 7 个新测试与 W3 的房间宏测试），quick gates `Server Parity EndToEnd SelfConsistency W1Gate` 77/77。
+- 默认路径逐位：3 更新 smoke（宏关）pool `weights_hash` 6fde2adf17381229、stream ffe9ba603d0b52a5，与 `079979f`
+  （worktree `train-w4-base` 同脚本）相同；逐行 metrics 除挂钟量 `env_steps_per_s_session` 外全部相同。
+- `--macros all` stream smoke（smoke preset、48 env、6 更新、`--cycle-cost 0.01`），训练器 env 旁挂
+  `CycleDetector(scope="all")`：**任何种类 0 环**（训练器房间检测器亦 0）；9,216 步、446 次提示决策：PromptSelect 440、
+  PromptConfirm 6，列出的 PromptCancel 行 0、选中 0；商店 REMOVE 宏行被选 6 次（STRIKE_SILENT 2、UP_MY_SLEEVE、TRACKING、
+  DEFEND_SILENT、SURVIVOR）；休息点 SMITH 宏 0（6 更新内未到休息点）；MACRO_FALLBACK 0、cand_n > 64 0、SIM_ERROR 0；
+  `env.macros = [rest, shop, prompt]`。同配置宏关对照 6 更新也是 0 环（短跑未遇到可取消站点；宏关成环的证据见上面
+  G3 随机检查）。
+- 续训：宏关 stream checkpoint u3 → `--resume auto --macros all` 到 u6：`resume_compat` encoder_version 3b73317739c650bd
+  两侧相同、`model_inputs identical`、无 widened enums、`config_diff` = macros / out / max_updates、rng ok；续训后选中 REMOVE 宏 2 次。
+- 日志（本机）：scratchpad `w4/r1-main.log`（套件 + C# + twin + 默认路径；其中 macros-all 段因探针脚本 bug 失败，已修复重跑）、
+  `w4/r2-all.log`（macros-all + 续训）、`w4/r0-base-default.log`（079979f 基线）。
+- 孪生（H）：`--macros checkpoint` 时 SMITH / REMOVE 房间宏在真游戏中按逐步校验的点击序列执行；**`prompt` 宏未映射**：
+  Vec 层的"选满自动确认"在真游戏侧没有对应的 confirm 点击，`all` checkpoint 在真游戏上会在第一个此类提示处 desync
+  并 fail closed（孪生停用、fallback）。补法：孪生把 `prompt` 开时的 PromptSelect 行解码为 `(select, confirm?)` 计划，
+  仅当孪生的环境在该步离开了此提示时才在真游戏点 confirm。

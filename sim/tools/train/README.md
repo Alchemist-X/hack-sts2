@@ -629,7 +629,8 @@ in the checkpoint's config (a resume keeps it unless `--macros` is given again; 
   push the last macro rows past the training cut in a shop (counted in `cand_over_max_rows`).
 - The real-game twin (`scripts/live/nn_twin_play.py`, `--macros checkpoint` by default) lists the checkpoint's macros
   and plays each macro row in the game as its clicks, checked step by step (`scripts/live/nn_twin/macros.py`,
-  README-nn-twin.md "宏动作"). Not covered: the combat lookahead has no macro mapping (it plays raw candidates).
+  README-nn-twin.md "宏动作"); it does not map the `prompt` macros of `--macros all` yet (fails closed at the first
+  auto-confirmed prompt). Not covered: the combat lookahead has no macro mapping (it plays raw candidates).
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop ...
