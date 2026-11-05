@@ -118,3 +118,13 @@
   ab-512 u4564 0.450、u5064 0.444；0 通关。
 - **待办**：sts2b 的运行时 11-04 18:39 EST 启动，若 24 小时上限属实会在 18:39 被回收 → 在 u6564 段终点（约 15:40）之后做轮换
   （停旧、立即 `colab new`、失败每分钟重试、gcs_pull 恢复、重启驱动 B 与 launch_d2.sh（把 `--wait` 改为 36000，因为 A 现在比 B 晚结束））。
+
+## 13:15 更新：运行时丢失自动轮换守护已上线
+
+- 本机后台 `scratchpad/rotate/watch_rotate.sh 120`（表 `rotate/managed.txt`：`sts2c a w3m-a sts2a2`、`sts2b b w3m-b sts2b2`；日志
+  `rotate/watch.log`；停止：`rm rotate/RUN`）。管理中的运行时从 `colab sessions` 消失且不是东京保活因 `done` 主动停掉时：
+  自动 `colab new --gpu A100`（最多重试 4 小时）→ 上传两份包 + 驱动脚本 + GCS 密钥 → `gcs_pull` 恢复 run 目录（最新 checkpoint）→
+  重启分段驱动与第二轮包装脚本（D 的取数等待改为 10 小时，因为 A 现在比 B 晚结束）→ 更新东京 `sessions.json` / `sessions.txt` 与本机表。
+  依赖本机在线；本机关机则需手动按同一流程恢复（`rotate/watch_rotate.sh` 里的 `rotate()` 就是流程）。
+- 13:02：A u4493（dev-128 u4300 0.440、u4400 0.434），B u5862（dev-128 u5800 0.432，ab-512 u5564 0.442；u5300 的 0.461 之后进入平台），
+  余额 490.9。sts2b 的 24 小时上限 18:39 EST 是对守护的第一次实战检验。
