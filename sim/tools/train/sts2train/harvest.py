@@ -56,6 +56,14 @@ RULE = ("capture at a combat's first decision (aux.is_combat 0 -> 1 inside a run
         "with probability prob, at most max_per_step per step and a ring's size per ring and step; clone = "
         "env.clone_determinized(slot, sha256('harvest:<seed>:<update>:<step>:<slot>')); full rings release their "
         "oldest entries (FIFO, one env.pool.release call per step); starts come from the env's auto-reset sequence")
+RULE_STREAM = ("capture at a combat's first decision (aux.is_combat 0 -> 1 inside a running episode) of an episode "
+               "started from a stream seed (not an anchor), slot without SIM_ERROR / CONTENT_GAP and with a legal "
+               "action; kind by the map_nodes cell with current = 1: Boss -> boss, Elite -> elite, else act_index >= 1 "
+               "-> act2; a kind without a ring falls back to act2 (act 2+), then to any; kept with probability prob, "
+               "at most max_per_step per step and a ring's size per ring and step; clone = "
+               "env.clone_determinized(slot, sha256('harvest:<seed>:<update>:<step>:<slot>')); full rings release "
+               "their oldest entries (FIFO, one env.pool.release call per step); a finished slot starts from a "
+               "uniformly drawn live anchor with probability harvest_start_share, else from the next stream seed")
 
 
 def parse_harvest(spec) -> dict[str, int]:
@@ -385,7 +393,7 @@ class Harvester:
         return {"spec": format_harvest(self.ring_size), "rings": dict(self.ring_size),
                 "live_max": sum(self.ring_size.values()), "prob": self.prob, "max_per_step": self.max_per_step,
                 "seed": self.seed, "base_pool_entries": self.base, "fresh_only": True, "clone": "determinized",
-                "rule": RULE, "start_mode": "stream" if self.stream else "pool",
+                "rule": RULE_STREAM if self.stream else RULE, "start_mode": "stream" if self.stream else "pool",
                 "starts": "stream: harvest_start_share of the finished slots from a uniform live anchor" if self.stream
                 else "pool: the env's auto-reset start sequence"}
 
