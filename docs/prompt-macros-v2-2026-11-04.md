@@ -58,7 +58,7 @@ finishing, and only the game's selectable options are listed. Spec unchanged; de
 | RewardsGrid（奖励网格） | 遗物 1 处（`FromSimpleGridForRewards`） | per prefs | 否 | 否 | 顺序 / DONE |
 | Bundle（卡包三选一） | 遗物 1 处（`FromChooseABundleScreen`） | exactly 1 | 否 | 否 | 每包一行（card_id = 0） |
 | CardReward（提示种类） | 移植中无构造点（0） | — | — | — | — |
-| （非提示）CardReward 阶段 | 奖励卡界面打开后（REROLL 后 / 多选奖励）；Skip 回到奖励界面但奖励未完成 | 1 + Skip | Skip 相当于返回 | 理论上可（需再次打开同一奖励）；见 G3 环检查 | 不改（W3 行为）；`scope="all"` 检测器把它当 UI 画面计数 |
+| （非提示）CardReward 阶段 | 奖励卡界面打开后（REROLL 后 / 多选奖励）；Skip 回到奖励界面但奖励未完成 | 1 + Skip | Skip 相当于返回 | 理论上可（需再次打开同一奖励）；G3 检查中 0 次 | 不改（W3 行为）；`scope="all"` 检测器把它当 UI 画面计数 |
 
 “relic / potion picks” 均以上表种类出现（遗物获得时的牌组提示、药水的 ChooseCard / HandSelect / PileSelect）；
 宝箱遗物（TakeTreasureRelic）与卡牌奖励（TakeRewardCard 宏）不是选择提示。
@@ -81,6 +81,17 @@ finishing, and only the game's selectable options are listed. Spec unchanged; de
 - Python：`sim/tools/vec/tests/test_prompt_macros.py`（配置；64 槽随机 400 步：宏关有取消行，宏开 0）；
   `sim/tools/train/tests/test_prompt_macros.py`（ModelSpec 宏开关一致；`CycleDetector(scope="all")` 在 64 槽 × 2000 步
   随机策略下宏开 0 环、宏关 > 0；结果写入 testbox `tmp/prompt-macros/cycle_check.json`）。
+
+## G3 环检查结果 / Cycle check (remote testbox, commit b644312)
+
+64 槽 × 随机策略，5 角色 A10，`CycleDetector(scope="all")` 与房间范围检测器同时计数：
+
+| run | steps | cycles (all scope) | cycles (room scope) | prompt decisions | MACRO_FALLBACK | cand_n > 64 | SIM_ERROR |
+|---|---|---|---|---|---|---|---|
+| macros off | 600 | 10（rest 6 / shop 4 / other 0） | 10 | 959 | 0 | 0 | 0 |
+| macros all | 2,000 | **0** | **0** | 2,910（HandSelect 1,230 / PileSelect 354 / DeckRemove 323 / ChooseCard 263 / DeckEnchant 185 / DeckTransform 155 / Bundle 137 / SimpleGrid 106 / DeckUpgrade 91 / DeckGeneric 41 / HandUpgrade 25） | 0 | 0 | 0 |
+
+宏关时的环全部是 SMITH→cancel 与商店删卡→select→cancel；宏开时任何画面、任何提示种类均为 0。
 
 ## 证据 / Evidence pointers
 
