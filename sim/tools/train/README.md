@@ -696,6 +696,51 @@ step (exactly-k = k picks, up-to-N = picks + a DONE row, DECLINE only where the 
 `CycleDetector(spec, scope="all")` (`sts2train/cycles.py`; the trainer's own detector and `--cycle-cost` stay on the
 rest / shop scope).
 
+## Exploration for rare decision kinds (`--explore-kinds`, `--explore-eps`, `--explore-logp`)
+
+Motivation (docs/diag-2026-11-05/behaviour-audit-a-u5064.md): line A u5064 chose HEAL at 453/453 rest sites with the
+SMITH:<card> macro rows at probability 0.000 and never bought the card removal (0/203). Rows at ~0 probability are
+never sampled, so PPO never learns their value. `--explore-kinds K1,K2 --explore-eps E` (`sts2train/explore.py`)
+mixes a uniform draw into the **rollout** sampling at those decisions only:
+
+- At a rollout decision whose candidate table has >= 1 row of an explore item, with probability E the action is drawn
+  uniformly from all explore rows present (e.g. HEAL and every SMITH:<card> row for `ChooseRestOption`), otherwise from
+  the policy. Rows the sampling distribution cannot take (past `cand_n` / `max_rows`, banned by
+  `--rollout-loop-breaker`) are never explored. Evaluation (`sts2train eval`, `--eval-every`, `--eval-at`,
+  report cards) and the loop breaker's greedy path never explore.
+- Items: a RunActionKind name as the candidate table reports it (`ChooseRestOption`, `BuyEntry`, `ProceedRewards`,
+  `TakeRewardCard`, ...), optionally `Kind:selector`: `macro` (room-macro rows, B >= 0) / `plain` (B = -1), a
+  RestOption name on `ChooseRestOption` (`ChooseRestOption:SMITH` = the SMITH rows without HEAL), a ShopCategory name
+  or `remove` (= `card_removal`) on `BuyEntry` (`BuyEntry:remove` = the removal rows only: a removal is a `BuyEntry`
+  like any purchase, the kind alone cannot separate it). Unknown names fail at start-up with the library's list.
+- Behaviour policy b = (1 - E) pi + E u at those decisions (u uniform over the explore rows), b = pi elsewhere.
+  `--explore-logp` picks what PPO's ratio uses:
+  - `mixture` (default): the stored log-prob is log b, so the ratio pi_new / b is the true importance ratio and the
+    gradient is unbiased. Side effect: at explore decisions the ratio starts at pi / b, i.e. 1 / (1 - E) for rows the
+    policy drew (above the clip for E > clip / (1 + clip), so positive advantages there are clipped away) and ~0 for
+    explored rows the policy gives ~0, whose gradient is correspondingly small (the true on-policy gradient).
+  - `decoupled`: stores log pi_old and multiplies the normalised advantage by pi_old / b (decoupled PPO): the same
+    unbiased gradient, clip window centred on pi_old.
+  - `policy`: stores log pi_old (ratio pi_new / pi_old, as if pi had drawn every action): biased off-policy, but the
+    explored rows get the full advantage x grad log pi push, the fastest way to move P(SMITH) off 0.
+  Advantages / values (GAE) are computed as usual; the entropy bonus stays on pi.
+- Randomness: the coin and the pick of slot s at step t of update u come from
+  `default_rng([purpose_seed(sample_seed, "explore"), u, t])`: no state, so resumes continue the same stream and
+  `--overlap double` draws each slot exactly as `--overlap off`; the torch sampling RNG is not touched. Works with
+  `--macros` on or off, `--harvest`, `--overlap double`, resume (inherited from the checkpoint; `--explore-kinds none`
+  or `--explore-eps 0` turns it off). E = 0 (default) builds no explorer: bit-identical to a build without it.
+- Metrics per update (metrics.jsonl): `explore_eps`, `explore_decisions` (decisions with an explore row),
+  `explore_share` (of valid decisions), `explore_steps` (mixture draws), `explore_policy_mass` (pi's summed
+  probability on the explore rows there), and per item `explore_present.<item>`, `explore_pmass.<item>`,
+  `explore_taken.<item>`, `explore_drawn.<item>` plus `_macro` variants over the item's macro rows:
+  `explore_pmass_macro.ChooseRestOption` is P(SMITH:<card>) at rest sites (watch it recover from 0),
+  `explore_taken_macro.BuyEntry` the removals taken. summary.json `explore` holds the run totals.
+
+```bash
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
+    --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 [--explore-logp mixture|decoupled|policy]
+```
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash

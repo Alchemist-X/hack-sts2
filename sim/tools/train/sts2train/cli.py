@@ -270,6 +270,22 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "observation; sts2train.cycles), once per cycle; the env, gamma / lambda, the logged "
                         "objective and the acquisition shaping are unchanged. Cycles are counted and logged "
                         f"(cycles.jsonl, metrics) in every run (default {D.cycle_cost} = count only)")
+    g.add_argument("--explore-kinds", dest="explore_kinds", metavar="K1,K2",
+                   help="rollout-only exploration for rare decision kinds (sts2train.explore; README 'Exploration for "
+                        "rare decision kinds'): RunActionKind names as the candidate table reports them, e.g. "
+                        "ChooseRestOption,BuyEntry, each optionally with a selector Kind:sel = macro (room-macro rows, "
+                        "B >= 0) / plain / a RestOption name on ChooseRestOption (SMITH, HEAL) / a ShopCategory name or "
+                        "'remove' (= card_removal) on BuyEntry; unknown names fail at start-up; 'none' turns it off on "
+                        "--resume (default off)")
+    g.add_argument("--explore-eps", dest="explore_eps", type=float, metavar="E",
+                   help="at a rollout decision with >= 1 explore row, draw uniformly from the explore rows present with "
+                        "probability E, else from the policy; never in evaluation or the loop breaker's greedy path; "
+                        f"logs explore_* per update (default {D.explore_eps} = off, bit-identical to a build without it)")
+    g.add_argument("--explore-logp", dest="explore_logp", choices=("mixture", "decoupled", "policy"),
+                   help="log-prob stored for the PPO ratio at explore decisions: mixture = log((1-E) pi + E u) (ratio "
+                        "pi_new / b, unbiased); decoupled = log pi_old with the advantage x pi_old / b (clip centred on "
+                        "pi_old); policy = log pi_old (biased off-policy, fastest push on explored rows) "
+                        f"(default {D.explore_logp})")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")
@@ -602,6 +618,9 @@ def main(argv=None) -> int:
         if "start_saves" in given:      # absolute, so a resume from another working directory finds it
             v = given["start_saves"]
             given["start_saves"] = None if v.lower() in ("", "none") else os.path.abspath(os.path.expanduser(v))
+        if "explore_kinds" in given:    # "off" / "none" turn it off (on --resume)
+            v = str(given["explore_kinds"]).strip()
+            given["explore_kinds"] = "" if v.lower() in ("", "off", "none") else v
         if "harvest" in given:          # "off" / "none" turn it off (on --resume)
             v = str(given["harvest"]).strip()
             given["harvest"] = "" if v.lower() in ("", "off", "none") else v

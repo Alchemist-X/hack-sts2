@@ -19,7 +19,10 @@ log-probs are the masked distribution's, so PPO's ratio is taken against the pol
 ``harvest`` (``--harvest boss:N,elite:N,act2:N``) adds self-anchor starts (``sts2train.harvest``): determinized clones
 of the policy's own boss / elite / act-2 combat entries in fresh-started episodes, kept as live pool entries in FIFO
 rings, which the env's auto-reset start sequence then starts episodes from (``harvest_*`` metrics; ``fresh_*`` counts
-fresh-entry starts only). With these flags off the trainer computes exactly what it computed before. The periodic
+fresh-entry starts only). ``explore_kinds`` / ``explore_eps`` (``--explore-kinds ChooseRestOption,BuyEntry --explore-eps
+E``, ``sts2train.explore``): at a rollout decision with a row of those kinds, with probability E the action is drawn
+uniformly from those rows; the stored log-prob is the mixture behaviour policy's (``explore_logp``), evaluation never
+explores (``explore_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
 eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
@@ -105,6 +108,8 @@ from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_s
 from .harvest import Harvester, format_harvest, parse_harvest
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
 from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
+from .explore import LOGP_MODES as EXPLORE_LOGP_MODES
+from .explore import KindExplorer, format_kinds, parse_kinds
 from .loopbreak import LoopBreaker
 from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
                     widened_tensors)
@@ -230,6 +235,10 @@ class TrainConfig:
     loop_breaker: bool = True       # the periodic eval's greedy policy runs with the loop breaker (sts2train.loopbreak)
     loop_breaker_k: int = 3         # returns to an observation before the breaker prefers leaving the screen
     rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
+    # exploration for rare decision kinds (sts2train.explore; rollout only, never in evaluation)
+    explore_kinds: str = ""         # RunActionKind names [:selector], comma-separated ("" = off)
+    explore_eps: float = 0.0        # mixture weight of the uniform draw over the explore rows (0 = off)
+    explore_logp: str = "mixture"   # stored log-prob: mixture (log b) | decoupled (log pi_old, adv x pi_old / b) | policy
     # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
     cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
     eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
@@ -328,6 +337,16 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     out.hp_shaping_coef = float(out.hp_shaping_coef)
     if not (out.hp_shaping_coef >= 0.0 and np.isfinite(out.hp_shaping_coef)):
         raise ValueError(f"hp_shaping_coef {out.hp_shaping_coef} must be a finite number >= 0 (0 = off)")
+    out.explore_kinds = format_kinds(parse_kinds(out.explore_kinds))     # canonical, "" = off; raises on bad syntax
+    out.explore_eps = float(out.explore_eps)
+    if not (0.0 <= out.explore_eps < 1.0):
+        raise ValueError(f"explore_eps {out.explore_eps} must be in [0, 1) (0 = off)")
+    if out.explore_eps > 0 and not out.explore_kinds and "explore_eps" not in given:
+        out.explore_eps = 0.0               # --explore-kinds none on a resume turns an inherited explorer off
+    if out.explore_eps > 0 and not out.explore_kinds:
+        raise ValueError("--explore-eps > 0 needs --explore-kinds (RunActionKind names, e.g. ChooseRestOption,BuyEntry)")
+    if out.explore_logp not in EXPLORE_LOGP_MODES:
+        raise ValueError(f"explore_logp {out.explore_logp!r}: expected one of {EXPLORE_LOGP_MODES}")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -1043,13 +1062,18 @@ class InferenceRunner:
                 return self.compiled(x)
             return self.eager(x)
 
-    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True, adjust=None):
-        """`adjust` (logits -> logits, e.g. ``LoopBreaker.apply``) runs on the logits before sampling, eager."""
+    def sample(self, x: dict[str, torch.Tensor], *, compiled: bool = True, adjust=None, explore=None):
+        """`adjust` (logits -> logits, e.g. ``LoopBreaker.apply``) runs on the logits before sampling, eager.
+        `explore` ((logits, dist, a, logp) -> (a, logp, adv weights or None), ``explore.KindExplorer`` bound to the
+        step; rollout only) replaces the policy's draw by the mixture's; its weights are left in ``explore_w``."""
         logits, value = self.forward(x, compiled=compiled)
         if adjust is not None:
             logits = adjust(logits)
         dist = torch.distributions.Categorical(logits=logits, validate_args=False)
         a = dist.sample()
+        if explore is not None:
+            a, logp, self.explore_w = explore(logits, dist, a, dist.log_prob(a))
+            return a, logp, value
         return a, dist.log_prob(a), value
 
 
@@ -1249,6 +1273,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             log(f"rollout loop breaker: back at an observation of its last {breaker.window} decisions a slot gives "
                 f"probability 0 to the candidates it took there; back there {cfg.loop_breaker_k} times or more, only "
                 f"the rows that leave the screen stay (when legal)")
+        explorer = None                 # --explore-kinds / --explore-eps (sts2train.explore): rollout sampling only
+        if cfg.explore_eps > 0:
+            explorer = KindExplorer(spec, cfg.explore_kinds, cfg.explore_eps,
+                                    purpose_seed(seed_of(cfg, "sample_seed"), "explore"), logp_mode=cfg.explore_logp)
+            log(explorer.describe())
         # --- UI revisit cycles (sts2train.cycles): counted in every rollout; --cycle-cost charges the closing step ---
         cycles = CycleDetector(spec, cfg.envs, card_name=env.schema.vocab.cards.name)   # the library's spec
         # --- run-state fields of episodes.jsonl (sts2vec.runstats; logging only, off with --no-episodes-log) ---
@@ -1267,7 +1296,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name),
                         "run_stats": RunStats(env.schema, n) if cfg.episodes_log else None}
 
-            ov = OverlapRollout(env, lane_trackers, aux_full=aux_tg)
+            ov = OverlapRollout(env, lane_trackers, aux_full=aux_tg, explorer=explorer)
             cycles, breaker = ov.cycles, ov.breaker
             run_stats = None                    # per lane (OverlapRollout)
             shaper = ov.shaper
@@ -1334,6 +1363,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
         dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
         store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device)
+        adv_w = (np.ones((cfg.rollout, cfg.envs), dtype=np.float32)       # --explore-logp decoupled: pi_old / b
+                 if explorer is not None and cfg.explore_logp == "decoupled" else None)
         log(f"rollout store: {store.nbytes / 2**20:.0f} MiB on {device}")
 
         ckpts = CheckpointManager(run, cfg.keep_ckpts)
@@ -1627,10 +1658,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         if not chk["ok"]:
                             raise CompiledMismatchError(f"the compiled rollout forward disagrees with eager ({chk}); "
                                                         f"rerun with --compile off")
+                    ex_kw = {}
+                    if explorer is not None:            # the mixture draw (rollout only; obs is still this step's)
+                        ex_kw["explore"] = lambda lg, d_, a_, lp_: explorer(obs, lg, d_, a_, lp_, update=upd + 1, t=t)
                     if breaker is None:
-                        a, logp, value = runner.sample(x)
+                        a, logp, value = runner.sample(x, **ex_kw)
                     else:                               # obs is still this step's (the env steps below)
-                        a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg))
+                        a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg), **ex_kw)
+                    if adv_w is not None:
+                        adv_w[t] = runner.explore_w
                     store.put(t, x, obs)
                     a_np = a.cpu().numpy().astype(np.int32)
                     valid = cand_n > 0
@@ -1706,7 +1742,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
                 ov_st = ov.rollout(upd=upd, store=store, runner=runner, device=device, max_rows=cfg.max_rows,
                                    static=static, track=track, steps=cfg.rollout, cycle_cost=cyc_cost, r_obj=r_obj,
-                                   cyc_r=cyc_r, hooks_on=hooks_on, episode_hooks=episode_hooks,
+                                   cyc_r=cyc_r, adv_w=adv_w, hooks_on=hooks_on, episode_hooks=episode_hooks,
                                    episode_fields=EPISODE_HOOKS.fields, errors_seen=errors_seen,
                                    check_forward=check_forward if runner.compiled is not None else None)
                 env_s, infer_s = ov_st["env_s"], ov_st["infer_s"]
@@ -1753,7 +1789,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             a_mean, a_std = float(f_adv[idx_all].mean()), float(f_adv[idx_all].std()) + 1e-8
             to = lambda a_: torch.from_numpy(np.ascontiguousarray(a_)).to(device)  # noqa: E731
             d_act, d_logp = to(store.actions.reshape(-1)), to(store.logp.reshape(-1))
-            d_adv = to(((f_adv - a_mean) / a_std).astype(np.float32))
+            n_adv = (f_adv - a_mean) / a_std
+            if adv_w is not None:               # decoupled PPO: importance weight pi_old / b on the advantage
+                n_adv = n_adv * adv_w.reshape(-1)
+            d_adv = to(n_adv.astype(np.float32))
             d_ret, d_val = to(ret.reshape(-1)), to(store.values.reshape(-1))
             mbs = [np.sort(perm[k:k + cfg.minibatch]) for perm in (rng.permutation(idx_all) for _ in range(cfg.epochs))
                    for k in range(0, len(perm), cfg.minibatch)]
@@ -1804,6 +1843,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
                 lb_st = {"loop_breaks": lb_n, "no_op_actions": no_n, "cycle_revisits": cy_n}
+            ex_st = explorer.pop_stats() if explorer is not None else {}
             cy_counts, cy_events = cycles.pop()     # --- sts2train.cycles: this update's cycles
             cy_st = cycle_update_stats(cy_counts, ep_this, cyc_cost)
             c["cycles"] += cy_counts["cycles"]
@@ -1868,7 +1908,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    **({"anchor_starts_update": tu["anchor_starts"], "anchor_start_failed": tu["anchor_start_failed"]}
                       if "anchor_starts" in tu else {}),
                    **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
-                                             ep_this, shaper), **lb_st, **cy_st,
+                                             ep_this, shaper), **lb_st, **cy_st, **ex_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
                    **gpu_memory(device)}
             metrics.write(row)
@@ -1896,6 +1936,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        if aux_tg is not None else "")
                     + (f" | loop breaks={lb_st['loop_breaks']} no-ops={lb_st['no_op_actions']} "
                        f"cycles={lb_st['cycle_revisits']}" if lb_st else "")
+                    + (f" | explore draws={ex_st['explore_steps']} at={ex_st['explore_decisions']} "
+                       f"p_mass={fmt(ex_st['explore_policy_mass'], '.4f')}" if ex_st else "")
                     + f" | ui cycles={cy_st['cycles_total']} eps={cy_st['episodes_with_cycle']}"
                     + (f" cost={cy_st['cycle_cost_total']:.3f}" if cyc_cost else "")
                     + (f" | harvest +{hs['harvest_captured']} -{hs['harvest_released']} live "
@@ -1953,6 +1995,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         }
         if harvester is not None:
             summary["harvest"] = harvester.totals()
+        if explorer is not None:
+            summary["explore"] = explorer.totals()
         if ov is not None:
             summary["overlap"] = {"mode": cfg.overlap, "lanes": [hi - lo for lo, hi in ov.pair.bounds],
                                   **{k + "_s": round(v, 2) for k, v in ov.totals.items()}}
