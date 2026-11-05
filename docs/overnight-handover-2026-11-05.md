@@ -6,10 +6,10 @@
 
 | 运行时 | 任务 | 起止 | 驱动脚本 / 日志（VM 上） |
 | --- | --- | --- | --- |
-| `sts2train`（GPU A） | 主线 M：C1 续训 u764→u3064（循环成本 0.01，无宏动作） | 18:42 → 约 00:30 | `/content/sts2/runs/sp3-main`，`sp3-main.launch.log` |
-| `sts2train`（GPU A） | 过夜线 A：从 M 的 `pinned-0003064.pt` 分叉，+宏动作（rest,shop）+熵退火 0.02→0.005，u3064→u7664（+6 亿步，每 500 update 固定评测 + ab-512 关 breaker） | 约 00:30 → 约 11:45 | `w3m-src/scripts/colab/w3m_line.sh … a …`，日志 `/content/sts2/runs/w3m-a.driver.log`，run `/content/sts2/runs/w3m-a` |
+| `sts2train`（GPU A） | 主线 M：C1 续训 u764→u3064（循环成本 0.01，无宏动作）。00:42 因 --max-hours 6 在约 u2560 停下，01:00 用 `resume_sp3.sh` 续到 u3064 | 18:42 → 约 02:15 | `/content/sts2/runs/sp3-main`，`sp3-main.launch.log` |
+| `sts2train`（GPU A） | 过夜线 A：从 M 的 `pinned-0003064.pt` 分叉，+宏动作（rest,shop）+熵退火 0.02→0.005，u3064→u7664（+6 亿步，每 500 update 固定评测 + ab-512 关 breaker） | 约 02:15 → 约 13:30 | `w3m-src/scripts/colab/w3m_line.sh … a …`，日志 `/content/sts2/runs/w3m-a.driver.log`，run `/content/sts2/runs/w3m-a` |
 | `sts2b`（GPU B） | 复验 R：种子 2 的 W0′→C0′→C1′→终点比较 | 18:45 → 约 23:00 | `sp2r_serial.sh`，`sp2r_serial.log`，比较结果 `/content/sts2/runs/cmp/*.txt` |
-| `sts2b`（GPU B） | 过夜线 B：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33），同一分叉点 | 约 23:10 启动等待，00:30 后开训 → 约 12:30 | `w3m_line.sh … b …`，日志 `/content/sts2/runs/w3m-b.driver.log`，run `/content/sts2/runs/w3m-b` |
+| `sts2b`（GPU B） | 过夜线 B：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33），同一分叉点 | 约 23:10 启动等待，02:15 后开训 → 约 14:15 | `w3m_line.sh … b …`，日志 `/content/sts2/runs/w3m-b.driver.log`，run `/content/sts2/runs/w3m-b` |
 
 两条过夜线的官方读数在 u7664；判据见 `docs/w3m-overnight-plan-2026-11-04.md`（宏动作回退规则：A 的 u3564、u4064 都显著低于 M 的 u3064 则回退；B 的止损规则：从 u4064 起连续两点 B−A 的区间全在 0 以下则停 B；≥0.60/≥0.10 是目标不是承诺）。
 
@@ -29,3 +29,8 @@
 ## 预算
 
 22:30 余额 654 单位；过夜两条线约 165–180 单位；预计 11-05 15:00 余额约 470。用户给的上限：24 小时 400 单位。
+
+## 01:00 更新
+
+- M 在 00:42 因 `--max-hours 6` 提前停止（约 u2560），01:00 已续训到 u3064（预计 02:15 到达）；线 A 驱动因等待超时（4 小时）退出，已用 WAIT_MAX_S=28800 重启；线 B 的分叉 checkpoint 等待窗口改为 10 小时。两条过夜线预计 02:15 起跑，A 约 13:30、B 约 14:15 结束。
+- 主线 M 的 u2264 固定评测：dev-128 关 breaker 0.389 [0.364, 0.413]，65/128 进入第二幕，0 通关，为目前最佳。
