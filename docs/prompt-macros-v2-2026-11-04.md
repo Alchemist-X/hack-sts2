@@ -126,3 +126,7 @@ merge commit `77acd78`，无冲突（两侧只在 `sim/VEC.md` / `sim/tools/trai
   Vec 层的"选满自动确认"在真游戏侧没有对应的 confirm 点击，`all` checkpoint 在真游戏上会在第一个此类提示处 desync
   并 fail closed（孪生停用、fallback）。补法：孪生把 `prompt` 开时的 PromptSelect 行解码为 `(select, confirm?)` 计划，
   仅当孪生的环境在该步离开了此提示时才在真游戏点 confirm。
+- Colab 包：`tmp/colab/sts2train-d21adf4ad8.tar.gz`（7,232,705 B，sha256 ef377b832caf02c4f00219b42c3320606d7133553661c596bb2f769bce49fde7，
+  git_rev d21adf4，148 saves of saves-silent-a9）；aot_key 03f89cc37d4f 与 G 相同，复用 G 在 raven 上的 NativeAOT 构建
+  （`lib/Sts2Sim.Vec.so` 13,844,424 B，sha256 997bb8a0fa6c7b49445192c1acfdb836f2a59bff0e9180f10a39b1cc7b0e7053，GLIBC_2.34）。
+  未跑 `smoke_bundle.sh`。

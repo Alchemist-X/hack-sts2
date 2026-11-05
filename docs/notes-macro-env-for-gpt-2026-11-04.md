@@ -72,7 +72,8 @@ sts2train eval --checkpoint RUN_DIR/checkpoints/last.pt --seedset silent-a10-dev
 
 ## Colab 包 / NativeAOT
 
-- 包：`@@BUNDLE@@`（@@SIZE@@ 字节，sha256 `@@SHA256@@`），NativeAOT key **`03f89cc37d4f`**（`lib/Sts2Sim.Vec.so`，
+- 包：`sts2train-d21adf4ad8.tar.gz`（7,232,705 字节，sha256 `ef377b832caf02c4f00219b42c3320606d7133553661c596bb2f769bce49fde7`，
+  git_rev `d21adf4`；`.so` sha256 `997bb8a0fa6c7b49445192c1acfdb836f2a59bff0e9180f10a39b1cc7b0e7053`，与 owner G 在 raven 上构建的同 key 库逐字节相同），NativeAOT key **`03f89cc37d4f`**（`lib/Sts2Sim.Vec.so`，
   GLIBC_2.34）。v1 包（key `7aaa846a6a35`）的库不认识 `prompt`，会报 `unknown macro "prompt"`。
 - 用法同前：`bash run_train.sh RUN_DIR 12 2048 <你的训练参数> --macros all`。
 - Python 直接用：`VecEnv(n, macros="all")`；或 `config_json` 里 `"macros": ["prompt"]` / `"all"`。
