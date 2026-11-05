@@ -21,8 +21,8 @@ of the policy's own boss / elite / act-2 combat entries in fresh-started episode
 rings, which the env's auto-reset start sequence then starts episodes from (``harvest_*`` metrics; ``fresh_*`` counts
 fresh-entry starts only). ``explore_kinds`` / ``explore_eps`` (``--explore-kinds ChooseRestOption,BuyEntry --explore-eps
 E``, ``sts2train.explore``): at a rollout decision with a row of those kinds, with probability E the action is drawn
-uniformly from those rows; the stored log-prob is the mixture behaviour policy's (``explore_logp``), evaluation never
-explores (``explore_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
+uniformly from those rows; ``explore_logp`` (default ``decoupled``: log pi_old with the advantage x pi_old / b) sets
+how PPO's ratio accounts for the mixture behaviour policy b (GAE / values stay b's), evaluation never explores (``explore_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
 eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
@@ -238,7 +238,7 @@ class TrainConfig:
     # exploration for rare decision kinds (sts2train.explore; rollout only, never in evaluation)
     explore_kinds: str = ""         # RunActionKind names [:selector], comma-separated ("" = off)
     explore_eps: float = 0.0        # mixture weight of the uniform draw over the explore rows (0 = off)
-    explore_logp: str = "mixture"   # stored log-prob: mixture (log b) | decoupled (log pi_old, adv x pi_old / b) | policy
+    explore_logp: str = "decoupled"  # stored log-prob: decoupled (log pi_old, adv x pi_old / b) | mixture (log b) | policy
     # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
     cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
     eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
@@ -345,8 +345,21 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         out.explore_eps = 0.0               # --explore-kinds none on a resume turns an inherited explorer off
     if out.explore_eps > 0 and not out.explore_kinds:
         raise ValueError("--explore-eps > 0 needs --explore-kinds (RunActionKind names, e.g. ChooseRestOption,BuyEntry)")
+    if out.explore_kinds and out.explore_eps == 0:
+        if "explore_eps" in given:          # an explicit --explore-eps 0 is "off": drop the kinds with it
+            out.explore_kinds = ""
+        else:                               # kinds without an eps would silently run the control arm
+            raise ValueError(f"--explore-kinds {out.explore_kinds} needs --explore-eps E > 0 (eps is 0: no "
+                             "exploration would happen); pass --explore-eps, or --explore-kinds none")
     if out.explore_logp not in EXPLORE_LOGP_MODES:
         raise ValueError(f"explore_logp {out.explore_logp!r}: expected one of {EXPLORE_LOGP_MODES}")
+    if out.explore_eps > 0 and out.explore_logp == "mixture":
+        lim = float(out.clip) / (1.0 + float(out.clip))
+        if out.explore_eps >= lim:
+            raise ValueError(f"--explore-logp mixture at --explore-eps {out.explore_eps:g} >= clip / (1 + clip) = "
+                             f"{lim:.4f}: the policy-drawn rows' start ratio 1 / (1 - E) is outside the clip window, so "
+                             "they only get negative-advantage gradient (a drift independent of the advantages; "
+                             "sts2train.explore docstring); use --explore-logp decoupled (default) or a smaller E")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -1276,7 +1289,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         explorer = None                 # --explore-kinds / --explore-eps (sts2train.explore): rollout sampling only
         if cfg.explore_eps > 0:
             explorer = KindExplorer(spec, cfg.explore_kinds, cfg.explore_eps,
-                                    purpose_seed(seed_of(cfg, "sample_seed"), "explore"), logp_mode=cfg.explore_logp)
+                                    purpose_seed(seed_of(cfg, "sample_seed"), "explore"), logp_mode=cfg.explore_logp,
+                                    clip=cfg.clip)
             log(explorer.describe())
         # --- UI revisit cycles (sts2train.cycles): counted in every rollout; --cycle-cost charges the closing step ---
         cycles = CycleDetector(spec, cfg.envs, card_name=env.schema.vocab.cards.name)   # the library's spec

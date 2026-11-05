@@ -714,31 +714,41 @@ mixes a uniform draw into the **rollout** sampling at those decisions only:
   or `remove` (= `card_removal`) on `BuyEntry` (`BuyEntry:remove` = the removal rows only: a removal is a `BuyEntry`
   like any purchase, the kind alone cannot separate it). Unknown names fail at start-up with the library's list.
 - Behaviour policy b = (1 - E) pi + E u at those decisions (u uniform over the explore rows), b = pi elsewhere.
-  `--explore-logp` picks what PPO's ratio uses:
-  - `mixture` (default): the stored log-prob is log b, so the ratio pi_new / b is the true importance ratio and the
-    gradient is unbiased. Side effect: at explore decisions the ratio starts at pi / b, i.e. 1 / (1 - E) for rows the
-    policy drew (above the clip for E > clip / (1 + clip), so positive advantages there are clipped away) and ~0 for
-    explored rows the policy gives ~0, whose gradient is correspondingly small (the true on-policy gradient).
-  - `decoupled`: stores log pi_old and multiplies the normalised advantage by pi_old / b (decoupled PPO): the same
-    unbiased gradient, clip window centred on pi_old.
+  `--explore-logp` picks what PPO's ratio uses. Every mode corrects only the one-step policy ratio: GAE advantages and
+  value targets come from the b-trajectories with no off-policy correction (no V-trace / Retrace), so the critic
+  learns V^b and the advantages are b's (a SMITH forced at E of the rest sites lowers V upstream of rest sites relative
+  to V^pi; small, because these decisions are rare). The entropy bonus stays on pi.
+  - `decoupled` (default): stores log pi_old and multiplies the normalised advantage by pi_old / b (decoupled PPO,
+    Hilton et al. 2021): the ratio starts at 1 everywhere, so the clip window is centred on pi_old, and pi_old / b is
+    the importance weight of the drawn sample.
+  - `mixture`: the stored log-prob is log b, ratio pi_new / b. At explore decisions the ratio starts at pi / b:
+    1 / (1 - E) for the rows the policy drew (outside the clip for E > clip / (1 + clip) = 0.167 at clip 0.2, so they
+    only receive negative-advantage gradient) and ~0 for explored rows the policy gives ~0 (below 1 - clip, so they only
+    receive positive-advantage gradient): an advantage-independent drift away from the policy's own choices.
+    Refused at E >= clip / (1 + clip); `explore_mix_clip0` is the share of explore-decision samples whose mixture start
+    ratio is outside the window (logged in every mode).
   - `policy`: stores log pi_old (ratio pi_new / pi_old, as if pi had drawn every action): biased off-policy, but the
     explored rows get the full advantage x grad log pi push, the fastest way to move P(SMITH) off 0.
-  Advantages / values (GAE) are computed as usual; the entropy bonus stays on pi.
 - Randomness: the coin and the pick of slot s at step t of update u come from
   `default_rng([purpose_seed(sample_seed, "explore"), u, t])`: no state, so resumes continue the same stream and
   `--overlap double` draws each slot exactly as `--overlap off`; the torch sampling RNG is not touched. Works with
   `--macros` on or off, `--harvest`, `--overlap double`, resume (inherited from the checkpoint; `--explore-kinds none`
   or `--explore-eps 0` turns it off). E = 0 (default) builds no explorer: bit-identical to a build without it.
+  `--explore-kinds` without `--explore-eps` (eps 0) is refused rather than silently running the control arm.
+- Cost: a step with no explore row in any slot's candidate table (every combat step for `ChooseRestOption,BuyEntry`)
+  costs a host-side row scan only; a step with one copies the [n, w] log-probs and the actions to the host (two syncs
+  on CUDA). `t_explore_s` per update is the explorer's wall time; not yet measured on CUDA, so compare `infer_s` with
+  the explorer on and off in the GPU A/B.
 - Metrics per update (metrics.jsonl): `explore_eps`, `explore_decisions` (decisions with an explore row),
   `explore_share` (of valid decisions), `explore_steps` (mixture draws), `explore_policy_mass` (pi's summed
-  probability on the explore rows there), and per item `explore_present.<item>`, `explore_pmass.<item>`,
+  probability on the explore rows there), `explore_mix_clip0`, `t_explore_s`, and per item `explore_present.<item>`, `explore_pmass.<item>`,
   `explore_taken.<item>`, `explore_drawn.<item>` plus `_macro` variants over the item's macro rows:
   `explore_pmass_macro.ChooseRestOption` is P(SMITH:<card>) at rest sites (watch it recover from 0),
   `explore_taken_macro.BuyEntry` the removals taken. summary.json `explore` holds the run totals.
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
-    --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 [--explore-logp mixture|decoupled|policy]
+    --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 [--explore-logp decoupled|mixture|policy]
 ```
 
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)

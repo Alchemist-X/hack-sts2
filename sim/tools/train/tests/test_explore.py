@@ -1,6 +1,7 @@
 """Exploration for rare decision kinds (`sts2train.explore`, wave 9): kind / selector parsing and validation, the
 mixture draw on synthetic candidate tables (draws only at decisions with an explore row, uniform over those rows,
-never on masked / illegal rows, stored log-prob = log((1 - E) pi + E u) exactly, decoupled weights, policy mode),
+never on masked / illegal rows, stored log-prob = log((1 - E) pi + E u) exactly, decoupled weights (the default), the
+mixture start ratios / explore_mix_clip0, no host copy on steps without explore rows, policy mode),
 the pure (update, t, slot) draw stream, the config / CLI plumbing, that evaluation never explores, eps 0 = the
 default path, --overlap double reproduces off under a greedy policy with the explorer on, and a resumed run is
 deterministic."""
@@ -69,11 +70,14 @@ def test_parse_and_format():
 
 def test_resolve_config_rules():
     c = resolve_config({})
-    assert c.explore_kinds == "" and c.explore_eps == 0.0 and c.explore_logp == "mixture"
+    assert c.explore_kinds == "" and c.explore_eps == 0.0 and c.explore_logp == "decoupled"
     c = resolve_config({"explore_kinds": "ChooseRestOption, BuyEntry:remove", "explore_eps": 0.3})
     assert c.explore_kinds == "ChooseRestOption,BuyEntry:card_removal" and c.explore_eps == 0.3
     for bad in ({"explore_eps": 0.3}, {"explore_kinds": "BuyEntry", "explore_eps": 1.0},
-                {"explore_kinds": "BuyEntry", "explore_eps": -0.1}, {"explore_logp": "x"}):
+                {"explore_kinds": "BuyEntry", "explore_eps": -0.1}, {"explore_logp": "x"},
+                {"explore_kinds": "BuyEntry"},                          # kinds without eps: the control arm
+                {"explore_kinds": "BuyEntry", "explore_eps": 0.3, "explore_logp": "mixture"},  # >= clip / (1 + clip)
+                {"explore_kinds": "BuyEntry", "explore_eps": 0.2 / 1.2, "explore_logp": "mixture"}):
         with pytest.raises(ValueError):
             resolve_config(bad)
     base = ppo.config_dict(resolve_config({"explore_kinds": "BuyEntry", "explore_eps": 0.2}))
@@ -81,6 +85,13 @@ def test_resolve_config_rules():
     off = resolve_config({"explore_kinds": ""}, base)
     assert off.explore_kinds == "" and off.explore_eps == 0.0, "--explore-kinds none turns it off on a resume"
     assert resolve_config({"explore_eps": 0.0}, base).explore_eps == 0.0
+    off = resolve_config({"explore_kinds": "BuyEntry", "explore_eps": 0.0})
+    assert off.explore_kinds == "" and off.explore_eps == 0.0, "an explicit eps 0 is off, kinds dropped"
+    assert resolve_config({"explore_kinds": "BuyEntry", "explore_eps": 0.15, "explore_logp": "mixture"}).explore_eps \
+        == 0.15, "mixture below clip / (1 + clip)"
+    assert resolve_config({"explore_kinds": "BuyEntry", "explore_eps": 0.2, "explore_logp": "mixture",
+                           "clip": 0.3}).explore_eps == 0.2, "the limit follows --clip"
+    assert resolve_config({"explore_kinds": "BuyEntry", "explore_eps": 0.3}).explore_logp == "decoupled"
 
 
 def test_unknown_names_fail(spec, live):
@@ -149,7 +160,7 @@ def _table(spec, n=64, seed=0):
 
 def test_mixture_draws_and_logp_exact(spec):
     obs, lg = _table(spec)
-    ex = KindExplorer(spec, "ChooseRestOption", EPS, 123)
+    ex = KindExplorer(spec, "ChooseRestOption", EPS, 123, logp_mode="mixture")
     n = lg.shape[0]
     fired_total, picks = 0, []
     for t in range(40):
@@ -201,7 +212,7 @@ def test_decoupled_and_policy_modes(spec):
     obs, lg = _table(spec, n=32)
     for mode in ("decoupled", "policy"):
         ex = KindExplorer(spec, "ChooseRestOption", EPS, 9, logp_mode=mode)
-        ref = KindExplorer(spec, "ChooseRestOption", EPS, 9)
+        ref = KindExplorer(spec, "ChooseRestOption", EPS, 9, logp_mode="mixture")
         a, lp, a2, lp2, w, dist = _step(ex, obs, lg, t=3, seed=1)
         _, _, a3, lpb, _, _ = _step(ref, obs, lg, t=3, seed=1)
         assert torch.equal(a2, a3), "the same draws in every mode"
@@ -212,6 +223,48 @@ def test_decoupled_and_policy_modes(spec):
             assert np.all(w[1::2] == 1.0)
         else:
             assert w is None
+
+
+def test_start_ratios_and_clip0(spec):
+    """The mixture mode's start ratio pi / b: 1 / (1 - E) on a policy-drawn non-explore row (outside the 0.2 clip at
+    E = 0.5), ~0 on an explored ~0-probability row; explore_mix_clip0 counts both. Decoupled: w = that ratio, stored
+    log-prob = log pi_old (start ratio 1)."""
+    obs, lg = _table(spec, n=32)
+    ex = KindExplorer(spec, "ChooseRestOption", EPS, 9)
+    assert ex.logp_mode == "decoupled"
+    out, n_out, n_pres = [], 0, 0
+    for t in range(20):
+        _, _, a2, lp2, w, dist = _step(ex, obs, lg, t=t, seed=t)
+        pi = torch.softmax(lg.double(), -1).gather(1, a2[:, None].long())[:, 0].numpy()
+        for s in range(0, 32, 2):
+            j = int(a2[s])
+            if j == 5:              # LeaveRestSite: not an explore row
+                assert w[s] == pytest.approx(1 / (1 - EPS), rel=1e-5)
+            elif 1 <= j <= 4:       # an explored macro row at ~0 probability
+                assert w[s] < 1e-6
+            out.append(abs(float(w[s]) - 1) > 0.2)
+        assert np.all(w[1::2] == 1.0) and torch.allclose(lp2.double(), torch.from_numpy(np.log(pi)), atol=1e-4)
+    st = ex.pop_stats()
+    assert st["explore_mix_clip0"] == pytest.approx(sum(out) / len(out)) and st["t_explore_s"] >= 0
+
+
+def test_no_host_copy_without_explore_rows(spec):
+    """A step with no explore row in any slot (every combat step) never touches the distribution / device."""
+    obs = _obs(spec, 8)
+    for s in range(8):
+        _set_rows(spec, obs, s, ["PlayCard"] * 3 + ["EndTurn"])
+
+    class NoTouch:
+        def __getattr__(self, k):
+            raise AssertionError(f"dist.{k} read on a step without explore rows")
+
+    for mode in ("decoupled", "mixture", "policy"):
+        ex = KindExplorer(spec, "ChooseRestOption,BuyEntry", EPS, 1, logp_mode=mode)
+        a, lp = torch.zeros(8, dtype=torch.long), torch.zeros(8)
+        a2, lp2, w = ex(obs, torch.zeros(8, 8), NoTouch(), a, lp, update=1, t=0)
+        assert a2 is a and lp2 is lp and (w is None) == (mode != "decoupled")
+        st = ex.pop_stats()
+        assert st["explore_decisions"] == 0 and st["explore_share"] == 0 and st["explore_mix_clip0"] is None
 
 
 def test_selectors(live):
@@ -296,15 +349,16 @@ def test_eps_zero_is_the_default_path(tmp_path):
 
 
 def test_train_logs_explore_metrics(tmp_path):
-    for mode in ("mixture", "decoupled"):
-        s, rows = _run(tmp_path, mode, start_mode="stream", seed=2, explore_kinds=COMMON, explore_eps=0.3,
+    for mode, eps in (("mixture", 0.15), ("decoupled", 0.3)):
+        s, rows = _run(tmp_path, mode, start_mode="stream", seed=2, explore_kinds=COMMON, explore_eps=eps,
                        explore_logp=mode)
         assert len(rows) == 3 and all(r["explore_steps"] > 0 and 0 < r["explore_share"] <= 1 for r in rows)
         assert all(0 <= r["explore_policy_mass"] <= 1 + 1e-6 for r in rows)
         assert s["explore"]["explore_steps"] == sum(r["explore_steps"] for r in rows)
         assert all(r["explore_drawn.EndTurn"] <= r["explore_taken.EndTurn"] for r in rows)
+        assert all(0 <= r["explore_mix_clip0"] <= 1 and r["t_explore_s"] >= 0 for r in rows)
         cfg = json.loads((tmp_path / mode / "config.json").read_text())["config"]
-        assert cfg["explore_kinds"] == COMMON and cfg["explore_eps"] == 0.3 and cfg["explore_logp"] == mode
+        assert cfg["explore_kinds"] == COMMON and cfg["explore_eps"] == eps and cfg["explore_logp"] == mode
 
 
 def _greedy(self, x, *, compiled=True, adjust=None, explore=None):
@@ -323,7 +377,7 @@ def _greedy(self, x, *, compiled=True, adjust=None, explore=None):
 def test_overlap_double_reproduces_off_with_explore(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(ppo.InferenceRunner, "sample", _greedy)
     kw = {"start_mode": "stream", "seed": 4, "init_seed": 4, "sample_seed": 4, "explore_kinds": COMMON,
-          "explore_eps": 0.4, "explore_logp": mode}
+          "explore_eps": 0.15 if mode == "mixture" else 0.4, "explore_logp": mode}
     s0, r0 = _run(tmp_path, "off", overlap="off", **kw)
     s1, r1 = _run(tmp_path, "double", overlap="double", **kw)
     assert sum(r["explore_steps"] for r in r0) > 0

@@ -281,10 +281,12 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="at a rollout decision with >= 1 explore row, draw uniformly from the explore rows present with "
                         "probability E, else from the policy; never in evaluation or the loop breaker's greedy path; "
                         f"logs explore_* per update (default {D.explore_eps} = off, bit-identical to a build without it)")
-    g.add_argument("--explore-logp", dest="explore_logp", choices=("mixture", "decoupled", "policy"),
-                   help="log-prob stored for the PPO ratio at explore decisions: mixture = log((1-E) pi + E u) (ratio "
-                        "pi_new / b, unbiased); decoupled = log pi_old with the advantage x pi_old / b (clip centred on "
-                        "pi_old); policy = log pi_old (biased off-policy, fastest push on explored rows) "
+    g.add_argument("--explore-logp", dest="explore_logp", choices=("decoupled", "mixture", "policy"),
+                   help="log-prob stored for the PPO ratio at explore decisions: decoupled = log pi_old with the "
+                        "advantage x pi_old / b (importance-weighted one-step ratio, clip centred on pi_old); mixture = "
+                        "log((1-E) pi + E u) (ratio pi_new / b; refused at E >= clip / (1 + clip), where the clip "
+                        "turns it into an advantage-independent drift); policy = log pi_old (biased off-policy, "
+                        "fastest push on explored rows); GAE / values stay b's in every mode "
                         f"(default {D.explore_logp})")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")

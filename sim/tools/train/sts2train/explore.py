@@ -28,21 +28,35 @@ Items (``parse_kinds``): ``Kind`` = every row of that RunActionKind (by name, as
   ``rest.option_id``), macro or plain: ``ChooseRestOption:SMITH`` = every SMITH:<card> row (or the plain SMITH row
   without macros), without HEAL.
 
-Log-prob stored for PPO (``logp_mode``):
+Log-prob stored for PPO (``logp_mode``). What every mode corrects is the one-step policy ratio only: the advantages
+(GAE) and the value targets are computed from the b-trajectories with no off-policy correction (no V-trace / Retrace),
+so the critic learns V^b and the advantages are b's (e.g. a forced SMITH at 30% of rest sites lowers V upstream of rest
+sites relative to V^pi; small, because rest and shop decisions are rare). None of the modes is "unbiased" in that sense.
 
-- ``mixture`` (default): store log b(a|s). The update's ratio is pi_new / b, the importance ratio of the samples
-  actually drawn, so the surrogate's gradient at pi_new = pi_old is the unbiased on-policy gradient of pi. Caveat (by
-  construction): at an explore decision the ratio starts at pi / b, not 1: 1 / (1 - E) for a policy-drawn row (1.43 at
-  E = 0.3, outside the 0.2 clip, so a positive advantage there gives no gradient while a negative one does), and
-  ~ pi / (E u) ~ 0 for an explored row the policy gives ~0 to, whose gradient is then ~ ratio x A x grad log pi:
-  correct but small, so pi on the rare rows grows only as fast as the true policy gradient lets it (approx_kl /
-  clipfrac include those samples).
-- ``decoupled``: store log pi_old(a|s) and multiply the normalised advantage by w = pi_old / b (decoupled PPO, Hilton
-  et al. 2021: the proximal policy pi_old is separated from the behaviour policy b). Same expected gradient as
-  ``mixture`` at the start of the update, but the clip window is centred on pi_old (the ratio starts at 1 everywhere).
+- ``decoupled`` (default): store log pi_old(a|s) and multiply the normalised advantage by w = pi_old / b (decoupled
+  PPO, Hilton et al. 2021: the proximal policy pi_old is separated from the behaviour policy b). The ratio starts at 1
+  for every sample, so the clip window is centred on pi_old and w is the importance weight of the sample actually
+  drawn: the first-step surrogate gradient is the on-policy policy gradient of pi (from b's samples). An explored row
+  the policy gives ~0 gets w ~ 0: its gradient is the (small) true one, grad pi = pi grad log pi.
+- ``mixture``: store log b(a|s), ratio pi_new / b. At an explore decision the ratio starts at pi / b, not 1:
+  1 / (1 - E) for a policy-drawn non-explore row and ~ pi / ((1 - E) pi + E / cnt) for the explore rows. Under the
+  clip this is NOT the on-policy gradient: once 1 / (1 - E) > 1 + clip (E > clip / (1 + clip) = 0.167 at clip 0.2)
+  every row the policy drew starts outside the window, so it only gets the negative-advantage gradient (positive ones
+  are clipped flat), while an explored ~0-probability row starts below 1 - clip and only gets the positive-advantage
+  gradient: an advantage-independent drift away from the policy's own choices (e.g. P(leave shop) and P(HEAL) pushed
+  down whatever their value). `resolve_config` therefore refuses ``mixture`` at E >= clip / (1 + clip); below that the
+  explored low-probability rows still start clipped from below. ``explore_mix_clip0`` reports the share of the explore
+  decisions' samples whose mixture start ratio pi / b lies outside [1 - clip, 1 + clip] (in every mode; under
+  ``decoupled`` / ``policy`` the actual start ratio is 1).
 - ``policy``: store log pi_old and ignore the mixture (ratio = pi_new / pi_old as if pi had drawn every action): biased
   off-policy; the explored rows get the full A x grad log pi push (fast recovery of the rare rows' probability, also for
   rows whose advantage is only noise).
+
+Cost. Steps without any explore row in the candidate table (all combat steps for ``ChooseRestOption,BuyEntry``) cost
+only the numpy row scan of the observation: no device-to-host copy. A step with an explore row copies the [n, w]
+normalised log-probs and the [n] actions to the host once each (two syncs on CUDA). ``t_explore_s`` (per update) is
+the wall time spent in the explorer; on CUDA it includes waiting for the forward pass that the rollout would otherwise
+wait for at its own action copy, so compare ``infer_s`` explorer on / off rather than reading it as pure overhead.
 
 Randomness. The draws of slot s at rollout step t of update u (the update the rollout belongs to, absolute) come from
 ``np.random.default_rng([purpose_seed(sample_seed, "explore"), u, t])`` (two uniforms per slot of the N-slot batch: the
@@ -53,7 +67,7 @@ sample RNG is never touched by the explorer either way).
 
 Metrics per update (``pop_stats``): ``explore_eps``, ``explore_decisions`` (decisions with >= 1 explore row),
 ``explore_share`` (of the valid decisions), ``explore_steps`` (mixture draws), ``explore_policy_mass`` (mean of pi's
-summed probability on the explore rows at those decisions), and per item ``explore_present.<item>``,
+summed probability on the explore rows at those decisions), ``explore_mix_clip0`` (above), ``t_explore_s``, and per item ``explore_present.<item>``,
 ``explore_pmass.<item>`` (mean pi mass on the item's rows where present), ``explore_taken.<item>`` /
 ``explore_drawn.<item>`` (actions taken on the item's rows / of them by a mixture draw), plus ``..._macro.<item>``
 variants over the item's macro rows (B >= 0): ``explore_pmass_macro.ChooseRestOption`` is P(SMITH:<card>) at rest sites
@@ -63,6 +77,7 @@ with macros on.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -70,7 +85,7 @@ import torch
 
 from .features import ModelSpec
 
-LOGP_MODES = ("mixture", "decoupled", "policy")
+LOGP_MODES = ("decoupled", "mixture", "policy")       # [0] = the default
 GENERIC_SELECTORS = ("macro", "plain")
 SELECTOR_ALIASES = {"remove": "card_removal"}
 NEG_LIVE = -1e8                     # logits above this are live rows (masked ones are model.NEG = -1e9)
@@ -113,7 +128,8 @@ class KindExplorer:
     """The mixture sampler of the module docstring. `spec` = the library's (``ModelSpec.from_schema(env.schema)``);
     `kinds` = ``parse_kinds`` input; raises ValueError on a kind or selector the library does not have."""
 
-    def __init__(self, spec: ModelSpec, kinds, eps: float, seed: int, *, logp_mode: str = "mixture"):
+    def __init__(self, spec: ModelSpec, kinds, eps: float, seed: int, *, logp_mode: str = LOGP_MODES[0],
+                 clip: float = 0.2):
         items = parse_kinds(kinds)
         if not items:
             raise ValueError("explore: no kinds given")
@@ -148,6 +164,8 @@ class KindExplorer:
         self.eps = eps
         self.logp_mode = logp_mode
         self.seed = int(seed)
+        self.clip = float(clip)
+        self._u_key, self._u = None, None
         C = spec.cols["cand"]
         self.c_kind, self.c_b, self.c_oi = C["kind"], C["B"], C["option_index"]
         self.shop_cat = spec.cols["shop"]["category"]
@@ -161,7 +179,7 @@ class KindExplorer:
 
     def _zero(self) -> None:
         L = len(self.items)
-        self.acc = {"decisions": 0, "present": 0, "fired": 0, "mass": 0.0}
+        self.acc = {"decisions": 0, "present": 0, "fired": 0, "mass": 0.0, "clip0": 0, "t": 0.0}
         self.per = {k: np.zeros(L, dtype=np.float64) for k in
                     ("present", "pmass", "taken", "drawn", "present_macro", "pmass_macro", "taken_macro",
                      "drawn_macro")}
@@ -199,8 +217,10 @@ class KindExplorer:
 
     def uniforms(self, update: int, t: int, n_total: int) -> np.ndarray:
         """[2, n_total] float64 in [0, 1): coin and pick of every slot of the N-slot batch at (update, t)."""
-        rng = np.random.default_rng([self.seed, int(update), int(t)])
-        return rng.random((2, int(n_total)))
+        key = (int(update), int(t), int(n_total))
+        if key != self._u_key:              # --overlap double: both lanes of a step share one draw
+            self._u_key, self._u = key, np.random.default_rng([self.seed, key[0], key[1]]).random((2, key[2]))
+        return self._u
 
     # ------------------------------------------------------------------------------------------- sampling
 
@@ -210,22 +230,30 @@ class KindExplorer:
         from), `a` / `logp` the policy's draw. -> (actions, stored log-probs, advantage weights or None): the actions
         with the mixture draws substituted, the log-prob per `logp_mode`, w = pi_old / b for ``decoupled``. Slots
         without an explore row keep the policy's action and log-prob unchanged (the same tensors' values)."""
+        t0 = time.perf_counter()
+        try:
+            return self._step(obs, logits, dist, a, logp, update, t, lo, n_total)
+        finally:
+            self.acc["t"] += time.perf_counter() - t0
+
+    def _step(self, obs, logits, dist, a, logp, update, t, lo, n_total):
         n, w = int(logits.shape[0]), int(logits.shape[1])
         n_total = n if n_total is None else int(n_total)
-        rows_i, macro = self.item_rows(obs, w)
-        live = (logits > NEG_LIVE).cpu().numpy()
-        rows_i &= live[None]
-        rows = rows_i.any(0)                                # [n, w]: the union = the explore rows
-        cnt = rows.sum(1)
-        present = cnt > 0
         valid = np.asarray(obs["cand_n"]) > 0
         self.acc["decisions"] += int(valid.sum())
         self.run["decisions"] += int(valid.sum())
-        a_np = a.cpu().numpy().astype(np.int64)
+        rows_i, macro = self.item_rows(obs, w)      # host-side scan of the observation: no device sync
+        if not rows_i.any():                        # no explore row at all (e.g. every combat step): untouched
+            return a, logp, (np.ones(n, dtype=np.float32) if self.logp_mode == "decoupled" else None)
+        lp_all = dist.logits                        # normalised log-probs of pi (Categorical); masked rows ~ -1e9
+        lp_np = lp_all.float().cpu().numpy()        # the one [n, w] copy: live mask, probabilities, log pi
+        rows_i &= (lp_np > NEG_LIVE)[None]
+        rows = rows_i.any(0)                                # [n, w]: the union = the explore rows
+        cnt = rows.sum(1)
+        present = cnt > 0
         if not present.any():
-            self._count(rows_i, macro, None, a_np, np.zeros(n, dtype=bool))
-            w_out = np.ones(n, dtype=np.float32) if self.logp_mode == "decoupled" else None
-            return a, logp, w_out
+            return a, logp, (np.ones(n, dtype=np.float32) if self.logp_mode == "decoupled" else None)
+        a_np = a.cpu().numpy().astype(np.int64)
         u = self.uniforms(update, t, n_total)[:, lo:lo + n]
         fire = present & (u[0] < self.eps)
         k = np.minimum((u[1] * np.maximum(cnt, 1)).astype(np.int64), np.maximum(cnt - 1, 0))
@@ -234,11 +262,9 @@ class KindExplorer:
         a_new_np = np.where(fire, pick, a_np)
         dev = a.device
         a_new = torch.from_numpy(a_new_np).to(dev, a.dtype)
-        lp_all = dist.logits                                # normalised log-probs of pi (Categorical)
         lp_pi = lp_all.gather(1, a_new.unsqueeze(1)).squeeze(1)
         lp_pi = torch.where(torch.from_numpy(fire).to(dev), lp_pi, logp)    # unchanged where pi drew
-        probs = lp_all.exp()
-        p_np = probs.float().cpu().numpy()
+        p_np = np.exp(lp_np)
         self._count(rows_i, macro, p_np, a_new_np, fire)
         mass = (p_np * rows).sum(1)
         self.acc["present"] += int(present.sum())
@@ -246,16 +272,23 @@ class KindExplorer:
         self.acc["mass"] += float(mass[present].sum())
         self.run["explore_steps"] += int(fire.sum())
         self.run["explore_decisions"] += int(present.sum())
-        in_rows = torch.from_numpy(rows[np.arange(n), a_new_np] & present).to(dev)
-        pres = torch.from_numpy(present).to(dev)
-        lu = torch.from_numpy(self._loge - np.log(np.maximum(cnt, 1))).to(dev, lp_pi.dtype)
-        lp_b = torch.where(in_rows, torch.logaddexp(self._log1m + lp_pi, lu), self._log1m + lp_pi)
-        lp_b = torch.where(pres, lp_b, lp_pi)
-        if self.logp_mode == "mixture":
-            return a_new, lp_b, None
+        ar = np.arange(n)
+        in_np = rows[ar, a_new_np] & present
+        lu_np = self._loge - np.log(np.maximum(cnt, 1))
+        lpi_np = lp_np[ar, a_new_np].astype(np.float64)    # host copy of log pi(a) (w, explore_mix_clip0)
+        lb_np = np.where(in_np, np.logaddexp(self._log1m + lpi_np, lu_np), self._log1m + lpi_np)
+        lb_np = np.where(present, lb_np, lpi_np)
+        r0 = np.exp(lpi_np - lb_np)                         # the mixture mode's start ratio pi / b
+        self.acc["clip0"] += int((present & (np.abs(r0 - 1.0) > self.clip)).sum())
         if self.logp_mode == "decoupled":
-            return a_new, lp_pi, (lp_pi - lp_b).exp().cpu().numpy().astype(np.float32)
-        return a_new, lp_pi, None
+            return a_new, lp_pi, r0.astype(np.float32)
+        if self.logp_mode == "policy":
+            return a_new, lp_pi, None
+        in_rows = torch.from_numpy(in_np).to(dev)
+        pres = torch.from_numpy(present).to(dev)
+        lu = torch.from_numpy(lu_np).to(dev, lp_pi.dtype)
+        lp_b = torch.where(in_rows, torch.logaddexp(self._log1m + lp_pi, lu), self._log1m + lp_pi)
+        return a_new, torch.where(pres, lp_b, lp_pi), None
 
     def _count(self, rows_i, macro, p_np, a_np, fire) -> None:
         n = rows_i.shape[1]
@@ -285,7 +318,9 @@ class KindExplorer:
         A, P = self.acc, self.per
         out = {"explore_eps": self.eps, "explore_decisions": A["present"], "explore_steps": A["fired"],
                "explore_share": A["present"] / A["decisions"] if A["decisions"] else None,
-               "explore_policy_mass": A["mass"] / A["present"] if A["present"] else None}
+               "explore_policy_mass": A["mass"] / A["present"] if A["present"] else None,
+               "explore_mix_clip0": A["clip0"] / A["present"] if A["present"] else None,
+               "t_explore_s": round(A["t"], 4)}
         for i, it in enumerate(self.items):
             lb = it.label
             out[f"explore_present.{lb}"] = int(P["present"][i])
@@ -302,7 +337,8 @@ class KindExplorer:
 
     def describe(self) -> str:
         return (f"explore: kinds {self.kinds}, eps {self.eps:g} (rollout only; mixture draws uniform over the explore "
-                f"rows present), stored log-prob: {self.logp_mode}")
+                f"rows present), stored log-prob: {self.logp_mode}"
+                + (" (advantage x pi_old / b)" if self.logp_mode == "decoupled" else ""))
 
     def totals(self) -> dict:
         return {"kinds": self.kinds, "eps": self.eps, "logp_mode": self.logp_mode, **self.run}
