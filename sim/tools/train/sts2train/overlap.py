@@ -152,6 +152,7 @@ class VecPair:
         self.schema = first.schema
         self.pool_spec = first.pool_spec
         self.floor_step_cap = first.floor_step_cap
+        self.macros = first.macros          # room macros (both lanes get the same VecEnv kwargs)
         self.config = dict(first.config, num_envs=self.num_envs, overlap_lanes=[lane.config for lane in self.lanes])
         self.buffers: Buffers = self.schema.allocate(self.num_envs)
         for lane, (lo, hi) in zip(self.lanes, self.bounds):

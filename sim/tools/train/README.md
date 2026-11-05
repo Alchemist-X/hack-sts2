@@ -610,6 +610,30 @@ uv run --project sim/tools/train sts2train train ... --cycle-cost 0.01 --eval-at
 sample-off − greedy-off +0.029 [0.009, 0.050], greedy-on − sample-off +0.091 [0.070, 0.112]; sampled, u2225 and
 u2050 are level: −0.005 [−0.018, 0.007]. Diagnosis memo: the 2026-11-04 q-modes memo.)
 
+## Room macros (`--macros rest,shop`)
+
+`--macros rest,shop` (TrainConfig `macros`, default `""` = off) turns on the env's room macro candidates (sim/VEC.md
+"Room macros"): at a rest site SMITH becomes one candidate per upgradable deck card, in a shop the card removal one
+candidate per removable card, each doing pick + confirm in the same step, so the SMITH → select → cancel loop
+(docs/diag-2026-11-04/q4-loopbreaker.md) cannot happen and no rest / shop UI revisit cycle can close. The value is
+passed to the training VecEnv (pool and stream modes), the periodic `--eval-every` and `--eval-at` evaluations, kept
+in the checkpoint's config (a resume keeps it unless `--macros` is given again; `--macros none` turns it off) and in
+`config.json` (`env.macros`, only when on). `sts2train eval` and `report-card` play a checkpoint with its own
+`config.macros` (override: `eval --macros rest,shop|none`); the eval run's `config.json` has `limits.macros`.
+
+- Compatibility: the schema, the model spec and `encoder_version` are identical with macros on or off (the macro rows
+  reuse the `ChooseRestOption` / `BuyEntry` kinds with B = the deck row and `card_id` = the card), so every checkpoint,
+  of any preset and mid-run, resumes with `--macros rest,shop` without widening (`check_spec_compat`: identical model
+  inputs). Old behaviour is bit for bit unchanged without the flag (`tests/test_perf.py` default-path tests).
+- Rows are appended after the screen's other candidates; with `max_rows` 64 a deck larger than about 45 cards can
+  push the last macro rows past the training cut in a shop (counted in `cand_over_max_rows`).
+- Not covered: the real-game twin and the combat lookahead have no macro mapping (they play raw candidates).
+
+```bash
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop ...
+uv run --project sim/tools/train sts2train eval --seedset silent-a10-dev-v1 --checkpoint RUN_DIR/checkpoints/last.pt
+```
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash

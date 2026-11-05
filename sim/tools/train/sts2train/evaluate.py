@@ -253,7 +253,7 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
                    floor_step_cap: int = FLOOR_STEP_CAP, spec_compat: dict | None = None, loop_breaker: bool = True,
                    loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeat: int = 0,
                    parent_seedset: dict | None = None, log=print, allow_blind: bool = False,
-                   blind_purpose: str | None = None) -> dict:
+                   blind_purpose: str | None = None, macros=None) -> dict:
     """Play `seedset` with `model` (`policy` greedy, or sample with the play RNG of (`sample_seed`, game, `repeat`))
     and write the protocol run directory `out_dir`; returns the report (with the loop breaker's totals under
     ``loop_breaker``, the cycle detector's under ``cycles``). `parent_seedset` (a slice's full set: identity and the
@@ -264,7 +264,10 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
     Raises `features.SpecMismatch` (before any game is played) when `spec` (the model's) differs from the library's in
     the model's inputs; an encoder_version change outside them is accepted and noted. `spec_compat` = the record of a
     checkpoint loaded with `load_checkpoint(..., library=...)` (a widened model's `spec` already has the library's
-    sizes; the record says which enums were widened): it is logged and kept in config.json instead of this check's."""
+    sizes; the record says which enums were widened): it is logged and kept in config.json instead of this check's.
+
+    `macros` (None / "rest,shop"; ``sts2vec.VecEnv(macros=...)``): the env's room macro candidates; they must be the
+    ones the model was trained with (`checkpoint_macros`). Recorded as ``limits.macros`` in config.json when on."""
     from sts2vec import load, schema_of
 
     schema = schema_of(load())
@@ -315,7 +318,7 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
             ss, act, out_dir, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap,
             seed=int(sample_seed) if policy == "sample" else 0,
             policy_name=name, policy_hash=f"weights:{weights_hash}", log=log, allow_blind=allow_blind,
-            purpose=blind_purpose, summary_extra={"weights_hash": weights_hash},
+            purpose=blind_purpose, summary_extra={"weights_hash": weights_hash}, macros=macros,
             config_extra={"model": "sts2train entity-encoder PPO",
                           "checkpoint": str(checkpoint) if checkpoint else None,
                           "weights_hash": weights_hash, "params": sum(p.numel() for p in model.parameters()),
@@ -339,6 +342,12 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
         return rep
     finally:
         model.train(was_training)
+
+
+def checkpoint_macros(ck: dict | None) -> str:
+    """The room macros ("rest,shop", "" = off) of a checkpoint's training config (``TrainConfig.macros``; checkpoints
+    from before the option have none)."""
+    return str(((ck or {}).get("config") or {}).get("macros") or "")
 
 
 def slice_seedset(seedset, chunk: str | None) -> tuple[dict, dict | None]:
@@ -365,12 +374,13 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
              step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, loop_breaker: bool = True,
              loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeats: int = 1,
              chunk: str | None = None, log=print, allow_blind: bool = False,
-             blind_purpose: str | None = None) -> dict:
+             blind_purpose: str | None = None, macros=None) -> dict:
     """`sts2train eval`: load `checkpoint` for the library sts2vec loads (`load_checkpoint(library=...)`: refused with
     `SpecMismatch` before any game, widened when its embedded enums only gained members) and evaluate it. The weights
     hash is the checkpoint's (a widened model adds only zero rows). `repeats` > 1 (sample mode): ``out_dir/r<k>``
     per repeat and ``out_dir/repeats.json``; the returned report is the first repeat's with ``repeats`` (one row per
-    repeat, the pooled progress mean)."""
+    repeat, the pooled progress mean). `macros` None = the checkpoint's training env's (`checkpoint_macros`); "" /
+    "none" = off."""
     from sts2vec import load, schema_of
 
     from .isolation import check_blind_eval
@@ -382,6 +392,11 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
     check_blind_eval(seedset, allow_blind=allow_blind, purpose=blind_purpose)     # refuse before loading anything
     ss, parent = slice_seedset(seedset, chunk)
     model, spec, ck = load_checkpoint(checkpoint, device, library=ModelSpec.from_schema(schema_of(load())))
+    from sts2vec.pool import parse_macros
+
+    macros = ",".join(parse_macros(checkpoint_macros(ck) if macros is None else macros))
+    if macros:
+        log(f"room macros: {macros}")
     reps = []
     for r in range(repeats):
         out = Path(out_dir) / f"r{r}" if repeats > 1 else Path(out_dir)
@@ -390,7 +405,7 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
                                    floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"),
                                    loop_breaker=loop_breaker, loop_breaker_k=loop_breaker_k, policy=policy,
                                    sample_seed=sample_seed, repeat=r, parent_seedset=parent, log=log,
-                                   allow_blind=allow_blind, blind_purpose=blind_purpose))
+                                   allow_blind=allow_blind, blind_purpose=blind_purpose, macros=macros or None))
     if repeats == 1:
         return reps[0]
     rows = [{"repeat": r, "dir": f"r{r}", "games": x["headline"]["games"],

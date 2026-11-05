@@ -59,10 +59,10 @@ def repo_sha() -> str | None:
         return None
 
 
-def _make_env(ss: dict, threads: int, step_cap: int, floor_step_cap: int, dll=None) -> VecEnv:
+def _make_env(ss: dict, threads: int, step_cap: int, floor_step_cap: int, dll=None, macros=None) -> VecEnv:
     n = len(ss["games"])
     env = VecEnv(n, threads=threads, step_cap=step_cap, floor_step_cap=floor_step_cap, auto_reset=False,
-                 seed_text="EVAL", content=ss["content"], pool=None, dll=dll)
+                 seed_text="EVAL", content=ss["content"], pool=None, macros=macros, dll=dll)
     try:
         for g in ss["games"]:
             env.pool.add_fresh(g["character"], seed=g["seed"], ascension=ss["ascension"], content=ss["content"])
@@ -81,13 +81,13 @@ def _end_result(term: int, reward: float, status: int) -> str:
 
 
 def replay(ss: dict, actions_log: list[list[int]], *, step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP,
-           threads: int = 8, dll=None) -> list[dict]:
-    """Re-play each game's recorded candidate indices on a fresh env (same limits as the evaluation).
+           threads: int = 8, dll=None, macros=None) -> list[dict]:
+    """Re-play each game's recorded candidate indices on a fresh env (same limits and room macros as the evaluation).
 
     Returns per game ``{"ended", "result", "act", "floor", "state_hash"}`` where ``state_hash`` is taken right after
     the game's last recorded action (or after its terminal / truncating step)."""
     n = len(ss["games"])
-    env = _make_env(ss, threads, step_cap, floor_step_cap, dll)
+    env = _make_env(ss, threads, step_cap, floor_step_cap, dll, macros)
     try:
         obs = env.reset(start_ids=np.arange(n, dtype=np.int32))
         le = env.schema.cols("last_episode")
@@ -122,14 +122,18 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
              floor_step_cap: int = FLOOR_STEP_CAP, seed: int = 0, policy_name: str | None = None,
              policy_hash: str | None = None, config_extra: dict | None = None, summary_extra: dict | None = None,
              log: Callable[[str], None] = print, dll=None, allow_blind: bool = False,
-             purpose: str | None = None) -> dict:
+             purpose: str | None = None, macros=None) -> dict:
     """Play ``seedset`` (name, id, path or dict) with ``policy`` (built-in name, ``module:callable``,
     ``file.py:callable`` or a callable; see ``sts2vec.policies``) and write the protocol run directory ``out_dir``.
     Returns the report dict (``report["headline"]["progress_mean"]`` is the protocol metric).
 
     A seed set with games of a frozen blind set (``protocol.blind_overlap``) raises ``protocol.BlindSetError`` before
     anything runs unless ``allow_blind`` and a ``purpose`` are given; the access is then logged to
-    ``out_dir/blind-access.jsonl`` (``protocol.require_blind_access``)."""
+    ``out_dir/blind-access.jsonl`` (``protocol.require_blind_access``).
+
+    ``macros`` (``VecEnv(macros=...)``; default off): the env's room macro candidates, used for the play and the replay
+    audit and recorded as ``limits.macros`` in config.json (only when on). A game's ``history_actions`` index those
+    candidate lists, so they replay only with the same macros."""
     ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(seedset)
     fn, label, phash = resolve(policy)
     policy_name = policy_name or label
@@ -144,7 +148,8 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
     out = Path(out_dir)
     (out / "games").mkdir(parents=True, exist_ok=True)
     t_start = time.monotonic()
-    env = _make_env(ss, threads, step_cap, floor_step_cap, dll)
+    env = _make_env(ss, threads, step_cap, floor_step_cap, dll, macros)
+    macros = env.macros
     schema = env.schema
     try:
         obs = env.reset(start_ids=np.arange(n, dtype=np.int32))
@@ -226,7 +231,8 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
     finally:
         env.close()
 
-    rep = replay(ss, actions_log, step_cap=step_cap, floor_step_cap=floor_step_cap, threads=threads, dll=dll)
+    rep = replay(ss, actions_log, step_cap=step_cap, floor_step_cap=floor_step_cap, threads=threads, dll=dll,
+                 macros=macros)
     replay_ok = []
     for i in range(n):
         r, p = result[i] or {}, rep[i]
@@ -258,7 +264,8 @@ def evaluate(seedset: str | dict, policy, out_dir: str | Path, *, threads: int =
     cfg = {"run_id": out.name, "protocol_version": PG.PROTOCOL_VERSION, "seedset": ss, "policy": policy_name,
            "model": None, "effort": None, "thinking": None, "server_version": env_version, "repo_sha": repo_sha(),
            "prompt_hash": policy_hash, "reveal_moves": False, "obs_mode": "sts2vec",
-           "limits": {"step_cap": step_cap, "floor_step_cap": floor_step_cap}, "eval_seed": seed, "threads": threads,
+           "limits": {"step_cap": step_cap, "floor_step_cap": floor_step_cap, **({"macros": list(macros)} if macros else {})},
+           "eval_seed": seed, "threads": threads,
            "evaluator": "sts2vec eval", **(config_extra or {})}
     with open(out / "config.json", "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=1)
