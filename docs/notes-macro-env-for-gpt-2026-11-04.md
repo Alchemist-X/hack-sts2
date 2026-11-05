@@ -99,8 +99,9 @@ det = CycleDetector(spec, scope="all")   # 只计数：reset 后 observe(obs)；
 - **SmithCount ≠ 1**（一次升级多张的休息点）不展开，仍走原始提示流程（宏开时无取消）。
 - **奖励卡界面（非提示的 CardReward 阶段）**的 Skip 回到奖励界面，理论上可成环，未改；随机检查中 0 次。
 - **真游戏孪生**（`scripts/live/nn_twin`）：休息点 SMITH / 商店 REMOVE 宏已映射为真实游戏中逐步校验的点击序列（还没在真游戏上
-  跑过；REMOVE 与 play server 干跑 0 desync，SMITH 只有单元测试）。**`prompt` 宏在孪生侧尚未映射**：孪生的模拟器会自动确认而
-  真游戏不会，首个"选后只剩确认"的提示就会 desync（fail closed：孪生停用，转 fallback）。真游戏评测 `all` 模型前要补这一步。
+  跑过；REMOVE 与 play server 干跑 0 desync，SMITH 只有单元测试）。**`prompt` 宏在孪生侧已映射（W5 2026-11-05，分支
+  `train/w5-twin-prompt`）**：孪生 env 在该步提交提示时，真游戏在选牌后补点确认（游戏自己关掉则不点），play server 干跑
+  0 desync；**还没在真游戏上跑过**（README-nn-twin.md “prompt 宏”）。
 - combat lookahead 的搜索环境没有宏映射；play server / LLM 通道用 `RunSim.LegalActions()`，不受影响。
 - 还没有用 `--macros all` 做过正式训练，只有 6 更新冒烟与续训冒烟。
 

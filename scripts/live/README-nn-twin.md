@@ -233,6 +233,38 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
   真实游戏里升级 / 删牌网格的顺序是否与牌组顺序一致、删牌确认是否总有预览，都还要第一次真机运行来确认（看
   `macro.steps` 和 `macro_grid` desync）。
 
+### prompt 宏（`--macros all` = `rest,shop,prompt`，W5 2026-11-05）
+
+`all` 训练的模型在孪生里看到的是“无取消、选满即提交”的提示（sim/VEC.md “Prompt macros v2”）。这些行沿用
+`PromptSelect` / `PromptConfirm` 的种类，所以不是 `macro` Act；runner 按孪生 env **自己走完这一步后的状态**决定游戏里的点击
+（`macros.py` “Prompt macros”，`Runner.prompt_commit`）：
+
+| 孪生的行 | 游戏里的点击 |
+| --- | --- |
+| `PromptSelect(A)`，孪生这一步**没**提交（exactly-k 的前 k−1 张、up-to-N 未满） | 只选这张牌（按 key + 名次配对，同其他选牌） |
+| `PromptSelect(A)`，孪生这一步提交了（离开了提示，或站在另一个提示里：`global_i.prompt_picked` 不是原来 +1 / `prompt_site_hash` 变了）——exactly-1、exactly-k 的第 k 张、up-to-N 的第 N 张、无序提示选到末尾 | 选这张牌，然后：游戏仍显示已选的牌且有确认键 → 点确认；游戏已自己关掉选择 → 不点（`closed_by_game`）；两边都进了新提示 → 不点（`next_prompt`）；其余（已选、无确认键；孪生已离开而游戏是新的未选提示；确认被拒）→ **fail closed** |
+| `PromptConfirm`，已有选牌（DONE） | 游戏的确认 |
+| `PromptConfirm`，0 张（DECLINE，只在游戏允许时列出） | 游戏的确认 / 跳过键；**绝不**映射到可取消站点的“取消”（那会回到打开提示的画面）——游戏只给取消时这行不映射（同步时换成游戏提供的次优行，否则 follow） |
+| `PromptCancel` | 宏开时不该出现；候选表里一出现就 fail closed（`prompt_cancel_row`，孪生停用、兜底到下一个存档点） |
+| 休息点 / 商店 `MACRO_FALLBACK`（status 512，宏行会超过 64 行） | 原始 `SMITH` / 删牌行（普通 `rest` / `buy` 映射）+ 上面的无取消提示行；计数器 `twin_macro_fallback` |
+
+- 孪生侧：`Twin(macros="all")`（或 `"rest,shop,prompt"`；`--macros checkpoint` 读 checkpoint 的 `config.macros`）→
+  `twin.prompt_macros`；`Twin.prompt_marker()` 读 `prompt_picked / prompt_site_hash / prompt_needs_confirm / min / max`。
+  dry run 的 token：提交且孪生提示需要确认时是 `pick j; confirm`，否则 `pick j`（与 play server 的历史逐条相等）。
+- 游戏侧：STS2_MCP 的网格里已选的牌还在，再选一次就是取消选择；`mcp.acts_of` 不再把已选的牌（`is_selected` /
+  `selected_indices`）列为可选，k 张选择的后几张只在未选的牌里按名次配对（模拟器没有取消选择）。
+- 决策记录多一个 `prompt_macro` 字段：`committed`、`picked`、`needs_confirm`、`bounds`，提交时还有 `status`、`steps`、
+  `failure`；计数器 `prompt_selects`、`prompt_commits`、`prompt_commit_confirmed / closed_by_game / next_prompt / failed`、
+  `prompt_commit_failures`、`prompt_cancel_rows`。
+- 测试：`scripts/live/tests/test_prompt_macros.py`（假 MCP：exactly-1 手牌选择 HAND_TRICK 型、exactly-2 事件变形、
+  up-to-N 的 DONE 与第 N 张自动确认、DECLINE = 跳过、DECLINE 不变成取消、取消行 fail closed、MACRO_FALLBACK 的 SMITH
+  路径、三种 desync fail closed）；`test_dry_run.py` 的 `--macros all` 随机策略 dry run 与 `nn_twin_play --macros all`
+  checkpoint dry run（0 desync、token 全同）。
+- **还没覆盖 / 没验证**：没在真实游戏里跑过；真实游戏的手牌选择在选中后是否把牌移出 `cards`、哪些提示游戏自己关闭、
+  哪些要确认键，都只按 v0.111.0 的状态形状推断（规则对两种情况都成立，但要看第一次真机运行的 `prompt_macro.steps`）；
+  同 id + 升级的副本仍按名次配对（手牌里费用被临时改过的副本分不出来）；一次升级多张的休息点（SmithCount ≠ 1）照旧走
+  原始提示；combat lookahead 没有宏映射。
+
 ## 开发者：dry run 与测试
 
 ```bash
