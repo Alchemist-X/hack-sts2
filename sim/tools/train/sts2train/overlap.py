@@ -493,7 +493,7 @@ class OverlapRollout:
     `make_trackers(n)` -> {"rewards", "shaper", "breaker", "cycles", optional "run_stats"} for a lane of n slots;
     `aux_full` = the trainer's ``AuxTargets`` (or None)."""
 
-    def __init__(self, env, make_trackers, *, aux_full=None):
+    def __init__(self, env, make_trackers, *, aux_full=None, explorer=None):
         self.stream = isinstance(env, LaneStreamEnv)
         pair = env.env if self.stream else env
         if not isinstance(pair, VecPair):
@@ -503,6 +503,7 @@ class OverlapRollout:
         self.cycles = LaneCycles(self.lanes)
         self.breaker = LaneBreakers(self.lanes) if self.lanes[0].breaker is not None else None
         self.shaper = LaneShapers(self.lanes) if self.lanes[0].shaper is not None else None
+        self.explorer = explorer        # sts2train.explore (one instance; draws keyed by the global slot)
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sts2train-overlap")
         self.totals = {"t_overlap_wait": 0.0, "t_rollout": 0.0}
 
@@ -527,7 +528,7 @@ class OverlapRollout:
         self.worker.shutdown(wait=True)
 
     def rollout(self, *, upd: int, store, runner, device, max_rows: int, static: bool, track, steps: int,
-                cycle_cost: float, r_obj, cyc_r, hooks_on: bool, episode_hooks, episode_fields, errors_seen: dict,
+                cycle_cost: float, r_obj, cyc_r, hooks_on: bool, adv_w=None, episode_hooks, episode_fields, errors_seen: dict,
                 check_forward=None) -> dict:
         """One rollout window of `steps` into `store` (rows of both lanes). Returns the loop's counters as ``train``
         keeps them for one env: env_s, infer_s, wait_s, rollout_s, n_steps, se_n, cg_n, il_n, over_n, fs_n,
@@ -548,10 +549,16 @@ class OverlapRollout:
             x = obs_to_device(o, device, max_rows=max_rows, static=static)
             if check_forward is not None:
                 check_forward(x)
+            ex_kw = {}
+            if self.explorer is not None:   # the N-slot draw at (update, t), this lane's rows: as --overlap off
+                ex_kw["explore"] = lambda lg, d_, a_, lp_: self.explorer(o, lg, d_, a_, lp_, update=upd + 1, t=t,
+                                                                         lo=L.lo, n_total=self.pair.num_envs)
             if L.breaker is None:
-                a, logp, value = runner.sample(x)
+                a, logp, value = runner.sample(x, **ex_kw)
             else:
-                a, logp, value = runner.sample(x, adjust=lambda lg: L.breaker.apply(o, lg))
+                a, logp, value = runner.sample(x, adjust=lambda lg: L.breaker.apply(o, lg), **ex_kw)
+            if adv_w is not None:
+                adv_w[t, L.lo:L.hi] = runner.explore_w
             store.put_rows(t, L.lo, L.hi, x, o)
             a_np = a.cpu().numpy().astype(np.int32)
             valid = cand_n > 0
