@@ -43,7 +43,8 @@ is decided by the twin's own env after its step (``prompt_committed``):
                              closed the selection itself, a failure when it still shows the picks and offers no confirm
   PromptConfirm, picks >= 1  DONE: the game's confirm
   PromptConfirm, 0 picks     DECLINE: the game's confirm / skip; never the game's cancel of a cancelable site (cancel
-                             goes back to the screen that opened the prompt, which the twin did not do)
+                             goes back to the screen that opened the prompt, which the twin did not do) -- the same
+                             rule with prompt macros off (``Runner.map_row``)
   PromptCancel               never listed with prompt macros on; a candidate table that shows one fails closed
   MACRO_FALLBACK (512)       the rest / shop expansion would exceed 64 rows: the plain SMITH / removal row, then the
                              prompt rows above (no cancel)

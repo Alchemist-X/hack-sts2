@@ -383,11 +383,12 @@ class Runner:
             if m is not None:
                 return m
         m = match_act(tact, racts, tacts, relaxed=relaxed)
-        if (m is not None and self.prompt_macros and tact.kind == "confirm" and tact.key == ("empty",)
-                and is_true_cancel(m)):
-            # prompt macros: DECLINE exists only where the game's own prompt allows declining (its confirm / skip
-            # button); the cancel of a cancelable site goes back to the screen that opened the prompt instead. A
-            # skippable choose-a-card screen publishes its cancel and its skip together: DECLINE is the skip.
+        if m is not None and tact.kind == "confirm" and tact.key == ("empty",) and is_true_cancel(m):
+            # DECLINE (PromptConfirm at 0 picks), prompt macros on or off: it exists only where the game's own prompt
+            # allows declining (its confirm / skip button); the cancel of a cancelable site goes back to the screen
+            # that opened the prompt instead. A skippable choose-a-card screen publishes its cancel and its skip
+            # together: DECLINE is the skip; a screen that offers only the cancel leaves DECLINE unmapped. (The
+            # PromptCancel row, listed only with prompt macros off, still maps to the game's cancel.)
             skips = [r for r in racts if (r.kind == "cancel" and not is_true_cancel(r))
                      or (r.kind == "card_alt" and r.key == ("skip",))]
             return skips[0] if skips else None

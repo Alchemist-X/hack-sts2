@@ -244,7 +244,7 @@ desync 要到这场战斗结束（奖励画面的存档）才能对齐**；其�
 | `PromptSelect(A)`，孪生这一步**没**提交（exactly-k 的前 k−1 张、up-to-N 未满） | 只选这张牌（按 key + 名次配对，同其他选牌） |
 | `PromptSelect(A)`，孪生这一步提交了（离开了提示，或站在另一个提示里：`global_i.prompt_picked` 不是原来 +1 / `prompt_site_hash` 变了）——exactly-1、exactly-k 的第 k 张、up-to-N 的第 N 张、无序提示选到末尾 | 选这张牌，然后：游戏仍显示已选的牌且有确认键 → 点确认；游戏已自己关掉选择 → 不点（`closed_by_game`）；两边都进了新提示 → 不点（`next_prompt`）；游戏显示的已选张数（`View.picked`）不等于孪生的 picked+1 → 不点，**fail closed**（`prompt_picked`）；其余（已选、无确认键；孪生已离开而游戏是新的未选提示；确认被拒）→ **fail closed** |
 | `PromptConfirm`，已有选牌（DONE） | 游戏的确认 |
-| `PromptConfirm`，0 张（DECLINE，只在游戏允许时列出） | 游戏的确认 / 跳过键（可跳过的 choose 画面同时给 `cancel_selection` 和 `skip_card_selection`：取跳过）；**绝不**映射到可取消站点的“取消”（那会回到打开提示的画面）——游戏只给取消时这行不映射（同步时换成游戏提供的次优行，否则 follow） |
+| `PromptConfirm`，0 张（DECLINE，只在游戏允许时列出） | 游戏的确认 / 跳过键（可跳过的 choose 画面同时给 `cancel_selection` 和 `skip_card_selection`：取跳过）；**绝不**映射到可取消站点的“取消”（那会回到打开提示的画面）——游戏只给取消时这行不映射（同步时换成游戏提供的次优行，否则 follow）。**宏关时（`--macros rest,shop` / none）同一规则**：DECLINE 有跳过就取跳过、绝不取取消；宏关时另有的 `PromptCancel` 行仍映射到游戏的取消 |
 | `PromptCancel` | 宏开时不该出现；候选表里一出现就 fail closed（`prompt_cancel_row`，孪生停用、兜底到下一个存档点） |
 | 休息点 / 商店 `MACRO_FALLBACK`（status 512，宏行会超过 64 行） | 原始 `SMITH` / 删牌行（普通 `rest` / `buy` 映射）+ 上面的无取消提示行；计数器 `twin_macro_fallback` |
 

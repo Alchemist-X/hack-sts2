@@ -340,11 +340,47 @@ def test_decline_never_becomes_the_cancel_of_a_cancelable_site(tmp_path):
     rec = records(tmp_path)[-1]
     assert rec["policy"] == "substitute" and rec["substituted_for"] == "twin confirm"
     assert r.mode == "lockstep" and r.twin_ok
-    # without prompt macros the old mapping stands (an empty confirmation finds the game's cancel / skip button)
+
+
+def test_decline_with_prompt_macros_off_is_the_skip_never_the_cancel(tmp_path):
+    """Prompt macros off (``--macros rest,shop``, the main line): the same DECLINE rule. On a choose-a-card screen that
+    publishes cancel and skip together DECLINE is the skip; on a cancel-only screen it does not map (in sync the runner
+    substitutes the best row the game does offer); the PromptCancel row still maps to the game's cancel."""
+    cards = [card("PRODUCTION", 0), card("ULTIMATE_DEFEND", 1)]
+    # cancel + skip: the skip, end to end in lockstep
+    game = FakeMcp({"g": grid("choose", cards, can_cancel=True, can_skip=True),
+                    "e": state("event", event={"event_id": "X"})},
+                   [(("g", {"action": "skip_card_selection"}), "e")], "g")
+    tw = choose_twin([sel("PRODUCTION", 0, 0), sel("ULTIMATE_DEFEND", 1, 1), twin("confirm", ("empty",), row=2),
+                      twin("cancel", row=3)])
     tw.prompt_macros = False
-    racts = FakeMcp({"g": grid("choose", cards, can_cancel=True)}, [], "g").observe().acts
-    assert r.map_row(tw.frames["p"].acts[1], tw.frames["p"].acts, racts, relaxed=False).native == \
+    r = runner(tmp_path, game, tw, [2])
+    racts = game.observe().acts
+    assert [a.native["action"] for a in racts if a.kind == "cancel"] == ["cancel_selection", "skip_card_selection"]
+    decline, cancel = tw.frames["p"].acts[2], tw.frames["p"].acts[3]
+    assert r.map_row(decline, tw.frames["p"].acts, racts, relaxed=False).native == {"action": "skip_card_selection"}
+    assert r.map_row(cancel, tw.frames["p"].acts, racts, relaxed=False).native == {"action": "cancel_selection"}
+    step(r, game, tw)
+    assert game.sent == [{"action": "skip_card_selection"}] and tw.steps == [2]
+    assert records(tmp_path)[-1]["policy"] == "greedy" and r.mode == "lockstep" and r.twin_ok
+    # the real STS2_MCP fixture (can_cancel and can_skip together)
+    raw = json.loads((FIXTURE / "card_select_choose.json").read_text())
+    assert r.map_row(decline, [decline], mcp.acts_of(raw), relaxed=False).native == {"action": "skip_card_selection"}
+    # cancel only: DECLINE does not map; in sync the runner substitutes a select, never the cancel
+    game2 = FakeMcp({"g": grid("choose", cards, can_cancel=True), "e": state("event", event={"event_id": "X"})},
+                    [(("g", {"action": "select_card", "index": 0}), "e")], "g")
+    tw2 = choose_twin([sel("PRODUCTION", 0, 0), twin("confirm", ("empty",), row=1), twin("cancel", row=2)])
+    tw2.prompt_macros = False
+    r2 = runner(tmp_path, game2, tw2, [1], name="cancel_only")
+    racts2 = game2.observe().acts
+    assert r2.map_row(tw2.frames["p"].acts[1], tw2.frames["p"].acts, racts2, relaxed=False) is None
+    assert r2.map_row(tw2.frames["p"].acts[2], tw2.frames["p"].acts, racts2, relaxed=False).native == \
         {"action": "cancel_selection"}
+    step(r2, game2, tw2)
+    assert game2.sent == [{"action": "select_card", "index": 0}] and tw2.steps == [0]
+    rec = records(tmp_path, "cancel_only")[-1]
+    assert rec["policy"] == "substitute" and rec["substituted_for"] == "twin confirm"
+    assert r2.mode == "lockstep" and r2.twin_ok
 
 
 # ------------------------------------------------------------------------------------------------ no cancel
