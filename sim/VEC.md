@@ -233,6 +233,56 @@ card needed two decisions (open, then pick) and the cards were invisible until t
   macro row against `reward_choices` and steps a shadow run by its expansion (10,000 decision points);
   `VecEncoderTests.Test_VecEncoder_TreasureAndCardRewardHidden` (74 rewards screens: the cards in `reward_choices`).
 
+### Room macros (opt-in, W3 2026-11-04; `RoomMacros.cs`, config `macros`)
+
+Motivation (docs/diag-2026-11-04/q4-loopbreaker.md): at a rest site the policy picked SMITH, then cancelled on the
+DeckUpgrade prompt and came back to a byte-identical rest site (173 of u2225's 177 dev-128 loop-breaker interventions;
+13 % of rest visits upgraded); the shop's card removal looped the same way. With `config_json` `"macros": ["rest",
+"shop"]` (or `"rest,shop"`; Python `VecEnv(macros="rest,shop")`, trainer `--macros rest,shop`) those screens take the
+whole choice in one decision. **Off is the default** and lists exactly the earlier candidates (C# test: every buffer
+of a `Macros = None` env equals the default env's; Python `make_config` leaves the key out).
+
+- `rest`: at a rest site (loop phase RestSite, no pending prompt) the `ChooseRestOption(A)` row of a
+  `SmithRestSiteOption` with `SmithCount == 1` is replaced by one row **`ChooseRestOption(A, B = d)`** per upgradable
+  master-deck card d (`CardInstance.IsUpgradable`, the filter of `RoomPrompts.FromDeckForUpgrade`). HEAL and every other
+  option stay; a SMITH with `SmithCount != 1` stays raw.
+- `shop`: in a shop (loop phase Shop, no pending prompt) the legal `BuyEntry(A)` row of the `MerchantCardRemovalEntry`
+  is replaced by one row **`BuyEntry(A, B = d)`** per removable deck card d (`IsRemovable`, the filter of
+  `RoomPrompts.FromDeckForRemoval`). The rows exist only when the plain purchase is legal (stocked, enough gold); the
+  game charges the entry's price as before.
+- Execution (`RoomMacros.Execute`): the game's own three clicks, each through the env's step (`StepFast` / tape path):
+  `Kind(A)` opens the DeckUpgrade / DeckRemove prompt (checked: kind and site `SmithRestSiteOption.OnSelect` /
+  `OneOffSynchronizer.DoMerchantCardRemoval`), `PromptSelect(j)` of the option whose `InstanceId` is deck card d's,
+  `PromptConfirm`. Any divergence throws → SIM_ERROR (fail closed). No cancel path exists; a prompt a hook opens
+  afterwards is left to the policy. One decision for `step_index`, `step_cap` and the floor stall cap. States and
+  hashes equal the manual three clicks (`Test_VecCand_RoomMacro*`).
+- Layout: the macro rows are **appended after the screen's other candidates**, in deck order, so HEAL / purchases /
+  leave keep their low indices under the trainer's 64-row candidate cut (`max_rows`; rows past it are not selectable
+  in training, counted in `cand_over_max_rows`). Columns: kind = `ChooseRestOption` / `BuyEntry` (unchanged ids),
+  A = the rest option / shop entry, **B = the deck row** (`deck` buffer row d; a game action of these kinds always has
+  B = -1, so B >= 0 identifies a macro row: `RoomMacros.IsMacro`), `option_index` = A (the SMITH `rest` row / the
+  removal `shop` row with its `price`), **`card_id` = the deck card's cards-vocab id** (what the model's candidate
+  scorer embeds for every card-bearing row: `c_card(card_emb[card_id])`, plus the deck-copies feature with
+  `--deck-counts`; the same path as `TakeRewardCard`). The upgrade level of the card is not a candidate column (B points
+  at the deck row, which the model pools but does not gather).
+- Schema / spec: **unchanged** — no buffer, enum member or vocab is added, so `encoder_version` is the same with macros
+  on or off (3b73317739c650bd for this build) and `features.check_spec_compat` reports identical model inputs, no
+  widening (`sim/tools/train/tests/test_train_macros.py`). Any checkpoint (any preset, mid-run) resumes with
+  `--macros rest,shop`: the candidate rows have the same shape; its learned `ChooseRestOption` / `BuyEntry` kind and
+  rest / shop option-bank features carry over and the card embedding now separates the rows. The meaning shift is
+  behavioural only: the old "SMITH" row stood for "open the prompt", the new rows stand for "upgrade this card".
+- Replays: `history_actions` index the candidate list, so a game recorded with macros replays only with the same
+  macros (`sts2vec.evaluate` records `limits.macros` and its replay audit uses them; `sts2train eval` defaults to the
+  checkpoint's `config.macros`). Not covered: the real-game twin (`scripts/live/nn_twin`) and the combat lookahead's
+  search env have no macro mapping (a macro-trained model plays them on the raw candidates); the play server / LLM
+  channel uses `RunSim.LegalActions()` and is unaffected.
+- A config of an older library without the key: `sts2vec_create` fails with `unknown config key "macros"`.
+- Tests: C# `VecTests.RoomMacros.cs` (`Test_VecConfig_MacrosParse`, `Test_VecCand_RoomMacroSmithUpgradesOneCard`,
+  `Test_VecCand_RoomMacroShopRemovalPaysThePrice`, `Test_VecEnv_RoomMacrosSoak`: 32 play-biased slots x 4000 steps,
+  no SIM_ERROR, macros taken in both rooms, never at the SMITH / removal prompt); Python
+  `sim/tools/vec/tests/test_room_macros.py`, `sim/tools/train/tests/test_train_macros.py` (no rest / shop cycle in a
+  300-step 64-slot random run with macros; the same run without them closes one).
+
 ## Bench
 
 ```bash

@@ -106,7 +106,10 @@ ABI_FEATURES: dict[str, tuple[str, int]] = {
 
 # config_json keys appended after the freeze -> how the Python side detects that a library build accepts them.
 # floor_step_cap (int, default 80, 0 = off): truncate after that many non-combat decisions on one floor (FLOOR_STALL).
-CONFIG_ADDITIONS = {"floor_step_cap": "schema EndKind lists FloorStall (Schema.supports_floor_step_cap)"}
+# macros (["rest", "shop"]; absent = off; W3 2026-11-04): room macro candidates (sim/VEC.md "Room macros"). Not visible in
+# the schema (macro rows reuse the ChooseRestOption / BuyEntry kinds): a build without it rejects the key at create.
+CONFIG_ADDITIONS = {"floor_step_cap": "schema EndKind lists FloorStall (Schema.supports_floor_step_cap)",
+                    "macros": "none (an older build rejects the key: sts2vec_create fails with 'unknown config key')"}
 
 # hostfxr / hostpolicy status codes worth naming (src/native/corehost/error_codes.h)
 HOSTFXR_CODES = {
