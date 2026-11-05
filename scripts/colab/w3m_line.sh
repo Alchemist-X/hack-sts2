@@ -16,7 +16,7 @@
 # Env knobs: STS=/content/sts2 (gcs_sync.py + key live there), BUCKET, WAIT_RUN (the source run whose trainer must have
 # exited first; default the FORK_CKPT's run dir), WAIT_MAX_S (default 14400), ENDS (segment ends, tests only),
 # MACROS (default rest,shop; none = the stop-and-revert lines A0 / B0 of the plan §5.1), ENT0 / ENT1 (entropy
-# anneal endpoints, default 0.02 -> 0.005; a continuation line sets both to the value it continues at),
+# anneal endpoints, default 0.02 -> 0.005; a continuation line sets both to the value it continues at), TAG (log label),
 # TRAIN / EV (stand-ins for tests), SYNC=0 (no GCS loop), EVALS=0 (no endpoint evals: the overlap preflight).
 set -u
 B=$1; RUN=$2; L=$3; FORK=$4; OVERLAP=${5:-off}
@@ -27,7 +27,7 @@ FORK_U=${FORK_U:-3064}; LAST=${LAST:-7664}; MACROS=${MACROS:-rest,shop}
 ENT0=${ENT0:-0.02}; ENT1=${ENT1:-0.005}   # entropy anneal ENT0 -> ENT1 over the line (ENT0 = ENT1: constant)
 ENDS=${ENDS:-"3564 4064 4564 5064 5564 6064 6564 7064 7564 7664"}
 WAIT_RUN=${WAIT_RUN:-$(dirname "$(dirname "$FORK")")}; WAIT_MAX_S=${WAIT_MAX_S:-14400}
-log() { echo "$(date -u '+%F %T') w3m-$L: $*"; }
+log() { echo "$(date -u '+%F %T') w3m-${TAG:-$L}: $*"; }   # TAG: log label of a continuation line (default the line letter)
 case "$L" in a|b) ;; *) log "LINE must be a or b"; exit 2 ;; esac
 case "$OVERLAP" in off|double) ;; *) log "OVERLAP must be off or double"; exit 2 ;; esac
 [ "$L" = b ] && [ "$OVERLAP" != off ] && { log "line b runs harvest, which requires --overlap off"; exit 2; }
