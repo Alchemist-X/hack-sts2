@@ -1,0 +1,225 @@
+{
+ "stage": "A/B",
+ "stage_label": "线 B 已到 u7664（官方读数）；第二轮 D 在 sts2b2 上训练中（第二段终点 u8664 已过）；线 A（sts2c）到 u7664 约 00:35 后接 C；第三轮 E′/F′ 等待",
+ "takeaway": "23:37：A u7395（dev-128 u7200 0.436、u7300 0.445；ab-512 u7064 0.454），u7664 约 00:35，之后 C 自动起跑；D 到第二段终点 u8664（dev-128 0.437、ab-512 0.446，与起点 0.434 持平），u9164 约 01:30 后接 F′。0 通关；余额 353.4（不放开上限，两张卡连续跑）。",
+ "run": "w3m-a",
+ "gpu_session": "sts2c（A → C → E′）+ sts2b2（D → F′）",
+ "mirror_dir": "",
+ "units_cap": 400,
+ "balance_at_batch_start": 731.98,
+ "batch_started_at": "2026-11-04T17:30:00Z",
+ "next_report_local": "00:10 EST",
+ "plan": [
+  {
+   "stage": "A",
+   "label": "Owner A：种子流、RNG 解耦、隔离守卫、256 局盲测集",
+   "target_updates": null,
+   "env_steps_m": null,
+   "status": "done",
+   "started": "12:30",
+   "finished": "13:28",
+   "eta": "",
+   "note": "分支 train/sp2-seeds"
+  },
+  {
+   "stage": "B",
+   "label": "Owner B：UI 回访环检测、循环成本 0.01、评测模式、三模式诊断",
+   "target_updates": null,
+   "env_steps_m": null,
+   "status": "done",
+   "started": "12:30",
+   "finished": "13:15",
+   "eta": "",
+   "note": "分支 train/sp2-cycles"
+  },
+  {
+   "stage": "I",
+   "label": "集成：合并、门禁、Colab 打包、运行文档",
+   "target_updates": null,
+   "env_steps_m": null,
+   "status": "done",
+   "started": "13:28",
+   "finished": "14:08",
+   "eta": "",
+   "note": "train/selfplay-v2 @ 08c2430，已合入 PR 分支 073a32b；门禁全过；包 sts2train-542a1e4eb8"
+  },
+  {
+   "stage": "W0",
+   "label": "W0：随机初始化、100% 新开局、循环只计数",
+   "target_updates": 382,
+   "env_steps_m": 50.1,
+   "status": "done",
+   "started": "14:13",
+   "finished": "16:00",
+   "eta": "",
+   "note": "评测点 u191、u382；14:55 运行时丢失，15:10 从 u150 续训"
+  },
+  {
+   "stage": "C0",
+   "label": "C0：从 W0 续训，原奖励",
+   "target_updates": 764,
+   "env_steps_m": 50.1,
+   "status": "done",
+   "started": "16:0x",
+   "finished": "17:17",
+   "eta": "",
+   "note": "评测点 u573、u764"
+  },
+  {
+   "stage": "C1",
+   "label": "C1：从 W0 续训，仅加循环成本 0.01",
+   "target_updates": 764,
+   "env_steps_m": 50.1,
+   "status": "done",
+   "started": "17:18",
+   "finished": "18:29",
+   "eta": "",
+   "note": "评测点 u573、u764"
+  },
+  {
+   "stage": "E",
+   "label": "终点评测与报告：dev-128 贪心开/关 + 采样×3，ab-512",
+   "target_updates": null,
+   "env_steps_m": null,
+   "status": "done",
+   "started": "",
+   "finished": "18:35",
+   "eta": "",
+   "note": "C1−C0 关 breaker +0.023 [+0.002, +0.043]；C0 有环 9/128，C1 0；采纳循环成本"
+  },
+  {
+   "stage": "M",
+   "label": "主线 M：C1 从 u764 续训至 u3064（+300M 步），每 500 个 update 固定评测",
+   "target_updates": 3064,
+   "env_steps_m": 301.5,
+   "status": "done",
+   "started": "18:42",
+   "finished": "02:56",
+   "eta": "",
+   "note": "u3064 dev-128 关 breaker 0.404 [0.378, 0.430]；u2264 0.389、u2764 0.390"
+  },
+  {
+   "stage": "R",
+   "label": "复验 R：独立种子（SP2，seed 2）重跑 W0 → C0 → C1 → 终点评测",
+   "target_updates": 764,
+   "env_steps_m": 100.1,
+   "status": "done",
+   "started": "18:45",
+   "finished": "22:49",
+   "eta": "",
+   "note": "C1′−C0′ 关 breaker +0.007 [−0.018, +0.032]（n.s.）；有环局 0 对 12；ab-512 0 对 37"
+  },
+  {
+   "stage": "NA",
+   "label": "过夜线 A：主线 + 宏动作环境 + 熵退火，从 M u3064 分叉 +4600 update（≈ 6 亿环境步）",
+   "target_updates": 7664,
+   "env_steps_m": 602.9,
+   "status": "running",
+   "started": "02:56",
+   "finished": "",
+   "eta": "约 11-06 00:30 结束",
+   "note": "sts2c；dev-128 u7200 0.436、u7300 0.445；ab-512 … u6564 0.467、u7064 0.454"
+  },
+  {
+   "stage": "NB",
+   "label": "过夜线 B：A 的配方 + harvest 硬战课程，同一分叉点（+4600 update ≈ 6 亿环境步）",
+   "target_updates": 7664,
+   "env_steps_m": 602.9,
+   "status": "done",
+   "started": "02:58",
+   "finished": "20:00",
+   "eta": "",
+   "note": "sts2b → sts2b2；官方读数 u7664：dev-128 关 breaker 0.440 [0.413, 0.466]，ab-512 0.434，采样×3 0.425；0 通关"
+  },
+  {
+   "stage": "NC",
+   "label": "第二轮 C：A 终点 u7664 + 全提示宏动作（--macros all），熵恒定 0.005，+1500 update（≈ 2.0 亿环境步）",
+   "target_updates": 9164,
+   "env_steps_m": 199.2,
+   "status": "pending",
+   "started": "",
+   "finished": "",
+   "eta": "A 结束后自动起跑（约 11-06 00:40），约 11-06 06:30 结束",
+   "note": "GPU A；launch_c2.sh 等待 w3m-a: done 后从桶取 B 的 pinned-0007664（分叉点已改为 B）；包 sts2train-bd6d6f6863"
+  },
+  {
+   "stage": "ND",
+   "label": "第二轮 D（对照）：同一终点 + rest,shop 宏，其余与 C 相同（+1500 update ≈ 2.0 亿环境步）",
+   "target_updates": 9164,
+   "env_steps_m": 199.2,
+   "status": "running",
+   "started": "20:03",
+   "finished": "",
+   "eta": "约 11-06 01:30 结束",
+   "note": "sts2b2，run w4-d；dev-128 u8600 0.448、u8664 0.437；ab-512 u8164 0.431、u8664 0.446"
+  },
+  {
+   "stage": "R3",
+   "label": "第三轮 v2：E′ = 稀有决策类型 ε 探索修复（火堆 + 删牌，eps 0.3）对照 F′ = 纯续训，从 A 的 u7664 终点各 +2000 update",
+   "target_updates": 9664,
+   "env_steps_m": 262.1,
+   "status": "pending",
+   "started": "",
+   "finished": "",
+   "eta": "各自在 C / D 结束后自动起跑（D 约 02:30、C 约 06:30），各约 8 小时",
+   "note": "已武装：launch_e.sh（GPU A，探索修复）/ launch_f.sh（GPU B，对照），分叉点 B 的 u7664，包 sts2train-57b85d8f0d；预注册 round3-plan v2"
+  },
+  {
+   "stage": "R4",
+   "label": "第四轮（草案）：G = E′ 配方 + 精英/跳卡探索 + 精英课程 对照 H = E′ 配方，从 E′ 终点各 +2000 update",
+   "target_updates": 11664,
+   "env_steps_m": 262.1,
+   "status": "pending",
+   "started": "",
+   "finished": "",
+   "eta": "E′/F′ 结束后（约 11-06 14:00）",
+   "note": "wave 10 已合入；包 sts2train-0cf4bbe2c9 已部署；预注册 docs/round4-plan-2026-11-06.md"
+  }
+ ],
+ "runs": [
+  {
+   "name": "W0",
+   "dir": "mirror/sp2-w0"
+  },
+  {
+   "name": "C0",
+   "dir": "mirror/sp2-c0"
+  },
+  {
+   "name": "C1",
+   "dir": "mirror/sp2-c1"
+  },
+  {
+   "name": "M",
+   "dir": "mirror/sp3-main"
+  },
+  {
+   "name": "W0r",
+   "dir": "mirror/sp2r-w0"
+  },
+  {
+   "name": "C0r",
+   "dir": "mirror/sp2r-c0"
+  },
+  {
+   "name": "C1r",
+   "dir": "mirror/sp2r-c1"
+  },
+  {
+   "name": "A",
+   "dir": "mirror/w3m-a"
+  },
+  {
+   "name": "B",
+   "dir": "mirror/w3m-b-hist"
+  },
+  {
+   "name": "B",
+   "dir": "mirror/w3m-b"
+  },
+  {
+   "name": "D",
+   "dir": "mirror/w4-d"
+  }
+ ]
+}

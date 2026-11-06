@@ -23,6 +23,48 @@ game process remains the state-transition engine.
 > uploaded. Sandbox workers use isolated save directories and never touch human
 > saves.
 
+## 训练工作（Route C 模拟器 · 静默猎手 A10）— 分支状态 2026-11-06
+
+本分支在录制器之外，还带着整套训练栈：`sim/` 是从反编译游戏源码移植的无头、可克隆 C# 规则内核（游戏作者书面许可，学术研究），
+`sim/tools/vec`（sts2vec，批量 Vec ABI 的 Python 绑定）、`sim/tools/train`（sts2train：PPO、协议评测、配对比较）、`sim/tools/eval`
+（协议 v0.2 计分），以及 Colab A100 上的线驱动与运维脚本（`scripts/colab/`）。目标：THE SILENT · Ascension 10，在 dev-128 上
+贪心、关 loop breaker 的**平均通关进度 ≥ 0.60、通关率 ≥ 0.10**，信息对等（不读隐藏信息、不读档）。
+
+**当前数字**（全部 0 通关；来源见括号）：
+
+| 读数 | 值 | 来源 |
+| --- | --- | --- |
+| 随机初始化、5,007 万步后（W0） | dev-128 0.251 | `sp2-w0` evals.jsonl，u382 |
+| 主线 M，4 亿步 | dev-128 0.404 [0.378, 0.430] | `sp3-main` evals.jsonl，u3064 |
+| 线 A 官方终点（宏动作 + 熵退火） | dev-128 0.444 [0.416, 0.473]；ab-512 0.464 [0.449, 0.479] | `w3m-a` evals.jsonl / 端点 report.json，u7664 |
+| 线 B 官方终点（A + harvest） | dev-128 0.440 [0.413, 0.466]；ab-512 0.434 | `w3m-b`，u7664；研究日志 20:15 |
+| 最高 ab-512 段终 | 0.467 [0.452, 0.482] | `w3m-a` 端点 report.json，u6564 |
+
+dev-128 = `silent-a10-dev-v1`（训练从不使用的 128 个开局），ab-512 = `silent-a10-ab-v1`（确认集），截至 2026-11-06 00:50 EST（研究日志最新条目；A u7664 的 ab-512 取自其后完成的端点 report.json）。
+进度卡在 0.43–0.47 的平台：Act 2 boss 打过率约 2%；行为审计发现策略从不锻造、从不删牌、从不主动选精英。
+
+**现在在跑**（两台 Colab A100）：GPU A 线 A 已到终点，接第二轮 C（`--macros all`）→ 第三轮 E′（火堆 / 删牌探索修复）；
+GPU B 第二轮 D（对照）→ 第三轮 F′（对照）。预注册判据与第四轮草案见下面的计划文档。
+
+**入口文档**：
+
+- [交接：给新人的一页](docs/handoff-2026-11-06.md)（目标、架构、十波工程、主要发现、复现、测试、数据、预算、文档索引）
+- [结果表](docs/results-silent-a10-2026-11-06.md)（+ [JSON](docs/results/evals-silent-a10-2026-11-06.json)）
+- [研究日志](docs/research-log-2026-11-05.md)（每半小时的观察 → 判断 → 行动，决策以此为准）
+- [第三轮计划](docs/round3-plan-2026-11-05.md)（另见 [第二轮](docs/round2-plan-2026-11-05.md)、[第四轮草案](docs/round4-plan-2026-11-06.md)）
+- [Colab 运维脚本](scripts/colab/ops/README.md)（线链、保活、轮换、恢复、事故教训）
+- [sts2train README](sim/tools/train/README.md)（所有训练 / 评测参数）
+
+**co-author 上手五步**：
+
+1. `git clone https://github.com/Alchemist-X/hack-sts2.git && cd hack-sts2 && git checkout claude/recorder-performance-lag-0f9d6d`
+2. 读 [`docs/handoff-2026-11-06.md`](docs/handoff-2026-11-06.md)，再看结果表与研究日志最后几轮。
+3. `uv sync --project sim/tools/train` 与 `uv sync --project sts2rec`（模拟器构建需要 .NET 9：`dotnet build sim/Sts2Sim.sln -c Release`）。
+4. 测试一律走 raven 上的远端测试箱：`scripts/test_remote.sh`（或 `--suites none -- uv run --project sim/tools/train pytest -q <files>`）；
+   不要在笔记本上跑重的 pytest / 训练冒烟。raven 的 SSH 访问向 owner 申请。
+5. 训练数据（checkpoint、评测目录）在私有 GCS 桶里：向 owner 申请读权限；密钥只在 owner 本机与训练 VM 上，不进仓库。
+   录制器会话与人类轨迹永远不入库。
+
 ## How it works
 
 - **`mod/`** — a C# mod (`Sts2Recorder.dll`) loaded by STS2's *official* first-party

@@ -1,0 +1,210 @@
+<meta name="dash-one-writer">
+<style>
+  .sa10 { font-family: var(--font-anthropic-sans); color: var(--color-fg); font-variant-numeric: tabular-nums; display: grid; gap: var(--cds-gap-md); }
+  .sa10 h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+  .sa10 h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .sa10 .lede { color: var(--color-fg-muted); margin: 0; }
+  .sa10 .meta { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin: 0; }
+  .sa10 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-md); }
+  .sa10 .card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; display: grid; gap: var(--cds-gap-xs); align-content: start; }
+  .sa10 .card .label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); letter-spacing: .02em; }
+  .sa10 .card .big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; }
+  .sa10 .card .sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .sa10 .pill { display: inline-block; padding: 0 .5em; border-radius: 999px; border: 1px solid var(--color-border-line); font-size: var(--cds-font-size-caption); }
+  .sa10 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+  .sa10 .chart { position: relative; min-height: 240px; }
+  .sa10 .chart svg { width: 100%; height: auto; display: block; }
+  .sa10 .tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .sa10 .legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .sa10 .legend i { display: inline-block; width: .7em; height: .7em; border-radius: 2px; margin-right: .35em; vertical-align: -.05em; }
+  .sa10 .tablebox { overflow: auto; max-height: 24rem; }
+  .sa10 table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-body); }
+  .sa10 th, .sa10 td { text-align: left; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
+  .sa10 th { position: sticky; top: 0; background: var(--color-panel); font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .sa10 td.num, .sa10 th.num { text-align: right; }
+  .sa10 tr.running td:first-child::before { content: "● "; color: var(--color-ok); }
+  .sa10 tr.pending td:first-child::before { content: "○ "; color: var(--color-fg-muted); }
+  .sa10 tr.done td:first-child::before { content: "✓ "; color: var(--color-ok); }
+  .sa10 tr.failed td:first-child::before { content: "✕ "; color: var(--color-bad); }
+  .sa10 ul.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--cds-gap-xs); }
+  .sa10 ul.tl li { display: grid; grid-template-columns: 7.5rem 1fr; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-body); }
+  .sa10 ul.tl li time { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .sa10 ul.tl li.bad time::before { content: "● "; color: var(--color-bad); }
+  .sa10 ul.tl li.ok time::before { content: "● "; color: var(--color-ok); }
+  .sa10 ul.tl li.info time::before { content: "● "; color: var(--color-fg-muted); }
+  .sa10 .note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; }
+  .sa10 [data-dash-source-state=empty] { color: transparent; }
+  .sa10 [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+</style>
+<div class="sa10">
+  <header>
+    <h1>静默猎手 A10 训练监控</h1>
+    <p class="lede"><span data-draw="takeaway" data-source="status" data-field="takeaway" data-row="0">—</span></p>
+    <p class="meta">数据更新于 <span data-draw="updated" data-source="status" data-field="updated_at" data-row="0">—</span> · 下次汇报 <span data-draw="next" data-source="status" data-field="next_report" data-row="0">—</span> · 本页每 30 分钟由 Claude 刷新</p>
+  </header>
+
+  <section class="tiles" aria-label="概览">
+    <div class="card"><div class="label">当前阶段</div><div class="big"><span class="pill" data-draw="stage" data-source="status" data-field="stage_label" data-row="0">—</span></div><div class="sub">GPU 会话：<span data-draw="gpu" data-source="status" data-field="gpu_session" data-row="0">—</span></div></div>
+    <div class="card"><div class="label">训练进度（当前 run）</div><div class="big">u<span data-draw="update" data-source="status" data-field="update" data-row="0">—</span></div><div class="sub"><span data-draw="envsteps" data-source="status" data-field="env_steps_m" data-row="0">—</span> M env steps · <span data-draw="sps" data-source="status" data-field="sps" data-row="0">—</span> steps/s</div></div>
+    <div class="card"><div class="label">新开局进度（近 20 个 update 均值）</div><div class="big"><span data-draw="pfresh" data-source="status" data-field="progress_fresh_recent" data-row="0">—</span></div><div class="sub">熵 <span data-draw="ent" data-source="status" data-field="entropy" data-row="0">—</span> · KL <span data-draw="kl" data-source="status" data-field="approx_kl" data-row="0">—</span></div></div>
+    <div class="card"><div class="label">UI 回访环（近 20 个 update）</div><div class="big"><span data-draw="cyc" data-source="status" data-field="cycles_per_update_recent" data-row="0">—</span><span class="sub"> 次/update</span></div><div class="sub">有环的局占比 <span data-draw="cycfrac" data-source="status" data-field="cycle_games_frac_recent" data-row="0">—</span></div></div>
+    <div class="card"><div class="label">本批算力</div><div class="big"><span data-draw="units" data-source="status" data-field="units_used" data-row="0">—</span><span class="sub"> / <span data-draw="cap" data-source="status" data-field="units_cap" data-row="0">—</span> 单位</span></div><div class="sub">账户余额 <span data-draw="bal" data-source="status" data-field="balance" data-row="0">—</span> 单位</div></div>
+  </section>
+
+  <section class="card" id="plan">
+    <h2>阶段计划与状态</h2>
+    <p class="note">W0 随机初始化、纯新开局 50M 步；C0/C1 从 W0 终点完整恢复各 +50M 步，串行；固定终点比较，不用 best.pt。</p>
+    <div class="tablebox"><table data-source="plan" data-row-key="stage">
+      <thead><tr><th data-field="label">阶段</th><th data-field="status">状态</th><th class="num" data-field="target_updates">目标 update</th><th data-field="started">开始</th><th data-field="eta">预计</th><th data-field="note">备注</th></tr></thead>
+      <tbody data-draw="plan-rows"></tbody>
+    </table></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>新开局进度曲线</h2>
+      <p class="note">每个 update 的训练期新开局进度（采样策略，无 breaker）。虚线为旧模型 u2225 的两个参照：贪心·关 breaker 0.252，贪心·开 breaker 0.372（dev-128）。</p>
+      <div class="legend"><span><i data-draw="lg0"></i>W0</span><span><i data-draw="lg1"></i>C0 原奖励</span><span><i data-draw="lg2"></i>C1 加循环成本</span></div>
+      <div class="chart" data-draw="chart-progress" data-source="metrics">—</div>
+      <p class="note nodata-m">训练尚未开始，曲线将在 W0 上机后出现。</p>
+    </div>
+    <div class="card">
+      <h2>每个 update 的 UI 回访环</h2>
+      <p class="note">只计已核实的休息点 / 商店零进展回访闭环，每个闭环计一次；C1 对每个闭环扣 0.01。</p>
+      <div class="legend"><span><i data-draw="lg3"></i>W0</span><span><i data-draw="lg4"></i>C0 原奖励</span><span><i data-draw="lg5"></i>C1 加循环成本</span></div>
+      <div class="chart" data-draw="chart-cycles" data-source="metrics">—</div>
+      <p class="note nodata-m">训练尚未开始。</p>
+    </div>
+  </section>
+
+  <section class="card" id="evals">
+    <h2>固定评测点</h2>
+    <p class="note">主指标：关 breaker 的贪心进度，以及出现定义循环的局占比。采样模式固定动作随机种子，每个游戏种子 3 次。</p>
+    <div class="tablebox"><table data-source="evals" data-row-key="run,update,seedset,mode">
+      <thead><tr><th data-field="run">run</th><th class="num" data-field="update">update</th><th data-field="seedset">种子集</th><th data-field="mode">模式</th><th class="num" data-field="progress_mean">进度</th><th class="num" data-field="ci_lo">CI 下</th><th class="num" data-field="ci_hi">CI 上</th><th class="num" data-field="wins">通关</th><th class="num" data-field="stuck">卡死</th><th class="num" data-field="interventions">breaker 介入</th><th class="num" data-field="cycles">循环</th></tr></thead>
+      <tbody data-draw="eval-rows"></tbody>
+    </table></div>
+    <p class="note nodata-e">尚无评测点结果。</p>
+  </section>
+
+  <section class="card" id="timeline">
+    <h2>事件时间线（EST）</h2>
+    <ul class="tl" data-draw="timeline" data-source="timeline"></ul>
+  </section>
+</div>
+<script>
+  const F = {
+    n0: d3.format(','), f3: d3.format('.3f'), f4: d3.format('.4f'), f1: d3.format('.1f'), f2: d3.format('.2f'), pct: d3.format('.1%'),
+  };
+  const txt = (el, v, fmt) => { el.textContent = (v === null || v === undefined || v === '') ? '—' : (fmt ? fmt(v) : String(v)); };
+  const row0 = (id) => { const d = dash.data(id); return d.status === 'ok' && d.data && d.data.length ? d.data[0] : null; };
+  const field = (name, key, fmt) => dash.draw(name, (el) => { const r = row0('status'); txt(el, r ? r[key] : null, fmt); });
+  field('takeaway', 'takeaway'); field('updated', 'updated_at'); field('next', 'next_report'); field('stage', 'stage_label'); field('gpu', 'gpu_session');
+  field('update', 'update', F.n0); field('envsteps', 'env_steps_m', F.f1); field('sps', 'sps', F.n0);
+  field('pfresh', 'progress_fresh_recent', F.f3); field('ent', 'entropy', F.f3); field('kl', 'approx_kl', F.f4);
+  field('cyc', 'cycles_per_update_recent', F.f1); field('cycfrac', 'cycle_games_frac_recent', F.pct);
+  field('units', 'units_used', F.f1); field('cap', 'units_cap', F.n0); field('bal', 'balance', F.f1);
+
+  const RUNS = ['W0', 'C0', 'C1'];
+  const runColor = (r) => dash.colors[Math.max(0, RUNS.indexOf(r)) % dash.colors.length];
+  ['lg0', 'lg1', 'lg2', 'lg3', 'lg4', 'lg5'].forEach((n, i) => dash.draw(n, (el) => { el.style.background = dash.colors[i % 3]; }));
+
+  dash.draw('plan-rows', (tb) => {
+    const d = dash.data('plan');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    const words = { running: '进行中', pending: '待开始', done: '完成', failed: '失败' };
+    for (const r of d.data) {
+      const tr = document.createElement('tr'); tr.className = r.status || ''; tr.dataset.key = r.stage;
+      const cells = [r.label, words[r.status] || r.status, r.target_updates == null ? '' : F.n0(r.target_updates), r.started || '', r.eta || '', r.note || ''];
+      cells.forEach((c, i) => { const td = document.createElement('td'); if (i === 2) td.className = 'num'; td.textContent = c; tr.appendChild(td); });
+      tb.appendChild(tr);
+    }
+  });
+
+  dash.draw('eval-rows', (tb) => {
+    const d = dash.data('evals');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    const rows = [...d.data].sort((a, b) => (a.run > b.run) - (a.run < b.run) || a.update - b.update || (a.mode > b.mode) - (a.mode < b.mode));
+    for (const r of rows) {
+      const tr = document.createElement('tr'); tr.dataset.key = [r.run, r.update, r.seedset, r.mode].map(encodeURIComponent).join(',');
+      const cells = [r.run, F.n0(r.update), r.seedset, r.mode, F.f3(r.progress_mean), r.ci_lo == null ? '' : F.f3(r.ci_lo), r.ci_hi == null ? '' : F.f3(r.ci_hi), r.wins == null ? '' : F.n0(r.wins), r.stuck == null ? '' : F.n0(r.stuck), r.interventions == null ? '' : F.n0(r.interventions), r.cycles == null ? '' : F.n0(r.cycles)];
+      cells.forEach((c, i) => { const td = document.createElement('td'); if ([1, 4, 5, 6, 7, 8, 9, 10].includes(i)) td.className = 'num'; td.textContent = c; tr.appendChild(td); });
+      tb.appendChild(tr);
+    }
+  });
+
+  dash.draw('timeline', (ul) => {
+    const d = dash.data('timeline');
+    ul.replaceChildren();
+    if (d.status !== 'ok') return;
+    for (const r of d.data.slice(0, 40)) {
+      const li = document.createElement('li'); li.className = r.kind || 'info';
+      const t = document.createElement('time'); t.textContent = String(r.time || '').slice(5);
+      const s = document.createElement('span'); s.textContent = r.event || '';
+      li.append(t, s); ul.appendChild(li);
+    }
+  });
+
+  dash.onData(() => {
+    const m = dash.data('metrics'); const e = dash.data('evals');
+    const hasM = m.status === 'ok' && m.data && m.data.length > 0;
+    const hasE = e.status === 'ok' && e.data && e.data.length > 0;
+    document.querySelectorAll('.nodata-m').forEach((el) => { el.hidden = hasM; });
+    document.querySelectorAll('.nodata-e').forEach((el) => { el.hidden = hasE; });
+  });
+
+  // ----- line charts over update, one series per run -----
+  function lineChart(box, rows, key, opts) {
+    box.replaceChildren();
+    if (!rows || !rows.length) { box.textContent = '—'; return; }
+    const W = Math.max(280, box.clientWidth || 600), H = 260;
+    const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    const data = rows.filter((r) => r[key] !== null && r[key] !== undefined && r.update !== null);
+    const yMax = Math.max(opts.yMin || 0, d3.max(data, (r) => r[key]) || 0, ...(opts.refs || []).map((x) => x.v)) * 1.08;
+    const xMax = Math.max(opts.xMax || 0, d3.max(data, (r) => r.update) || 0);
+    const measure = (s) => { const t = svg.append('text').attr('font-size', 11).text(s); const w = t.node().getComputedTextLength(); t.remove(); return w; };
+    const yFmt = opts.yFmt || F.f2;
+    const ml = 8 + measure(yFmt(yMax)), mr = 12, mt = 10, mb = 28;
+    const x = d3.scaleLinear([0, xMax || 1], [ml, W - mr]);
+    const y = d3.scaleLinear([0, yMax || 1], [H - mb, mt]);
+    const g = svg.append('g');
+    g.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.min(6, Math.floor((W - ml - mr) / 70))).tickFormat(F.n0)).attr('font-size', null).attr('font-family', null)
+      .call((ax) => { ax.selectAll('text').attr('fill', 'var(--color-fg-muted)').attr('font-size', 11); ax.selectAll('line,path').attr('stroke', 'var(--cds-chart-axis)'); });
+    g.append('g').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).ticks(5).tickFormat(yFmt).tickSize(-(W - ml - mr))).attr('font-size', null).attr('font-family', null)
+      .call((ax) => { ax.selectAll('text').attr('fill', 'var(--color-fg-muted)').attr('font-size', 11); ax.selectAll('line').attr('stroke', 'var(--cds-chart-grid)'); ax.select('path').remove(); });
+    for (const ref of opts.refs || []) {
+      g.append('line').attr('x1', ml).attr('x2', W - mr).attr('y1', y(ref.v)).attr('y2', y(ref.v)).attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 4');
+      g.append('text').attr('x', W - mr).attr('y', y(ref.v) - 4).attr('text-anchor', 'end').attr('font-size', 10).attr('fill', 'var(--color-fg-muted)').text(ref.label);
+    }
+    if (opts.fork) g.append('line').attr('x1', x(opts.fork)).attr('x2', x(opts.fork)).attr('y1', mt).attr('y2', H - mb).attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '2 3');
+    const series = d3.groups(data, (r) => r.run);
+    const line = d3.line().x((r) => x(r.update)).y((r) => y(r[key]));
+    for (const [run, pts] of series) {
+      pts.sort((a, b) => a.update - b.update);
+      g.append('path').attr('d', line(pts)).attr('fill', 'none').attr('stroke', runColor(run)).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      const lastPt = pts[pts.length - 1];
+      g.append('circle').attr('cx', x(lastPt.update)).attr('cy', y(lastPt[key])).attr('r', 3).attr('fill', runColor(run));
+    }
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; box.appendChild(tip);
+    const dot = g.append('circle').attr('r', 4).attr('fill', 'none').attr('stroke-width', 2).style('display', 'none');
+    const all = data.slice().sort((a, b) => a.update - b.update);
+    const bis = d3.bisector((r) => r.update).center;
+    svg.on('pointermove', (ev) => {
+      const [px, py] = d3.pointer(ev);
+      const u = x.invert(px);
+      const near = series.map(([run, pts]) => pts[Math.min(pts.length - 1, bis(pts, u))]).filter(Boolean)
+        .sort((a, b) => Math.abs(a.update - u) - Math.abs(b.update - u))[0];
+      if (!near) return;
+      dot.style('display', null).attr('cx', x(near.update)).attr('cy', y(near[key])).attr('stroke', runColor(near.run));
+      tip.hidden = false;
+      tip.textContent = `${near.run} · u${F.n0(near.update)}: ${yFmt(near[key])}`;
+      const bw = box.clientWidth; const tx = Math.min(bw - tip.offsetWidth - 4, Math.max(0, (x(near.update) / W) * bw + 8));
+      tip.style.left = tx + 'px'; tip.style.top = Math.max(0, (y(near[key]) / H) * (box.clientWidth * H / W) - 30) + 'px';
+    }).on('pointerleave', () => { tip.hidden = true; dot.style('display', 'none'); });
+  }
+  const REF_OFF = 0.252, REF_ON = 0.372, FORK = 382, XMAX = 764;
+  dash.draw('chart-progress', (box) => { const d = dash.data('metrics'); lineChart(box, d.status === 'ok' ? d.data : null, 'progress_fresh', { yFmt: F.f2, refs: [{ v: REF_OFF, label: 'u2225 贪心·关 0.252' }, { v: REF_ON, label: 'u2225 贪心·开 0.372' }], fork: FORK, xMax: XMAX, yMin: 0.4 }); });
+  dash.draw('chart-cycles', (box) => { const d = dash.data('metrics'); lineChart(box, d.status === 'ok' ? d.data : null, 'cycles_total', { yFmt: F.n0, fork: FORK, xMax: XMAX }); });
+</script>

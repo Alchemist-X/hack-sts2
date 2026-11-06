@@ -1,0 +1,5557 @@
+{
+ "generated": {
+  "date": "2026-11-06",
+  "timezone": "EST",
+  "note": "dev-128 = silent-a10-dev-v1 fixed evals (eval_at rows, deduped on (update, loop_breaker), last row wins); endpoint = official segment-end passes of scripts/colab/w3m_line.sh; progress = protocol v0.2 mean clear progress",
+  "sources": [
+   "mirror/<run>/evals.jsonl",
+   "mirror/<run>/status.json",
+   "mirror/<run>/config.json",
+   "runs/<run>/evals/endpoint/*/report.json (GCS bucket, read-only copy)",
+   "runs/<run>/evals/endpoint/*-dev128-sample-off/repeats.json",
+   "docs/research-log-2026-11-05.md"
+  ],
+  "env_steps_per_update": 131072
+ },
+ "runs": [
+  {
+   "name": "sp2-w0",
+   "line": "W0",
+   "recipe": "self-play v2 公共起点：随机初始化（--init-seed 1），100% 种子流新开局（SP1），无人类存档 / harvest，无循环成本",
+   "fork_point": "random init (u0)",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 382,
+    "env_steps": 50069504,
+    "episodes": 274215,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 191,
+     "mean": 0.229,
+     "ci95": [
+      0.2137,
+      0.2443
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 124,
+      "2": 4
+     },
+     "games_with_cycle": 4,
+     "stuck": 4
+    },
+    {
+     "update": 382,
+     "mean": 0.2506,
+     "ci95": [
+      0.2352,
+      0.266
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 125,
+      "2": 3
+     },
+     "games_with_cycle": 5,
+     "stuck": 5
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 191,
+     "mean": 0.2317,
+     "ci95": [
+      0.2161,
+      0.2473
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 124,
+      "2": 4
+     },
+     "games_with_cycle": 4,
+     "stuck": 0
+    },
+    {
+     "update": 382,
+     "mean": 0.2544,
+     "ci95": [
+      0.2394,
+      0.2695
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 125,
+      "2": 3
+     },
+     "games_with_cycle": 5,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 382,
+    "mean": 0.2506,
+    "ci95": [
+     0.2352,
+     0.266
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp2-c0",
+   "line": "C0",
+   "recipe": "W0 终点续训，原奖励（循环成本 0）",
+   "fork_point": "sp2-w0 pinned-0000382",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 764,
+    "env_steps": 100139008,
+    "episodes": 499454,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 573,
+     "mean": 0.286,
+     "ci95": [
+      0.2662,
+      0.3057
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 109,
+      "2": 19
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.2869,
+     "ci95": [
+      0.2671,
+      0.3068
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 108,
+      "2": 20
+     },
+     "games_with_cycle": 9,
+     "stuck": 10
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 573,
+     "mean": 0.286,
+     "ci95": [
+      0.2662,
+      0.3057
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 109,
+      "2": 19
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.295,
+     "ci95": [
+      0.2744,
+      0.3155
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 106,
+      "2": 22
+     },
+     "games_with_cycle": 9,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 764,
+    "mean": 0.2869,
+    "ci95": [
+     0.2671,
+     0.3068
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp2-c1",
+   "line": "C1",
+   "recipe": "W0 终点续训，只加 UI 循环成本 --cycle-cost 0.01（被采纳进主线）",
+   "fork_point": "sp2-w0 pinned-0000382",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 764,
+    "env_steps": 100139008,
+    "episodes": 507903,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 573,
+     "mean": 0.2907,
+     "ci95": [
+      0.2706,
+      0.3108
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 108,
+      "2": 20
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.3097,
+     "ci95": [
+      0.2883,
+      0.3312
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 95,
+      "2": 33
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 573,
+     "mean": 0.2904,
+     "ci95": [
+      0.2703,
+      0.3105
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 108,
+      "2": 20
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.3085,
+     "ci95": [
+      0.2869,
+      0.3301
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 95,
+      "2": 33
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 764,
+    "mean": 0.3097,
+    "ci95": [
+     0.2883,
+     0.3312
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp2r-w0",
+   "line": "R-W0",
+   "recipe": "W0 的复验：独立种子 2（SP2，init/sample/env seed 2）",
+   "fork_point": "random init (u0)",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 382,
+    "env_steps": 50069504,
+    "episodes": 281127,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 191,
+     "mean": 0.2345,
+     "ci95": [
+      0.2171,
+      0.2518
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 122,
+      "2": 6
+     },
+     "games_with_cycle": 7,
+     "stuck": 7
+    },
+    {
+     "update": 382,
+     "mean": 0.2611,
+     "ci95": [
+      0.2443,
+      0.278
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 118,
+      "2": 10
+     },
+     "games_with_cycle": 2,
+     "stuck": 2
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 191,
+     "mean": 0.2403,
+     "ci95": [
+      0.223,
+      0.2577
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 122,
+      "2": 6
+     },
+     "games_with_cycle": 7,
+     "stuck": 0
+    },
+    {
+     "update": 382,
+     "mean": 0.2622,
+     "ci95": [
+      0.2456,
+      0.2788
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 118,
+      "2": 10
+     },
+     "games_with_cycle": 2,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 382,
+    "mean": 0.2611,
+    "ci95": [
+     0.2443,
+     0.278
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp2r-c0",
+   "line": "R-C0",
+   "recipe": "C0 的复验（种子 2）",
+   "fork_point": "sp2r-w0 pinned-0000382",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 764,
+    "env_steps": 100139008,
+    "episodes": 500980,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 573,
+     "mean": 0.2569,
+     "ci95": [
+      0.2391,
+      0.2748
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 116,
+      "2": 12
+     },
+     "games_with_cycle": 8,
+     "stuck": 8
+    },
+    {
+     "update": 764,
+     "mean": 0.3037,
+     "ci95": [
+      0.2832,
+      0.3243
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 100,
+      "2": 28
+     },
+     "games_with_cycle": 12,
+     "stuck": 13
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 573,
+     "mean": 0.2659,
+     "ci95": [
+      0.2473,
+      0.2844
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 115,
+      "2": 13
+     },
+     "games_with_cycle": 8,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.3193,
+     "ci95": [
+      0.2979,
+      0.3408
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 98,
+      "2": 30
+     },
+     "games_with_cycle": 13,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 764,
+    "mean": 0.3037,
+    "ci95": [
+     0.2832,
+     0.3243
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp2r-c1",
+   "line": "R-C1",
+   "recipe": "C1 的复验（种子 2）",
+   "fork_point": "sp2r-w0 pinned-0000382",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 764,
+    "env_steps": 100139008,
+    "episodes": 497342,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 573,
+     "mean": 0.2838,
+     "ci95": [
+      0.2682,
+      0.2995
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 114,
+      "2": 14
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.3105,
+     "ci95": [
+      0.2891,
+      0.332
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 96,
+      "2": 32
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 573,
+     "mean": 0.2838,
+     "ci95": [
+      0.2682,
+      0.2995
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 114,
+      "2": 14
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 764,
+     "mean": 0.3105,
+     "ci95": [
+      0.2891,
+      0.332
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 96,
+      "2": 32
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 764,
+    "mean": 0.3105,
+    "ci95": [
+     0.2891,
+     0.332
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "sp3-main",
+   "line": "M",
+   "recipe": "主线：C1 配方续训 u764→u3064（循环成本 0.01，无宏动作，熵 0.02）",
+   "fork_point": "sp2-c1 pinned-0000764",
+   "bundle": "sts2train-542a1e4eb8",
+   "bundles_seen_in_config": [
+    "sts2train-542a1e4eb8"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 3064,
+    "env_steps": 401604608,
+    "episodes": 1576775,
+    "training_episode_wins_cumulative": 0,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 1264,
+     "mean": 0.3475,
+     "ci95": [
+      0.3225,
+      0.3725
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 81,
+      "2": 47
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 1764,
+     "mean": 0.3674,
+     "ci95": [
+      0.3454,
+      0.3893
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 69,
+      "2": 59
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 2264,
+     "mean": 0.3885,
+     "ci95": [
+      0.3638,
+      0.4132
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 63,
+      "2": 65
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 2764,
+     "mean": 0.3903,
+     "ci95": [
+      0.3681,
+      0.4126
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 65,
+      "2": 63
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3064,
+     "mean": 0.4042,
+     "ci95": [
+      0.3779,
+      0.4305
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 64,
+      "2": 64
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 1264,
+     "mean": 0.3484,
+     "ci95": [
+      0.3236,
+      0.3733
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 81,
+      "2": 47
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 1764,
+     "mean": 0.3691,
+     "ci95": [
+      0.347,
+      0.3913
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 68,
+      "2": 60
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 2264,
+     "mean": 0.3885,
+     "ci95": [
+      0.3638,
+      0.4132
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 63,
+      "2": 65
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 2764,
+     "mean": 0.3903,
+     "ci95": [
+      0.3681,
+      0.4126
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 65,
+      "2": 63
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3064,
+     "mean": 0.4042,
+     "ci95": [
+      0.3779,
+      0.4305
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 64,
+      "2": 64
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 3064,
+    "mean": 0.4042,
+    "ci95": [
+     0.3779,
+     0.4305
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [],
+   "sample_x3": []
+  },
+  {
+   "name": "w3m-a",
+   "line": "A",
+   "recipe": "过夜线 A：M + 房间宏 --macros rest,shop + 熵退火 0.02→0.005（u3064→u7664）",
+   "fork_point": "sp3-main pinned-0003064",
+   "bundle": "sts2train-413f510188",
+   "bundles_seen_in_config": [
+    "sts2train-413f510188"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 7664,
+    "env_steps": 1004535808,
+    "episodes": 3322533,
+    "training_episode_wins_cumulative": 3,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 3100,
+     "mean": 0.4073,
+     "ci95": [
+      0.3817,
+      0.4328
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 59,
+      "2": 68,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3200,
+     "mean": 0.4062,
+     "ci95": [
+      0.3808,
+      0.4317
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 62,
+      "2": 66
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3300,
+     "mean": 0.4344,
+     "ci95": [
+      0.4087,
+      0.4601
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3400,
+     "mean": 0.4277,
+     "ci95": [
+      0.4028,
+      0.4525
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 78
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3500,
+     "mean": 0.4277,
+     "ci95": [
+      0.4039,
+      0.4515
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 81
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3564,
+     "mean": 0.4295,
+     "ci95": [
+      0.4038,
+      0.4551
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 80,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3600,
+     "mean": 0.402,
+     "ci95": [
+      0.3777,
+      0.4263
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 67
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3700,
+     "mean": 0.4286,
+     "ci95": [
+      0.4032,
+      0.454
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 77,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3800,
+     "mean": 0.4366,
+     "ci95": [
+      0.4098,
+      0.4635
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3900,
+     "mean": 0.4153,
+     "ci95": [
+      0.3888,
+      0.4418
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 76
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4000,
+     "mean": 0.3993,
+     "ci95": [
+      0.3742,
+      0.4245
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 58,
+      "2": 69,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4064,
+     "mean": 0.4179,
+     "ci95": [
+      0.3917,
+      0.4442
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 79
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4100,
+     "mean": 0.4295,
+     "ci95": [
+      0.4023,
+      0.4566
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 79,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4200,
+     "mean": 0.4183,
+     "ci95": [
+      0.3936,
+      0.443
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 76
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4300,
+     "mean": 0.4399,
+     "ci95": [
+      0.4152,
+      0.4647
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 84
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4400,
+     "mean": 0.434,
+     "ci95": [
+      0.4064,
+      0.4617
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 76,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4500,
+     "mean": 0.4204,
+     "ci95": [
+      0.3921,
+      0.4487
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 57,
+      "2": 71
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4564,
+     "mean": 0.4321,
+     "ci95": [
+      0.4054,
+      0.4588
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4600,
+     "mean": 0.4146,
+     "ci95": [
+      0.3875,
+      0.4417
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 1
+    },
+    {
+     "update": 4700,
+     "mean": 0.4329,
+     "ci95": [
+      0.4069,
+      0.4589
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 86
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4800,
+     "mean": 0.4264,
+     "ci95": [
+      0.398,
+      0.4549
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 74,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4900,
+     "mean": 0.4314,
+     "ci95": [
+      0.4045,
+      0.4582
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 80
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5000,
+     "mean": 0.4529,
+     "ci95": [
+      0.427,
+      0.4789
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5064,
+     "mean": 0.4351,
+     "ci95": [
+      0.4076,
+      0.4626
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5100,
+     "mean": 0.4376,
+     "ci95": [
+      0.4114,
+      0.4639
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5200,
+     "mean": 0.4383,
+     "ci95": [
+      0.4114,
+      0.4652
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5300,
+     "mean": 0.4245,
+     "ci95": [
+      0.3967,
+      0.4523
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 76,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 1
+    },
+    {
+     "update": 5400,
+     "mean": 0.406,
+     "ci95": [
+      0.3773,
+      0.4348
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 65,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5500,
+     "mean": 0.4258,
+     "ci95": [
+      0.3989,
+      0.4527
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5564,
+     "mean": 0.4045,
+     "ci95": [
+      0.3744,
+      0.4346
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 62,
+      "2": 63,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5600,
+     "mean": 0.3962,
+     "ci95": [
+      0.368,
+      0.4244
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 64,
+      "2": 63,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5700,
+     "mean": 0.394,
+     "ci95": [
+      0.3667,
+      0.4213
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 66,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5800,
+     "mean": 0.426,
+     "ci95": [
+      0.3978,
+      0.4543
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 71,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5900,
+     "mean": 0.4339,
+     "ci95": [
+      0.4067,
+      0.4612
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 74,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6000,
+     "mean": 0.4415,
+     "ci95": [
+      0.4152,
+      0.4679
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 78,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6064,
+     "mean": 0.4481,
+     "ci95": [
+      0.4217,
+      0.4745
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 86,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6100,
+     "mean": 0.4344,
+     "ci95": [
+      0.4059,
+      0.4629
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6200,
+     "mean": 0.4451,
+     "ci95": [
+      0.417,
+      0.4732
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 81,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6300,
+     "mean": 0.4335,
+     "ci95": [
+      0.4038,
+      0.4632
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 76,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6400,
+     "mean": 0.4319,
+     "ci95": [
+      0.4042,
+      0.4596
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 75,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6500,
+     "mean": 0.4422,
+     "ci95": [
+      0.4139,
+      0.4704
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 71,
+      "3": 6
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6564,
+     "mean": 0.4559,
+     "ci95": [
+      0.4284,
+      0.4834
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6600,
+     "mean": 0.4542,
+     "ci95": [
+      0.4271,
+      0.4813
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 79,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6700,
+     "mean": 0.4525,
+     "ci95": [
+      0.4242,
+      0.4808
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6800,
+     "mean": 0.4577,
+     "ci95": [
+      0.4283,
+      0.4872
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 82,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6900,
+     "mean": 0.4518,
+     "ci95": [
+      0.4228,
+      0.4808
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7000,
+     "mean": 0.441,
+     "ci95": [
+      0.414,
+      0.468
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7064,
+     "mean": 0.4494,
+     "ci95": [
+      0.422,
+      0.4769
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 77,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7100,
+     "mean": 0.437,
+     "ci95": [
+      0.4096,
+      0.4643
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 77,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7200,
+     "mean": 0.4362,
+     "ci95": [
+      0.4094,
+      0.4631
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7300,
+     "mean": 0.4447,
+     "ci95": [
+      0.4175,
+      0.472
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 77,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7400,
+     "mean": 0.45,
+     "ci95": [
+      0.4228,
+      0.4772
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7500,
+     "mean": 0.4524,
+     "ci95": [
+      0.4244,
+      0.4805
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 86,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7564,
+     "mean": 0.4589,
+     "ci95": [
+      0.4324,
+      0.4854
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 86,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7600,
+     "mean": 0.4372,
+     "ci95": [
+      0.4084,
+      0.466
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7664,
+     "mean": 0.4442,
+     "ci95": [
+      0.4158,
+      0.4726
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 83,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 3100,
+     "mean": 0.4089,
+     "ci95": [
+      0.3834,
+      0.4343
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 58,
+      "2": 69,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3200,
+     "mean": 0.4062,
+     "ci95": [
+      0.3808,
+      0.4317
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 62,
+      "2": 66
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3300,
+     "mean": 0.4344,
+     "ci95": [
+      0.4087,
+      0.4601
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3400,
+     "mean": 0.4277,
+     "ci95": [
+      0.4028,
+      0.4525
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 78
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3500,
+     "mean": 0.4277,
+     "ci95": [
+      0.4039,
+      0.4515
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 81
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3564,
+     "mean": 0.4295,
+     "ci95": [
+      0.4038,
+      0.4551
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 80,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3600,
+     "mean": 0.402,
+     "ci95": [
+      0.3777,
+      0.4263
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 67
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3700,
+     "mean": 0.4286,
+     "ci95": [
+      0.4032,
+      0.454
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 77,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3800,
+     "mean": 0.4366,
+     "ci95": [
+      0.4098,
+      0.4635
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3900,
+     "mean": 0.4153,
+     "ci95": [
+      0.3888,
+      0.4418
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 76
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4000,
+     "mean": 0.3993,
+     "ci95": [
+      0.3742,
+      0.4245
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 58,
+      "2": 69,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4064,
+     "mean": 0.4179,
+     "ci95": [
+      0.3917,
+      0.4442
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 79
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4100,
+     "mean": 0.4295,
+     "ci95": [
+      0.4023,
+      0.4566
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 79,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4200,
+     "mean": 0.4183,
+     "ci95": [
+      0.3936,
+      0.443
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 76
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4300,
+     "mean": 0.4399,
+     "ci95": [
+      0.4152,
+      0.4647
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 84
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4400,
+     "mean": 0.434,
+     "ci95": [
+      0.4064,
+      0.4617
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 76,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4500,
+     "mean": 0.4204,
+     "ci95": [
+      0.3921,
+      0.4487
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 57,
+      "2": 71
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4564,
+     "mean": 0.4321,
+     "ci95": [
+      0.4054,
+      0.4588
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4600,
+     "mean": 0.4162,
+     "ci95": [
+      0.3883,
+      0.4441
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4700,
+     "mean": 0.4329,
+     "ci95": [
+      0.4069,
+      0.4589
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 86
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4800,
+     "mean": 0.4264,
+     "ci95": [
+      0.398,
+      0.4549
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 74,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4900,
+     "mean": 0.4314,
+     "ci95": [
+      0.4045,
+      0.4582
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 80
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5000,
+     "mean": 0.4529,
+     "ci95": [
+      0.427,
+      0.4789
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5064,
+     "mean": 0.4351,
+     "ci95": [
+      0.4076,
+      0.4626
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5100,
+     "mean": 0.4376,
+     "ci95": [
+      0.4114,
+      0.4639
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5200,
+     "mean": 0.4383,
+     "ci95": [
+      0.4114,
+      0.4652
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5300,
+     "mean": 0.4253,
+     "ci95": [
+      0.3971,
+      0.4535
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 76,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5400,
+     "mean": 0.406,
+     "ci95": [
+      0.3773,
+      0.4348
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 65,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5500,
+     "mean": 0.4258,
+     "ci95": [
+      0.3989,
+      0.4527
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5564,
+     "mean": 0.4045,
+     "ci95": [
+      0.3744,
+      0.4346
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 62,
+      "2": 63,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5600,
+     "mean": 0.3962,
+     "ci95": [
+      0.368,
+      0.4244
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 64,
+      "2": 63,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5700,
+     "mean": 0.394,
+     "ci95": [
+      0.3667,
+      0.4213
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 61,
+      "2": 66,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5800,
+     "mean": 0.426,
+     "ci95": [
+      0.3978,
+      0.4543
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 71,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5900,
+     "mean": 0.4339,
+     "ci95": [
+      0.4067,
+      0.4612
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 74,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6000,
+     "mean": 0.4415,
+     "ci95": [
+      0.4152,
+      0.4679
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 78,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6064,
+     "mean": 0.4481,
+     "ci95": [
+      0.4217,
+      0.4745
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 86,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6100,
+     "mean": 0.4344,
+     "ci95": [
+      0.4059,
+      0.4629
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6200,
+     "mean": 0.4451,
+     "ci95": [
+      0.417,
+      0.4732
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 81,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6300,
+     "mean": 0.4335,
+     "ci95": [
+      0.4038,
+      0.4632
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 76,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6400,
+     "mean": 0.4319,
+     "ci95": [
+      0.4042,
+      0.4596
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 75,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6500,
+     "mean": 0.4422,
+     "ci95": [
+      0.4139,
+      0.4704
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 71,
+      "3": 6
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6564,
+     "mean": 0.4559,
+     "ci95": [
+      0.4284,
+      0.4834
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6600,
+     "mean": 0.4542,
+     "ci95": [
+      0.4271,
+      0.4813
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 79,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6700,
+     "mean": 0.4525,
+     "ci95": [
+      0.4242,
+      0.4808
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6800,
+     "mean": 0.4577,
+     "ci95": [
+      0.4283,
+      0.4872
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 82,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6900,
+     "mean": 0.4518,
+     "ci95": [
+      0.4228,
+      0.4808
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 79,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7000,
+     "mean": 0.441,
+     "ci95": [
+      0.414,
+      0.468
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7064,
+     "mean": 0.4494,
+     "ci95": [
+      0.422,
+      0.4769
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 77,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7100,
+     "mean": 0.437,
+     "ci95": [
+      0.4096,
+      0.4643
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 77,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7200,
+     "mean": 0.4362,
+     "ci95": [
+      0.4094,
+      0.4631
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7300,
+     "mean": 0.4447,
+     "ci95": [
+      0.4175,
+      0.472
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 77,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7400,
+     "mean": 0.45,
+     "ci95": [
+      0.4228,
+      0.4772
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7500,
+     "mean": 0.4524,
+     "ci95": [
+      0.4244,
+      0.4805
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 86,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7564,
+     "mean": 0.4589,
+     "ci95": [
+      0.4324,
+      0.4854
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 86,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7600,
+     "mean": 0.4372,
+     "ci95": [
+      0.4084,
+      0.466
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7664,
+     "mean": 0.4442,
+     "ci95": [
+      0.4158,
+      0.4726
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 83,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 7564,
+    "mean": 0.4589,
+    "ci95": [
+     0.4324,
+     0.4854
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [
+    {
+     "name": "u0003564-ab512-greedy-off",
+     "update": 3564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4314,
+     "progress_ci95": [
+      0.418,
+      0.4447
+     ],
+     "wins": 0,
+     "floor_max": 45,
+     "act_reached": {
+      "1": 187,
+      "2": 319,
+      "3": 6
+     }
+    },
+    {
+     "name": "u0004064-ab512-greedy-off",
+     "update": 4064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.44,
+     "progress_ci95": [
+      0.4263,
+      0.4537
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 176,
+      "2": 324,
+      "3": 12
+     }
+    },
+    {
+     "name": "u0004564-ab512-greedy-off",
+     "update": 4564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4377,
+     "progress_ci95": [
+      0.424,
+      0.4514
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 177,
+      "2": 318,
+      "3": 17
+     }
+    },
+    {
+     "name": "u0005064-ab512-greedy-off",
+     "update": 5064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4454,
+     "progress_ci95": [
+      0.4313,
+      0.4596
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 182,
+      "2": 316,
+      "3": 14
+     }
+    },
+    {
+     "name": "u0005564-ab512-greedy-off",
+     "update": 5564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4181,
+     "progress_ci95": [
+      0.4033,
+      0.4328
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 223,
+      "2": 274,
+      "3": 15
+     }
+    },
+    {
+     "name": "u0006064-ab512-greedy-off",
+     "update": 6064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.439,
+     "progress_ci95": [
+      0.4252,
+      0.4529
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 188,
+      "2": 313,
+      "3": 11
+     }
+    },
+    {
+     "name": "u0006564-ab512-greedy-off",
+     "update": 6564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4668,
+     "progress_ci95": [
+      0.4521,
+      0.4816
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 159,
+      "2": 327,
+      "3": 26
+     }
+    },
+    {
+     "name": "u0007064-ab512-greedy-off",
+     "update": 7064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4536,
+     "progress_ci95": [
+      0.4397,
+      0.4676
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 167,
+      "2": 330,
+      "3": 15
+     }
+    },
+    {
+     "name": "u0007564-ab512-greedy-off",
+     "update": 7564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4508,
+     "progress_ci95": [
+      0.4361,
+      0.4654
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 176,
+      "2": 318,
+      "3": 18
+     }
+    },
+    {
+     "name": "u0007664-ab512-greedy-off",
+     "update": 7664,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4642,
+     "progress_ci95": [
+      0.4489,
+      0.4794
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 155,
+      "2": 324,
+      "3": 33
+     }
+    },
+    {
+     "name": "u0007664-ab512-greedy-on",
+     "update": 7664,
+     "seedset": "ab512",
+     "mode": "greedy-on",
+     "games": 512,
+     "progress_mean": 0.4642,
+     "progress_ci95": [
+      0.4489,
+      0.4794
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 155,
+      "2": 324,
+      "3": 33
+     }
+    }
+   ],
+   "sample_x3": [
+    {
+     "name": "u0007664-dev128-sample-off",
+     "update": 7664,
+     "policy": "sample",
+     "breaker": "off",
+     "sample_seed": 1,
+     "repeats": 3,
+     "seedset": "silent-a10-dev-s128",
+     "per_repeat": [
+      0.4195,
+      0.4242,
+      0.4054
+     ],
+     "wins": 0,
+     "plays": 384,
+     "progress_mean_pooled": 0.4164
+    }
+   ]
+  },
+  {
+   "name": "w3m-b",
+   "line": "B",
+   "recipe": "过夜线 B：A 的配方 + harvest 自锚点起局（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33）",
+   "fork_point": "sp3-main pinned-0003064",
+   "bundle": "sts2train-413f510188",
+   "bundles_seen_in_config": [
+    "sts2train-413f510188"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 7664,
+    "env_steps": 1004535808,
+    "episodes": 3690421,
+    "training_episode_wins_cumulative": 4,
+    "state": "finished"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 3100,
+     "mean": 0.4033,
+     "ci95": [
+      0.3767,
+      0.4298
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 60,
+      "2": 67,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3200,
+     "mean": 0.4051,
+     "ci95": [
+      0.3812,
+      0.4291
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 73
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3300,
+     "mean": 0.4126,
+     "ci95": [
+      0.3883,
+      0.4368
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 73
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3400,
+     "mean": 0.4021,
+     "ci95": [
+      0.3778,
+      0.4264
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 57,
+      "2": 71
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3500,
+     "mean": 0.4115,
+     "ci95": [
+      0.3861,
+      0.4369
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3564,
+     "mean": 0.4033,
+     "ci95": [
+      0.3787,
+      0.4279
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 56,
+      "2": 72
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3600,
+     "mean": 0.4191,
+     "ci95": [
+      0.3944,
+      0.4438
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3700,
+     "mean": 0.3927,
+     "ci95": [
+      0.3671,
+      0.4183
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 63,
+      "2": 65
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3800,
+     "mean": 0.4291,
+     "ci95": [
+      0.4054,
+      0.4528
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 82
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3900,
+     "mean": 0.4131,
+     "ci95": [
+      0.3871,
+      0.4391
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 53,
+      "2": 73,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4000,
+     "mean": 0.4157,
+     "ci95": [
+      0.3915,
+      0.4398
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 74
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4064,
+     "mean": 0.4261,
+     "ci95": [
+      0.4007,
+      0.4514
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 78,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4100,
+     "mean": 0.4382,
+     "ci95": [
+      0.4122,
+      0.4642
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 79,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4200,
+     "mean": 0.431,
+     "ci95": [
+      0.4063,
+      0.4556
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 72,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4300,
+     "mean": 0.4261,
+     "ci95": [
+      0.401,
+      0.4513
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 77,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4400,
+     "mean": 0.4418,
+     "ci95": [
+      0.4154,
+      0.4682
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4500,
+     "mean": 0.4482,
+     "ci95": [
+      0.4247,
+      0.4716
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 84,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4564,
+     "mean": 0.4482,
+     "ci95": [
+      0.4225,
+      0.474
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4600,
+     "mean": 0.4247,
+     "ci95": [
+      0.3986,
+      0.4508
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4700,
+     "mean": 0.433,
+     "ci95": [
+      0.4059,
+      0.4602
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4800,
+     "mean": 0.4374,
+     "ci95": [
+      0.4103,
+      0.4645
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 79,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4900,
+     "mean": 0.4377,
+     "ci95": [
+      0.4123,
+      0.4632
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5000,
+     "mean": 0.4477,
+     "ci95": [
+      0.4218,
+      0.4736
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 86
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5064,
+     "mean": 0.4199,
+     "ci95": [
+      0.3918,
+      0.4479
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 71,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5100,
+     "mean": 0.455,
+     "ci95": [
+      0.4294,
+      0.4807
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 86,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5200,
+     "mean": 0.4298,
+     "ci95": [
+      0.4053,
+      0.4543
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 81,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5300,
+     "mean": 0.4607,
+     "ci95": [
+      0.4353,
+      0.4861
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 34,
+      "2": 92,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5400,
+     "mean": 0.4395,
+     "ci95": [
+      0.4129,
+      0.4661
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 80,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5500,
+     "mean": 0.4402,
+     "ci95": [
+      0.4115,
+      0.4689
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5564,
+     "mean": 0.425,
+     "ci95": [
+      0.3982,
+      0.4518
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 79
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5600,
+     "mean": 0.4242,
+     "ci95": [
+      0.3982,
+      0.4503
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 76,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5700,
+     "mean": 0.4288,
+     "ci95": [
+      0.4012,
+      0.4564
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 74,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5800,
+     "mean": 0.4315,
+     "ci95": [
+      0.4053,
+      0.4576
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5900,
+     "mean": 0.4499,
+     "ci95": [
+      0.4246,
+      0.4753
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 86,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6000,
+     "mean": 0.425,
+     "ci95": [
+      0.3996,
+      0.4504
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 78,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6064,
+     "mean": 0.4438,
+     "ci95": [
+      0.4169,
+      0.4707
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 38,
+      "2": 86,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6100,
+     "mean": 0.4262,
+     "ci95": [
+      0.4012,
+      0.4511
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 81
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6200,
+     "mean": 0.4286,
+     "ci95": [
+      0.4005,
+      0.4567
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6300,
+     "mean": 0.4345,
+     "ci95": [
+      0.4079,
+      0.4612
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6400,
+     "mean": 0.4277,
+     "ci95": [
+      0.4008,
+      0.4545
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 80,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6500,
+     "mean": 0.456,
+     "ci95": [
+      0.4299,
+      0.4822
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 87,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6564,
+     "mean": 0.4467,
+     "ci95": [
+      0.4189,
+      0.4745
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6600,
+     "mean": 0.4403,
+     "ci95": [
+      0.4148,
+      0.4658
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 84,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6700,
+     "mean": 0.4321,
+     "ci95": [
+      0.4046,
+      0.4596
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 78,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6800,
+     "mean": 0.4478,
+     "ci95": [
+      0.4226,
+      0.4731
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 88,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6900,
+     "mean": 0.4393,
+     "ci95": [
+      0.4119,
+      0.4667
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 86,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7000,
+     "mean": 0.4513,
+     "ci95": [
+      0.4226,
+      0.4799
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 83,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7064,
+     "mean": 0.426,
+     "ci95": [
+      0.3989,
+      0.4531
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7100,
+     "mean": 0.417,
+     "ci95": [
+      0.3919,
+      0.4421
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 78
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7200,
+     "mean": 0.4095,
+     "ci95": [
+      0.3825,
+      0.4365
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 58,
+      "2": 68,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7300,
+     "mean": 0.4274,
+     "ci95": [
+      0.3993,
+      0.4554
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7400,
+     "mean": 0.4495,
+     "ci95": [
+      0.4217,
+      0.4774
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7500,
+     "mean": 0.4209,
+     "ci95": [
+      0.3947,
+      0.447
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7564,
+     "mean": 0.4438,
+     "ci95": [
+      0.4169,
+      0.4708
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 82,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7600,
+     "mean": 0.4155,
+     "ci95": [
+      0.3881,
+      0.4429
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 73,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7664,
+     "mean": 0.4397,
+     "ci95": [
+      0.4131,
+      0.4663
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 3100,
+     "mean": 0.4024,
+     "ci95": [
+      0.3757,
+      0.4291
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 60,
+      "2": 67,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3200,
+     "mean": 0.4051,
+     "ci95": [
+      0.3812,
+      0.4291
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 73
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3300,
+     "mean": 0.4126,
+     "ci95": [
+      0.3883,
+      0.4368
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 55,
+      "2": 73
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3400,
+     "mean": 0.4021,
+     "ci95": [
+      0.3778,
+      0.4264
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 57,
+      "2": 71
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3500,
+     "mean": 0.4115,
+     "ci95": [
+      0.3861,
+      0.4369
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3564,
+     "mean": 0.4033,
+     "ci95": [
+      0.3787,
+      0.4279
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 56,
+      "2": 72
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3600,
+     "mean": 0.4191,
+     "ci95": [
+      0.3944,
+      0.4438
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3700,
+     "mean": 0.3927,
+     "ci95": [
+      0.3671,
+      0.4183
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 63,
+      "2": 65
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3800,
+     "mean": 0.431,
+     "ci95": [
+      0.4074,
+      0.4547
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 83
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 3900,
+     "mean": 0.4157,
+     "ci95": [
+      0.3895,
+      0.4419
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 74,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4000,
+     "mean": 0.4157,
+     "ci95": [
+      0.3915,
+      0.4398
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 74
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4064,
+     "mean": 0.4261,
+     "ci95": [
+      0.4007,
+      0.4514
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 78,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4100,
+     "mean": 0.4408,
+     "ci95": [
+      0.4147,
+      0.4669
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4200,
+     "mean": 0.4297,
+     "ci95": [
+      0.4049,
+      0.4545
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 56,
+      "2": 71,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4300,
+     "mean": 0.4279,
+     "ci95": [
+      0.4028,
+      0.453
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 78,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4400,
+     "mean": 0.4418,
+     "ci95": [
+      0.4154,
+      0.4682
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4500,
+     "mean": 0.4482,
+     "ci95": [
+      0.4247,
+      0.4716
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 84,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4564,
+     "mean": 0.4482,
+     "ci95": [
+      0.4225,
+      0.474
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4600,
+     "mean": 0.4247,
+     "ci95": [
+      0.3986,
+      0.4508
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4700,
+     "mean": 0.433,
+     "ci95": [
+      0.4059,
+      0.4602
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4800,
+     "mean": 0.4374,
+     "ci95": [
+      0.4103,
+      0.4645
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 79,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 4900,
+     "mean": 0.4376,
+     "ci95": [
+      0.4121,
+      0.4631
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5000,
+     "mean": 0.4474,
+     "ci95": [
+      0.4215,
+      0.4733
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 86
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5064,
+     "mean": 0.4202,
+     "ci95": [
+      0.3921,
+      0.4482
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 71,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5100,
+     "mean": 0.4541,
+     "ci95": [
+      0.4286,
+      0.4795
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 86,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5200,
+     "mean": 0.4298,
+     "ci95": [
+      0.4053,
+      0.4543
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 81,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5300,
+     "mean": 0.4607,
+     "ci95": [
+      0.4353,
+      0.4861
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 34,
+      "2": 92,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5400,
+     "mean": 0.4425,
+     "ci95": [
+      0.4159,
+      0.4692
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5500,
+     "mean": 0.4412,
+     "ci95": [
+      0.4123,
+      0.47
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5564,
+     "mean": 0.4264,
+     "ci95": [
+      0.3997,
+      0.4531
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 80
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5600,
+     "mean": 0.4236,
+     "ci95": [
+      0.3974,
+      0.4498
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 76,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5700,
+     "mean": 0.4308,
+     "ci95": [
+      0.4031,
+      0.4584
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 75,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5800,
+     "mean": 0.4316,
+     "ci95": [
+      0.4055,
+      0.4578
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 83,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 5900,
+     "mean": 0.4511,
+     "ci95": [
+      0.4258,
+      0.4763
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 87,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6000,
+     "mean": 0.426,
+     "ci95": [
+      0.4005,
+      0.4515
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 78,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6064,
+     "mean": 0.4438,
+     "ci95": [
+      0.4169,
+      0.4707
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 38,
+      "2": 86,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6100,
+     "mean": 0.4281,
+     "ci95": [
+      0.4031,
+      0.4531
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 82
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6200,
+     "mean": 0.4286,
+     "ci95": [
+      0.4005,
+      0.4567
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6300,
+     "mean": 0.4345,
+     "ci95": [
+      0.4079,
+      0.4612
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 82,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6400,
+     "mean": 0.4277,
+     "ci95": [
+      0.4008,
+      0.4545
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 80,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6500,
+     "mean": 0.456,
+     "ci95": [
+      0.4299,
+      0.4822
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 87,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6564,
+     "mean": 0.4467,
+     "ci95": [
+      0.4189,
+      0.4745
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 80,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6600,
+     "mean": 0.4403,
+     "ci95": [
+      0.4148,
+      0.4658
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 84,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6700,
+     "mean": 0.4321,
+     "ci95": [
+      0.4046,
+      0.4596
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 78,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6800,
+     "mean": 0.4478,
+     "ci95": [
+      0.4226,
+      0.4731
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 39,
+      "2": 88,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 6900,
+     "mean": 0.4393,
+     "ci95": [
+      0.4119,
+      0.4667
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 86,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7000,
+     "mean": 0.4513,
+     "ci95": [
+      0.4226,
+      0.4799
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 40,
+      "2": 83,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7064,
+     "mean": 0.426,
+     "ci95": [
+      0.3989,
+      0.4531
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7100,
+     "mean": 0.417,
+     "ci95": [
+      0.3919,
+      0.4421
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 50,
+      "2": 78
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7200,
+     "mean": 0.4095,
+     "ci95": [
+      0.3825,
+      0.4365
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 58,
+      "2": 68,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7300,
+     "mean": 0.4274,
+     "ci95": [
+      0.3993,
+      0.4554
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7400,
+     "mean": 0.4495,
+     "ci95": [
+      0.4217,
+      0.4774
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 49,
+      "2": 76,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7500,
+     "mean": 0.4209,
+     "ci95": [
+      0.3947,
+      0.447
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 54,
+      "2": 73,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7564,
+     "mean": 0.4438,
+     "ci95": [
+      0.4169,
+      0.4708
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 82,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7600,
+     "mean": 0.4155,
+     "ci95": [
+      0.3881,
+      0.4429
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 73,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7664,
+     "mean": 0.4397,
+     "ci95": [
+      0.4131,
+      0.4663
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 5300,
+    "mean": 0.4607,
+    "ci95": [
+     0.4353,
+     0.4861
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [
+    {
+     "name": "u0003564-ab512-greedy-off",
+     "update": 3564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4251,
+     "progress_ci95": [
+      0.4118,
+      0.4384
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 208,
+      "2": 296,
+      "3": 8
+     }
+    },
+    {
+     "name": "u0004064-ab512-greedy-off",
+     "update": 4064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4328,
+     "progress_ci95": [
+      0.4199,
+      0.4457
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 187,
+      "2": 319,
+      "3": 6
+     }
+    },
+    {
+     "name": "u0004564-ab512-greedy-off",
+     "update": 4564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4498,
+     "progress_ci95": [
+      0.4355,
+      0.464
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 165,
+      "2": 328,
+      "3": 19
+     }
+    },
+    {
+     "name": "u0005064-ab512-greedy-off",
+     "update": 5064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4444,
+     "progress_ci95": [
+      0.4305,
+      0.4583
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 178,
+      "2": 321,
+      "3": 13
+     }
+    },
+    {
+     "name": "u0005564-ab512-greedy-off",
+     "update": 5564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4417,
+     "progress_ci95": [
+      0.4279,
+      0.4556
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 183,
+      "2": 319,
+      "3": 10
+     }
+    },
+    {
+     "name": "u0006064-ab512-greedy-off",
+     "update": 6064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4316,
+     "progress_ci95": [
+      0.4178,
+      0.4455
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 187,
+      "2": 313,
+      "3": 12
+     }
+    },
+    {
+     "name": "u0006564-ab512-greedy-off",
+     "update": 6564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.446,
+     "progress_ci95": [
+      0.4327,
+      0.4594
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 173,
+      "2": 330,
+      "3": 9
+     }
+    },
+    {
+     "name": "u0007064-ab512-greedy-off",
+     "update": 7064,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4429,
+     "progress_ci95": [
+      0.4287,
+      0.4571
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 174,
+      "2": 322,
+      "3": 16
+     }
+    },
+    {
+     "name": "u0007564-ab512-greedy-off",
+     "update": 7564,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4405,
+     "progress_ci95": [
+      0.4268,
+      0.4543
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 183,
+      "2": 320,
+      "3": 9
+     }
+    },
+    {
+     "name": "u0007664-ab512-greedy-off",
+     "update": 7664,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.434,
+     "progress_ci95": [
+      0.4196,
+      0.4485
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 198,
+      "2": 302,
+      "3": 12
+     }
+    },
+    {
+     "name": "u0007664-ab512-greedy-on",
+     "update": 7664,
+     "seedset": "ab512",
+     "mode": "greedy-on",
+     "games": 512,
+     "progress_mean": 0.434,
+     "progress_ci95": [
+      0.4196,
+      0.4485
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 198,
+      "2": 302,
+      "3": 12
+     }
+    }
+   ],
+   "sample_x3": [
+    {
+     "name": "u0007664-dev128-sample-off",
+     "update": 7664,
+     "policy": "sample",
+     "breaker": "off",
+     "sample_seed": 1,
+     "repeats": 3,
+     "seedset": "silent-a10-dev-s128",
+     "per_repeat": [
+      0.4201,
+      0.4236,
+      0.43
+     ],
+     "wins": 0,
+     "plays": 384,
+     "progress_mean_pooled": 0.4246
+    }
+   ]
+  },
+  {
+   "name": "w4-d",
+   "line": "D",
+   "recipe": "第二轮对照 D：B 终点续训，--macros rest,shop，熵恒定 0.005（config 里 harvest 仍开，继承自 B）",
+   "fork_point": "w3m-b pinned-0007664",
+   "bundle": "sts2train-bd6d6f6863",
+   "bundles_seen_in_config": [
+    "sts2train-bd6d6f6863"
+   ],
+   "params": 2904208,
+   "status": {
+    "update": 8664,
+    "env_steps": 1135607808,
+    "episodes": 4111537,
+    "training_episode_wins_cumulative": 5,
+    "state": "error"
+   },
+   "dev128_greedy_off": [
+    {
+     "update": 7700,
+     "mean": 0.4084,
+     "ci95": [
+      0.3798,
+      0.437
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 53,
+      "2": 73,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7800,
+     "mean": 0.4365,
+     "ci95": [
+      0.409,
+      0.464
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7900,
+     "mean": 0.4408,
+     "ci95": [
+      0.4133,
+      0.4683
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 80,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8000,
+     "mean": 0.4184,
+     "ci95": [
+      0.3938,
+      0.443
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8100,
+     "mean": 0.4361,
+     "ci95": [
+      0.4098,
+      0.4624
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 80,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8164,
+     "mean": 0.4419,
+     "ci95": [
+      0.4158,
+      0.4681
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 82
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8200,
+     "mean": 0.4379,
+     "ci95": [
+      0.4104,
+      0.4654
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 73,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8300,
+     "mean": 0.4307,
+     "ci95": [
+      0.4051,
+      0.4563
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8400,
+     "mean": 0.4369,
+     "ci95": [
+      0.4078,
+      0.466
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 45,
+      "2": 81,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8500,
+     "mean": 0.4478,
+     "ci95": [
+      0.4188,
+      0.4768
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 41,
+      "2": 84,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8600,
+     "mean": 0.4477,
+     "ci95": [
+      0.4181,
+      0.4773
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 80,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8664,
+     "mean": 0.4367,
+     "ci95": [
+      0.4096,
+      0.4638
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_on": [
+    {
+     "update": 7700,
+     "mean": 0.4084,
+     "ci95": [
+      0.3798,
+      0.437
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 53,
+      "2": 73,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7800,
+     "mean": 0.4365,
+     "ci95": [
+      0.409,
+      0.464
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 46,
+      "2": 81,
+      "3": 1
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 7900,
+     "mean": 0.4395,
+     "ci95": [
+      0.4119,
+      0.4672
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 79,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8000,
+     "mean": 0.4184,
+     "ci95": [
+      0.3938,
+      0.443
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8100,
+     "mean": 0.4361,
+     "ci95": [
+      0.4098,
+      0.4624
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 80,
+      "3": 4
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8164,
+     "mean": 0.44,
+     "ci95": [
+      0.4139,
+      0.4661
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 47,
+      "2": 81
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8200,
+     "mean": 0.4369,
+     "ci95": [
+      0.4096,
+      0.4643
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 52,
+      "2": 73,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8300,
+     "mean": 0.4307,
+     "ci95": [
+      0.4051,
+      0.4563
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 51,
+      "2": 75,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8400,
+     "mean": 0.4399,
+     "ci95": [
+      0.4111,
+      0.4687
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 44,
+      "2": 82,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8500,
+     "mean": 0.447,
+     "ci95": [
+      0.4179,
+      0.476
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 42,
+      "2": 83,
+      "3": 3
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8600,
+     "mean": 0.4477,
+     "ci95": [
+      0.4181,
+      0.4773
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 43,
+      "2": 80,
+      "3": 5
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    },
+    {
+     "update": 8664,
+     "mean": 0.4367,
+     "ci95": [
+      0.4096,
+      0.4638
+     ],
+     "wins": 0,
+     "games": 128,
+     "act_reached": {
+      "1": 48,
+      "2": 78,
+      "3": 2
+     },
+     "games_with_cycle": 0,
+     "stuck": 0
+    }
+   ],
+   "dev128_greedy_off_best": {
+    "update": 8500,
+    "mean": 0.4478,
+    "ci95": [
+     0.4188,
+     0.4768
+    ]
+   },
+   "eval_wins_total": 0,
+   "endpoint": [
+    {
+     "name": "u0008164-ab512-greedy-off",
+     "update": 8164,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4309,
+     "progress_ci95": [
+      0.4167,
+      0.445
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 203,
+      "2": 301,
+      "3": 8
+     }
+    },
+    {
+     "name": "u0008664-ab512-greedy-off",
+     "update": 8664,
+     "seedset": "ab512",
+     "mode": "greedy-off",
+     "games": 512,
+     "progress_mean": 0.4459,
+     "progress_ci95": [
+      0.4315,
+      0.4602
+     ],
+     "wins": 0,
+     "floor_max": 48,
+     "act_reached": {
+      "1": 180,
+      "2": 318,
+      "3": 14
+     }
+    }
+   ],
+   "sample_x3": []
+  }
+ ]
+}
