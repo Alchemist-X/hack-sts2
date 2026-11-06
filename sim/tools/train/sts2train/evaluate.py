@@ -56,15 +56,18 @@ from sts2vec.evaluate import evaluate as vec_evaluate
 
 from .cycles import CycleDetector, sample_rng
 from .features import ModelSpec, bind_spec, check_spec_compat, describe_widened, obs_to_torch
+from .force import FORCE_MODES, ForcedChoice, parse_force, write_force_stats
 from .loopbreak import DEFAULT_K, LoopBreaker
 
 POLICIES = ("greedy", "sample")
 
 
-def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, breaker: LoopBreaker | None = None):
+def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, breaker: LoopBreaker | None = None,
+                  force: ForcedChoice | None = None):
     """The model's greedy policy as an ``sts2vec`` policy callable (every candidate row, float32). With `heads` (a
     model with aux heads) every call also records the heads' readouts of the slots that act; with `breaker` the argmax
-    goes through the loop breaker (``LoopBreaker.greedy``; it learns the game keys from the first call)."""
+    goes through the loop breaker (``LoopBreaker.greedy``; it learns the game keys from the first call); with `force`
+    (``sts2train.force``) the forced decisions' logits are restricted to the chosen forced row first."""
 
     def act(obs: dict, ctx) -> np.ndarray:
         with torch.no_grad():
@@ -73,6 +76,8 @@ def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, br
             else:
                 logits, _, h = model(obs_to_torch(obs, device), aux=True)
                 heads.record(obs, ctx, h)
+        if force is not None:
+            logits = force.apply(obs, logits, ctx.live, ctx.keys)
         if breaker is None:
             return logits.argmax(-1).cpu().numpy().astype(np.int32)
         if breaker.keys is None:
@@ -83,7 +88,7 @@ def greedy_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, br
 
 
 def sample_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, breaker: LoopBreaker | None = None, *,
-                  seed: int = 0, repeat: int = 0):
+                  seed: int = 0, repeat: int = 0, force: ForcedChoice | None = None):
     """The model's sampling policy as an ``sts2vec`` policy callable: per live slot one draw from the softmax of its
     legal candidates' logits (float64 inverse CDF on one uniform of the play's own RNG, ``cycles.sample_rng(seed,
     game key, repeat)``, drawn only when the slot acts, so a play does not depend on which games share the batch).
@@ -100,6 +105,8 @@ def sample_policy(model, device: str = "cpu", heads: "HeadLog | None" = None, br
             else:
                 logits, _, h = model(obs_to_torch(obs, device), aux=True)
                 heads.record(obs, ctx, h)
+        if force is not None:       # a forced decision keeps one live row: the draw takes it
+            logits = force.apply(obs, logits, ctx.live, ctx.keys)
         if breaker is not None:
             if breaker.keys is None:
                 breaker.keys = list(ctx.keys)
@@ -253,7 +260,8 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
                    floor_step_cap: int = FLOOR_STEP_CAP, spec_compat: dict | None = None, loop_breaker: bool = True,
                    loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeat: int = 0,
                    parent_seedset: dict | None = None, log=print, allow_blind: bool = False,
-                   blind_purpose: str | None = None, macros=None) -> dict:
+                   blind_purpose: str | None = None, macros=None, force=None, force_mode: str = FORCE_MODES[0],
+                   force_seed: int = 0) -> dict:
     """Play `seedset` with `model` (`policy` greedy, or sample with the play RNG of (`sample_seed`, game, `repeat`))
     and write the protocol run directory `out_dir`; returns the report (with the loop breaker's totals under
     ``loop_breaker``, the cycle detector's under ``cycles``). `parent_seedset` (a slice's full set: identity and the
@@ -267,7 +275,11 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
     sizes; the record says which enums were widened): it is logged and kept in config.json instead of this check's.
 
     `macros` (None / "rest,shop"; ``sts2vec.VecEnv(macros=...)``): the env's room macro candidates; they must be the
-    ones the model was trained with (`checkpoint_macros`). Recorded as ``limits.macros`` in config.json when on."""
+    ones the model was trained with (`checkpoint_macros`). Recorded as ``limits.macros`` in config.json when on.
+
+    `force` (selectors, ``sts2train.force``; None / "" / "none" = off, the plain policy) with `force_mode` greedy /
+    uniform (`force_seed`): the forced-choice what-if eval; config.json records ``force``, report.json and the returned
+    report gain the counts under ``force``, every game summary its own."""
     from sts2vec import load, schema_of
 
     schema = schema_of(load())
@@ -293,10 +305,16 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
         name += f":sample:s{int(sample_seed)}:r{int(repeat)}"
     heads = HeadLog(spec.cols["global_i"]["is_combat"]) if getattr(model, "aux_heads", False) else None
     breaker = LoopBreaker(library, k=loop_breaker_k, enabled=loop_breaker)     # leave kinds: the library's ids
+    force = parse_force(force)
+    fc = ForcedChoice(library, force, force_mode, force_seed) if force else None
+    if fc is not None:
+        name += f":force-{force_mode}:{force}"
+        log(fc.describe())
     if policy == "greedy":
-        act = greedy_policy(model, device, heads, breaker)
+        act = greedy_policy(model, device, heads, breaker, **({"force": fc} if fc is not None else {}))
     else:       # the breaker off still counts no-ops / cycle revisits and returns the logits unchanged
-        act = sample_policy(model, device, heads, breaker, seed=sample_seed, repeat=repeat)
+        act = sample_policy(model, device, heads, breaker, seed=sample_seed, repeat=repeat,
+                            **({"force": fc} if fc is not None else {}))
     ss = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(seedset)
     keys = [PG.game_key(g) for g in ss["games"]]
     det = CycleDetector(library, card_name=schema.vocab.cards.name, keep_events=True)
@@ -312,6 +330,9 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
                                "prompt_kinds": [det.pkind_names[int(k)] for k in det.prompt_kind_ids]}
     if parent_seedset is not None:
         extra["parent_seedset"] = parent_seedset
+    if fc is not None:
+        extra["force"] = {"selectors": fc.labels, "mode": force_mode,
+                          "seed": int(force_seed) if force_mode == "uniform" else None}
 
     try:
         rep = vec_evaluate(
@@ -336,6 +357,10 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
             f"{lb['games_with_loop_breaks']} games, {lb['no_op_actions']} no-op actions in {lb['games_with_no_ops']} "
             f"games, {lb['cycle_revisits']} cycle revisits in {lb['games_with_cycles']} games")
         cy = rep["cycles"] = write_cycle_stats(det, keys, out_dir, mode)
+        if fc is not None:
+            fo = rep["force"] = write_force_stats(fc, out_dir, keys)
+            log(f"forced choice ({force_mode}): {fo['forced_total']} forced decisions ({fo['changed_total']} changed "
+                f"the policy's argmax) in {fo['games_forced']} games; per selector {fo['forced_decisions']}")
         rep["eval_mode"] = mode
         log(f"UI revisit cycles ({mode['name']}): {cy['cycles']} (rest {cy['cycles_rest']}, shop "
             f"{cy['cycles_shop']}) in {cy['games_with_cycle']}/{cy['games']} games; stuck {cy['stuck']}")
@@ -374,13 +399,13 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
              step_cap: int = STEP_CAP, floor_step_cap: int = FLOOR_STEP_CAP, loop_breaker: bool = True,
              loop_breaker_k: int = DEFAULT_K, policy: str = "greedy", sample_seed: int = 0, repeats: int = 1,
              chunk: str | None = None, log=print, allow_blind: bool = False,
-             blind_purpose: str | None = None, macros=None) -> dict:
+             blind_purpose: str | None = None, macros=None, force=None, force_mode: str = FORCE_MODES[0]) -> dict:
     """`sts2train eval`: load `checkpoint` for the library sts2vec loads (`load_checkpoint(library=...)`: refused with
     `SpecMismatch` before any game, widened when its embedded enums only gained members) and evaluate it. The weights
     hash is the checkpoint's (a widened model adds only zero rows). `repeats` > 1 (sample mode): ``out_dir/r<k>``
     per repeat and ``out_dir/repeats.json``; the returned report is the first repeat's with ``repeats`` (one row per
     repeat, the pooled progress mean). `macros` None = the checkpoint's training env's (`checkpoint_macros`); "" /
-    "none" = off."""
+    "none" = off. `force` / `force_mode`: `evaluate_model` (the uniform draw's seed = `sample_seed`)."""
     from sts2vec import load, schema_of
 
     from .isolation import check_blind_eval
@@ -405,7 +430,8 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
                                    floor_step_cap=floor_step_cap, spec_compat=ck.get("spec_compat"),
                                    loop_breaker=loop_breaker, loop_breaker_k=loop_breaker_k, policy=policy,
                                    sample_seed=sample_seed, repeat=r, parent_seedset=parent, log=log,
-                                   allow_blind=allow_blind, blind_purpose=blind_purpose, macros=macros or None))
+                                   allow_blind=allow_blind, blind_purpose=blind_purpose, macros=macros or None,
+                                   force=force, force_mode=force_mode, force_seed=sample_seed))
     if repeats == 1:
         return reps[0]
     rows = [{"repeat": r, "dir": f"r{r}", "games": x["headline"]["games"],

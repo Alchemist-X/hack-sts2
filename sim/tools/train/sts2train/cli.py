@@ -602,6 +602,13 @@ def main(argv=None) -> int:
     ev.add_argument("--chunk", default=None, metavar="I/N",
                     help="play only the I-th of N equal slices of the seed set (config.json parent_seedset records "
                          "the full set; `sts2train compare DIR0,DIR1 ...` merges slices)")
+    ev.add_argument("--force", default=None, metavar="SELECTORS",
+                    help="forced-choice what-if eval (sts2train.force): at a decision with a row of these selectors "
+                         "(the --explore-kinds grammar, e.g. ChooseRestOption:SMITH,Travel:Elite) the action is "
+                         "restricted to those rows; counts go to report.json 'force' (default none = off)")
+    ev.add_argument("--force-mode", dest="force_mode", choices=["greedy", "uniform"], default="greedy",
+                    help="greedy = the forced row with the highest logit (default); uniform = uniform among them, "
+                         "the play's draw seeded from (--sample-seed, game key)")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
     cp = sub.add_parser("compare", help="per-seed paired comparison of protocol evaluations of one seed set "
@@ -714,7 +721,7 @@ def main(argv=None) -> int:
                            loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k, policy=a.policy,
                            sample_seed=a.sample_seed, repeats=a.repeats, chunk=a.chunk,
                            log=lambda m: print(m, flush=True), allow_blind=a.allow_blind, blind_purpose=a.purpose,
-                           macros=a.macros)
+                           macros=a.macros, force=a.force, force_mode=a.force_mode)
         except (SpecMismatch, BlindSetError) as e:
             print(f"error: {e}", flush=True)
             return 2
@@ -732,7 +739,10 @@ def main(argv=None) -> int:
                              if (cy := rep.get("cycles")) else {}),
                           **({"repeats": {k: rep["repeats"][k] for k in ("repeats", "plays", "progress_mean_pooled",
                                                                          "runs")}} if "repeats" in rep else {}),
-                          **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {})}, indent=1))
+                          **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {}),
+                          **({"force": {k: rep["force"][k] for k in ("selectors", "mode", "forced_decisions",
+                                                                     "available", "changed", "forced_total")}}
+                             if "force" in rep else {})}, indent=1))
         runs = rep["repeats"]["runs"] if "repeats" in rep else [{"replayable": h["replayable"], "games": h["games"]}]
         bad = ", ".join(f"{r['replayable']}/{r['games']}" for r in runs if r["replayable"] != r["games"])
         if bad:      # the replay audit failed: the score is not reproducible (sts2vec eval)
