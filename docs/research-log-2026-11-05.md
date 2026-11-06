@@ -337,3 +337,9 @@ sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评�
 
 **wave 17**（commit 5ad8ef4，包 `sts2train-5ad8ef40ca`，评审 PASS）：`--boss-bonus B`（挣得的 act-2+ boss 击杀一次性奖励，只进回报；存档起局从已击杀奖励屏开始不付）；stream 模式接受 `--start-saves`（每个起局按 `--save-mix` 抽存档，存档种子做隔离检查）；harvest 新环 `boss2`；新指标 `boss2_kills`、`boss_bonus_sum`、`save_starts_update`。关掉时逐位相同（stream 与 pool 两种配置各自核对）。探针：silent-a9a10-late 121/122 可用（1 份 `extra_rewards` 不支持），0 保留集碰撞；首观测 45% 战斗、0 地图。
 **行动**：`launch_s.sh` 部署到 sts2b3（等 `w3m-crep: done` 与 `bundle-w17`，从桶取 C2 的 pinned-0010664），东京保活改盯 w10-s；H4 撤下（H 延后）；`docs/boss-school-plan-2026-11-06.md` 预注册（先行指标 act_reached[3]：基线 3–6/128，采纳 ≥ 12/128）。bundle-w17 也放到了 sts2a2 备用。
+
+## 15:45 EST 11-06（第 44 轮）
+
+**观察**：C2 u10564：dev-128 u10500 **0.483 [0.458, 0.508]**（历史最高；到 act 2 的局 92/128，act 3 3/128），约 15:50 到 u10664，端点评测后 G 自动起跑。C-rep 到 u8664：dev-128 0.447（u8600 0.434）。余额 166.7。
+**判断**：C 续训的 dev-128 在 u10200–10500 为 0.464 / 0.466 / 0.467 / 0.483，均值明显高于 u9164 之前；ab-512 段终还在 0.45 上下——确认集要等 u10664 的端点。act 3 到达率仍 2–5%：第二关 boss 仍是瓶颈，S 线对症。
+**行动**：无新启动。16:15 核对 G 的首批推力统计（push_step_n、push_budget_used、kl）。
