@@ -270,3 +270,9 @@ sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评�
 **观察**：E2 到 u7896：dev-128 u7700 0.434、u7800（待读）；kl 统计持续 0.4–1.8e6，dual_clipped 最高 1.7e-3，被探索样本几乎全部触顶。C2 u9430（13.3 s/update，约 15:45 到 10664）。wave 12 完成：`--explore-push DELTA`（探索样本退出比率、有界原始策略梯度；掩码走 rollout store；kl/clipfrac 排除探索样本；4 个 push_* 统计），commit 26c074a，raven 285 项通过，关掉时与 wave 11 逐位相同；包 `sts2train-26c074a021`（AOT key 不变）。评审 agent 因网络错误未跑完（已重跑）。余额约 230。
 **判断**：E2 的机制已证明不可取（震荡），不等 u8164；E3（有界推力）接替，预注册修订见 round3-plan；G/H 同样改用推力（round4-plan 第二次修订）。
 **行动**：两台部署 `bundle-w12`；sts2b3：杀旧 `launch_h`，起 `launch_e3` / `launch_h2`，11:08 停 E2 并写结束标记（E3 随即起跑）；sts2a2：杀旧 `launch_g`，起 `launch_g2`（等 C2）。守护/保活条目不变（w10-g / w10-h）。
+
+## 11:30 EST 11-06（第 33 轮：E3 首批数据）
+
+**观察**：E3 11:15 起跑；首次尝试在 compile 门槛上失败——带推力项的 loss 编译版 0.0218 对 eager 0.0311（不是舍入级差异），驱动自动转 eager。eager 下 u7682–7695：approx_kl 0.003–0.009、clipfrac 0.02–0.03（非探索样本，恢复正常量级）；push_share 0.36–0.41%，**push_clamped 0.89–0.93，push_dlogp −124 … −1575（u7694 +1672）**：在 loss 时刻，被探索行的 log π 与 rollout 时存的 log π_old 相差数百 nat（多为更低），90% 超出 ±1 nat 的信任域，推力梯度实际为零。
+**判断**：信任域设在 log-prob 空间没用——要么是 rollout 路径与更新路径对极端 logit（gap 可能 > 100…1000）的 log-prob 表示不一致（bf16 在 1024 处的 ulp 是 8；log(softmax) 与 x − logsumexp 的差别），要么是一次 Adam 步就把这些行推几百 nat（编码厌恶的参数长期休眠、v≈0，一步就是满 lr 的共同跳变）。E2 的 +20 触顶与 E3 的 −1000 是同一现象的两种表现。不再猜：wave 13 诊断在 raven 的 CPU 上用 A 的 pinned-0007664 直接测——logit 间隔分布、fp32 对 bf16 的差、一步 Adam/SGD 的 log-prob 变化及参数组归因，再对比五种修法（推力单独 SGD 小步、排除休眠参数组、按灵敏度缩放、logit 下限 + 直通梯度、重置 SMITH/删牌选项嵌入）。
+**行动**：E3 继续跑作为经验探针（u7764 / u7864 的 dev-128 与 u8164 端点能告诉我们这种震荡对表现的影响；随时可停）；wave 13 诊断工作流已启动；G/H 起跑前（15:45 / 19:30）按诊断结论决定是否改推力实现。
