@@ -252,3 +252,9 @@ wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skip
 
 `r2_compare.sh 9164`：PRIMARY dev-128 greedy-off C−D **+0.049 [+0.018, +0.080]**（bootstrap 同），AUX ab-512 −0.004 [−0.021, +0.013]。**预注册规则：采纳 `--macros all`**。保留意见见 round2-plan 末段。后续线默认 `--macros all`；E′ 重启（E2）仍用 rest,shop 以保持与已完成的 F′ 同配置（只差探索修复）。
 sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评测目录每个几百个小文件，串行拉取是 40 分钟级。
+
+## 10:05 EST 11-06（第 30 轮）
+
+**观察**：sts2a2 恢复完成（w3m-a 16,013 个评测小文件 3.5 分钟；w4-c md5 全部一致），C 续训 10:01 起跑（w4-c u9164 → 10664，TAG c2）。F′ u9650，约 10:08 到 9664，端点评测后约 10:35 `w3m-f: done`。wave 11（dual-clip）构建中。
+**判断**：两张卡接下来 15 小时的安排：GPU A：C2（→ 16:00）→ G（精英/跳卡探索，→ 约 23:30）；GPU B：E2（→ 约 19:30）→ H（对照，→ 约 03:00）。E2 − F′ 读探索修复，G − H 读精英/跳卡（同分叉 C2 的 u10664，harvest 两臂都继承）。守护 v2 的每线包装器列表与现链不符，今天两台的 24 h 回收（sts2b3 00:10、sts2a2 09:45 11-07）都在计划的运行之后，暂不切换。
+**行动**：`launch_g.sh` / `launch_h.sh` 写好并部署（分别等 `w3m-c2: done` / `w3m-e2: done` 与 `bundle-w11`），东京保活改盯 w10-g / w10-h；round4-plan 修订预注册。
