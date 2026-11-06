@@ -188,3 +188,7 @@ wave 9 合入（`--explore-kinds/--explore-eps/--explore-logp`，评审后默认
 **观察**：A u6844：dev-128 u6700 0.453、u6800 0.458（连续三点 ≥ 0.45）；D u8120：dev-128 u8000 0.418、u8100 0.436。余额 380.3。守护无事件。wave 10 工程中。
 **判断**：A 的上升是熵退火末段的收敛（ent_coef 已接近 0.005），不是噪声；A 的 u7664 将成为目前最佳 checkpoint，第三轮分叉点大概率改回 A。
 **行动**：无；00:40 做配对比较后定分叉点。
+
+## 22:00 EST（第 22 轮补）：wave 10 落地，第四轮草案
+
+wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skipcard` 探索选择器；eps=0 逐位相同；包 `sts2train-0cf4bbe2c9` 已部署。第四轮草案 `docs/round4-plan-2026-11-06.md`：G = E′ 配方 + 精英/跳卡探索 + 精英课程（harvest）对照 H = E′ 配方；判据含可避精英选择率、遗物数、跳卡率、Act 2 boss 打过率。
