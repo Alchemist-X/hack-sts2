@@ -104,13 +104,26 @@ run_eval() {   # OUT DONE_FILE eval-args...: skip a finished evaluation, redo an
 }
 
 # ------------------------------------------------------------------------------------------------ segments
+FAILS=0   # consecutive run_train.sh failures (a session that ends normally resets it)
 for END in $ENDS; do
   tries=0
   until reached "$RUN" "$END"; do
     tries=$((tries + 1))
     if [ $tries -gt 4 ]; then log "$RUN is not at update $END after 4 sessions: stop"; exit 1; fi
     log "train $RUN to update $END (session $tries, overlap $OVERLAP)"
-    $TRAIN "$RUN" 12 2048 "${FLAGS[@]}" --max-updates "$END" || { log "run_train.sh failed (rc $?)"; exit 1; }
+    $TRAIN "$RUN" 12 2048 "${FLAGS[@]}" --max-updates "$END"; rc=$?
+    [ $rc -eq 0 ] && { FAILS=0; continue; }
+    FAILS=$((FAILS + 1))
+    log "run_train.sh failed (rc $rc, failure $FAILS in a row)"
+    [ $FAILS -ge 3 ] && { log "run_train.sh failed 3 times in a row: stop"; exit 1; }
+    # The trainer's compiled-vs-eager numerics gate (ppo.py check_compiled) trips on bf16 rounding noise when the
+    # minibatch loss is ~0 (w4-d session 19 at u8664, 2026-11-06 04:38Z: loss rel 2.3e-2 > 1e-2 while every gradient
+    # agreed to 3.8e-2 << 0.25); before this retry the exit cascaded into the wrappers' ': done' and the keepalive
+    # stopped the runtime. Continue eager instead (recorded in the run's config.json / train.log).
+    if tail -c 20000 "$RUN/train.log" 2>/dev/null | grep -q "compiled minibatch update vs eager.*MISMATCH\|CompiledMismatchError"; then
+      FLAGS+=(--compile off); log "compile gate tripped: retrying with --compile off"
+    fi
+    sleep 30
   done
   log "$RUN at update $END"
   CK=$(printf '%s/checkpoints/pinned-%07d.pt' "$RUN" "$END")
