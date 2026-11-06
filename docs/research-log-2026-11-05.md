@@ -192,3 +192,9 @@ wave 9 合入（`--explore-kinds/--explore-eps/--explore-logp`，评审后默认
 ## 22:00 EST（第 22 轮补）：wave 10 落地，第四轮草案
 
 wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skipcard` 探索选择器；eps=0 逐位相同；包 `sts2train-0cf4bbe2c9` 已部署。第四轮草案 `docs/round4-plan-2026-11-06.md`：G = E′ 配方 + 精英/跳卡探索 + 精英课程（harvest）对照 H = E′ 配方；判据含可避精英选择率、遗物数、跳卡率、Act 2 boss 打过率。
+
+## 22:15 EST（第 23 轮）
+
+**观察**：A u6989：dev-128 u6800 0.458、u6900 0.452（段终 ab-512 u6564 0.467）；D 到第一个段终点 u8164：dev-128 0.440、ab-512 0.431（起点 B u7664 的 ab-512 0.434——500 个 update 后持平）。余额 373.6。wave 10 合并门禁通过。
+**判断**：D（对照，无宏变化）在 B 终点上续训 500 update 没有提升，符合"平台"判断；C 的 `--macros all` 读数明早见。
+**行动**：推送分支；等 A 的 u7664（约 00:30）。
