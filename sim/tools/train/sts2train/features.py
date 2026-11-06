@@ -24,10 +24,20 @@ import torch
 USED_BUFFERS = (
     "global_i", "global_f", "hand", "hand_f", "hand_dmg", "deck", "draw_counts", "discard_counts", "exhaust_counts",
     "relics", "potions", "powers_player", "orbs", "enemies", "enemy_intents", "enemy_powers", "allies", "map_nodes",
-    "rewards", "card_reward", "card_reward_alts", "shop", "rest", "event_options", "prompt_options", "cand", "cand_n",
+    "rewards", "card_reward", "card_reward_alts", "reward_choices", "shop", "rest", "event_options", "prompt_options", "cand", "cand_n",
 )
 # Buffers whose leading row axis is truncated (training stores at most this many rows; eval passes all of them).
 ROW_TRUNCATED = ("cand", "prompt_options")
+
+REWARD_INPUT_ARCH = "reward_choices_v1"
+PUBLIC_HAND_INPUT_ARCH = "reward_choices_public_handselect_v1"
+INPUT_ARCHES = (REWARD_INPUT_ARCH, PUBLIC_HAND_INPUT_ARCH)
+
+def checked_input_arch(marker):
+    if type(marker) is not str or marker not in INPUT_ARCHES:
+        raise ValueError("unknown or untyped public input architecture")
+    return marker
+
 
 ENUMS = ("RunPhase", "RunActionKind", "IntentType", "MapPointType", "RewardType", "ChoicePromptKind", "CardType",
          "TargetType", "CardRarity", "RestOption", "CardRewardAlt", "ShopCategory", "PileType", "RelicStatus",
@@ -51,18 +61,27 @@ class ModelSpec:
     card_vars: int
     aux_fields: list[str] = field(default_factory=list)
 
+    input_arch: str = ""                       # pre-reward checkpoints have no input architecture marker
+
     @classmethod
-    def from_schema(cls, schema) -> "ModelSpec":
+    def from_schema(cls, schema, *, input_arch=REWARD_INPUT_ARCH) -> "ModelSpec":
+        checked_input_arch(input_arch)
         vocab = {k: len(v) for k, v in schema.vocab.lists.items()}
         enums = {k: len(v) for k, v in schema.vocab.enums.items()}
         names = {k: [schema.vocab.enums[k].name(i) for i in range(len(schema.vocab.enums[k]))] for k in ENUMS}
         cols, shapes = {}, {}
+        if "reward_choices" not in schema:
+            raise SpecMismatch("reward_choices_v1 requires the native reward_choices buffer")
         for name in USED_BUFFERS + ("aux", "last_episode"):
             b = schema[name]
             shapes[name] = list(b.shape)
             if b.fields:
                 cols[name] = {f: i for i, f in enumerate(b.fields)}
-        return cls(encoder_version=schema.encoder_version, vocab=vocab, enums=enums, enum_names=names, cols=cols,
+        required_kinds = {"TakeRewardCard", "TakeRewardAlternative"}
+        required_cols = set(cols["hand"]) | {"reward_index", "option", "alt_id"}
+        if not required_kinds.issubset(names["RunActionKind"]) or not required_cols.issubset(cols.get("reward_choices", {})):
+            raise SpecMismatch("reward_choices_v1 requires the native reward choice table and both reward macro kinds")
+        return cls(input_arch=input_arch, encoder_version=schema.encoder_version, vocab=vocab, enums=enums, enum_names=names, cols=cols,
                    shapes=shapes, card_vars=len(schema.card_vars), aux_fields=list(schema["aux"].fields))
 
     def to_json(self) -> dict:
@@ -71,6 +90,70 @@ class ModelSpec:
     @classmethod
     def from_json(cls, d: dict) -> "ModelSpec":
         return cls(**d)
+
+
+def public_hand_slots(spec, x):
+    """B0 public-only proof, returning candidate hand indices or -1 without mutating x.
+
+    Native hand_n/prompt_option_n are pre-clamp counts. cand_n is clamped at
+    native cap, so cap equality is conservatively unknown. No global status
+    claim: unrelated native table flags are not model inputs.
+    """
+    hand, options, cand = x["hand"], x["prompt_options"], x["cand"]
+    batch, width = cand.shape[:2]
+    out = torch.full((batch, width), -1, dtype=torch.long, device=cand.device)
+    H, P = hand.shape[1], options.shape[1]
+    O = min(H, P)
+    if width == 0 or O == 0:
+        return out
+    g, h, o, c = (spec.cols[k] for k in ("global_i", "hand", "prompt_options", "cand"))
+    gi = x["global_i"]
+    hn, pn, cn = gi[:, g["hand_n"]], gi[:, g["prompt_option_n"]], x["cand_n"]
+    hi = torch.arange(H, device=hand.device)
+    oi = torch.arange(O, device=hand.device)
+    hp = hi[None, :] < hn[:, None]
+    op = oi[None, :] < pn[:, None]
+    hid, hup = hand[..., h["card_id"]], hand[..., h["upgrade"]]
+    opts = options[:, :O]
+    pid, pup = opts[..., o["item_id"]], opts[..., o["upgrade"]]
+    active = ((gi[:, g["decision_kind"]] == spec.enum_names["RunPhase"].index("Prompt"))
+              & (gi[:, g["prompt_kind"]] == spec.enum_names["ChoicePromptKind"].index("HandSelect"))
+              & (gi[:, g["prompt_pile"]] == spec.enum_names["PileType"].index("Hand"))
+              & (gi[:, g["is_combat"]] == 1))
+    complete = ((hn > 0) & (hn <= H) & (pn > 0) & (pn <= O) & (pn <= hn)
+                & (cn > 0) & (cn <= width) & (cn < spec.shapes["cand"][0]))
+    # Known identities only. '?' cannot prove card identity; hand padding must
+    # agree with true hand_n, not quietly introduce stale visible cards.
+    complete &= torch.where(hp, (hid > 1) & (hid < spec.vocab["cards"]) & (hup >= 0), (hid == 0) & (hup == 0)).all(1)
+    good_option = ((pid > 1) & (pid < spec.vocab["cards"]) & (pup >= 0)
+                   & (opts[..., o["kind_of_item"]] == spec.enum_names["PromptItemKind"].index("card"))
+                   & (opts[..., o["ordinal"]] == oi[None, :]))
+    complete &= (~op | good_option).all(1)
+    matches = ((pid[:, :, None] == hid[:, None, :]) & (pup[:, :, None] == hup[:, None, :])
+               & op[:, :, None] & hp[:, None, :])
+    nmatch = matches.sum(2)
+    complete &= (~op | (nmatch > 0)).all(1)
+    # The native HandSelect is an ordered subset without replacement. Reject
+    # stale/foreign snapshots whose public multiplicities cannot be a subset.
+    hand_same = ((hid[:, :, None] == hid[:, None, :]) & (hup[:, :, None] == hup[:, None, :])
+                 & hp[:, :, None] & hp[:, None, :]).sum(2)
+    complete &= (~hp | (matches.sum(1) <= hand_same)).all(1)
+    ordered_equal = (~op | ((pid == hid[:, :O]) & (pup == hup[:, :O]))).all(1)
+    full = (pn == hn) & ordered_equal
+    filtered = pn < hn
+    unique = matches.to(torch.int64).argmax(2)
+    option_slots = torch.where(full[:, None], oi[None, :].expand(batch, -1),
+                               torch.where(filtered[:, None] & (nmatch == 1), unique, -1))
+    option_slots = torch.where((active & complete)[:, None] & op, option_slots, -1)
+    index = cand[..., c["option_index"]].long()
+    safe = index.clamp(0, O - 1)
+    slots = option_slots.gather(1, safe)
+    item = pid.gather(1, safe)
+    eligible = ((torch.arange(width, device=cand.device)[None, :] < cn[:, None])
+                & (cand[..., c["kind"]] == spec.enum_names["RunActionKind"].index("PromptSelect"))
+                & (index >= 0) & (index < pn[:, None]) & (index < O)
+                & (cand[..., c["A"]] == index) & (cand[..., c["card_id"]] == item))
+    return torch.where(eligible, slots, out)
 
 
 class SpecMismatch(ValueError):
@@ -124,6 +207,8 @@ def spec_diff(old: "ModelSpec | dict", new: "ModelSpec | dict") -> tuple[list[st
     block: list[str] = []
     other: list[str] = []
     widened: dict[str, dict] = {}
+    if o.get("input_arch", "") != n.get("input_arch", ""):
+        block.append(f"input architecture {o.get('input_arch') or 'baseline'} -> {n.get('input_arch') or 'baseline'}")
     if o.get("encoder_version") != n.get("encoder_version"):
         other.append(f"encoder_version {o.get('encoder_version')} -> {n.get('encoder_version')}")
     oshp, nshp, ocol, ncol = o.get("shapes", {}), n.get("shapes", {}), o.get("cols", {}), n.get("cols", {})
@@ -300,7 +385,7 @@ class RolloutStore:
     computed from host copies of cand_n / prompt_option_n (`rows`), so a minibatch costs no device->host sync."""
 
     def __init__(self, spec: ModelSpec, steps: int, num_envs: int, max_rows: int, dtypes: dict[str, np.dtype],
-                 device: torch.device | str = "cpu"):
+                 device: torch.device | str = "cpu", *, transition_aux: bool = False):
         self.T, self.N, self.max_rows = steps, num_envs, max_rows
         self.device = torch.device(device)
         self._prompt_col = spec.cols["global_i"]["prompt_option_n"]
@@ -319,6 +404,16 @@ class RolloutStore:
         self.valid = np.zeros((steps, num_envs), dtype=bool)
         self.cand_n_h = np.zeros((steps, num_envs), dtype=np.int64)       # host copies of the row counts (`rows`)
         self.prompt_n_h = np.zeros((steps, num_envs), dtype=np.int64)
+        self.transition_y = np.zeros((steps, num_envs, 4), dtype=np.float32) if transition_aux else None
+        self.transition_mask = np.zeros((steps, num_envs, 4), dtype=bool) if transition_aux else None
+
+    def put_transition(self, t, target, mask):
+        if self.transition_y is None or target.shape != (self.N, 4) or mask.shape != (self.N, 4):
+            raise ValueError("transition rollout storage unavailable or misaligned")
+        if not np.isfinite(target[mask]).all():
+            raise FloatingPointError("nonfinite transition label")
+        self.transition_y[t] = np.where(mask, target, 0)
+        self.transition_mask[t] = mask
 
     def put(self, t: int, x: dict[str, torch.Tensor], obs: dict[str, np.ndarray] | None = None) -> None:
         """Store step t from `obs_to_device` tensors (row-cut buffers are zero-padded to `max_rows`). `obs` = the host

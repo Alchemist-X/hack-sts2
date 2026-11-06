@@ -95,7 +95,7 @@ from .cycles import update_stats as cycle_update_stats
 from .episodes import EPISODE_HOOKS, EpisodeLog
 from .gae import time_limit_advantages
 from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_spec_compat, describe_widened,
-                       obs_to_device, widen_spec)
+                       obs_to_device, widen_spec, checked_input_arch, REWARD_INPUT_ARCH)
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
 from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
 from .loopbreak import LoopBreaker
@@ -170,8 +170,11 @@ class TrainConfig:
     heads: int = 4
     ff_mult: int = 4
     deck_counts: bool = False       # count-aware deck / pile pooling + deck count features (architecture)
+    critic_arch: str = ""           # Task099 explicit opt-in detached legal-candidate value context
+    input_arch: str = "reward_choices_v1"  # Task104 explicit public HandSelect routing semantic identity
     # auxiliary heads (sts2train.heads; architecture: part of the checkpoint's arch)
     aux_heads: bool = False         # win-probability + combat-hp heads on the state, trained with the PPO loss
+    transition_coef: float = 0.0    # Task089 optional training-only public actual-action delta head (fixed .1)
     aux_coef: float = 0.1           # weight of their losses (masked BCE + masked squared error)
     aux_bootstrap: bool = True      # episodes / combats still running at the window end: target = the head there
     # runtime
@@ -251,6 +254,10 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         raise ValueError(f"compile {out.compile!r}: expected one of {COMPILE_MODES}")
     if out.compile == "reduce-overhead" and out.static_rows is False:
         raise ValueError("compile reduce-overhead (CUDA graphs) needs static shapes: drop --no-static-rows")
+    if float(out.transition_coef) not in (0.0, 0.1):
+        raise ValueError("Task089 transition_coef must be zero or fixed .1")
+    if out.transition_coef and (out.compile != "off" or out.amp or out.tf32 or out.epochs != 1):
+        raise ValueError("Task089 positive integration requires eager FP32 epochs1")
     if not float(out.aux_coef) >= 0.0:
         raise ValueError(f"aux_coef {out.aux_coef} must be >= 0")
     if isinstance(out.loop_breaker, str):
@@ -384,7 +391,16 @@ def use_static_rows(cfg: TrainConfig) -> bool:
 
 
 def config_dict(cfg: TrainConfig) -> dict:
-    return {k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(cfg).items()}
+    from .model import checked_critic_arch
+    checked_critic_arch(getattr(cfg, "critic_arch", ""))
+    from .features import checked_input_arch, REWARD_INPUT_ARCH
+    checked_input_arch(getattr(cfg, "input_arch", REWARD_INPUT_ARCH))
+    out = {k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(cfg).items()}
+    if not out.get("critic_arch"):
+        out.pop("critic_arch", None)
+    if out.get("input_arch") == REWARD_INPUT_ARCH:
+        out.pop("input_arch", None)
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ checkpoints
@@ -400,6 +416,10 @@ def weights_hash(model: torch.nn.Module) -> str:
 
 def save_checkpoint(path: Path, model: Policy, spec: ModelSpec, cfg: TrainConfig, extra: dict) -> str:
     """A weights-only checkpoint (eval / tests); training checkpoints add optimizer, counters and RNG states."""
+    from .model import checked_critic_arch
+    if checked_critic_arch(getattr(cfg, "critic_arch", "")) != getattr(model, "critic_arch", ""):
+        raise ValueError("saved critic config differs from model architecture")
+    _input_save_guard(model, spec, cfg)
     wh = weights_hash(model)
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
     atomic_torch_save({"format": CKPT_FORMAT, "spec": spec.to_json(), "model": state, "config": config_dict(cfg),
@@ -412,7 +432,76 @@ def head_record(model: Policy) -> dict:
     return {"heads": dict(HEAD_OUTPUTS)} if getattr(model, "aux_heads", False) else {}
 
 
-def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tuple[Policy, ModelSpec, dict]:
+def validate_input_checkpoint(ck, model=None):
+    from .features import checked_input_arch, REWARD_INPUT_ARCH
+    marker = checked_input_arch((ck.get("spec") or {}).get("input_arch", ""))
+    arch = checked_input_arch((ck.get("arch") or {}).get("input_arch", ""))
+    config = checked_input_arch((ck.get("config") or {}).get("input_arch", REWARD_INPUT_ARCH))
+    if marker != arch or marker != config or (model is not None and marker != model.spec.input_arch):
+        raise ValueError("checkpoint public input semantics differ across spec/arch/config/model")
+    return marker
+
+def _input_save_guard(model, spec, cfg):
+    from .features import checked_input_arch, REWARD_INPUT_ARCH
+    marker = checked_input_arch(getattr(cfg, "input_arch", REWARD_INPUT_ARCH))
+    if marker != spec.input_arch or marker != model.spec.input_arch:
+        raise ValueError("saved public input semantics differ from model/spec/config")
+
+
+def validate_critic_checkpoint(ck, model=None, *, require_optimizer=False):
+    from .model import checked_critic_arch, CRITIC_ARCH
+    validate_input_checkpoint(ck, model)
+    arch = ck.get("arch") or {}
+    config = ck.get("config") or {}
+    marker = checked_critic_arch(arch.get("critic_arch", ""))
+    if marker != checked_critic_arch(config.get("critic_arch", "")):
+        raise ValueError("checkpoint critic arch/config marker differs")
+    state = ck.get("model") or {}
+    key = "value_candidate_proj.weight"
+    if bool(marker) != (key in state):
+        raise ValueError("critic checkpoint marker/complete projection differs")
+    if marker:
+        shape = (int(arch.get("s", config.get("s", 256))) // 2,
+                 int(arch.get("d", config.get("d", 96))))
+        value = state[key]
+        if not torch.is_tensor(value) or tuple(value.shape) != shape or value.dtype != torch.float32 or not torch.isfinite(value).all():
+            raise ValueError("critic projection schema or finite weights differs")
+    if model is not None and marker != getattr(model, "critic_arch", ""):
+        raise ValueError("checkpoint critic architecture cannot be resumed as another architecture")
+    if marker and require_optimizer:
+        saved = ck.get("optimizer")
+        if model is None or not isinstance(saved, dict):
+            raise ValueError("critic resume requires complete optimizer state")
+        groups, states = saved.get("param_groups"), saved.get("state")
+        names = [name for name, _ in model.named_parameters()]
+        if not isinstance(groups, list) or len(groups) != 1 or not isinstance(states, dict) or len(groups[0].get("params", [])) != len(names):
+            raise ValueError("critic optimizer parameter schema differs")
+        ids = groups[0]["params"]
+        if (any(type(identifier) is not int for identifier in ids)
+                or ids != list(range(len(names)))
+                or any(type(identifier) is not int or identifier not in ids for identifier in states)):
+            raise ValueError("critic optimizer IDs are not unique canonical model bindings")
+        identifier = groups[0]["params"][names.index(key)]
+        moment = states.get(identifier)
+        if not states and ck.get("updates", 0) == 0:
+            return marker  # Explicit fresh unstepped optimizer is valid, never a learned resume.
+        required = {"step", "exp_avg", "exp_avg_sq"} | ({"max_exp_avg_sq"} if groups[0].get("amsgrad", False) else set())
+        if not isinstance(moment, dict) or set(moment) != required:
+            raise ValueError("critic optimizer moments incomplete")
+        for name in required - {"step"}:
+            tensor = moment[name]
+            if not torch.is_tensor(tensor) or tuple(tensor.shape) != shape or tensor.dtype != value.dtype or not torch.isfinite(tensor).all():
+                raise ValueError("critic optimizer moment shape/dtype/finite differs")
+        step = moment["step"]
+        if not torch.is_tensor(step) or step.ndim != 0 or step.dtype != torch.float32 or not torch.isfinite(step).all() or float(step) < 1 or float(step) != int(float(step)):
+            raise ValueError("critic optimizer step is not a finite positive integer")
+        other_steps = [float(st["step"]) for st in states.values() if isinstance(st, dict) and torch.is_tensor(st.get("step")) and st["step"].numel() == 1]
+        if not other_steps or float(step) != max(other_steps):
+            raise ValueError("critic optimizer step is behind base optimizer")
+    return marker
+
+
+def load_checkpoint(path, device="cpu", library: ModelSpec | None = None, *, library_schema=None) -> tuple[Policy, ModelSpec, dict]:
     """A checkpoint's model on `device` (eval mode), its spec and the checkpoint dict.
 
     With `library` (the spec of the library the model will run on) the checkpoint must pass
@@ -420,7 +509,12 @@ def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tup
     widens embedded enums, the model is built from `features.widen_spec` (the checkpoint's spec with the library's
     sizes of those enums) and loads the checkpoint through `model.widen_state_dict` (old rows kept, new rows zero)."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
+    validate_critic_checkpoint(ck)
     spec = ModelSpec.from_json(ck["spec"])
+    if library_schema is not None:
+        if library is not None:
+            raise ValueError("supply library or library_schema, not both")
+        library = ModelSpec.from_schema(library_schema, input_arch=spec.input_arch)
     widened: dict = {}
     if library is not None:
         ck["spec_compat"] = check_spec_compat(spec, library, what="evaluate")
@@ -436,6 +530,14 @@ def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tup
 def make_checkpoint(model: Policy, opt: torch.optim.Optimizer, spec: ModelSpec, cfg: TrainConfig, counters: dict,
                     rng: np.random.Generator, device: torch.device, **extra) -> dict:
     """A resumable training checkpoint: weights, optimizer, counters, RNG states, spec and config."""
+    from .model import checked_critic_arch
+    if checked_critic_arch(getattr(cfg, "critic_arch", "")) != getattr(model, "critic_arch", ""):
+        raise ValueError("checkpoint critic config differs from model architecture")
+    _input_save_guard(model, spec, cfg)
+    if getattr(cfg, "transition_coef", 0):
+        from .transition_state import contract
+        if not isinstance(extra.get("transition_aux"), dict) or extra["transition_aux"].get("contract") != contract(spec):
+            raise ValueError("positive Task089 checkpoint requires exact separate head state")
     return {"format": CKPT_FORMAT, "spec": spec.to_json(), "config": config_dict(cfg), "arch": model.arch,
             "model": {k: v.detach().cpu() for k, v in model.state_dict().items()}, "weights_hash": weights_hash(model),
             "optimizer": opt.state_dict(), "updates": int(counters.get("updates", 0)),
@@ -452,6 +554,7 @@ def restore_checkpoint(ck: dict, model: Policy, opt: torch.optim.Optimizer | Non
     zero rows for the new members (`model.widen_state_dict`), and so do those tables' Adam moments (steps kept).
     Returns what happened to each RNG state (`_set_rng_state`; None without `rng`)."""
     widened = sorted(widened or ())
+    validate_critic_checkpoint(ck, model, require_optimizer=opt is not None)
     model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
     if opt is not None and ck.get("optimizer"):
         opt.load_state_dict(widen_optimizer_state(ck["optimizer"], ck["model"], model, widened) if widened
@@ -560,11 +663,14 @@ def effective_floor_step_cap(env) -> int:
     return int(getattr(env, "floor_step_cap", 0) or 0)
 
 
-def resume_compat(resume: dict, log=print) -> dict:
+def resume_compat(resume: dict, log=print, *, input_arch=REWARD_INPUT_ARCH) -> dict:
     """Check a resume checkpoint's spec against the library sts2vec loads (before any env exists, so a refused resume
     leaves the run directory untouched): `features.check_spec_compat`, raising `SpecMismatch` with every difference in
     the model's inputs. Returns the compat record for config.json (``model_inputs`` identical / widened)."""
-    compat = check_spec_compat(resume["spec"], ModelSpec.from_schema(schema_of(load())), what="resume")
+    checked_input_arch(input_arch)
+    if validate_input_checkpoint(resume) != input_arch:
+        raise ValueError("resume input architecture differs from requested config")
+    compat = check_spec_compat(resume["spec"], ModelSpec.from_schema(schema_of(load()), input_arch=input_arch), what="resume")
     if compat["other_differences"] or compat["widened_enums"]:
         inputs = "identical"
         if compat["widened_enums"]:
@@ -732,10 +838,8 @@ def _learner_policy(model, xb, act, *, amp, with_aux):
     return logp_all, logp_all.gather(1, act.unsqueeze(1)).squeeze(1), value, heads
 
 
-def _batch_logp_gate(model, args, amp):
-    """Compare actual sampled behavior logp with the first frozen learner minibatch."""
-    xb, act, oldlogp = args[:3]
-    logp_all, newlogp, value, heads = _learner_policy(model, xb, act, amp=amp, with_aux=len(args) > 6)
+def _logp_gate_from_outputs(model, oldlogp, logp_all, newlogp, value, heads, amp):
+    """Accepted S/M gate math shared with the actual learner-forward observer."""
     outputs = (oldlogp, logp_all, value, *(heads or {}).values())
     finite = bool(torch.stack([torch.isfinite(x.detach()).all() for x in outputs]).all())
     delta = newlogp.detach().double() - oldlogp.double()
@@ -750,22 +854,42 @@ def _batch_logp_gate(model, args, amp):
                         "min_signed_delta_logp": float(values.min()), "max_signed_delta_logp": float(values.max()),
                         "positive_deltas": int((values > 0).sum()), "negative_deltas": int((values < 0).sum()),
                         "zero_deltas": int((values == 0).sum())}
-    return {**distribution, "samples": act.numel(), "finite": finite, "max_abs_delta_logp": maximum,
+    return {**distribution, "samples": oldlogp.numel(), "finite": finite, "max_abs_delta_logp": maximum,
             "mean_approx_kl": mean_kl if finite else None, "max_abs_delta_limit": 1e-3, "mean_approx_kl_limit": 1e-6,
             "learner_train_mode": model.training, "learner_grad_enabled": torch.is_grad_enabled(),
             "bf16_autocast": amp, "same_candidate_mask": True,
             "passed": finite and maximum <= 1e-3 and mean_kl <= 1e-6}
 
 
+def _batch_logp_gate(model, args, amp):
+    """Compare actual sampled behavior logp with the first frozen learner minibatch."""
+    xb, act, oldlogp = args[:3]
+    logp_all, newlogp, value, heads = _learner_policy(model, xb, act, amp=amp,
+        with_aux=bool(getattr(model, "aux_heads", False)) and len(args) > 6)
+    return _logp_gate_from_outputs(model, oldlogp, logp_all, newlogp, value, heads, amp)
+
+
 def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
              madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
              ent_coef: float, amp: bool = False, aux: tuple | None = None,
-             aux_coef: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
+             aux_coef: float = 0.0, transition: tuple | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
     and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
     `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
     losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
-    logp_all, newlogp, v, heads = _learner_policy(model, xb, act, amp=amp, with_aux=aux is not None)
+    transition_features = None
+    if transition is None:
+        logp_all, newlogp, v, heads = _learner_policy(model, xb, act, amp=amp, with_aux=aux is not None)
+    else:
+        with _autocast(amp):
+            result = model(xb, aux=aux is not None, return_transition_features=True)
+            if aux is not None:
+                logits, v, heads, transition_features = result
+            else:
+                logits, v, transition_features = result
+                heads = None
+        logp_all = F.log_softmax(logits, -1)
+        newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
     ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
     ratio = (newlogp - oldlogp).exp()
     pg = -torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv).mean()
@@ -775,13 +899,25 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
     if heads is not None:
         wl, cl, wf, cf_ = aux_losses(heads, *aux)
         loss = loss + aux_coef * (wl + cl)
+    base_loss = loss
+    if transition is not None:
+        from .transition_aux import masked_loss
+        from .transition_state import prediction_metrics
+        head, target, mask, coef = transition
+        pred = head(*transition_features, act)
+        observer = getattr(head, "_gate_observer", None)
+        if observer is not None:
+            observer(logp_all, newlogp, v, heads, pred)
+        extra = masked_loss(pred, target, mask)
+        head.last_metrics = prediction_metrics(pred, target, mask)
+        loss = loss + coef * extra
     with torch.no_grad():
         kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
         cf = ((ratio - 1).abs() > clip).float().mean()
     if heads is not None:
-        return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(), wl.detach(),
+        return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, base_loss.detach(), wl.detach(),
                                   cl.detach(), wf, cf_])
-    return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()])
+    return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, base_loss.detach()])
 
 
 def _macos_inductor_openmp() -> None:
@@ -825,8 +961,16 @@ class MinibatchUpdater:
     and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`)."""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
-                 device: torch.device | str):
+                 device: torch.device | str, *, transition_head=None, transition_opt=None):
         self.model, self.opt = model, opt
+        self.transition_head, self.transition_opt = transition_head, transition_opt
+        self.transition_rows = []
+        self.transition_gate_required = False
+        self.first_transition_gate = None
+        self.transition_gate_context = None
+        self.transition_coef = float(getattr(cfg, "transition_coef", 0.))
+        if bool(self.transition_coef) != (transition_head is not None and transition_opt is not None):
+            raise ValueError("transition learner state/config differs")
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
         self.coefs = (vf_coef, ent_coef)
@@ -842,6 +986,14 @@ class MinibatchUpdater:
                 return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
                                 ent_coef=ent_coef, amp=amp)
 
+        if self.transition_head is not None:
+            def transition_loss_fn(xb, act, oldlogp, madv, vret, vold, *extra):
+                old_aux = tuple(extra[:4]) if self.aux else None
+                y, mask = extra[4:] if self.aux else extra
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp, aux=old_aux, aux_coef=aux_coef,
+                                transition=(transition_head, y, mask, self.transition_coef))
+            loss_fn = transition_loss_fn
         self.eager = loss_fn
         self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
         self.cudagraphs = _cudagraphs(cfg.compile, torch.device(device))
@@ -855,11 +1007,24 @@ class MinibatchUpdater:
         return self.eager(*args)
 
     def __call__(self, *args, compiled: bool = True) -> torch.Tensor:
+        if self.transition_gate_required:
+            from .transition_gpu_gate import validate_receipt
+            validate_receipt(self.first_transition_gate, self.transition_gate_context)
         self.opt.zero_grad(set_to_none=True)
+        if self.transition_opt is not None:
+            from .transition_state import sync_optimizer
+            sync_optimizer(self.opt, self.transition_opt)
+            self.transition_opt.zero_grad(set_to_none=True)
         loss, st = self.loss(*args, compiled=compiled)
         loss.backward()
-        gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+        params = self.model.parameters() if self.transition_head is None else \
+            list(self.model.parameters()) + list(self.transition_head.parameters())
+        gn = torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
         self.opt.step()
+        if self.transition_opt is not None:
+            # Always step, including dense zero head gradients: matches joint Adam moment decay.
+            self.transition_opt.step()
+            self.transition_rows.append(self.transition_head.last_metrics)
         if self.aux:
             return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
@@ -998,7 +1163,7 @@ def plan_run(given: dict, resume: str | None = None, log=print) -> tuple[TrainCo
 
 def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: Path | None = None,
           given: dict | None = None, episode_hooks=(), isolation_seedsets=(), strict_resume=False,
-          checkpoint_ready=None, seed_range=None, isolation_guard=None, batch_probe=None) -> dict:
+          checkpoint_ready=None, seed_range=None, isolation_guard=None, batch_probe=None, transition_gate_context=None, formal_transition_gpu_gate=False, critic_diagnostics=False) -> dict:
     """Train until a budget ends the session (or SIGINT / SIGTERM). `resume` = a checkpoint dict from `plan_run`;
     `given` = the command line's explicit settings (recorded in config.json ``sessions[]``); `episode_hooks` =
     callables added to ``episodes.EPISODE_HOOKS`` for this call (fields of the episodes.jsonl rows).
@@ -1012,12 +1177,18 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     Before anything is created: an eval seed set with games of a frozen blind set is refused unless
     ``allow_blind`` + ``blind_purpose`` (``isolation.check_blind_eval``), and a legacy start pool that holds a holdout
     game is refused (``isolation.check_legacy_pool``); stream mode skips such seeds instead (``seedstream``)."""
+    if critic_diagnostics:
+        from .critic_diagnostics import safe_summarize as summarize_critic_diagnostics
+
     if batch_probe is not None and (
         not callable(batch_probe) or resume is not None or seed_range is None or cfg.start_mode != "stream"
         or (cfg.envs, cfg.rollout, cfg.minibatch, cfg.epochs, cfg.max_updates, cfg.ckpt_every) != (2048, 64, 4096, 1, 1, 1)
         or cfg.device != "cuda" or cfg.compile != "off" or cfg.rollout_loop_breaker
     ):
         raise ValueError("batch probe requires one fresh frozen CUDA update")
+    from . import transition_gpu_gate
+    transition_gate_required = transition_gpu_gate.required(cfg, formal_transition_gpu_gate)
+    first_transition_gate = transition_gpu_gate.prepare(cfg, strict_resume, resume, transition_gate_context, formal_transition_gpu_gate)
     if seed_range is not None and cfg.start_mode != "stream":
         raise ValueError("a seed reservation requires --start-mode stream")
     if cfg.bootstrap_time_limits and cfg.start_mode != "stream":
@@ -1092,7 +1263,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
     else:                               # the slots' start offsets into the fixed pool (VecEnv slot seeds)
         start_seed = seed_of(cfg, "start_seed")
         seed_text = f"PPO{start_seed}" if resume is None else f"PPO{start_seed}R{upd0}"
-    compat = resume_compat(resume, log) if resume is not None else None   # raises SpecMismatch
+    compat = resume_compat(resume, log, input_arch=cfg.input_arch) if resume is not None else None   # raises SpecMismatch
     env = VecEnv(cfg.envs, **env_kwargs(cfg, seed_text))
     old_handlers: dict = {}
     try:
@@ -1104,7 +1275,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             if stream.resumed_prefix and stream.resumed_prefix != stream.prefix:
                 log(f"seed stream: prefix {stream.resumed_prefix} -> {stream.prefix}; the counter continues at "
                     f"{stream.state.next}")
-        spec = ModelSpec.from_schema(env.schema)
+        spec = ModelSpec.from_schema(env.schema, input_arch=cfg.input_arch)
         bind_spec(spec)
         if compat is not None and compat["library_encoder_version"] != spec.encoder_version:
             raise SpecMismatch(f"the env loaded encoder_version {spec.encoder_version}, the resume check saw "
@@ -1198,11 +1369,16 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
         model = model.to(device)
         opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
+        from . import transition_state as transition_state
+        from .transition_vector import TransitionFrame, targets as transition_targets
+        transition_head, transition_opt = transition_state.create(spec, model, cfg, device)
+        transition_counts = {}
         rng_restored = None
         best_src = None
         if resume is not None:
             rng_restored = restore_checkpoint(resume, model, opt, rng, device, lr=cfg.lr,
                                               widened=compat["widened_enums"])
+            transition_counts = transition_state.restore(resume, transition_head, transition_opt, transition_counts)
             ck_cfg = resume.get("config") or {}
             if strict_resume:
                 required_rng = {"numpy", "torch"} | ({device.type} if device.type in {"cuda", "mps"} else set())
@@ -1225,7 +1401,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         if cfg.no_best:
             best_eval = None
         adam_step = optimizer_step(opt)
-        updater = MinibatchUpdater(model, opt, cfg, amp, device)
+        updater = MinibatchUpdater(model, opt, cfg, amp, device, transition_head=transition_head, transition_opt=transition_opt)
+        updater.transition_gate_required = transition_gate_required
+        updater.first_transition_gate = first_transition_gate
+        updater.transition_gate_context = transition_gate_context
         runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
         tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
         compile_check: dict = {}            # eager vs compiled, once per session (first rollout step / minibatch)
@@ -1235,7 +1414,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             + (f" [static rows: cand / prompt_options {cfg.max_rows} wide]" if static else ""))
 
         dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
-        store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device)
+        store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device, transition_aux=transition_head is not None)
         log(f"rollout store: {store.nbytes / 2**20:.0f} MiB on {device}")
 
         ckpts = CheckpointManager(run, cfg.keep_ckpts)
@@ -1297,7 +1476,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             "repo_sha": repo_sha(), "sessions": sessions, "start_pool": starts.summary() if starts else None,
             "start_mode": cfg.start_mode, "seeds": seeds_record(cfg),
             "isolation": dict(isolation, collisions_skipped=env.stream.state.skipped) if cfg.start_mode == "stream"
-            else isolation, "seed_stream": track.record(), "blind_eval": blind_eval})
+            else isolation, "seed_stream": track.record(), "blind_eval": blind_eval,
+            **({"transition_aux_contract": transition_head.contract,
+                "transition_aux_params": param_count(transition_head),
+                "training_params_including_transition": n_params + param_count(transition_head)}
+               if transition_head is not None else {})})
 
         stop = {"signal": None}
 
@@ -1319,6 +1502,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 extra = {"seed_stream": track.state_dict()}
             else:                       # a pool session keeps a stream's counter for a later stream session
                 extra = dict(track.state_dict(), **({"seed_stream": carried_stream} if carried_stream else {}))
+            if transition_head is not None:
+                extra["transition_aux"] = transition_state.pack(transition_head, transition_opt, transition_counts)
+            if transition_gate_required:
+                transition_gpu_gate.validate_receipt(first_transition_gate, transition_gate_context)
+                extra[transition_gpu_gate.KEY] = first_transition_gate
             state = make_checkpoint(model, opt, spec, cfg, dict(c, updates=upd), rng, device, best_eval=best_eval,
                                     last_eval=last_eval, inflight=track.inflight(), training_precision=precision,
                                     **extra)
@@ -1504,10 +1692,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             env_s = infer_s = 0.0
             n_steps = se_n = cg_n = il_n = over_n = fs_n = 0
             prompt_over_n = native_cand_over_n = native_table_over_n = step_caps = 0
+            diagnostic_phase = np.empty(store.values.shape, dtype=np.int32) if critic_diagnostics else None
+            diagnostic_act = np.empty(store.values.shape, dtype=np.int32) if critic_diagnostics else None
             final_values = np.full_like(store.values, np.nan) if cfg.bootstrap_time_limits else None
             step_args = {"capture_final": True} if cfg.bootstrap_time_limits else {}
             model.eval()
+            transition_update = {}
+            updater.transition_rows = []
             for t in range(cfg.rollout):
+                if critic_diagnostics:
+                    diagnostic_phase[t] = obs["global_i"][:, spec.cols["global_i"]["phase"]]
+                    diagnostic_act[t] = obs["global_i"][:, spec.cols["global_i"]["act_index"]] + 1
                 t0 = time.monotonic()
                 cand_n = obs["cand_n"].copy()
                 prompt_n = obs["global_i"][:, spec.cols["global_i"]["prompt_option_n"]]
@@ -1538,7 +1733,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 store.values[t] = value.cpu().numpy()
                 store.valid[t] = valid
                 t1 = time.monotonic()
+                if transition_head is not None:
+                    pre_info = env.info(copy=True)
+                    pre_transition = TransitionFrame.capture(spec, obs, pre_info["episode_id"], pre_info["step_index"], env.status, a_np)
                 obs, rew, term, trunc, status, info = env.step(a_np, **step_args)
+                if transition_head is not None:
+                    post_transition = TransitionFrame.capture(spec, obs, info["episode_id"], info["step_index"], status)
+                    ty, tm, tc = transition_targets(spec, pre_transition, post_transition, a_np,
+                        term.copy(), trunc.copy(), status.copy(), store.valid[t].copy(), max_rows=cfg.max_rows,
+                        last_episode=info["last_episode"].copy(),
+                        terminal_end_kind=env.schema.vocab.enums["EndKind"].index_of("Terminal"))
+                    store.put_transition(t, ty, tm)
+                    transition_state.add_counts(transition_update,
+                        transition_state.coverage(spec, pre_transition, a_np, ty, tm, tc))
                 t2 = time.monotonic()
                 done = (term | trunc).astype(bool)
                 cap_slots = cap_obs = None
@@ -1610,6 +1817,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     infer_s += cap_infer_s
                 env_s += t2 - t1
                 ep_this += fin
+            if transition_head is not None:
+                transition_state.add_counts(transition_counts, transition_update)
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
             x_last = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
@@ -1638,6 +1847,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     gae = delta + cfg.gamma * cfg.lam * nonterm * gae
                     adv[t] = gae
             ret = adv + store.values
+            critic_diagnostic_row = (summarize_critic_diagnostics(
+                store.values, ret, adv, store.valid, diagnostic_phase, diagnostic_act,
+                store.dones, final_values, last_v, spec.enum_names["RunPhase"])
+                if critic_diagnostics else None)
 
             if cfg.start_mode == "stream":
                 env.prefetch()                      # the lookahead's templates, in a thread while the update runs
@@ -1660,10 +1873,24 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             d_mbs = torch.split(to(np.concatenate(mbs)), [len(m) for m in mbs]) if mbs else ()
             d_aux = tuple(to(a_.reshape(-1)) for a_ in aux_np)      # win_y, win_m, combat_y, combat_m (aux heads)
 
+            d_transition = () if transition_head is None else (
+                to(store.transition_y.reshape(-1, 4)), to(store.transition_mask.reshape(-1, 4)))
+
             def mb_args(mb_h, mb):
                 return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
-                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux))
+                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux), *(a_[mb] for a_ in d_transition))
 
+            if transition_gate_required and first_transition_gate is None:
+                first_transition_gate = transition_gpu_gate.run(updater,
+                    mb_args(mbs[0], d_mbs[0]) if mbs else None,
+                    mbs[0] if mbs else np.array([], dtype=np.int64), transition_gate_context,
+                    run / transition_gpu_gate.FILENAME,
+                    {"rollout_decisions": n_steps, "learning_samples": len(idx_all),
+                     "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,
+                     "cand_over_max_rows": over_n, "prompt_over_max_rows": prompt_over_n,
+                     "native_candidate_overflow": native_cand_over_n,
+                     "native_table_overflow": native_table_over_n})
+                updater.first_transition_gate = first_transition_gate
             if batch_probe is not None:
                 gate_start = time.monotonic()
                 check = (_batch_logp_gate(model, mb_args(mbs[0], d_mbs[0]), amp)
@@ -1787,9 +2014,19 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                              ep_this, shaper), **lb_st, **cy_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
                    **gpu_memory(device)}
+            if transition_gate_required:
+                row[transition_gpu_gate.KEY] = first_transition_gate
             if batch_probe is not None:
                 row.update(t_gate_s=gate_s, t_gate_publish_s=gate_publish_s,
                            decisions_per_s_excluding_gate=n_steps / max(t_ck - t_iter - gate_s - gate_publish_s, 1e-9))
+            if transition_head is not None:
+                row["transition_aux"] = {"coverage": transition_update, "cumulative": transition_counts,
+                    "learner": transition_state.summarize_rows(updater.transition_rows),
+                    "coefficient": cfg.transition_coef, "base_loss_stat_unchanged": True,
+                    "total_loss_minibatch_mean": sm["loss"] + cfg.transition_coef *
+                        transition_state.summarize_rows(updater.transition_rows)["loss_minibatch_mean"]}
+            if critic_diagnostics:
+                row["critic_diagnostics"] = critic_diagnostic_row
             metrics.write(row)
             if batch_probe is not None:
                 batch_probe("after_update", {"metrics": row, "optimizer_steps_after": optimizer_step(opt),

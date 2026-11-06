@@ -1,0 +1,1162 @@
+{
+  "schema": "gpt-research-share-v1",
+  "base_repository_commit": "ef377742fa61c66ab246b4bedff536e745751d0b",
+  "scope": "source and curated aggregate summaries; not a live deployment or production ledger",
+  "files": [
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/__init__.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/adapters.py",
+      "sha256": "cf1b235ad5cafed830303bce34ec497ab618acb715092ab37e6ba7be85d570df",
+      "bytes": 1910,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/adapters.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/artifact_adapter.py",
+      "sha256": "79bd09cd8edae721f7ce5ae13532dc42990265ccc3ee51b70a694bfd0abf8787",
+      "bytes": 29789,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/artifact_adapter.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/broker.py",
+      "sha256": "692b8c90f358c44908215677962c75130629b1a32399dc49914dd25f6db56e71",
+      "bytes": 50463,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/broker.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/contracts.py",
+      "sha256": "f499998b8ad7cf32a4a06226f5453d310e979b528b4d5ac18505e5fc93f4c146",
+      "bytes": 14331,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/contracts.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/controller.py",
+      "sha256": "35a683593ec8b7c754843b6f158b981f8a4b5d581e63f6a823c258743f674fce",
+      "bytes": 31417,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/controller.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/lineage.py",
+      "sha256": "70bd442b84bffdb4c9c5d0678c0837534f3e18cfa7c391d6ad741dcfa307ab10",
+      "bytes": 7023,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/lineage.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/manifests.py",
+      "sha256": "ea2ac436c9fb66294da5219dcd879bf905330cc6973d34ea6ade5bb7ec29f4a4",
+      "bytes": 9025,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/manifests.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/modal_provider.py",
+      "sha256": "6057afb1ac380f6febe6f8b02a7e6ada9570d27cb9dc100395caf8f64edb8fae",
+      "bytes": 10237,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/modal_provider.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/native_worker.py",
+      "sha256": "a3a7a85551c873e2f1b8764de4fa0b93a9e1b0bb0514ed98b1ec19a719b2a8bd",
+      "bytes": 13981,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/native_worker.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/sandbox_bundle.py",
+      "sha256": "dd1e8936cae1703776486fd25d3fd58289ee8d3e3c7f8042283d314818326276",
+      "bytes": 6394,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/sandbox_bundle.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/sandbox_provider.py",
+      "sha256": "bac3fe7f07a29dbc791a4c2808bc00903b2d4affe5ae3c6e929db56a7fe19082",
+      "bytes": 22731,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/sandbox_provider.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/modal_research/transition_contract.py",
+      "sha256": "2f83b34fa1a2e7ed6746889cb2690b1c86d84858c94bf557fa791a92a772ceda",
+      "bytes": 33469,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/transition_contract.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/__init__.py",
+      "sha256": "51098b80b81edf0744cda2e2c21b478c3b04f9f7dda8413776c9999b845a12ce",
+      "bytes": 255,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/__init__.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/critic_diagnostics.py",
+      "sha256": "0df080b9448177a58695b7ac5c1b76c82f758a0dd9261c860ddf8557796b1f54",
+      "bytes": 5487,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/critic_diagnostics.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/cycles.py",
+      "sha256": "7a27ce9185765f38a8fa6bd46e20e7173a4684bd834c4cd451c71f27ff6c8305",
+      "bytes": 22082,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/cycles.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/episodes.py",
+      "sha256": "4c65cb9b35be698331d7e3d1d25cad8aa46971df2de3b42e42be6df859fee1fe",
+      "bytes": 6964,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/episodes.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/evaluate.py",
+      "sha256": "8df68583c711ff1b9eb70ec772b470a34a68375f9054c806a379bb075144e9ee",
+      "bytes": 25285,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/evaluate.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/features.py",
+      "sha256": "10babafe5b54bf7fedf04cfc21e9acd92e0843154fbd45efd953b17240c47ad3",
+      "bytes": 23063,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/features.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/gae.py",
+      "sha256": "a34b95be5c2dd01169a320718892f3cbcf987792cd441d8958f71d0d34dcca8e",
+      "bytes": 1193,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/gae.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/heads.py",
+      "sha256": "a46e3f5904cb201d5e18712dc764cb9e1292574bead7cbadef76386422f3a49f",
+      "bytes": 8494,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/heads.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/isolation.py",
+      "sha256": "4a627ff887f15093344e40219930a5f742776c67dae18d599022d5e5468c4ca7",
+      "bytes": 10154,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/isolation.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/loopbreak.py",
+      "sha256": "a91edce801a0c159052e2c4c9b9ed2cf62cc9a5fe5f5d76e6686d4e472f47f1a",
+      "bytes": 12393,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/loopbreak.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/model.py",
+      "sha256": "4702c3ad3659209b11c7359d1943ca337de67bba0f37324e12ef17842056bd35",
+      "bytes": 45071,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/model.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/objective.py",
+      "sha256": "9098473be747f5d3d8c2fa5a28769b0f1bf5a0152ac43ec076841cfbc79802a5",
+      "bytes": 11325,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/objective.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/ppo.py",
+      "sha256": "c66539a1564f3e20a1cec394b0bd42dda0951ccbf281c5d4810b00c8e1124e9e",
+      "bytes": 136953,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/ppo.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/progress.py",
+      "sha256": "c37943665d902e3d52b7e2f8180165aa0ba9edacebf0fdca355df31d95895578",
+      "bytes": 3320,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/progress.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/runlog.py",
+      "sha256": "614545e8265d2ae129e821408e074025126328947e13cb733d74878eb1fb1716",
+      "bytes": 6685,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/runlog.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/seedstream.py",
+      "sha256": "6f4ac9bb936997c8dc8ae49720dae424ed8996ad0012f3746774b4ea4a23900b",
+      "bytes": 26769,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/seedstream.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/startpool.py",
+      "sha256": "9554a7dddf2b58a09f3e5708d05b483d956371aa12aec4ab5e2b5090e0593df1",
+      "bytes": 23194,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/startpool.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/transition_aux.py",
+      "sha256": "8723438ce4f7edd402418e102e5c43b9a7cb8a99badd5858dbaf468f5dd419c8",
+      "bytes": 9754,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_aux.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/transition_gpu_gate.py",
+      "sha256": "cd4f9b535a4e353b935c53501edda24b0b8f91d87c51859998a5638ea22a8716",
+      "bytes": 16108,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_gpu_gate.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/transition_state.py",
+      "sha256": "407fffeafa5f0cebc4a33b54ebfdbe28693efd49c2469335bacdfbf3577664ae",
+      "bytes": 10884,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_state.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2train/transition_vector.py",
+      "sha256": "faaa9fef0cb6b4da3a58922f19841c0f5868cdddde36c3f5220612601ce5f5bd",
+      "bytes": 6976,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_vector.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/__init__.py",
+      "sha256": "017cc4f1e1f744abfcceb4f664afa96e5b08dda2f39ee6acae928db839e187d2",
+      "bytes": 1047,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/__init__.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/env.py",
+      "sha256": "17d950709ce1b83ef0156f05f095a64ff949fd1879da4732440e07287034082b",
+      "bytes": 21571,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/env.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/errors.py",
+      "sha256": "56828317c3c663dd353a079e456e6e9c44a776a92d85c01bf0b59280e163f3b0",
+      "bytes": 973,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/errors.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/evaluate.py",
+      "sha256": "3f145a7aa01d45362112ae10d581d77599ed9948d0f64b1977fa16f809b8d9f0",
+      "bytes": 16207,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/evaluate.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/loader.py",
+      "sha256": "2d369347079352bd7c7bdbd596d1d8e43672db9bee6d700fb5ce75571d657b88",
+      "bytes": 24472,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/loader.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/policies.py",
+      "sha256": "f4915fd29bfd5093614c7730a9d6cfe3fbdd8b866ad2896055fcd1c37998535d",
+      "bytes": 12473,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/policies.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/pool.py",
+      "sha256": "6b0dd82a85b1016267fb1e3df9b17c4ce63b4f410ba0bf0e7fcf947d412413c9",
+      "bytes": 11902,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/pool.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/protocol.py",
+      "sha256": "105225d1411d04f1a77cceaab2d5c089489b2de944aff34131e76fc1cfeb3434",
+      "bytes": 24666,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/protocol.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/code/sts2vec/schema.py",
+      "sha256": "e4cafa2415767939d860e3b20f6b883818f1ee103299aef54b6daa512f00c7ff",
+      "bytes": 15122,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/schema.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/recipe.json",
+      "sha256": "b7967bf94b0f2991f05a1ce83009aff5224ff14ba5e392a9f4c11702b224a334",
+      "bytes": 1801,
+      "origin": "curated scientific configuration"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/tests/test_logging.py",
+      "sha256": "f4d97a9ff17a643fcb5911752a8905743e8b5686bfbdf06bb377c6b7bcbe44c9",
+      "bytes": 6608,
+      "origin": "archived CPU test; reference path adapted, assertions unchanged",
+      "original_path": "task099/candidate/tests/test_logging.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/tests/test_critic.py",
+      "sha256": "c135334b9b3bb354ad5be4af95b2311e669d3ca96d25df687bdaf2117ffdafed",
+      "bytes": 12290,
+      "origin": "archived CPU test source",
+      "original_path": "task099/candidate/tests/test_critic.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/public-schema.json",
+      "sha256": "f23c686b35140f8a6ea3d8cf97c1a21dafc6fa19f5f15b3252b1cb3050295e81",
+      "bytes": 94741,
+      "origin": "public native schema; not a trajectory",
+      "original_path": "task099/integration/public-native-schema.json"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/reference_model.py",
+      "sha256": "6a84612735aace38b168aebfb1adb137c9fe6c24ad7a3d28c3f4571d22af4f4a",
+      "bytes": 43081,
+      "origin": "historical reference for initialization equivalence",
+      "original_path": "sim/tools/train/sts2train/model.py",
+      "source_commit": "8012c039ab1298d3099c865279f39057d18b0fe6"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/__init__.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/adapters.py",
+      "sha256": "cf1b235ad5cafed830303bce34ec497ab618acb715092ab37e6ba7be85d570df",
+      "bytes": 1910,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/adapters.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/artifact_adapter.py",
+      "sha256": "67a1a7e599539a346d25aeef0fbbf767481b5bc24bd1d087fd2033833c36c547",
+      "bytes": 30012,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/artifact_adapter.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/broker.py",
+      "sha256": "692b8c90f358c44908215677962c75130629b1a32399dc49914dd25f6db56e71",
+      "bytes": 50463,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/broker.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/contracts.py",
+      "sha256": "29cd822ae277bbf2215256ebff6f1cea70561b1ad6a5da04379f8fda79a3317e",
+      "bytes": 14687,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/contracts.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/controller.py",
+      "sha256": "35a683593ec8b7c754843b6f158b981f8a4b5d581e63f6a823c258743f674fce",
+      "bytes": 31417,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/controller.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/lineage.py",
+      "sha256": "70bd442b84bffdb4c9c5d0678c0837534f3e18cfa7c391d6ad741dcfa307ab10",
+      "bytes": 7023,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/lineage.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/manifests.py",
+      "sha256": "ea2ac436c9fb66294da5219dcd879bf905330cc6973d34ea6ade5bb7ec29f4a4",
+      "bytes": 9025,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/manifests.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/modal_provider.py",
+      "sha256": "6057afb1ac380f6febe6f8b02a7e6ada9570d27cb9dc100395caf8f64edb8fae",
+      "bytes": 10237,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/modal_provider.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/native_worker.py",
+      "sha256": "df3b7eb55cdabf3296fbbf3a40c8461589de6a07c9cc9ff83ab822558ec7cccf",
+      "bytes": 14238,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/native_worker.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/sandbox_bundle.py",
+      "sha256": "dd1e8936cae1703776486fd25d3fd58289ee8d3e3c7f8042283d314818326276",
+      "bytes": 6394,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/sandbox_bundle.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/sandbox_provider.py",
+      "sha256": "bac3fe7f07a29dbc791a4c2808bc00903b2d4affe5ae3c6e929db56a7fe19082",
+      "bytes": 22731,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/sandbox_provider.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/modal_research/transition_contract.py",
+      "sha256": "74a43e0577a2baa21823230b78ad68ee610bbd402dd443910b9a04355a3049dc",
+      "bytes": 34705,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/modal_research/transition_contract.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/__init__.py",
+      "sha256": "51098b80b81edf0744cda2e2c21b478c3b04f9f7dda8413776c9999b845a12ce",
+      "bytes": 255,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/__init__.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/__init__.py",
+      "sha256": "51098b80b81edf0744cda2e2c21b478c3b04f9f7dda8413776c9999b845a12ce",
+      "bytes": 255,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/__init__.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/critic_diagnostics.py",
+      "sha256": "0df080b9448177a58695b7ac5c1b76c82f758a0dd9261c860ddf8557796b1f54",
+      "bytes": 5487,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/critic_diagnostics.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/critic_diagnostics.py",
+      "sha256": "0df080b9448177a58695b7ac5c1b76c82f758a0dd9261c860ddf8557796b1f54",
+      "bytes": 5487,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/critic_diagnostics.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/cycles.py",
+      "sha256": "7a27ce9185765f38a8fa6bd46e20e7173a4684bd834c4cd451c71f27ff6c8305",
+      "bytes": 22082,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/cycles.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/cycles.py",
+      "sha256": "7a27ce9185765f38a8fa6bd46e20e7173a4684bd834c4cd451c71f27ff6c8305",
+      "bytes": 22082,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/cycles.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/episodes.py",
+      "sha256": "4c65cb9b35be698331d7e3d1d25cad8aa46971df2de3b42e42be6df859fee1fe",
+      "bytes": 6964,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/episodes.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/episodes.py",
+      "sha256": "4c65cb9b35be698331d7e3d1d25cad8aa46971df2de3b42e42be6df859fee1fe",
+      "bytes": 6964,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/episodes.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/evaluate.py",
+      "sha256": "d4db3106a8018d7fe1dd9ecbeaa4384cc5528a650500f8dc76fa24161ce57f98",
+      "bytes": 25473,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/evaluate.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/evaluate.py",
+      "sha256": "d4db3106a8018d7fe1dd9ecbeaa4384cc5528a650500f8dc76fa24161ce57f98",
+      "bytes": 25473,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/evaluate.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/features.py",
+      "sha256": "316e969717284df7aefc1ac459b02b508097db0e2b755476ba42337476529030",
+      "bytes": 27150,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/features.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/features.py",
+      "sha256": "316e969717284df7aefc1ac459b02b508097db0e2b755476ba42337476529030",
+      "bytes": 27150,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/features.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/gae.py",
+      "sha256": "a34b95be5c2dd01169a320718892f3cbcf987792cd441d8958f71d0d34dcca8e",
+      "bytes": 1193,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/gae.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/gae.py",
+      "sha256": "a34b95be5c2dd01169a320718892f3cbcf987792cd441d8958f71d0d34dcca8e",
+      "bytes": 1193,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/gae.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/heads.py",
+      "sha256": "a46e3f5904cb201d5e18712dc764cb9e1292574bead7cbadef76386422f3a49f",
+      "bytes": 8494,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/heads.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/heads.py",
+      "sha256": "a46e3f5904cb201d5e18712dc764cb9e1292574bead7cbadef76386422f3a49f",
+      "bytes": 8494,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/heads.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/isolation.py",
+      "sha256": "4a627ff887f15093344e40219930a5f742776c67dae18d599022d5e5468c4ca7",
+      "bytes": 10154,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/isolation.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/isolation.py",
+      "sha256": "4a627ff887f15093344e40219930a5f742776c67dae18d599022d5e5468c4ca7",
+      "bytes": 10154,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/isolation.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/loopbreak.py",
+      "sha256": "a91edce801a0c159052e2c4c9b9ed2cf62cc9a5fe5f5d76e6686d4e472f47f1a",
+      "bytes": 12393,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/loopbreak.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/loopbreak.py",
+      "sha256": "a91edce801a0c159052e2c4c9b9ed2cf62cc9a5fe5f5d76e6686d4e472f47f1a",
+      "bytes": 12393,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/loopbreak.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/model.py",
+      "sha256": "1c0f48bbe45154417f5952d734673aa96874098c57010b765cdfa0b190becb21",
+      "bytes": 45423,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/model.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/model.py",
+      "sha256": "1c0f48bbe45154417f5952d734673aa96874098c57010b765cdfa0b190becb21",
+      "bytes": 45423,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/model.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/objective.py",
+      "sha256": "9098473be747f5d3d8c2fa5a28769b0f1bf5a0152ac43ec076841cfbc79802a5",
+      "bytes": 11325,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/objective.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/objective.py",
+      "sha256": "9098473be747f5d3d8c2fa5a28769b0f1bf5a0152ac43ec076841cfbc79802a5",
+      "bytes": 11325,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/objective.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/ppo.py",
+      "sha256": "97059b209603b556de165d137043a2a25f2ace7cab9bb3450891f309fbe76ea3",
+      "bytes": 138897,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/ppo.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/ppo.py",
+      "sha256": "97059b209603b556de165d137043a2a25f2ace7cab9bb3450891f309fbe76ea3",
+      "bytes": 138897,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/ppo.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/progress.py",
+      "sha256": "c37943665d902e3d52b7e2f8180165aa0ba9edacebf0fdca355df31d95895578",
+      "bytes": 3320,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/progress.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/progress.py",
+      "sha256": "c37943665d902e3d52b7e2f8180165aa0ba9edacebf0fdca355df31d95895578",
+      "bytes": 3320,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/progress.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/runlog.py",
+      "sha256": "614545e8265d2ae129e821408e074025126328947e13cb733d74878eb1fb1716",
+      "bytes": 6685,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/runlog.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/runlog.py",
+      "sha256": "614545e8265d2ae129e821408e074025126328947e13cb733d74878eb1fb1716",
+      "bytes": 6685,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/runlog.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/seedstream.py",
+      "sha256": "6f4ac9bb936997c8dc8ae49720dae424ed8996ad0012f3746774b4ea4a23900b",
+      "bytes": 26769,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/seedstream.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/seedstream.py",
+      "sha256": "6f4ac9bb936997c8dc8ae49720dae424ed8996ad0012f3746774b4ea4a23900b",
+      "bytes": 26769,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/seedstream.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/startpool.py",
+      "sha256": "9554a7dddf2b58a09f3e5708d05b483d956371aa12aec4ab5e2b5090e0593df1",
+      "bytes": 23194,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/startpool.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/startpool.py",
+      "sha256": "9554a7dddf2b58a09f3e5708d05b483d956371aa12aec4ab5e2b5090e0593df1",
+      "bytes": 23194,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/startpool.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/transition_aux.py",
+      "sha256": "8723438ce4f7edd402418e102e5c43b9a7cb8a99badd5858dbaf468f5dd419c8",
+      "bytes": 9754,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_aux.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/transition_aux.py",
+      "sha256": "8723438ce4f7edd402418e102e5c43b9a7cb8a99badd5858dbaf468f5dd419c8",
+      "bytes": 9754,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/transition_aux.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/transition_gpu_gate.py",
+      "sha256": "cd4f9b535a4e353b935c53501edda24b0b8f91d87c51859998a5638ea22a8716",
+      "bytes": 16108,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_gpu_gate.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/transition_gpu_gate.py",
+      "sha256": "cd4f9b535a4e353b935c53501edda24b0b8f91d87c51859998a5638ea22a8716",
+      "bytes": 16108,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/transition_gpu_gate.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/transition_state.py",
+      "sha256": "407fffeafa5f0cebc4a33b54ebfdbe28693efd49c2469335bacdfbf3577664ae",
+      "bytes": 10884,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_state.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/transition_state.py",
+      "sha256": "407fffeafa5f0cebc4a33b54ebfdbe28693efd49c2469335bacdfbf3577664ae",
+      "bytes": 10884,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/transition_state.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2train/transition_vector.py",
+      "sha256": "faaa9fef0cb6b4da3a58922f19841c0f5868cdddde36c3f5220612601ce5f5bd",
+      "bytes": 6976,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/train/sts2train/transition_vector.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/train/sts2train/transition_vector.py",
+      "sha256": "faaa9fef0cb6b4da3a58922f19841c0f5868cdddde36c3f5220612601ce5f5bd",
+      "bytes": 6976,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/train/sts2train/transition_vector.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/__init__.py",
+      "sha256": "017cc4f1e1f744abfcceb4f664afa96e5b08dda2f39ee6acae928db839e187d2",
+      "bytes": 1047,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/__init__.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/__init__.py",
+      "sha256": "017cc4f1e1f744abfcceb4f664afa96e5b08dda2f39ee6acae928db839e187d2",
+      "bytes": 1047,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/__init__.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/env.py",
+      "sha256": "17d950709ce1b83ef0156f05f095a64ff949fd1879da4732440e07287034082b",
+      "bytes": 21571,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/env.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/env.py",
+      "sha256": "17d950709ce1b83ef0156f05f095a64ff949fd1879da4732440e07287034082b",
+      "bytes": 21571,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/env.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/errors.py",
+      "sha256": "56828317c3c663dd353a079e456e6e9c44a776a92d85c01bf0b59280e163f3b0",
+      "bytes": 973,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/errors.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/errors.py",
+      "sha256": "56828317c3c663dd353a079e456e6e9c44a776a92d85c01bf0b59280e163f3b0",
+      "bytes": 973,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/errors.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/evaluate.py",
+      "sha256": "3f145a7aa01d45362112ae10d581d77599ed9948d0f64b1977fa16f809b8d9f0",
+      "bytes": 16207,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/evaluate.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/evaluate.py",
+      "sha256": "3f145a7aa01d45362112ae10d581d77599ed9948d0f64b1977fa16f809b8d9f0",
+      "bytes": 16207,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/evaluate.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/loader.py",
+      "sha256": "2d369347079352bd7c7bdbd596d1d8e43672db9bee6d700fb5ce75571d657b88",
+      "bytes": 24472,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/loader.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/loader.py",
+      "sha256": "2d369347079352bd7c7bdbd596d1d8e43672db9bee6d700fb5ce75571d657b88",
+      "bytes": 24472,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/loader.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/policies.py",
+      "sha256": "f4915fd29bfd5093614c7730a9d6cfe3fbdd8b866ad2896055fcd1c37998535d",
+      "bytes": 12473,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/policies.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/policies.py",
+      "sha256": "f4915fd29bfd5093614c7730a9d6cfe3fbdd8b866ad2896055fcd1c37998535d",
+      "bytes": 12473,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/policies.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/pool.py",
+      "sha256": "6b0dd82a85b1016267fb1e3df9b17c4ce63b4f410ba0bf0e7fcf947d412413c9",
+      "bytes": 11902,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/pool.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/pool.py",
+      "sha256": "6b0dd82a85b1016267fb1e3df9b17c4ce63b4f410ba0bf0e7fcf947d412413c9",
+      "bytes": 11902,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/pool.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/protocol.py",
+      "sha256": "105225d1411d04f1a77cceaab2d5c089489b2de944aff34131e76fc1cfeb3434",
+      "bytes": 24666,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/protocol.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/protocol.py",
+      "sha256": "105225d1411d04f1a77cceaab2d5c089489b2de944aff34131e76fc1cfeb3434",
+      "bytes": 24666,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/protocol.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/code/sts2vec/schema.py",
+      "sha256": "e4cafa2415767939d860e3b20f6b883818f1ee103299aef54b6daa512f00c7ff",
+      "bytes": 15122,
+      "origin": "immutable worker source",
+      "original_path": "sim/tools/vec/sts2vec/schema.py",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188"
+    },
+    {
+      "path": "sim/tools/vec/sts2vec/schema.py",
+      "sha256": "e4cafa2415767939d860e3b20f6b883818f1ee103299aef54b6daa512f00c7ff",
+      "bytes": 15122,
+      "origin": "task104 Python package mirror",
+      "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+      "original_path": "sim/tools/vec/sts2vec/schema.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/recipe.json",
+      "sha256": "230f6ec8f45287ef4b573a0eef18cfa788f9dec81af57704594b6ba58ef1be34",
+      "bytes": 1821,
+      "origin": "curated scientific configuration"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/tests/test_public_pointer.py",
+      "sha256": "5889eb79b02c9e957b8f7e21472cfb1f4a13a4650952a744f1ce25288475c2c6",
+      "bytes": 13029,
+      "origin": "archived CPU test source",
+      "original_path": "task104/candidate/tests/test_public_pointer.py"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/public-schema.json",
+      "sha256": "f23c686b35140f8a6ea3d8cf97c1a21dafc6fa19f5f15b3252b1cb3050295e81",
+      "bytes": 94741,
+      "origin": "public native schema; not a trajectory",
+      "original_path": "task099/integration/public-native-schema.json"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/reference_model.py",
+      "sha256": "4702c3ad3659209b11c7359d1943ca337de67bba0f37324e12ef17842056bd35",
+      "bytes": 45071,
+      "origin": "historical reference for initialization equivalence",
+      "original_path": "sim/tools/train/sts2train/model.py",
+      "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6"
+    },
+    {
+      "path": "research/gpt-training/modal-function/function_app.py",
+      "sha256": "0f88d3c81954a4378cce8e83cff27b2062e6ccd94cf53f143fcf846ddaf62edf",
+      "bytes": 12305,
+      "origin": "Task104 Function transport source",
+      "original_path": "task104/release-preparation/function-package-budget90/function_app.py"
+    },
+    {
+      "path": "research/gpt-training/modal-function/deploy_metadata.py",
+      "sha256": "122ac229eb9b4f8425c2b217adef9a6d84cdfedcb90b11e4263038b1a483b9b8",
+      "bytes": 6993,
+      "origin": "Task104 Function transport source",
+      "original_path": "task104/release-preparation/function-package-budget90/deploy_metadata.py"
+    },
+    {
+      "path": "research/gpt-training/modal-function/modal_research/function_worker.py",
+      "sha256": "2b3aceca086f06f118567aed7108f124f2c3517371d0811bf307a0a0ade78e19",
+      "bytes": 8685,
+      "origin": "Task104 Function transport source",
+      "original_path": "task104/release-preparation/function-package-budget90/modal_research/function_worker.py"
+    },
+    {
+      "path": "research/gpt-training/modal-function/modal_research/native_worker.py",
+      "sha256": "374085b3ab817bf612e4875b63863341c6d0c9359460050aabd2bf7bf7f4d186",
+      "bytes": 14238,
+      "origin": "Task104 Function transport source",
+      "original_path": "task104/release-preparation/function-package-budget90/modal_research/native_worker.py"
+    },
+    {
+      "path": "research/gpt-training/progress.json",
+      "sha256": "40e87f7c143370d1c34b08662ad774a06d489530d98f6921f263fc38038c6e44",
+      "bytes": 3756,
+      "origin": "curated accepted aggregate results"
+    },
+    {
+      "path": "research/gpt-training/learning-curve.csv",
+      "sha256": "e545030d9ddf25e966b69a1062904478d89533d04e2ea54fa6d4444c806fe888",
+      "bytes": 251,
+      "origin": "aggregate curve derived from accepted summaries"
+    },
+    {
+      "path": "research/gpt-training/learning-curve.png",
+      "sha256": "fb8245ae4cd205f4dd6febeaf17b018ffe152de46d33379d0eb9f4b0efe1688a",
+      "bytes": 132423,
+      "origin": "existing aggregate scientific plot; copied without modification"
+    },
+    {
+      "path": "research/gpt-training/ARCHITECTURE.md",
+      "sha256": "9337a82e1d7cbcd8178bff8c596fb4d58875729738f3c3578d581923f3836aa6",
+      "bytes": 3192,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/verify_snapshot.py",
+      "sha256": "296036e7a3763b66c002b9e39b1a55048da872a557e356f75ee89e64f94ad99c",
+      "bytes": 2310,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/PROGRESS.md",
+      "sha256": "c31f14b05fcc97b7cbb3d3b8249a87adf5ecbcbfca779cd26ce7dd8af9dae998",
+      "bytes": 3820,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/README.md",
+      "sha256": "cab3599b68fc1ef672ee9b34e1e446dea4809d7fcfe85c46b82b04fc04d5c538",
+      "bytes": 5229,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/modal-function/README.md",
+      "sha256": "1a5f399d8428e2f612b4e50e6987db01e4b5be8c7640bb942f8f7d269724ea73",
+      "bytes": 1058,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/32-milestone-reward.md",
+      "sha256": "d5394b4b27f37448b28e32f54f5232fbaf366cfdaa6cb23b7acc427428e861f1",
+      "bytes": 2335,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/31-critic-capacity.md",
+      "sha256": "d7a9bbc9589594a7e888431c670cbc1ce95d40c943efb37dd95bcc76b24c281d",
+      "bytes": 2476,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/README.md",
+      "sha256": "f15250b49184b105fda64bc42aa54eff4c16d728f640b06bbb3d5d8440a91748",
+      "bytes": 2257,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/35-ppo-audit.md",
+      "sha256": "f3bb260c37e36828c4b5c7e3fff3e3763943f42d8d0cca7ff6b14185405edb4c",
+      "bytes": 2619,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/33-long-horizon.md",
+      "sha256": "724bffb15366f478abd58bd1b7882d16525249220e31c4d933774c7d97d5d538",
+      "bytes": 2372,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/36-q-learning.md",
+      "sha256": "862a0191e9d42499f9a0d5faf069fbb09fd9f3a86d65a9e36a80ade7d1b984a0",
+      "bytes": 3540,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/issues/34-critic-separation.md",
+      "sha256": "33f2d30ac1d3da5625ae031370ef307336845056a781c0ea9b487d5e62c173f0",
+      "bytes": 2155,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/releases/task104/tests/conftest.py",
+      "sha256": "9f9e36921c341488080b982d38c2301025be421c1019d76015cde7c1612273a1",
+      "bytes": 916,
+      "origin": "portable fixture paths; archived test assertions unchanged"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/tests/conftest.py",
+      "sha256": "17be28876a6e409f8b133479b598df98df5db73a49c92ec9cfb08cc69c3385dc",
+      "bytes": 744,
+      "origin": "portable fixture paths; archived test assertions unchanged"
+    },
+    {
+      "path": "README.md",
+      "sha256": "692f08a05e0b8e9510b29e588e5d7f379d54b8a0cc0765fa52cc70fbafa51672",
+      "bytes": 17145,
+      "origin": "publication documentation or verifier"
+    },
+    {
+      "path": "research/gpt-training/releases/task099/reference_ppo.py",
+      "sha256": "eff347e9290a640f125bc74a389c29d6b442bf9cb31ffa06ad132c2f0b95f40c",
+      "bytes": 131648,
+      "origin": "historical PPO reference for observational-equivalence test",
+      "original_path": "sim/tools/train/sts2train/ppo.py",
+      "source_commit": "8012c039ab1298d3099c865279f39057d18b0fe6"
+    },
+    {
+      "path": "research/gpt-training/VALIDATION.md",
+      "sha256": "cabaad1c7021f05bd9c4f66afc5431623596a0a0c83fbe1931e5d575d0b6c3f7",
+      "bytes": 2238,
+      "origin": "publication validation record"
+    }
+  ],
+  "evidence_sources": [
+    {
+      "relative_archive_path": "task099/analysis/learning-curve-through200m-source.json",
+      "sha256": "352127717b38a38e9434821e71121b599fc35d821cf5604de5ac59cd175c0db3"
+    },
+    {
+      "relative_archive_path": "task099/analysis/dev200m-report.md",
+      "sha256": "9b148d8c687d48def77e7b878430939a9d438cf97c9e34edc1ec7d795f8bbaea"
+    },
+    {
+      "relative_archive_path": "task104/root-first-canonical-and-budget-binding-repair-scope.json",
+      "sha256": "64f44112f8271c27b08d14bc9ed437cdf7fd8f00b9990298a72599f26b4d95dc"
+    }
+  ]
+}

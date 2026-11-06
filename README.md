@@ -1,4 +1,88 @@
-# hack-sts2
+# STS2 GPT / Modal training research
+
+Co-author snapshot: `codex/sts2-gpt-research-share-20261106`.
+Evidence cutoff: **2026-11-06 05:09:53 UTC / 00:09:53 America/Detroit**.
+
+中文摘要：本分支共享 GPT 研究线的实际训练代码、架构、配方与进度。
+Task099 已完成约 200M 决策，dev256 平均进度 **0.3422、0/256 通关**；
+最高观测点为 150M 的 0.3505。Task104 已接受约 24.64M 训练步，尚无新质量评测。
+目标未达，blind1000 未用于选型。研究建议在 issues 中，未混入已验证结果。
+
+## Co-author entry points
+
+- [Research guide, source identities and reproduction boundaries](research/gpt-training/README.md)
+- [Actor / Value architecture, reward and batching](research/gpt-training/ARCHITECTURE.md)
+- [Progress and limitations](research/gpt-training/PROGRESS.md), [JSON](research/gpt-training/progress.json), [CSV](research/gpt-training/learning-curve.csv)
+- [Research roadmap #37](https://github.com/Alchemist-X/hack-sts2/issues/37)
+- [Source manifest](research/gpt-training/source-manifest.json) and [publication validation](research/gpt-training/VALIDATION.md)
+
+This GPT-managed research line trains a small entity-encoder / Transformer policy
+with PPO in the **headless C# rules simulator**. It is a game policy, not GPT weights
+being fine-tuned. Silent A10, autonomous fresh starts, public observations and legal
+candidates; no human trajectories, external/Claude weights, save starts or harvest.
+
+The actor and critic share a 3-layer Transformer (`d=192`, 6 heads), with a 384-wide
+state vector. The actor scores legal candidates; the critic uses the state plus a
+detached mean of candidate embeddings. Policy including critic: **2,941,072 parameters**;
+transition auxiliary head: **37,188**; total: **2,978,260**.
+
+Training uses 2,048 environment slots × 64 decisions = 131,072 transitions per
+rollout; minibatch 4,096, one epoch, 32 main optimizer updates per full valid batch.
+Later runs use one H100, 32 physical CPU cores, 64 GiB, strict FP32.
+
+## Accepted Task099 development curve
+
+| Decisions | Mean progress | Act 2 / 256 | Act 3 / 256 | Wins / 256 |
+|---:|---:|---:|---:|---:|
+| 25,034,752 | 0.2725516563 | 21 | 0 | 0 |
+| 50,069,504 | 0.2828294961 | 28 | 0 | 0 |
+| 100,007,936 | 0.2939402695 | 39 | 0 | 0 |
+| 150,077,440 | 0.3505400039 | 99 | 0 | 0 |
+| 200,015,872 | 0.3421844336 | 87 | 0 | 0 |
+
+![Accepted Task099 development curve](research/gpt-training/learning-curve.png)
+
+One initialization, reused dev256, no blind result. The 200M versus 150M point
+decrease is not proof of certain regression. Runtime changed after 25M, so this
+curve does not isolate architecture effects. Goal: mean progress at least 0.6 and
+win rate above 0.1; **not achieved**.
+
+## Actual code and proposed work
+
+- [Task099 exact worker source](research/gpt-training/releases/task099/code/): accepted 200M lineage.
+- [Task104 exact worker source](research/gpt-training/releases/task104/code/): public HandSelect input mapping.
+- [Modal Function transport](research/gpt-training/modal-function/): 32-core overlay; live release descriptors excluded.
+- [Train-package mirror](sim/tools/train/sts2train/): Task104 files; inherited CLI helpers are not the production entry point.
+
+Issues: [#31 Value capacity](https://github.com/Alchemist-X/hack-sts2/issues/31),
+[#32 milestone rewards](https://github.com/Alchemist-X/hack-sts2/issues/32),
+[#33 rollout/GAE](https://github.com/Alchemist-X/hack-sts2/issues/33),
+[#34 separate critic](https://github.com/Alchemist-X/hack-sts2/issues/34),
+[#35 PPO audit](https://github.com/Alchemist-X/hack-sts2/issues/35),
+[#36 Q-learning](https://github.com/Alchemist-X/hack-sts2/issues/36).
+These are proposals, not deployed improvements.
+
+```bash
+git clone --branch codex/sts2-gpt-research-share-20261106 https://github.com/Alchemist-X/hack-sts2.git
+cd hack-sts2
+python3 research/gpt-training/verify_snapshot.py
+```
+
+The standard-library verification command checks hashes, syntax and aggregate
+consistency without loading weights, starting a game or contacting Modal. This
+publication changes no live service, ledger, budget or main research worktree.
+Newly published material excludes credentials, model checkpoints, raw trajectories,
+saves, runtime logs, private reasoning and operational databases. Native runtime
+assets and live resource descriptors must be provisioned separately.
+
+---
+
+## Inherited repository overview (historical, other workflows)
+
+The following overview describes the broader recorder/official-engine workflow.
+It is **not** the environment description or results of the GPT simulator-training
+line above. Older model cards and other agents' results must not be combined with
+this lineage's curve.
 
 Full-trajectory recorder and official-engine-backed text environment for
 **Slay the Spire 2** — the STS2 counterpart of

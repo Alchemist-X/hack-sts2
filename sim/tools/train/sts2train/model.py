@@ -29,7 +29,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
-from .features import ROW_TRUNCATED, USED_BUFFERS, ModelSpec
+from .features import (REWARD_INPUT_ARCH, PUBLIC_HAND_INPUT_ARCH, checked_input_arch, public_hand_slots,
+                       ROW_TRUNCATED, USED_BUFFERS, ModelSpec)
 
 NEG = -1e9
 HASH_BUCKETS = 1021
@@ -50,6 +51,19 @@ ARCH_DEFAULTS = PRESETS["smoke"]
 # on the state (sts2train.heads); `deck_counts` = count-aware deck / pile pooling (Policy._deck_bag). A checkpoint's
 # "arch" lists the ones that are on; `arch_of` defaults the rest to off.
 MODEL_FLAGS = ("aux_heads", "deck_counts")
+CRITIC_ARCH = "state_legal_candidates_detached_mean_v1"
+
+def checked_critic_arch(marker):
+    if type(marker) is not str or marker not in ("", CRITIC_ARCH):
+        raise ValueError("unknown or untyped critic architecture")
+    return marker
+
+def legal_candidate_mean(h2, cand_n):
+    """Current public legal candidates only; no selected action, probabilities or afterstate."""
+    legal = torch.arange(h2.shape[1], device=h2.device)[None, :] < cand_n[:, None]
+    safe = torch.where(legal[..., None], h2, torch.zeros_like(h2))
+    return safe.sum(1) / legal.sum(1, keepdim=True).to(h2.dtype).clamp_min(1)
+
 DECK_STATS = 7      # deck_counts: size / distinct / upgraded / enchanted / afflicted counts of the deck (_deck_stats)
 PILE_STATS = 6      # deck_counts: distinct ids and upgraded copies of each combat pile (_piles)
 # Embedding tables sized by an enum the model embeds (features.ENUMS) -> their modules in `Policy`. A checkpoint whose
@@ -150,9 +164,11 @@ class Block(nn.Module):
 
 class Policy(nn.Module):
     def __init__(self, spec: ModelSpec, d: int = 96, s: int = 256, depth: int = 0, heads: int = 4, ff_mult: int = 4,
-                 aux_heads: bool = False, deck_counts: bool = False):
+                 aux_heads: bool = False, deck_counts: bool = False, critic_arch: str = ""):
         super().__init__()
+        checked_input_arch(spec.input_arch)
         self.spec = spec
+        self.critic_arch = checked_critic_arch(critic_arch)
         self.d, self.s = d, s
         self.depth, self.heads, self.ff_mult = depth, heads, ff_mult
         self.grad_ckpt = False   # runtime switch (not architecture): recompute trunk blocks in backward
@@ -198,7 +214,9 @@ class Policy(nn.Module):
                                                "treasure_relic_id")}
         # Multi-column reads as device index buffers (non-persistent: the state_dict is unchanged). Indexing a CUDA
         # tensor with a Python list uploads the list first, a synchronous host->device copy (a stream sync) per call.
-        for key, buf, names in COL_GROUPS:
+        card_fields = sorted(C["hand"], key=C["hand"].__getitem__)
+        col_groups = (*COL_GROUPS, ("reward_choice_card", "reward_choices", card_fields))
+        for key, buf, names in col_groups:
             self.register_buffer(f"_ix_{key}", torch.tensor([C[buf][k] for k in names], dtype=torch.long),
                                  persistent=False)
         skip = set(self._gi_id_cols.values()) | {gi["prompt_site_hash"]}
@@ -222,7 +240,8 @@ class Policy(nn.Module):
         self.node_mlp = RowLin(8 + 4 + 7 + 8 + 4, 32)
         self.map_proj = nn.Linear(32, d)
         self.reward_mlp = RowMLP(8 + 32 + 2, d)
-        self.alt_proj = nn.Linear(16, d)
+        # Version the existing projection key so baseline strict loads reject these checkpoints too.
+        self.reward_choices_v1_alt_proj = nn.Linear(16, d)
         self.shop_mlp = RowMLP(8 + 32 + 5, d)
         self.rest_mlp = RowMLP(16 + 1, d)
         self.event_mlp = RowMLP(32 + 32 + 4 + 1, d)
@@ -260,7 +279,8 @@ class Policy(nn.Module):
         sizes = {"map": self.map_ranks, "rewards": spec.shapes["rewards"][0], "card_reward": spec.shapes["card_reward"][0],
                  "alts": spec.shapes["card_reward_alts"][0], "shop": spec.shapes["shop"][0],
                  "rest": spec.shapes["rest"][0], "events": spec.shapes["event_options"][0]}
-        self._bank_order = ["map", "rewards", "card_reward", "alts", "shop", "rest", "events"]
+        sizes["reward_choices"] = spec.shapes["reward_choices"][0]
+        self._bank_order = ["map", "rewards", "card_reward", "alts", "shop", "rest", "events", "reward_choices"]
         offsets, off = {}, 1
         for b in self._bank_order:
             offsets[b] = off
@@ -268,7 +288,8 @@ class Policy(nn.Module):
         self._prompt_offset = off
         kind_bank = {"Travel": "map", "ClaimReward": "rewards", "PickRewardCard": "card_reward",
                      "RewardAlternative": "alts", "BuyEntry": "shop", "ChooseRestOption": "rest",
-                     "ChooseEventOption": "events", "PromptSelect": "prompt"}
+                     "ChooseEventOption": "events", "PromptSelect": "prompt",
+                     "TakeRewardCard": "reward_choices", "TakeRewardAlternative": "reward_choices"}
         off_t = torch.zeros(len(kinds), dtype=torch.long)
         size_t = torch.zeros(len(kinds), dtype=torch.long)
         is_prompt = torch.zeros(len(kinds), dtype=torch.bool)
@@ -297,6 +318,16 @@ class Policy(nn.Module):
             ha = max(s // 4, 16)
             self.win_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
             self.combat_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
+        if self.critic_arch:
+            # Append only after ALL original Policy modules. Explicit CPU construction
+            # restores CPU RNG, never draws CUDA RNG, and preserves later aux/sampler draws.
+            with torch.random.fork_rng(devices=[]):
+                projection = nn.Linear(d, s // 2, bias=False, device="cpu")
+                with torch.no_grad():
+                    projection.weight.zero_()
+            ref = self.value_head[0].weight
+            self.value_candidate_proj = projection.to(device=ref.device, dtype=ref.dtype)
+
 
     # ------------------------------------------------------------------------------------------------ tables
 
@@ -490,8 +521,15 @@ class Policy(nn.Module):
         card_reward = masked_mean(cr_e, cr_m)
 
         alts = x["card_reward_alts"]
-        alt_e = F.relu(self.alt_proj(self.alt_emb(alts.clamp(0, self.spec.enums["CardRewardAlt"] - 1))))
+        alt_e = F.relu(self.reward_choices_v1_alt_proj(self.alt_emb(alts.clamp(0, self.spec.enums["CardRewardAlt"] - 1))))
         alt = masked_mean(alt_e, alts != 0)
+
+        # Rewards-screen macros point here via cand.option_index. Keep the new detail in the actor's option bank.
+        choices = x["reward_choices"]
+        choice_alt_id = choices[..., C["reward_choices"]["alt_id"]]
+        choice_card = self._cards(self._cols("reward_choice_card", choices), None)
+        choice_alt = F.relu(self.reward_choices_v1_alt_proj(self.alt_emb(choice_alt_id.clamp(0, self.alt_emb.num_embeddings - 1))))
+        choice_e = torch.where((choice_alt_id != 0).unsqueeze(-1), choice_alt, choice_card)
 
         sh, sc = x["shop"], C["shop"]
         sh_m = sh[..., sc["category"]] != 0
@@ -544,7 +582,7 @@ class Policy(nn.Module):
             state = self.state_mlp(torch.cat(pooled, -1))
         tables = {"hand": hand_e, "enemies": en_e, "potions": pot_e,
                   "bank": torch.cat([torch.zeros(B, 1, self.d, device=gi.device, dtype=hand_e.dtype), ranks, rw_e, cr_e,
-                                     alt_e, sh_e, rs_e, ev_e, po_e], 1)}
+                                     alt_e, sh_e, rs_e, ev_e, choice_e, po_e], 1)}
         if deck_cnt is not None:
             tables["deck_counts"] = deck_cnt
         return state, tables
@@ -571,20 +609,24 @@ class Policy(nn.Module):
         state = self.state_mlp(torch.cat([h[:, 0], masked_mean(h, keep)], -1))
         return state, h[:, o:o + H], h[:, o + H:o + H + E], h[:, o + H + E:]
 
-    def forward(self, x: dict[str, torch.Tensor], aux: bool = False):
+    def forward(self, x: dict[str, torch.Tensor], aux: bool = False, return_transition_features: bool = False):
         """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32); with `aux` (a model with aux_heads)
         also the heads' logits {"win_logit": [B], "combat_logit": [B]} float32 (sts2train.heads: win_prob =
         sigmoid(win_logit), combat_hp_pred = sigmoid(combat_logit))."""
         if aux and not self.aux_heads:
             raise ValueError("forward(aux=True) needs a model built with aux_heads=True")
         state, tables = self.encode(x)
-        value = self.value_head(state).squeeze(-1)
+        value = self.value_head(state).squeeze(-1) if not self.critic_arch else None
         cand, cc = x["cand"], self.spec.cols["cand"]
         Cn = cand.shape[1]
         kind = cand[..., cc["kind"]].clamp(0, self.kind_off.shape[0] - 1).long()
 
+        recovered_hand = public_hand_slots(self.spec, x) if self.spec.input_arch == PUBLIC_HAND_INPUT_ARCH else None
         def ptr(table, col):
             i = cand[..., cc[col]].long()
+            if col == "hand_slot" and recovered_hand is not None:
+                is_select = cand[..., cc["kind"]] == self.spec.enum_names["RunActionKind"].index("PromptSelect")
+                i = torch.where(is_select, recovered_hand, i)
             ok = (i >= 0) & (i < table.shape[1])
             return gather_rows(table, torch.where(ok, i, torch.zeros_like(i))) * ok.unsqueeze(-1).to(table.dtype), ok
 
@@ -611,6 +653,19 @@ class Policy(nn.Module):
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)
         valid = torch.arange(Cn, device=cand.device).view(1, -1) < x["cand_n"].view(-1, 1)
         logits = logits.float().masked_fill(~valid, NEG)          # float32 even under autocast
+        if self.critic_arch:
+            pool = legal_candidate_mean(h2, x["cand_n"]).detach()
+            # Algebraically [Wold,Wcandidate] @ cat(state,pool)+bold,
+            # preserving the original FP32 state GEMM, ReLU and final layer.
+            hidden = self.value_head[0](state) + self.value_candidate_proj(pool)
+            value = self.value_head[2](self.value_head[1](hidden)).squeeze(-1)
+
+        if return_transition_features:
+            features = (state, h2)  # preaction representations only; never any afterstate input
+            if aux:
+                return logits, value.float(), {"win_logit": self.win_head(state).squeeze(-1).float(),
+                                               "combat_logit": self.combat_head(state).squeeze(-1).float()}, features
+            return logits, value.float(), features
         if aux:
             return logits, value.float(), {"win_logit": self.win_head(state).squeeze(-1).float(),
                                            "combat_logit": self.combat_head(state).squeeze(-1).float()}
@@ -618,9 +673,12 @@ class Policy(nn.Module):
 
     @property
     def arch(self) -> dict:
-        """Size knobs + the MODEL_FLAGS that are on (a model without them reports exactly the five knobs)."""
+        """Size knobs, enabled MODEL_FLAGS and the checkpoint input architecture."""
         a = {"d": self.d, "s": self.s, "depth": self.depth, "heads": self.heads, "ff_mult": self.ff_mult}
         a.update({k: True for k in MODEL_FLAGS if getattr(self, k)})
+        a["input_arch"] = self.spec.input_arch
+        if self.critic_arch:
+            a["critic_arch"] = self.critic_arch
         return a
 
 
@@ -696,6 +754,9 @@ def arch_of(config: dict | None) -> dict:
     config = config or {}
     out = {k: int(config.get(k, ARCH_DEFAULTS[k])) for k in ARCH_KEYS}
     out.update({k: bool(config.get(k, False)) for k in MODEL_FLAGS})
+    marker = checked_critic_arch(config.get("critic_arch", ""))
+    if marker:
+        out["critic_arch"] = marker
     return out
 
 
@@ -704,4 +765,7 @@ def model_arch(cfg) -> dict:
     the log line show)."""
     a = {k: getattr(cfg, k) for k in ARCH_KEYS}
     a.update({k: True for k in MODEL_FLAGS if getattr(cfg, k, False)})
+    marker = checked_critic_arch(getattr(cfg, "critic_arch", ""))
+    if marker:
+        a["critic_arch"] = marker
     return a

@@ -1,0 +1,96 @@
+{
+  "schema": "gpt-research-progress-v1",
+  "evidence_cutoff_utc": "2026-11-06T05:09:53.578910+00:00",
+  "source_curve_sha256": "352127717b38a38e9434821e71121b599fc35d821cf5604de5ac59cd175c0db3",
+  "task099": {
+    "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6",
+    "status": "original 200M plan complete; research goal unmet",
+    "evaluation": "reused dev256, greedy, no search/breaker; blind1000 unused",
+    "points": [
+      {
+        "decisions": 25034752,
+        "mean_protocol_progress": 0.27255165625,
+        "act2_reach": 21,
+        "wins": 0,
+        "games": 256,
+        "act3_reach": 0,
+        "analysis_sha256": "31b63d75526bb93e2243a64f0e3f80938cd7bbbbcdab5e9389d850862dde11cb",
+        "report_sha256": "fab53551f5fbd6a6c1f762db09229769f4238c6442fefbce1158a24d09ecb2a0"
+      },
+      {
+        "decisions": 50069504,
+        "mean_protocol_progress": 0.28282949609375,
+        "act2_reach": 28,
+        "wins": 0,
+        "games": 256,
+        "act3_reach": 0,
+        "analysis_sha256": "c0e600e1a1bde00b4e018e87e0ac33f1cb96d91cd9e35d68e986e9948a324559",
+        "report_sha256": "a3f782003e2e0c42259fe538c0a8c47cf1c256618fa3478ecbacb349f75ca7e6"
+      },
+      {
+        "decisions": 100007936,
+        "mean_protocol_progress": 0.29394026953125,
+        "act2_reach": 39,
+        "wins": 0,
+        "games": 256,
+        "act3_reach": 0,
+        "analysis_sha256": "d6893a9851c3526b6c176d8ee00414668888132ebd70f159362cf3280bfb6b24",
+        "report_sha256": "7cdba46d6fac1b720283600e57fc170802353e292e3d08c748c144cf666470dc"
+      },
+      {
+        "decisions": 150077440,
+        "mean_protocol_progress": 0.35054000390625,
+        "act2_reach": 99,
+        "wins": 0,
+        "games": 256,
+        "act3_reach": 0,
+        "analysis_sha256": "a72e3f3dc37d553dd402fb837ad57e713738697a078d6ca2322bfb9cff6f336b",
+        "report_sha256": "dc7b722353ac104dd21d02c317859556ddaf030d2341ccc6d10ee7187553378d"
+      },
+      {
+        "decisions": 200015872,
+        "mean_protocol_progress": 0.34218443359375,
+        "act2_reach": 87,
+        "wins": 0,
+        "games": 256,
+        "act3_reach": 0,
+        "analysis_sha256": "f843b1074113fc3daefa8d7c1504173df87ef5529786a0480381567505217724",
+        "report_sha256": "9b148d8c687d48def77e7b878430939a9d438cf97c9e34edc1ec7d795f8bbaea"
+      }
+    ],
+    "training_diagnostics": {
+      "closed_episodes": 869319,
+      "wins": 0,
+      "act2_learning_steps": 9851148,
+      "act3_learning_steps": 17417,
+      "native_table_overflow_flags": 32,
+      "restore_count": 12,
+      "inflight_episodes_discarded_on_restore": 24576
+    }
+  },
+  "task104": {
+    "source_commit": "53dd1d94616a6c1f32c177d8c45e6686571c4188",
+    "change": "public HandSelect option-to-hand mapping; zero added model parameters",
+    "accepted_decisions": 24641536,
+    "accepted_updates": 188,
+    "quality_evaluation": null,
+    "status_at_evidence_cutoff": "first segment accepted; continuation blocked by per-arm budget binding defect; main-thread repair in progress"
+  },
+  "costs": {
+    "per_run_final_cost_usd": null,
+    "note": "Workspace meter and reservations are not attributed final bills; no fabricated per-step dollar curve"
+  },
+  "goal": {
+    "mean_progress_at_least": 0.6,
+    "requested_win_rate_greater_than": 0.1,
+    "achieved": false,
+    "blind_used": false
+  },
+  "limitations": [
+    "single training initialization; repeatedly reused development set",
+    "runtime changed from Sandbox16 to Function32; not a pure architecture causal comparison",
+    "200M vs150M point difference is not evidence of certain regression",
+    "training Act3 exposure is not validated greedy Act3 ability",
+    "no raw trajectories, checkpoints or production ledger published"
+  ]
+}

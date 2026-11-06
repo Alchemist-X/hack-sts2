@@ -267,7 +267,9 @@ def evaluate_model(model, spec, seedset: str, out_dir: str, *, weights_hash: str
     from sts2vec import load, schema_of
 
     schema = schema_of(load())
-    library = ModelSpec.from_schema(schema)
+    library = ModelSpec.from_schema(schema, input_arch=spec.input_arch)
+    if model.spec.input_arch != spec.input_arch or model.arch["input_arch"] != spec.input_arch:
+        raise ValueError("evaluate model input architecture differs from spec")
     compat = check_spec_compat(spec, library, what="evaluate")
     if spec_compat is not None:
         compat = spec_compat
@@ -382,7 +384,7 @@ def evaluate(seedset: str, checkpoint: str, out_dir: str, *, threads: int = 8, d
     if repeats < 1 or (repeats > 1 and policy != "sample"):
         raise ValueError(f"repeats {repeats}: >= 1, and > 1 only with --policy sample (greedy plays are identical)")
     ss, parent = slice_seedset(seedset, chunk)
-    model, spec, ck = load_checkpoint(checkpoint, device, library=ModelSpec.from_schema(schema_of(load())))
+    model, spec, ck = load_checkpoint(checkpoint, device, library_schema=schema_of(load()))
     reps = []
     for r in range(repeats):
         out = Path(out_dir) / f"r{r}" if repeats > 1 else Path(out_dir)

@@ -1,0 +1,69 @@
+{
+  "experiment_id": "silent-a10-s-candidate-value-long-task099",
+  "character": "SILENT",
+  "ascension": 10,
+  "input_arch": "reward_choices_v1",
+  "model_config": {
+    "aux_heads": true,
+    "critic_arch": "state_legal_candidates_detached_mean_v1",
+    "d": 192,
+    "deck_counts": true,
+    "depth": 3,
+    "ff_mult": 4,
+    "heads": 6,
+    "s": 384
+  },
+  "ppo_config": {
+    "acq_deck_coef": 0.003,
+    "acq_relic_coef": 0.01,
+    "acq_shaping": false,
+    "acq_upgrade_coef": 0.004,
+    "amp": false,
+    "aux_bootstrap": true,
+    "aux_coef": 0.1,
+    "clip": 0.2,
+    "compile": "off",
+    "cycle_cost": 0.01,
+    "ent_coef": 0.02,
+    "epochs": 1,
+    "floor_step_cap": 80,
+    "gamma": 1.0,
+    "grad_ckpt": false,
+    "lam": 0.99,
+    "lr": 0.0003,
+    "max_grad_norm": 0.5,
+    "max_rows": 192,
+    "minibatch": 4096,
+    "objective": "protocol",
+    "step_cap": 1200,
+    "tf32": false,
+    "transition_coef": 0.1,
+    "vf_coef": 0.5,
+    "win_bonus": 1.0
+  },
+  "reward_version": "protocol-v0.2-delta-win1-noacq-cycle-0p01-stepcap-bootstrap-v1",
+  "actual_param_count": 2941072,
+  "source_commit": "c93781778b2e71b29110079c0f9ec3881829e7f6",
+  "original_spec_sha256": "53528feea6277c38b810e365a4b24eb55261d6264510fc95e7f7b4f6e53e395e",
+  "publication_scope": "scientific configuration excerpt; not an executable signed production specification",
+  "sampling": {
+    "envs": 2048,
+    "rollout": 64,
+    "rollout_batch": 131072,
+    "minibatch": 4096,
+    "epochs": 1
+  },
+  "runtime": {
+    "training_gpu": "H100",
+    "physical_cpu_cores": 32,
+    "memory_mib": 65536,
+    "numeric": "FP32; AMP/TF32 disabled"
+  },
+  "data": {
+    "starts": "fresh autonomous stream",
+    "human_trajectories": false,
+    "external_weights": false,
+    "save_starts": false,
+    "harvest": false
+  }
+}
