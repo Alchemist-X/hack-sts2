@@ -226,3 +226,12 @@ wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skip
 2. 新建 A100 `sts2b3`：第一次恢复 ssh 在 900 s 被切（670 MB、大量小评测文件）且其 gcs_pull 仍在后台跑——杀掉两份拉取，`resume_b2_sts2b3.sh`：`gcs_pull --skip-existing` → 对 status/metrics/evals/train.log/episodes/两份 checkpoint/两份端点报告逐一比对桶内 md5 → 取回 B 的 pinned-0007664（F′ 分叉用）→ 补写 `w3m-b: done` 标记 → 起 `launch_d2.sh` + `launch_f.sh`。00:40 训练器从 ckpt-0008664 续训（session 20）。东京 sessions.txt/sessions.json 与 Mac 清单已指向 sts2b3。
 3. A 于 00:41 到 u7664：dev-128 关 breaker **0.444 [0.416, 0.473]**（B 官方 0.440 [0.413, 0.466]）——"A 区间整体高于 B"不成立；配对比较在 A 的 ab-512 端点（约 00:55）后跑，除非配对差的 CI 排除 0，第三轮 E′/F′ 分叉点保持 B 的 u7664（不改包装器）。
 4. 工程（Opus 工作流 wf_01cec61a-c10，后台）：ppo.py 门槛尺度改为含每样本项幅度 + 单测（raven）；守护 v2（一条线的所有 run 目录全部恢复、整条链重启、保活因失败停机 → ALERT 不轮换）；运维脚本/结果表/交接文档/README 段落入库（用户要求共享给 co-author）。
+
+
+## 00:50 EST 11-06（第 28 轮，收尾）
+
+**观察**：配对比较 u7664：dev-128 greedy-off B−A −0.0045 [−0.035, +0.026]（n.s.）；ab-512 greedy-off B−A −0.0301 [−0.047, −0.013]（A 高）；官方结论：harvest 无可检测差异。D 在 sts2b3 上第一次尝试又在同一门槛上退出（数值逐位相同 → 确定性误触发），新驱动自动以 `--compile off` 重启，u8676 起 eager 训练（upd 3.6 s 对 3.2 s，整体慢 ~5%）。C 于 00:50 在 sts2c 起跑（从 B 的 u7664，`--macros all`）。余额 341.7。
+**判断**：第三轮分叉点按预注册规则改为 A 的 u7664（主集持平、确认集 A +0.030 且区间排除 0；两臂同分叉点）。v1 守护的 rotate() 只恢复一条线的第一个 run 目录，对现在的链（C / E′ 在 sts2c）会把 C 从头重分叉并覆盖桶内历史——比不轮换更糟。
+**行动**：`launch_e.sh`（sts2c，本地 A 的 pinned-0007664）与 `launch_f.sh`（sts2b3，从桶取 A 的 pinned-0007664）改写并按 PID 重启（各一进程，已核对）；`managed.txt` 清空（v1 不再自动轮换；东京保活照常），守护 v2 由后台 Opus 工作流产出，明早切换；round3-plan 追加执行记录。用户指示：安排好隔夜 8 小时训练后停止其他工作——本轮为今晚最后一轮，下一次人工汇报在用户醒来后。
+
+**隔夜链（无人值守）**：GPU A sts2c：C u7664→9164（约 06:15）→ 端点评测 → E′（A 的 u7664 + 探索修复，→ 9664，约 14:00）。GPU B sts2b3：D u8676→9164（约 02:40，eager）→ 端点评测 → F′（A 的 u7664，对照，→ 9664，约 10:30）。sts2c 24 h 回收约 11:52（E′ 中途；需守护 v2 或人工恢复）；sts2b3 回收约 11-07 00:10。
