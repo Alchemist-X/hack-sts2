@@ -839,6 +839,75 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --m
     --explore-push 1
 ```
 
+### Explore push step（独立归一步长，wave 14）
+
+为什么（wave 13 诊断，`docs/diag-2026-11-06/explore-sensitivity.md`，A 的 u7664）：explored 的 SMITH 行比 HEAL 低 ~92 nat
+（removal 行 ~73，p5 -654），而且 ‖∇θ log π‖ ≈ 238（removal ≈ 754，combat 行 ≈ 1），各决策之间几乎平行。wave 12 把推力放在
+共享 minibatch loss 里：推力梯度主导整个梯度，全局 clip 0.5 把一切缩小（PPO 部分缩 ~470 倍），Adam 的逐参数归一化又把它
+放大回每个 minibatch ~12 nat 的跳变（新 Adam 状态 9 nat；dormant 二阶矩只解释 ~30%）。于是 wave 12 的信任域对 96% 的
+explored 样本处于钳制状态，这些行每次 update 随机游走 ±47 nat（已复现）。
+
+做法（`--explore-push-step ETA`，需要 `--explore-push DELTA` > 0；`ppo.MinibatchUpdater.push_step`）：
+
+1. 每个 minibatch 的主 loss 是**不含推力项**的 PPO：explored 样本照 wave 12 退出 surrogate 和 kl / clipfrac，value /
+   entropy / aux 不变；backward → clip → Adam step，与推力系数为 0 时逐位相同（Adam 状态从不看到推力梯度）。
+2. 然后对 minibatch 里的每个推力组（`ppo.push_groups`：explore item × 稀有 / 常见，见下）：在 Adam step **之后**对该组的
+   explored 子集做一次新的前向（`amp` 时在 bf16 autocast 下，与 rollout 存 log π_old 的精度一致），保留未钳制的样本
+   U = {|log π_new − log π_old| < DELTA}；在 fp32 下算 `g = ∇θ L_push`（L_push = −mean_U A·log π(a)，即 DELTA 内
+   −mean A·clamp(dl, ±DELTA) 的梯度）和 `h = ∇θ mean_U log π(a)`，然后普通一步
+   `θ ← θ − ETA / max(‖h‖², 1) · g`：不进全局 clip，不进 Adam，无动量；只有 autograd 能从 U 走到的参数会动。
+   一阶下子集的 mean log π 变化 = ETA·⟨mean A∇log π, h⟩/‖h‖²，行梯度平行时 = ETA·mean A（ETA 的单位是 nat）。
+   `max(‖h‖², 1)` 的下限防止 ∇log π ≈ 0 的行（策略本来就选的 p ≈ 1 行）得到无界步长：‖h‖² < 1 时就是 lr = ETA 的
+   普通 SGD，子集只动 ETA·‖h‖² < ETA。U 为空时 g = 0，参数逐位不变。
+3. 分组：explorer 记录每个 mixture draw 的 explore item（`KindExplorer.last_explored_item`，int8，-1 = 非 draw，顺序同
+   `--explore-kinds`），trainer 存成 [T, N]（overlap 两条 lane 同样）。`push_groups` = 2·item + [log π_old <
+   `PUSH_STEP_RARE_LOGP` = -3]：同一个 item 里稀有行与常见行分开归一。原因（实测）：`--explore-kinds ChooseRestOption`
+   不带 selector 时，mixture draw 里有一半是 HEAL（p ≈ 1，梯度 ≈ 0），与 SMITH 同组时把 ‖h‖² 稀释成 (k/n)²，SMITH 行一步
+   动 ETA·n/k；32 个 minibatch 后 SMITH 漂移 +13.8 nat（p50），分组后 −1.0。SMITH 与 removal 是不同 item，各自一步
+   （梯度尺度差 ~3 倍）。
+4. 编译：推力步总是 eager（单独的小前向 + 两次 `autograd.grad`），主 minibatch 的编译路径不变；启动时的
+   compiled-vs-eager gate（`check_compiled`）只测主 loss，不含推力步。代价：每个 minibatch 每个推力组多 2 次（amp 时 3 次）
+   ~16 行的前向和一次小 backward；trainer 侧分组在 host 上做，不加 device sync。
+
+与 wave 12 的关系：`--explore-push DELTA` 仍是信任域参数，存的 log π_old 语义不变；开了 `--explore-push-step` 时 wave 12
+的系数路径关闭（主 loss 里推力系数强制为 0；同时显式传 `--explore-push-coef` 会被 `resolve_config` 拒绝）。ETA 必须 >= 0，
+0 = 关闭，与改动前逐位相同（`tests/test_explore_push_step.py` (a)；另在 raven 上与 HEAD 的 ppo.py 比较：4 步 updater ×
+smoke / trunk × {plain, aux, push 1, push 1 + dual 3 + aux}，以及 3 个完整 CPU train() 跑（默认、explorer + push 1 +
+dual 3、explorer + push 1 + overlap double），权重 hash 与 metrics 逐位相同）。没有 explorer / push 时传 ETA > 0 报错；
+resume 关掉 explorer 时继承的 push 与 step 一并关闭。checkpoint 的 config 记录 `explore_push_step`，旧 checkpoint resume 为 0；
+report card 的 explore 组显示它。
+
+指标（开启时，metrics.jsonl 与 train.log 的 update 行；位于 push_* 之后）：
+
+- `push_step_n`：本次 update 被推的 explored 样本数（各 minibatch 的 |U| 之和；不是平均）；
+- `push_step_dlogp`：这些样本在各自组那一步前后（fp32 前向）log π 的平均变化，按 n 加权——直接检验 ETA：A 全为 +1 时
+  应 ≈ ETA；A 正负混合时 ≈ ETA·mean A（所以通常比 ETA 小）；
+- `push_step_hnorm`：各组 ‖h‖ 的 n 加权平均（行灵敏度；u7664 上 SMITH ≈ 220，随训练变化时看它）；
+- wave 12 的 `push_share` / `push_clamped` / `push_dlogp` / `push_loss` 照旧（主 loss 前向时测，即 Adam step 之前）。
+
+验收实测（raven CPU fp32，A 的 pinned-0007664 + wave 13 采集的决策，committed `MinibatchUpdater`，checkpoint 的 Adam 状态与
+lr 3e-4 / clip 0.5；minibatch = 385 个 combat 决策（合成优势）+ 16 个 explored SMITH 样本，log π_old = 起点；推力效果 =
+与同一 minibatch 序列的无推力 arm 的差）：
+
+| 路径 | 每步 push_step_dlogp | 4 mb 后 SMITH 推力效果 p50 | 32 mb 后 SMITH 推力效果 p5 / p50 / p95 | combat KL vs 无推力，4 mb 后 p95 / max | HEAL |
+|---|---|---|---|---|---|
+| wave 12（coef 1，A ±1） | — | −40.9 | −142 / −125 / −113 | 2.1e-2 / 0.44 | 0 |
+| wave 14（ETA 0.5，A ±1） | \|·\| 均值 0.20 | +0.02 | −1.86 / −1.48 / −1.10 | 4.2e-7 / 1.7e-5 | 0 |
+| wave 14（ETA 0.5，A 全 +1） | 0.500（0.499..0.509） | +2.03（4 步 × 0.5） | +7.7 / +8.7 / +10.3 | 1.5e-4 / 2.8e-3 | 0 |
+| wave 12（A 全 +1） | — | +38.4 | +69 / +80 / +86 | 8.9e-3 / 0.60 | ≤ 6e-4 |
+
+- `push_clamped` 在这个复现里 wave 14 也有 0.72（wave 12 0.97），但无推力 arm 同样是 0.74：钳制来自主 PPO（合成优势 +
+  checkpoint Adam 状态）本身在 32 个 minibatch 里把 SMITH 行整体移动 −8 nat（p5 −19，p95 +14），不是推力；wave 13 的
+  "push_clamped 0.0" 是只放推力项的复现。真实 minibatch 的主 PPO 漂移幅度未测。
+- 32 个 minibatch 之后两条轨迹的 combat KL（与无推力 arm 比）p95 3e-3、max 0.13（wave 12：p95 5e-2、max 6.4）：单步副作用
+  < 1e-4，但后续 Adam 步会放大小差异。
+
+```bash
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
+    --explore-kinds ChooseRestOption:SMITH,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --dual-clip 3 \
+    --explore-push 1 --explore-push-step 0.5
+```
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash

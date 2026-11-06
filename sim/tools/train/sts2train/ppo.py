@@ -24,7 +24,9 @@ E``, ``sts2train.explore``): at a rollout decision with a row of those kinds, wi
 uniformly from those rows; ``explore_logp`` (default ``decoupled``: log pi_old with the advantage x pi_old / b) sets
 how PPO's ratio accounts for the mixture behaviour policy b (GAE / values stay b's), evaluation never explores (``explore_*`` metrics);
 ``explore_push`` (``--explore-push DELTA``, wave 12, needs ``--explore-logp policy``) takes the mixture draws out of the
-PPO surrogate and gives them a bounded push term instead (``ppo_loss``; ``push_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
+PPO surrogate and gives them a bounded push term instead (``ppo_loss``; ``push_*`` metrics); ``explore_push_step``
+(``--explore-push-step ETA``, wave 14) applies that push as its own row-scaled plain step after the Adam step instead of
+inside the shared loss (``MinibatchUpdater.push_step``; ``push_step_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
 eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
@@ -130,6 +132,9 @@ COMPILE_MODES = ("off", "default", "reduce-overhead")
 STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
 DUAL_STAT_NAMES = ("dual_clipped",)  # after grad_norm (before AUX_STAT_NAMES) when dual_clip > 0 (stat_names)
 PUSH_STAT_NAMES = ("push_share", "push_clamped", "push_dlogp", "push_loss")  # after DUAL when explore_push > 0
+PUSH_STEP_STAT_NAMES = ("push_step_n", "push_step_dlogp", "push_step_hnorm")  # after PUSH when explore_push_step > 0
+PUSH_STEP_H2_MIN = 1.0              # floor of ||grad mean log pi||^2 in the push step's lr ETA / ||h||^2 (push_step)
+PUSH_STEP_RARE_LOGP = -3.0          # push_groups: explored samples with stored log pi_old below this (p < ~5%) are "rare"
 LOG_RATIO_MAX = 20.0                # ppo_surrogate clamps log(pi_new / pi_old) here before exp (exp(20) ~ 4.9e8)
 NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
@@ -247,6 +252,7 @@ class TrainConfig:
     explore_logp: str = "decoupled"  # stored log-prob: decoupled (log pi_old, adv x pi_old / b) | mixture (log b) | policy
     explore_push: float = 0.0       # wave 12: mixture draws leave the surrogate, push term A x clamp(dlogp, +-DELTA) (0 = off)
     explore_push_coef: float = 1.0  # multiplier of that push term in the loss
+    explore_push_step: float = 0.0  # wave 14: the push as its own row-scaled step of ETA nats after Adam (0 = off)
     # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
     cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
     eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
@@ -386,6 +392,19 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         raise ValueError(f"--explore-push needs --explore-logp policy (got {out.explore_logp!r}): the push term is "
                          "A x clamp(log pi_new - log pi_old, +-DELTA) with the stored log pi_old of the explored row; "
                          "decoupled / mixture store a different log-prob or weight the advantage")
+    out.explore_push_step = float(out.explore_push_step)
+    if not (out.explore_push_step >= 0.0 and np.isfinite(out.explore_push_step)):
+        raise ValueError(f"explore_push_step {out.explore_push_step} must be 0 (off) or a finite number > 0 (nats per "
+                         "step, e.g. 0.5)")
+    if out.explore_push_step > 0 and out.explore_push == 0:
+        if "explore_push_step" in given:
+            raise ValueError(f"--explore-push-step {out.explore_push_step:g} needs --explore-push DELTA > 0 (the trust "
+                             "region of the step) with an explorer and --explore-logp policy")
+        out.explore_push_step = 0.0         # the inherited push was dropped (explorer off on a resume): so is the step
+    if out.explore_push_step > 0 and "explore_push_coef" in given:
+        raise ValueError("--explore-push-coef applies to the wave-12 push inside the shared loss; with "
+                         "--explore-push-step the push is a separate step of ETA nats and the coefficient is unused: "
+                         "pass one of the two")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -542,9 +561,11 @@ def parse_eval_at(v) -> tuple[int, ...]:
 
 def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
     """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then DUAL_STAT_NAMES with
-    dual_clip > 0, then PUSH_STAT_NAMES with explore_push > 0, then AUX_STAT_NAMES with aux_heads."""
+    dual_clip > 0, then PUSH_STAT_NAMES with explore_push > 0, then PUSH_STEP_STAT_NAMES with explore_push_step > 0,
+    then AUX_STAT_NAMES with aux_heads."""
     return (STAT_NAMES + (DUAL_STAT_NAMES if float(getattr(cfg, "dual_clip", 0.0)) > 0 else ())
             + (PUSH_STAT_NAMES if float(getattr(cfg, "explore_push", 0.0)) > 0 else ())
+            + (PUSH_STEP_STAT_NAMES if float(getattr(cfg, "explore_push_step", 0.0)) > 0 else ())
             + (AUX_STAT_NAMES if cfg.aux_heads else ()))
 
 
@@ -1047,7 +1068,14 @@ class MinibatchUpdater:
     With `cfg.aux_heads` the six PPO tensors are followed by the aux heads' four (win_y, win_m, combat_y, combat_m)
     and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`); with `cfg.dual_clip` > 0 `dual_clipped`
     follows grad_norm (before the aux statistics). With `cfg.explore_push` > 0 an `explored` [B] bool tensor follows
-    vold (before the aux targets) and PUSH_STAT_NAMES follow dual_clipped."""
+    vold (before the aux targets) and PUSH_STAT_NAMES follow dual_clipped.
+
+    With `cfg.explore_push_step` ETA > 0 (wave 14) the main loss is the push-on loss with the push coefficient 0 (the
+    explored samples stay out of the surrogate and kl / clipfrac; the push statistics are measured as in wave 12) and
+    the minibatch's Adam step is exactly the coefficient-0 step; then `push_step` applies the push as a separate plain
+    step per explore item (`explored_item` keyword of the call: [B] int, -1 = not explored) and PUSH_STEP_STAT_NAMES
+    follow the push statistics. The push step runs eager and is not part of `loss` (nor of `check_compiled`).
+    (The `explored_item` keyword carries push group ids: `push_groups`.)"""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
                  device: torch.device | str):
@@ -1064,6 +1092,11 @@ class MinibatchUpdater:
         self.aux = bool(getattr(cfg, "aux_heads", False))
         self.push = push = float(getattr(cfg, "explore_push", 0.0))
         push_coef = float(getattr(cfg, "explore_push_coef", 1.0))
+        self.push_step_eta = float(getattr(cfg, "explore_push_step", 0.0)) if push > 0 else 0.0
+        if self.push_step_eta > 0:
+            push_coef = 0.0             # the push leaves the shared loss / clip / Adam: push_step applies it instead
+        self.amp = amp
+        self.n_dual = 1 if dual_clip > 0 else 0
         self.split = self.split or self.aux or push > 0
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
@@ -1106,15 +1139,102 @@ class MinibatchUpdater:
             return self.compiled(*args)
         return self.eager(*args)
 
-    def __call__(self, *args, compiled: bool = True) -> torch.Tensor:
+    def __call__(self, *args, compiled: bool = True, explored_item=None) -> torch.Tensor:
+        """One minibatch step. `explored_item` ([B] int numpy / tensor, -1 = not explored; --explore-push-step only):
+        the push group of each explored sample, one row-scaled step per group (the trainer passes `push_groups` of
+        `KindExplorer.last_explored_item` and the stored log pi_old: explore item x rare / common); None = every
+        explored sample (args[6]) is group 0."""
         self.opt.zero_grad(set_to_none=True)
         loss, st = self.loss(*args, compiled=compiled)
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
         self.opt.step()
-        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [push 4] + [aux heads' 4]
+        if self.push_step_eta > 0:      # after the Adam step, outside the clip and the optimizer
+            if explored_item is None:
+                explored_item = np.where(args[6].detach().cpu().numpy(), 0, -1)
+            pst = self.push_step(args[0], args[1], args[2], args[3], explored_item)
+            k = 6 + self.n_dual + len(PUSH_STAT_NAMES)
+            st = torch.cat([st[:k], pst, st[k:]])
+        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [push 4] + [push step 3] + [aux heads' 4]
             return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
+
+    def _logp(self, xb: dict[str, torch.Tensor], act: torch.Tensor, amp: bool = False) -> torch.Tensor:
+        with _autocast(amp):
+            logits = self.model(xb)[0]
+        return F.log_softmax(logits.float(), -1).gather(1, act.unsqueeze(1)).squeeze(1)
+
+    def push_step(self, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tensor,
+                  explored_item) -> torch.Tensor:
+        """The row-scaled push step of --explore-push-step ETA (wave 14), applied to the model in place. ->
+        [push_step_n, push_step_dlogp, push_step_hnorm] (float32, on the device; no host sync).
+
+        Per group i present in `explored_item` ([B] int, -1 = not explored; the trainer's groups are `push_groups`:
+        explore item x rare / common), on its explored samples S_i of this
+        minibatch: a fresh forward (no grad; under bf16 autocast when `amp`, the precision the rollout stored log pi_old
+        in) keeps the unclamped ones U = {|log pi_new - log pi_old| < DELTA} (the trust region of wave 12, measured
+        after the minibatch's Adam step); then in fp32
+            g = grad L_push,  L_push = -mean_U A x log pi(a)   (= grad of -mean_U A x clamp(dl, +-DELTA) inside DELTA),
+            h = grad mean_U log pi(a),
+            theta <- theta - ETA / max(||h||^2, PUSH_STEP_H2_MIN) x g
+        (plain step: no global clip, no Adam, no momentum; only the parameters autograd reaches from U move). To first
+        order the step changes mean_U log pi by ETA x <mean A grad log pi, h> / ||h||^2, i.e. ETA x mean A when the rows'
+        gradients are parallel (wave 13: SMITH rows ~238, removal rows ~754, nearly parallel across decisions). The
+        floor keeps rows with ~no sensitivity (an explored row the policy already takes with p ~ 1: grad log pi ~ 0)
+        from getting an unbounded step; at ||h||^2 < 1 the step is plain SGD with lr ETA and moves mean_U log pi by
+        < ETA. U empty: g = 0, no parameter changes. Groups are stepped one after another (separate scales: SMITH vs
+        removal rows differ ~3x; p ~ 1 draws of an item must not dilute its rare rows' scale: `push_groups`).
+
+        Statistics over the pushed samples (sum of |U_i|): push_step_n = sum |U_i|, push_step_dlogp = the mean change
+        of their log pi produced by their item's step (fp32 forward before / after: the direct check that a step moves
+        ~ETA nats), push_step_hnorm = the |U_i|-weighted mean of ||h_i||."""
+        item = explored_item.detach().cpu().numpy() if torch.is_tensor(explored_item) else np.asarray(explored_item)
+        dev = act.device
+        n_t = torch.zeros((), dtype=torch.float32, device=dev)
+        dl_t, h_t = n_t.clone(), n_t.clone()
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        delta, eta = self.push, self.push_step_eta
+        for it in np.unique(item[item >= 0]).tolist():
+            idx = torch.from_numpy(np.flatnonzero(item == it)).to(dev)
+            sub = {k: v.index_select(0, idx) for k, v in xb.items()}
+            a_s, old_s, A_s = act.index_select(0, idx), oldlogp.index_select(0, idx), madv.index_select(0, idx)
+            lp = self._logp(sub, a_s)                                   # fp32, with grad
+            with torch.no_grad():
+                lp_chk = self._logp(sub, a_s, amp=True) if self.amp else lp.detach()
+                u = (lp_chk - old_s).abs() < delta                     # nan / inf dl: clamped (False)
+                n = u.sum().float()
+                den = n.clamp_min(1.0)
+            lp_u = torch.where(u, lp, torch.zeros_like(lp))
+            g = torch.autograd.grad(-(A_s.float() * lp_u).sum() / den, params, retain_graph=True, allow_unused=True)
+            h = torch.autograd.grad(lp_u.sum() / den, params, allow_unused=True)
+            with torch.no_grad():
+                h2 = torch.zeros((), dtype=torch.float32, device=dev)
+                for h_ in h:
+                    if h_ is not None:
+                        h2 = h2 + h_.float().pow(2).sum()
+                c = eta / h2.clamp_min(PUSH_STEP_H2_MIN)
+                for p, g_ in zip(params, g):
+                    if g_ is not None:
+                        p.sub_(c.to(g_.dtype) * g_)
+                lp_after = self._logp(sub, a_s)
+                dl_t = dl_t + torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum()
+                n_t = n_t + n
+                h_t = h_t + h2.sqrt() * n
+        den = n_t.clamp_min(1.0)
+        return torch.stack([n_t, dl_t / den, h_t / den])
+
+
+def push_groups(item: np.ndarray, oldlogp: np.ndarray) -> np.ndarray:
+    """The push step's normalisation groups (--explore-push-step): 2 x explore item + 1 for the rare explored samples
+    (stored log pi_old < PUSH_STEP_RARE_LOGP), 2 x item for the others, -1 = not explored (`item` [B] int, -1 = not
+    explored; `oldlogp` [B] host float). One explore item can hold rows of very different sensitivity: with
+    ``--explore-kinds ChooseRestOption`` (no selector) the mixture draws include HEAL (p ~ 1, grad log pi ~ 0) next to
+    SMITH (log pi ~ -90, ||grad log pi|| ~ 240); in one group the p ~ 1 samples dilute ||h||^2 by (k / n)^2 and the k
+    rare samples move by ETA x n / k instead of ETA (wave-14 measurement: +13.8 nats of SMITH drift per 32 minibatches
+    with half the draws HEAL, vs -0.2 for SMITH-only draws). Splitting by rarity gives each its own scale."""
+    item = np.asarray(item).astype(np.int64)
+    rare = np.asarray(oldlogp) < PUSH_STEP_RARE_LOGP
+    return np.where(item >= 0, 2 * item + rare, -1)
 
 
 def loss_scale(*, loss: float, policy_loss: float, value_loss: float, entropy: float, adv_abs_mean: float,
@@ -1532,6 +1652,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                  if explorer is not None and cfg.explore_logp == "decoupled" else None)
         ex_mask = (np.zeros((cfg.rollout, cfg.envs), dtype=bool)          # --explore-push: the mixture draws
                    if explorer is not None and cfg.explore_push > 0 else None)
+        ex_item = (np.full((cfg.rollout, cfg.envs), -1, dtype=np.int8)    # --explore-push-step: their explore item
+                   if ex_mask is not None and cfg.explore_push_step > 0 else None)
         log(f"rollout store: {store.nbytes / 2**20:.0f} MiB on {device}")
 
         ckpts = CheckpointManager(run, cfg.keep_ckpts)
@@ -1836,6 +1958,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         adv_w[t] = runner.explore_w
                     if ex_mask is not None:
                         ex_mask[t] = explorer.last_explored
+                    if ex_item is not None:
+                        ex_item[t] = explorer.last_explored_item
                     store.put(t, x, obs)
                     a_np = a.cpu().numpy().astype(np.int32)
                     valid = cand_n > 0
@@ -1911,7 +2035,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
                 ov_st = ov.rollout(upd=upd, store=store, runner=runner, device=device, max_rows=cfg.max_rows,
                                    static=static, track=track, steps=cfg.rollout, cycle_cost=cyc_cost, r_obj=r_obj,
-                                   cyc_r=cyc_r, adv_w=adv_w, ex_mask=ex_mask, hooks_on=hooks_on, episode_hooks=episode_hooks,
+                                   cyc_r=cyc_r, adv_w=adv_w, ex_mask=ex_mask, ex_item=ex_item, hooks_on=hooks_on, episode_hooks=episode_hooks,
                                    episode_fields=EPISODE_HOOKS.fields, errors_seen=errors_seen,
                                    check_forward=check_forward if runner.compiled is not None else None)
                 env_s, infer_s = ov_st["env_s"], ov_st["infer_s"]
@@ -1986,12 +2110,22 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 if not chk["ok"]:
                     raise CompiledMismatchError(f"the compiled PPO update disagrees with eager ({chk}); rerun with "
                                                 f"--compile off")
-            stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch) for mb_h, mb in zip(mbs, d_mbs)]
+            f_item = (push_groups(ex_item.reshape(-1), store.logp.reshape(-1))     # --explore-push-step (host)
+                      if ex_item is not None else None)
+            stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch,
+                             **({"explored_item": f_item[mb_h]} if f_item is not None else {}))
+                     for mb_h, mb in zip(mbs, d_mbs)]
             stats = torch.stack(stats).cpu().numpy() if stats else None
             update_s = time.monotonic() - t_up
             if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
                 raise FloatingPointError(f"non-finite loss at update {upd + 1}")
             sm = dict(zip(stat_names(cfg), (float(x) for x in np.mean(stats, 0)))) if stats is not None else {}
+            if stats is not None and cfg.explore_push_step > 0:    # the update's pushed samples: a sum, weighted means
+                names_ = stat_names(cfg)
+                n_ = stats[:, names_.index("push_step_n")].astype(np.float64)
+                sm["push_step_n"] = float(n_.sum())
+                for k_ in ("push_step_dlogp", "push_step_hnorm"):
+                    sm[k_] = (float((stats[:, names_.index(k_)] * n_).sum() / n_.sum()) if n_.sum() > 0 else None)
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
             ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
@@ -2103,6 +2237,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     + (f" push_share={fmt(sm.get('push_share'), '.5f')} push_clamped="
                        f"{fmt(sm.get('push_clamped'), '.4f')} push_dlogp={fmt(sm.get('push_dlogp'), '.4f')} "
                        f"push_loss={fmt(sm.get('push_loss'), '.5f')}" if cfg.explore_push > 0 else "")
+                    + (f" push_step_n={fmt(sm.get('push_step_n'), '.0f')} push_step_dlogp="
+                       f"{fmt(sm.get('push_step_dlogp'), '.4f')} push_step_hnorm={fmt(sm.get('push_step_hnorm'), '.1f')}"
+                       if cfg.explore_push_step > 0 else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")

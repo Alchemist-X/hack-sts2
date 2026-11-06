@@ -80,7 +80,10 @@ sample RNG is never touched by the explorer either way).
 Explored mask (wave 12). Every call leaves ``last_explored`` ([n] bool numpy, the call's slots): True where the
 action is a mixture draw (the coin fired; the drawn row may coincide with the policy's own choice), False elsewhere
 (all False on a step without explore rows). The trainer stores it per sample for ``--explore-push`` (``ppo.ppo_loss``:
-the explored samples leave the PPO surrogate and get the bounded push term instead).
+the explored samples leave the PPO surrogate and get the bounded push term instead). ``last_explored_item`` (wave 14,
+[n] int8 numpy) says which explore item (index into ``items``, the order of ``--explore-kinds``) each mixture draw's row
+belongs to (the first item whose rows contain it), -1 where no mixture draw happened; ``--explore-push-step`` takes one
+row-scaled step per item present (``ppo.MinibatchUpdater.push_step``).
 
 Metrics per update (``pop_stats``): ``explore_eps``, ``explore_decisions`` (decisions with >= 1 explore row),
 ``explore_share`` (of the valid decisions), ``explore_steps`` (mixture draws), ``explore_policy_mass`` (mean of pi's
@@ -209,6 +212,7 @@ class KindExplorer:
         self._zero()
         self.run = {"explore_steps": 0, "explore_decisions": 0, "decisions": 0}
         self.last_explored = np.zeros(0, dtype=bool)     # [n] of the last call: True = a mixture draw (wave 12)
+        self.last_explored_item = np.zeros(0, dtype=np.int8)    # [n]: item index of that draw's row, -1 = none (w14)
 
     # ------------------------------------------------------------------------------------------- rows
 
@@ -295,7 +299,8 @@ class KindExplorer:
         from), `a` / `logp` the policy's draw. -> (actions, stored log-probs, advantage weights or None): the actions
         with the mixture draws substituted, the log-prob per `logp_mode`, w = pi_old / b for ``decoupled``. Slots
         without an explore row keep the policy's action and log-prob unchanged (the same tensors' values). The call's
-        explored mask (True = a mixture draw) is left in ``last_explored`` ([n] bool numpy)."""
+        explored mask (True = a mixture draw) is left in ``last_explored`` ([n] bool numpy), the drawn row's explore item
+        in ``last_explored_item`` ([n] int8, -1 = no mixture draw)."""
         t0 = time.perf_counter()
         try:
             return self._step(obs, logits, dist, a, logp, update, t, lo, n_total)
@@ -306,6 +311,7 @@ class KindExplorer:
         n, w = int(logits.shape[0]), int(logits.shape[1])
         n_total = n if n_total is None else int(n_total)
         self.last_explored = np.zeros(n, dtype=bool)
+        self.last_explored_item = np.full(n, -1, dtype=np.int8)
         valid = np.asarray(obs["cand_n"]) > 0
         self.acc["decisions"] += int(valid.sum())
         self.run["decisions"] += int(valid.sum())
@@ -328,6 +334,8 @@ class KindExplorer:
         csum = np.cumsum(rows, 1)                           # the k-th explore row (0-based) of each slot
         pick = np.argmax(csum > k[:, None], 1)
         a_new_np = np.where(fire, pick, a_np)
+        ar_ = np.arange(n)
+        self.last_explored_item = np.where(fire, np.argmax(rows_i[:, ar_, pick], 0), -1).astype(np.int8)
         dev = a.device
         a_new = torch.from_numpy(a_new_np).to(dev, a.dtype)
         lp_pi = lp_all.gather(1, a_new.unsqueeze(1)).squeeze(1)

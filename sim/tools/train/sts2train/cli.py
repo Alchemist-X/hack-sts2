@@ -298,7 +298,15 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "them; logs push_share / push_clamped / push_dlogp / push_loss. A checkpoint without it "
                         f"resumes with 0 (default {D.explore_push} = off, bit-identical)")
     g.add_argument("--explore-push-coef", dest="explore_push_coef", type=float, metavar="X",
-                   help=f"multiplier of the --explore-push term in the loss (default {D.explore_push_coef})")
+                   help=f"multiplier of the --explore-push term in the loss (default {D.explore_push_coef}; not with "
+                        "--explore-push-step)")
+    g.add_argument("--explore-push-step", dest="explore_push_step", type=float, metavar="ETA",
+                   help="wave 14 (needs --explore-push DELTA): the push leaves the shared loss, the global grad clip "
+                        "and Adam; after each minibatch's Adam step the unclamped explored samples (|log pi_new - log "
+                        "pi_old| < DELTA) of each explore item get their own plain step theta -= ETA / max(||grad mean "
+                        "log pi||^2, 1) x grad L_push, which moves their mean log pi by ~ETA x mean A nats; logs "
+                        "push_step_n / push_step_dlogp / push_step_hnorm. A checkpoint without it resumes with 0 "
+                        f"(default {D.explore_push_step} = off, bit-identical)")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")
