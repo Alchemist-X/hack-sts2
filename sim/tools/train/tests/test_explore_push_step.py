@@ -12,13 +12,20 @@ Gates here:
 (b) ETA 0.5 on a toy model whose explored rows' log-probs are linear in the step: one step moves the explored subset's
     mean log pi by ETA (to the second-order term), push_step_dlogp reports it, a non-explored control row moves much
     less, the value parameter does not move;
-(c) clamped explored samples (|dl| >= DELTA after the Adam step) produce no step (bit-identical parameters);
+(c) wave 14b: the rollout-based |dl| < DELTA test no longer gates (shifted log pi_old: the same step as unshifted);
+    non-finite stored log pi_old is still left out (no step);
 (d) the Adam state and the Adam update of the minibatch are those of the coefficient-0 push loss: only the subsequent
     plain step differs, and it is exactly `push_step` applied to the coefficient-0 result;
 (e) two explore items -> two steps with their own scales, each moving its own subset by ~ETA;
 (f) config validation / resume / CLI; the explorer's `last_explored_item`; a short CPU train() run (overlap off and
-    double) logs the push-step statistics.
-CPU only."""
+    double) logs the push-step statistics;
+(g) wave 14b budget: per group at most ~DELTA nats of the push's own measured movement per window (DELTA 1, ETA 0.5:
+    exactly 2 steps of ~0.5, then none, whatever the drift of the policy between minibatches; other DELTA / ETA; the
+    step-count guard for mixed-sign advantages), groups budget independently, `reset_push_budget` opens a new window,
+    and the trainer resets once per epoch of every update.
+Adapted from wave 14 for 14b: `test_clamped_samples_produce_no_step` -> `test_rollout_drift_does_not_gate_the_step`
+(the old eligibility semantics), `test_adam_update_is_the_coef0_update` (the hand-applied step needs the budget
+parameters of the step-on updater). CPU only."""
 
 from __future__ import annotations
 
@@ -260,37 +267,50 @@ def test_low_sensitivity_rows_get_the_floored_step():
     assert float((model.w.detach() - w0).abs().max()) < 1e-6
 
 
-# ------------------------------------------------------------------------------------------------ (c) clamped
-def test_clamped_samples_produce_no_step():
-    """Every explored sample at |dl| >= DELTA (stored log pi_old 1, 2.5 nats away, or -inf): no parameter moves (bitwise),
-    push_step_n = 0; with half of them inside DELTA only those are pushed (n = 8) and the others' log pi_old does not
-    enter the step."""
-    model = Toy(12)
+# ------------------------------------------------------------------------------------------------ (c) no rollout gate
+def test_rollout_drift_does_not_gate_the_step():
+    """Wave 14b: explored samples whose stored log pi_old is 1.5 / 2.5 nats away from the current log pi (the main PPO
+    pass drifted them beyond DELTA 1) are pushed exactly as if they had not drifted (bitwise the same parameters as
+    unshifted log pi_old, push_step_n = 16), while push_clamped still reports the drift (all 16 beyond DELTA). A -inf
+    stored log pi_old is left out: alone -> no parameter moves (bitwise), finite stats; with half the samples at -inf
+    only the other 8 are pushed, exactly as those 8 alone."""
     xb, act, items = _toy_batch([(0, 16, list(range(6)), 30.0)])
     n = len(act)
     shift = torch.zeros(n)
-    shift[:16] = torch.tensor([1.0, -1.0, 2.5, -2.5] * 4)
+    shift[:16] = torch.tensor([1.5, -1.5, 2.5, -2.5] * 4)
+    res = {}
+    for name, sh in (("shifted", shift), ("plain", None)):
+        model = Toy(12)
+        up, cfg = _toy_updater(model)
+        out = up(*_toy_args(model, xb, act, items, shift=sh), compiled=False, explored_item=items)
+        res[name] = (model.w.detach().clone(), dict(zip(stat_names(cfg), out.tolist())))
+    assert torch.equal(res["shifted"][0], res["plain"][0]) and float(res["plain"][0].abs().max()) > 0
+    d = res["shifted"][1]
+    assert d["push_step_n"] == 16 and d["push_step_dlogp"] == pytest.approx(0.5, abs=1e-3)
+    assert d["push_clamped"] == 1.0, "push_clamped still measures the rollout-based drift"
+
+    model = Toy(12)
     up, cfg = _toy_updater(model)
+    names = stat_names(cfg)
     w0 = model.w.detach().clone()
-    out = up(*_toy_args(model, xb, act, items, shift=shift), compiled=False, explored_item=items)
-    d = dict(zip(stat_names(cfg), out.tolist()))
-    assert torch.equal(model.w.detach(), w0) and d["push_step_n"] == 0 and d["push_step_dlogp"] == 0.0
     args = list(_toy_args(model, xb, act, items))
     args[2] = args[2].clone()
     args[2][0] = -math.inf
     out = up(*args, compiled=False, explored_item=np.where(np.arange(n) == 0, 0, -1))
-    names = stat_names(cfg)
     assert torch.equal(model.w.detach(), w0)
+    assert out[names.index("push_step_n")].item() == 0
     assert all(math.isfinite(out[names.index(k)].item()) for k in ppo.PUSH_STEP_STAT_NAMES + ("loss",))
 
-    shift[:16] = torch.tensor([0.3, 5.0] * 8)
     m_a, m_b = Toy(12), Toy(12)
     up_a, _ = _toy_updater(m_a)
-    out = up_a(*_toy_args(m_a, xb, act, items, shift=shift), compiled=False, explored_item=items)
-    assert dict(zip(stat_names(cfg), out.tolist()))["push_step_n"] == 8
+    args = list(_toy_args(m_a, xb, act, items))
+    args[2] = args[2].clone()
+    args[2][1:16:2] = -math.inf
+    out = up_a(*args, compiled=False, explored_item=items)
+    assert dict(zip(names, out.tolist()))["push_step_n"] == 8
     keep = np.where(np.arange(n) % 2 == 0, items, -1)          # the same 8 samples alone
     up_b, _ = _toy_updater(m_b)
-    up_b(*_toy_args(m_b, xb, act, keep, shift=shift), compiled=False, explored_item=keep)
+    up_b(*_toy_args(m_b, xb, act, keep), compiled=False, explored_item=keep)
     assert torch.allclose(m_a.w.detach(), m_b.w.detach(), rtol=1e-6, atol=1e-7)
 
 
@@ -328,6 +348,7 @@ def test_adam_update_is_the_coef0_update(spec, variant):
         assert out_on[names_on.index(k)].item() == out_ref[names_ref.index(k)].item(), k
     h_before = _hash(m_ref)
     up_ref.push_step_eta = 0.5                  # the same step, applied by hand to the coefficient-0 result
+    up_ref.push_budget_thr, up_ref.push_budget_cap = up_on.push_budget_thr, up_on.push_budget_cap
     pst = up_ref.push_step(bb[0], bb[1], bb[2], bb[3], items)
     assert _hash(m_ref) == _hash(m_on) != h_before
     d = dict(zip(names_on, out_on.tolist()))
@@ -402,6 +423,126 @@ def test_push_groups_split_rare_and_common_draws():
         res[name] = float((_logp_of(model, xb, act) - lp0)[rare].mean())
     assert res["lumped"] == pytest.approx(0.5 * 16 / 6, rel=1e-2)
     assert res["grouped"] == pytest.approx(0.5, abs=1e-3)
+
+
+# ------------------------------------------------------------------------------------------------ (g) budget (14b)
+def _stats(cfg, out):
+    return dict(zip(stat_names(cfg), out.tolist()))
+
+
+def _drift(model, hbar, nats):
+    """Simulate the main PPO pass: move w along the explored rows' mean gradient `hbar` so that their mean log pi
+    changes by `nats` (the toy's explored log-probs are linear in w)."""
+    with torch.no_grad():
+        model.w += nats * hbar / hbar.pow(2).sum()
+
+
+@pytest.mark.parametrize("delta,eta,steps", [(1.0, 0.5, 2), (2.0, 0.5, 4), (0.5, 1.0, 1), (1.0, 0.3, 3)])
+def test_budget_allows_delta_over_eta_steps_whatever_the_drift(delta, eta, steps):
+    """One group, A = +1, log pi_old = the window's start (the rollout), DELTA / ETA given; between minibatches the
+    policy is moved by -8 / +6 / -19 / +14 nats along the explored rows (the main pass's drift on u7664: p50 -8, p5 -19,
+    p95 +14), so wave 14 would have clamped every sample after the first minibatch. Per window: exactly `steps` steps
+    (push_step_n = 16 each, push_step_dlogp ~ ETA), then none (bitwise no change of the parameters apart from the
+    simulated drift; push_step_n = 0); push_budget_used = steps x ETA (~ DELTA); push_budget_hit 0 before, 1 after."""
+    model = Toy(12)
+    xb, act, items = _toy_batch([(0, 16, list(range(6)), 30.0)])
+    up, cfg = _toy_updater(model, {"explore_push": delta, "explore_push_step": eta})
+    args = _toy_args(model, xb, act, items)                  # stored log pi_old fixed at the start
+    ex = torch.from_numpy(items >= 0)
+    hbar = xb["f"][ex, 1].mean(0)
+    taken = []
+    for k, dn in enumerate((-8.0, 6.0, -19.0, 14.0, -8.0, 3.0)):
+        _drift(model, hbar, dn)
+        w0, lp0 = model.w.detach().clone(), _logp_of(model, xb, act)
+        d = _stats(cfg, up(*args, compiled=False, explored_item=items))
+        moved = float((_logp_of(model, xb, act) - lp0)[ex].mean())
+        if k < steps:
+            assert d["push_step_n"] == 16 and d["push_step_dlogp"] == pytest.approx(eta, abs=2e-3), k
+            assert moved == pytest.approx(eta, abs=2e-3)
+        else:
+            assert d["push_step_n"] == 0 and d["push_step_dlogp"] == 0.0 and torch.equal(model.w.detach(), w0), k
+        taken.append(int(d["push_step_n"] > 0))
+        assert d["push_budget_used"] == pytest.approx(eta * min(k + 1, steps), abs=5e-3)
+        assert d["push_budget_hit"] == (1.0 if k + 1 >= steps else 0.0), k
+    assert sum(taken) == steps
+
+
+def test_budget_guard_caps_mixed_sign_steps():
+    """A = +-1 half / half: each step's |mean change| is ~0, so the nat budget never fills; the step-count guard
+    ceil(DELTA / ETA) + 1 = 3 (DELTA 1, ETA 0.5) stops the group after 3 steps. A = -1: the budget counts |change|, so a
+    downward push also stops after 2 steps (mean log pi -1.0)."""
+    xb, act, items = _toy_batch([(0, 16, list(range(6)), 30.0)])
+    mixed = torch.tensor([1.0, -1.0] * 8 + [0.0] * (len(act) - 16))
+    for adv, steps, total in ((mixed, 3, None), (-1.0, 2, -1.0)):
+        model = Toy(12)
+        up, cfg = _toy_updater(model)
+        assert up.push_budget_cap == 3
+        args = _toy_args(model, xb, act, items, adv=adv)
+        lp0 = _logp_of(model, xb, act)
+        ns = [_stats(cfg, up(*args, compiled=False, explored_item=items))["push_step_n"] for _ in range(5)]
+        assert ns == [16.0] * steps + [0.0] * (5 - steps)
+        if total is not None:
+            assert float((_logp_of(model, xb, act) - lp0)[:16].mean()) == pytest.approx(total, abs=5e-3)
+
+
+def test_groups_budget_independently_and_reset_opens_a_new_window():
+    """Group 0 (dims 0-3) is present from minibatch 1, group 1 (dims 4-7) only from minibatch 2 on: group 0 steps in
+    minibatches 1-2, group 1 in 2-3 (its budget is its own, untouched by group 0's spending); after both are spent
+    nothing moves; `reset_push_budget` opens a new window and both step again (and push_budget_used restarts)."""
+    model = Toy(12)
+    xb, act, items = _toy_batch([(0, 10, [0, 1, 2, 3], 10.0), (1, 6, [4, 5, 6, 7], 60.0)], seed=3)
+    up, cfg = _toy_updater(model)
+    args = _toy_args(model, xb, act, items)
+    only0 = np.where(items == 0, 0, -1)
+    sel = {g: torch.from_numpy(items == g) for g in (0, 1)}
+
+    def run(it):
+        lp0 = _logp_of(model, xb, act)
+        d = _stats(cfg, up(*args, compiled=False, explored_item=it))
+        lp1 = _logp_of(model, xb, act)
+        return d, {g: float((lp1 - lp0)[sel[g]].mean()) for g in (0, 1)}
+
+    seq = [(only0, {0: 0.5}, 10), (items, {0: 0.5, 1: 0.5}, 16), (items, {1: 0.5}, 6), (items, {}, 0)]
+    for k, (it, want, n) in enumerate(seq):
+        d, mv = run(it)
+        assert d["push_step_n"] == n, k
+        for g in want:
+            assert mv[g] == pytest.approx(want[g], abs=2e-3), (k, g)
+    assert d["push_budget_used"] == pytest.approx(1.0, abs=5e-3) and d["push_budget_hit"] == 1.0
+    w0 = model.w.detach().clone()
+    up(*args, compiled=False, explored_item=items)
+    assert torch.equal(model.w.detach(), w0)
+    up.reset_push_budget()
+    d, mv = run(items)
+    assert d["push_step_n"] == 16 and mv[0] == pytest.approx(0.5, abs=2e-3) and mv[1] == pytest.approx(0.5, abs=2e-3)
+    assert d["push_budget_used"] == pytest.approx(0.5, abs=5e-3) and d["push_budget_hit"] == 0.0
+
+
+def test_train_resets_the_budget_every_epoch_of_every_update(tmp_path, monkeypatch):
+    """train() with epochs 2 and 3 updates calls `reset_push_budget` 6 times, each before the first minibatch of its
+    epoch (windows of equal size in pairs); every update logs push_budget_used >= 0 and push_budget_hit in [0, 1] (the mean of the epochs' end states)."""
+    calls = []
+    orig_reset, orig_call = MinibatchUpdater.reset_push_budget, MinibatchUpdater.__call__
+
+    def reset(self):
+        calls.append("reset")
+        orig_reset(self)
+
+    def call(self, *a, **k):
+        calls.append("mb")
+        return orig_call(self, *a, **k)
+
+    monkeypatch.setattr(MinibatchUpdater, "reset_push_budget", reset)
+    monkeypatch.setattr(MinibatchUpdater, "__call__", call)
+    kw = {"explore_kinds": "PlayCard,EndTurn", "explore_eps": 0.3, "explore_logp": "policy", "explore_push": 1.0,
+          "explore_push_step": 0.5, "epochs": 2}
+    train(resolve_config({**RUN, "out": str(tmp_path / "e"), **kw}), log=lambda s: None)
+    assert calls[0] == "reset" and calls.count("reset") == 6
+    wins = " ".join(calls).split("reset")[1:]               # the minibatches of each window
+    sizes = [len(w.split()) for w in wins]
+    assert all(n > 0 for n in sizes) and sizes[0::2] == sizes[1::2], sizes     # two equal epochs per update
+    for r in read_jsonl(tmp_path / "e" / "metrics.jsonl"):
+        assert r["push_budget_used"] >= 0 and 0 <= r["push_budget_hit"] <= 1 and r["push_step_n"] > 0
 
 
 # ------------------------------------------------------------------------------------------------ (f) config / plumbing
@@ -522,7 +663,8 @@ def test_train_logs_push_step_metrics(tmp_path, overlap):
         assert 0 < r["push_step_n"] <= r["explore_steps"]
         assert all(math.isfinite(r[k]) for k in ppo.PUSH_STEP_STAT_NAMES + ppo.PUSH_STAT_NAMES + ("loss",))
         assert r["push_step_hnorm"] > 0
-    assert any("push_step_n=" in m and "push_step_dlogp=" in m for m in logs)
+        assert r["push_budget_used"] > 0 and 0 <= r["push_budget_hit"] <= 1
+    assert any("push_step_n=" in m and "push_budget_used=" in m for m in logs)
     cfg = json.loads((tmp_path / "p" / "config.json").read_text())["config"]
     assert cfg["explore_push_step"] == 0.5
     ck = torch.load(sorted((tmp_path / "p" / "checkpoints").glob("*.pt"))[-1], map_location="cpu", weights_only=False)

@@ -839,7 +839,7 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --m
     --explore-push 1
 ```
 
-### Explore push step（独立归一步长，wave 14）
+### Explore push step（独立归一步长，wave 14；推力自身的预算，wave 14b）
 
 为什么（wave 13 诊断，`docs/diag-2026-11-06/explore-sensitivity.md`，A 的 u7664）：explored 的 SMITH 行比 HEAL 低 ~92 nat
 （removal 行 ~73，p5 -654），而且 ‖∇θ log π‖ ≈ 238（removal ≈ 754，combat 行 ≈ 1），各决策之间几乎平行。wave 12 把推力放在
@@ -851,11 +851,11 @@ explored 样本处于钳制状态，这些行每次 update 随机游走 ±47 nat
 
 1. 每个 minibatch 的主 loss 是**不含推力项**的 PPO：explored 样本照 wave 12 退出 surrogate 和 kl / clipfrac，value /
    entropy / aux 不变；backward → clip → Adam step，与推力系数为 0 时逐位相同（Adam 状态从不看到推力梯度）。
-2. 然后对 minibatch 里的每个推力组（`ppo.push_groups`：explore item × 稀有 / 常见，见下）：在 Adam step **之后**对该组的
-   explored 子集做一次新的前向（`amp` 时在 bf16 autocast 下，与 rollout 存 log π_old 的精度一致），保留未钳制的样本
-   U = {|log π_new − log π_old| < DELTA}；在 fp32 下算 `g = ∇θ L_push`（L_push = −mean_U A·log π(a)，即 DELTA 内
-   −mean A·clamp(dl, ±DELTA) 的梯度）和 `h = ∇θ mean_U log π(a)`，然后普通一步
+2. 然后对 minibatch 里的每个推力组（`ppo.push_groups`：explore item × 稀有 / 常见，见下）：在 Adam step **之后**，
+   U = 该组在本 minibatch 的全部 explored 样本（只排除存的 log π_old 非有限的，如 -inf）；在 fp32 下算
+   `g = ∇θ L_push`（L_push = −mean_U A·log π(a)）和 `h = ∇θ mean_U log π(a)`，然后普通一步
    `θ ← θ − ETA / max(‖h‖², 1) · g`：不进全局 clip，不进 Adam，无动量；只有 autograd 能从 U 走到的参数会动。
+   （wave 14 用 rollout 基准的 |log π_new − log π_old| < DELTA 选 U；14b 起不再用它做门控，见下面"预算"。）
    一阶下子集的 mean log π 变化 = ETA·⟨mean A∇log π, h⟩/‖h‖²，行梯度平行时 = ETA·mean A（ETA 的单位是 nat）。
    `max(‖h‖², 1)` 的下限防止 ∇log π ≈ 0 的行（策略本来就选的 p ≈ 1 行）得到无界步长：‖h‖² < 1 时就是 lr = ETA 的
    普通 SGD，子集只动 ETA·‖h‖² < ETA。U 为空时 g = 0，参数逐位不变。
@@ -866,10 +866,24 @@ explored 样本处于钳制状态，这些行每次 update 随机游走 ±47 nat
    动 ETA·n/k；32 个 minibatch 后 SMITH 漂移 +13.8 nat（p50），分组后 −1.0。SMITH 与 removal 是不同 item，各自一步
    （梯度尺度差 ~3 倍）。
 4. 编译：推力步总是 eager（单独的小前向 + 两次 `autograd.grad`），主 minibatch 的编译路径不变；启动时的
-   compiled-vs-eager gate（`check_compiled`）只测主 loss，不含推力步。代价：每个 minibatch 每个推力组多 2 次（amp 时 3 次）
-   ~16 行的前向和一次小 backward；trainer 侧分组在 host 上做，不加 device sync。
+   compiled-vs-eager gate（`check_compiled`）只测主 loss，不含推力步。代价：每个 minibatch 每个推力组多 2 次
+   ~16 行的前向和一次小 backward（预算用完的组照样算，只是系数为 0——这样决定留在 device 上）；trainer 侧分组在 host 上
+   做，不加 device sync。
+5. **预算（wave 14b，推力自己的信任域）**。wave 14 的复核（raven 回放，A u7664）：不加推力时主 PPO / Adam 本身在一个
+   update 的 32 个 minibatch 里就把 SMITH 行移动 p50 −8 nat（p5 −19，p95 +14），以 rollout 的 log π_old 为基准的
+   |dl| < DELTA 被这部分漂移占满：每个 minibatch 只剩 3–4 / 16 个样本可推，无推力 arm 的 push_clamped 也是 0.72–0.79；
+   推力自身每个 update 只贡献 ~0..+2 nat，而主漂移 −8，P(SMITH) 继续下降。所以 14b 把信任域改成**推力自身的累计移动量**：
+   每个预算窗口、每个推力组 g 累计 `used_g = Σ |该组每一步前后（fp32 前向）mean_U log π 的变化|`，以及步数；组 g 在
+   `used_g < DELTA − min(ETA, DELTA)/2` 且步数 < `ceil(DELTA/ETA) + 1` 时才走下一步。于是一个窗口里每组走
+   round(DELTA/ETA) 步（至少 1 步）、共 ≈ DELTA nat，与主 loss 的漂移无关（DELTA 1、ETA 0.5 → 正好 2 步；DELTA 2 → 4 步）。
+   半步余量让实测 0.4999 的两步不会在 DELTA 1 时买到第三步；取绝对值让向下推（A < 0）也消耗预算；步数上限是 A 正负
+   混合时的保护（那时每步 |mean 变化| ≈ 0，nat 预算填不满，上限 3 步 @ DELTA 1 / ETA 0.5）。
+   **窗口 = 一个 update 的一个 epoch**：trainer 在每个 epoch 的第一个 minibatch 前调 `MinibatchUpdater.reset_push_budget()`，
+   所以 `--epochs E` 时一个 update 内推力最多把一组行移动 ≈ E·DELTA（默认 epochs 2 → ≈ 2·DELTA）。没有新 flag：DELTA 仍是
+   `--explore-push`，ETA 仍是 `--explore-push-step`；ETA = 0 时整条路径与 wave 14 / 12 逐位相同。没有新的 checkpoint 状态
+   （累加器每个窗口从 0 开始）。
 
-与 wave 12 的关系：`--explore-push DELTA` 仍是信任域参数，存的 log π_old 语义不变；开了 `--explore-push-step` 时 wave 12
+与 wave 12 的关系：`--explore-push DELTA` 仍是信任域参数（14b 起是推力自身每窗口的预算），存的 log π_old 语义不变；开了 `--explore-push-step` 时 wave 12
 的系数路径关闭（主 loss 里推力系数强制为 0；同时显式传 `--explore-push-coef` 会被 `resolve_config` 拒绝）。ETA 必须 >= 0，
 0 = 关闭，与改动前逐位相同（`tests/test_explore_push_step.py` (a)；另在 raven 上与 HEAD 的 ppo.py 比较：4 步 updater ×
 smoke / trunk × {plain, aux, push 1, push 1 + dual 3 + aux}，以及 3 个完整 CPU train() 跑（默认、explorer + push 1 +
@@ -879,11 +893,15 @@ report card 的 explore 组显示它。
 
 指标（开启时，metrics.jsonl 与 train.log 的 update 行；位于 push_* 之后）：
 
-- `push_step_n`：本次 update 被推的 explored 样本数（各 minibatch 的 |U| 之和；不是平均）；
+- `push_step_n`：本次 update 被推的 explored 样本数（实际走了的那些步的 |U| 之和；不是平均）；
 - `push_step_dlogp`：这些样本在各自组那一步前后（fp32 前向）log π 的平均变化，按 n 加权——直接检验 ETA：A 全为 +1 时
   应 ≈ ETA；A 正负混合时 ≈ ETA·mean A（所以通常比 ETA 小）；
 - `push_step_hnorm`：各组 ‖h‖ 的 n 加权平均（行灵敏度；u7664 上 SMITH ≈ 220，随训练变化时看它）；
+- `push_budget_used`（14b）：窗口结束时各组 used_g 的平均（nat），各 epoch 取平均；A 同号时 ≈ DELTA；
+- `push_budget_hit`（14b）：窗口结束时已不能再走的组（预算或步数上限）所占比例，各 epoch 取平均；
 - wave 12 的 `push_share` / `push_clamped` / `push_dlogp` / `push_loss` 照旧（主 loss 前向时测，即 Adam step 之前）。
+  14b 起 `push_clamped` 不再决定推力步，只是漂移指示：explored 样本相对 rollout 的 log π_old 已漂出 ±DELTA 的比例
+  （主要来自主 PPO 的漂移）。
 
 验收实测（raven CPU fp32，A 的 pinned-0007664 + wave 13 采集的决策，committed `MinibatchUpdater`，checkpoint 的 Adam 状态与
 lr 3e-4 / clip 0.5；minibatch = 385 个 combat 决策（合成优势）+ 16 个 explored SMITH 样本，log π_old = 起点；推力效果 =
@@ -901,6 +919,21 @@ lr 3e-4 / clip 0.5；minibatch = 385 个 combat 决策（合成优势）+ 16 个
   "push_clamped 0.0" 是只放推力项的复现。真实 minibatch 的主 PPO 漂移幅度未测。
 - 32 个 minibatch 之后两条轨迹的 combat KL（与无推力 arm 比）p95 3e-3、max 0.13（wave 12：p95 5e-2、max 6.4）：单步副作用
   < 1e-4，但后续 Adam 步会放大小差异。
+
+14b 验收（同一回放框架，committed `MinibatchUpdater`；A 的 checkpoint 是 epochs 1，所以 32 个 minibatch = 一个预算窗口；
+"推力效果" = 与无推力 arm 的 SMITH 行 log π 差的 p50）：
+
+| arm（ETA 0.5） | 走了几步（第几个 mb） | 每步 push_step_dlogp | 窗口末 push_budget_used / hit | 4 mb 后推力效果 | 32 mb 后推力效果 | combat KL vs 无推力，4 mb 后 p95 / max | HEAL |
+|---|---|---|---|---|---|---|---|
+| DELTA 1，A 全 +1（rest64 主批） | 2（mb 1–2） | 0.4996 / 0.4994 | 0.999 / 1.0 | +0.92 | +2.48 | 8.6e-5 / 3.4e-2 | 0 |
+| DELTA 1，A 全 +1（combat 主批） | 2 | 0.5009 / 0.4994 | 1.000 / 1.0 | +0.94 | +1.15 | 4.0e-5 / 9.4e-4 | 0 |
+| DELTA 2，A 全 +1（combat 主批） | 4（mb 1–4） | 0.499..0.501 | 1.999 / 1.0 | +1.94 | +2.19 | 1.4e-4 / 3.4e-3 | 0 |
+| DELTA 1，A ±1（rest64） | 3（步数上限） | −0.17 / +0.08 / +0.12 | 0.37 / 1.0 | +0.07 | +0.43 | 1.6e-6 / 3.1e-5 | 0 |
+| DELTA 2，A ±1（combat） | 5（步数上限） | \|·\| ≤ 0.17 | 0.42 / 1.0 | +0.03 | +0.21 | 3.6e-7 / 1.3e-5 | 0 |
+
+- 推力步不再被主漂移吃掉：无推力时 push_clamped 仍是 0.62–0.79（主 PPO 漂移），但每组照样在窗口开头走满预算。
+- 4 mb 后的推力效果 ≈ DELTA（A 同号）；之后两条轨迹经 Adam 分叉（32 mb 后 combat KL max 0.5–7），32 mb 的数字含这部分
+  混沌放大，不全是推力本身。
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \

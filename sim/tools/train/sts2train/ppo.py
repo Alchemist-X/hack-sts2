@@ -26,7 +26,8 @@ how PPO's ratio accounts for the mixture behaviour policy b (GAE / values stay b
 ``explore_push`` (``--explore-push DELTA``, wave 12, needs ``--explore-logp policy``) takes the mixture draws out of the
 PPO surrogate and gives them a bounded push term instead (``ppo_loss``; ``push_*`` metrics); ``explore_push_step``
 (``--explore-push-step ETA``, wave 14) applies that push as its own row-scaled plain step after the Adam step instead of
-inside the shared loss (``MinibatchUpdater.push_step``; ``push_step_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
+inside the shared loss, budgeted per push group to DELTA nats of its own movement per epoch (wave 14b;
+``MinibatchUpdater.push_step``; ``push_step_*`` / ``push_budget_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
 eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
@@ -85,6 +86,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import inspect
+import math
 import os
 import platform
 import signal
@@ -132,7 +134,8 @@ COMPILE_MODES = ("off", "default", "reduce-overhead")
 STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
 DUAL_STAT_NAMES = ("dual_clipped",)  # after grad_norm (before AUX_STAT_NAMES) when dual_clip > 0 (stat_names)
 PUSH_STAT_NAMES = ("push_share", "push_clamped", "push_dlogp", "push_loss")  # after DUAL when explore_push > 0
-PUSH_STEP_STAT_NAMES = ("push_step_n", "push_step_dlogp", "push_step_hnorm")  # after PUSH when explore_push_step > 0
+PUSH_STEP_STAT_NAMES = ("push_step_n", "push_step_dlogp", "push_step_hnorm",   # after PUSH when explore_push_step > 0
+                        "push_budget_used", "push_budget_hit")
 PUSH_STEP_H2_MIN = 1.0              # floor of ||grad mean log pi||^2 in the push step's lr ETA / ||h||^2 (push_step)
 PUSH_STEP_RARE_LOGP = -3.0          # push_groups: explored samples with stored log pi_old below this (p < ~5%) are "rare"
 LOG_RATIO_MAX = 20.0                # ppo_surrogate clamps log(pi_new / pi_old) here before exp (exp(20) ~ 4.9e8)
@@ -252,7 +255,8 @@ class TrainConfig:
     explore_logp: str = "decoupled"  # stored log-prob: decoupled (log pi_old, adv x pi_old / b) | mixture (log b) | policy
     explore_push: float = 0.0       # wave 12: mixture draws leave the surrogate, push term A x clamp(dlogp, +-DELTA) (0 = off)
     explore_push_coef: float = 1.0  # multiplier of that push term in the loss
-    explore_push_step: float = 0.0  # wave 14: the push as its own row-scaled step of ETA nats after Adam (0 = off)
+    explore_push_step: float = 0.0  # wave 14: the push as its own row-scaled step of ETA nats after Adam (0 = off);
+    #                                 wave 14b: at most ~DELTA (explore_push) nats of the push's own movement per group / epoch
     # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
     cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
     eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
@@ -1075,7 +1079,8 @@ class MinibatchUpdater:
     the minibatch's Adam step is exactly the coefficient-0 step; then `push_step` applies the push as a separate plain
     step per explore item (`explored_item` keyword of the call: [B] int, -1 = not explored) and PUSH_STEP_STAT_NAMES
     follow the push statistics. The push step runs eager and is not part of `loss` (nor of `check_compiled`).
-    (The `explored_item` keyword carries push group ids: `push_groups`.)"""
+    (The `explored_item` keyword carries push group ids: `push_groups`.) The push step's per-group budget (wave 14b)
+    persists across calls: the trainer calls `reset_push_budget` at the start of every epoch of every update."""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
                  device: torch.device | str):
@@ -1097,6 +1102,11 @@ class MinibatchUpdater:
             push_coef = 0.0             # the push leaves the shared loss / clip / Adam: push_step applies it instead
         self.amp = amp
         self.n_dual = 1 if dual_clip > 0 else 0
+        # wave 14b: the push's own trust region, a budget of DELTA nats of measured movement per group and epoch
+        eta_ = self.push_step_eta
+        self.push_budget_thr = push - min(eta_, push) / 2 if eta_ > 0 else 0.0
+        self.push_budget_cap = math.ceil(push / eta_ - 1e-9) + 1 if eta_ > 0 else 0
+        self._budget: dict[int, list[torch.Tensor]] = {}     # group id -> [used nats, steps] (0-d device float32)
         self.split = self.split or self.aux or push > 0
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
@@ -1155,7 +1165,7 @@ class MinibatchUpdater:
             pst = self.push_step(args[0], args[1], args[2], args[3], explored_item)
             k = 6 + self.n_dual + len(PUSH_STAT_NAMES)
             st = torch.cat([st[:k], pst, st[k:]])
-        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [push 4] + [push step 3] + [aux heads' 4]
+        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [push 4] + [push step 5] + [aux heads' 4]
             return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
 
@@ -1164,17 +1174,23 @@ class MinibatchUpdater:
             logits = self.model(xb)[0]
         return F.log_softmax(logits.float(), -1).gather(1, act.unsqueeze(1)).squeeze(1)
 
+    def reset_push_budget(self) -> None:
+        """Start a new budget window of the push step (wave 14b): every group's used nats and step count back to 0.
+        The trainer calls it at the start of each epoch of each update (so with epochs E an update moves a group's
+        rows by up to ~E x DELTA through the push)."""
+        self._budget = {}
+
     def push_step(self, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tensor,
                   explored_item) -> torch.Tensor:
-        """The row-scaled push step of --explore-push-step ETA (wave 14), applied to the model in place. ->
-        [push_step_n, push_step_dlogp, push_step_hnorm] (float32, on the device; no host sync).
+        """The row-scaled push step of --explore-push-step ETA (wave 14, budget wave 14b), applied to the model in
+        place. -> [push_step_n, push_step_dlogp, push_step_hnorm, push_budget_used, push_budget_hit] (float32, on the
+        device; no host sync).
 
         Per group i present in `explored_item` ([B] int, -1 = not explored; the trainer's groups are `push_groups`:
-        explore item x rare / common), on its explored samples S_i of this
-        minibatch: a fresh forward (no grad; under bf16 autocast when `amp`, the precision the rollout stored log pi_old
-        in) keeps the unclamped ones U = {|log pi_new - log pi_old| < DELTA} (the trust region of wave 12, measured
-        after the minibatch's Adam step); then in fp32
-            g = grad L_push,  L_push = -mean_U A x log pi(a)   (= grad of -mean_U A x clamp(dl, +-DELTA) inside DELTA),
+        explore item x rare / common), on its explored samples U_i of this minibatch whose stored log pi_old is finite
+        (-inf / nan are left out; the rollout-based |log pi_new - log pi_old| < DELTA test of wave 14 no longer gates:
+        the main PPO pass alone drifts the explored rows by ~8 nats per update on u7664, which used it up), in fp32
+            g = grad L_push,  L_push = -mean_U A x log pi(a),
             h = grad mean_U log pi(a),
             theta <- theta - ETA / max(||h||^2, PUSH_STEP_H2_MIN) x g
         (plain step: no global clip, no Adam, no momentum; only the parameters autograd reaches from U move). To first
@@ -1185,25 +1201,38 @@ class MinibatchUpdater:
         < ETA. U empty: g = 0, no parameter changes. Groups are stepped one after another (separate scales: SMITH vs
         removal rows differ ~3x; p ~ 1 draws of an item must not dilute its rare rows' scale: `push_groups`).
 
-        Statistics over the pushed samples (sum of |U_i|): push_step_n = sum |U_i|, push_step_dlogp = the mean change
-        of their log pi produced by their item's step (fp32 forward before / after: the direct check that a step moves
-        ~ETA nats), push_step_hnorm = the |U_i|-weighted mean of ||h_i||."""
+        Budget (wave 14b, the push's own trust region): per group the window (`reset_push_budget`; the trainer: one
+        epoch of one update) accumulates used_i = sum over its steps of |the step's measured change of mean_U log pi|
+        (fp32 forward before / after) and the step count. Group i takes a step while used_i < DELTA - min(ETA, DELTA) / 2
+        (i.e. round(DELTA / ETA) steps of ~ETA, at least one; the half-step margin keeps a measured 0.4999 from buying
+        a third step at DELTA 1, ETA 0.5) and fewer than ceil(DELTA / ETA) + 1 steps were taken (guard for mixed-sign
+        advantages, whose |mean change| per step is small). An ineligible group's step is computed with coefficient 0
+        (the parameters do not change; the decision stays on the device). The absolute value makes a downward push
+        (A < 0) spend the budget too.
+
+        Statistics over the samples of the steps actually taken: push_step_n = sum |U_i|, push_step_dlogp = the mean
+        change of their log pi produced by their group's step, push_step_hnorm = the |U_i|-weighted mean of ||h_i||;
+        push_budget_used = the mean over the window's groups (so far) of used_i in nats, push_budget_hit = the fraction
+        of them that can take no further step."""
         item = explored_item.detach().cpu().numpy() if torch.is_tensor(explored_item) else np.asarray(explored_item)
         dev = act.device
         n_t = torch.zeros((), dtype=torch.float32, device=dev)
         dl_t, h_t = n_t.clone(), n_t.clone()
         params = [p for p in self.model.parameters() if p.requires_grad]
-        delta, eta = self.push, self.push_step_eta
+        eta, thr, cap = self.push_step_eta, self.push_budget_thr, self.push_budget_cap
         for it in np.unique(item[item >= 0]).tolist():
+            b = self._budget.get(it)
+            if b is None:
+                b = self._budget[it] = [n_t.new_zeros(()), n_t.new_zeros(())]
             idx = torch.from_numpy(np.flatnonzero(item == it)).to(dev)
             sub = {k: v.index_select(0, idx) for k, v in xb.items()}
             a_s, old_s, A_s = act.index_select(0, idx), oldlogp.index_select(0, idx), madv.index_select(0, idx)
             lp = self._logp(sub, a_s)                                   # fp32, with grad
             with torch.no_grad():
-                lp_chk = self._logp(sub, a_s, amp=True) if self.amp else lp.detach()
-                u = (lp_chk - old_s).abs() < delta                     # nan / inf dl: clamped (False)
+                u = torch.isfinite(old_s)
                 n = u.sum().float()
                 den = n.clamp_min(1.0)
+                ok = (b[0] < thr) & (b[1] < cap) & (n > 0)
             lp_u = torch.where(u, lp, torch.zeros_like(lp))
             g = torch.autograd.grad(-(A_s.float() * lp_u).sum() / den, params, retain_graph=True, allow_unused=True)
             h = torch.autograd.grad(lp_u.sum() / den, params, allow_unused=True)
@@ -1212,16 +1241,26 @@ class MinibatchUpdater:
                 for h_ in h:
                     if h_ is not None:
                         h2 = h2 + h_.float().pow(2).sum()
-                c = eta / h2.clamp_min(PUSH_STEP_H2_MIN)
+                c = torch.where(ok, eta / h2.clamp_min(PUSH_STEP_H2_MIN), torch.zeros_like(h2))
                 for p, g_ in zip(params, g):
                     if g_ is not None:
                         p.sub_(c.to(g_.dtype) * g_)
                 lp_after = self._logp(sub, a_s)
-                dl_t = dl_t + torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum()
-                n_t = n_t + n
-                h_t = h_t + h2.sqrt() * n
+                okf = ok.float()
+                dsum = torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum() * okf
+                b[0] = b[0] + (dsum / den).abs()
+                b[1] = b[1] + okf
+                dl_t = dl_t + dsum
+                n_t = n_t + n * okf
+                h_t = h_t + h2.sqrt() * n * okf
         den = n_t.clamp_min(1.0)
-        return torch.stack([n_t, dl_t / den, h_t / den])
+        if self._budget:
+            used = torch.stack([b[0] for b in self._budget.values()])
+            steps = torch.stack([b[1] for b in self._budget.values()])
+            b_used, b_hit = used.mean(), ((used >= thr) | (steps >= cap)).float().mean()
+        else:
+            b_used, b_hit = n_t.new_zeros(()), n_t.new_zeros(())
+        return torch.stack([n_t, dl_t / den, h_t / den, b_used, b_hit])
 
 
 def push_groups(item: np.ndarray, oldlogp: np.ndarray) -> np.ndarray:
@@ -2112,9 +2151,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                                 f"--compile off")
             f_item = (push_groups(ex_item.reshape(-1), store.logp.reshape(-1))     # --explore-push-step (host)
                       if ex_item is not None else None)
-            stats = [updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch,
-                             **({"explored_item": f_item[mb_h]} if f_item is not None else {}))
-                     for mb_h, mb in zip(mbs, d_mbs)]
+            n_pe = max(1, len(mbs) // cfg.epochs)       # minibatches per epoch (every epoch has the same count)
+            stats = []
+            for k_mb, (mb_h, mb) in enumerate(zip(mbs, d_mbs)):
+                if f_item is not None and k_mb % n_pe == 0:
+                    updater.reset_push_budget()         # wave 14b: the push budget is per epoch of the update
+                stats.append(updater(*mb_args(mb_h, mb), compiled=len(mb_h) == cfg.minibatch,
+                                     **({"explored_item": f_item[mb_h]} if f_item is not None else {})))
             stats = torch.stack(stats).cpu().numpy() if stats else None
             update_s = time.monotonic() - t_up
             if stats is not None and not np.isfinite(stats[:, STAT_NAMES.index("loss")]).all():
@@ -2126,6 +2169,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 sm["push_step_n"] = float(n_.sum())
                 for k_ in ("push_step_dlogp", "push_step_hnorm"):
                     sm[k_] = (float((stats[:, names_.index(k_)] * n_).sum() / n_.sum()) if n_.sum() > 0 else None)
+                ends = np.arange(min(n_pe, len(stats)) - 1, len(stats), n_pe)  # the last minibatch of each epoch
+                for k_ in ("push_budget_used", "push_budget_hit"):          # the window's end state, mean of epochs
+                    sm[k_] = float(stats[ends, names_.index(k_)].mean())
             ret_v, val_v = ret.reshape(-1)[idx_all], store.values.reshape(-1)[idx_all]
             var_r = float(np.var(ret_v)) if len(ret_v) else 0.0
             ev = (1.0 - float(np.var(ret_v - val_v)) / var_r) if var_r > 1e-12 else None
@@ -2239,6 +2285,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                        f"push_loss={fmt(sm.get('push_loss'), '.5f')}" if cfg.explore_push > 0 else "")
                     + (f" push_step_n={fmt(sm.get('push_step_n'), '.0f')} push_step_dlogp="
                        f"{fmt(sm.get('push_step_dlogp'), '.4f')} push_step_hnorm={fmt(sm.get('push_step_hnorm'), '.1f')}"
+                       f" push_budget_used={fmt(sm.get('push_budget_used'), '.3f')} push_budget_hit="
+                       f"{fmt(sm.get('push_budget_hit'), '.2f')}"
                        if cfg.explore_push_step > 0 else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
