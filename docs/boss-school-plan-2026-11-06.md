@@ -27,3 +27,7 @@
 - 只有 2 局人类对局，牌组多样性低——策略可能学会"那两套牌"的打法而不泛化；需要用户再录 5–10 局到第二 / 三幕的 Silent A10。
 - A9 存档在 A9 难度下进行，训练分布略偏易；评估仍是 A10。
 - 学校局的回报从存档的 `start_progress` 起算（`progress_gain`），不会混入评估口径。
+
+## 2026-11-06 16:30 EST 修订：对照 = C3
+
+GPU A 在 G 停止后改跑 C3（C2 的 u10664 纯续训，+1500 update，bundle-w17 且新特性全关）。S 与 C3 同分叉、同包、同训练步数，只差 `--start-saves/--save-mix/--copies-mode` 与 `--boss-bonus`：主判据改为**配对 S − C3**（dev-128 greedy、关 breaker，u12164；act_reached[3] 的局数差与 progress 差），辅以上文的绝对门槛（≥ 12/128）。
