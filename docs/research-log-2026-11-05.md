@@ -247,3 +247,8 @@ wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skip
 **观察**：C 于 06:27 到 u9164：dev-128 关 breaker **0.480 [0.453, 0.507]**（最后 4 点 0.457 / 0.460 / 0.461 / 0.480，历史最高），ab-512 0.449（段终 0.443 → 0.460 → 0.449）；D 于 02:41 到 u9164：dev-128 0.430 [0.403, 0.457]，ab-512 0.453。F′（A 的 u7664，对照）u9164 0.457、u9500 0.436，约 10:05 到 9664。**E′ 06:35 起跑后崩溃**（w9-e）：`--explore-logp policy` 下被探索且 π_old≈0 的行使 PPO 比率无界——kl 0.08 / 3.2 / … / 5870（u7670）/ 120 / 2.9e12（u7676），训练器死；重试时先撞 compile 门槛（rel 1.31e-2，已自动转 eager），再起即 kl 5e14、prog nan；3 次失败 → 驱动退出 → 06:45 保活停掉 sts2c。守护昨夜已停用轮换，GPU A 空转到 09:40（约 3 小时）。ssh 到死会话名又造了 CPU 幽灵（已停）。余额 240.7。
 **判断**：(1) 第二轮主集 C − D ≈ +0.05 但确认集持平，配对判读（`r2_compare.sh 9164`，sts2b3 上跑）出来前不下结论；(2) E′ 的失败是数值问题不是假设问题：A<0 一侧 r·A 无裁剪（标准 PPO 的已知缺口），dual-clip（Ye 2020，max(min(rA, clip(r)A), cA)）+ 对数比率上限即可；探索修复的假设仍值得测；(3) GPU A 空转期间最省事的有效用法是 C 纯续训（u9164 → 10664），同时检验 0.48 是否站得住。
 **行动**：新机 sts2a2（A100）建好，`resume_a_sts2a2.sh` 恢复 w3m-a（分叉 checkpoint）与 w4-c（md5 校验）后起 `launch_c3.sh`（TAG=c2，ENDS 9664 10164 10664，`--macros all`，熵 0.005，包 bd6d6f6863）；sts2b3 上部署 `launch_e2.sh`（等 `w3m-f: done` 与 `/content/sts2/bundle-w11` 出现 → 从桶取 A 的 pinned-0007664 → E′ + `--dual-clip 3.0`），东京保活的 sts2b3 条目改指 w9-e2.driver.log，sts2a2 条目指 w4-c2.driver.log；wave 11（dual-clip + 对数比率 clamp + 单测 + 新包）交 Opus 工作流 wf_86ef6e2c-5ac。
+
+## 10:00 EST 11-06（第 29 轮补：第二轮判读）
+
+`r2_compare.sh 9164`：PRIMARY dev-128 greedy-off C−D **+0.049 [+0.018, +0.080]**（bootstrap 同），AUX ab-512 −0.004 [−0.021, +0.013]。**预注册规则：采纳 `--macros all`**。保留意见见 round2-plan 末段。后续线默认 `--macros all`；E′ 重启（E2）仍用 rest,shop 以保持与已完成的 F′ 同配置（只差探索修复）。
+sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评测目录每个几百个小文件，串行拉取是 40 分钟级。
