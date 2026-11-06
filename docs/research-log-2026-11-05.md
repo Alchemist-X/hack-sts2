@@ -288,3 +288,8 @@ sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评�
 **观察**（raven CPU，A 的 pinned-0007664，dev-128 上 457 个火堆决策 / 187 个删牌决策 / 385 个战斗决策）：SMITH 行相对最大行的 logit 间隔中位数 −92（p5 −127，最小 −148），P(SMITH) 中位 1e-38；删牌行中位 −73、p5 −654（c_bias 项可到 600）；战斗行中位 −10。bf16 与 fp32 的 log-prob 差 SMITH ≤ 1 nat、删牌 ≤ 3.5（H1 否定）。**‖∇θ log π‖：SMITH 行 238、删牌行 754，战斗行 1.1**——极端行的梯度大 200–700 倍且在所有火堆决策上近乎平行。一步推力（64 个被探索 SMITH 样本、δ=1、全局裁剪 0.5）：Adam（checkpoint 状态）±12 nat/步，新 Adam ±9；SGD 3e-4 无裁剪 +15；SGD 1e-5 无裁剪 +0.55（一阶预测 lr·‖g‖² = 0.56）。归因：Adam 的逐参数归一化是主因（休眠参数只解释约 30%），option_bank 贡献最大。32 个 minibatch 的回放复现 E3 形态：push_clamped 0.96、每轮漂移 ±47 nat；改为独立 SGD 1e-5 或按行尺度归一的步长 η/‖∇ mean log π‖²（η=0.5）：push_clamped 0.0、每轮漂移 −0.5（优势混合）/ −1.2（全负）。副作用：共享裁剪 0.5 下推力梯度（范数 236）会把同一 minibatch 的 PPO 梯度压小约 470 倍。
 **判断**：推力必须离开共享 loss、离开 Adam、离开全局裁剪——每个 minibatch 先做不含推力的 PPO（关掉时与 wave 11 逐位相同），再对被探索子集单独前向，按 θ ← θ − (η/‖h‖²)·g（g=∇L_push，h=∇ mean log π，η=0.5 nat）做一步；SMITH 与删牌行分别归一（梯度尺度差 3 倍）。备选：固定 SGD lr 1e-5。
 **行动**：wave 14 实现（Opus）；G/H 改用它（15:30 前换包装器）；诊断文档 `docs/diag-2026-11-06/explore-sensitivity.md` 入库。
+
+## 12:15 EST 11-06（第 36 轮）
+
+**观察**：C2 u9702：dev-128 u9600 0.452、u9664 0.452（段终）、u9700 0.461。C-rep u7813：dev-128 u7700 0.433、u7800 0.430。余额 207.1。wave 13 复核：数字全部复现（修了一处 removal 行 bf16 差的上限 4.3 → 3.5；共享裁剪对 PPO 梯度的压缩实测 1/47（优势正负各半）到 1/490（同号））；复核者补充：u7664 处 SMITH 行梯度近乎平行，推力主要整体移动 P(SMITH)，分不出"该升哪张"——先把 P(SMITH) 从 1e-38 拉回来，选牌是之后的事。
+**行动**：wave 14（`--explore-push-step ETA`：每个 minibatch 先做不含推力的 PPO，再对被探索子集按 θ ← θ − (η/‖∇mean log π‖²)·∇L_push 单独走一步，按探索项分组归一；验收：raven 上 4 个 minibatch 实测 ≈0.5 nat/步）工作流已启动。`launch_g3.sh` / `launch_h3.sh`（等 `bundle-w14`，`--explore-push 1.0 --explore-push-step 0.5 --dual-clip 3.0`）已替换两台上的 g2 / h2——G 不会再带着失效的推力起跑。诊断文档已入库（路径占位符化）。
