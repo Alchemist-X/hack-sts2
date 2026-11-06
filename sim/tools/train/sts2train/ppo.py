@@ -992,17 +992,41 @@ class MinibatchUpdater:
         return torch.cat([st, gn.detach().float().view(1)])
 
 
+def loss_scale(*, loss: float, policy_loss: float, value_loss: float, entropy: float, adv_abs_mean: float,
+               vf_coef: float, ent_coef: float) -> dict:
+    """The magnitude `check_compiled` measures the compiled-vs-eager loss difference against (python floats in and
+    out, eager-side statistics). The minibatch means can cancel to ~0 late in training while the per-sample terms stay
+    O(1), so besides |loss| and the mean terms (|policy| + vf * |value| + ent * |entropy|) the scale takes the
+    per-sample term magnitudes: mean |advantage| for the policy term (|ratio * A| with ratio ~1; advantages are
+    normalised), vf * the value loss (already the mean of the non-negative per-sample 0.5 * max(unclipped, clipped)
+    squared errors, so its mean is its per-sample magnitude) and ent * |entropy|. Returns the parts and `scale`."""
+    terms = abs(policy_loss) + vf_coef * abs(value_loss) + ent_coef * abs(entropy)
+    per_sample = abs(adv_abs_mean) + vf_coef * abs(value_loss) + ent_coef * abs(entropy)
+    return {"scale_loss": abs(loss), "scale_terms": terms, "scale_per_sample": per_sample, "adv_abs_mean": adv_abs_mean,
+            "scale": max(abs(loss), terms, per_sample, 1e-6)}
+
+
+def loss_gate(loss_eager: float, loss_compiled: float, scale: float, *, amp: bool, tf32: bool = False) -> dict:
+    """The loss half of `check_compiled`'s decision: |compiled - eager| / `scale` (`loss_scale`) against 1e-2 under
+    bf16 autocast or TF32, 1e-4 in fp32."""
+    rel = float(abs(loss_compiled - loss_eager) / scale)
+    tol = 1e-2 if (amp or tf32) else 1e-4
+    return {"loss_rel": rel, "tol_loss": tol, "loss_ok": bool(rel <= tol)}
+
+
 def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: bool = False) -> dict:
     """Eager vs compiled forward + backward of one minibatch `args` (no optimizer step; gradients are cleared after):
     the loss and every parameter's gradient norm. With CUDA graphs the compiled side runs three times (warm-up,
     record, replay) and the replay is compared. `ok` is False when the compiled path computes something else (beyond
     bf16 / TF32 rounding): a backend bug must stop a run rather than train it on wrong gradients.
 
-    The loss difference is measured against the magnitude of its terms (|policy| + vf * |value| + ent * |entropy|; the
-    total can cancel to ~0), a parameter's gradient-norm difference against its norm floored at a fraction of the
-    global norm (1e-3 fp32, 3e-3 TF32, 1e-2 bf16): gradients that are rounding noise (c_bias.bias: the loss is
-    invariant to a per-sample logit shift) must not fail the check, while a wrong gradient anywhere above that floor
-    does."""
+    The loss difference is measured against the magnitude of its terms (`loss_scale`: the mean terms |policy| + vf *
+    |value| + ent * |entropy| and the per-sample magnitudes mean |advantage| + vf * value loss + ent * |entropy|; the
+    total and the policy mean can cancel to ~0; run w4-d, session 19, update 8664, 2026-11-06 04:38Z: bf16 noise of
+    1.4e-4 on a mean-term scale of ~6e-3 failed the gate with every gradient within 3.8e-2), a parameter's
+    gradient-norm difference against its norm floored at a fraction of the global norm (1e-3 fp32, 3e-3 TF32, 1e-2
+    bf16): gradients that are rounding noise (c_bias.bias: the loss is invariant to a per-sample logit shift) must not
+    fail the check, while a wrong gradient anywhere above that floor does."""
     model, opt = updater.model, updater.opt
     names, params = zip(*model.named_parameters())
     res = {}
@@ -1018,19 +1042,21 @@ def check_compiled(updater: MinibatchUpdater, args: tuple, *, amp: bool, tf32: b
     (se, ge), (sc, gc) = res["eager"], res["compiled"]
     i = {k: STAT_NAMES.index(k) for k in ("entropy", "value_loss", "policy_loss", "loss")}
     vf_coef, ent_coef = updater.coefs
-    scale = max(abs(se[i["loss"]]), abs(se[i["policy_loss"]]) + vf_coef * abs(se[i["value_loss"]])
-                + ent_coef * abs(se[i["entropy"]]), 1e-6)
-    loss_rel = float(abs(sc[i["loss"]] - se[i["loss"]]) / scale)
+    sc_ = loss_scale(loss=float(se[i["loss"]]), policy_loss=float(se[i["policy_loss"]]),
+                     value_loss=float(se[i["value_loss"]]), entropy=float(se[i["entropy"]]),
+                     adv_abs_mean=float(args[3].detach().float().abs().mean().cpu()),   # madv (MinibatchUpdater.loss)
+                     vf_coef=vf_coef, ent_coef=ent_coef)
+    lg = loss_gate(float(se[i["loss"]]), float(sc[i["loss"]]), sc_["scale"], amp=amp, tf32=tf32)
+    loss_rel, tol_loss = lg["loss_rel"], lg["tol_loss"]
     g_e, g_c = float(np.sqrt((ge ** 2).sum())), float(np.sqrt((gc ** 2).sum()))
     floor = (1e-2 if amp else 3e-3 if tf32 else 1e-3) * g_e
     grel = np.abs(gc - ge) / np.maximum(ge, max(floor, 1e-12))
     worst = int(np.argmax(grel)) if len(grel) else 0
-    tol_loss = 1e-2 if (amp or tf32) else 1e-4
     tol_grad = 0.25 if amp else 0.05 if tf32 else 1e-3
     out = {"loss_eager": float(se[i["loss"]]), "loss_compiled": float(sc[i["loss"]]), "loss_rel": loss_rel,
            "grad_norm_eager": g_e, "grad_norm_compiled": g_c, "worst_param": names[worst],
            "worst_param_grad_rel": float(grel[worst]) if len(grel) else 0.0, "tol_loss": tol_loss,
-           "tol_grad": tol_grad, "replayed": updater.cudagraphs}
+           "tol_grad": tol_grad, "replayed": updater.cudagraphs, **sc_}
     out["ok"] = bool(loss_rel <= tol_loss and out["worst_param_grad_rel"] <= tol_grad)
     return out
 
@@ -1821,7 +1847,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     and len(mbs[0]) == cfg.minibatch:
                 compile_check["update"] = chk = check_compiled(updater, mb_args(mbs[0], d_mbs[0]), amp=amp, tf32=tf32)
                 log(f"compiled minibatch update vs eager: loss {chk['loss_compiled']:.6g} vs {chk['loss_eager']:.6g} "
-                    f"(rel {chk['loss_rel']:.2e}, tol {chk['tol_loss']:g}), worst parameter gradient norm "
+                    f"(rel {chk['loss_rel']:.2e} of scale {chk['scale']:.3g} = max(|loss| {chk['scale_loss']:.3g}, "
+                    f"terms {chk['scale_terms']:.3g}, per-sample {chk['scale_per_sample']:.3g} with mean |adv| "
+                    f"{chk['adv_abs_mean']:.3g}), tol {chk['tol_loss']:g}), worst parameter gradient norm "
                     f"{chk['worst_param']} rel {chk['worst_param_grad_rel']:.2e} (tol {chk['tol_grad']:g}): "
                     f"{'OK' if chk['ok'] else 'MISMATCH'}")
                 if not chk["ok"]:
