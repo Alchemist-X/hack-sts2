@@ -713,6 +713,21 @@ mixes a uniform draw into the **rollout** sampling at those decisions only:
   RestOption name on `ChooseRestOption` (`ChooseRestOption:SMITH` = the SMITH rows without HEAL), a ShopCategory name
   or `remove` (= `card_removal`) on `BuyEntry` (`BuyEntry:remove` = the removal rows only: a removal is a `BuyEntry`
   like any purchase, the kind alone cannot separate it). Unknown names fail at start-up with the library's list.
+- Wave 10 (behaviour audit: 0/257 avoidable elites taken, card rewards skipped 6.3% of the time):
+  - `Travel:<MapPointType>` (`Travel:Elite`, `Travel:RestSite`, `Travel:Unknown`, `Travel:Shop`, `Travel:Monster`,
+    `Travel:Treasure`, ...): the Travel rows whose destination node has that type. A Travel row's A (`option_index`) is
+    the rank of the destination among the legal points (`map_nodes.legal_next`) sorted by (col, row) (sim/VEC.md, the
+    model's map pointer), so the type is `map_nodes.point_type` of the A-th legal cell in column-major order; checked
+    against the real env (the node the slot lands on). `--explore-kinds Travel:Elite --explore-eps E`: at a Travel
+    decision offering >= 1 Elite, with probability E the action is uniform among the Elite destinations (P(an elite)
+    >= E in the rollouts); decisions without an Elite destination are untouched. Unknown point types (or `Unassigned`)
+    fail at start-up.
+  - `ProceedRewards` (every ProceedRewards row: also the decisions where nothing, or only gold / potions / relics, is
+    left to claim, where proceeding skips no card) and `ProceedRewards:skipcard` (the row only at decisions that also
+    list a card row, `TakeRewardCard` or `PickRewardCard`: there proceeding skips the unclaimed card). Use `:skipcard`
+    to explore true skips. Proceeding forfeits every unclaimed reward on the screen (`OnSkipped`), so a skipcard draw
+    with gold still unclaimed skips the gold too. The CardReward phase (after a REROLL) lists the card screen's own Skip
+    (`RewardAlternative`), not ProceedRewards, so it is not explored by this item.
 - Behaviour policy b = (1 - E) pi + E u at those decisions (u uniform over the explore rows), b = pi elsewhere.
   `--explore-logp` picks what PPO's ratio uses. Every mode corrects only the one-step policy ratio: GAE advantages and
   value targets come from the b-trajectories with no off-policy correction (no V-trace / Retrace), so the critic
@@ -749,6 +764,9 @@ mixes a uniform draw into the **rollout** sampling at those decisions only:
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
     --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 [--explore-logp decoupled|mixture|policy]
+# wave 10: elite routes and card-reward skips
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR \
+    --explore-kinds Travel:Elite,ProceedRewards:skipcard --explore-eps 0.3
 ```
 
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)

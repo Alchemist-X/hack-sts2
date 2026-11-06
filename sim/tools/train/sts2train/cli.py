@@ -275,8 +275,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "rare decision kinds'): RunActionKind names as the candidate table reports them, e.g. "
                         "ChooseRestOption,BuyEntry, each optionally with a selector Kind:sel = macro (room-macro rows, "
                         "B >= 0) / plain / a RestOption name on ChooseRestOption (SMITH, HEAL) / a ShopCategory name or "
-                        "'remove' (= card_removal) on BuyEntry; unknown names fail at start-up; 'none' turns it off on "
-                        "--resume (default off)")
+                        "'remove' (= card_removal) on BuyEntry / a MapPointType name on Travel (Travel:Elite = the "
+                        "Travel rows whose destination is an elite) / skipcard on ProceedRewards (only at decisions "
+                        "that also list a card row: a true card skip); unknown names fail at start-up; 'none' turns "
+                        "it off on --resume (default off)")
     g.add_argument("--explore-eps", dest="explore_eps", type=float, metavar="E",
                    help="at a rollout decision with >= 1 explore row, draw uniformly from the explore rows present with "
                         "probability E, else from the policy; never in evaluation or the loop breaker's greedy path; "

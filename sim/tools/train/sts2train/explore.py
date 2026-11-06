@@ -27,6 +27,18 @@ Items (``parse_kinds``): ``Kind`` = every row of that RunActionKind (by name, as
 - any RestOption name (``SMITH``, ``HEAL``, ...) on ``ChooseRestOption``: the rows of that rest option (``A``'s
   ``rest.option_id``), macro or plain: ``ChooseRestOption:SMITH`` = every SMITH:<card> row (or the plain SMITH row
   without macros), without HEAL.
+- any MapPointType name (``Elite``, ``RestSite``, ``Unknown``, ``Shop``, ``Treasure``, ``Monster``, ...) on ``Travel``
+  (wave 10): the Travel rows whose destination node has that point type. A Travel row's A (``option_index``) is the
+  rank of the destination among the legal points (``map_nodes.legal_next``) sorted by (col, row) (sim/VEC.md; the
+  model's own map pointer, ``model.py``), so the destination's type is ``map_nodes.point_type`` of the A-th legal cell
+  in column-major order. ``Travel:Elite`` at E: at a Travel decision offering >= 1 Elite destination, with probability
+  E the action is uniform among the Elite destinations (P(an elite) >= E in the rollouts); a decision without an Elite
+  destination is untouched.
+- ``skipcard`` on ``ProceedRewards`` (wave 10): the ProceedRewards row only at decisions that also list a card row
+  (``TakeRewardCard`` = the rewards-screen card macro, or ``PickRewardCard``): leaving the rewards screen there skips the
+  unclaimed card. The bare ``ProceedRewards`` item also explores the decisions where nothing (or only gold / potions /
+  relics) is left to claim, where proceeding is no skip. Proceeding forfeits every unclaimed reward on the screen (the
+  game's ``OnSkipped``), not only the card: with gold still unclaimed a ``skipcard`` draw skips the gold too.
 
 Log-prob stored for PPO (``logp_mode``). What every mode corrects is the one-step policy ratio only: the advantages
 (GAE) and the value targets are computed from the b-trajectories with no off-policy correction (no V-trace / Retrace),
@@ -120,8 +132,12 @@ def format_kinds(items) -> str:
 class _Item:
     label: str
     kind_id: int
-    sel: str | None         # None | "macro" | "plain" | "shop" | "rest"
-    sel_id: int = -1        # ShopCategory / RestOption member id for "shop" / "rest"
+    sel: str | None         # None | "macro" | "plain" | "shop" | "rest" | "travel" | "skipcard"
+    sel_id: int = -1        # ShopCategory / RestOption / MapPointType member id for "shop" / "rest" / "travel"
+
+
+SKIPCARD = "skipcard"
+CARD_KINDS = ("TakeRewardCard", "PickRewardCard")    # the card rows whose presence makes ProceedRewards a skip
 
 
 class KindExplorer:
@@ -142,6 +158,8 @@ class KindExplorer:
         names = list(en["RunActionKind"])
         shop_names = list(en.get("ShopCategory") or [])
         rest_names = list(en.get("RestOption") or [])
+        point_names = [p for p in (en.get("MapPointType") or []) if p != "Unassigned"]     # 0 = no node
+        self.card_kind_ids = [names.index(k) for k in CARD_KINDS if k in names]
         self.items: list[_Item] = []
         for kind, sel in items:
             if kind not in names:
@@ -155,9 +173,15 @@ class KindExplorer:
                     it.sel, it.sel_id = "shop", shop_names.index(sel)
                 elif kind == "ChooseRestOption" and sel in rest_names:
                     it.sel, it.sel_id = "rest", rest_names.index(sel)
+                elif kind == "Travel" and sel in point_names:
+                    it.sel, it.sel_id = "travel", list(en["MapPointType"]).index(sel)
+                elif kind == "ProceedRewards" and sel == SKIPCARD and self.card_kind_ids:
+                    it.sel = SKIPCARD
                 else:
                     ok = list(GENERIC_SELECTORS) + (["remove"] + shop_names if kind == "BuyEntry" else
-                                                    rest_names if kind == "ChooseRestOption" else [])
+                                                    rest_names if kind == "ChooseRestOption" else
+                                                    [f"{p} (MapPointType)" for p in point_names] if kind == "Travel"
+                                                    else [SKIPCARD] if kind == "ProceedRewards" else [])
                     raise ValueError(f"explore selector {label!r}: unknown for {kind} (expected one of {ok})")
             self.items.append(it)
         self.kinds = format_kinds(items)
@@ -170,6 +194,11 @@ class KindExplorer:
         self.c_kind, self.c_b, self.c_oi = C["kind"], C["B"], C["option_index"]
         self.shop_cat = spec.cols["shop"]["category"]
         self.rest_opt = spec.cols["rest"]["option_id"]
+        M = spec.cols.get("map_nodes") or {}
+        self.m_pt, self.m_legal = M.get("point_type", -1), M.get("legal_next", -1)
+        self.travel_id = names.index("Travel") if "Travel" in names else -1
+        if any(it.sel == "travel" for it in self.items) and min(self.m_pt, self.m_legal) < 0:
+            raise ValueError("explore Travel:<MapPointType>: this library's map_nodes has no point_type / legal_next")
         self._log1m = math.log1p(-eps)
         self._loge = math.log(eps)
         self._zero()
@@ -197,7 +226,7 @@ class KindExplorer:
         kind = cand[:, :, self.c_kind]
         macro = cand[:, :, self.c_b] >= 0
         macro_full[:, :w_c] = macro
-        oi = None
+        oi = dest = has_card = None
         for i, it in enumerate(self.items):
             r = legal & (kind == it.kind_id)
             if it.sel == "macro":
@@ -212,8 +241,38 @@ class KindExplorer:
                 ok = (oi >= 0) & (oi < buf.shape[1])
                 val = np.take_along_axis(buf[:, :, col], np.clip(oi, 0, buf.shape[1] - 1), axis=1)
                 r &= ok & (val == it.sel_id)
+            elif it.sel == "travel":
+                if dest is None:
+                    if oi is None:
+                        oi = cand[:, :, self.c_oi].astype(np.int64)
+                    dest = self.travel_dest(obs, oi, legal & (kind == self.travel_id))
+                r &= dest == it.sel_id
+            elif it.sel == SKIPCARD:
+                if has_card is None:
+                    has_card = (legal & np.isin(kind, self.card_kind_ids)).any(1, keepdims=True)
+                r &= has_card
             rows[i, :, :w_c] = r
         return rows, macro_full
+
+    def travel_dest(self, obs: dict, oi: np.ndarray, travel: np.ndarray) -> np.ndarray:
+        """[n, w] MapPointType id of the destination of each Travel row (``travel`` [n, w] bool), -1 elsewhere: row A
+        (``oi``) = rank of the destination among the legal points sorted by (col, row) (sim/VEC.md; ``model.py``'s
+        map pointer). Reads ``map_nodes`` only for the slots with a Travel row (none on combat steps)."""
+        out = np.full(oi.shape, -1, dtype=np.int64)
+        slots = np.flatnonzero(travel.any(1))
+        if slots.size == 0:
+            return out
+        mp = np.asarray(obs["map_nodes"])[slots]                    # [k, R, C, f]
+        k = slots.size
+        legal_cm = (mp[..., self.m_legal] != 0).transpose(0, 2, 1).reshape(k, -1)      # column-major: (col, row)
+        pt_cm = mp[..., self.m_pt].astype(np.int64).transpose(0, 2, 1).reshape(k, -1)
+        order = np.argsort(~legal_cm, axis=1, kind="stable")       # legal cells first, in (col, row) order
+        pt_rank = np.take_along_axis(pt_cm, order, 1)               # [k, R * C]: type of the r-th legal point
+        o = oi[slots]
+        ok = travel[slots] & (o >= 0) & (o < legal_cm.sum(1, keepdims=True))
+        val = np.take_along_axis(pt_rank, np.clip(o, 0, pt_rank.shape[1] - 1), 1)
+        out[slots] = np.where(ok, val, -1)
+        return out
 
     def uniforms(self, update: int, t: int, n_total: int) -> np.ndarray:
         """[2, n_total] float64 in [0, 1): coin and pick of every slot of the N-slot batch at (update, t)."""
