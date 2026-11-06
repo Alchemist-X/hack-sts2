@@ -235,3 +235,9 @@ wave 10 合入（`5006cdf`）：`Travel:<MapPointType>` 与 `ProceedRewards:skip
 **行动**：`launch_e.sh`（sts2c，本地 A 的 pinned-0007664）与 `launch_f.sh`（sts2b3，从桶取 A 的 pinned-0007664）改写并按 PID 重启（各一进程，已核对）；`managed.txt` 清空（v1 不再自动轮换；东京保活照常），守护 v2 由后台 Opus 工作流产出，明早切换；round3-plan 追加执行记录。用户指示：安排好隔夜 8 小时训练后停止其他工作——本轮为今晚最后一轮，下一次人工汇报在用户醒来后。
 
 **隔夜链（无人值守）**：GPU A sts2c：C u7664→9164（约 06:15）→ 端点评测 → E′（A 的 u7664 + 探索修复，→ 9664，约 14:00）。GPU B sts2b3：D u8676→9164（约 02:40，eager）→ 端点评测 → F′（A 的 u7664，对照，→ 9664，约 10:30）。sts2c 24 h 回收约 11:52（E′ 中途；需守护 v2 或人工恢复）；sts2b3 回收约 11-07 00:10。
+
+## 01:05 EST 11-06（收尾补记）
+
+- 共享给 co-author：`08be53a` 入库 README 分支状态段、`docs/handoff-2026-11-06.md`、`docs/results-silent-a10-2026-11-06.md`（+ JSON）、`scripts/colab/ops/`（链式启动器、保活、守护 v2、镜像、恢复脚本）、`scripts/analysis/audit/`、`scripts/dashboard/`；已推 origin（public）并镜像到 **raven-labs-official/hack-sts2**（private，org 成员可见，默认分支即本训练分支；用 SSH 推送，gh 的 token 缺 workflow 权限）。
+- 核对：C 的首个 update 通过 compile 门槛（rel 1.35e-4），u7691 在训；C 与 D 的 config 都从 B 的 checkpoint 继承了 harvest（boss:1536,elite:512,act2:1024）——C 对 D 仍是"仅宏动作"的比较，但第二轮读数要写明两臂都带 harvest；E′/F′ 从 A 的 u7664 分叉，无 harvest。
+- 未完成（明早）：`sim/tools/train/sts2train/ppo.py` 门槛尺度修正 + `tests/test_compile_gate.py` 仍在 Opus 工作流的 raven 验证中，未提交；守护 v2 切换（11:52 sts2c 回收前）。
