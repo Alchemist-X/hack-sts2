@@ -126,6 +126,8 @@ FLOOR_STALL = STATUS.get("FLOOR_STALL", 0)   # truncated by the env's floor_step
 CKPT_FORMAT = 2
 COMPILE_MODES = ("off", "default", "reduce-overhead")
 STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
+DUAL_STAT_NAMES = ("dual_clipped",)  # after grad_norm (before AUX_STAT_NAMES) when dual_clip > 0 (stat_names)
+LOG_RATIO_MAX = 20.0                # ppo_surrogate clamps log(pi_new / pi_old) here before exp (exp(20) ~ 4.9e8)
 NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
 RNG_SCHEMES = ("legacy", "decoupled")
@@ -182,6 +184,7 @@ class TrainConfig:
     gamma: float = 1.0
     lam: float = 0.95
     clip: float = 0.2
+    dual_clip: float = 0.0          # dual-clip constant c > 1 (Ye et al. 2020): A < 0 surrogate floored at c x A (0 = off)
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     # entropy schedule (off = constant ent_coef): linear from ent_coef to ent_coef_final over ent_anneal_updates
@@ -334,6 +337,9 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
             raise ValueError(f"--harvest with --overlap {out.overlap} is not supported: anchors are clones in one "
                              "env's pool and anchor starts restore them into any slot, while the two overlap lanes "
                              "have separate pools (run --harvest with --overlap off)")
+    out.dual_clip = float(out.dual_clip)
+    if not (out.dual_clip == 0.0 or (out.dual_clip > 1.0 and np.isfinite(out.dual_clip))):
+        raise ValueError(f"dual_clip {out.dual_clip} must be 0 (off) or a finite number > 1 (Ye et al. 2020 use 3)")
     out.hp_shaping_coef = float(out.hp_shaping_coef)
     if not (out.hp_shaping_coef >= 0.0 and np.isfinite(out.hp_shaping_coef)):
         raise ValueError(f"hp_shaping_coef {out.hp_shaping_coef} must be a finite number >= 0 (0 = off)")
@@ -515,9 +521,10 @@ def parse_eval_at(v) -> tuple[int, ...]:
 
 
 def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
-    """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then AUX_STAT_NAMES with
-    aux_heads."""
-    return STAT_NAMES + (AUX_STAT_NAMES if cfg.aux_heads else ())
+    """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then DUAL_STAT_NAMES with
+    dual_clip > 0, then AUX_STAT_NAMES with aux_heads."""
+    return (STAT_NAMES + (DUAL_STAT_NAMES if float(getattr(cfg, "dual_clip", 0.0)) > 0 else ())
+            + (AUX_STAT_NAMES if cfg.aux_heads else ()))
 
 
 def use_static_rows(cfg: TrainConfig) -> bool:
@@ -867,12 +874,39 @@ def _autocast(amp: bool):
     return torch.autocast("cuda", dtype=torch.bfloat16) if amp else contextlib.nullcontext()
 
 
+def ppo_surrogate(newlogp: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tensor, *, clip: float,
+                  dual_clip: float = 0.0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """The PPO policy term: (pg = -mean surrogate, ratio, log ratio, dual-clip hit mask or None when off).
+
+    Log-ratio guard (always on): logr = (newlogp - oldlogp).clamp(max=LOG_RATIO_MAX) before exp, so the ratio never
+    overflows to inf and an A == 0 sample never yields inf x 0 = nan (run w9-e, 2026-11-06 06:35 EST: --explore-logp
+    policy stores log pi_old of explored rows the policy gives ~0 probability, approx_kl 2.9e12 then nan). For
+    logr <= LOG_RATIO_MAX the clamp is an exact no-op (values and gradient pass through unchanged: bit-identical to the
+    unclamped formula); only rows above the bound differ (previously inf / nan or a ratio > 4.9e8).
+
+    `dual_clip` c > 1 (Ye et al. 2020, dual-clip PPO): for A < 0 the surrogate min(r A, clip(r) A), unbounded below as
+    r grows, becomes max(min(r A, clip(r) A), c A); A >= 0 unchanged. 0 = off: exactly the standard clipped objective
+    (no extra ops on that path)."""
+    logr = (newlogp - oldlogp).clamp(max=LOG_RATIO_MAX)
+    ratio = logr.exp()
+    surr = torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv)
+    hit = None
+    if dual_clip > 0:
+        floor = dual_clip * madv
+        neg = madv < 0
+        hit = neg & (surr < floor)
+        surr = torch.where(neg, torch.max(surr, floor), surr)
+    return -surr.mean(), ratio, logr, hit
+
+
 def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
              madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
              ent_coef: float, amp: bool = False, aux: tuple | None = None,
-             aux_coef: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
+             aux_coef: float = 0.0, dual_clip: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
     """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
     and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
+    The policy term is `ppo_surrogate` (log-ratio clamp; dual clip when `dual_clip` > 0, which appends the share of
+    samples on the dual-clip branch, `dual_clipped`, after loss). approx_kl / clipfrac use the clamped log ratio.
     `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
     losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
     heads = None
@@ -884,8 +918,7 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
     logp_all = F.log_softmax(logits, -1)
     newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
     ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
-    ratio = (newlogp - oldlogp).exp()
-    pg = -torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv).mean()
+    pg, ratio, logr, hit = ppo_surrogate(newlogp, oldlogp, madv, clip=clip, dual_clip=dual_clip)
     vclip = vold + (v - vold).clamp(-clip, clip)
     vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
     loss = pg + vf_coef * vl - ent_coef * ent
@@ -893,12 +926,14 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
         wl, cl, wf, cf_ = aux_losses(heads, *aux)
         loss = loss + aux_coef * (wl + cl)
     with torch.no_grad():
-        kl = ((ratio - 1) - (newlogp - oldlogp)).mean()
+        kl = ((ratio - 1) - logr).mean()
         cf = ((ratio - 1).abs() > clip).float().mean()
+    st = [ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()]
+    if hit is not None:
+        st.append(hit.float().mean())
     if heads is not None:
-        return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach(), wl.detach(),
-                                  cl.detach(), wf, cf_])
-    return loss, torch.stack([ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()])
+        st += [wl.detach(), cl.detach(), wf, cf_]
+    return loss, torch.stack(st)
 
 
 def _macos_inductor_openmp() -> None:
@@ -939,28 +974,34 @@ class MinibatchUpdater:
     so the returned statistics are a fresh tensor and gradients are cleared before the forward.
 
     With `cfg.aux_heads` the six PPO tensors are followed by the aux heads' four (win_y, win_m, combat_y, combat_m)
-    and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`)."""
+    and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`); with `cfg.dual_clip` > 0 `dual_clipped`
+    follows grad_norm (before the aux statistics)."""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
                  device: torch.device | str):
         self.model, self.opt = model, opt
         self.max_grad_norm = float(cfg.max_grad_norm)
         clip, vf_coef, ent_coef = float(cfg.clip), float(cfg.vf_coef), float(cfg.ent_coef)
+        dual_clip = float(getattr(cfg, "dual_clip", 0.0))
+        self.dual_clip = dual_clip
+        self.split = dual_clip > 0      # grad_norm goes after the six PPO statistics (stat_names order)
         self.coefs = (vf_coef, ent_coef)
         self.ent_t = None
         if ent_schedule_on(cfg):        # a 0-d device tensor updated in place (set_ent_coef): no recompile per value
             self.ent_t = ent_coef = torch.tensor(ent_coef, dtype=torch.float32, device=device)
         self.aux = bool(getattr(cfg, "aux_heads", False))
+        self.split = self.split or self.aux
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
         if self.aux:
             def loss_fn(xb, act, oldlogp, madv, vret, vold, win_y, win_m, combat_y, combat_m):
                 return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
-                                ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef)
+                                ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef,
+                                dual_clip=dual_clip)
         else:
             def loss_fn(xb, act, oldlogp, madv, vret, vold):
                 return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
-                                ent_coef=ent_coef, amp=amp)
+                                ent_coef=ent_coef, amp=amp, dual_clip=dual_clip)
 
         self.eager = loss_fn
         self.compiled = compile_fn(loss_fn, cfg.compile, use_static_rows(cfg))
@@ -987,7 +1028,7 @@ class MinibatchUpdater:
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
         self.opt.step()
-        if self.aux:
+        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [aux heads' 4]
             return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
 
@@ -1931,7 +1972,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "episodes_total": c["episodes"], **es, **ss, **hs,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
                    if len(idx_all) else None,
-                   **sm, "explained_variance": ev,
+                   **sm, **({} if "dual_clipped" in sm else {"dual_clipped": 0.0}), "explained_variance": ev,
                    "t_env_s": round(env_s, 3), "t_infer_s": round(infer_s, 3), "t_update_s": round(update_s, 3),
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    **({"t_eval_at_s": round(eval_at_s, 3)} if eval_at or cfg.eval_at_every else {}),
@@ -1968,6 +2009,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"prog={fmt(es['progress_mean'], '.4f')} floor={fmt(es['floor_mean'], '.2f')} wins={es['wins']} "
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
                     + (f" ent_coef={ent_now:.5f}" if ent_sched else "")
+                    + (f" dual_clipped={fmt(sm.get('dual_clipped'), '.4f')}" if cfg.dual_clip > 0 else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")

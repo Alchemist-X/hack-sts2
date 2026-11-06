@@ -117,7 +117,7 @@ FLAG_GROUPS = (
     ("objective", ("objective", "win_bonus", "acq_shaping", "hp_shaping_coef", "cycle_cost")),
     ("starts", ("characters", "ascension", "pool", "start_saves", "save_mix", "save_copies", "harvest", "harvest_prob",
                 "harvest_max_per_step", "harvest_start_share")),
-    ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "vf_coef", "ent_coef",
+    ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "dual_clip", "vf_coef", "ent_coef",
              "max_grad_norm", "max_rows")),
     ("model flags", ("aux_heads", "aux_coef", "deck_counts")),
     ("rollouts", ("rollout_loop_breaker", "step_cap", "floor_step_cap")),

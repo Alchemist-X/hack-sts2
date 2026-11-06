@@ -769,6 +769,27 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR \
     --explore-kinds Travel:Elite,ProceedRewards:skipcard --explore-eps 0.3
 ```
 
+### Dual-clip 与 log-ratio 钳制（`--dual-clip C`，wave 11）
+
+事故：run w9-e（2026-11-06 06:35-06:42 EST，bundle sts2train-57b85d8f0d）用 `--explore-logp policy` 时，被探索到、
+而策略给 ~0 概率的行（SMITH、card removal）存下的 log pi_old 极负（甚至 float 下溢成 -inf），ratio
+r = exp(logp_new - logp_old) 无界；PPO 的 min(r A, clip(r) A) 在 A < 0 时就是 r A，梯度巨大（A == 0 时 inf x 0 = nan），
+approx_kl 先到 2.9e12 再成 nan，trainer 连续三次挂掉。
+
+- log-ratio 钳制（始终开启）：`ppo.ppo_surrogate` 先算 logr = (logp_new - logp_old).clamp(max=LOG_RATIO_MAX = 20)
+  再 exp，approx_kl / clipfrac 也用钳制后的 ratio。logr <= 20 时 clamp 是精确的 no-op（数值与梯度逐位不变），
+  只有超过上界的行不同（以前是 inf / nan 或 > 4.9e8 的 ratio，现在 ratio = exp(20)，且这些行无梯度）。
+- `--dual-clip C`（C > 1，常用 3；Ye et al. 2020）：A < 0 的样本 surrogate 变为 max(min(r A, clip(r) A), C A)，
+  A >= 0 不变。默认 0 = 关闭，与改动前逐位相同（`tests/test_dual_clip.py`、`test_perf` 的 default-path 门）。
+  checkpoint 的 config 记录 `dual_clip`；没有该字段的旧 checkpoint resume 时为 0，除非显式给出。
+- 指标：metrics.jsonl 每次 update 的 `dual_clipped` = 落在 dual-clip 分支的样本比例（关闭时 0）；开启时
+  train.log 的 update 行打印 `dual_clipped=`。
+
+```bash
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
+    --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --dual-clip 3
+```
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash

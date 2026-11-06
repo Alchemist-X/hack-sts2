@@ -363,6 +363,13 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                             ("--ent-coef", "ent_coef", float), ("--max-grad-norm", "max_grad_norm", float),
                             ("--max-rows", "max_rows", int)):
         g.add_argument(flag, dest=dest, type=typ, help=f"(default {getattr(D, dest)})")
+    g.add_argument("--dual-clip", dest="dual_clip", type=float, metavar="C",
+                   help="dual-clip PPO (Ye et al. 2020): for samples with advantage A < 0 the clipped surrogate is "
+                        "floored at C x A (C > 1, e.g. 3), so an exploded ratio pi_new / pi_old (an explored row the "
+                        "policy gave ~0 probability, --explore-logp policy) cannot give an unbounded loss / gradient; "
+                        "logs dual_clipped (share of samples on that branch) per update. Independent of it the log "
+                        "ratio is always clamped at 20 before exp (exact no-op below). On --resume a checkpoint "
+                        "trained without it resumes with 0 unless given (default 0 = off, bit-identical)")
     g.add_argument("--ent-coef-final", dest="ent_coef_final", type=_float_or_none, metavar="X",
                    help="entropy schedule: anneal --ent-coef linearly to X over --ent-anneal-updates updates, then keep "
                         "X ('none' turns a resumed schedule off; default off = constant --ent-coef)")
