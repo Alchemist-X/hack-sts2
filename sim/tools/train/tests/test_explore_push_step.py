@@ -22,7 +22,10 @@ Gates here:
 (g) wave 14b budget: per group at most ~DELTA nats of the push's own measured movement per window (DELTA 1, ETA 0.5:
     exactly 2 steps of ~0.5, then none, whatever the drift of the policy between minibatches; other DELTA / ETA; the
     step-count guard for mixed-sign advantages), groups budget independently, `reset_push_budget` opens a new window,
-    and the trainer resets once per epoch of every update.
+    and the trainer resets once per epoch of every update;
+(h) wave 14c (host-gated eligibility): bit-identical to wave 14b's coefficient-0 push step (inline copy
+    `_push_step_w14b`) on the smoke model with 8 groups over 32 minibatches (stats, weights, Adam state, budgets), and
+    the push step's model forwards / autograd.grad calls are exactly 2 x the steps taken (none for spent groups).
 Adapted from wave 14 for 14b: `test_clamped_samples_produce_no_step` -> `test_rollout_drift_does_not_gate_the_step`
 (the old eligibility semantics), `test_adam_update_is_the_coef0_update` (the hand-applied step needs the budget
 parameters of the step-on updater). CPU only."""
@@ -669,3 +672,169 @@ def test_train_logs_push_step_metrics(tmp_path, overlap):
     assert cfg["explore_push_step"] == 0.5
     ck = torch.load(sorted((tmp_path / "p" / "checkpoints").glob("*.pt"))[-1], map_location="cpu", weights_only=False)
     assert ck["config"]["explore_push_step"] == 0.5
+
+
+# ------------------------------------------------------------------------------------------------ (h) wave 14c
+def _push_step_w14b(self, xb, act, oldlogp, madv, explored_item):
+    """wave 14b's `push_step` (f6b591c), verbatim: every present group runs its forwards and backwards; an ineligible
+    one with coefficient 0. The reference of the wave-14c host-gated step."""
+    item = explored_item.detach().cpu().numpy() if torch.is_tensor(explored_item) else np.asarray(explored_item)
+    dev = act.device
+    n_t = torch.zeros((), dtype=torch.float32, device=dev)
+    dl_t, h_t = n_t.clone(), n_t.clone()
+    params = [p for p in self.model.parameters() if p.requires_grad]
+    eta, thr, cap = self.push_step_eta, self.push_budget_thr, self.push_budget_cap
+    for it in np.unique(item[item >= 0]).tolist():
+        b = self._budget.get(it)
+        if b is None:
+            b = self._budget[it] = [n_t.new_zeros(()), n_t.new_zeros(())]
+        idx = torch.from_numpy(np.flatnonzero(item == it)).to(dev)
+        sub = {k: v.index_select(0, idx) for k, v in xb.items()}
+        a_s, old_s, A_s = act.index_select(0, idx), oldlogp.index_select(0, idx), madv.index_select(0, idx)
+        lp = self._logp(sub, a_s)
+        with torch.no_grad():
+            u = torch.isfinite(old_s)
+            n = u.sum().float()
+            den = n.clamp_min(1.0)
+            ok = (b[0] < thr) & (b[1] < cap) & (n > 0)
+        lp_u = torch.where(u, lp, torch.zeros_like(lp))
+        g = torch.autograd.grad(-(A_s.float() * lp_u).sum() / den, params, retain_graph=True, allow_unused=True)
+        h = torch.autograd.grad(lp_u.sum() / den, params, allow_unused=True)
+        with torch.no_grad():
+            h2 = torch.zeros((), dtype=torch.float32, device=dev)
+            for h_ in h:
+                if h_ is not None:
+                    h2 = h2 + h_.float().pow(2).sum()
+            c = torch.where(ok, eta / h2.clamp_min(ppo.PUSH_STEP_H2_MIN), torch.zeros_like(h2))
+            for p, g_ in zip(params, g):
+                if g_ is not None:
+                    p.sub_(c.to(g_.dtype) * g_)
+            lp_after = self._logp(sub, a_s)
+            okf = ok.float()
+            dsum = torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum() * okf
+            b[0] = b[0] + (dsum / den).abs()
+            b[1] = b[1] + okf
+            dl_t = dl_t + dsum
+            n_t = n_t + n * okf
+            h_t = h_t + h2.sqrt() * n * okf
+    den = n_t.clamp_min(1.0)
+    if self._budget:
+        used = torch.stack([b[0] for b in self._budget.values()])
+        steps = torch.stack([b[1] for b in self._budget.values()])
+        b_used, b_hit = used.mean(), ((used >= thr) | (steps >= cap)).float().mean()
+    else:
+        b_used, b_hit = n_t.new_zeros(()), n_t.new_zeros(())
+    return torch.stack([n_t, dl_t / den, h_t / den, b_used, b_hit])
+
+
+def _g8_minibatches(spec, n_mb=32, n=64):
+    """32 minibatches of 64 with up to 8 push groups (ids 0-7, 4 explored samples each = 32 explored): group g is absent
+    in minibatch k when (g + k) % 5 == 0, group 3's stored log pi_old is all -inf in every 7th minibatch (present,
+    nothing finite) and one sample of group 5 is always -inf (left out)."""
+    out = []
+    for k in range(n_mb):
+        xb, act, old, madv, vret, vold = _batch(spec, n=n, seed=100 + k)
+        item = np.full(n, -1, dtype=np.int64)
+        for g in range(8):
+            if (g + k) % 5:
+                item[g * 4:(g + 1) * 4] = g
+        old = old.clone()
+        if k % 7 == 3:
+            old[12:16] = -math.inf
+        old[20] = -math.inf
+        out.append(((xb, act, old, madv, vret, vold, torch.from_numpy(item >= 0)), item))
+    return out
+
+
+def _run_g8(spec, given, mbs, ref, counter=None):
+    torch.manual_seed(0)
+    m = Policy(spec[0])
+    cfg = resolve_config(given)
+    opt = torch.optim.Adam(m.parameters(), lr=3e-4)
+    up = MinibatchUpdater(m, opt, cfg, False, "cpu")
+    if ref:
+        up.push_step = _push_step_w14b.__get__(up)
+    sts, budgets = [], []
+    for k, (args, item) in enumerate(mbs):
+        if k % 16 == 0:                     # two budget windows (epochs) of 16 minibatches
+            up.reset_push_budget()
+        before = sum(float(b[1]) for b in up._budget.values())
+        if counter is not None:
+            counter["on"] = True
+        st = up(*args, compiled=False, explored_item=item)
+        if counter is not None:
+            counter["on"] = False
+            counter["steps"].append(sum(float(b[1]) for b in up._budget.values()) - before)
+        sts.append(st)
+        budgets.append({g: (b[0].clone(), b[1].clone()) for g, b in up._budget.items()})
+    return torch.stack(sts), m, opt, cfg, budgets
+
+
+@pytest.mark.parametrize("delta", [1.0, 3.0], ids=["d1", "d3"])
+def test_host_gate_is_bit_identical_to_w14b(spec, delta):
+    """Wave 14c: the host-gated push step equals wave 14b's coefficient-0 version (`_push_step_w14b`) bit for bit on
+    the smoke model, 8 groups x 32 minibatches (two budget windows; groups absent / all non-finite / partly non-finite;
+    DELTA 1 ETA 0.5 -> 2 steps per group and window, DELTA 3 ETA 0.5 = line G's budget): every minibatch's statistics,
+    the weights, the Adam state and the budget entries (values, step counts, dict order) torch.equal."""
+    given = {**STEP, "explore_push": delta, "minibatch": 64, "dual_clip": 3.0}
+    mbs = _g8_minibatches(spec)
+    sn, mn, on, cfg, bn = _run_g8(spec, given, mbs, ref=False)
+    sr, mr, orf, _, br = _run_g8(spec, given, mbs, ref=True)
+    assert torch.equal(sn, sr)
+    assert all(torch.equal(a, b) for a, b in zip(mn.parameters(), mr.parameters()))
+    assert _adam_equal(_adam(on), _adam(orf))
+    for a, b in zip(bn, br):
+        assert list(a) == list(b) and all(torch.equal(a[g][0], b[g][0]) and torch.equal(a[g][1], b[g][1]) for g in a)
+    names = stat_names(cfg)
+    n_ = sn[:, names.index("push_step_n")]
+    assert float(n_.sum()) > 0
+    if delta == 1.0:                    # every group spent within each window: calls that take no step at all
+        assert (n_ == 0).any() and float(sn[:, names.index("push_budget_hit")].max()) == 1.0
+
+
+def test_skipped_groups_run_no_forward(spec, monkeypatch):
+    """Wave 14c: inside `push_step` the model forward runs exactly 2 x (steps taken) times per call (the grad forward
+    and the after forward of each step; autograd.grad 2 x steps) and not at all for an out-of-budget group or one with
+    no finite sample, while wave 14b ran 2 forwards per present group; same steps taken."""
+    given = {**STEP, "minibatch": 64}
+    mbs = _g8_minibatches(spec)
+    res = {}
+    for name in ("new", "ref"):
+        cnt = {"on": False, "fwd": [0], "grad": [0], "steps": []}
+        orig_fwd, orig_grad = Policy.forward, torch.autograd.grad
+
+        def fwd(self, *a, _c=cnt, **k):
+            if _c["on"]:
+                _c["fwd"][-1] += 1
+            return orig_fwd(self, *a, **k)
+
+        def grad(*a, _c=cnt, **k):
+            if _c["on"]:
+                _c["grad"][-1] += 1
+            return orig_grad(*a, **k)
+
+        orig_ps = MinibatchUpdater.push_step
+
+        def ps(self, *a, _c=cnt, **k):      # count only the push step (not the main loss forward / backward)
+            _c["fwd"].append(0)
+            _c["grad"].append(0)
+            on = _c["on"]
+            _c["on"] = True
+            try:
+                return (_push_step_w14b(self, *a, **k) if name == "ref" else orig_ps(self, *a, **k))
+            finally:
+                _c["on"] = on
+
+        monkeypatch.setattr(Policy, "forward", fwd)
+        monkeypatch.setattr(torch.autograd, "grad", grad)
+        monkeypatch.setattr(MinibatchUpdater, "push_step", ps)
+        cnt2 = {"on": False, "steps": []}
+        _run_g8(spec, given, mbs, ref=False, counter=cnt2)
+        monkeypatch.undo()
+        res[name] = (cnt["fwd"][1:], cnt["grad"][1:], cnt2["steps"])
+    (fn, gn_, stn), (fr, gr, str_) = res["new"], res["ref"]
+    assert len(fn) == len(mbs) and stn == str_
+    assert fn == [2 * int(s) for s in stn] and gn_ == [2 * int(s) for s in stn]
+    present = [len(np.unique(it[it >= 0])) for _, it in mbs]
+    assert fr == [2 * p for p in present] and gr == [2 * p for p in present]
+    assert sum(fn) < sum(fr) and any(s == 0 and p > 0 for s, p in zip(stn, present))

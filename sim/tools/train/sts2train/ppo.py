@@ -1191,7 +1191,7 @@ class MinibatchUpdater:
                   explored_item) -> torch.Tensor:
         """The row-scaled push step of --explore-push-step ETA (wave 14, budget wave 14b), applied to the model in
         place. -> [push_step_n, push_step_dlogp, push_step_hnorm, push_budget_used, push_budget_hit] (float32, on the
-        device; no host sync).
+        device; one host read per call when a group is present: the eligibility test below).
 
         Per group i present in `explored_item` ([B] int, -1 = not explored; the trainer's groups are `push_groups`:
         explore item x rare / common), on its explored samples U_i of this minibatch whose stored log pi_old is finite
@@ -1213,9 +1213,17 @@ class MinibatchUpdater:
         (fp32 forward before / after) and the step count. Group i takes a step while used_i < DELTA - min(ETA, DELTA) / 2
         (i.e. round(DELTA / ETA) steps of ~ETA, at least one; the half-step margin keeps a measured 0.4999 from buying
         a third step at DELTA 1, ETA 0.5) and fewer than ceil(DELTA / ETA) + 1 steps were taken (guard for mixed-sign
-        advantages, whose |mean change| per step is small). An ineligible group's step is computed with coefficient 0
-        (the parameters do not change; the decision stays on the device). The absolute value makes a downward push
-        (A < 0) spend the budget too.
+        advantages, whose |mean change| per step is small). The absolute value makes a downward push (A < 0) spend the
+        budget too. Eligibility is decided on the host (wave 14c) before any work for a group: one device->host read per
+        call carries every present group's budget test (the same float32 device comparisons as wave 14b) and the
+        minibatch's finite log pi_old mask; an ineligible group (or one with no finite sample) runs no forward and no
+        backward and leaves the parameters, its budget and the statistics untouched, which is what wave 14b's
+        coefficient-0 pass produced (it added 0 / multiplied by 0; the group's budget entry is still opened, so it counts
+        in push_budget_used / push_budget_hit as before). The decisions are those of the coefficient-0 path: a group
+        steps at most once per call and the groups' budgets are independent, so each group's test depends only on its
+        own state at the start of the call. Per step taken: one fp32 forward with grad, two autograd.grad, one no-grad
+        forward after the step (the "before" log pi is the first forward's; no pass can be shared across groups, whose
+        subsets differ, or across calls, between which the Adam step moves the parameters).
 
         Statistics over the samples of the steps actually taken: push_step_n = sum |U_i|, push_step_dlogp = the mean
         change of their log pi produced by their group's step, push_step_hnorm = the |U_i|-weighted mean of ||h_i||;
@@ -1227,11 +1235,21 @@ class MinibatchUpdater:
         dl_t, h_t = n_t.clone(), n_t.clone()
         params = [p for p in self.model.parameters() if p.requires_grad]
         eta, thr, cap = self.push_step_eta, self.push_budget_thr, self.push_budget_cap
-        for it in np.unique(item[item >= 0]).tolist():
-            b = self._budget.get(it)
-            if b is None:
-                b = self._budget[it] = [n_t.new_zeros(()), n_t.new_zeros(())]
-            idx = torch.from_numpy(np.flatnonzero(item == it)).to(dev)
+        groups = np.unique(item[item >= 0]).tolist()
+        for it in groups:                   # the window's entries, opened in group order (as wave 14b's loop did)
+            if it not in self._budget:
+                self._budget[it] = [n_t.new_zeros(()), n_t.new_zeros(())]
+        if groups:                          # wave 14c: one host read of every group's budget test + the finite mask
+            used = torch.stack([self._budget[it][0] for it in groups])
+            steps = torch.stack([self._budget[it][1] for it in groups])
+            host = torch.cat([((used < thr) & (steps < cap)).float(), torch.isfinite(oldlogp).float()]).cpu().numpy()
+            ok_h, fin_h = host[:len(groups)] > 0, host[len(groups):] > 0
+        for gi, it in enumerate(groups):
+            sel = np.flatnonzero(item == it)
+            if not (ok_h[gi] and fin_h[sel].any()):     # out of budget / no finite sample: wave 14b's coef-0 no-op
+                continue
+            b = self._budget[it]
+            idx = torch.from_numpy(sel).to(dev)
             sub = {k: v.index_select(0, idx) for k, v in xb.items()}
             a_s, old_s, A_s = act.index_select(0, idx), oldlogp.index_select(0, idx), madv.index_select(0, idx)
             lp = self._logp(sub, a_s)                                   # fp32, with grad
@@ -1239,7 +1257,6 @@ class MinibatchUpdater:
                 u = torch.isfinite(old_s)
                 n = u.sum().float()
                 den = n.clamp_min(1.0)
-                ok = (b[0] < thr) & (b[1] < cap) & (n > 0)
             lp_u = torch.where(u, lp, torch.zeros_like(lp))
             g = torch.autograd.grad(-(A_s.float() * lp_u).sum() / den, params, retain_graph=True, allow_unused=True)
             h = torch.autograd.grad(lp_u.sum() / den, params, allow_unused=True)
@@ -1248,18 +1265,17 @@ class MinibatchUpdater:
                 for h_ in h:
                     if h_ is not None:
                         h2 = h2 + h_.float().pow(2).sum()
-                c = torch.where(ok, eta / h2.clamp_min(PUSH_STEP_H2_MIN), torch.zeros_like(h2))
+                c = eta / h2.clamp_min(PUSH_STEP_H2_MIN)               # wave 14b: where(ok, this, 0), ok True here
                 for p, g_ in zip(params, g):
                     if g_ is not None:
                         p.sub_(c.to(g_.dtype) * g_)
                 lp_after = self._logp(sub, a_s)
-                okf = ok.float()
-                dsum = torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum() * okf
+                dsum = torch.where(u, lp_after - lp.detach(), torch.zeros_like(lp)).sum()   # (x ok = 1.0: exact)
                 b[0] = b[0] + (dsum / den).abs()
-                b[1] = b[1] + okf
+                b[1] = b[1] + 1.0
                 dl_t = dl_t + dsum
-                n_t = n_t + n * okf
-                h_t = h_t + h2.sqrt() * n * okf
+                n_t = n_t + n
+                h_t = h_t + h2.sqrt() * n
         den = n_t.clamp_min(1.0)
         if self._budget:
             used = torch.stack([b[0] for b in self._budget.values()])

@@ -935,7 +935,7 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --m
     --explore-push 1
 ```
 
-### Explore push step（独立归一步长，wave 14；推力自身的预算，wave 14b）
+### Explore push step（独立归一步长，wave 14；推力自身的预算，wave 14b；host 端资格判定，wave 14c）
 
 为什么（wave 13 诊断，`docs/diag-2026-11-06/explore-sensitivity.md`，A 的 u7664）：explored 的 SMITH 行比 HEAL 低 ~92 nat
 （removal 行 ~73，p5 -654），而且 ‖∇θ log π‖ ≈ 238（removal ≈ 754，combat 行 ≈ 1），各决策之间几乎平行。wave 12 把推力放在
@@ -1030,6 +1030,19 @@ lr 3e-4 / clip 0.5；minibatch = 385 个 combat 决策（合成优势）+ 16 个
 - 推力步不再被主漂移吃掉：无推力时 push_clamped 仍是 0.62–0.79（主 PPO 漂移），但每组照样在窗口开头走满预算。
 - 4 mb 后的推力效果 ≈ DELTA（A 同号）；之后两条轨迹经 Adam 分叉（32 mb 后 combat KL max 0.5–7），32 mb 的数字含这部分
   混沌放大，不全是推力本身。
+
+**14c：推力步的开销（结果逐位不变）**。line G（Colab A100，DELTA 3 / ETA 0.5，minibatch 4096 × 32，8 个推力组）每个 update
+的更新阶段 22–23 s（不开推力 3.2 s）：14b 对每个 minibatch 的每个出现的组都跑子集前向 + 两次 autograd.grad + 步后前向，
+预算用完的组只是系数 0，约 6 步后预算就用完，剩下的是 ~1,300 个受 kernel 启动延迟限制的空转小 pass。14c 在 host 上先判
+资格：每次调用一次 device→host 读回（各组的 `used < DELTA − min(ETA, DELTA)/2 且 steps < cap`，与 14b 相同的 float32 设备端比较，
+外加 minibatch 的 finite log π_old 掩码），不合格的组（预算/步数用完，或没有有限样本）完全跳过前向与反向。跳过路径与 14b 的系数 0
+路径逐位相同：参数减 0、预算加 0、统计加 0（push_step_n / dlogp / hnorm 的 n 加权和里贡献 0），该组的预算条目照样建立
+（push_budget_used / hit 的分母不变）；判定也相同，因为每组每次调用最多走一步、各组预算互不影响。每步仍是 1 次带梯度前向 +
+2 次 autograd.grad + 1 次步后前向（"步前" log π 已复用带梯度前向；不同组子集不同、跨 minibatch 之间有 Adam 步，没有可共享的
+pass）。验证：raven CPU（A u7664 回放，DELTA 3 / ETA 0.5 / dual 3，32 minibatch，4 线程），与 f6b591c 的 ppo.py 比较 stats /
+参数 / Adam 状态 torch.equal 全部相同；推力步耗时 1 组 3.78 → 0.85 s，2 组 6.77 → 1.47 s，8 组 51.7 → 10.2 s（32 个 minibatch
+总耗时 92.8 → 51.2 s；只有前 7 个 minibatch 有组在走步）。`tests/test_explore_push_step.py` (h)：8 组 × 32 minibatch 与 14b
+内联副本逐位相同（DELTA 1 / 3），推力步内的模型前向与 autograd.grad 次数 = 2 × 实际步数（用完的组 0 次）。
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
