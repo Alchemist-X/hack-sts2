@@ -115,7 +115,7 @@ option bank 一组贡献约 3/4；它在 rest / shop 之外几乎不被训练（
 - 推荐方案只有原型（脚本内实现），没有改 `ppo.py`，没有跑训练 smoke，没有测速度。
 - 采集用的是 fp32 采样策略、无 loop breaker、dev-128 一次，与训练 rollout 的 seed stream 分布不同（rest 457 / removal 187 个决策）。
 
-脚本与原始数据（不在 repo）：`/private/tmp/claude-501/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-recorder-performance-lag-0f9d6d/adbf2344-809a-4167-9774-cd8087651b17/scratchpad/diag13/scripts/{collect,analyze,multistep,make_fake}.py`，结果 `…/diag13/res.json`、`…/diag13/multistep.json`；raven 上 `/data/raven/hack-sts2/testbox/diag13/tmp/`（含 dec.pkl）。
+脚本与原始数据（不在 repo）：`<scratchpad>/diag13/scripts/{collect,analyze,multistep,make_fake}.py`，结果 `…/diag13/res.json`、`…/diag13/multistep.json`；raven 上 `/data/raven/hack-sts2/testbox/diag13/tmp/`（含 dec.pkl）。
 
 ## 复核（2026-11-06，独立 agent，raven 自起容器 `diag13v`）
 
@@ -129,4 +129,4 @@ option bank 一组贡献约 3/4；它在 rest / shop 之外几乎不被训练（
   - 带 PPO 项的完整 minibatch（committed `ppo_loss`，explored 16 行 A = ±1 各半 + 4080 行 combat，优势 N(0,1)、vret = v + N(0, 0.5²) 为合成，aux 关）：PPO 单独梯度范数 0.175（不触发 clip），加 push 后 23.6，PPO 梯度被缩到 ~1/47；一个 minibatch 后被推行的 A 符号方向位移 p5 / p50 / p95 = −3.6 / +2.0 / +5.0，即同一 minibatch 里已经有行越过 δ = 1，且有 A = −1 的行被抬高 3.6 nat；held-out SMITH 整体 +4.3。补充含义：SMITH 行的 log π 梯度近乎平行，push 实际上是按 ΣA 的“共模平移”，区分不出哪张 SMITH 牌更好；行尺度归一化把速度压到 ~η·mean(A)，但不改变这一点（推断，未测逐牌区分度）。
 - 未复核：E3 后期 checkpoint、CUDA bf16 / compile、真实训练 minibatch（真实优势 / value / aux）下的梯度比例、推荐方案在 `ppo.py` 中的实现。
 
-复核脚本与输出：`/private/tmp/claude-501/-Users-Aincrad-dev-proj-hack-sts2--claude-worktrees-recorder-performance-lag-0f9d6d/adbf2344-809a-4167-9774-cd8087651b17/scratchpad/diag13v/{verify.py,ck.py}`；raven `/data/raven/hack-sts2/testbox/diag13v/tmp/`（verify.json、res_v.json、multistep_v.json、dec_v.pkl）。
+复核脚本与输出：`<scratchpad>/diag13v/{verify.py,ck.py}`；raven `/data/raven/hack-sts2/testbox/diag13v/tmp/`（verify.json、res_v.json、multistep_v.json、dec_v.pkl）。
