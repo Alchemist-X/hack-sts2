@@ -12,6 +12,17 @@ state, so its return is the progress gained from there (``progress_gain`` of the
 Truncated episodes (step cap, floor step cap) end with the progress of their last state, as the protocol scores
 ``capped`` / ``stuck`` games.
 
+``boss_bonus`` (``--boss-bonus B``, wave 17, any objective; default 0 = off, rewards bit-identical): a one-time reward
+B at every boss kill from act 2 on: the step whose observation increments ``aux.act_index`` from k to k + 1 with
+k >= 1 (the act-2 boss is behind the act 2 -> 3 transition; it is paid at that transition, after the boss's rewards
+screen), and the Victory terminal (the act-3 / final boss kill: B on top of ``win_bonus``). The act 1 -> 2 transition
+(k = 0) pays nothing. Earned kills only: with ``aux.is_combat`` in the aux block (the trainer's), a transition pays only
+when the episode observed a combat in act k (so a save / anchor start on the Rewards screen of a boss the human killed,
+or past it, is not paid for that kill; counted as ``boss2_transitions_unearned``). B is part of the reward and so of an episode's ``return``, never of ``progress`` /
+``start_progress`` / ``progress_gain`` (the protocol's); each finished episode carries ``boss_bonus_total`` (B paid in
+it) and ``boss2_kills`` (act-2+ boss kills: transitions k >= 1 plus a win), and ``pop_boss_counts`` gives the trainer's
+per-update counts. A save start that begins in act 2 is paid on its act-2 boss kill like any other episode; a slot's
+first observation (reset / auto-reset / save / anchor start) never pays (no transition is observed there).
 ``win``: the env's own reward (1 at a Victory terminal, else 0; CONTRACTS.md D5).
 ``AcqShaping`` (``--acq-shaping``, any objective): potential-based shaping for deck size, relics and upgrades on top
 of the objective's reward; the trainer logs it apart, and episode returns / progress stay the objective's.
@@ -40,6 +51,10 @@ def state_progress(act_index: int, total_floor: int, act_floor: int, act_rooms: 
     return float(PG.compute(None, act, int(total_floor), ascension, starts, rooms)["progress"])
 
 
+BOSS_COUNTS = {"boss2_kills": 0, "boss2_kills_transition": 0, "boss2_kills_win": 0, "boss2_transitions_unearned": 0,
+               "boss_bonus_sum": 0.0}
+
+
 class EpisodeRewards:
     """Per-slot reward of one objective plus finished-episode bookkeeping for a VecEnv with auto-reset.
 
@@ -51,15 +66,17 @@ class EpisodeRewards:
     ``start_entry`` (the pool entry it started from; -1 when no ``start_entry`` was passed), ``start_floor``,
     ``start_act`` (1-based), ``start_progress`` (protocol progress of its first observation: 0 for a fresh run, the
     save's progress for a save start) and ``progress_gain`` = ``progress - start_progress`` (for the protocol
-    objective: the return without the win bonus).
+    objective: the return without the win bonus and the boss bonus). With ``boss_bonus`` != 0 also ``boss_bonus_total``
+    and ``boss2_kills`` (module docstring).
     """
 
     def __init__(self, objective: str, aux_fields, last_episode_fields, num_envs: int, ascension: int = 0,
-                 win_bonus: float = 1.0, shaped_floors: float = 48.0):
+                 win_bonus: float = 1.0, shaped_floors: float = 48.0, boss_bonus: float = 0.0):
         if objective not in OBJECTIVES:
             raise ValueError(f"objective {objective!r}: expected one of {OBJECTIVES}")
         self.objective = objective
         self.win_bonus = float(win_bonus)
+        self.boss_bonus = float(boss_bonus)
         self.shaped_floors = float(shaped_floors)
         self.ascension = ascension
         self.tracker = ProgressTracker(aux_fields, last_episode_fields, num_envs, ascension)
@@ -73,6 +90,22 @@ class EpisodeRewards:
         self.start_progress = np.zeros(num_envs, dtype=np.float64)
         self.start_floor = np.zeros(num_envs, dtype=np.int64)
         self.start_act = np.ones(num_envs, dtype=np.int64)
+        # --boss-bonus bookkeeping: per slot (current episode) and per window (pop_boss_counts)
+        self.boss_paid = np.zeros(num_envs, dtype=np.float64)
+        self.boss_kills = np.zeros(num_envs, dtype=np.int64)
+        self._win_counts = dict(BOSS_COUNTS)
+        fields = list(aux_fields)
+        self._comb = fields.index("is_combat") if "is_combat" in fields else None
+        self.seen_combat = np.ones(num_envs, dtype=bool)      # a combat observed in the current act of the episode
+
+    def pop_boss_counts(self) -> dict:
+        """Act-2+ boss kills since the last call (``boss2_kills`` = ``boss2_kills_transition`` (act k -> k + 1 with
+        k >= 1) + ``boss2_kills_win`` (Victory terminals)) and the boss bonus paid (``boss_bonus_sum``); counted with
+        ``boss_bonus`` 0 too (diagnostic; nothing is paid then). Clears the counters."""
+        out = dict(self._win_counts)
+        out["boss_bonus_sum"] = round(out["boss_bonus_sum"], 6)
+        self._win_counts = dict(BOSS_COUNTS)
+        return out
 
     def _refresh(self) -> None:
         prev = self.tracker.prev           # act_index, total_floor, act_floor, act_rooms of the latest observation
@@ -96,6 +129,10 @@ class EpisodeRewards:
         self._key[:] = -1
         self._refresh()
         self.ret[:] = 0.0
+        self.boss_paid[:] = 0.0
+        self.boss_kills[:] = 0
+        if self._comb is not None:
+            self.seen_combat = np.asarray(aux)[:, self._comb] != 0
         self.start_entry[:] = -1
         self._mark_starts(np.ones(self.n, dtype=bool), start_entry)
 
@@ -104,6 +141,7 @@ class EpisodeRewards:
         done = np.asarray(done, dtype=bool)
         old_p = self.progress.copy()
         old_floor = self.tracker.prev[:, 1].copy()
+        old_act = self.tracker.prev[:, 0].copy()
         finished = self.tracker.finished(done, last_episode)
         self.tracker.observe(aux)
         self._refresh()
@@ -118,6 +156,31 @@ class EpisodeRewards:
                 floor_now = self.tracker.prev[:, 1].copy()
                 floor_now[done] = last_episode[done, self._le_floor]
                 r += (floor_now - old_floor) / self.shaped_floors
+        # act-2+ boss kills: a live slot's act k -> k + 1 with k >= 1 after a combat of act k in this episode, or a
+        # Victory terminal (the final boss)
+        new_act = self.tracker.prev[:, 0]
+        trans = ~done & (old_act >= 1) & (new_act == old_act + 1)
+        kill = trans & self.seen_combat
+        if self._comb is not None:
+            comb = np.asarray(aux)[:, self._comb] != 0
+            self.seen_combat = np.where(done | (new_act != old_act), comb, self.seen_combat | comb)
+        n_un = int(np.count_nonzero(trans & ~kill))
+        if n_un:
+            self._win_counts["boss2_transitions_unearned"] += n_un
+        n_tr = int(np.count_nonzero(kill))
+        wins = [e["slot"] for e in finished if e["win"]]
+        if n_tr or wins:
+            kill = kill.copy()
+            kill[wins] = True
+            self.boss_kills += kill
+            W = self._win_counts
+            W["boss2_kills_transition"] += n_tr
+            W["boss2_kills_win"] += len(wins)
+            W["boss2_kills"] += n_tr + len(wins)
+            if self.boss_bonus != 0.0:
+                r[kill] += self.boss_bonus
+                self.boss_paid[kill] += self.boss_bonus
+                W["boss_bonus_sum"] += self.boss_bonus * (n_tr + len(wins))
         self.ret += r
         for e in finished:
             i = e["slot"]
@@ -125,7 +188,12 @@ class EpisodeRewards:
             e.update(start_entry=int(self.start_entry[i]), start_floor=int(self.start_floor[i]),
                      start_act=int(self.start_act[i]), start_progress=float(self.start_progress[i]))
             e["progress_gain"] = None if e.get("progress") is None else float(e["progress"]) - e["start_progress"]
+            if self.boss_bonus != 0.0:
+                e["boss_bonus_total"] = float(self.boss_paid[i])
+                e["boss2_kills"] = int(self.boss_kills[i])
         self.ret[done] = 0.0
+        self.boss_paid[done] = 0.0
+        self.boss_kills[done] = 0
         self._mark_starts(done, start_entry)        # auto-reset: the next episodes' first observations
         return r.astype(np.float32), finished
 

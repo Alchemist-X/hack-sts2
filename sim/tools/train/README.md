@@ -478,6 +478,9 @@ uv run --project sim/tools/train sts2train train --characters SILENT --ascension
   line carry the split too; `sts2train plot` draws both curves.
 - **Resume** keeps the saves directory of the checkpoint's config (an absolute path); `--start-saves NEWDIR` points it
   elsewhere, `--start-saves none` turns save starts off.
+- **Stream mode** (wave 17): `--start-mode stream --start-saves DIR --save-mix M` (M < 1) puts the save entries
+  (same copy count as above) into the empty pool and starts a starting slot from a uniformly drawn one with
+  probability M; see "Boss 学校（wave 17）" below.
 
 Training restricts actions to the first 64 candidates (`--max-rows`; rare overflow is counted as `cand_over_max_rows`);
 eval passes every candidate row.
@@ -543,6 +546,99 @@ uv run --project sim/tools/train sts2train train ... --harvest boss:1536,elite:5
   source's observation; evaluation (fresh seeds, single pass, greedy + loop breaker) is unchanged. Determinization
   keeps the pre-rolled encounter queues, later bosses and unopened rewards, and every start of one anchor replays its
   one sampled hidden state (which the policy never observes).
+
+## Boss 学校（wave 17）
+
+为什么：dev-128 greedy 读数里 act-2 boss 只有 ≈ 20% 的局能到、到了也只有 ≈ 7% 能杀（act-1 boss 79%）；协议 progress 对一次
+boss 击杀只付 ≈ 1/(3L) ≈ 0.02，所以 value head 在 act-2 boss 附近的斜率只有 0.5（`docs/diag-2026-11-06/value-calibration.md`）；
+重放策略自己的 boss 入口（harvest ring `boss`，B 线 vs A 线）没有区别；wave 16 显示"总是强制升级 / 删牌 / 精英"更差。所以
+直接的杠杆是：让策略在**强牌组**的后期局面里积累经验（人类存档开局），并给 act-2+ boss 击杀一个更强的信号。三件东西，
+默认全关，关着时训练逐位不变（raven 上的确定性对照：stream + harvest + macros 与 pool + acq/hp shaping 两种配置，
+旧 / 新代码 3 个 update 的权重、metrics、episodes.jsonl 完全一致；新增的只有下面列出的 metrics 键）。
+
+### `--boss-bonus B`（`objective.EpisodeRewards`）
+
+- **何时付**：每次 act-2 及以后的 boss 击杀付一次 B：(1) 观测里 `aux.act_index` 从 k 变成 k + 1 且 k ≥ 1 的那一步
+  （act-2 boss 在 act 2 → 3 的过渡之后；过渡发生在 boss 的 Rewards 屏之后，所以奖励记在过渡那一步）；(2) Victory 终局
+  （act-3 / 最终 boss），B 叠加在 `--win-bonus` 之上（决定：最终 boss 也付 B，"每个 act-2+ boss 都付"）。act 1 → 2
+  （k = 0）不付；一局的第一个观测（reset / auto-reset / 存档 / anchor 开局）不付（没有观测到过渡）。
+- **只付挣来的击杀**：aux 块里有 `is_combat`（训练器的 aux 块有）时，过渡只有在本局在 act k 里观测到过战斗时才付；
+  存档 / anchor 从人类已经打完的 boss 的 Rewards 屏（或其后）开局，走进下一 act 不付，计为 `boss2_transitions_unearned`。
+- **只进 return，不进 progress**：B 是 reward 的一部分，所以进 `return` / GAE / value 目标；`progress`、`start_progress`、
+  `progress_gain`（协议的）不变，eval 读数不受影响。`return = progress_gain + win_bonus·win + B·boss2_kills`。
+- **记录**：每局 `boss_bonus_total`（本局付的 B 总和）和 `boss2_kills`（B ≠ 0 时进 episodes.jsonl）；每个 update 的
+  `boss2_kills` = `boss2_kills_transition` + `boss2_kills_win`、`boss2_transitions_unearned`、`boss_bonus_sum`
+  （B = 0 时也计数，作诊断；不付钱）。存档开局在 act 2 的局，杀了 act-2 boss 照常付。
+- **配置**：`TrainConfig.boss_bonus`（默认 0.0），在 `--win-bonus` 旁边；checkpoint 的 config 记录它；从旧 checkpoint
+  resume 得 0；resume 继承，`--boss-bonus 0` 关掉。非有限值报错。对任意 objective 都加（与 shaping 相同：加在
+  objective 的 reward 上）。
+
+### 存档学校：stream 模式下的 `--start-saves`（`startpool` + `seedstream.StreamEnv.attach_saves`）
+
+wave 17 之前 `--start-mode stream` 拒绝 `--start-saves`（只是设计上没接，不涉及冻结 eval 种子集：eval 从不用存档）。
+现在两者可以组合，训练线的其他 flag（`--seed-stream-prefix`、`--harvest ...`、`--macros all`、`--overlap off`、
+explorer off）都不受影响；没有存档时 stream 的开局序列逐位不变（不抽随机数）。
+
+- **池**：存档（和它们的副本）在 stream 发任何种子之前先放进空池，占 pool id 0 .. K-1，永不释放、不消耗 stream index。
+  副本数与 pool 模式相同：`c = max(1, round(pool · M / (1 − M) / saves))`（`--pool` 默认 2048、M = 0.25、121 个存档 →
+  每个 6 份、726 个条目）；`--save-copies determinized`（别名 `--copies-mode`）= copy 0 是导入的存档本身，其余是
+  `env.clone_determinized`（同一玩家视图，隐藏状态重采样）；`exact` = 重新导入（每次都是人类的 RNG）。
+- **开局规则**：每个要开新局的槽（每步结束的槽，以及会话开始时的 reset）先抽 u ~ U(0,1)（生成器种子 = sha256(训练 seed,
+  会话开始时的 stream 计数器)）；u < M → 均匀抽一个存档条目（`restore_many`），否则进入 anchor 份额（`--harvest`；
+  所以 anchor 份额是"非存档开局"的份额），再否则下一个 stream 种子。M 就是所有开局里存档开局的比例（smoke：首个
+  reset 64 槽里 20 个）。失败的存档开局退回 anchor / stream（`save_start_failed`）。`--save-mix` 必须 < 1；
+  `--overlap double` 仍拒绝存档。
+- **隔离**：每个可用存档的 `rng.seed`（人类局的 12 字符种子）+ 角色 + ascension 与冻结 holdout 集比对（run seed 与三元组），
+  撞上就拒绝训练（pool 模式同样）；config.json `isolation.save_seeds_checked` / `save_run_seeds`。
+- **记录**：`fresh_*` = stream 开局（与无存档的线可比），`save_*` = 存档开局（`save_progress_gain_mean`、
+  `save_start_progress_mean`、`save_episodes_by_start_act` …），`harvest_*` = anchor；`save_starts_update` /
+  `save_start_failed` / `save_starts_session`；config.json `start_pool`（`start_mode: stream`、`save_mix`、
+  `save_entries`、`copies_per_save`、跳过原因、直方图）与 `seed_stream.save_share`。episodes.jsonl：`start_kind`
+  `stream` / `save` / `anchor:<kind>`，存档行 `seed_text` = `<file>#copy<c>`、`n` = null，非 stream 开局的行带
+  `start_act` / `start_floor` / `start_progress` / `progress_gain`。存档开局的 progress 从存档状态的协议 progress
+  （`start_progress`，该局的绝对进度）起算，return 只算从那里得到的增量；eval 从不用存档，所以 eval 读数不受影响。
+  存档保留自己的 ascension：A9 存档在 `--ascension 10` 下按 A9 玩（日志有 note）。
+- **Resume**：存档目录在 config 里（绝对路径），resume 保留；`--start-saves none` 关掉。
+
+**做一个池**：录制器在每次游戏存档时复制 `current_run.save`（`<sessions>/<session>/native/saves/*.save`，schema 20）。
+`scripts/train/collect_start_saves.py --out DIR --character SILENT [--ascension 10] [--min-floor 18] --check`
+只读地复制它们（按 sha256 去重，`--check` 用 sts2vec 试导入并跳过失败的），并写 `DIR/manifest.json`（会话、种子、
+floor / act / 房间直方图）；A9 + A10 混合池就别给 `--ascension`。trainer 的 probe 还会再按内容去重，并跳过导入器
+不支持的存档（原因写进 config.json 的 `start_pool.skipped_files`）。manifest 只作来源记录，可选。
+
+现有三个池的 probe（raven，2026-11-06，`probe_saves(..., characters=("SILENT",))`）：
+
+| 池 | 文件 | 可用 | 跳过（原因） | act 2 / 3 | 首个观测阶段 Combat / Rewards / Event / RestSite / Shop / Treasure | start_progress 均值 | 人类局 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| silent-a9a10-late | 122 | 121 | 1（`pre_finished_room extra_rewards are not supported`） | 61 / 60（A9 64，A10 57） | 54 / 32 / 15 / 11 / 5 / 4 | 0.650 | 2（A43U5UZ5W8BS A9，WWVGBDEYNG19 A10） |
+| silent-a10-late | 58 | 57 | 1（同上） | 27 / 30 | 24 / 13 / 8 / 7 / 3 / 2 | 0.668 | 1 |
+| silent-a10-all | 88 | 87 | 1（同上） | act 1/2/3 = 30 / 27 / 30 | 36 / 21 / 12 / 12 / 3 / 3 | 0.488 | 1 |
+
+a10-late 是 a9a10-late 的子集（57 个 sha 重合），三池并集 151 个；没有存档停在地图屏（存档点只有进房间 / 战后 Rewards /
+Ancient 之后），≈ 45% 从战斗第一回合开局；没有 holdout 碰撞；没有 pending prompt。注意多样性很低：121 个存档只来自
+2 局人类游戏（每局约 60 个存档点），determinized 副本只重采样隐藏状态，牌组 / 地图只有两种。
+
+### harvest ring `boss2`（`harvest.KINDS`）
+
+`boss2` = 当前地图格是 Boss 且 `aux.act_index ≥ 1`（act-2 / act-3 boss）的战斗入口，机制与其他 ring 相同（概率、
+每步上限、FIFO 释放、stream 模式下按 `--harvest-start-share` 开局）。有 `boss2` ring 时 act 2+ 的 boss 进 `boss2`、
+`boss` 只剩 act-1 boss；没有时 `boss` 照旧接收所有 boss（逐位同前）。`boss2` 追加在 `KINDS` 末尾，旧 kind 的编码与
+规范 spec 顺序不变（`format_harvest`：`boss:…,elite:…,act2:…,any:…,boss2:…`）。注意 anchor 只从 stream 开局的局里
+捕获（不从存档 / anchor 局），所以 `boss2` 的捕获量取决于策略自己到达 act-2 boss 的频率（≈ 20% 的局）。
+
+### S 线的额外 flag
+
+在训练线（A / C 的 resume 命令）原有的 flag 之上加：
+
+```bash
+--start-saves /content/sts2/saves-silent-a9a10-late --save-mix 0.25 --copies-mode determinized --boss-bonus 0.2
+# 可选（若采用 boss2 ring；B 线显示 boss ring 本身无效，所以默认不加）：
+--harvest boss:1536,elite:512,act2:1024,boss2:512
+```
+
+`--copies-mode` 是 `--save-copies` 的别名。Colab 上 `/content/sts2/saves-silent-a9a10-late` 需要先把 122 个存档
+（含 manifest.json）放进去；`--save-mix 0.25` 时每个 update 约 1/4 的新局从存档开（由于存档局比 fresh 局短，
+episode 份额会更高）。
 
 ## Loop breaker (`--loop-breaker`, `--rollout-loop-breaker`)
 

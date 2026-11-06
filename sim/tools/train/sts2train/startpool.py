@@ -25,7 +25,16 @@ observation; ``split_stats`` reports fresh- and save-started episodes separately
 ``metrics.jsonl``), and with ``--harvest`` (``sts2train.harvest``) the episodes started from self-anchors (pool ids
 ``>= harvest.base``) as a third group (``harvest_*``), so ``fresh_*`` keeps meaning "started from a fresh entry". A
 save-started episode's protocol ``progress`` is the run's absolute progress at its end (what the evaluator would
-score); its return is ``progress - start_progress`` (+ the win bonus), reported as ``save_progress_gain_mean``.
+score); its return is ``progress - start_progress`` (+ the win bonus, + ``--boss-bonus`` per act-2+ boss kill),
+reported as ``save_progress_gain_mean``.
+
+Stream mode (wave 17, ``--start-mode stream --start-saves DIR --save-mix M``): the pool holds no fresh entries; the
+saves and their copies (as many save entries as pool mode would make for ``--pool`` fresh entries at mix M:
+``c = max(1, round(pool * M / (1 - M) / saves))`` copies of each) are built into the empty pool first (ids 0 .. K-1;
+``StartPool.stream_share`` = M) and ``seedstream.StreamEnv.attach_saves`` starts a finished slot from a uniformly
+drawn save entry with probability M (so M is the fraction of episode starts), else from an anchor / the stream.
+Evaluation never uses saves (fresh seed sets only), so the eval readout is unaffected; a save start's protocol
+progress starts at its save's ``start_progress`` (the run's absolute progress there).
 """
 
 from __future__ import annotations
@@ -50,6 +59,16 @@ FRESH, SAVE = 0, 1
 COPY_MODES = ("determinized", "exact")
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
 MANIFEST = "manifest.json"          # written by scripts/train/collect_start_saves.py (optional; provenance only)
+
+
+def save_seed(path) -> str | None:
+    """The run seed text of a save file (its ``rng.seed``), or None when it cannot be read."""
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        seed = (d.get("rng") or {}).get("seed")
+        return str(seed) if seed else None
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def find_saves(root: str | os.PathLike) -> list[Path]:
@@ -259,6 +278,7 @@ class StartPool:
     files: int
     copies_mode: str
     build_s: float = 0.0
+    stream_share: float | None = None   # stream mode: probability that a start is a save start (layout: saves only)
     kinds: np.ndarray = field(init=False)
 
     def __post_init__(self):
@@ -285,6 +305,10 @@ class StartPool:
                "start_progress_mean": (round(float(np.mean([s.start_progress for s in self.saves])), 6)
                                        if self.saves else None),
                "histograms_unique_saves": self.histograms(), "build_s": round(self.build_s, 2)}
+        if self.stream_share is not None:
+            out.update(save_mix=self.stream_share, save_mix_effective=None, start_mode="stream",
+                       save_start_rule="stream: a starting slot draws u ~ U(0,1); u < save_mix -> a uniformly drawn "
+                                       "save entry, else an anchor (--harvest) / the next stream seed")
         if not brief:
             out["skipped_files"] = self.skipped
             out["saves"] = [{k: v for k, v in asdict(s).items() if k != "path"} for s in self.saves]
@@ -294,11 +318,17 @@ class StartPool:
 
     def describe(self) -> list[str]:
         L, h = self.layout, self.histograms()
-        lines = [f"start pool: {L.fresh} fresh + {L.save_entries} save entries = {L.size} ({len(self.saves)} saves x "
-                 f"{L.copies} {'copy' if L.copies == 1 else 'copies'}, {self.copies_mode}); save starts "
-                 f"{L.mix_effective:.4f} of episode starts (requested {L.mix:g}); built in {self.build_s:.1f} s",
-                 f"start saves: {self.files} files under {self.root}, {len(self.saves)} usable, "
-                 f"{len(self.skipped)} skipped"]
+        if self.stream_share is not None:
+            lines = [f"start saves (stream mode): {L.save_entries} save entries ({len(self.saves)} saves x {L.copies} "
+                     f"{'copy' if L.copies == 1 else 'copies'}, {self.copies_mode}); a starting slot takes a uniformly "
+                     f"drawn save entry with probability {self.stream_share:g}, else an anchor / the next stream "
+                     f"seed; built in {self.build_s:.1f} s"]
+        else:
+            lines = [f"start pool: {L.fresh} fresh + {L.save_entries} save entries = {L.size} ({len(self.saves)} saves "
+                     f"x {L.copies} {'copy' if L.copies == 1 else 'copies'}, {self.copies_mode}); save starts "
+                     f"{L.mix_effective:.4f} of episode starts (requested {L.mix:g}); built in {self.build_s:.1f} s"]
+        lines.append(f"start saves: {self.files} files under {self.root}, {len(self.saves)} usable, "
+                     f"{len(self.skipped)} skipped")
         reasons = Counter(r["reason"] for r in self.skipped)
         lines += [f"  skipped x{n}: {r}" for r, n in reasons.most_common()]
         lines.append("  start floor (unique saves): " + " ".join(f"{k}:{v}" for k, v in h["start_floor"].items()))
@@ -491,12 +521,25 @@ def start_pool_from_config(env: VecEnv, cfg, log=print) -> StartPool | None:
     spec = env.pool_spec
     env_seed = getattr(cfg, "env_seed", None)
     start_seed = getattr(cfg, "start_seed", None)
-    sp = build_start_pool(env, cfg.start_saves, mix=float(cfg.save_mix), copies_mode=cfg.save_copies,
-                          fresh=int(cfg.pool), characters=tuple(cfg.characters), ascension=int(cfg.ascension),
+    mix, fresh, probe = float(cfg.save_mix), int(cfg.pool), None
+    stream = getattr(cfg, "start_mode", "pool") == "stream"
+    if stream:          # saves only in the pool (copies as pool mode would make them); the stream draws the share
+        probe = probe_saves(cfg.start_saves, content=env.config.get("content", "ported_only"),
+                            characters=tuple(cfg.characters))
+        if not probe[0]:
+            reasons = Counter(r["reason"] for r in probe[1]).most_common(3)
+            raise ValueError(f"--start-saves {cfg.start_saves}: no usable save among {probe[2]} files (skipped: "
+                             f"{reasons})")
+        copies = plan_layout(fresh, len(probe[0]), mix).copies
+        mix, fresh = 1.0, copies * len(probe[0])
+    sp = build_start_pool(env, cfg.start_saves, mix=mix, copies_mode=cfg.save_copies,
+                          fresh=fresh, characters=tuple(cfg.characters), ascension=int(cfg.ascension),
                           seed_prefix=spec.seed_prefix if spec is not None else
                           f"TRAIN{cfg.seed if env_seed is None else env_seed}",
                           act1=spec.act1 if spec is not None else "random",
-                          seed=int(cfg.seed if start_seed is None else start_seed))
+                          seed=int(cfg.seed if start_seed is None else start_seed), probe=probe)
+    if stream:
+        sp.stream_share = float(cfg.save_mix)
     for line in sp.describe():
         log(line)
     other = sorted(a for a in sp.histograms()["ascension"] if a != int(cfg.ascension))

@@ -16,9 +16,11 @@ run's own eval seed set. Then:
   has, so a skip needs a 64-bit hash collision (or a seed set built on the stream's own texts).
 - ``--start-mode pool`` (legacy): the fresh pool's seed texts (``TRAIN<env_seed>-<CHARACTER>-<i>``, i < --pool) are
   checked before the env is built and the run is REFUSED (``IsolationError``) when any of them collides: ``--seed 0
-  --pool 4608`` would swallow silent-a10-ab-v1 (TRAIN0-SILENT-4096..4607). Start saves are human games with their own
-  12-character run seeds and are not checked here (they are not part of the new mainline: --start-mode stream refuses
-  them).
+  --pool 4608`` would swallow silent-a10-ab-v1 (TRAIN0-SILENT-4096..4607).
+- Start saves (``--start-saves``, both modes; wave 17): human games with their own 12-character run seeds (the save's
+  ``rng.seed``); ``check_save_seeds`` checks each usable save's (character, seed, ascension) and run seed and REFUSES
+  the run on a collision (a save of a holdout game would train on that game's map / RNG); config.json
+  ``isolation.save_seeds_checked`` / ``save_run_seeds``.
 
 config.json records ``isolation``: the checked sets (id, name, role, games, sha256), the number of holdout games and
 distinct run seeds, the mode, the number of start seeds checked (pool) or the skip count (stream), ``refused`` false
@@ -161,3 +163,19 @@ def check_blind_eval(seedset, *, allow_blind: bool, purpose: str | None, log_dir
     data = PG.validate_seedset(dict(seedset)) if isinstance(seedset, dict) else PG.load_seedset(str(seedset))
     return require_blind_access(data, allow_blind=allow_blind, purpose=purpose,
                                 out_dir=None if log_dir is None else Path(log_dir), weights_hash=weights_hash)
+
+
+def check_save_seeds(starts, guard: IsolationGuard) -> dict:
+    """Refuse start saves whose run is a holdout game (``IsolationError``); -> the ``isolation`` fields to add.
+    ``starts`` = a ``startpool.StartPool``; the seed text of a save is its ``rng.seed`` (``startpool.save_seed``)."""
+    from .startpool import save_seed
+
+    rows = [(s.character, save_seed(s.path), int(s.ascension)) for s in starts.saves]
+    rows = [r for r in rows if r[1]]
+    hits = guard.check(rows)
+    if hits:
+        first = "; ".join(h["reason"] for h in hits[:3])
+        raise IsolationError(f"refusing to train: {len(hits)} of the {len(rows)} start saves are games of frozen "
+                             f"evaluation seed sets: {first}")
+    return {"save_seeds_checked": len(rows), "save_run_seeds": len({r[1] for r in rows}),
+            "save_seed_unknown": len(starts.saves) - len(rows)}

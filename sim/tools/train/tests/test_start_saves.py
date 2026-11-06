@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -365,3 +366,105 @@ def test_train_cli_with_start_saves(saves_dir, tmp_path):
     assert conf["config"]["start_saves"] is None and conf["start_pool"] is None
     rows = read_jsonl(run / "metrics.jsonl")
     assert [r["update"] for r in rows] == [1, 2, 3, 4] and "save_episodes" not in rows[-1]
+
+
+# ------------------------------------------------------------------------------------------------ stream mode (wave 17)
+
+
+def test_stream_config_takes_saves():
+    from sts2train.ppo import resolve_config
+
+    cfg = resolve_config({"start_mode": "stream", "start_saves": "/tmp/x", "save_mix": 0.25})
+    assert cfg.start_saves == "/tmp/x" and cfg.save_mix == 0.25
+    for bad in ({"save_mix": 1.0}, {"overlap": "double"}):
+        with pytest.raises(ValueError):
+            resolve_config({"start_mode": "stream", "start_saves": "/tmp/x", "save_mix": 0.25, **bad})
+
+
+def test_stream_env_save_starts(saves_dir):
+    """StreamEnv + attach_saves on the real library: the saves are pool ids 0..K-1 (never released), about save_mix
+    of the starts take a save entry (start_kind save, floor 17, no stream index consumed), the rest the stream; the
+    stream's counters only count stream starts; no SIM_ERROR / CONTENT_GAP."""
+    from sts2train.seedstream import SeedStream, StreamEnv
+
+    N = 16
+    env = VecEnv(N, threads=2, auto_reset=False, pool=None, seed_text="TSS", step_cap=150)
+    s = StreamEnv(env, SeedStream("SPV", ("SILENT",), 10), lookahead=8, prefetch=False)
+    try:
+        sp = build_start_pool(s, saves_dir, mix=1.0, fresh=4, characters=("SILENT",), seed=2)
+        sp.stream_share = 0.5
+        K = sp.layout.size
+        assert K == 4 and sp.layout.copies == 4 and sp.summary()["start_mode"] == "stream"
+        s.attach_saves(sp, 0.5, seed=1)
+        s.prime()
+        env.pool.warm()
+        obs = s.reset()
+        rw = EpisodeRewards("protocol", env.schema["aux"].fields, env.schema["last_episode"].fields, N, 10,
+                            boss_bonus=0.2)
+        rw.reset(obs["aux"], start_entry=s.info()["start_entry"])
+        rng = np.random.default_rng(3)
+        kinds, bad = [], 0
+        for _ in range(600):
+            obs, rew, term, trunc, status, info = s.step(random_actions(rng, obs["cand_n"]))
+            bad += int(np.count_nonzero(status & (STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"])))
+            done = (term | trunc).astype(bool)
+            r, fin = rw.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+            s.annotate(fin)
+            for e in fin:
+                kinds.append(e["start_kind"])
+                if e["start_kind"] == "save":
+                    assert 0 <= e["start_entry"] < K and e["start_floor"] == 17 and e["seed_n"] is None
+                    assert e["seed_text"].startswith("a_boss1.save#copy") and "boss_bonus_total" in e
+                    assert e["start_progress"] == pytest.approx(sp.saves[0].start_progress)
+                else:
+                    assert e["start_kind"] == "stream" and e["start_entry"] >= K and e["start_progress"] == 0.0
+        assert bad == 0
+        c = Counter(kinds)
+        assert c["save"] > 20 and c["stream"] > 20, c
+        assert 0.3 < c["save"] / len(kinds) < 0.7, c
+        st = s.stream.state
+        assert st.started == int(s.slot_starts.sum()) and st.next == st.started + st.skipped
+        assert int(s.slot_save_starts.sum()) == s.save_totals["save_starts"] > 0
+        assert len(env.pool) == K + len(s.fifo)              # saves stay, stream entries are released after one start
+        assert s.metrics()["save_starts_session"] == s.save_totals["save_starts"]
+        assert s.record()["save_entries"] == K and s.record()["save_share"] == 0.5
+    finally:
+        s.close()
+
+
+def test_train_cli_stream_with_start_saves_and_boss_bonus(saves_dir, tmp_path):
+    """`sts2train train --start-mode stream --start-saves ... --boss-bonus ... --harvest ...boss2`: the save pool is
+    recorded (stream share), the save seeds are isolation-checked, metrics carry fresh_* / save_* and the save start /
+    boss counters, episodes.jsonl marks save starts with their start fields; a plain resume keeps it all."""
+    from sts2train.cli import main
+    from sts2train.runlog import read_jsonl
+
+    run = tmp_path / "run"
+    common = ["--start-mode", "stream", "--envs", "16", "--threads", "2", "--pool", "8", "--rollout", "24",
+              "--minibatch", "128", "--d-model", "32", "--state-dim", "64", "--torch-threads", "2", "--step-cap",
+              "150", "--ckpt-every", "1", "--log-every", "100", "--max-hours", "0.5", "--out", str(run)]
+    rc = main(["train", *common, "--max-updates", "2", "--start-saves", str(saves_dir), "--save-mix", "0.5",
+               "--copies-mode", "determinized", "--boss-bonus", "0.2", "--harvest", "boss2:8,any:8",
+               "--characters", "SILENT", "--ascension", "10"])
+    assert rc == 0
+    conf = json.loads((run / "config.json").read_text())
+    assert conf["config"]["boss_bonus"] == 0.2 and conf["config"]["harvest"] == "any:8,boss2:8"
+    sp = conf["start_pool"]
+    assert sp["start_mode"] == "stream" and sp["save_mix"] == 0.5 and sp["unique_saves"] == 1
+    assert sp["save_entries"] == 8 and sp["fresh_entries"] == 0          # = pool mode's 8 save entries at mix 0.5
+    assert conf["isolation"]["save_seeds_checked"] == 1 and conf["seed_stream"]["save_share"] == 0.5
+    rows = read_jsonl(run / "metrics.jsonl")
+    for k in ("fresh_episodes", "save_episodes", "save_progress_gain_mean", "save_starts_update", "save_start_failed",
+              "boss2_kills", "boss_bonus_sum", "harvest_captured_boss2", "save_starts_session"):
+        assert k in rows[-1], k
+    assert sum(r["save_episodes"] for r in rows) > 0 and all(r["sim_error"] == 0 for r in rows)
+    eps = read_jsonl(run / "episodes.jsonl")
+    saves = [r for r in eps if r.get("start_kind") == "save"]
+    assert saves and all(r["start_floor"] == 17 and r["start_act"] == 1 and r["start_progress"] > 0 for r in saves)
+    assert all("progress_gain" in r and "boss_bonus_total" in r for r in saves)
+    assert all("start_progress" not in r for r in eps if r.get("start_kind") == "stream")
+    rc = main(["train", *common, "--max-updates", "3", "--resume", "auto"])
+    assert rc == 0
+    conf = json.loads((run / "config.json").read_text())
+    assert conf["config"]["start_saves"] == str(saves_dir) and conf["start_pool"]["save_entries"] == 8
+    assert "save_episodes" in read_jsonl(run / "metrics.jsonl")[-1]

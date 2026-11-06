@@ -14,7 +14,9 @@ Capture rule (``RULE``): ``aux.is_combat`` goes 0 -> 1 between two observations 
 episode's first observation), the episode started from a fresh pool entry (``start_entry < base`` and not a save:
 anchors are a re-weighting of the fresh on-policy state distribution, never of human saves or of other anchors), the
 slot has no SIM_ERROR / CONTENT_GAP bit and a legal action. Kind from the map cell flagged ``map_nodes.current``:
-``boss`` (MapPointType Boss), ``elite`` (Elite), ``act2`` (any other combat with ``aux.act_index >= 1``: act 2-3
+``boss`` (MapPointType Boss), ``boss2`` (wave 17: a Boss cell with ``aux.act_index >= 1``, i.e. the act-2 and act-3
+bosses; when a ``boss2`` ring exists these go there and ``boss`` keeps the act-1 boss, without one ``boss`` takes every
+boss as before), ``elite`` (Elite), ``act2`` (any other combat with ``aux.act_index >= 1``: act 2-3
 hallway and unknown-room fights; also bosses / elites in act 2+ when they have no ring of their own), ``any`` (every
 combat entry, the act-1 hallway included, that no ring above takes; tests / smoke). Each candidate is kept with
 probability ``prob`` (a generator seeded from (seed, update, step)), at most ``max_per_step`` per env step and at most
@@ -46,20 +48,24 @@ import numpy as np
 from sts2vec import STATUS
 from sts2vec.errors import Sts2VecError
 
-KINDS = ("boss", "elite", "act2", "any")       # "any" = every combat entry no other ring takes (tests / smoke only)
-BOSS, ELITE, ACT2, ANY = range(len(KINDS))
+KINDS = ("boss", "elite", "act2", "any", "boss2")   # "any" = every combat entry no other ring takes (tests / smoke);
+#                                                 "boss2" (wave 17) = act 2+ bosses; appended so the codes of the
+#                                                 older kinds and the canonical order of their specs are unchanged
+BOSS, ELITE, ACT2, ANY, BOSS2 = range(len(KINDS))
 ERR_BITS = STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"]
 RULE = ("capture at a combat's first decision (aux.is_combat 0 -> 1 inside a running episode) of an episode started "
         "from a fresh pool entry (start_entry < base, not a save, not an anchor), slot without SIM_ERROR / "
         "CONTENT_GAP and with a legal action; kind by the map_nodes cell with current = 1: Boss -> boss, Elite -> "
-        "elite, else act_index >= 1 -> act2; a kind without a ring falls back to act2 (act 2+), then to any; kept "
+        "elite, else act_index >= 1 -> act2; a Boss cell with act_index >= 1 goes to boss2 when that ring exists, "
+        "else to boss; a kind without a ring falls back to act2 (act 2+), then to any; kept "
         "with probability prob, at most max_per_step per step and a ring's size per ring and step; clone = "
         "env.clone_determinized(slot, sha256('harvest:<seed>:<update>:<step>:<slot>')); full rings release their "
         "oldest entries (FIFO, one env.pool.release call per step); starts come from the env's auto-reset sequence")
 RULE_STREAM = ("capture at a combat's first decision (aux.is_combat 0 -> 1 inside a running episode) of an episode "
                "started from a stream seed (not an anchor), slot without SIM_ERROR / CONTENT_GAP and with a legal "
                "action; kind by the map_nodes cell with current = 1: Boss -> boss, Elite -> elite, else act_index >= 1 "
-               "-> act2; a kind without a ring falls back to act2 (act 2+), then to any; kept with probability prob, "
+               "-> act2; a Boss cell with act_index >= 1 goes to boss2 when that ring exists, else to boss; a kind "
+               "without a ring falls back to act2 (act 2+), then to any; kept with probability prob, "
                "at most max_per_step per step and a ring's size per ring and step; clone = "
                "env.clone_determinized(slot, sha256('harvest:<seed>:<update>:<step>:<slot>')); full rings release "
                "their oldest entries (FIFO, one env.pool.release call per step); a finished slot starts from a "
@@ -96,6 +102,11 @@ def parse_harvest(spec) -> dict[str, int]:
     if not rings:
         raise ValueError(f"--harvest {spec!r}: no ring (expected e.g. boss:1536,elite:512,act2:1024)")
     return {k: rings[k] for k in KINDS if k in rings}
+
+
+def is_boss2(code: int, act: int) -> bool:
+    """The ``boss2`` predicate: a Boss cell (detected kind BOSS) with ``aux.act_index >= 1`` (act-2 / act-3 bosses)."""
+    return int(code) == BOSS and int(act) >= 1
 
 
 def format_harvest(rings: dict[str, int]) -> str:
@@ -254,6 +265,8 @@ class Harvester:
     def _ring_for(self, code: int, act: int) -> str | None:
         """The ring a candidate of detected kind `code` (BOSS / ELITE / ACT2, -1 = act-1 hallway) goes to."""
         prefs = []
+        if code == BOSS and is_boss2(code, act):
+            prefs.append("boss2")
         if code >= 0:
             prefs.append(KINDS[code])
         if act >= 1:

@@ -708,3 +708,37 @@ def test_stream_train_harvest_resume(tmp_path):
     assert len(ns) == len(set(ns))                                              # no stream index twice
     ck6 = torch.load(run / "checkpoints" / "ckpt-0000006.pt", weights_only=False)
     assert ck6["harvest"]["sessions"] == 2 and ck6["harvest"]["captured"] == m2[-1]["harvest_captured_run"]
+
+
+# ------------------------------------------------------------------------------------------------ boss2 (wave 17)
+
+
+def test_boss2_ring_takes_act2plus_bosses_and_boss_keeps_act1():
+    """boss2 = a Boss cell with act_index >= 1: with a boss2 ring the act-2 / act-3 bosses go there and the act-1 boss
+    to boss; without one boss takes every boss (bit for bit the earlier rule); boss2 alone skips the act-1 boss."""
+    from sts2train.harvest import BOSS as K_BOSS, ELITE as K_ELITE, is_boss2
+
+    assert is_boss2(K_BOSS, 1) and is_boss2(K_BOSS, 2) and not is_boss2(K_BOSS, 0) and not is_boss2(K_ELITE, 1)
+    assert parse_harvest("boss2:4,boss:8") == {"boss": 8, "boss2": 4}
+    assert format_harvest(parse_harvest("boss2:4,boss:8,elite:2,act2:3")) == "boss:8,elite:2,act2:3,boss2:4"
+    assert KINDS[:4] == ("boss", "elite", "act2", "any")               # older kind codes unchanged
+    n, base = 4, 10
+    o0 = obs_of(n)
+    o1 = obs_of(n, combat=range(4), cells={0: (BOSS, 3, 0), 1: (BOSS, 3, 1), 2: (BOSS, 3, 2)}, acts={1: 1, 2: 2, 3: 1})
+    start = np.arange(n)
+    env = FakeEnv(n, base)
+    h = Harvester(env, {"boss": 8, "act2": 8, "boss2": 8}, prob=1.0)
+    h.reset(o0, start)
+    assert h.step(o1, np.zeros(n, bool), start) == 4
+    assert h.kind_of(range(base, base + 4)).tolist() == [KINDS.index(k) for k in ("boss", "boss2", "boss2", "act2")]
+    st = h.pop_stats()
+    assert st["harvest_captured_boss2"] == 2 and st["harvest_live_boss2"] == 2 and st["harvest_captured_boss"] == 1
+    env = FakeEnv(n, base)                                              # no boss2 ring: the old rule
+    h = Harvester(env, {"boss": 8, "act2": 8}, prob=1.0)
+    h.reset(o0, start)
+    assert h.step(o1, np.zeros(n, bool), start) == 4
+    assert h.kind_of(range(base, base + 4)).tolist() == [KINDS.index(k) for k in ("boss", "boss", "boss", "act2")]
+    env = FakeEnv(n, base)                                              # boss2 alone: act-1 boss / hallways skipped
+    h = Harvester(env, {"boss2": 8}, prob=1.0)
+    h.reset(o0, start)
+    assert h.step(o1, np.zeros(n, bool), start) == 2 and [c[0] for c in env.clones] == [1, 2]

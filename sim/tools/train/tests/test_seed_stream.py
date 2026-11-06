@@ -47,7 +47,7 @@ def test_prefix_and_config_rules():
             check_prefix(bad)
     cfg = resolve_config({"start_mode": "stream", "seed": 3})
     assert (cfg.init_seed, cfg.sample_seed, cfg.env_seed, cfg.start_seed, cfg.rng_scheme) == (3, 3, 3, 3, "decoupled")
-    for bad in ({"start_saves": "/tmp/x"}, {"baseline_steps": 10}, {"start_seed": 1}, {"seed_stream_prefix": "TRAIN1"},
+    for bad in ({"start_saves": "/tmp/x", "save_mix": 1.0}, {"baseline_steps": 10}, {"start_seed": 1}, {"seed_stream_prefix": "TRAIN1"},
                 {"stream_lookahead": -1}):
         with pytest.raises(ValueError):
             resolve_config({"start_mode": "stream", **bad})

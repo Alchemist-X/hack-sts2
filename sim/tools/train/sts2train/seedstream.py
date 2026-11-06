@@ -58,6 +58,17 @@ start only takes stream seeds (the rings are empty then). Per-slot bookkeeping k
 so slot i's k-th episode still has ``episode_id = (k - 1) * N + i + 1`` with k = ``slot_attempts``). The update counter
 ``starts`` stays stream starts only (= seeds consumed - failed), ``anchor_starts`` is separate.
 
+Save starts (wave 17, ``--start-saves DIR --save-mix M`` in stream mode; ``attach_saves``, ``sts2train.startpool``):
+the usable saves (and their copies, ``--save-copies``) are put into the empty pool before the stream issues anything,
+so they are pool ids ``0 .. K-1``; they are never released and consume no stream index. Every slot that starts an
+episode (after a step, and at the reset of a session start) first draws u ~ U(0, 1) from a generator seeded with
+sha256 of the trainer seed and the stream counter at the session start; when u < M it starts from a uniformly drawn
+save entry (``restore_many``), so M is the fraction of all episode starts that are save starts. The other slots go on
+to the anchor share (above; with ``--harvest`` an anchor start is then a share of the non-save starts) and then to the
+stream. A failed save start falls back to the anchors / the stream (``save_start_failed``). ``slot_kind`` ``save``,
+``slot_n = -1``, ``slot_text`` = ``<save file>#copy<c>``; episodes.jsonl ``start_kind`` ``save``. Without saves
+nothing of this runs (no generator draws), so the stream / anchor sequences are bit for bit the earlier ones.
+
 Pool mode (``PoolStarts``): the legacy fixed pool; entry names (fresh seed text, or ``<save file>#copy<c>``) and the
 per-entry start counts (``seeds_used_total`` = entries started at least once; checkpoint ``start_counts``, kept across
 a resume while the pool size is the same).
@@ -196,6 +207,8 @@ class _Tracker:
         self.update = {"starts": 0, "start_failed": 0}
         if getattr(self, "anchors", None) is not None:
             self.update.update(anchor_starts=0, anchor_start_failed=0)
+        if getattr(self, "saves", None) is not None:
+            self.update.update(save_starts=0, save_start_failed=0)
         self.t_restart = 0.0
         self.t_prefetch = 0.0
         self.t_prefetch_wait = 0.0
@@ -249,6 +262,11 @@ class StreamEnv(_Tracker):
         self.slot_kind: list[str | None] = [None] * n        # stream / anchor:<kind> (with anchors attached)
         self.slot_anchor_starts = np.zeros(n, dtype=np.int64)
         self.ended_kind: dict[int, str | None] = {}
+        self.saves = None                                    # attach_saves: a startpool.StartPool (ids 0 .. K-1)
+        self.save_share = 0.0
+        self.save_rng = None
+        self.save_names: list[str] = []
+        self.slot_save_starts = np.zeros(n, dtype=np.int64)
         self.failed_rows: list[dict] = []                    # start failures not yet logged
         self.errors: dict[int, str] = {}
         self._thread: threading.Thread | None = None
@@ -273,6 +291,50 @@ class StreamEnv(_Tracker):
         self.anchor_rng = np.random.default_rng(int.from_bytes(h, "little"))
         self.anchor_totals = {"anchor_starts": 0, "anchor_start_failed": 0}
         self.update.update(anchor_starts=0, anchor_start_failed=0)
+
+    def attach_saves(self, starts, share: float, *, seed: int = 0) -> None:
+        """Start a ``share`` of all episode starts from the save entries of ``starts`` (a ``StartPool`` built into this
+        env's pool before ``prime``; module docstring)."""
+        if not 0.0 <= float(share) <= 1.0:
+            raise ValueError(f"save_mix {share} must be in [0, 1]")
+        if self.fifo or len(self.env.pool) != starts.layout.size:
+            raise ValueError("attach_saves: the save entries must be the whole pool, added before the stream issues")
+        import hashlib
+
+        self.saves = starts
+        self.save_ids = np.flatnonzero(starts.kinds == 1).astype(np.int64)       # startpool.SAVE
+        self.save_names = pool_entry_names(self.env, starts)
+        self.save_share = float(share)
+        h = hashlib.sha256(f"save-start:{int(seed)}:{self.stream.state.next}".encode()).digest()[:8]
+        self.save_rng = np.random.default_rng(int.from_bytes(h, "little"))
+        self.save_totals = {"save_starts": 0, "save_start_failed": 0}
+        self.update.update(save_starts=0, save_start_failed=0)
+
+    def _start_saves(self, slots: np.ndarray) -> np.ndarray:
+        """The save share of `slots`: restore those from uniformly drawn save entries; -> the slots left over."""
+        u = self.save_rng.random(len(slots))
+        pick = u < self.save_share
+        if not pick.any() or not len(self.save_ids):
+            return slots
+        s_slots = slots[pick]
+        s_ent = self.save_ids[self.save_rng.integers(0, len(self.save_ids), size=len(s_slots))]
+        self.env.restore_many(s_slots, s_ent)
+        self.slot_attempts[s_slots] += 1
+        st = np.asarray(self.env.status)[s_slots]
+        cn = np.asarray(self.env.buffers["cand_n"])[s_slots]
+        bad = ((st & ERR_BITS) != 0) | (cn <= 0)
+        for j, i in enumerate(s_slots):
+            if bad[j]:
+                self.update["save_start_failed"] += 1
+                self.save_totals["save_start_failed"] += 1
+                continue
+            e = int(s_ent[j])
+            self.slot_n[i], self.slot_text[i], self.slot_entry[i] = -1, self.save_names[e], e
+            self.slot_kind[i] = "save"
+            self.slot_save_starts[i] += 1
+            self.update["save_starts"] += 1
+            self.save_totals["save_starts"] += 1
+        return np.sort(np.concatenate([slots[~pick], s_slots[bad]]))
 
     def _start_anchors(self, slots: np.ndarray) -> np.ndarray:
         """The anchor share of `slots` (an ended step's slots): restore those from live anchors; -> the slots left for
@@ -370,7 +432,11 @@ class StreamEnv(_Tracker):
             raise ValueError("stream mode: reset() starts every slot from the seed stream (no mask / start_ids)")
         self._join()
         t = time.monotonic()
-        self._start(np.arange(self.env.num_envs))
+        slots = np.arange(self.env.num_envs)
+        if self.saves is not None:                  # save starts take their share from the first episodes on
+            slots = self._start_saves(slots)
+        if len(slots):
+            self._start(slots)
         self.ended = {}
         self.t_restart += time.monotonic() - t
         self.totals["t_restart"] += time.monotonic() - t
@@ -391,8 +457,11 @@ class StreamEnv(_Tracker):
             slots = np.flatnonzero(done)
             for i in slots:
                 self.ended[int(i)] = (int(self.slot_n[i]), self.slot_text[i], int(self.slot_entry[i]))
-            if self.anchors is not None:
+            if self.anchors is not None or self.saves is not None:
                 self.ended_kind = {int(i): self.slot_kind[i] for i in slots}
+            if self.saves is not None and len(slots):
+                slots = self._start_saves(slots)
+            if self.anchors is not None and len(slots):
                 slots = self._start_anchors(slots)
             if len(slots):
                 self._start(slots)
@@ -466,7 +535,7 @@ class StreamEnv(_Tracker):
         for e in finished:
             n, text, _ = self.ended.get(e["slot"], (-1, None, -1))
             e["seed_text"], e["seed_n"] = text, (n if n >= 0 else None)
-            if self.anchors is not None:        # episodes.jsonl start_kind: stream | anchor:<kind>
+            if self.anchors is not None or self.saves is not None:   # start_kind: stream | anchor:<kind> | save
                 e["start_kind"] = self.ended_kind.get(e["slot"])
 
     def count_starts(self, done, info) -> None:
@@ -480,7 +549,7 @@ class StreamEnv(_Tracker):
     def inflight(self) -> dict:
         """The episodes running now (for the checkpoint): slot, stream index, seed text, steps so far."""
         steps = np.asarray(self.env.info()["step_index"])
-        if self.anchors is not None:            # anchor episodes run too (n None, start_kind anchor:<kind>)
+        if self.anchors is not None or self.saves is not None:   # anchor / save episodes run too (n None)
             live = np.flatnonzero(self.slot_entry >= 0)
             return {"slot": live.tolist(), "n": [int(self.slot_n[i]) if self.slot_n[i] >= 0 else None for i in live],
                     "seed_text": [self.slot_text[i] for i in live], "steps": steps[live].astype(np.int64).tolist(),
@@ -498,6 +567,8 @@ class StreamEnv(_Tracker):
                "stream_failed_total": st.failed, "stream_lookahead": len(self.fifo)}
         if self.anchors is not None:
             out["anchor_starts_session"] = self.anchor_totals["anchor_starts"]
+        if self.saves is not None:
+            out["save_starts_session"] = self.save_totals["save_starts"]
         return out
 
     def record(self) -> dict:
@@ -508,7 +579,9 @@ class StreamEnv(_Tracker):
                 "lookahead": self.lookahead, "lookahead_adaptive": self.adaptive, "prefetch": self.prefetch_enabled,
                 "resumed_prefix": self.stream.resumed_prefix,
                 "isolation_skips_this_session": self.stream.session_skips[:20],
-                **({"anchor_share": self.anchor_share, **self.anchor_totals} if self.anchors is not None else {})}
+                **({"anchor_share": self.anchor_share, **self.anchor_totals} if self.anchors is not None else {}),
+                **({"save_share": self.save_share, "save_entries": len(self.save_ids), **self.save_totals}
+                   if self.saves is not None else {})}
 
 
 class PoolStarts(_Tracker):

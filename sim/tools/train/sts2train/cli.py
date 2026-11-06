@@ -240,6 +240,10 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="protocol (default): per-step delta of the protocol v0.2 progress + --win-bonus at a win; "
                         "win: 1 at a Victory terminal; shaped: LEGACY smoke objective (win + delta floor / 48)")
     g.add_argument("--win-bonus", dest="win_bonus", type=float, help=f"(default {D.win_bonus})")
+    g.add_argument("--boss-bonus", dest="boss_bonus", type=float,
+                   help="wave 17: one-time reward B at every act-2+ boss kill (the act k -> k+1 transition with k >= 1, "
+                        "and the Victory terminal on top of --win-bonus); part of the return, never of progress; "
+                        "episodes.jsonl boss_bonus_total, metrics boss2_kills (default 0 = off)")
     g.add_argument("--shaped", action="store_true", help="LEGACY (= --objective shaped)")
     g.add_argument("--acq-shaping", dest="acq_shaping", action=argparse.BooleanOptionalAction,
                    help="potential-based acquisition shaping added to the objective's reward: phi = deck_coef x "
@@ -335,7 +339,8 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "TRAIN<env_seed>-<C>-<i> (+ --start-saves); refused when it holds a frozen eval seed set's "
                         "game. stream: every episode "
                         "starts from a never-used seed <prefix>-<C>-<n>, n from a counter kept in the checkpoint "
-                        "(sts2train.seedstream); holdout games are skipped; --start-saves must be none")
+                        "(sts2train.seedstream); holdout games are skipped; with --start-saves a starting slot takes "
+                        "a save entry with probability --save-mix (< 1), else the stream")
     g.add_argument("--seed-stream-prefix", dest="seed_stream_prefix",
                    help="stream: seed text prefix, [A-Z][A-Z0-9_]{0,23}, not TRAIN* (default SP<env_seed>)")
     g.add_argument("--stream-lookahead", dest="stream_lookahead", type=int,
@@ -349,17 +354,20 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="comma separated (default all five)")
     g.add_argument("--start-saves", dest="start_saves",
                    help="directory of game .save files (searched recursively; scripts/train/collect_start_saves.py) "
-                        "to start episodes from, mixed with --pool fresh starts; unsupported saves are skipped and "
-                        "reported; 'none' turns it off on --resume (default: fresh starts only)")
+                        "to start episodes from, mixed with --pool fresh starts (pool mode) or the seed stream (stream "
+                        "mode); unsupported saves are skipped and reported; a save whose run seed is a frozen eval "
+                        "game is refused; 'none' turns it off on --resume (default: fresh starts only)")
     g.add_argument("--save-mix", dest="save_mix", type=float,
-                   help=f"fraction of episode starts from --start-saves, via pool entry weights (default {D.save_mix})")
-    g.add_argument("--save-copies", dest="save_copies", choices=["determinized", "exact"],
+                   help=f"fraction of episode starts from --start-saves: pool mode via pool entry weights, stream mode "
+                        f"as the probability of a save start per starting slot (default {D.save_mix})")
+    g.add_argument("--save-copies", "--copies-mode", dest="save_copies", choices=["determinized", "exact"],
                    help="further pool copies of a save: determinized = same player view, hidden state (draw order, "
                         f"RNG streams) resampled per copy; exact = every start replays the save's RNG (default "
                         f"{D.save_copies})")
     g = tr.add_argument_group("self-anchor starts (sts2train.harvest)")
     g.add_argument("--harvest", metavar="SPEC",
-                   help="ring sizes kind:N,... with kind boss / elite / act2 / any (e.g. "
+                   help="ring sizes kind:N,... with kind boss / elite / act2 / any / boss2 (act 2+ bosses; boss then "
+                        "keeps act-1 bosses) (e.g. "
                         "boss:1536,elite:512,act2:1024): at a combat's first decision in a fresh-started training "
                         "episode, keep a determinized clone "
                         "(same player view, hidden state resampled) as a live pool entry in that kind's FIFO ring; the "

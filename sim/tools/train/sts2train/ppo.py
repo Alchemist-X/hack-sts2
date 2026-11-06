@@ -113,7 +113,7 @@ from .features import (ModelSpec, RolloutStore, SpecMismatch, bind_spec, check_s
                        obs_to_device, widen_spec)
 from .harvest import Harvester, format_harvest, parse_harvest
 from .heads import AUX_STAT_NAMES, HEAD_OUTPUTS, AuxTargets, aux_losses
-from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool
+from .isolation import IsolationGuard, check_blind_eval, check_legacy_pool, check_save_seeds
 from .explore import LOGP_MODES as EXPLORE_LOGP_MODES
 from .explore import KindExplorer, format_kinds, parse_kinds
 from .loopbreak import LoopBreaker
@@ -180,6 +180,8 @@ class TrainConfig:
     # objective
     objective: str = "protocol"     # protocol | win | shaped (see sts2train.objective)
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
+    boss_bonus: float = 0.0         # wave 17: one-time reward at every act-2+ boss kill (act k -> k+1, k >= 1, and the
+                                    # Victory terminal on top of win_bonus); in the return, never in progress (0 = off)
     shaped: bool = False            # LEGACY flag: same as objective="shaped" (delta(total_floor) / shaped_floors)
     shaped_floors: float = 48.0
     acq_shaping: bool = False       # potential-based acquisition shaping on top of the objective (objective.AcqShaping)
@@ -327,9 +329,11 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     if out.start_mode not in START_MODES:
         raise ValueError(f"start_mode {out.start_mode!r}: expected one of {START_MODES}")
     if out.start_mode == "stream":
-        if out.start_saves:
-            raise ValueError("--start-mode stream takes fresh starts only: --start-saves must be none (on a resume "
-                             "of a run with start saves pass --start-saves none)")
+        # wave 17: start saves compose with the stream (seedstream.StreamEnv.attach_saves: a finished slot starts from
+        # a uniformly drawn save entry with probability save_mix, else anchors / the next stream seed)
+        if uses_start_saves(out) and float(out.save_mix) >= 1.0:
+            raise ValueError("--start-mode stream with --start-saves needs --save-mix < 1 (the stream supplies the "
+                             "other starts; use --start-mode pool for saves only)")
         if out.baseline_steps:
             raise ValueError("--baseline-steps plays on the training env, which --start-mode stream reserves for the "
                              "seed stream: drop it or use --start-mode pool")
@@ -355,6 +359,9 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     out.dual_clip = float(out.dual_clip)
     if not (out.dual_clip == 0.0 or (out.dual_clip > 1.0 and np.isfinite(out.dual_clip))):
         raise ValueError(f"dual_clip {out.dual_clip} must be 0 (off) or a finite number > 1 (Ye et al. 2020 use 3)")
+    out.boss_bonus = float(out.boss_bonus)
+    if not np.isfinite(out.boss_bonus):
+        raise ValueError(f"boss_bonus {out.boss_bonus} must be a finite number (0 = off)")
     out.hp_shaping_coef = float(out.hp_shaping_coef)
     if not (out.hp_shaping_coef >= 0.0 and np.isfinite(out.hp_shaping_coef)):
         raise ValueError(f"hp_shaping_coef {out.hp_shaping_coef} must be a finite number >= 0 (0 = off)")
@@ -1521,6 +1528,10 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                f"{compat['library_encoder_version']}")
         floor_cap = effective_floor_step_cap(env)
         starts = start_pool_from_config(env, cfg, log=log)     # None = config.pool.fresh only (also on --resume)
+        if starts is not None:                             # human saves' run seeds vs the frozen eval seed sets
+            isolation = dict(isolation, **check_save_seeds(starts, guard))
+            if cfg.start_mode == "stream":                 # saves = pool ids 0..K-1, before the stream issues
+                env.attach_saves(starts, float(cfg.save_mix), seed=cfg.seed)
         track = env if cfg.start_mode == "stream" else PoolStarts(env, starts, (resume or {}).get("start_counts"))
         carried_stream = (resume or {}).get("seed_stream") if cfg.start_mode == "pool" else None
         harvester = None                                   # self-anchor starts (--harvest; rings start empty)
@@ -1568,8 +1579,11 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                f": {isolation['start_seeds_checked']} pool seeds checked against {len(guard.sets)} holdout sets "
                f"({len(guard.by_seed)} run seeds): no collision"))
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
-                                 cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors)
-        log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else ""))
+                                 cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors,
+                                 boss_bonus=cfg.boss_bonus)
+        log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else "")
+            + (f"; boss bonus {cfg.boss_bonus:g} at every act-2+ boss kill (act k -> k+1 with k >= 1, and a win), in "
+               f"the return, not in progress" if cfg.boss_bonus else ""))
         acq_coefs = {"deck": cfg.acq_deck_coef, "relic": cfg.acq_relic_coef, "upgrade": cfg.acq_upgrade_coef}
         hp_coef = float(cfg.hp_shaping_coef)
         shaper = make_shaper(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, acq=bool(cfg.acq_shaping),
@@ -1613,7 +1627,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             def lane_trackers(n: int) -> dict:
                 return {"rewards": EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, n,
                                                   cfg.ascension, win_bonus=cfg.win_bonus,
-                                                  shaped_floors=cfg.shaped_floors),
+                                                  shaped_floors=cfg.shaped_floors, boss_bonus=cfg.boss_bonus),
                         "shaper": make_shaper(spec.aux_fields, spec.cols["deck"], n, cfg.gamma,
                                               acq=bool(cfg.acq_shaping), acq_coefs=acq_coefs, hp_coef=hp_coef),
                         "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k) if cfg.rollout_loop_breaker else None,
@@ -2192,6 +2206,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             es = _episode_stats(ep_this)
             ss = split_stats(ep_this, starts, harvester)  # fresh_* / save_* / harvest_* ({} without saves / anchors)
             hs = harvester.pop_stats() if harvester is not None else {}
+            bs = pop_boss_counts([rewards] if ov is None else [L.rewards for L in ov.lanes])   # act-2+ boss kills
             lb_st = {}
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()
@@ -2239,7 +2254,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "session_s": round(t_end - session_start, 2), "env_steps": c["env_steps"],
                    "env_steps_update": n_steps, "env_steps_per_s": round(sps, 1),
                    "env_steps_per_s_session": round(session_steps / max(t_end - train_start, 1e-9), 1),
-                   "episodes_total": c["episodes"], **es, **ss, **hs,
+                   "episodes_total": c["episodes"], **es, **ss, **hs, **bs,
                    "reward_mean": float((store.rewards if r_obj is None else r_obj).reshape(-1)[idx_all].mean())
                    if len(idx_all) else None,
                    **sm, **({} if "dual_clipped" in sm else {"dual_clipped": 0.0}), "explained_variance": ev,
@@ -2260,6 +2275,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                       if cfg.start_mode == "stream" else {}),
                    **({"anchor_starts_update": tu["anchor_starts"], "anchor_start_failed": tu["anchor_start_failed"]}
                       if "anchor_starts" in tu else {}),
+                   **({"save_starts_update": tu["save_starts"], "save_start_failed": tu["save_start_failed"]}
+                      if "save_starts" in tu else {}),
                    **aux_st, **shaping_stats(store.rewards if cyc_r is None else store.rewards + cyc_r, r_obj, idx_all,
                                              ep_this, shaper), **lb_st, **cy_st, **ex_st,
                    "reward_sum_trained": float(store.rewards.reshape(-1)[idx_all].sum(dtype=np.float64)),
@@ -2437,6 +2454,17 @@ def evals_history(resume_path, run: Path, upd0: int, seedset: str, best: dict | 
     rec.update(source="same run directory" if src.resolve() == run.resolve() else "source run directory",
                rows=len(rows), best_update=(new_best or {}).get("update"), evals=str(f))
     return new_best, new_last, rec
+
+
+def pop_boss_counts(trackers) -> dict:
+    """The update's act-2+ boss kill counts (``EpisodeRewards.pop_boss_counts``) summed over the reward trackers (one,
+    or the two overlap lanes'): ``boss2_kills`` (= ``boss2_kills_transition`` + ``boss2_kills_win``) and
+    ``boss_bonus_sum`` (the bonus paid; 0 with ``--boss-bonus`` 0, the kills are counted anyway)."""
+    out: dict = {}
+    for t in trackers:
+        for k, v in t.pop_boss_counts().items():
+            out[k] = out.get(k, 0) + v
+    return out
 
 
 def shaping_stats(rewards: np.ndarray, r_obj: np.ndarray | None, idx_all: np.ndarray, eps: list[dict],

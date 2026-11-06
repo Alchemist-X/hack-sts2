@@ -16,9 +16,14 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
   (a stream seed whose template / first observation failed).
 - ``progress``: protocol v0.2 progress at the end (what ``sts2vec eval`` would score); ``return``: the objective's
   summed reward (unshaped).
-- ``start_kind`` (only with ``--harvest`` in ``--start-mode stream``): ``stream`` (a stream seed) or
-  ``anchor:<kind>`` (a self-anchor of ring ``kind``, ``sts2train.harvest``; ``seed_text`` is then the seed text of the
+- ``start_kind`` (only with ``--harvest`` or ``--start-saves`` in ``--start-mode stream``): ``stream`` (a stream seed),
+  ``save`` (a start save entry, wave 17; ``seed_text`` = ``<save file>#copy<c>``) or ``anchor:<kind>`` (a self-anchor of ring ``kind``, ``sts2train.harvest``; ``seed_text`` is then the seed text of the
   stream episode the anchor was cloned from and ``n`` null, so ``n`` keeps listing stream indices only).
+- ``start_act`` / ``start_floor`` / ``start_progress`` / ``progress_gain`` (wave 17): only on rows whose
+  ``start_kind`` is not ``stream`` (save / anchor starts): the first observation's act (1-based), floor and protocol
+  progress, and ``progress - start_progress``.
+- ``boss_bonus_total`` / ``boss2_kills`` (wave 17, only with ``--boss-bonus`` != 0): the boss bonus paid in the
+  episode (part of ``return``) and its act-2+ boss kills (``objective.EpisodeRewards``).
 - ``cycles``: the verified UI revisit cycles (``sts2train.cycles``: rest-site / shop prompt -> cancel back to the same
   observation) the episode closed, counted with or without ``--cycle-cost`` (null on ``dropped`` / ``start_failed``
   rows); the per-cycle rows (path, room, floor) are in ``cycles.jsonl``.
@@ -58,7 +63,8 @@ from .runlog import JsonlWriter
 
 END_RESULT = {2: "trunc", 3: "error", 4: "error", 5: "stall"}     # EndKind (sim/Sts2Sim.Vec/Status.cs) -> result
 BASE_KEYS = ("update", "session", "slot", "seed_text", "n", "result", "act", "floor", "steps", "progress", "return",
-             "end_kind", "cycles", "start_kind")
+             "end_kind", "cycles", "start_kind", "start_act", "start_floor", "start_progress", "progress_gain",
+             "boss_bonus_total", "boss2_kills")
 
 EpisodeHook = Callable[[dict], "Mapping | None"]
 
@@ -141,6 +147,12 @@ class EpisodeLog:
                    "end_kind": e.get("end_kind"), "cycles": int(e.get("cycles", 0))}
             if "start_kind" in e:
                 row["start_kind"] = e["start_kind"]
+                if e["start_kind"] not in (None, "stream"):     # save / anchor starts begin mid-run
+                    row.update(start_act=e.get("start_act"), start_floor=e.get("start_floor"),
+                               start_progress=_r(e.get("start_progress")), progress_gain=_r(e.get("progress_gain")))
+            if "boss_bonus_total" in e:
+                row["boss_bonus_total"] = _r(e["boss_bonus_total"])
+                row["boss2_kills"] = int(e.get("boss2_kills", 0))
             row.update(e.get("fields") or {})
             self._write(row)
 
