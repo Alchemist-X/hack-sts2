@@ -290,6 +290,15 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "turns it into an advantage-independent drift); policy = log pi_old (biased off-policy, "
                         "fastest push on explored rows); GAE / values stay b's in every mode "
                         f"(default {D.explore_logp})")
+    g.add_argument("--explore-push", dest="explore_push", type=float, metavar="DELTA",
+                   help="bounded exploration push (wave 12; needs --explore-logp policy): the mixture draws leave the "
+                        "PPO surrogate and get the term -mean_explored A x clamp(log pi_new - log pi_old, -DELTA, "
+                        "+DELTA) instead (gradient A x grad log pi until the row moved DELTA nats this update, zero "
+                        "beyond); they stay in the value / entropy / aux losses; approx_kl / clipfrac then exclude "
+                        "them; logs push_share / push_clamped / push_dlogp / push_loss. A checkpoint without it "
+                        f"resumes with 0 (default {D.explore_push} = off, bit-identical)")
+    g.add_argument("--explore-push-coef", dest="explore_push_coef", type=float, metavar="X",
+                   help=f"multiplier of the --explore-push term in the loss (default {D.explore_push_coef})")
     g = tr.add_argument_group("env")
     g.add_argument("--envs", type=int, help=f"(default {D.envs})")
     g.add_argument("--threads", type=int, help="env worker threads (default 0 = cpu count)")

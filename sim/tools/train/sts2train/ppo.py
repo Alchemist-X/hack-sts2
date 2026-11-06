@@ -22,7 +22,9 @@ rings, which the env's auto-reset start sequence then starts episodes from (``ha
 fresh-entry starts only). ``explore_kinds`` / ``explore_eps`` (``--explore-kinds ChooseRestOption,BuyEntry --explore-eps
 E``, ``sts2train.explore``): at a rollout decision with a row of those kinds, with probability E the action is drawn
 uniformly from those rows; ``explore_logp`` (default ``decoupled``: log pi_old with the advantage x pi_old / b) sets
-how PPO's ratio accounts for the mixture behaviour policy b (GAE / values stay b's), evaluation never explores (``explore_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
+how PPO's ratio accounts for the mixture behaviour policy b (GAE / values stay b's), evaluation never explores (``explore_*`` metrics);
+``explore_push`` (``--explore-push DELTA``, wave 12, needs ``--explore-logp policy``) takes the mixture draws out of the
+PPO surrogate and gives them a bounded push term instead (``ppo_loss``; ``push_*`` metrics). With these flags off the trainer computes exactly what it computed before. The periodic
 eval's greedy policy runs with the loop breaker unless ``loop_breaker`` is off (``--loop-breaker off``).
 
 Starts and seeds (README "Start modes, seeds and isolation"): ``start_mode`` ``pool`` (default; the fixed
@@ -127,6 +129,7 @@ CKPT_FORMAT = 2
 COMPILE_MODES = ("off", "default", "reduce-overhead")
 STAT_NAMES = ("entropy", "value_loss", "policy_loss", "approx_kl", "clipfrac", "loss", "grad_norm")
 DUAL_STAT_NAMES = ("dual_clipped",)  # after grad_norm (before AUX_STAT_NAMES) when dual_clip > 0 (stat_names)
+PUSH_STAT_NAMES = ("push_share", "push_clamped", "push_dlogp", "push_loss")  # after DUAL when explore_push > 0
 LOG_RATIO_MAX = 20.0                # ppo_surrogate clamps log(pi_new / pi_old) here before exp (exp(20) ~ 4.9e8)
 NEG_LIVE = -1e8                     # logits above this are live candidates (masked ones are model.NEG = -1e9)
 LOCAL_PARAM_LIMIT = 3_000_000       # above this (or the large preset) cpu / mps training needs --allow-big-local
@@ -242,6 +245,8 @@ class TrainConfig:
     explore_kinds: str = ""         # RunActionKind names [:selector], comma-separated ("" = off)
     explore_eps: float = 0.0        # mixture weight of the uniform draw over the explore rows (0 = off)
     explore_logp: str = "decoupled"  # stored log-prob: decoupled (log pi_old, adv x pi_old / b) | mixture (log b) | policy
+    explore_push: float = 0.0       # wave 12: mixture draws leave the surrogate, push term A x clamp(dlogp, +-DELTA) (0 = off)
+    explore_push_coef: float = 1.0  # multiplier of that push term in the loss
     # UI revisit cycles (sts2train.cycles; always counted) and fixed-endpoint evaluation
     cycle_cost: float = 0.0         # subtracted from the trainer's reward of a transition that closes a cycle
     eval_at: tuple = ()             # absolute update numbers: evaluate eval_at_seedset in every eval_at_modes mode
@@ -366,6 +371,21 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
                              f"{lim:.4f}: the policy-drawn rows' start ratio 1 / (1 - E) is outside the clip window, so "
                              "they only get negative-advantage gradient (a drift independent of the advantages; "
                              "sts2train.explore docstring); use --explore-logp decoupled (default) or a smaller E")
+    out.explore_push = float(out.explore_push)
+    out.explore_push_coef = float(out.explore_push_coef)
+    if not (out.explore_push >= 0.0 and np.isfinite(out.explore_push)):
+        raise ValueError(f"explore_push {out.explore_push} must be 0 (off) or a finite number > 0 (nats, e.g. 1)")
+    if not (out.explore_push_coef >= 0.0 and np.isfinite(out.explore_push_coef)):
+        raise ValueError(f"explore_push_coef {out.explore_push_coef} must be a finite number >= 0")
+    if out.explore_push > 0 and out.explore_eps == 0:
+        if "explore_push" in given:
+            raise ValueError(f"--explore-push {out.explore_push:g} needs an explorer (--explore-kinds K --explore-eps E "
+                             "> 0 --explore-logp policy): without mixture draws there is nothing to push")
+        out.explore_push = 0.0              # a resume that turned the explorer off drops the inherited push with it
+    if out.explore_push > 0 and out.explore_logp != "policy":
+        raise ValueError(f"--explore-push needs --explore-logp policy (got {out.explore_logp!r}): the push term is "
+                         "A x clamp(log pi_new - log pi_old, +-DELTA) with the stored log pi_old of the explored row; "
+                         "decoupled / mixture store a different log-prob or weight the advantage")
     out.cycle_cost = float(out.cycle_cost)
     if not (out.cycle_cost >= 0.0 and np.isfinite(out.cycle_cost)):
         raise ValueError(f"cycle_cost {out.cycle_cost} must be a finite number >= 0")
@@ -522,8 +542,9 @@ def parse_eval_at(v) -> tuple[int, ...]:
 
 def stat_names(cfg: TrainConfig) -> tuple[str, ...]:
     """Names of the per-minibatch statistics `MinibatchUpdater` returns: STAT_NAMES, then DUAL_STAT_NAMES with
-    dual_clip > 0, then AUX_STAT_NAMES with aux_heads."""
+    dual_clip > 0, then PUSH_STAT_NAMES with explore_push > 0, then AUX_STAT_NAMES with aux_heads."""
     return (STAT_NAMES + (DUAL_STAT_NAMES if float(getattr(cfg, "dual_clip", 0.0)) > 0 else ())
+            + (PUSH_STAT_NAMES if float(getattr(cfg, "explore_push", 0.0)) > 0 else ())
             + (AUX_STAT_NAMES if cfg.aux_heads else ()))
 
 
@@ -875,7 +896,8 @@ def _autocast(amp: bool):
 
 
 def ppo_surrogate(newlogp: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tensor, *, clip: float,
-                  dual_clip: float = 0.0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+                  dual_clip: float = 0.0, exclude: torch.Tensor | None = None
+                  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """The PPO policy term: (pg = -mean surrogate, ratio, log ratio, dual-clip hit mask or None when off).
 
     Log-ratio guard (always on): logr = (newlogp - oldlogp).clamp(max=LOG_RATIO_MAX) before exp, so the ratio never
@@ -886,7 +908,11 @@ def ppo_surrogate(newlogp: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tens
 
     `dual_clip` c > 1 (Ye et al. 2020, dual-clip PPO): for A < 0 the surrogate min(r A, clip(r) A), unbounded below as
     r grows, becomes max(min(r A, clip(r) A), c A); A >= 0 unchanged. 0 = off: exactly the standard clipped objective
-    (no extra ops on that path)."""
+    (no extra ops on that path).
+
+    `exclude` ([B] bool, --explore-push): those samples' surrogate term is 0 (torch.where: no gradient, no nan) and they
+    are never counted as dual-clip hits; the mean stays over the whole minibatch, so every other sample's contribution
+    is exactly what it is without `exclude`. None = no extra ops."""
     logr = (newlogp - oldlogp).clamp(max=LOG_RATIO_MAX)
     ratio = logr.exp()
     surr = torch.min(ratio * madv, ratio.clamp(1 - clip, 1 + clip) * madv)
@@ -896,17 +922,49 @@ def ppo_surrogate(newlogp: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tens
         neg = madv < 0
         hit = neg & (surr < floor)
         surr = torch.where(neg, torch.max(surr, floor), surr)
+    if exclude is not None:
+        surr = torch.where(exclude, torch.zeros_like(surr), surr)
+        if hit is not None:
+            hit = hit & ~exclude
     return -surr.mean(), ratio, logr, hit
+
+
+def explore_push_term(newlogp: torch.Tensor, oldlogp: torch.Tensor, madv: torch.Tensor, explored: torch.Tensor, *,
+                      delta: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """The bounded push of --explore-push DELTA (wave 12) -> (L_push, [push_share, push_clamped, push_dlogp, push_loss]).
+
+    L_push = -mean over the explored samples of A x clamp(logp_new - logp_old, -DELTA, +DELTA): gradient A x grad log pi
+    while |logp_new - logp_old| < DELTA, zero beyond (clamp's backward), i.e. a per-update trust region of DELTA nats per
+    explored row, independent of the ratio exp(logp_new - logp_old) (which for a row at log pi ~ -80 is meaningless)
+    and robust to bf16 noise on extreme logits. Non-explored samples contribute nothing (torch.where; a -inf /
+    huge log ratio there cannot leak a nan). The mean is over the explored samples (0 when the minibatch has none).
+    Statistics: push_share = explored / minibatch, push_clamped = share of explored with |dlogp| >= DELTA, push_dlogp =
+    their mean (unclamped) dlogp, push_loss = L_push (before explore_push_coef)."""
+    zero = torch.zeros_like(newlogp)
+    dl = torch.where(explored, newlogp - oldlogp, zero)
+    n_ex = explored.sum()
+    den = n_ex.clamp_min(1).to(newlogp.dtype)
+    push = -torch.where(explored, madv * dl.clamp(-delta, delta), zero).sum() / den
+    with torch.no_grad():
+        st = torch.stack([n_ex.to(newlogp.dtype) / explored.numel(),
+                          (explored & (dl.abs() >= delta)).sum().to(newlogp.dtype) / den,
+                          dl.sum() / den, push.detach()])
+    return push, st
 
 
 def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldlogp: torch.Tensor,
              madv: torch.Tensor, vret: torch.Tensor, vold: torch.Tensor, *, clip: float, vf_coef: float,
              ent_coef: float, amp: bool = False, aux: tuple | None = None,
-             aux_coef: float = 0.0, dual_clip: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
+             aux_coef: float = 0.0, dual_clip: float = 0.0, explored: torch.Tensor | None = None,
+             push: float = 0.0, push_coef: float = 1.0) -> tuple[torch.Tensor, torch.Tensor]:
     """PPO minibatch loss (clipped policy + clipped value - entropy bonus; the forward under bf16 autocast when `amp`)
     and its detached statistics [entropy, value_loss, policy_loss, approx_kl, clipfrac, loss] as one float32 tensor.
     The policy term is `ppo_surrogate` (log-ratio clamp; dual clip when `dual_clip` > 0, which appends the share of
     samples on the dual-clip branch, `dual_clipped`, after loss). approx_kl / clipfrac use the clamped log ratio.
+    `explored` ([B] bool mixture draws) with `push` > 0 (--explore-push, wave 12): those samples leave the surrogate
+    (`ppo_surrogate` exclude) and add `push_coef` x `explore_push_term` instead; they stay in the value loss, the
+    entropy and the aux heads; approx_kl / clipfrac are then over the non-explored samples only; the four push
+    statistics follow dual_clipped. `push` = 0 (or `explored` None): the wave-11 loss, no extra ops.
     `aux` = (win_y, win_m, combat_y, combat_m) minibatch targets / masks of the aux heads: adds `aux_coef` x their
     losses (`heads.aux_losses`) and appends [win loss, combat loss, win target share, combat target share]."""
     heads = None
@@ -918,19 +976,32 @@ def ppo_loss(model: Policy, xb: dict[str, torch.Tensor], act: torch.Tensor, oldl
     logp_all = F.log_softmax(logits, -1)
     newlogp = logp_all.gather(1, act.unsqueeze(1)).squeeze(1)
     ent = -(logp_all.exp() * logp_all.clamp_min(-1e4)).sum(-1).mean()
-    pg, ratio, logr, hit = ppo_surrogate(newlogp, oldlogp, madv, clip=clip, dual_clip=dual_clip)
+    on = explored is not None and push > 0
+    pg, ratio, logr, hit = ppo_surrogate(newlogp, oldlogp, madv, clip=clip, dual_clip=dual_clip,
+                                         exclude=explored if on else None)
     vclip = vold + (v - vold).clamp(-clip, clip)
     vl = 0.5 * torch.max((v - vret) ** 2, (vclip - vret) ** 2).mean()
     loss = pg + vf_coef * vl - ent_coef * ent
+    if on:
+        lpush, pst = explore_push_term(newlogp, oldlogp, madv, explored, delta=push)
+        loss = loss + push_coef * lpush
     if heads is not None:
         wl, cl, wf, cf_ = aux_losses(heads, *aux)
         loss = loss + aux_coef * (wl + cl)
     with torch.no_grad():
-        kl = ((ratio - 1) - logr).mean()
-        cf = ((ratio - 1).abs() > clip).float().mean()
+        if on:                  # the ratio path only: explored samples are not on it
+            keep = ~explored
+            nk = keep.sum().clamp_min(1).float()
+            kl = torch.where(keep, (ratio - 1) - logr, torch.zeros_like(logr)).sum() / nk
+            cf = (keep & ((ratio - 1).abs() > clip)).float().sum() / nk
+        else:
+            kl = ((ratio - 1) - logr).mean()
+            cf = ((ratio - 1).abs() > clip).float().mean()
     st = [ent.detach(), vl.detach(), pg.detach(), kl, cf, loss.detach()]
     if hit is not None:
         st.append(hit.float().mean())
+    if on:
+        st += list(pst.unbind())
     if heads is not None:
         st += [wl.detach(), cl.detach(), wf, cf_]
     return loss, torch.stack(st)
@@ -975,7 +1046,8 @@ class MinibatchUpdater:
 
     With `cfg.aux_heads` the six PPO tensors are followed by the aux heads' four (win_y, win_m, combat_y, combat_m)
     and the statistics by AUX_STAT_NAMES (after grad_norm: `stat_names`); with `cfg.dual_clip` > 0 `dual_clipped`
-    follows grad_norm (before the aux statistics)."""
+    follows grad_norm (before the aux statistics). With `cfg.explore_push` > 0 an `explored` [B] bool tensor follows
+    vold (before the aux targets) and PUSH_STAT_NAMES follow dual_clipped."""
 
     def __init__(self, model: Policy, opt: torch.optim.Optimizer, cfg: TrainConfig, amp: bool,
                  device: torch.device | str):
@@ -990,10 +1062,22 @@ class MinibatchUpdater:
         if ent_schedule_on(cfg):        # a 0-d device tensor updated in place (set_ent_coef): no recompile per value
             self.ent_t = ent_coef = torch.tensor(ent_coef, dtype=torch.float32, device=device)
         self.aux = bool(getattr(cfg, "aux_heads", False))
-        self.split = self.split or self.aux
+        self.push = push = float(getattr(cfg, "explore_push", 0.0))
+        push_coef = float(getattr(cfg, "explore_push_coef", 1.0))
+        self.split = self.split or self.aux or push > 0
         aux_coef = float(getattr(cfg, "aux_coef", 0.0))
 
-        if self.aux:
+        if push > 0 and self.aux:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold, explored, win_y, win_m, combat_y, combat_m):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef,
+                                dual_clip=dual_clip, explored=explored, push=push, push_coef=push_coef)
+        elif push > 0:
+            def loss_fn(xb, act, oldlogp, madv, vret, vold, explored):
+                return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
+                                ent_coef=ent_coef, amp=amp, dual_clip=dual_clip, explored=explored, push=push,
+                                push_coef=push_coef)
+        elif self.aux:
             def loss_fn(xb, act, oldlogp, madv, vret, vold, win_y, win_m, combat_y, combat_m):
                 return ppo_loss(model, xb, act, oldlogp, madv, vret, vold, clip=clip, vf_coef=vf_coef,
                                 ent_coef=ent_coef, amp=amp, aux=(win_y, win_m, combat_y, combat_m), aux_coef=aux_coef,
@@ -1015,7 +1099,7 @@ class MinibatchUpdater:
         self.coefs = (self.coefs[0], float(v))
 
     def loss(self, *args, compiled: bool = True):
-        """`args` = (xb, act, oldlogp, madv, vret, vold[, win_y, win_m, combat_y, combat_m])."""
+        """`args` = (xb, act, oldlogp, madv, vret, vold[, explored][, win_y, win_m, combat_y, combat_m])."""
         if compiled and self.compiled is not None:
             if self.cudagraphs:
                 torch.compiler.cudagraph_mark_step_begin()
@@ -1028,7 +1112,7 @@ class MinibatchUpdater:
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
         self.opt.step()
-        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [aux heads' 4]
+        if self.split:          # [6 PPO] + grad_norm + [dual_clipped] + [push 4] + [aux heads' 4]
             return torch.cat([st[:6], gn.detach().float().view(1), st[6:]])
         return torch.cat([st, gn.detach().float().view(1)])
 
@@ -1446,6 +1530,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         store = RolloutStore(spec, cfg.rollout, cfg.envs, cfg.max_rows, dtypes, device)
         adv_w = (np.ones((cfg.rollout, cfg.envs), dtype=np.float32)       # --explore-logp decoupled: pi_old / b
                  if explorer is not None and cfg.explore_logp == "decoupled" else None)
+        ex_mask = (np.zeros((cfg.rollout, cfg.envs), dtype=bool)          # --explore-push: the mixture draws
+                   if explorer is not None and cfg.explore_push > 0 else None)
         log(f"rollout store: {store.nbytes / 2**20:.0f} MiB on {device}")
 
         ckpts = CheckpointManager(run, cfg.keep_ckpts)
@@ -1748,6 +1834,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         a, logp, value = runner.sample(x, adjust=lambda lg: breaker.apply(obs, lg), **ex_kw)
                     if adv_w is not None:
                         adv_w[t] = runner.explore_w
+                    if ex_mask is not None:
+                        ex_mask[t] = explorer.last_explored
                     store.put(t, x, obs)
                     a_np = a.cpu().numpy().astype(np.int32)
                     valid = cand_n > 0
@@ -1823,7 +1911,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
 
                 ov_st = ov.rollout(upd=upd, store=store, runner=runner, device=device, max_rows=cfg.max_rows,
                                    static=static, track=track, steps=cfg.rollout, cycle_cost=cyc_cost, r_obj=r_obj,
-                                   cyc_r=cyc_r, adv_w=adv_w, hooks_on=hooks_on, episode_hooks=episode_hooks,
+                                   cyc_r=cyc_r, adv_w=adv_w, ex_mask=ex_mask, hooks_on=hooks_on, episode_hooks=episode_hooks,
                                    episode_fields=EPISODE_HOOKS.fields, errors_seen=errors_seen,
                                    check_forward=check_forward if runner.compiled is not None else None)
                 env_s, infer_s = ov_st["env_s"], ov_st["infer_s"]
@@ -1879,10 +1967,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    for k in range(0, len(perm), cfg.minibatch)]
             d_mbs = torch.split(to(np.concatenate(mbs)), [len(m) for m in mbs]) if mbs else ()
             d_aux = tuple(to(a_.reshape(-1)) for a_ in aux_np)      # win_y, win_m, combat_y, combat_m (aux heads)
+            d_exp = (to(ex_mask.reshape(-1)),) if ex_mask is not None else ()      # --explore-push: mixture draws
 
             def mb_args(mb_h, mb):
                 return (store.batch(mb, rows=None if static else store.rows(mb_h), static=static), d_act[mb],
-                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_aux))
+                        d_logp[mb], d_adv[mb], d_ret[mb], d_val[mb], *(a_[mb] for a_ in d_exp),
+                        *(a_[mb] for a_ in d_aux))
 
             if updater.compiled is not None and "update" not in compile_check and mbs \
                     and len(mbs[0]) == cfg.minibatch:
@@ -2010,6 +2100,9 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     f"ent={fmt(sm.get('entropy'), '.3f')} kl={fmt(sm.get('approx_kl'), '.4f')}"
                     + (f" ent_coef={ent_now:.5f}" if ent_sched else "")
                     + (f" dual_clipped={fmt(sm.get('dual_clipped'), '.4f')}" if cfg.dual_clip > 0 else "")
+                    + (f" push_share={fmt(sm.get('push_share'), '.5f')} push_clamped="
+                       f"{fmt(sm.get('push_clamped'), '.4f')} push_dlogp={fmt(sm.get('push_dlogp'), '.4f')} "
+                       f"push_loss={fmt(sm.get('push_loss'), '.5f')}" if cfg.explore_push > 0 else "")
                     + (f" | fresh eps={ss['fresh_episodes']} prog={fmt(ss['fresh_progress_mean'], '.4f')} | save "
                        f"eps={ss['save_episodes']} gain={fmt(ss['save_progress_gain_mean'], '.4f')} "
                        f"prog={fmt(ss['save_progress_mean'], '.4f')} wins={ss['save_wins']}" if ss else "")

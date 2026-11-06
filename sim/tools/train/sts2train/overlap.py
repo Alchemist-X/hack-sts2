@@ -528,7 +528,7 @@ class OverlapRollout:
         self.worker.shutdown(wait=True)
 
     def rollout(self, *, upd: int, store, runner, device, max_rows: int, static: bool, track, steps: int,
-                cycle_cost: float, r_obj, cyc_r, hooks_on: bool, adv_w=None, episode_hooks, episode_fields, errors_seen: dict,
+                cycle_cost: float, r_obj, cyc_r, hooks_on: bool, adv_w=None, ex_mask=None, episode_hooks, episode_fields, errors_seen: dict,
                 check_forward=None) -> dict:
         """One rollout window of `steps` into `store` (rows of both lanes). Returns the loop's counters as ``train``
         keeps them for one env: env_s, infer_s, wait_s, rollout_s, n_steps, se_n, cg_n, il_n, over_n, fs_n,
@@ -559,6 +559,8 @@ class OverlapRollout:
                 a, logp, value = runner.sample(x, adjust=lambda lg: L.breaker.apply(o, lg), **ex_kw)
             if adv_w is not None:
                 adv_w[t, L.lo:L.hi] = runner.explore_w
+            if ex_mask is not None:         # --explore-push: this lane's mixture draws
+                ex_mask[t, L.lo:L.hi] = self.explorer.last_explored
             store.put_rows(t, L.lo, L.hi, x, o)
             a_np = a.cpu().numpy().astype(np.int32)
             valid = cand_n > 0

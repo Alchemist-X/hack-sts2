@@ -119,6 +119,7 @@ FLAG_GROUPS = (
                 "harvest_max_per_step", "harvest_start_share")),
     ("PPO", ("envs", "rollout", "epochs", "minibatch", "lr", "gamma", "lam", "clip", "dual_clip", "vf_coef", "ent_coef",
              "max_grad_norm", "max_rows")),
+    ("explore", ("explore_kinds", "explore_eps", "explore_logp", "explore_push", "explore_push_coef")),
     ("model flags", ("aux_heads", "aux_coef", "deck_counts")),
     ("rollouts", ("rollout_loop_breaker", "step_cap", "floor_step_cap")),
     ("runtime", ("device", "amp", "compile", "seed", "max_hours")),

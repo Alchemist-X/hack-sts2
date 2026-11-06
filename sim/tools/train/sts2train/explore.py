@@ -77,6 +77,11 @@ same stream at its update, ``--overlap double`` draws slot s as ``--overlap off`
 N-slot draw), and E = 0 builds no explorer at all (the trainer computes exactly what it computed before; the torch
 sample RNG is never touched by the explorer either way).
 
+Explored mask (wave 12). Every call leaves ``last_explored`` ([n] bool numpy, the call's slots): True where the
+action is a mixture draw (the coin fired; the drawn row may coincide with the policy's own choice), False elsewhere
+(all False on a step without explore rows). The trainer stores it per sample for ``--explore-push`` (``ppo.ppo_loss``:
+the explored samples leave the PPO surrogate and get the bounded push term instead).
+
 Metrics per update (``pop_stats``): ``explore_eps``, ``explore_decisions`` (decisions with >= 1 explore row),
 ``explore_share`` (of the valid decisions), ``explore_steps`` (mixture draws), ``explore_policy_mass`` (mean of pi's
 summed probability on the explore rows at those decisions), ``explore_mix_clip0`` (above), ``t_explore_s``, and per item ``explore_present.<item>``,
@@ -203,6 +208,7 @@ class KindExplorer:
         self._loge = math.log(eps)
         self._zero()
         self.run = {"explore_steps": 0, "explore_decisions": 0, "decisions": 0}
+        self.last_explored = np.zeros(0, dtype=bool)     # [n] of the last call: True = a mixture draw (wave 12)
 
     # ------------------------------------------------------------------------------------------- rows
 
@@ -288,7 +294,8 @@ class KindExplorer:
         """One rollout step of slots [lo, lo + n) of an `n_total`-slot batch: `logits` [n, w] (what `dist` was built
         from), `a` / `logp` the policy's draw. -> (actions, stored log-probs, advantage weights or None): the actions
         with the mixture draws substituted, the log-prob per `logp_mode`, w = pi_old / b for ``decoupled``. Slots
-        without an explore row keep the policy's action and log-prob unchanged (the same tensors' values)."""
+        without an explore row keep the policy's action and log-prob unchanged (the same tensors' values). The call's
+        explored mask (True = a mixture draw) is left in ``last_explored`` ([n] bool numpy)."""
         t0 = time.perf_counter()
         try:
             return self._step(obs, logits, dist, a, logp, update, t, lo, n_total)
@@ -298,6 +305,7 @@ class KindExplorer:
     def _step(self, obs, logits, dist, a, logp, update, t, lo, n_total):
         n, w = int(logits.shape[0]), int(logits.shape[1])
         n_total = n if n_total is None else int(n_total)
+        self.last_explored = np.zeros(n, dtype=bool)
         valid = np.asarray(obs["cand_n"]) > 0
         self.acc["decisions"] += int(valid.sum())
         self.run["decisions"] += int(valid.sum())
@@ -315,6 +323,7 @@ class KindExplorer:
         a_np = a.cpu().numpy().astype(np.int64)
         u = self.uniforms(update, t, n_total)[:, lo:lo + n]
         fire = present & (u[0] < self.eps)
+        self.last_explored = fire.copy()
         k = np.minimum((u[1] * np.maximum(cnt, 1)).astype(np.int64), np.maximum(cnt - 1, 0))
         csum = np.cumsum(rows, 1)                           # the k-th explore row (0-based) of each slot
         pick = np.argmax(csum > k[:, None], 1)

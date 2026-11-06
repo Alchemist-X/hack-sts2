@@ -793,6 +793,52 @@ uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --m
     --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --dual-clip 3
 ```
 
+### Explore push（有界探索推力，`--explore-push DELTA`，wave 12）
+
+为什么：run w9-e2（2026-11-06 10:18 EST，Colab A100，bundle sts2train-69463a9f85 = wave 11；`--explore-kinds
+ChooseRestOption,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --dual-clip 3.0`，bf16，1 epoch x 32 个 4096 的
+minibatch）的每次 update 的 approx_kl 在 0.4-0.5 与 6.8e4-1.5e6 之间交替，dual_clipped 1e-5-1.7e-3，explore_steps ≈ 487 /
+update；落在 log-ratio 钳制上的样本数（kl / (e^20 / 131072) ≈ kl / 3700）从 ~18 涨到 ~400 ≈ 每个被探索的样本。解读：
+`policy` 模式下，被探索的行（SMITH:<card>、card removal，策略给 log pi ≈ -80）在一次 update 内就被前几个 minibatch
+的 A·∇log pi 推动 > 20 nats（行打分器已饱和），随后钳制把它们的梯度清零，下一次 update 自己的负优势样本又把它们推回：
+振荡；连"安静"的 update 也有 kl 0.4（正常 0.002）。dual-clip 让目标有界，但没有让动力学有界。PPO 的 ratio 机制救不了
+硬零行：`decoupled` / `mixture` 给这些行的梯度 ∝ pi ≈ 0，`policy` 给的是无界且有偏的推力。
+
+做法（`ppo.ppo_loss` / `ppo.explore_push_term`）：explorer（`explore.KindExplorer.last_explored`）按样本记录 explored
+掩码（True = 本步是 mixture 抽样，硬币命中），trainer 像 act / logp 一样存进 [T, N]，传给 `MinibatchUpdater`。DELTA > 0 时：
+
+- explored 样本退出 PPO surrogate（其 surrogate 项为 0，minibatch 均值的分母不变，所以其余样本的贡献逐位不变），
+  但照常参与 value loss、entropy 与 aux heads；
+- 改为推力项 `L_push = -mean_{explored} A · clamp(logp_new - logp_old, -DELTA, +DELTA)`，乘 `--explore-push-coef`
+  （默认 1.0）加进 loss。A 是 surrogate 用的同一个归一化优势，logp_old 是存下的 log pi_old；均值只在 explored 样本上取。
+  梯度：|logp_new - logp_old| < DELTA 时为 A·∇log pi，超出后为 0（clamp 的反传）：每个 explored 行每次 update 至多移动
+  DELTA nats 的信任域，与 ratio 无关，并且对极端 logit 上的 bf16 噪声稳健（DELTA ≈ 1 ≫ 幅度 80 的 logit 约 0.25 nat 的
+  bf16 量化）；
+- 非 explored 样本不受影响：wave 11 的 dual-clip 与 log-ratio 钳制照旧作用于它们。
+
+与其他 flag 的关系：必须 `--explore-logp policy`（`resolve_config` 拒绝 decoupled / mixture：前者给优势乘 pi_old / b，后者
+存 log b，都不是推力项要的 log pi_old）；必须有 explorer（`--explore-kinds` + `--explore-eps` > 0）；resume 时若关掉了
+explorer，继承来的 push 一并关闭。可与 `--dual-clip` 同开（建议保留 3：它只管非 explored 样本）。DELTA 必须 >= 0，
+0 = 关闭，与改动前逐位相同（`tests/test_explore_push.py`；4 步 Adam、smoke / trunk x aux on/off，与 HEAD 的 ppo.py
+比较 stats / 权重 / Adam 状态逐位相同）。checkpoint 的 config 记录 `explore_push` / `explore_push_coef`，没有这两个字段
+的旧 checkpoint resume 时为 0 / 1.0；report card 的 explore 组显示它们。
+
+指标（开启时：metrics.jsonl 每次 update 与 train.log 的 update 行；是 minibatch 统计量的 update 内平均）：
+
+- `push_share`：explored 样本占 minibatch 的比例；
+- `push_clamped`：explored 样本中 loss 计算时 |logp_new - logp_old| >= DELTA 的比例（已达本次 update 的信任域边界，无梯度）；
+- `push_dlogp`：explored 样本的 logp_new - logp_old 均值（未钳制）：正 = 被推上，负 = 被推下；
+- `push_loss`：L_push（乘 coef 之前）。
+- 同时 `approx_kl` / `clipfrac` 改为只在非 explored 样本上统计（explored 样本不走 ratio 路径），所以 kl 重新有意义：
+  开启后应回到 ~1e-3 量级；若仍大，问题不在探索行。minibatch 内没有 explored 样本时 push_clamped / push_dlogp /
+  push_loss 记 0（会把 update 平均拉低；4096 的 minibatch 下 ~400 个 explored / update 时几乎不发生）。
+
+```bash
+uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
+    --explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --dual-clip 3 \
+    --explore-push 1
+```
+
 ## Model card and weights bundle (`report-card`, `pack`, `probe`)
 
 ```bash
