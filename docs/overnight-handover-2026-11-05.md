@@ -156,3 +156,31 @@
 - B u7664：dev-128 关 breaker 0.4397 [0.413, 0.466]，ab-512 0.434，采样 ×3 0.425，0 通关。`runs/w3m-b/evals/endpoint/u0007664-*` 在桶里。
 - D（第二轮对照）20:03 在 sts2b2 从 B 的 pinned-0007664 起跑（到 u9164，约 01:30）；随后 F′。A 约 00:30 到 u7664 → C（从桶取 B 的终点）→ E′。
 - 注意：B 的训练期 metrics/episodes（u3064–u7425）在桶里被轮换后的新会话覆盖（评测与 checkpoint 完好）；稀疏副本在本机 scratchpad/recover/。
+
+---
+
+## 2026-11-06 01:00 EST 起的隔夜安排（用户 00:55 指示：安排好 8 小时训练，其余停止）
+
+### 现在在跑什么
+
+| GPU | 会话 | 阶段 | 起点 → 终点 | 预计 | 之后自动接 |
+|---|---|---|---|---|---|
+| A | `sts2c`（11-05 11:52 建，24 h 回收约 11-06 11:52） | 第二轮 C：B 的 u7664 + `--macros all`，熵 0.005 | u7664 → 9164（00:50 起跑） | 约 06:15 到终点，端点评测约 20 min | E′（`launch_e.sh`：**A 的 u7664** + 探索修复，→ 9664，约 06:40 → 14:00） |
+| B | `sts2b3`（11-06 00:09 建，回收约 11-07 00:10） | 第二轮 D（对照）：B 的 u7664 + rest,shop | u8676 → 9164（00:46 起，**eager**） | 约 02:40 到终点，端点评测约 25 min | F′（`launch_f.sh`：**A 的 u7664**，对照，→ 9664，约 03:05 → 10:30） |
+
+- 23:38 事故：D 第三段启动时 `compiled minibatch update vs eager` 门槛被 bf16 噪声误触发（loss≈0；梯度全部一致）→ 训练器退出 → `launch_f` 判"异常结束: done" → 东京保活停掉 sts2b2。00:40 在 sts2b3 从 u8664 恢复（md5 校验后）。`scripts/colab/w3m_line.sh`（两台机器均已部署）现在对 run_train.sh 失败重试 3 次，并在 train.log 出现该 MISMATCH 时追加 `--compile off`——D 的第二次尝试逐位复现同一数值（确定性误触发），已自动转 eager（update 阶段 3.6 s 对 3.2 s）。
+- 第三轮分叉点：00:40 配对比较 u7664——dev-128 B−A −0.005 [−0.035, +0.026]，ab-512 B−A −0.030 [−0.047, −0.013] → E′/F′ 改从 **A 的 pinned-0007664** 分叉（见 `docs/round3-plan-2026-11-05.md` 末段）。第二轮 C/D 保持 B 的 u7664。
+
+### 守护状态
+
+- 东京保活（`~/sts2keep/sessions.txt`）：`sts2c → runs/w9-e.driver.log`，`sts2b3 → runs/w9-f.driver.log`；末行以 `: done` 结尾即停机。
+- Mac 轮换守护 v1 仍在跑，但 `managed.txt` 已清空：v1 的 rotate() 只恢复一条线的第一个 run 目录，对现在的链会把 C/E′ 从头重分叉并覆盖桶内历史。**守护 v2**（恢复一条线的全部 run 目录、整条链重启、保活因失败停机 → ALERT）由后台 Opus 工作流 `wf_01cec61a-c10` 产出（`scripts/colab/ops/watch_rotate.sh` + `scratchpad/rotate/watch_rotate_v2.sh`），切换步骤：按 PID 杀 v1 → `managed.txt` 写 `sts2c a w3m-a,w4-c,w9-e sts2a2` 与 `sts2b3 b w3m-b,w4-d,w9-f sts2b4` → 起 v2。**必须在 11:52 sts2c 回收前完成**，否则 E′ 中断需人工按 `scripts/colab/ops/resume_b_sts2b3.sh` 的步骤恢复（恢复 w3m-a、w4-c、w9-e 三个目录；核对 md5；补 `w3m-a: done`、`w3m-c: done` 标记；起 `launch_c2.sh`（会秒级结束）与 `launch_e.sh`）。
+- Mac 镜像循环与 ping 循环照常；监控页在 00:55 刷新后不再自动更新。
+
+### 早上先看什么
+
+1. `ssh colab-sts2c "tail -2 /content/sts2/runs/w4-c.driver.log; tail -1 /content/sts2/runs/w9-e/train.log"` —— C 是否到 u9164 并有端点评测，E′ 是否起跑（若 C 的首个 update 也触发门槛，驱动会自动转 eager，看 `w4-c.driver.log` 里的 "compile gate tripped"）。
+2. `ssh colab-sts2b3 "tail -2 /content/sts2/runs/w4-d.driver.log; tail -1 /content/sts2/runs/w9-f/train.log"` —— D 终点评测、F′ 起跑。
+3. `colab --auth=adc sessions` 两张 A100 都在；`colab --auth=adc usage` 余额（00:55 为 341.7，双卡约 13.5/h → 早 08:00 约 245；低于 150 告警）。
+4. 第二轮读数：`r2_compare.sh 9164`（C 对 D，`--macros all` 是否采纳）在 C 到终点后（约 06:40）可跑。
+5. 工作流 `wf_01cec61a-c10` 的产物（运维脚本入库、结果表、交接文档、README 段落、ppo.py 门槛修正、守护 v2）：核对 `git status`，审阅后提交推送；仓库为 public，org 镜像待用户决定（raven-labs-official / raven-labs-pro）。
