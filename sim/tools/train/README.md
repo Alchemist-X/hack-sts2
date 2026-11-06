@@ -784,6 +784,9 @@ approx_kl 先到 2.9e12 再成 nan，trainer 连续三次挂掉。
   checkpoint 的 config 记录 `dual_clip`；没有该字段的旧 checkpoint resume 时为 0，除非显式给出。
 - 指标：metrics.jsonl 每次 update 的 `dual_clipped` = 落在 dual-clip 分支的样本比例（关闭时 0）；开启时
   train.log 的 update 行打印 `dual_clipped=`。
+- 监控注意：钳制只保证有限，不保证小。每个被钳制的行对 approx_kl 的贡献约 exp(20) ≈ 4.9e8，所以在
+  `--explore-logp policy` 下 approx_kl（以及关闭 dual clip 时的 policy_loss / loss，约 -4.9e8 x A）仍可能是 1e7-1e8
+  量级，但这些行没有梯度。这时判断稳定性看 `grad_norm`、`entropy`、`dual_clipped` 和评测曲线，不要看 approx_kl。
 
 ```bash
 uv run --project sim/tools/train sts2train train --resume auto --out RUN_DIR --macros rest,shop \
