@@ -2,7 +2,8 @@
 mixture draw on synthetic candidate tables (draws only at decisions with an explore row, uniform over those rows,
 never on masked / illegal rows, stored log-prob = log((1 - E) pi + E u) exactly, decoupled weights (the default), the
 mixture start ratios / explore_mix_clip0, no host copy on steps without explore rows, policy mode),
-the pure (update, t, slot) draw stream, the config / CLI plumbing, that evaluation never explores, eps 0 = the
+the pure (update, t, slot) draw stream, the wave-10 selectors (Travel:<MapPointType> rows from the map pointer, checked
+against the real env's travel; ProceedRewards:skipcard only next to a card row; unknown names refused), the config / CLI plumbing, that evaluation never explores, eps 0 = the
 default path, --overlap double reproduces off under a greedy policy with the explorer on, and a resumed run is
 deterministic."""
 
@@ -294,6 +295,170 @@ def test_selectors(live):
     assert macro[0].tolist()[:6] == [False, False, False, True, True, False]
 
 
+# ------------------------------------------------------------------------------------------------ wave 10 selectors
+
+
+def _map(live, obs, s, cells):
+    """Slot s's map: `cells` = [(row, col, MapPointType name, legal_next)], every other cell empty."""
+    M, pts = live.cols["map_nodes"], list(live.enum_names["MapPointType"])
+    obs["map_nodes"][s] = 0
+    for r, c, name, legal in cells:
+        obs["map_nodes"][s, r, c, M["point_type"]] = pts.index(name)
+        obs["map_nodes"][s, r, c, M["legal_next"]] = int(legal)
+
+
+def _travel_obs(live, n=3):
+    obs = _obs(live, n, 2)
+    # slot 0: legal (col, row) order = (0, 5) RestSite, (1, 2) Elite, (3, 2) Monster, (5, 2) Elite; an Elite at (2, 3)
+    # that is not legal; Travel A = the rank in that order
+    _map(live, obs, 0, [(2, 3, "Monster", 1), (2, 1, "Elite", 1), (5, 0, "RestSite", 1), (2, 5, "Elite", 1),
+                        (3, 2, "Elite", 0)])
+    _set_rows(live, obs, 0, ["Travel"] * 4, oi=[0, 1, 2, 3])
+    # slot 1: no Elite destination (Monster, Unknown); an Elite elsewhere on the map
+    _map(live, obs, 1, [(1, 0, "Monster", 1), (1, 2, "Unknown", 1), (2, 2, "Elite", 0)])
+    _set_rows(live, obs, 1, ["Travel"] * 2, oi=[0, 1])
+    # slot 2: a combat (the map has a legal-looking Elite cell, but no Travel row)
+    _map(live, obs, 2, [(1, 1, "Elite", 1)])
+    _set_rows(live, obs, 2, ["PlayCard"] * 3 + ["EndTurn"])
+    return obs
+
+
+def test_travel_selector_rows(live):
+    obs = _travel_obs(live)
+    ex = KindExplorer(live, "Travel:Elite,Travel:RestSite,Travel:Unknown,Travel:Monster,Travel", 0.3, 1)
+    rows, _ = ex.item_rows(obs, 8)
+    got = [[np.flatnonzero(rows[i, s]).tolist() for s in range(3)] for i in range(5)]
+    assert got[0] == [[1, 3], [], []]                  # Travel:Elite
+    assert got[1] == [[0], [], []]                     # Travel:RestSite
+    assert got[2] == [[], [1], []]                     # Travel:Unknown
+    assert got[3] == [[2], [0], []]                    # Travel:Monster
+    assert got[4] == [[0, 1, 2, 3], [0, 1], []]        # Travel (every row)
+    pts = list(live.enum_names["MapPointType"])
+    oi = obs["cand"][:, :8, live.cols["cand"]["option_index"]].astype(np.int64)
+    tr = (obs["cand"][:, :8, live.cols["cand"]["kind"]] == ex.travel_id) & (np.arange(8)[None] < obs["cand_n"][:, None])
+    d = ex.travel_dest(obs, oi, tr)
+    assert [pts[int(v)] for v in d[0, :4]] == ["RestSite", "Elite", "Monster", "Elite"] and (d[2] == -1).all()
+
+
+def test_travel_elite_draw(live):
+    """Travel:Elite at E: decisions with an Elite destination take one with P >= E (uniform among them) even when the
+    policy gives them ~0; decisions without one keep the policy's draw."""
+    base = _travel_obs(live)
+    n = 64
+    obs = {k: np.ascontiguousarray(np.concatenate([v[i % 2: i % 2 + 1] for i in range(n)])) for k, v in base.items()}
+    lg = torch.full((n, 8), -1e9)
+    lg[0::2, :4] = torch.tensor([0.0, -60.0, 0.0, -60.0])      # slot-0 pattern: the elites at ~0
+    lg[1::2, :2] = 0.0
+    ex = KindExplorer(live, "Travel:Elite", 0.3, 11)
+    elite, picks = 0, []
+    for t in range(60):
+        a, lp, a2, lp2, w, _ = _step(ex, obs, lg, t=t, seed=t)
+        assert torch.equal(a2[1::2], a[1::2]) and torch.equal(lp2[1::2], lp[1::2])
+        e = [int(j) for j in a2[0::2] if int(j) in (1, 3)]
+        elite += len(e)
+        picks += e
+    share = elite / (60 * n // 2)
+    assert 0.25 < share < 0.35, share
+    assert abs(picks.count(1) - picks.count(3)) < 0.3 * len(picks)
+    st = ex.pop_stats()
+    assert st["explore_present.Travel:Elite"] == 60 * n // 2 and st["explore_taken.Travel:Elite"] == elite
+    assert st["explore_drawn.Travel:Elite"] == elite and st["explore_pmass.Travel:Elite"] < 1e-9
+
+
+def test_proceed_skipcard_rows(spec, live):
+    obs = _obs(live, 4, 3)
+    _set_rows(live, obs, 0, ["TakeRewardCard"] * 3 + ["ClaimReward", "ProceedRewards"], B=[0, 1, 2, -1, -1],
+              oi=[0, 1, 2, 1, -1])
+    _set_rows(live, obs, 1, ["ClaimReward", "ProceedRewards"], oi=[0, -1])       # only gold left: proceed is no skip
+    _set_rows(live, obs, 2, ["PickRewardCard"] * 3 + ["RewardAlternative"], oi=[0, 1, 2, 0])   # card screen
+    _set_rows(live, obs, 3, ["PickRewardCard"] * 2 + ["ProceedRewards"], oi=[0, 1, -1])
+    ex = KindExplorer(live, "ProceedRewards:skipcard,ProceedRewards", 0.3, 1)
+    rows, _ = ex.item_rows(obs, 8)
+    got = [[np.flatnonzero(rows[i, s]).tolist() for s in range(4)] for i in range(2)]
+    assert got[0] == [[4], [], [], [2]]                # ProceedRewards:skipcard
+    assert got[1] == [[4], [1], [], [2]]               # ProceedRewards (also the no-skip decision)
+    assert parse_kinds("ProceedRewards:skipcard") == (("ProceedRewards", "skipcard"),)
+    KindExplorer(spec, "ProceedRewards:skipcard", 0.3, 1)      # pre-macro library: PickRewardCard only
+    # the draw: skips the card with P = E at the skipcard decisions (pi gives ProceedRewards ~0), slot 1 untouched
+    lg = torch.full((4, 8), -1e9)
+    lg[0, :5] = torch.tensor([0.0, 0.0, 0.0, 0.0, -60.0])
+    lg[1, :2] = torch.tensor([0.0, -60.0])
+    lg[2, :4] = 0.0
+    lg[3, :3] = torch.tensor([0.0, 0.0, -60.0])
+    ex = KindExplorer(live, "ProceedRewards:skipcard", 0.3, 4)
+    skips = 0
+    for t in range(400):
+        a, _, a2, _, _, _ = _step(ex, obs, lg, t=t, seed=t)
+        assert int(a2[1]) == int(a[1]) == 0 and int(a2[2]) == int(a[2])
+        skips += int(a2[0] == 4) + int(a2[3] == 2)
+    assert 0.25 < skips / 800 < 0.35, skips
+
+
+def test_wave10_unknown_names_fail(spec, live):
+    for bad in ("Travel:Elit", "Travel:Unassigned", "Travel:elite", "Travel:SMITH"):
+        with pytest.raises(ValueError, match="MapPointType"):
+            KindExplorer(live, bad, 0.3, 1)
+    with pytest.raises(ValueError, match="selector"):
+        KindExplorer(spec, "Travel:Elite", 0.3, 1)       # a spec without MapPointType names
+    for bad in ("ProceedRewards:skip", "BuyEntry:skipcard", "Travel:skipcard", "ChooseRestOption:Elite"):
+        with pytest.raises(ValueError, match="selector"):
+            KindExplorer(live, bad, 0.3, 1)
+    assert resolve_config({"explore_kinds": "Travel:Elite,ProceedRewards:skipcard", "explore_eps": 0.3}).explore_kinds \
+        == "Travel:Elite,ProceedRewards:skipcard"
+
+
+def test_travel_destination_matches_the_env():
+    """Heuristic play with uniform travel on the real env: every Travel row maps to a live node, after taking a
+    Travel row the slot's current node has the point type `travel_dest` predicted (the A -> (col, row) rank mapping
+    is the env's), and ProceedRewards:skipcard rows appear on real rewards screens with a card."""
+    from sts2vec import PoolSpec, VecEnv
+    from sts2vec.policies import HeuristicPolicy, PolicyContext
+
+    from sts2train.features import ModelSpec
+
+    n = 32
+    with VecEnv(n, threads=2, pool=PoolSpec(characters=("SILENT",), ascension=10, count=16, seed_prefix="TEXTR"),
+                seed_text="TEXTR") as env:
+        live = ModelSpec.from_schema(env.schema)
+        ex = KindExplorer(live, "Travel:Elite,ProceedRewards:skipcard", 0.3, 1)
+        C, M = live.cols["cand"], live.cols["map_nodes"]
+        pol = HeuristicPolicy()
+        ctx = PolicyContext(schema=env.schema, num_envs=n, live=np.ones(n, bool))
+        proceed = live.enum_names["RunActionKind"].index("ProceedRewards")
+        obs = env.reset()
+        rng = np.random.default_rng(7)
+        checked = skip_decisions = 0
+        seen = set()
+        ar = np.arange(n)
+        for _ in range(1200):
+            w = obs["cand"].shape[1]
+            kind = obs["cand"][:, :, C["kind"]]
+            tr = (kind == ex.travel_id) & (np.arange(w)[None] < obs["cand_n"][:, None])
+            d = ex.travel_dest(obs, obs["cand"][:, :, C["option_index"]].astype(np.int64), tr)
+            assert (d[tr] > 0).all(), "every Travel row points at a node"
+            seen.update(int(v) for v in d[tr])
+            rows, _ = ex.item_rows(obs, w)
+            sk = rows[1].any(1)
+            assert (kind[rows[1]] == proceed).all()
+            skip_decisions += int(sk.sum())
+            act = np.asarray(pol(obs, ctx)).astype(np.int64)
+            ntr = tr.sum(1)
+            for s in np.flatnonzero(ntr > 0):              # uniform over the destinations (not the first column)
+                act[s] = int(np.flatnonzero(tr[s])[rng.integers(0, ntr[s])])
+            took = (ntr > 0) & (act >= 0)
+            want = np.where(took, d[ar, np.clip(act, 0, w - 1)], -1)
+            obs, _, term, trunc, _, _ = env.step(act.astype(np.int32))
+            done = (term | trunc).astype(bool)
+            for s in np.flatnonzero(took & ~done):
+                cur = obs["map_nodes"][s][..., M["current"]] != 0
+                assert cur.sum() == 1
+                assert int(obs["map_nodes"][s][..., M["point_type"]][cur][0]) == int(want[s]), s
+                checked += 1
+        pts = live.enum_names["MapPointType"]
+        assert checked > 50 and len(seen) >= 3, (checked, sorted(pts[v] for v in seen))
+        assert skip_decisions > 0
+
+
 def test_draw_stream_is_a_pure_function_of_update_t_slot(spec):
     ex = KindExplorer(spec, "ChooseRestOption", EPS, 77)
     a = ex.uniforms(5, 3, 12)
@@ -346,6 +511,25 @@ def test_eps_zero_is_the_default_path(tmp_path):
     s1, r1 = _run(tmp_path, "eps0", explore_kinds="ChooseRestOption,BuyEntry", explore_eps=0.0, **kw)
     assert s0["weights_hash"] == s1["weights_hash"] and _strip(r0) == _strip(r1)
     assert "explore" not in s1 and not any(k.startswith("explore") for r in r1 for k in r)
+
+
+def test_eps_zero_with_wave10_items_is_the_default_path(tmp_path):
+    kw = {"start_mode": "stream", "seed": 3, "init_seed": 3, "sample_seed": 3}
+    s0, r0 = _run(tmp_path, "default", **kw)
+    s1, r1 = _run(tmp_path, "eps0", explore_kinds="Travel:Elite,ProceedRewards:skipcard", explore_eps=0.0, **kw)
+    assert s0["weights_hash"] == s1["weights_hash"] and _strip(r0) == _strip(r1)
+    assert "explore" not in s1 and not any(k.startswith("explore") for r in r1 for k in r)
+
+
+def test_train_logs_wave10_items(tmp_path):
+    """The per-item metrics of the wave-10 selectors appear in metrics.jsonl (counts may be 0 in 3 short updates)."""
+    items = "Travel:Elite,Travel:Monster,ProceedRewards:skipcard"
+    s, rows = _run(tmp_path, "w10", start_mode="stream", seed=6, explore_kinds=items, explore_eps=0.3,
+                   max_updates=2, rollout=48)
+    for it in items.split(","):
+        assert all(f"explore_present.{it}" in r and f"explore_taken.{it}" in r and f"explore_pmass.{it}" in r
+                   for r in rows), it
+    assert s["explore"]["kinds"] == items
 
 
 def test_train_logs_explore_metrics(tmp_path):
