@@ -447,3 +447,12 @@ sts2a2 的恢复改用并发 gcs_pull（8 线程、只取最新 pinned）：评�
 **观察**：S 结束（22:55）：段终 u12164 ab-512 **0.483** [0.468, 0.499]（act3 37/512）、dev-128 0.483（act3 7/128）。**配对 S − C3 @u12164**（在 sts2a2 上算，产物 `runs/w4-c3/evals/pairs/u0012164-S-vs-C3/`）：dev-128 +0.005 [−0.025, +0.035]；ab-512 −0.002 [−0.018, +0.014]。三个段终配对：+0.006、+0.011、−0.002。C4 u12345 左右正常。余额 271。
 **判断**：boss 学校在单训练种子、三个配对点上没有可辨效应（合并约 +0.005，SE 约 0.005）；u11664 的 0.500 是噪声上沿。首要嫌疑是存档池多样性（2 局、3 个 boss 战状态）而不是机制本身；留到人类数据扩充（HD3 合成存档、更多录制）之后再测。按预注册槽位规则，第二槽位给 **W20a**（boss 血量比例终局奖励 0.1，与 C4 同 fork 配对）。
 **行动**：验证桶里有 S 的全部段终产物（含 dev128-sample-off）后 `colab stop -s sts2b3`（23:01）；`provision_line.sh w20a` 建 sts2b4（A100-40GB、12 vCPU），装两套训练包与存档池，23:03 起 `launch_w20a.sh`（先从桶取 C3 的 pinned-0012164）；Tokyo keepalive 加 sts2b4、删 sts2b3。启动脚本又踩了一次"inline bash -c 自匹配"（provision 报 already-running 但没起）——改用远端 `start_line.sh` 起，教训记入 lab README 的待办。台账：S done、W20a running、S2 planned。
+
+## 00:00 EST 11-07（第 59 轮，收尾）
+
+**观察**：C4 第一个段终 u12664：**ab-512 0.471** [0.456, 0.487]（act3 31/512）、dev-128 0.473（act3 7/128）；per-100 u12600 0.472。C 系确认集序列 0.486 → 0.489 → 0.485 → 0.471：平台后开始回落。W20a u12378（起跑 50 分钟）：dev-128 u12200 0.472（act3 3）、u12300 0.475（act3 7）；机制指标 boss_death_hp_frac_mean 0.52（第二幕 0.55、第三幕 0.26），与起跑时（0.54 / 0.55 / 0.22）持平——200 个 update 还看不出奖励是否在抬高打掉的血量。余额 254.6。
+**判断**：按预注册，W20a 对 C4 的判读在 u12664（约 01:00）与 u13164（约 03:30）的配对，机制指标须先于进度上升；今晚不再启动任何新线或新改动（用户指令）。C4 约 01:45、W20a 约 03:30 自然结束，keepalive 各自关机（sts2a2 回收点 09:45，sts2b4 回收点明天 23:01）。
+**行动（收尾）**：
+- 不安装 C4 之后的 bench 链（wave 21 只提交代码与暂存的启动器，明早再决定是否跑 A100 bench）。
+- 看板最后一次刷新；分支全部推送（origin + ravenlabs）。
+- 明早读什么：`runs/w4-c4/evals/endpoint/u0013164-*`、`runs/w11-w20a/evals/endpoint/u0012664-* / u0013164-*`（桶里），配对用 `scripts/analysis/decide.py` + `scripts/analysis/prereg/w20a-vs-c4.json`（或 sts2a2 上的 r2_compare）；wave 21 的 `scripts/analysis/bench_report.py` 等 A100 空闲窗口跑 `launch_bench.sh`；复盘清单在 `docs/retro-2026-11-06.md`。
