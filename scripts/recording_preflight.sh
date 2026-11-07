@@ -2,7 +2,7 @@
 # recording_preflight.sh — read-only checks before recording human runs. Changes nothing.
 #   1. game version (release_info.json) == v0.111.0, the only version the simulator implements
 #   2. mods/ holds only Sts2Recorder (no STS2_MCP, no QuickSL, nothing else)
-#   3. mods/Sts2Recorder.conf sets decision_capture_combat_inputs: true
+#   3. mods/Sts2Recorder.conf sets decision_capture_combat_inputs: true (WARN only: it costs ~8 ms per combat input)
 #   4. installed Sts2Recorder.dll == install_mod.sh build output (sha256), when both exist
 # Exit 0 only when every check passes. Paths follow install_mod.sh / mcp_mod.sh (STS2GameDir, STS2ModsDir).
 set -uo pipefail
@@ -46,7 +46,7 @@ fi
 if [[ -f "$CONF" ]]; then
   val=$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get("decision_capture_combat_inputs"); print("absent" if v is None else json.dumps(v))' "$CONF" 2>/dev/null || echo unparsable)
   if [[ "$val" == true ]]; then report PASS conf-combat-capture "decision_capture_combat_inputs=true"
-  else report FAIL conf-combat-capture "decision_capture_combat_inputs=$val (want true; conf: $(tr -d '\n ' < "$CONF"))"; fi
+  else report WARN conf-combat-capture "decision_capture_combat_inputs=$val (recorder 0.4.0 combat-input snapshots off; turning it on costs ~8 ms main-thread per combat input, user decides; conf: $(tr -d '\n ' < "$CONF"))"; fi
 else
   report FAIL conf-combat-capture "Sts2Recorder.conf not found at $CONF"
 fi
