@@ -1,4 +1,4 @@
-"""Synthetic benchmark of the PPO update and the rollout inference forward (``sts2train bench-update``).
+"""Synthetic benchmarks of the PPO update and the rollout inference (``sts2train bench-update`` / ``bench-rollout``).
 
 Builds the policy of a preset (or explicit size flags), fills a ``RolloutStore`` with random observations of the
 schema's shapes and valid value ranges (``random_obs``), then times K PPO minibatch updates through the trainer's own
@@ -9,6 +9,16 @@ runs several compile modes in one process with a speed-up summary; ``--deck-coun
 model with those parts (the aux heads' loss on random targets and masks); ``--profile`` adds ``torch.profiler`` tables:
 top aten ops by self device time (CUDA) or self CPU time (cpu / mps) and, on CUDA, the top kernels with the summed
 kernel time per minibatch (GPU busy share of the wall time).
+
+``sts2train bench-rollout`` (wave 21) times the trainer's whole rollout-inference window on random observations: T
+steps (default 64) of upload, forward + sampling, store write and readback into a T-step ``RolloutStore``, plus the
+bootstrap forward, per compile mode and per batch size (``--envs 2048,4096``), with the trainer's phase split
+(``sts2train.phases.InferPhases``: the t_h2d_s / t_forward_s / t_store_s / t_sample_d2h_s / t_track_s of
+metrics.jsonl), the forward alone, peak device memory and, from a short ``torch.profiler`` pass, kernel launches per
+step (runtime launch calls; a CUDA-graph replay is one ``cudaGraphLaunch``), device kernels per step and the GPU busy
+time, whose complement over the unprofiled step time is the GPU idle fraction. ``--profile`` also writes a chrome
+trace per (mode, batch). Both benchmarks print one ``bench-update ...`` / ``bench-rollout ...`` summary line per
+result and ``--json`` writes every number.
 
 The numbers that matter come from the training GPU (an A100 in the Colab runtime); cpu / mps runs are only for
 validating the code paths with small settings (a cpu / mps bench refuses an estimated > 3 GiB of activations).
@@ -27,6 +37,7 @@ import numpy as np
 import torch
 
 from .features import USED_BUFFERS, ModelSpec, RolloutStore, bind_spec, obs_to_device
+from .phases import METRIC_KEYS, PHASES, InferPhases, read_back
 
 # Column value ranges for random observations: [lo, hi) per field name (vocab / enum sizes resolved from the spec).
 _VOCAB_COLS = {"card_id": "cards", "relic_id": "relics", "potion_id": "potions", "power_id": "powers",
@@ -192,6 +203,46 @@ def _profile_table(prof, device: torch.device, steps: int, top: int) -> dict:
     return out
 
 
+LAUNCH_CALLS = ("cudaLaunchKernel", "cudaLaunchKernelExC", "cuLaunchKernel", "cuLaunchKernelEx", "cudaGraphLaunch")
+
+
+def _launch_counts(prof, steps: int, cuda: bool = True) -> dict:
+    """Per step (or minibatch) from a profiler run of `steps`: runtime kernel-launch calls (``LAUNCH_CALLS``; a CUDA
+    graph replay counts once, as ``graph_launches`` too), device kernels / memcpy+memset ops executed and their summed
+    device time (GPU busy ms; one stream, so no overlap), and the aten op calls on the host, nested ones included (cpu:
+    the work units). Without `cuda` the device fields are None."""
+    from torch.autograd import DeviceType
+
+    n = max(steps, 1)
+    evs = prof.key_averages()
+    launches = graphs = aten = 0
+    dev_ops = 0
+    busy_us = 0.0
+    for e in evs:
+        dt = getattr(e, "device_type", DeviceType.CPU)
+        if dt == DeviceType.CPU:
+            if e.key in LAUNCH_CALLS:
+                launches += e.count
+                graphs += e.count if e.key == "cudaGraphLaunch" else 0
+            elif e.key.startswith("aten::"):
+                aten += e.count
+        elif dt == DeviceType.CUDA:
+            dev_ops += e.count
+            busy_us += getattr(e, "self_device_time_total", None) or getattr(e, "self_cuda_time_total", 0.0) or 0.0
+    if not cuda:
+        return {"launch_calls": None, "graph_launches": None, "device_ops": None, "gpu_busy_ms": None,
+                "aten_ops": aten / n}
+    return {"launch_calls": launches / n, "graph_launches": graphs / n, "device_ops": dev_ops / n,
+            "gpu_busy_ms": busy_us / 1000.0 / n, "aten_ops": aten / n}
+
+
+def _trace_path(a, name: str) -> Path:
+    d = Path(a.trace_dir) if getattr(a, "trace_dir", None) else (Path(a.json).parent if getattr(a, "json", None)
+                                                                  else Path("bench-traces"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{name}.trace.json"
+
+
 def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.device, log) -> dict:
     from .model import Policy, activation_bytes_per_sample, model_arch, param_count
     from .ppo import (InferenceRunner, MinibatchUpdater, check_compiled, check_compiled_forward, resolve_config,
@@ -300,6 +351,14 @@ def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.devic
             run_updates(a.profile_steps)
             _sync(device)
         out["profile"] = pr = _profile_table(prof, device, a.profile_steps, a.top)
+        lc = _launch_counts(prof, a.profile_steps, device.type == "cuda")
+        pr["launch_calls_per_minibatch"] = lc["launch_calls"]
+        pr["graph_launches_per_minibatch"] = lc["graph_launches"]
+        if device.type == "cuda":           # kernel time vs the unprofiled minibatch time
+            out["gpu_idle_frac"] = max(0.0, 1.0 - lc["gpu_busy_ms"] / out["update_ms"])
+        tp = _trace_path(a, f"update-{mode}-b{B}")
+        prof.export_chrome_trace(str(tp))
+        out["trace"] = str(tp)
         log(f"   profile, top aten ops by {pr['basis']} per minibatch ({a.profile_steps} minibatches):")
         for r in pr["ops"]:
             log(f"     {r['share'] * 100:5.1f}%  {r['self_ms']:8.2f} ms  {r['calls']:5d}x  {r['op'][:100]}")
@@ -321,7 +380,7 @@ def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.devic
         x = obs_to_device(obs, device, max_rows=R, static=static)
         act_, logp, value = runner.sample(x)
         istore.put(0, x, obs)
-        return act_.cpu().numpy(), logp.cpu().numpy(), value.cpu().numpy()
+        return read_back(act_, logp, value)
 
     if mode != "off" and a.check:
         x = obs_to_device(obs, device, max_rows=R, static=static)
@@ -348,7 +407,22 @@ def _bench_mode(a, mode: str, spec: ModelSpec, dtypes: dict, device: torch.devic
         f"+ host copies; {out['infer_samples_per_s']:,.0f} samples/s), forward alone {out['infer_forward_ms']:.1f} ms"
         + (f"; dynamo: {out.get('unique_graphs')} graphs, {out.get('graph_breaks')} graph breaks"
            if mode != "off" and "unique_graphs" in out else ""))
+    log(update_line(out))
     return out
+
+
+def _fmt(v, spec: str = ".1f", none: str = "-") -> str:
+    return none if v is None else format(v, spec)
+
+
+def update_line(r: dict) -> str:
+    """The one-line summary of a bench-update result (grep-able: ``bench-update mode=...``)."""
+    pr = r.get("profile") or {}
+    return (f"bench-update mode={r['mode']} B={r['minibatch']} update_ms={r['update_ms']:.2f} "
+            f"rollout_step_ms={r['rollout_step_ms']:.2f} forward_ms={r['infer_forward_ms']:.2f} "
+            f"peak_mb={_fmt(r.get('gpu_peak_mb'), '.0f')} kernels={_fmt(pr.get('kernels_per_minibatch'), 'd')} "
+            f"launches={_fmt(pr.get('launch_calls_per_minibatch'), '.0f')} "
+            f"gpu_idle={_fmt(r.get('gpu_idle_frac'), '.0%')} device={r['device']}")
 
 
 def bench_update(a, log=print) -> list[dict]:
@@ -389,6 +463,199 @@ def bench_update(a, log=print) -> list[dict]:
             log(f"   {r['label']:<44} update {r['update_ms']:8.1f} ms/minibatch "
                 f"(x{base['update_ms'] / r['update_ms']:.2f})   rollout step {r['rollout_step_ms']:7.1f} ms "
                 f"(x{base['rollout_step_ms'] / r['rollout_step_ms']:.2f})")
+    if a.json:
+        Path(a.json).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.json).write_text(json.dumps({"torch": torch.__version__, "device": str(device), "results": results},
+                                           indent=1, default=str))
+    return results
+
+
+# ------------------------------------------------------------------------------------------------ bench-rollout
+
+
+def _rollout_mode(a, mode: str, N: int, spec: ModelSpec, dtypes: dict, device: torch.device, log) -> dict:
+    """One (compile mode, batch) of ``bench-rollout``: the trainer's rollout-inference window on random observations."""
+    from .model import Policy, model_arch, param_count
+    from .ppo import InferenceRunner, check_compiled_forward, resolve_config, use_static_rows
+
+    given = {k: getattr(a, k) for k in ("d", "s", "depth", "heads", "ff_mult") if getattr(a, k, None) is not None}
+    if a.preset:
+        given["preset"] = a.preset
+    given.update(max_rows=a.max_rows, compile=mode, amp=bool(a.amp), deck_counts=bool(getattr(a, "deck_counts", False)))
+    if a.static_rows is not None:
+        given["static_rows"] = a.static_rows
+    cfg = resolve_config(given)
+    arch = model_arch(cfg)
+    static = use_static_rows(cfg)
+    amp = cfg.amp and device.type == "cuda"
+    R, T = cfg.max_rows, int(a.rollout_steps)
+    torch.manual_seed(a.seed)
+    rng = np.random.default_rng(a.seed)
+    model = Policy(spec, **arch).to(device).eval()
+    runner = InferenceRunner(model, amp, mode, device, static=static)
+    label = f"compile={mode}" + (" static-rows" if static else " dynamic-rows") + (" amp" if amp else "")
+    log(f"== {label}: {param_count(model):,} parameters ({', '.join(f'{k}={v}' for k, v in arch.items())}), envs {N}, "
+        f"{T} steps, max_rows {R}, device {device}")
+    obs_v = [random_obs(spec, N, rng, dtypes=dtypes, max_cand=R, max_prompt=R) for _ in range(2)]   # alternating
+    store = RolloutStore(spec, T, N, R, dtypes, device)
+    ph = InferPhases(device)
+
+    def window(steps: int) -> None:
+        """`steps` rollout steps + the bootstrap forward, as ``ppo.train`` runs them (the env step omitted)."""
+        for t in range(steps):
+            obs = obs_v[t % 2]
+            ph.begin("track")
+            cand_n = obs["cand_n"].copy()
+            ph.to("h2d")
+            x = obs_to_device(obs, device, max_rows=R, static=static)
+            ph.to("forward")
+            act_, logp, value = runner.sample(x)
+            ph.to("store")
+            store.put(t, x, obs)
+            ph.to("sample_d2h")
+            a_h, logp_h, value_h = read_back(act_, logp, value)
+            ph.to("track", synced=True)
+            a_np = a_h.astype(np.int32)
+            valid = cand_n > 0
+            a_np[~valid] = -1
+            ph.to("store", host=True)
+            store.actions[t] = np.maximum(a_np, 0)
+            store.logp[t] = logp_h
+            store.values[t] = value_h
+            store.valid[t] = valid
+            ph.end()
+        ph.begin("h2d")
+        x = obs_to_device(obs_v[steps % 2], device, max_rows=R, static=static)
+        ph.to("forward")
+        _, last_v = runner.forward(x)
+        ph.to("sample_d2h")
+        last_v.cpu().numpy()
+        ph.end(synced=True)
+        ph.flush()
+
+    out = {"mode": mode, "label": label, "static_rows": static, "amp": amp, "params": param_count(model),
+           "arch": arch, "envs": N, "rollout_steps": T, "max_rows": R, "device": str(device),
+           "store_mb": round(store.nbytes / 2 ** 20, 1)}
+    tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
+    if mode != "off" and a.check:
+        t0 = time.perf_counter()
+        x = obs_to_device(obs_v[0], device, max_rows=R, static=static)
+        out["check_forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
+        out["compile_s"] = round(time.perf_counter() - t0, 1)
+        log(f"   numerics (rollout forward, compiled vs eager): logits rel {chk['logits_rel']:.1e}, values rel "
+            f"{chk['value_rel']:.1e} (tol {chk['tol']:g}): {'OK' if chk['ok'] else 'MISMATCH'}; compile "
+            f"{out['compile_s']} s")
+    t0 = time.perf_counter()
+    for _ in range(a.warmup):
+        ph.reset()
+        window(T)
+    _sync(device)
+    out["warmup_s"] = round(time.perf_counter() - t0, 2)
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    acc = dict.fromkeys(PHASES, 0.0)
+    walls = []
+    for _ in range(a.repeats):
+        ph.reset()
+        t0 = time.perf_counter()
+        window(T)
+        walls.append(time.perf_counter() - t0)
+        for p in PHASES:
+            acc[p] += ph.acc[p]
+    wall = sum(walls)
+    per = max(a.repeats * (T + 1), 1)               # T steps + the bootstrap forward per window
+    out.update(window_s=round(wall / max(a.repeats, 1), 4), step_ms=1000 * wall / per,
+               phase_ms={METRIC_KEYS[p]: 1000 * acc[p] / per for p in PHASES},
+               phase_sum_ms=1000 * sum(acc.values()) / per, samples_per_s=a.repeats * T * N / wall)
+    if device.type == "cuda":
+        out["gpu_peak_mb"] = round(torch.cuda.max_memory_allocated(device) / 2 ** 20, 1)
+    x = obs_to_device(obs_v[0], device, max_rows=R, static=static)
+    _sync(device)
+    t0 = time.perf_counter()
+    for _ in range(T):
+        runner.forward(x)
+    _sync(device)
+    out["forward_ms"] = 1000 * (time.perf_counter() - t0) / T
+    out.update(_dynamo_counts())
+
+    if a.kernel_count or a.profile:
+        try:
+            from torch.profiler import ProfilerActivity, profile
+        except Exception:                           # noqa: BLE001 - optional
+            profile = None
+        if profile is not None:
+            acts = [ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if device.type == "cuda" else [])
+            k = max(1, min(int(a.profile_steps), T))
+            ph.reset()
+            with profile(activities=acts) as prof:
+                window(k)
+                _sync(device)
+            lc = _launch_counts(prof, k + 1, device.type == "cuda")
+            out["profile"] = {f"{n}_per_step": v for n, v in lc.items()}
+            if device.type == "cuda":               # kernel time vs the unprofiled step time
+                out["gpu_idle_frac"] = max(0.0, 1.0 - lc["gpu_busy_ms"] / out["step_ms"])
+            if a.profile:
+                tp = _trace_path(a, f"rollout-{mode}-n{N}")
+                prof.export_chrome_trace(str(tp))
+                out["trace"] = str(tp)
+    pm = out["phase_ms"]
+    log(f"   rollout window: {out['step_ms']:.2f} ms per step ({a.repeats} x {T} steps + bootstrap after {a.warmup} "
+        f"warm-up; {out['samples_per_s']:,.0f} samples/s): " + ", ".join(f"{p} {pm[METRIC_KEYS[p]]:.2f}" for p in PHASES)
+        + f" ms; forward alone {out['forward_ms']:.2f} ms"
+        + (f"; GPU peak {out['gpu_peak_mb']:,.0f} MB" if "gpu_peak_mb" in out else ""))
+    log(rollout_line(out))
+    return out
+
+
+def rollout_line(r: dict) -> str:
+    """The one-line summary of a bench-rollout result (grep-able: ``bench-rollout mode=...``)."""
+    pm, pr = r["phase_ms"], r.get("profile") or {}
+    return (f"bench-rollout mode={r['mode']} envs={r['envs']} steps={r['rollout_steps']} step_ms={r['step_ms']:.2f} "
+            + " ".join(f"{p}={pm[METRIC_KEYS[p]]:.2f}" for p in PHASES)
+            + f" forward_only_ms={r['forward_ms']:.2f} launches={_fmt(pr.get('launch_calls_per_step'), '.0f')} "
+              f"kernels={_fmt(pr.get('device_ops_per_step'), '.0f')} aten_ops={_fmt(pr.get('aten_ops_per_step'), '.0f')} "
+              f"gpu_idle={_fmt(r.get('gpu_idle_frac'), '.0%')} peak_mb={_fmt(r.get('gpu_peak_mb'), '.0f')} "
+              f"device={r['device']}")
+
+
+def bench_rollout(a, log=print) -> list[dict]:
+    """`sts2train bench-rollout`: one result per (compile mode in `--modes`, batch in `--envs`)."""
+    from .ppo import cap_mps_memory, pick_device
+
+    device = pick_device(a.device)
+    if device.type == "mps":
+        cap_mps_memory(log)
+    torch.set_num_threads(a.torch_threads or min(os.cpu_count() or 4, 16))
+    if device.type == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    spec, dtypes = load_spec(a.spec)
+    bind_spec(spec)
+    log(f"bench-rollout: torch {torch.__version__}, device {device}"
+        + (f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else "") + f", schema {spec.encoder_version}")
+    if device.type != "cuda":
+        log("NOTE: cpu / mps numbers only validate the code paths; the numbers that matter come from the training GPU "
+            "(A100): run the same command there with --device cuda.")
+    modes = [m.strip() for m in (a.modes or a.compile or "off").split(",") if m.strip()]
+    envs = [int(e) for e in str(a.envs).split(",") if e.strip()]
+    results = []
+    for mode in modes:
+        for N in envs:
+            with contextlib.suppress(Exception):
+                from torch._dynamo.utils import counters
+
+                torch._dynamo.reset()
+                counters.clear()
+            results.append(_rollout_mode(a, mode, N, spec, dtypes, device, log))
+            gc.collect()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+    if len(results) > 1:
+        log("summary (per step; speed-up vs the first mode at the same batch):")
+        for r in results:
+            base = next(b for b in results if b["envs"] == r["envs"])
+            log(f"   {r['label']:<36} envs {r['envs']:>6}  {r['step_ms']:8.2f} ms/step (x{base['step_ms'] / r['step_ms']:.2f})"
+                f"  forward {r['forward_ms']:7.2f} ms (x{base['forward_ms'] / r['forward_ms']:.2f})")
     if a.json:
         Path(a.json).parent.mkdir(parents=True, exist_ok=True)
         Path(a.json).write_text(json.dumps({"torch": torch.__version__, "device": str(device), "results": results},

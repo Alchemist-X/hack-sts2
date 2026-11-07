@@ -224,6 +224,70 @@ PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3 sts2train bench-update --preset small --min
     --modes off,default
 ```
 
+## Throughput measurement (wave 21)
+
+Operator-level work on the trainer starts from measurements. On the Colab A100 (12 vCPU, 2048 envs x 64 steps, mid
+preset, bf16, `--compile default`) one update is ~12.9 s: env 5.3 s, rollout inference 2.4 s, update 3.2 s.
+
+**Phase split of `t_infer_s`** (`sts2train/phases.py`, every metrics.jsonl row, both `--overlap` modes; t_* keys only,
+so the golden comparisons ignore them):
+
+| key | what |
+| --- | --- |
+| `t_h2d_s` | observations host -> device (`obs_to_device`: pinned staging copies + async uploads) |
+| `t_forward_s` | policy forward with logit adjustment, masking, the categorical draw and the exploration mixture; the first update's compiled-vs-eager check; the aux heads' bootstrap pass |
+| `t_store_s` | rollout store writes (`RolloutStore.put` / `put_rows`, the host per-step arrays) |
+| `t_sample_d2h_s` | actions / log-probs / values device -> host |
+| `t_track_s` | Python bookkeeping inside the timer (cand_n copy, aux targets, breaker / cycle commits, run stats) |
+
+The five keys add up to `t_infer_s` (tests: within 2 % plus rounding). On the cpu they are host wall times. On CUDA the
+host only enqueues work and waits once per step, in the readback, so a CUDA event is recorded at each phase boundary
+of the step's device chain and once right after the readback. The stream is idle at that point, so that event's
+timestamp is the host time. Each phase is charged from the later of its own host end and its device work's completion.
+The sum stays the wall time, and the readback's wait goes to the phase whose kernels it waited for, usually the
+forward. No sync is added: the events are read once per update after the bootstrap readback (`InferPhases.flush`).
+On mps the split is host times only, so the waits stay in `t_sample_d2h_s`.
+
+**Stacked readback.** On CUDA, actions, log-probs and values come back in one device->host copy of their bytes
+(`phases.read_back`: uint8 views concatenated on the device, re-viewed on the host). The bytes are the same as the
+three `.cpu()` copies of before, NaN payloads and signed zeros included. That gives one blocking transfer per step
+instead of three. `tests/test_phases.py` runs `train()` with the stacked path forced on the cpu against the separate
+copies: weights, metrics (t_* aside) and episodes are equal bit for bit. A pre/post run of three small configs (off,
+`--overlap double`, `--rollout-loop-breaker --aux-heads`) also gave the same weights, metrics and episodes.
+
+**Benchmarks.** `bench-update` times the minibatch update (synthetic rollout store) and now also prints one
+`bench-update mode=... update_ms=... kernels=... launches=... gpu_idle=...` line per mode. `--profile` adds launch
+counts, the GPU idle fraction and a chrome trace (`--trace-dir`; default: the `--json` directory, else `./bench-traces`).
+`bench-rollout` times the trainer's rollout-inference window: T steps (`--rollout-steps`, default 64) of upload, forward +
+sampling, store write and readback into a T-step `RolloutStore`, plus the bootstrap forward. It runs per compile mode
+(`--modes`) and per batch size (`--envs 2048,4096`). Each result reports:
+
+- per-step ms and its phase split (the same `InferPhases`);
+- the forward alone;
+- peak device memory;
+- from a short profiler pass (`--profile-steps`, default 8; `--no-kernel-count` skips it): runtime kernel-launch calls
+  per step (a CUDA-graph replay is one `cudaGraphLaunch`), device kernels per step, GPU busy ms, and the GPU idle
+  fraction (`1 - busy / unprofiled step time`).
+
+`--profile` writes the chrome trace. Each result also prints a one-line `bench-rollout mode=... envs=... step_ms=...`
+summary; `--json` writes everything.
+
+```bash
+# the A100 runs (Colab bundle; not on a runtime that trains)
+sts2train bench-update --preset mid --minibatch 4096 --envs 2048 --device cuda --amp \
+    --modes off,default,reduce-overhead --warmup 5 --steps 20 --profile --json OUT/bench-update.json
+sts2train bench-rollout --preset mid --envs 2048,4096 --rollout-steps 64 --device cuda --amp \
+    --modes off,default,reduce-overhead --warmup 1 --repeats 3 --profile --json OUT/bench-rollout.json
+# cpu: code-path check only (tests/test_phases.py, a few seconds)
+sts2train bench-rollout --d-model 32 --state-dim 64 --depth 1 --heads 2 --ff-mult 2 --device cpu --envs 8,16 \
+    --rollout-steps 4 --repeats 2
+```
+
+What to read off: if `t_forward_s` dominates `t_infer_s` and `bench-rollout` shows a GPU idle fraction well above 0
+with hundreds of launches per step, the forward is launch-bound. `reduce-overhead` (CUDA graphs) on the rollout
+forward is then the lever (F5 item 2). If `t_h2d_s` is large, the pinned observation arena is the lever (F5 item 3).
+No adoption decision is made here.
+
 ## Rollout overlap (`--overlap off|double`)
 
 `--overlap off` (default) is the serial rollout: per step, the forward of all N slots, then the env step of all N
@@ -274,7 +338,8 @@ python sim/tools/train/bench/overlap_bench.py --device cuda --envs 1024 --rollou
 | `heads.py` | `--aux-heads`: `AuxTargets` (per-window targets and masks of the win-probability / combat-hp heads), `aux_losses`, `HEAD_OUTPUTS` (the definitions checkpoints record) |
 | `model.py` | `Policy`: id embeddings for cards, relics, potions, powers, monsters, encounters, events, orbs, enchantments, afflictions, card vars and every enum; per-table row MLPs (hand / card reward share one card encoder; deck and piles are embedding bags; map nodes, prompt options single layer) with masked mean pooling; optional transformer trunk; candidate scorer whose first layer is factored per source (kind, A/B, hand_slot → hand row, target_slot → enemy row, potion_slot → potion row, option_index → the option bank of its kind, card_id → card embedding, state) and scored bilinearly against the state; masked to `j < cand_n`; value head. `PRESETS`; `MODEL_FLAGS` (`aux_heads`, `deck_counts`: optional parts, created last) |
 | `ppo.py` | `TrainConfig`, `plan_run` (fresh / resume config resolution), `train` (PPO: GAE, clipped policy and value loss, entropy bonus, Adam, optional bf16 autocast on CUDA, TF32 on CUDA), `ppo_loss` / `MinibatchUpdater` / `InferenceRunner` (the update step and rollout forward, eager or compiled) and `check_compiled`, checkpoints, status / metrics / evals, budget and signal handling, uniform-random baseline |
-| `bench.py` | `sts2train bench-update`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table |
+| `bench.py` | `sts2train bench-update` / `bench-rollout`: random observations of the schema's shapes and value ranges (`random_obs`), timing of `ppo.MinibatchUpdater` / `ppo.InferenceRunner` per compile mode, eager-vs-compiled check, profiler table, launch counts, GPU idle fraction, chrome traces; `bench-rollout` = the 64-step rollout-inference window with the phase split (wave 21) |
+| `phases.py` | wave 21: `InferPhases` (the t_h2d_s / t_forward_s / t_store_s / t_sample_d2h_s / t_track_s split of `t_infer_s`, CUDA events read once per update) and `read_back` (one stacked D2H copy of actions / log-probs / values) |
 | `runlog.py` | atomic writes, `JsonlWriter`, `CheckpointManager` (rotation, `best.pt`) |
 | `objective.py` | `EpisodeRewards`: per-slot reward of the `protocol` / `win` / `shaped` objective and finished-episode records (protocol progress fields + the episode's return); `AcqShaping` (`--acq-shaping`), `HpShaping` (`--hp-shaping-coef`), `ShapingSet` |
 | `startpool.py` | `--start-saves`: `probe_saves` (import every save once, first observation, skip reasons), `plan_layout` (interleaved fresh / save entry layout for the requested mix), `build_start_pool` (fills the env's pool; determinized or exact save copies), `split_stats` (the `fresh_*` / `save_*` / `harvest_*` metrics) |

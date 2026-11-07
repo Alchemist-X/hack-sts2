@@ -123,6 +123,7 @@ from .objective import OBJECTIVES, EpisodeRewards, annotate_shaping, boss_hp_sta
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
 from .overlap import OVERLAP_MODES, LaneStreamEnv, OverlapRollout, VecPair
+from .phases import InferPhases, read_back
 from .seedstream import (START_MODES, PoolStarts, SeedStream, StreamEnv, lookahead_of, max_lookahead,
                          stream_prefix)
 from .startpool import recent_sums, recent_view, split_stats, start_pool_from_config, uses_start_saves
@@ -1777,6 +1778,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         adam_step = optimizer_step(opt)
         updater = MinibatchUpdater(model, opt, cfg, amp, device)
         runner = InferenceRunner(model, amp, cfg.compile, device, static=static)
+        phases = InferPhases(device)        # wave 21: t_infer_s -> t_h2d_s / t_forward_s / t_store_s / ... (t_* only)
         tf32 = device.type == "cuda" and torch.backends.cuda.matmul.allow_tf32
         compile_check: dict = {}            # eager vs compiled, once per session (first rollout step / minibatch)
         log(f"device: {device}" + (" [bf16 autocast]" if amp else "")
@@ -2071,13 +2073,17 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             n_steps = se_n = cg_n = il_n = over_n = fs_n = 0
             model.eval()
             ov_st = None
+            phases.reset()
             if ov is None:
                 for t in range(cfg.rollout):
                     t0 = time.monotonic()
+                    phases.begin("track")               # wave 21: t_infer_s split (sts2train.phases)
                     cand_n = obs["cand_n"].copy()
                     if aux_tg is not None:
                         aux_tg.before(t, obs["aux"])
+                    phases.to("h2d")
                     x = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+                    phases.to("forward")
                     if runner.compiled is not None and "forward" not in compile_check:
                         compile_check["forward"] = chk = check_compiled_forward(runner, x, amp=amp, tf32=tf32)
                         log(f"compiled rollout forward vs eager: logits rel {chk['logits_rel']:.2e}, values rel "
@@ -2098,8 +2104,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         ex_mask[t] = explorer.last_explored
                     if ex_item is not None:
                         ex_item[t] = explorer.last_explored_item
+                    phases.to("store")
                     store.put(t, x, obs)
-                    a_np = a.cpu().numpy().astype(np.int32)
+                    phases.to("sample_d2h")
+                    a_h, logp_h, value_h = read_back(a, logp, value)    # one D2H copy on CUDA (same bytes)
+                    phases.to("track", synced=True)
+                    a_np = a_h.astype(np.int32)
                     valid = cand_n > 0
                     a_np[~valid] = -1
                     if breaker is not None:
@@ -2107,10 +2117,12 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                     cycles.commit(a_np, obs)            # sts2train.cycles: the actions taken here (obs still this step's)
                     if run_stats is not None:           # episodes.jsonl fields: the observation decided at (pre-step)
                         run_stats.observe(obs)
+                    phases.to("store", host=True)
                     store.actions[t] = np.maximum(a_np, 0)
-                    store.logp[t] = logp.cpu().numpy()
-                    store.values[t] = value.cpu().numpy()
+                    store.logp[t] = logp_h
+                    store.values[t] = value_h
                     store.valid[t] = valid
+                    phases.end()
                     t1 = time.monotonic()
                     obs, rew, term, trunc, status, info = env.step(a_np)
                     t2 = time.monotonic()
@@ -2176,26 +2188,35 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                                    static=static, track=track, steps=cfg.rollout, cycle_cost=cyc_cost, r_obj=r_obj,
                                    cyc_r=cyc_r, adv_w=adv_w, ex_mask=ex_mask, ex_item=ex_item, hooks_on=hooks_on, episode_hooks=episode_hooks,
                                    episode_fields=EPISODE_HOOKS.fields, errors_seen=errors_seen,
-                                   check_forward=check_forward if runner.compiled is not None else None)
+                                   check_forward=check_forward if runner.compiled is not None else None,
+                                   phases=phases)
                 env_s, infer_s = ov_st["env_s"], ov_st["infer_s"]
                 n_steps, se_n, cg_n, il_n = ov_st["n_steps"], ov_st["se_n"], ov_st["cg_n"], ov_st["il_n"]
                 over_n, fs_n, ep_this = ov_st["over_n"], ov_st["fs_n"], ov_st["ep_this"]
                 obs = env.obs
             # bootstrap value of the state after the rollout
             t0 = time.monotonic()
+            phases.begin("h2d")
             x_last = obs_to_device(obs, device, max_rows=cfg.max_rows, static=static)
+            phases.to("forward")
             _, last_v = runner.forward(x_last)
+            phases.to("sample_d2h")
             last_v = last_v.cpu().numpy()
+            phases.to("track", synced=True)
             aux_np, aux_st = (), {}
             if aux_tg is not None:                  # the heads at the state after the window (bootstrap targets)
+                phases.to("forward")                # (with their readback: two small tensors behind the pass)
                 with torch.no_grad(), _autocast(amp):
                     _, _, hb = model(x_last, aux=True)
                 win_b, cmb_b = (torch.sigmoid(hb[k]).cpu().numpy() for k in ("win_logit", "combat_logit"))
+                phases.to("track", synced=True)
                 *aux_np, aux_st = aux_tg.targets(win_b, cmb_b)
                 in_cmb = obs["aux"][:, spec.aux_fields.index("is_combat")] != 0
                 aux_st.update(aux_win_prob_mean=float(win_b.mean()),
                               aux_combat_pred_mean=float(cmb_b[in_cmb].mean()) if in_cmb.any() else None)
+            phases.end()
             infer_s += time.monotonic() - t0
+            phases.flush()                          # the update's CUDA events (the readbacks above synchronised)
             adv = np.zeros_like(store.rewards)
             gae = np.zeros(cfg.envs, dtype=np.float32)
             for t in reversed(range(cfg.rollout)):
@@ -2350,7 +2371,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                    "t_ckpt_s": round(ckpt_s, 3), "t_eval_s": round(eval_s, 3),
                    **({"t_eval_at_s": round(eval_at_s, 3)} if eval_at or cfg.eval_at_every else {}),
                    "t_other_s": round(iter_s - env_s - infer_s - update_s - ckpt_s - eval_s, 3),
-                   "t_total_s": round(iter_s, 3),
+                   "t_total_s": round(iter_s, 3), **phases.metrics(),
                    **({"t_overlap_wait_s": round(ov_st["wait_s"], 3), "t_rollout_s": round(ov_st["rollout_s"], 3)}
                       if ov_st is not None else {}),
                    "sim_error": se_n, "content_gap": cg_n, "illegal": il_n,

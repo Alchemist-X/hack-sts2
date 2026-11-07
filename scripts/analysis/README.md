@@ -7,3 +7,10 @@
   relics at death, death room kind, per-encounter exposure from eval `fights`; a data-gaps line per label. Stdlib only:
   `python3 -I scripts/analysis/death_profile.py M=<eval dir> T=<episodes.jsonl>@2065-2264`. Method:
   `docs/diag-2026-11-05/death-analysis-m-u2264.md`; tests: `sim/tools/train/tests/test_death_profile.py`.
+- `bench_report.py` — throughput bench results (THRU-MEASURE) in, a table and a recommendation out:
+  `sts2train bench-update` / `bench-rollout` `--json` files (per mode: ms per minibatch and per rollout step projected
+  to seconds per training update, speed-up vs off, peak GPU MB, kernel launches, compiled-vs-eager checks) and the
+  overlap preflight's `bench.json` / `decision.txt` (r_inf <= 1.4 rule). Recommends the fastest passing compile mode
+  (split into `--compile-update` / `--compile-infer` when the winners differ) only above `--min-gain` of the projected
+  live update time, and whether `--overlap double` is worth it. Stdlib only:
+  `python3 -I scripts/analysis/bench_report.py runs/bench-w21/evals`; tests: `sim/tools/train/tests/test_bench_report.py`.

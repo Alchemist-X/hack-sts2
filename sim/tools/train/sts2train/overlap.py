@@ -41,7 +41,9 @@ hook that clones slots into the pool (e.g. a self-anchor harvester) runs per lan
 Timing (metrics.jsonl, only with ``--overlap double``): ``t_env_s`` = the summed native step time of both lanes (worker
 thread, overlapped), ``t_infer_s`` = the main thread's pre phases + the bootstrap forward, ``t_overlap_wait_s`` = the
 main thread blocked on the worker, ``t_rollout_s`` = the rollout's wall time. No overlap gain means ``t_rollout_s ~
-t_env_s + t_infer_s + post``; full overlap ``t_rollout_s ~ max(t_env_s, t_infer_s + post)``.
+t_env_s + t_infer_s + post``; full overlap ``t_rollout_s ~ max(t_env_s, t_infer_s + post)``. The wave-21 split of
+``t_infer_s`` (t_h2d_s / t_forward_s / t_store_s / t_sample_d2h_s / t_track_s, ``sts2train.phases``) covers the pre
+phases here as in the serial loop.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ from sts2vec import STATUS, VecEnv
 from sts2vec.schema import Buffers
 
 from .features import obs_to_device
+from .phases import InferPhases, read_back
 from .objective import annotate_shaping
 from .seedstream import ERR_BITS, StreamEnv
 
@@ -529,24 +532,29 @@ class OverlapRollout:
 
     def rollout(self, *, upd: int, store, runner, device, max_rows: int, static: bool, track, steps: int,
                 cycle_cost: float, r_obj, cyc_r, hooks_on: bool, adv_w=None, ex_mask=None, ex_item=None, episode_hooks, episode_fields, errors_seen: dict,
-                check_forward=None) -> dict:
+                check_forward=None, phases: InferPhases | None = None) -> dict:
         """One rollout window of `steps` into `store` (rows of both lanes). Returns the loop's counters as ``train``
         keeps them for one env: env_s, infer_s, wait_s, rollout_s, n_steps, se_n, cg_n, il_n, over_n, fs_n,
-        ep_this."""
+        ep_this. `phases` (wave 21): the trainer's ``InferPhases``, fed the pre phases (the bootstrap is the
+        trainer's)."""
         T = int(steps)
         A, B = self.lanes
         acc = dict(env_s=0.0, infer_s=0.0, wait_s=0.0, n_steps=0, se_n=0, cg_n=0, il_n=0, over_n=0, fs_n=0)
         ep_this: list[dict] = []
         views = {L.k: self._views(L) for L in self.lanes}
         t_start = time.monotonic()
+        ph = phases if phases is not None else InferPhases("cpu")
 
         def pre(L: Lane, t: int) -> np.ndarray:
             t0 = time.monotonic()
+            ph.begin("track")
             o = views[L.k]
             cand_n = o["cand_n"].copy()
             if L.aux_tg is not None:
                 L.aux_tg.before(t, o["aux"])
+            ph.to("h2d")
             x = obs_to_device(o, device, max_rows=max_rows, static=static)
+            ph.to("forward")
             if check_forward is not None:
                 check_forward(x)
             ex_kw = {}
@@ -563,8 +571,12 @@ class OverlapRollout:
                 ex_mask[t, L.lo:L.hi] = self.explorer.last_explored
             if ex_item is not None:         # --explore-push-step: their explore items
                 ex_item[t, L.lo:L.hi] = self.explorer.last_explored_item
+            ph.to("store")
             store.put_rows(t, L.lo, L.hi, x, o)
-            a_np = a.cpu().numpy().astype(np.int32)
+            ph.to("sample_d2h")
+            a_h, logp_h, value_h = read_back(a, logp, value)            # one D2H copy on CUDA (same bytes)
+            ph.to("track", synced=True)
+            a_np = a_h.astype(np.int32)
             valid = cand_n > 0
             a_np[~valid] = -1
             if L.breaker is not None:
@@ -572,11 +584,13 @@ class OverlapRollout:
             L.cycles.commit(a_np, o)
             if L.run_stats is not None:                     # the observation decided at (before this lane's step)
                 L.run_stats.observe(o)
+            ph.to("store", host=True)
             store.actions[t, L.lo:L.hi] = np.maximum(a_np, 0)
-            store.logp[t, L.lo:L.hi] = logp.cpu().numpy()
-            store.values[t, L.lo:L.hi] = value.cpu().numpy()
+            store.logp[t, L.lo:L.hi] = logp_h
+            store.values[t, L.lo:L.hi] = value_h
             store.valid[t, L.lo:L.hi] = valid
             L.cand_n, L.valid = cand_n, valid
+            ph.end()
             acc["infer_s"] += time.monotonic() - t0
             return a_np
 

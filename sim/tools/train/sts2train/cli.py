@@ -1,7 +1,8 @@
 """sts2train CLI (also installed as ``sts2train-smoke``): ``train`` (PPO), ``eval`` (protocol v0.2 NN entry point; exit
 1 when the replay audit fails, like ``sts2vec eval``; greedy / sampled, loop breaker on / off, repeats, slices),
 ``compare`` (per-seed paired comparison of evaluations), ``plot`` (curves of a run directory), ``bench-update``
-(synthetic timing of the PPO update and the rollout forward), ``report-card`` / ``pack`` / ``probe`` (model card,
+(synthetic timing of the PPO update and the rollout forward), ``bench-rollout`` (the rollout-inference window with its
+phase split, wave 21), ``report-card`` / ``pack`` / ``probe`` (model card,
 weights bundle and per-decision readout of a checkpoint: ``sts2train.reportcard``).
 
     sts2train train --preset large --device cuda --envs 2048 --max-hours 6 --eval-every 50 --out RUN_DIR
@@ -458,9 +459,57 @@ def _bench_parser(sub) -> argparse.ArgumentParser:
     b.add_argument("--infer-steps", dest="infer_steps", type=int, default=20, help="timed rollout steps (default 20)")
     b.add_argument("--no-check", dest="check", action="store_false",
                    help="skip the compiled-vs-eager numerics check on one minibatch")
-    b.add_argument("--profile", action="store_true", help="torch.profiler table of the top ops after the timing")
+    b.add_argument("--profile", action="store_true", help="torch.profiler table of the top ops after the timing, "
+                                                           "kernel-launch counts, and a chrome trace (--trace-dir)")
     b.add_argument("--profile-steps", dest="profile_steps", type=int, default=3)
     b.add_argument("--top", type=int, default=15, help="profile rows (default 15)")
+    b.add_argument("--trace-dir", dest="trace_dir",
+                   help="directory of the --profile chrome traces (default: the --json file's directory, else "
+                        "./bench-traces)")
+    b.add_argument("--torch-threads", dest="torch_threads", type=int, default=0)
+    b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--spec", help="checkpoint (.pt) or spec JSON for the shapes (default: the sts2vec library schema)")
+    b.add_argument("--json", help="also write the results to this JSON file")
+    b.set_defaults(compile=None, static_rows=None)
+    return b
+
+
+def _bench_rollout_parser(sub) -> argparse.ArgumentParser:
+    b = sub.add_parser("bench-rollout", help="time the rollout-inference window (T steps + bootstrap) on random inputs",
+                       description="Synthetic benchmark of the trainer's rollout inference (wave 21): T steps of "
+                                   "observation upload, forward + sampling, store write and action readback into a "
+                                   "T-step rollout store plus the bootstrap forward, per compile mode and batch size, "
+                                   "with the trainer's t_h2d / t_forward / t_store / t_sample_d2h / t_track split, "
+                                   "the forward alone, peak device memory, kernel launches per step and the GPU idle "
+                                   "fraction (torch.profiler). The numbers that matter come from the training GPU "
+                                   "(A100); cpu / mps runs only validate the code paths with small settings.")
+    b.add_argument("--preset", choices=sorted(PRESETS), help="architecture preset (default smoke)")
+    b.add_argument("--d-model", dest="d", type=int)
+    b.add_argument("--state-dim", dest="s", type=int)
+    b.add_argument("--depth", type=int)
+    b.add_argument("--heads", type=int)
+    b.add_argument("--ff-mult", dest="ff_mult", type=int)
+    b.add_argument("--device", default="auto", help="cpu | mps | cuda[:i] | auto (default auto)")
+    b.add_argument("--amp", action=argparse.BooleanOptionalAction, default=False, help="bf16 autocast (CUDA only)")
+    _speed_flags(b)
+    b.add_argument("--modes", help="comma-separated compile modes (e.g. off,default,reduce-overhead); overrides --compile")
+    b.add_argument("--deck-counts", dest="deck_counts", action="store_true",
+                   help="the --deck-counts model (count-aware deck / pile pooling)")
+    b.add_argument("--envs", default="2048,4096", help="comma-separated rollout batch sizes (default %(default)s)")
+    b.add_argument("--max-rows", dest="max_rows", type=int, default=64, help="(default 64)")
+    b.add_argument("--rollout-steps", dest="rollout_steps", type=int, default=64,
+                   help="steps per rollout window (the trainer's --rollout; default 64)")
+    b.add_argument("--warmup", type=int, default=1, help="untimed windows first (default 1)")
+    b.add_argument("--repeats", type=int, default=3, help="timed windows (default 3)")
+    b.add_argument("--no-check", dest="check", action="store_false",
+                   help="skip the compiled-vs-eager check of the rollout forward")
+    b.add_argument("--no-kernel-count", dest="kernel_count", action="store_false",
+                   help="skip the short torch.profiler pass (kernel launches per step, GPU idle fraction)")
+    b.add_argument("--profile", action="store_true", help="also write a chrome trace of the profiler pass per result")
+    b.add_argument("--profile-steps", dest="profile_steps", type=int, default=8,
+                   help="rollout steps in the profiler pass (default 8)")
+    b.add_argument("--trace-dir", dest="trace_dir",
+                   help="directory of the chrome traces (default: the --json file's directory, else ./bench-traces)")
     b.add_argument("--torch-threads", dest="torch_threads", type=int, default=0)
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--spec", help="checkpoint (.pt) or spec JSON for the shapes (default: the sts2vec library schema)")
@@ -651,6 +700,7 @@ def main(argv=None) -> int:
     cp.add_argument("--labels", default=None, help="comma-separated arm labels")
     cp.add_argument("--json", default=None, help="also write the full result (per-game differences) to this file")
     _bench_parser(sub)
+    _bench_rollout_parser(sub)
     _card_parsers(sub)
     a = ap.parse_args(argv)
     if a.cmd in ("report-card", "pack", "probe"):
@@ -661,6 +711,15 @@ def main(argv=None) -> int:
         try:
             bench_update(a)
         except (BenchSizeError, ValueError) as e:
+            print(f"error: {e}", flush=True)
+            return 2
+        return 0
+    if a.cmd == "bench-rollout":
+        from .bench import bench_rollout
+
+        try:
+            bench_rollout(a)
+        except ValueError as e:
             print(f"error: {e}", flush=True)
             return 2
         return 0
