@@ -96,6 +96,17 @@ public readonly unsafe struct SlotBuffers
     public Span<float> Aux => Get<float>(Buf.Aux);
     public Span<long> Episode => Get<long>(Buf.Episode);
     public Span<int> LastEpisode => Get<int>(Buf.LastEpisode);
+    public Span<int> GlobalX => Get<int>(Buf.GlobalX);
+    /// <summary>[CAP_HAND * 2], row i = hand row i.</summary>
+    public Span<int> HandX => Get<int>(Buf.HandX);
+    public Span<int> DrawMarked => Get<int>(Buf.DrawMarked);
+    public Span<int> DiscardOrder => Get<int>(Buf.DiscardOrder);
+    public Span<int> ExhaustOrder => Get<int>(Buf.ExhaustOrder);
+    public Span<int> EventOptionValues => Get<int>(Buf.EventOptionValues);
+    /// <summary>[CAP_REWARD_CHOICES * (3 + HC)], row k = rewards-screen choice k (appended 2026-11-04).</summary>
+    public Span<int> RewardChoices => Get<int>(Buf.RewardChoices);
+    /// <summary>[CAP_MAP_ROWS * CAP_MAP_COLS * 5], cell [row][col] = <c>map_nodes</c> cell (appended 2026-11-04).</summary>
+    public Span<int> MapRoutes => Get<int>(Buf.MapRoutes);
 
     public ref int CandN => ref Get<int>(Buf.CandN)[0];
     public ref float Reward => ref Get<float>(Buf.Reward)[0];

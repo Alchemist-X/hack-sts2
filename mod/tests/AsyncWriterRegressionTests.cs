@@ -84,6 +84,11 @@ public sealed class AsyncWriterRegressionTests
             Assert.Equal(
                 LegacyState(7, t, "phase", "combat", hash, serialized),
                 JsonlLine.State(7, t, "phase", "combat", hash, serialized));
+            // The direct-node overload (the recorder hot path) must survive the
+            // same fragile corpus, not just simple payloads.
+            Assert.Equal(
+                LegacyState(7, t, "phase", "combat", hash, serialized),
+                JsonlLine.State(7, t, "phase", "combat", hash, state));
         }
     }
 

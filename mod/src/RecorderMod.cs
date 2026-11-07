@@ -23,7 +23,7 @@ namespace Sts2Recorder.Game;
 [ModInitializer("Initialize")]
 public static class RecorderMod
 {
-    public const string Version = "0.3.0";
+    public const string Version = "0.4.0";
     public const string HarmonyId = "alchemist-x.sts2recorder";
     private const string ConfigFileName = "Sts2Recorder.conf";
 
@@ -61,6 +61,39 @@ public static class RecorderMod
 
     public const double DefaultSnapshotMinIntervalMs = 150;
 
+    /// <summary>
+    /// Trailing-coalesce window for unconditional phase/action snapshot triggers,
+    /// in ms (Sts2Recorder.conf key "burst_min_interval_ms"; 0 disables coalescing
+    /// and restores build-per-trigger). Terminal/combat-end snapshots always bypass.
+    /// </summary>
+    public static double BurstMinIntervalMs { get; private set; } = DefaultBurstMinIntervalMs;
+
+    public const double DefaultBurstMinIntervalMs = 100;
+
+    /// <summary>
+    /// Whether to re-enable the game's singleplayer combat checksum stream
+    /// (Sts2Recorder.conf key "sp_checksum_enabled"). v0.107.1 disables checksum
+    /// computation outside Host/Client/Replay; re-enabling restores the integrity
+    /// events but adds a game-side full-combat-state hash per action/turn, so it
+    /// is opt-in for validation runs rather than always-on.
+    /// </summary>
+    public static bool SpChecksumEnabled { get; private set; } = DefaultSpChecksumEnabled;
+
+    public const bool DefaultSpChecksumEnabled = false;
+
+    /// <summary>
+    /// Whether combat inputs (manual card play, end turn, in-combat potion
+    /// use/discard) take a synchronous pre-input decision snapshot
+    /// (Sts2Recorder.conf key "decision_capture_combat_inputs"). Each capture is
+    /// a full main-thread state build (~8 ms) on every combat input, so it is
+    /// opt-in; with it off those actions keep the 0.3.1 latest-snapshot
+    /// state_seq. Non-combat decision captures (rewards, map, events, shop,
+    /// rest site, selection screens) are always on.
+    /// </summary>
+    public static bool DecisionCaptureCombatInputs { get; private set; } = DefaultDecisionCaptureCombatInputs;
+
+    public const bool DefaultDecisionCaptureCombatInputs = false;
+
     public static void Initialize()
     {
         try
@@ -76,6 +109,7 @@ public static class RecorderMod
             RunLifecycle.ApplyPatches(harmony);
             ActionPipeline.ApplyPatches(harmony);
             HumanFunnels.ApplyPatches(harmony);
+            DecisionHooks.ApplyPatches(harmony);
 
             TrySubscribe("event:RunManager.RunStarted",
                 () => RunManager.Instance.RunStarted += RunLifecycle.OnRunStarted);
@@ -215,7 +249,13 @@ public static class RecorderMod
 
     private static void DrainMainThreadQueue()
     {
-        while (_mainThreadQueue.TryDequeue(out var work))
+        // Drain only what was queued BEFORE this frame's drain began: a callback
+        // that re-enqueues itself (the trailing-snapshot re-defer) must run on
+        // the NEXT ProcessFrame — an unbounded while-TryDequeue would pop the
+        // re-enqueued callback immediately and hot-spin the main thread until
+        // its wall-clock window expired.
+        var budget = _mainThreadQueue.Count;
+        while (budget-- > 0 && _mainThreadQueue.TryDequeue(out var work))
         {
             try
             {
@@ -259,6 +299,22 @@ public static class RecorderMod
                 {
                     SetSnapshotInterval(intervalElem.GetDouble(), ConfigFileName);
                 }
+                if (doc.RootElement.TryGetProperty("burst_min_interval_ms", out var burstElem)
+                    && burstElem.ValueKind == JsonValueKind.Number)
+                {
+                    BurstMinIntervalMs = ValidatedIntervalMs(
+                        burstElem.GetDouble(), "burst_min_interval_ms", ConfigFileName, BurstMinIntervalMs);
+                }
+                if (doc.RootElement.TryGetProperty("sp_checksum_enabled", out var checksumElem)
+                    && checksumElem.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    SpChecksumEnabled = checksumElem.GetBoolean();
+                }
+                if (doc.RootElement.TryGetProperty("decision_capture_combat_inputs", out var combatCaptureElem)
+                    && combatCaptureElem.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    DecisionCaptureCombatInputs = combatCaptureElem.GetBoolean();
+                }
             }
 
             // Process-level overrides make one immutable mod/runtime directory
@@ -301,13 +357,19 @@ public static class RecorderMod
 
     private static void SetSnapshotInterval(double interval, string source)
     {
-        if (interval >= 0 && double.IsFinite(interval))
+        SnapshotMinIntervalMs = ValidatedIntervalMs(
+            interval, "snapshot_min_interval_ms", source, SnapshotMinIntervalMs);
+    }
+
+    /// <summary>Accepts a non-negative finite millisecond value; invalid keeps <paramref name="current"/>.</summary>
+    private static double ValidatedIntervalMs(double value, string key, string source, double current)
+    {
+        if (value >= 0 && double.IsFinite(value))
         {
-            SnapshotMinIntervalMs = interval;
-            return;
+            return value;
         }
         GD.PrintErr(
-            $"[Sts2Recorder] Ignoring invalid snapshot interval {interval} from {source}; "
-            + $"using {SnapshotMinIntervalMs} ms");
+            $"[Sts2Recorder] Ignoring invalid {key}={value} from {source}; using {current} ms");
+        return current;
     }
 }

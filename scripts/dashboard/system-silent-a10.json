@@ -1,0 +1,18 @@
+[
+ {"key": "model_preset", "value": "mid", "note": "实体编码器 PPO（sts2train entity-encoder），策略头 + 价值头 + 辅助胜负 / 战斗头"},
+ {"key": "model_params", "value": 2904208, "note": "约 2.9M 参数（config.json params）"},
+ {"key": "envs", "value": 2048, "note": "并行环境数（--envs）"},
+ {"key": "rollout_steps", "value": 64, "note": "每个 update 每个环境的步数（--rollout）"},
+ {"key": "env_steps_per_update", "value": 131072, "note": "2048 × 64"},
+ {"key": "machine", "value": "Colab A100-SXM4-40GB + 12 vCPU", "note": "每条线一台运行时；环境在 CPU 上并行（12 线程），网络在 GPU 上"},
+ {"key": "gpu_cost_units_per_hour", "value": 6.73, "note": "一台 A100 运行时每小时约耗计算单位"},
+ {"key": "bundle", "value": "bundle-w17", "note": "S 与 C3 当前所用训练包"},
+ {"key": "bundle_sha", "value": "5ad8ef40ca", "note": "sts2train-5ad8ef40ca（S、C3）"},
+ {"key": "env_hash", "value": "sts2vec/3b73317739c650bd", "note": "原生模拟器库版本（Sts2Sim.Vec.so）；所有线一致"},
+ {"key": "seedset_dev128", "value": "silent-a10-dev-v1", "note": "dev-128：每 100 个 update 的固定评测（贪心，breaker 开 / 关）"},
+ {"key": "seedset_ab512", "value": "silent-a10-ab-v1", "note": "ab-512：段终确认集（贪心关 breaker），配对比较用"},
+ {"key": "seedset_blind256", "value": "silent-a10-blind-v1", "note": "blind-256：盲测集，训练期不看"},
+ {"key": "seedset_test100", "value": "silent-a10-test-v1", "note": "test-100：最终测试集，只在结项时用"},
+ {"key": "gcs_bucket", "value": "gomoku-zero-20260816-ai-sts2train", "note": "checkpoint、指标、评测报告的持久化桶；本机镜像每 10 分钟拉取小文件"},
+ {"key": "keepalive_host", "value": "东京 VM（GCP asia-northeast1）", "note": "保活脚本：盯驱动日志，线跑完（\": done\"）后停掉运行时"}
+]

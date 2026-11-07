@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import CanonicalError, JsonlError, RecordError
+from .decision_coverage import audit_decision
 from .legal_actions import audit_action_space, derive_legal_actions
 from .session import (
     ActionRecord,
@@ -167,8 +168,23 @@ def _build_step(
 ) -> dict[str, Any]:
     after_index = bisect_right(state_seqs, action.seq)
     state_after = states[after_index] if after_index < len(states) else None
+    return _resolved_step(step_idx, action, states_by_seq.get(action.state_seq),
+                          state_after, step_events, is_last, manifest)
+
+
+def _resolved_step(step_idx: int, action: ActionRecord,
+                   state_before: StateRecord | None, state_after: StateRecord | None,
+                   step_events: list[dict[str, Any]], is_last: bool,
+                   manifest: Manifest) -> dict[str, Any]:
+    """Shared semantics for full scans and indexed reads; no nearest-state fallback."""
     state_before_estimated = False
-    if action.state_seq is None:
+    action_payload = _action_payload(action)
+    capture = action_payload.get("params", {}).get("_decision", {})
+    explicit_missing = isinstance(capture, dict) and capture.get("status") == "missing"
+    if action.state_seq is None and explicit_missing:
+        # A failed pre-input capture must not be replaced by a future observation.
+        state_before = None
+    elif action.state_seq is None:
         # Contract: the action fired before any snapshot existed. Best effort:
         # use the next snapshot after the action (i.e. state_after) as
         # state_before, flagged so consumers can tell it is not a true
@@ -176,7 +192,6 @@ def _build_step(
         state_before = state_after
         state_before_estimated = True
     else:
-        state_before = states_by_seq.get(action.state_seq)
         if state_before is None:
             raise CanonicalError(
                 f"action seq={action.seq} references state_seq={action.state_seq}, "
@@ -192,9 +207,11 @@ def _build_step(
     }
     if state_before is not None:
         info["legal_actions"] = derive_legal_actions(state_before.state)
-        info["action_space_audit"] = audit_action_space(state_before.state)
+        info["action_space_audit"] = audit_action_space(state_before.state, actions=info["legal_actions"])
     if state_before_estimated:
         info["state_before_estimated"] = True
+    info["decision_audit"] = audit_decision(
+        state_before.state if state_before is not None else None, action_payload)
     if action.status is not None:
         info["action_status"] = action.status
     terminal = False
@@ -205,7 +222,7 @@ def _build_step(
         "step_idx": step_idx,
         "ts": action.t,
         "state_before": state_before.state if state_before is not None else None,
-        "action": _action_payload(action),
+        "action": action_payload,
         "state_after": state_after.state if state_after is not None else None,
         "reward": None,
         "terminal": terminal,
@@ -213,8 +230,14 @@ def _build_step(
     }
 
 
-def build_canonical(session_dir: Path | str) -> dict[str, Any]:
+def build_canonical(session_dir: Path | str, *, cache_dir: Path | str | None = None,
+                    action_seqs: set[int] | None = None) -> dict[str, Any]:
     """Build the canonical {meta, prelude_events, steps[]} trajectory."""
+    if cache_dir is not None:
+        from .indexed_reader import IndexedCanonicalReader
+        with IndexedCanonicalReader(session_dir, cache_dir) as reader:
+            return {"meta": reader.meta, "prelude_events": reader.prelude_events,
+                    "steps": list(reader.steps(action_seqs))}
     session_dir = Path(session_dir)
     manifest = load_manifest(session_dir)
     # incomplete=true (crash-terminated): tolerate one torn FINAL line per
@@ -236,9 +259,9 @@ def build_canonical(session_dir: Path | str) -> dict[str, Any]:
     ordered_events = tuple(sorted(events, key=lambda record: record.seq))
     states_by_seq = {record.seq: record for record in ordered_states}
     state_seqs = [record.seq for record in ordered_states]
-    action_seqs = [record.seq for record in ordered_actions]
+    boundary_action_seqs = [record.seq for record in ordered_actions]
 
-    prelude_events, step_events = _partition_events(ordered_events, action_seqs)
+    prelude_events, step_events = _partition_events(ordered_events, boundary_action_seqs)
     steps = [
         _build_step(
             step_idx=index,
@@ -251,6 +274,7 @@ def build_canonical(session_dir: Path | str) -> dict[str, Any]:
             manifest=manifest,
         )
         for index, action in enumerate(ordered_actions)
+        if action_seqs is None or action.seq in action_seqs
     ]
     return {
         "meta": _build_meta(manifest, session_dir),

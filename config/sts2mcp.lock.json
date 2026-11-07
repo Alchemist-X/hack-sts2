@@ -1,19 +1,70 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "https://github.com/Gennadiyev/STS2MCP.git",
   "commit": "55e064850a68f3b4cde7e5fd525bf9b2dec4e885",
   "upstream_version": "0.4.0",
-  "compatible_game_version": "0.107.1",
-  "compatible_game_commit": "59260271",
-  "release_channel": "stable",
-  "artifact": {
-    "path": "artifacts/mcp/55e064850a68f3b4cde7e5fd525bf9b2dec4e885/STS2_MCP.dll",
-    "sha256": "4de1ca6f53f1cc0ec2ef434696772825e6c3fa09035e2ad0f0df5ebfd7f2eb5b"
+  "compatible_game_version": "0.111.0",
+  "compatible_game_commit": "41cef1ea",
+  "release_channel": "public-beta",
+  "game": {
+    "purpose": "The game build the patch list targets. scripts/build_selection_mcp.sh refuses any other build (release_info.json version + sts2.dll sha256 of the assembly dir it compiles against); a game update starts docs/version-migration-playbook.md.",
+    "version": "v0.111.0",
+    "commit": "41cef1ea",
+    "release_channel": "public-beta",
+    "steam_buildid": 24724944,
+    "sts2_dll_sha256": {
+      "data_sts2_macos_arm64": "9cb4f1ad8c9f284aa8fec3122ffd6d780bbf543d875c817abdd12ff63fbf12b4",
+      "data_sts2_macos_x86_64": "71eec3ba5e0c640fc0cf0758517faf5f2ff039bea21966b22b23f2c427c7a09f",
+      "data_sts2_linuxbsd_x86_64": "2b40d2df538db1ceb5fa48d958c80ab730ada1e07db88a870aff01a661768b9f"
+    },
+    "knowledge_source": "knowledge/source/v0.111.0"
   },
+  "patches": [
+    {
+      "path": "patches/sts2mcp-selection-state.patch",
+      "sha256": "07b56f1c2fe6bccd991fdf827b09b04fba5ddd48efe1f22aaa4c29ffce18b5dc"
+    },
+    {
+      "path": "patches/sts2mcp-rule-evidence.patch",
+      "sha256": "faea11e24ddf18f3eee30b20fec47aa8fdf7a358d9e623400180b2a06bce925f"
+    },
+    {
+      "path": "patches/sts2mcp-action-receipts.patch",
+      "sha256": "f674d5c15d68a5190627c84ff3ccb35db312f5bef2ef1be5b08b245f5c31d000"
+    },
+    {
+      "path": "patches/sts2mcp-seeded-standard-embark.patch",
+      "sha256": "584da3ab10953ff594cdaea1fec8568268c9ca274398afb2a961ba0bf8dd047c"
+    },
+    {
+      "path": "patches/sts2mcp-eval-api.patch",
+      "sha256": "17f51dee1fc583a0de70fef5640f106995339bf7c31dcef1dc5e0f48fc4354d1"
+    },
+    {
+      "path": "patches/sts2mcp-v0111-compat.patch",
+      "sha256": "4ab89087f01077e509a41f49a7d88be3494f8a02ebcd3bffddf1cbf0d1bed62e"
+    }
+  ],
   "build": {
     "dotnet_sdk": "9.0.117",
     "configuration": "Release",
     "deterministic": true
+  },
+  "sandbox_build": {
+    "purpose": "Worker/benchmark MCP: upstream commit + patches (in order) + scripts/McpHeadlessPatcher. Reproducible (SourceLink off, PathMap), so the DLL sha256 is checked per assembly dir.",
+    "build_script": "scripts/build_selection_mcp.sh",
+    "dll_sha256": {
+      "data_sts2_macos_arm64": "83fc6828ce487df685499bd8f594be876fd3b393b119a19f4b5fe30e5d48ff18"
+    },
+    "manifest_sha256": "f64ee11ebfa9f3cc9dfa89d99fa6125c594e3de4a46ac5e1776327f7a80aa3c9",
+    "validated_2026_10_31": "Built in this worktree and again outside any git repo: identical DLL. Same IL (718 method bodies) and user strings as the smoke-tested 768a44c9 build; only MVID and the informational version (no repo commit) differ. Isolated worker reported rules_context v0.111.0 / 41cef1ea / sts2.dll 9cb4f1ad and the eval API; stub run_bench smoke passed.",
+    "human_game_installed": false
+  },
+  "artifact": {
+    "purpose": "Historical: the unpatched upstream build for game 0.107.1. Unpatched upstream does not compile on v0.111.0; build_upstream_mcp.sh refuses other game versions. Workers never use it.",
+    "game_version": "0.107.1",
+    "path": "artifacts/mcp/55e064850a68f3b4cde7e5fd525bf9b2dec4e885/STS2_MCP.dll",
+    "sha256": "4de1ca6f53f1cc0ec2ef434696772825e6c3fa09035e2ad0f0df5ebfd7f2eb5b"
   },
   "sandbox_patch": {
     "purpose": "Disable optional Harmony UI patches and read the worker port from STS2_MCP_PORT.",

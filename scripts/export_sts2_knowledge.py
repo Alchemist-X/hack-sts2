@@ -4,8 +4,10 @@
 The active profile supplies canonical, currently registered card/relic/potion IDs.
 The MCP wiki supplies localized, fully resolved card/relic rules text. The local
 PCK supplies English and Simplified Chinese localization templates. Decompiled
-v0.107.1 source supplies model classes, numeric expressions, upgrades, and enemy
-move state machines. Community opinions intentionally live elsewhere.
+source supplies model classes, numeric expressions, upgrades, and enemy move
+state machines. The game version and commit come from the installed build's
+release_info.json. `--offline` skips the live MCP and exports source plus PCK
+facts only. Community opinions intentionally live elsewhere.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import json
 import mmap
 import os
 import re
+import struct
 import subprocess
 import sys
 import urllib.error
@@ -26,9 +29,23 @@ from pathlib import Path
 from typing import Any
 
 
+# Defaults for callers that do not pass the installed build's identity.
 GAME_VERSION = "0.107.1"
 GAME_COMMIT = "59260271"
 SCHEMA_VERSION = 1
+# ILSpy writes one of two project layouts: `--nested-directories` nests every
+# namespace segment (MegaCrit/sts2/Core/Models/Cards/), while plain `-p` writes
+# one folder per namespace (MegaCrit.Sts2.Core.Models.Cards/).
+NESTED_CORE = "MegaCrit/sts2/Core"
+FLAT_CORE = "MegaCrit.Sts2.Core"
+# scripts/export_sts2_localization.py writes cards/relics/potions/keywords/enemies
+# (plus powers/events) into the same knowledge/source/v<version> directories and
+# stamps itself as the manifest's "generator". This exporter writes the same
+# file names with a different row set and manifest, so a rerun into such a
+# directory would silently replace the files the simulator's RulesText and the
+# Docker image load. export() refuses unless --overwrite-localization-export.
+LOCALIZATION_GENERATOR = "scripts/export_sts2_localization.py"
+LOCALIZATION_ONLY_FILES = ("events.jsonl", "powers.jsonl")
 LOCALIZATION_OBJECT_SENTINELS = (
     "SLEIGHT_OF_FLESH.description",
     "AKABEKO.description",
@@ -111,17 +128,68 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--decompiled-root",
         type=Path,
-        default=Path("artifacts/knowledge/decompiled-v0.107.1"),
+        default=None,
+        help="Default: artifacts/knowledge/decompiled-v<installed version>.",
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("knowledge/source/v0.107.1")
+        "--output",
+        type=Path,
+        default=None,
+        help="Default: knowledge/source/v<installed version>.",
     )
     parser.add_argument(
         "--skip-decompile",
         action="store_true",
         help="Require an existing decompiled tree instead of regenerating it.",
     )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Do not query a live MCP. Runtime text is omitted and every "
+        "record has profile_discovered=false.",
+    )
+    parser.add_argument(
+        "--release-channel",
+        default="stable",
+        help="Steam branch of the installed build, e.g. public-beta.",
+    )
+    parser.add_argument(
+        "--overwrite-localization-export",
+        action="store_true",
+        help="Allow writing into an --output directory that holds files "
+        f"produced by {LOCALIZATION_GENERATOR} (refused by default).",
+    )
     return parser.parse_args()
+
+
+def localization_export_markers(output: Path) -> list[str]:
+    """Evidence that export_sts2_localization.py produced files in `output`."""
+
+    markers: list[str] = []
+    manifest = output / "manifest.json"
+    if manifest.is_file():
+        try:
+            generator = json.loads(manifest.read_text(encoding="utf-8")).get("generator")
+        except (OSError, ValueError, AttributeError):
+            generator = None
+        if generator == LOCALIZATION_GENERATOR:
+            markers.append(f"manifest.json generator {generator}")
+    markers += [name for name in LOCALIZATION_ONLY_FILES if (output / name).is_file()]
+    return markers
+
+
+def guard_output(output: Path, overwrite_localization_export: bool = False) -> None:
+    """Refuse to clobber a directory written by export_sts2_localization.py."""
+
+    markers = localization_export_markers(output)
+    if markers and not overwrite_localization_export:
+        raise RuntimeError(
+            f"refusing to write into {output}: it holds files produced by "
+            f"{LOCALIZATION_GENERATOR} ({', '.join(markers)}) that this exporter "
+            "would overwrite with a different row set and manifest. Export to a "
+            "scratch --output and merge fields by id (knowledge/README.md), or "
+            "pass --overwrite-localization-export to replace them on purpose."
+        )
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -179,13 +247,51 @@ def find_all(mapped: mmap.mmap, needle: bytes) -> list[int]:
         position += len(needle)
 
 
-def extract_locale_map(pck_path: Path, occurrence_index: int) -> dict[str, str]:
+def pck_locale_ranges(mapped: mmap.mmap) -> dict[str, list[tuple[int, int]]]:
+    """Map each locale code to the byte ranges of its localization/<code>/*.json.
+
+    Reads the Godot PCK directory (format 2 or 3, unencrypted): u32 path length,
+    zero-padded path, u64 offset, u64 size, 16-byte MD5, u32 flags per entry.
+    """
+
+    if bytes(mapped[:4]) != b"GDPC":
+        raise RuntimeError("not a Godot PCK file")
+    pack_version, _major, _minor, _patch, pack_flags = struct.unpack_from(
+        "<5I", mapped, 4
+    )
+    if pack_flags & 1:
+        raise RuntimeError("PCK directory is encrypted")
+    (file_base,) = struct.unpack_from("<Q", mapped, 24)
+    if pack_version == 2:
+        position = 96
+    elif pack_version == 3:
+        (position,) = struct.unpack_from("<Q", mapped, 32)
+    else:
+        raise RuntimeError(f"unsupported PCK format version {pack_version}")
+    (count,) = struct.unpack_from("<I", mapped, position)
+    position += 4
+    ranges: dict[str, list[tuple[int, int]]] = {}
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", mapped, position)
+        raw_path = bytes(mapped[position + 4 : position + 4 + length])
+        offset, size = struct.unpack_from("<QQ", mapped, position + 4 + length)
+        position += 4 + length + 16 + 16 + 4
+        parts = raw_path.rstrip(b"\0").decode("utf-8").removeprefix("res://").split("/")
+        if len(parts) == 3 and parts[0] == "localization" and parts[2].endswith(".json"):
+            start = file_base + offset
+            ranges.setdefault(parts[1], []).append((start, start + size))
+    return ranges
+
+
+def extract_locale_map(pck_path: Path, occurrence_index: int | str) -> dict[str, str]:
     """Merge the relevant localization objects for one locale.
 
     The PCK stores uncompressed JSON objects, but their physical order is not a
-    single locale block. Each stable sentinel occurs once per supported locale;
-    selecting the same occurrence index per object avoids mixing neighboring
-    languages while remaining independent of private PCK directory metadata.
+    single locale block. Each stable sentinel occurs once per supported locale.
+    A locale code ("eng", "zhs") selects the occurrence inside that locale's
+    localization/<code>/ files according to the PCK directory. An integer keeps
+    the legacy positional choice; positions shift when the game adds a locale
+    (v0.111.0 added zht after zhs, so -1 is no longer Simplified Chinese).
     """
 
     with pck_path.open("rb") as handle:
@@ -193,23 +299,43 @@ def extract_locale_map(pck_path: Path, occurrence_index: int) -> dict[str, str]:
         try:
             merged: dict[str, str] = {}
             decoder = json.JSONDecoder()
+            locale_ranges: list[tuple[int, int]] | None = None
+            if isinstance(occurrence_index, str):
+                locale_ranges = pck_locale_ranges(mapped).get(occurrence_index)
+                if not locale_ranges:
+                    raise RuntimeError(
+                        f"PCK has no localization/{occurrence_index}/ files"
+                    )
             for sentinel in LOCALIZATION_OBJECT_SENTINELS:
                 occurrences = find_all(mapped, f'"{sentinel}"'.encode())
-                if len(occurrences) < 2:
-                    raise RuntimeError(
-                        f"localization sentinel {sentinel} appeared "
-                        f"{len(occurrences)} times"
+                if locale_ranges is not None:
+                    inside = [
+                        offset
+                        for offset in occurrences
+                        if any(start <= offset < end for start, end in locale_ranges)
+                    ]
+                    if len(inside) != 1:
+                        raise RuntimeError(
+                            f"localization sentinel {sentinel} appeared "
+                            f"{len(inside)} times in locale {occurrence_index}"
+                        )
+                    center = inside[0]
+                else:
+                    if len(occurrences) < 2:
+                        raise RuntimeError(
+                            f"localization sentinel {sentinel} appeared "
+                            f"{len(occurrences)} times"
+                        )
+                    index = (
+                        occurrence_index
+                        if occurrence_index >= 0
+                        else len(occurrences) + occurrence_index
                     )
-                index = (
-                    occurrence_index
-                    if occurrence_index >= 0
-                    else len(occurrences) + occurrence_index
-                )
-                if not 0 <= index < len(occurrences):
-                    raise RuntimeError(
-                        f"invalid locale occurrence index {occurrence_index}"
-                    )
-                center = occurrences[index]
+                    if not 0 <= index < len(occurrences):
+                        raise RuntimeError(
+                            f"invalid locale occurrence index {occurrence_index}"
+                        )
+                    center = occurrences[index]
                 start = mapped.rfind(
                     b"{\n", max(0, center - 2 * 1024 * 1024), center
                 )
@@ -246,6 +372,42 @@ def pascal_to_model_id(value: str) -> str:
     first = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", value)
     second = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", first)
     return second.upper()
+
+
+def core_file(decompiled_root: Path, relative: str) -> Path:
+    """Locate a Core source file ("Commands/OstyCmd.cs") in either ILSpy layout."""
+
+    nested = decompiled_root / NESTED_CORE / relative
+    if nested.is_file():
+        return nested
+    folder, _, name = relative.rpartition("/")
+    return decompiled_root / f"{FLAT_CORE}.{folder.replace('/', '.')}" / name
+
+
+def core_files(
+    decompiled_root: Path, namespace: str, *, recursive: bool = True
+) -> list[Path]:
+    """Sorted .cs files of a Core namespace ("Models/Cards"), in either layout.
+
+    With recursive=True sub-namespaces such as Models/Cards/Mocks are included.
+    """
+
+    nested = decompiled_root / NESTED_CORE / namespace
+    if nested.is_dir():
+        return sorted(nested.rglob("*.cs") if recursive else nested.glob("*.cs"))
+    flat = f"{FLAT_CORE}.{namespace.replace('/', '.')}"
+    folders = [decompiled_root / flat]
+    if recursive:
+        folders += [
+            folder
+            for folder in decompiled_root.glob(f"{flat}.*")
+            if folder.is_dir()
+        ]
+    return sorted(path for folder in folders for path in folder.glob("*.cs"))
+
+
+def is_mock_source(path: Path) -> bool:
+    return "Mocks" in path.parts or "Mocks" in path.parent.name.split(".")
 
 
 def localized_model_ids(locales: dict[str, dict[str, str]]) -> dict[str, str]:
@@ -356,7 +518,11 @@ def source_facts(path: Path | None, decompiled_root: Path, kind: str) -> dict[st
     return facts
 
 
-def verified_mechanics(decompiled_root: Path) -> list[dict[str, Any]]:
+def verified_mechanics(
+    decompiled_root: Path,
+    game_version: str = GAME_VERSION,
+    game_commit: str = GAME_COMMIT,
+) -> list[dict[str, Any]]:
     """Extract source-backed cross-model contracts that affect decisions.
 
     These records are intentionally small and fail closed on version drift.  A
@@ -366,7 +532,10 @@ def verified_mechanics(decompiled_root: Path) -> list[dict[str, Any]]:
 
     records: list[dict[str, Any]] = []
     for spec in MECHANIC_SPECS:
-        path = decompiled_root / str(spec["relative_path"])
+        path = core_file(
+            decompiled_root,
+            str(spec["relative_path"]).removeprefix(NESTED_CORE + "/"),
+        )
         if not path.is_file():
             raise RuntimeError(f"mechanic source is missing: {path}")
         raw = path.read_bytes()
@@ -389,8 +558,8 @@ def verified_mechanics(decompiled_root: Path) -> list[dict[str, Any]]:
         records.append(
             {
                 "schema_version": SCHEMA_VERSION,
-                "game_version": GAME_VERSION,
-                "game_commit": GAME_COMMIT,
+                "game_version": game_version,
+                "game_commit": game_commit,
                 "kind": "mechanic",
                 "id": spec["id"],
                 "title": spec["title"],
@@ -402,7 +571,7 @@ def verified_mechanics(decompiled_root: Path) -> list[dict[str, Any]]:
                     "assembly": "sts2.dll",
                     "type": spec["type"],
                     "method": spec["method"],
-                    "decompiled_path": spec["relative_path"],
+                    "decompiled_path": str(path.relative_to(decompiled_root)),
                     "sha256": sha256_bytes(raw),
                     "method_source": method_source,
                 },
@@ -482,23 +651,40 @@ def export() -> None:
     for required in (assembly, pck, release_info):
         if not required.is_file():
             raise RuntimeError(f"required game file is missing: {required}")
+    release = json.loads(release_info.read_text(encoding="utf-8"))
+    game_version = str(release["version"]).lstrip("v")
+    game_commit = str(release["commit"])
+    if args.decompiled_root is None:
+        args.decompiled_root = Path(f"artifacts/knowledge/decompiled-v{game_version}")
+    if args.output is None:
+        args.output = Path(f"knowledge/source/v{game_version}")
+    if args.output.name.startswith("v") and args.output.name != f"v{game_version}":
+        raise RuntimeError(
+            f"output {args.output} does not match installed build v{game_version}"
+        )
+    guard_output(args.output, args.overwrite_localization_export)
 
     if not args.skip_decompile:
         decompile(game_data, args.decompiled_root)
-    if not (args.decompiled_root / "MegaCrit/sts2/Core/Models").is_dir():
+    if not core_files(args.decompiled_root, "Models/Cards"):
         raise RuntimeError(f"decompiled model tree is missing: {args.decompiled_root}")
 
     print("[knowledge] extracting English and Simplified Chinese localization")
     locales = {
-        "eng": extract_locale_map(pck, 1),
-        "zhs": extract_locale_map(pck, -1),
+        "eng": extract_locale_map(pck, "eng"),
+        "zhs": extract_locale_map(pck, "zhs"),
     }
 
-    compendium = http_json(f"http://127.0.0.1:{args.port}/api/v1/compendium")
-    sections = compendium.get("sections", {})
-    card_ids = sorted(sections["card_library"]["discovered_ids"])
-    relic_ids = sorted(sections["relic_collection"]["discovered_ids"])
-    potion_ids = sorted(sections["potion_lab"]["discovered_ids"])
+    compendium: dict[str, Any] = {}
+    card_ids: list[str] = []
+    relic_ids: list[str] = []
+    potion_ids: list[str] = []
+    if not args.offline:
+        compendium = http_json(f"http://127.0.0.1:{args.port}/api/v1/compendium")
+        sections = compendium.get("sections", {})
+        card_ids = sorted(sections["card_library"]["discovered_ids"])
+        relic_ids = sorted(sections["relic_collection"]["discovered_ids"])
+        potion_ids = sorted(sections["potion_lab"]["discovered_ids"])
     card_runtime: dict[str, dict[str, Any]] = {}
     for number, model_id in enumerate(card_ids, start=1):
         if number % 50 == 0 or number == len(card_ids):
@@ -518,12 +704,11 @@ def export() -> None:
         runtime: dict[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
         namespace = MODEL_NAMESPACES[kind]
-        model_root = args.decompiled_root / "MegaCrit/sts2/Core/Models" / namespace
         runtime_by_name = {
             normalized_name(model_id): model_id for model_id in runtime
         }
         records: list[dict[str, Any]] = []
-        for path in sorted(model_root.rglob("*.cs")):
+        for path in core_files(args.decompiled_root, f"Models/{namespace}"):
             model_id = resolve_source_model_id(
                 path, runtime_by_name, localized_by_name
             )
@@ -531,8 +716,8 @@ def export() -> None:
             records.append(
                 {
                     "schema_version": SCHEMA_VERSION,
-                    "game_version": GAME_VERSION,
-                    "game_commit": GAME_COMMIT,
+                    "game_version": game_version,
+                    "game_commit": game_commit,
                     "kind": kind,
                     "model_id": f"{kind.upper()}.{model_id}",
                     "id": model_id,
@@ -560,22 +745,21 @@ def export() -> None:
         if key.endswith(".name")
     }
     enemies: list[dict[str, Any]] = []
-    monster_root = args.decompiled_root / "MegaCrit/sts2/Core/Models/Monsters"
-    for path in sorted(monster_root.rglob("*.cs")):
+    for path in core_files(args.decompiled_root, "Models/Monsters"):
         inferred = pascal_to_model_id(path.stem)
         model_id = monster_names.get(normalized_name(inferred), inferred)
         localized = localize(locales, model_id)
         enemies.append(
             {
                 "schema_version": SCHEMA_VERSION,
-                "game_version": GAME_VERSION,
-                "game_commit": GAME_COMMIT,
+                "game_version": game_version,
+                "game_commit": game_commit,
                 "kind": "enemy",
                 "model_id": f"MONSTER.{model_id}",
                 "id": model_id,
                 "localized": localized,
                 "internal_or_test_model": (
-                    "Mocks" in path.parts
+                    is_mock_source(path)
                     or "Deprecated" in path.stem
                     or not localized
                 ),
@@ -601,8 +785,8 @@ def export() -> None:
     keywords = [
         {
             "schema_version": SCHEMA_VERSION,
-            "game_version": GAME_VERSION,
-            "game_commit": GAME_COMMIT,
+            "game_version": game_version,
+            "game_commit": game_commit,
             "kind": "keyword",
             "id": keyword_id,
             "localization_id": localization_id,
@@ -611,7 +795,7 @@ def export() -> None:
         for keyword_id, localization_id in keyword_specs
         if localize(locales, localization_id)
     ]
-    mechanics = verified_mechanics(args.decompiled_root)
+    mechanics = verified_mechanics(args.decompiled_root, game_version, game_commit)
 
     counts = {
         "cards": write_jsonl(args.output / "cards.jsonl", cards),
@@ -639,11 +823,22 @@ def export() -> None:
         "enemy_internal_or_test_models": sum(item["internal_or_test_model"] for item in enemies),
         "verified_cross_model_mechanics": len(mechanics),
     }
+    runtime_source: dict[str, Any] = {
+        "endpoint": f"http://127.0.0.1:{args.port}/api/v1/wiki",
+        "scope": "active_profile_discovered_cards_and_relics",
+        "profile_id": compendium.get("profile_id"),
+        "note": "Exact per-ID lookup for the active profile subset. Every decompiled model is still indexed; profile_discovered marks which records received runtime-resolved text.",
+    }
+    if args.offline:
+        runtime_source = {
+            "scope": "none",
+            "note": "Offline export without a live MCP: runtime is null and profile_discovered is false for every record. Localized templates come from the PCK; source facts from the decompiled assembly.",
+        }
     manifest = {
         "schema_version": SCHEMA_VERSION,
-        "game_version": GAME_VERSION,
-        "game_commit": GAME_COMMIT,
-        "release_channel": "stable",
+        "game_version": game_version,
+        "game_commit": game_commit,
+        "release_channel": args.release_channel,
         "sources": {
             "assembly": {
                 "name": "sts2.dll",
@@ -655,12 +850,7 @@ def export() -> None:
                 "sha256": sha256_file(pck),
                 "locales": ["eng", "zhs"],
             },
-            "runtime": {
-                "endpoint": f"http://127.0.0.1:{args.port}/api/v1/wiki",
-                "scope": "active_profile_discovered_cards_and_relics",
-                "profile_id": compendium.get("profile_id"),
-                "note": "Exact per-ID lookup for the active profile subset. Every decompiled model is still indexed; profile_discovered marks which records received runtime-resolved text.",
-            },
+            "runtime": runtime_source,
         },
         "counts": counts,
         "coverage": coverage,

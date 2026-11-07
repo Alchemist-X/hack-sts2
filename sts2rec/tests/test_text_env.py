@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from threading import Barrier
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -202,9 +203,14 @@ def test_unlabeled_terminal_is_unknown_instead_of_a_defeat(tmp_path: Path) -> No
 
 
 def test_vector_steps_workers_concurrently() -> None:
+    both_entered = Barrier(2)
+
     class SlowScriptedEnv(ScriptedEnv):
         def step(self, action: dict[str, Any]) -> dict[str, Any]:
-            time.sleep(0.05)
+            # A serial implementation cannot release this barrier. Checking
+            # overlap avoids conflating concurrent execution with machine speed
+            # or the cost of constructing the post-action observation.
+            both_entered.wait(timeout=2)
             return super().step(action)
 
     envs = [
@@ -214,10 +220,7 @@ def test_vector_steps_workers_concurrently() -> None:
     for env in envs:
         env.observe()
     with VectorSts2TextEnv(envs) as vector:
-        started = time.monotonic()
         results = vector.step([1, 1])
-        elapsed = time.monotonic() - started
-    assert elapsed < 0.09
     assert [result.info["worker_id"] for result in results] == [1, 2]
 
 

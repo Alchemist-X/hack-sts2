@@ -31,12 +31,19 @@ uv run --project sim/tools/vec python sim/tools/vec/tools/gen_env_spec.py       
 ```
 
 `eval` (alias `evaluate`) plays every game of a protocol seed set with one policy (one slot per game, no auto-reset,
-limits step_cap 1200 / 80 non-combat decisions per floor), scores it with the protocol v0.2 progress metric
+limits step_cap 1200 / the env's `floor_step_cap` 80 non-combat decisions per floor → `stuck`), scores it with the protocol v0.2 progress metric
 (`sts2vec/protocol.py`, a vendored copy of `sts2eval.progress` kept equal by `tests/test_protocol.py`) and writes
 `config.json`, `run.json`, `games/<CHAR>-<SEED>.summary.json`, `report.json` and `report.md` in the LLM runner's
 layout; a replay audit re-plays every game's candidate indices on a fresh env (result, act, floor and final state hash
 must match). Options: `--out DIR` (default `tmp/eval/vec-<policy>-<seedset>-<time>`), `--threads`, `--seed` (policy
 RNGs), `--step-cap`, `--floor-step-cap`. Exit status 1 when a replay fails.
+
+Every game summary also carries the run state at the end (`sts2vec.runstats`, 2026-11-05, logging only): `hp`,
+`max_hp`, `deck` (size), `upgraded`, `relics`, `gold`, `potions`, `killer` (the encounter of the fight a death
+happened in), `boss_entry` (`[{act, floor, hp, max_hp, boss}]` per act-boss room entered), `room` (the final room's
+kind; also `death.room_type`, null before 2026-11-05) and `fights` (`[{floor, act, room, enemies, encounter,
+hp_before, max_hp_before, result, hp_after, max_hp}]` per combat, `result` won / lost / unfinished); the definitions
+are in `sim/tools/train/README.md` "Run-state fields". Summaries without these keys still load in every report.
 
 ## Write your own policy in 20 lines
 
@@ -98,13 +105,17 @@ with VecEnv(1024, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", co
 
 | Member | Meaning |
 | --- | --- |
-| `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(), pool_cache=4096, dll=None)` | creates the native env (`sts2vec_create`); `pool=None` = empty pool |
+| `VecEnv(num_envs, *, threads=8, step_cap=3000, auto_reset=True, seed_text="VEC", content="ported_only", pool=PoolSpec(), pool_cache=4096, fast_path=True, floor_step_cap=80, dll=None)` | creates the native env (`sts2vec_create`); `pool=None` = empty pool; `floor_step_cap` (= `sts2vec.FLOOR_STEP_CAP`, 0 = off) truncates an episode after that many non-combat decisions on one floor (status `FLOOR_STALL`, `end_kind` FloorStall; combat decisions never count) |
 | `.reset(mask=None, start_ids=None, *, copy=False) -> obs` | restart masked slots (None = all) from `start_ids[i]` (None / `< 0` = the slot's start sequence) |
 | `.step(actions, *, copy=False) -> (obs, reward, terminated, truncated, status, info)` | `actions` int [N]; `reward` float32, `terminated`/`truncated` uint8, `status` int32 bit flags; `info = {episode_id, step_index, start_entry, last_episode}` |
 | `.restore(slot, entry, *, copy=False) -> obs` / `.snapshot(slot) -> entry` | one-slot restart from a pool entry / clone a live slot into the pool |
 | `.clone_determinized(slot, seed) -> entry` | determinized clone of a live slot into the pool: same observation, hidden state (draw order, RNG streams, relic-bag / event order) resampled from `seed`; restore it like any entry (sim/VEC.md "Determinized clones") |
+| `.branch(src, dsts, determinized=True, seed=0, *, copy=False) -> obs` | ABI 2, search: copy a live slot into every slot of `dsts` in one call, without a pool entry: determinized (destination at call position j gets `clone_determinized(src, branch_seed(seed, j))`: same view, resampled hidden state) or exact (`determinized=False`: same `state_hash`). `src` may also be one source per destination (`sts2vec_branch_many`: many roots in one call, the fast form). Destinations start a new episode (`RESET`, `step_index` 0, `start_entry` -1, `last_episode` untouched) and their observations are written now; sources and other slots are untouched (sim/VEC.md "Search") |
+| `.restore_many(slots, entries, *, copy=False) -> obs` | ABI 2: `restore(slots[j], entries[j])` for all j in one parallel call |
+| `.abi_version`, `.supports_branch`, `.supports_restore_many`, `.supports_pool_release` | the loaded library's ABI (1 = built before `sts2vec_abi_version`) and whether it has each search feature |
 | `.state_hash(slots=None) -> uint64 [n]` | `RunSim.StateHash` (debug/test only; 0 = no run) |
-| `.pool.add_fresh(character, *, seed, ascension=0, act1="random", content=None)`, `.pool.add_save(path)`, `len(.pool)` | runtime pool entries (ids in insertion order) |
+| `.pool.add_fresh(character, *, seed, ascension=0, act1="random", content=None)`, `.pool.add_save(path)`, `len(.pool)` | runtime pool entries (ids in insertion order; `len` = live entries) |
+| `.pool.release(ids) -> int` | ABI 2: drop entries for good, all or nothing (a snapshot's state becomes garbage, a cached fresh template frees its slot); `len(pool)` and the start sequence skip them and their ids are never reused (`reset` / `restore` / `release` with one raise) |
 | `.pool.warm(max_entries=None) -> int` | create fresh entries' start templates now (None = all, up to `pool_cache`), in id order on the env's threads; returns how many this call created. Starts do not change; only the cold `NewRun` moves out of reset/step |
 | `.candidates(i)`, `.legal_mask()`, `.last_episode(i)` | decoded candidate rows (RunActionKind names), bool [N, 192], decoded last-episode row |
 | `.status`, `.status_counts()`, `.slot_errors()`, `.last_error(slot=-1)` | status bits of the last call; native exception text per failed slot |
@@ -124,9 +135,25 @@ With auto-reset a finished slot already shows its next episode; the finished one
 
 Lower level: `sts2vec.load()` returns the `Library` (one per process) with every export as a ctypes function
 (`lib.sts2vec_step(h, actions_ptr, buffers_ptr)`), `lib.version()`, `lib.schema_json()`, `lib.last_error(h, slot)`,
-`lib.gc_server`, `lib.runtime_properties`. Exports added after the ABI freeze (`sts2vec_pool_warm`, `sts2vec_clone_determinized`) are optional: a
-library built before them still loads with the attribute set to None (`lib.missing_exports`), and the wrapper that
-needs one raises `Sts2VecError` asking for a rebuild.
+`lib.gc_server`, `lib.runtime_properties`. Exports added after the ABI freeze (`sts2vec_pool_warm`,
+`sts2vec_clone_determinized`, and the ABI 2 set `sts2vec_abi_version`, `sts2vec_branch`, `sts2vec_branch_many`,
+`sts2vec_restore_many`, `sts2vec_pool_release`) are optional: a library built before them still loads with the attribute
+set to None (`lib.missing_exports`), `lib.abi_version` is 1 and `lib.supports(...)` / `lib.supports_branch` are False, and
+the wrapper that needs one raises `Sts2VecError` ("... not supported; rebuild it").
+
+Search (sim/VEC.md "Search"): keep one env per search, roots in some slots, scratch slots for the rollouts, and branch
+every root in one call per decision round; nothing accumulates in the pool:
+
+```python
+from sts2vec import VecEnv, PoolSpec
+with VecEnv(M * (1 + K), threads=8, auto_reset=False, pool=None) as env:
+    ...                                                   # roots 0..M-1 track the real games (restore / step them)
+    roots = np.repeat(np.arange(M), K)                    # K rollouts per root, slots M..M+M*K-1
+    scratch = M + np.arange(M * K)
+    obs = env.branch(roots, scratch, seed=round_no)       # determinized copies: same view, resampled hidden state
+    first = np.full(env.num_envs, -1, np.int32); first[scratch] = candidate_of_each_rollout
+    env.step(first)                                       # then roll out with any policy, score, pick per root
+```
 
 ## Environment variables
 
@@ -156,7 +183,9 @@ produces `Sts2Sim.Vec.so` (13 MB, ~35 s on Huginn) and links with gcc when clang
 hostfxr failure text, discovery),
 schema/buffers (order, dtypes, sizes, pointer table, vocab/enum maps, xxh64 / encoder_version), the env API against
 the stubs (shapes, dtypes, status bits, partial reset, start sequence, start-id validation, empty pool, snapshot /
-restore, copy semantics, close), pools (spec JSON, entries, add_fresh/add_save with the fixture save) and the CLIs.
+restore, copy semantics, close), pools (spec JSON, entries, add_fresh/add_save with the fixture save) and the CLIs;
+`test_branch.py` the ABI 2 search calls (exact / determinized / many-root branch, release, restore_many, a second
+thread branching while one steps, `branch_seed` vectors).
 `test_full.py` and one pool test need the real encoder/candidates: they skip with `needs V1/V2` on a stub build and
 run automatically once V1/V2 are merged (cross-process determinism, 1,024 x 300 random soak with 0 SIM_ERROR /
 CONTENT_GAP, threads 1 vs 8 byte-identical, step-cap truncation + auto-reset, fixture save -> 3 candidates).

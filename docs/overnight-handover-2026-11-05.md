@@ -1,0 +1,186 @@
+# 过夜交接（2026-11-04 23:00 EST 写，覆盖到 11-05 15:00 EST）
+
+用户离开约 16 小时；本机预计 11-05 06:00 后中断（本会话、Mac 端的 ping/镜像循环、监控页刷新都会停）。训练与保活不依赖本机。
+
+## 正在跑什么（两台 Colab A100）
+
+| 运行时 | 任务 | 起止 | 驱动脚本 / 日志（VM 上） |
+| --- | --- | --- | --- |
+| `sts2train`（GPU A） | 主线 M：C1 续训 u764→u3064（循环成本 0.01，无宏动作）。00:42 因 --max-hours 6 在约 u2560 停下，01:00 用 `resume_sp3.sh` 续到 u3064 | 18:42 → 约 02:55 | `/content/sts2/runs/sp3-main`，`sp3-main.launch.log` |
+| `sts2train`（GPU A） | 过夜线 A：从 M 的 `pinned-0003064.pt` 分叉，+宏动作（rest,shop）+熵退火 0.02→0.005，u3064→u7664（+6 亿步，每 500 update 固定评测 + ab-512 关 breaker） | 约 02:55 → 约 19:30–20:00 | `w3m-src/scripts/colab/w3m_line.sh … a …`，日志 `/content/sts2/runs/w3m-a.driver.log`，run `/content/sts2/runs/w3m-a` |
+| `sts2b`（GPU B） | 复验 R：种子 2 的 W0′→C0′→C1′→终点比较 | 18:45 → 约 23:00 | `sp2r_serial.sh`，`sp2r_serial.log`，比较结果 `/content/sts2/runs/cmp/*.txt` |
+| `sts2b`（GPU B） | 过夜线 B：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33），同一分叉点 | 约 23:10 启动等待，约 03:00 开训 → 约 20:30–21:30 | `w3m_line.sh … b …`，日志 `/content/sts2/runs/w3m-b.driver.log`，run `/content/sts2/runs/w3m-b` |
+
+两条过夜线的官方读数在 u7664；判据见 `docs/w3m-overnight-plan-2026-11-04.md`（宏动作回退规则：A 的 u3564、u4064 都显著低于 M 的 u3064 则回退；B 的止损规则：从 u4064 起连续两点 B−A 的区间全在 0 以下则停 B；≥0.60/≥0.10 是目标不是承诺）。
+
+## 保活与数据（不依赖 Mac）
+
+- **保活**：东京 VM（`gcloud compute ssh instance-tokyo-0701-predict-raven …`）上 `~/sts2keep/colab_keepalive.sh` 每 5 分钟对 `~/sts2keep/sessions.txt` 里的运行时做一次内核 ping；驱动日志末行出现 `done` 时自动 `colab stop` 该运行时（不再计费）。日志 `~/sts2keep/keepalive.log`；删除 `~/sts2keep/RUN` 可停止循环。东京 VM 上放了 Colab CLI、会话名表和 ADC（单人 VM，按规则允许）。
+- **数据**：VM 上每个 run 目录由 `gcs_sync.py` 每分钟镜像到 `gs://gomoku-zero-20260816-ai-sts2train/runs/<run>/`（checkpoint、pinned、metrics/evals/cycles/episodes、评测目录）。VM 丢失时用 `gcs_pull.py` 恢复后重跑同一驱动命令即可续训。
+- **本机**：06:00 前每 30 分钟刷新监控页（claude.ai artifact 492zmT59ngRDmG3GqkmMC7）；06:00 后页面停更，数据以桶为准。
+
+## 回来后怎么看结果（约 15:00 EST）
+
+1. `gcloud storage ls gs://gomoku-zero-20260816-ai-sts2train/runs/` 看 `w3m-a`、`w3m-b` 的 `evals.jsonl`（`mode` 为 greedy-on / greedy-off 的 eval_at 行）和 `evals/endpoint/`。
+2. 在本机 `train-w3m` 工作树里 `scripts/colab/w3m_compare.sh 7664`（拉取 M、A、B 的评测目录并跑全部配对比较），或直接读 VM 上的 `/content/sts2/runs/cmp/`（若运行时已被保活脚本停掉，则只能用桶里的评测目录在本地 CPU 跑 `sts2train compare`）。
+3. 决定：按计划文档的规则判宏动作是否保留、harvest 是否采纳；选出下一轮主线起点（通常是官方终点的 pinned checkpoint）。
+4. 下一轮候选（已就绪或在做）：v2 全提示宏动作（wave 4，分支 train/w4，完成后 `--macros all`，含真游戏映射）、large 预设（需先在 A100 上跑重叠执行预检 `w3m_preflight_overlap.sh`）、以战斗血量头为叶子的搜索。
+
+## 预算
+
+22:30 余额 654 单位；过夜两条线约 165–180 单位；预计 11-05 15:00 余额约 470。用户给的上限：24 小时 400 单位。
+
+## 01:00 更新
+
+- M 在 00:42 因 `--max-hours 6` 提前停止（约 u2560），01:00 已续训到 u3064（预计 02:15 到达）；线 A 驱动因等待超时（4 小时）退出，已用 WAIT_MAX_S=28800 重启；线 B 的分叉 checkpoint 等待窗口改为 10 小时。两条过夜线预计 02:15 起跑，A 约 13:30、B 约 14:15 结束。
+- 主线 M 的 u2264 固定评测：dev-128 关 breaker 0.389 [0.364, 0.413]，65/128 进入第二幕，0 通关，为目前最佳。
+
+## 01:30 更新（时间线修正 + 第二轮已武装）
+
+- **时间线修正**：M 续训实测 12.4 s/update（固定评测只要 24 s 一次，可忽略），M 到 u3064 约 **02:55 EST**；
+  线 A 4600 update ≈ 16 h → 约 **19:30–20:00 EST** 结束，线 B（harvest 略慢）约 **20:30–21:30**。官方读数 u7664 因此在
+  用户回来（15:00）之后；15:00 时 A 大约在 u6500。
+- 01:00 那次对线 B 等待脚本的重启实际没有存活（ssh 退出时被带走），01:08 已重新以 `setsid nohup` 启动并核实在跑
+  （`w3m-b.driver.log` 每分钟一行 waiting，`w3m_fetch.py` 进程在）。
+- **第二轮已武装为自动接续**（`docs/round2-plan-2026-11-05.md`，预注册）：A 结束后 GPU A 自动跑 C（A 终点 + `--macros all`），
+  B 结束后 GPU B 自动跑 D（A 终点 + `rest,shop`，对照），各 +1500 update，约 11-06 01:30–03:00 EST 结束，合计约 75 单位。
+  东京保活现在盯 `w4-c.driver.log` / `w4-d.driver.log`。取消方法见该文档。
+- wave-4 包（`sts2train-d21adf4ad8`，AOT `03f89cc37d4f`）已解包到两台 VM 的 `/content/sts2/` 并放进桶 `bundles/`；
+  驱动脚本 `scripts/colab/w3m_line.sh` 加了 `ENT0`/`ENT1`/`TAG` 旋钮（`6175dc8`，默认不变），VM 上在 `/content/sts2/w5-src/`。
+- **wave 5 在跑**（Opus，远端测试）：孪生对 `prompt` 宏的映射，分支 `train/w5-twin-prompt`，工作树
+  `.claude/worktrees/train-w5-twin-prompt`；完成后需要集成进本分支（若本机 06:00 前没完成，分支上有提交即可接着做）。
+- 预算：01:00 余额 619.6；过夜两线约 235 单位、第二轮约 75 单位；到 11-06 05:30 预计余额约 300。24 小时窗口内约 300 单位，低于 400 上限。
+
+## 02:15 更新
+
+- M u2764 固定评测 dev-128 关 breaker 0.390 [0.368, 0.413]（63/128 进二幕），与 u2264 的 0.389 持平：最近 500 update 趋平。
+  看 A/B 的 u3564 / u4064 段终点是否继续平——若平，下一轮的杠杆要换（见死亡分析）。
+- 死亡分析 `docs/diag-2026-11-05/death-analysis-m-u2264.md`（2593f7b）：128 局全部战斗死亡；Act 1 boss 占 32%（到达者 38.7% 死亡），
+  Act 2 第 4–8 间 + Act 1 boss 房合计 61%；`DECIMILLIPEDE_ELITE` 12.5% 为最大单一杀手；Act 2 boss 到达 9 局全灭。
+  日志缺 HP / 卡组 / 房间类型（`death.room_type` 恒为 null 是 bug）→ wave 6 在补（分支 `train/w6-episode-fields`，Opus，远端门禁，零行为改动）。
+- wave 5 已合入 PR 分支（`970b178`，已推送）：孪生可在真游戏上执行 `--macros all` 的提示宏；DECLINE 在两种模式下都映射成 skip。
+  合并提交全套远端门禁通过（build、train 215、vec 131、eval 84、live 101）。**还没在真游戏上跑过**；第一次真跑要看 `prompt_macro.steps`
+  确认哪些 STS2_MCP 提示在最后一次选择后自动关闭。
+- 东京保活脚本已加固（超时强杀、文件捕获、失败重试）并重启，07:11Z 起两台 ping 正常。
+
+## 03:30 更新
+
+- wave 6 合入 PR 分支（`bd6d6f6`）：训练对局行与评测摘要新增 hp / max_hp / deck / upgraded / relics / gold / potions / killer /
+  boss_entry / room，评测摘要另有 fights 列表，`death.room_type` 修复；零行为改动（三组冒烟 weights_hash 与基线相同），
+  成本约 0.6 ms / rollout step。合并提交的全套远端门禁结果见本节末。
+- 新包 `sts2train-bd6d6f6863.tar.gz`（AOT 同 `03f89cc37d4f`，库逐字节相同；raven 容器冒烟通过）已放到两台 VM 与桶 `bundles/`，
+  第二轮 C / D 的包装脚本已换成 `launch_c2.sh` / `launch_d2.sh`（只改包路径）。过夜线 A / B 不变（仍是 w3m 包，无新字段）。
+- 回来后的第一份诊断可以直接用 C / D 的 `evals/endpoint/*/summary` 与 `episodes.jsonl` 回答"死在哪、进 boss 时血量多少、卡组什么样"。
+
+## 03:05 更新：分叉已发生
+
+- M 到 u3064，dev-128 关 breaker **0.404 [0.378, 0.430]**（64/128 进二幕，0 通关），新最佳。`pinned-0003064.pt` 07:57Z 进桶。
+- 02:56 EST 线 A 分叉开训（`runs/w3m-a`，gcs_sync 已起）；02:58 线 B 取到同一 checkpoint 开训（`runs/w3m-b`）。
+- wave 7 合入并推送（`c4109be`）：`scripts/analysis/death_profile.py` + `scripts/colab/r2_compare.sh N`（第二轮一键读数，
+  见 `docs/round2-plan-2026-11-05.md` "读结果"）。
+
+## 04:00 更新：首批固定评测
+
+- dev-128 贪心关 breaker：线 A u3100 0.407、u3200 0.406、**u3300 0.434 [0.409, 0.460]**（81/128 进二幕）；线 B u3100 0.403、
+  u3200 0.405、u3300 0.413 [0.388, 0.437]；分叉点 M u3064 0.404。宏环境切换后固定评测没有回落；两线训练期闭环 0。
+- 评测点是每 100 update 的整百（3100、3200、…），段终 3564 / 4064 / … 另有 ab-512。
+
+## 05:00 更新：第一段终点 u3564
+
+| 线 | dev-128 关 breaker（固定评测） | ab-512 关 breaker（段终） |
+| --- | --- | --- |
+| A（宏 + 熵退火） | u3300 0.434、u3400 0.428、u3500 0.428、**u3564 0.4295 [0.404, 0.455]**（80/128 进二幕） | 0.431（512 局，0 胜，最远楼层 45） |
+| B（A + harvest） | u3300 0.413、u3400 0.402、u3500 0.412、**u3564 0.4033 [0.379, 0.428]** | 0.425（512 局，0 胜，最远楼层 48） |
+| 分叉点 M u3064 | 0.404 [0.378, 0.430] | — |
+
+- 宏回退规则（A 的 u3564、u4064 都显著低于 M u3064 才回退）在 u3564 不满足：A 高于 M。B 与 M 持平，B−A 未配对约 −0.026；
+  B 的止损规则从 u4064 起算（连续两点 B−A 区间全在 0 以下）。配对比较用 `scripts/colab/w3m_compare.sh 3564` 或 VM 上 `/content/sts2/runs/cmp/`。
+- 两线已进入第二段（到 u4064，约 06:40 EST），每段起点都是 `--resume auto`（session 计数 +1）。
+
+## 05:30 更新（本机中断前最后一次）
+
+- A u3705、B u3690，第二段进行中（到 u4064 约 06:40 EST）。dev-128 关 breaker 每 100 update 一点（±0.025 噪声）：
+  A u3300–u3700 = 0.434、0.428、0.428、0.430、0.402、0.429（均值约 0.425）；B = 0.413、0.402、0.412、0.403、0.419、0.393（约 0.407）；
+  分叉点 M u3064 0.404。仍 0 通关。
+- 本机 06:00 后中断：监控页停在 05:30 的刷新；本机的 ping / 镜像循环随之停止；训练、GCS 镜像、东京保活、第二轮自动接续都不依赖本机。
+- 回来后按"回来后怎么看结果"一节操作；第二轮读数用 `scripts/colab/r2_compare.sh 9164`，死亡画像用 `scripts/analysis/death_profile.py`。
+
+## 12:00 更新：线 A 停机 4.5 小时后在新运行时恢复；规则读数
+
+- **事故**：07:20 为规避运行时 24 小时上限（线 A 的运行时 15:07 到期）做"先停旧、再开新"轮换（账号只允许 2 台 A100），
+  停旧后新 A100 分配失败（Service Unavailable），会话被中断没有重试，线 A 在 u4252 停到 11:52。checkpoint 完整在桶里，无数据损失。
+  11:52 `colab new -s sts2c` 成功，`runs/w3m-a` 用 gcs_pull 恢复，驱动 A 与 `launch_c2.sh` 在 `sts2c` 上重启；东京保活已指向
+  `sts2c` / `sts2b`。A 的终点 u7664 推迟到约 11-06 00:30，第二轮 C 顺延。
+- **规则读数**（`/content/sts2/runs/cmp/` on sts2b，`w3m_compare.sh 3564/4064`）：宏回退规则不触发（A u3564 0.429、u4064 0.418
+  对 M u3064 0.404）；B 止损规则不触发（u4064 B−A：dev-128 +0.008、ab-512 −0.007）。漏斗 A u3564：到 Act 1 boss 89%、打过 63%、
+  到 Act 2 boss 12%、打过 0.8%；ab-512 u4064 打过 Act 2 boss 2.3%。
+- **线 B**（一直在跑）：u5529；dev-128 关 breaker u4564 0.448、u5000 0.447、u5300 0.461 [0.435, 0.486]、u5500 0.441；
+  ab-512 u4564 0.450、u5064 0.444；0 通关。
+- **待办**：sts2b 的运行时 11-04 18:39 EST 启动，若 24 小时上限属实会在 18:39 被回收 → 在 u6564 段终点（约 15:40）之后做轮换
+  （停旧、立即 `colab new`、失败每分钟重试、gcs_pull 恢复、重启驱动 B 与 launch_d2.sh（把 `--wait` 改为 36000，因为 A 现在比 B 晚结束））。
+
+## 13:15 更新：运行时丢失自动轮换守护已上线
+
+- 本机后台 `scratchpad/rotate/watch_rotate.sh 120`（表 `rotate/managed.txt`：`sts2c a w3m-a sts2a2`、`sts2b b w3m-b sts2b2`；日志
+  `rotate/watch.log`；停止：`rm rotate/RUN`）。管理中的运行时从 `colab sessions` 消失且不是东京保活因 `done` 主动停掉时：
+  自动 `colab new --gpu A100`（最多重试 4 小时）→ 上传两份包 + 驱动脚本 + GCS 密钥 → `gcs_pull` 恢复 run 目录（最新 checkpoint）→
+  重启分段驱动与第二轮包装脚本（D 的取数等待改为 10 小时，因为 A 现在比 B 晚结束）→ 更新东京 `sessions.json` / `sessions.txt` 与本机表。
+  依赖本机在线；本机关机则需手动按同一流程恢复（`rotate/watch_rotate.sh` 里的 `rotate()` 就是流程）。
+- 13:02：A u4493（dev-128 u4300 0.440、u4400 0.434），B u5862（dev-128 u5800 0.432，ab-512 u5564 0.442；u5300 的 0.461 之后进入平台），
+  余额 490.9。sts2b 的 24 小时上限 18:39 EST 是对守护的第一次实战检验。
+
+## 15:40 更新：第三轮已武装（E = HP 势能塑形 对照 F）
+
+- 今日诊断：决策时搜索对当前策略为负（价值头估"剩余进度 − 塑形势能"，同一决策内 Q 差中位数 0.004）；人类数据仅 1 局 A10；harvest ±0.01。
+- wave 8 合入（`e2548db`）：`--hp-shaping-coef`（势能式，κ=0 逐位相同）；包 `sts2train-22fdd480f0` 已在两台 VM 与桶。
+- 第三轮（`docs/round3-plan-2026-11-05.md`）：C/D 各自结束后自动起跑 E（GPU A，κ=0.1）与 F（GPU B，对照），从 A 的 u7664 终点各 +2000 update，
+  约 11-06 02:00–03:00 起跑、11:00–12:00 结束；东京保活盯 `w8-e` / `w8-f` 日志。
+- 运行时轮换守护（本机 `rotate/watch_rotate.sh`）在轮换时会重启分段驱动 + 第二轮与第三轮的包装脚本。
+
+## 18:40 更新：第三轮改为探索修复（E′ 对照 F′）
+
+- 行为审计发现策略从不锻造、从不删牌（概率 0，采样碰不到），且早于宏动作（u764 前）。wave 9 合入：rollout 期对指定决策类型做 ε 探索
+  （`--explore-kinds / --explore-eps / --explore-logp`），eps=0 逐位相同；包 `sts2train-57b85d8f0d`。
+- 第三轮改版 v2（`docs/round3-plan-2026-11-05.md`）：E′ = 探索修复（火堆 + 删牌，eps 0.3，policy 对数概率）对照 F′ = 纯续训；
+  包装脚本 `launch_e.sh` / `launch_f.sh` 已替换，日志 `runs/w9-e|w9-f.driver.log`，东京保活已改盯这两份日志。HP 塑形顺延到第四轮。
+
+## 19:05 更新：24 小时上限实证、线 B 在 sts2b2 上恢复
+
+- `sts2b` 在 24.0 小时整被回收（线 B 约 u7440），轮换守护自动建了 `sts2b2`，恢复由我手动收尾；**`sts2c` 将在 11-06 11:52 EST 被回收**，
+  其上的 C（第二轮）/ E′（第三轮）需要在此前的段终点轮换（守护会自动做，但最好主动在段终点做）。
+- 第二轮 C/D 与第三轮 E′/F′ 的分叉点改为 **B 的 u7664**（两臂同起点，避免 GPU B 空等 A 到 00:30）。
+- 不要对可能已死的会话名做 ssh/scp（代理会重建一个 CPU 会话顶名）。
+
+## 20:15 更新：线 B 官方读数 u7664；D 起跑
+
+- B u7664：dev-128 关 breaker 0.4397 [0.413, 0.466]，ab-512 0.434，采样 ×3 0.425，0 通关。`runs/w3m-b/evals/endpoint/u0007664-*` 在桶里。
+- D（第二轮对照）20:03 在 sts2b2 从 B 的 pinned-0007664 起跑（到 u9164，约 01:30）；随后 F′。A 约 00:30 到 u7664 → C（从桶取 B 的终点）→ E′。
+- 注意：B 的训练期 metrics/episodes（u3064–u7425）在桶里被轮换后的新会话覆盖（评测与 checkpoint 完好）；稀疏副本在本机 scratchpad/recover/。
+
+---
+
+## 2026-11-06 01:00 EST 起的隔夜安排（用户 00:55 指示：安排好 8 小时训练，其余停止）
+
+### 现在在跑什么
+
+| GPU | 会话 | 阶段 | 起点 → 终点 | 预计 | 之后自动接 |
+|---|---|---|---|---|---|
+| A | `sts2c`（11-05 11:52 建，24 h 回收约 11-06 11:52） | 第二轮 C：B 的 u7664 + `--macros all`，熵 0.005 | u7664 → 9164（00:50 起跑） | 约 06:15 到终点，端点评测约 20 min | E′（`launch_e.sh`：**A 的 u7664** + 探索修复，→ 9664，约 06:40 → 14:00） |
+| B | `sts2b3`（11-06 00:09 建，回收约 11-07 00:10） | 第二轮 D（对照）：B 的 u7664 + rest,shop | u8676 → 9164（00:46 起，**eager**） | 约 02:40 到终点，端点评测约 25 min | F′（`launch_f.sh`：**A 的 u7664**，对照，→ 9664，约 03:05 → 10:30） |
+
+- 23:38 事故：D 第三段启动时 `compiled minibatch update vs eager` 门槛被 bf16 噪声误触发（loss≈0；梯度全部一致）→ 训练器退出 → `launch_f` 判"异常结束: done" → 东京保活停掉 sts2b2。00:40 在 sts2b3 从 u8664 恢复（md5 校验后）。`scripts/colab/w3m_line.sh`（两台机器均已部署）现在对 run_train.sh 失败重试 3 次，并在 train.log 出现该 MISMATCH 时追加 `--compile off`——D 的第二次尝试逐位复现同一数值（确定性误触发），已自动转 eager（update 阶段 3.6 s 对 3.2 s）。
+- 第三轮分叉点：00:40 配对比较 u7664——dev-128 B−A −0.005 [−0.035, +0.026]，ab-512 B−A −0.030 [−0.047, −0.013] → E′/F′ 改从 **A 的 pinned-0007664** 分叉（见 `docs/round3-plan-2026-11-05.md` 末段）。第二轮 C/D 保持 B 的 u7664。
+
+### 守护状态
+
+- 东京保活（`~/sts2keep/sessions.txt`）：`sts2c → runs/w9-e.driver.log`，`sts2b3 → runs/w9-f.driver.log`；末行以 `: done` 结尾即停机。
+- Mac 轮换守护 v1 仍在跑，但 `managed.txt` 已清空：v1 的 rotate() 只恢复一条线的第一个 run 目录，对现在的链会把 C/E′ 从头重分叉并覆盖桶内历史。**守护 v2**（恢复一条线的全部 run 目录、整条链重启、保活因失败停机 → ALERT）由后台 Opus 工作流 `wf_01cec61a-c10` 产出（`scripts/colab/ops/watch_rotate.sh` + `scratchpad/rotate/watch_rotate_v2.sh`），切换步骤：按 PID 杀 v1 → `managed.txt` 写 `sts2c a w3m-a,w4-c,w9-e sts2a2` 与 `sts2b3 b w3m-b,w4-d,w9-f sts2b4` → 起 v2。**必须在 11:52 sts2c 回收前完成**，否则 E′ 中断需人工按 `scripts/colab/ops/resume_b_sts2b3.sh` 的步骤恢复（恢复 w3m-a、w4-c、w9-e 三个目录；核对 md5；补 `w3m-a: done`、`w3m-c: done` 标记；起 `launch_c2.sh`（会秒级结束）与 `launch_e.sh`）。
+- Mac 镜像循环与 ping 循环照常；监控页在 00:55 刷新后不再自动更新。
+
+### 早上先看什么
+
+1. `ssh colab-sts2c "tail -2 /content/sts2/runs/w4-c.driver.log; tail -1 /content/sts2/runs/w9-e/train.log"` —— C 是否到 u9164 并有端点评测，E′ 是否起跑（若 C 的首个 update 也触发门槛，驱动会自动转 eager，看 `w4-c.driver.log` 里的 "compile gate tripped"）。
+2. `ssh colab-sts2b3 "tail -2 /content/sts2/runs/w4-d.driver.log; tail -1 /content/sts2/runs/w9-f/train.log"` —— D 终点评测、F′ 起跑。
+3. `colab --auth=adc sessions` 两张 A100 都在；`colab --auth=adc usage` 余额（00:55 为 341.7，双卡约 13.5/h → 早 08:00 约 245；低于 150 告警）。
+4. 第二轮读数：`r2_compare.sh 9164`（C 对 D，`--macros all` 是否采纳）在 C 到终点后（约 06:40）可跑。
+5. 工作流 `wf_01cec61a-c10` 的产物（运维脚本入库、结果表、交接文档、README 段落、ppo.py 门槛修正、守护 v2）：核对 `git status`，审阅后提交推送；仓库为 public，org 镜像待用户决定（raven-labs-official / raven-labs-pro）。

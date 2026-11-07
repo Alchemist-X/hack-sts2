@@ -19,6 +19,7 @@ import os
 import re
 import statistics
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROTOCOL_VERSION = "0.2"
@@ -85,10 +86,48 @@ def compute(result: str | None, act: int | None, floor: int | None, ascension: i
 # ------------------------------------------------------------------------------------------------ seed sets
 
 _SEED_RE = re.compile(r"^[A-Z0-9]{1,10}$")
+# A training-pool seed text, "<seed_prefix>-<CHARACTER>-<i>" (the fresh entries of `sts2train train`: TRAIN0-SILENT-17),
+# is accepted too, with its CHARACTER equal to the game's: seed sets drawn from the training generator outside the
+# training pool (silent-a10-ab-v1: TRAIN0-SILENT-4096..4607). The sim hashes a seed text as given; these are not game
+# seeds (the game's format is the one above), so such sets are sim-only.
+_POOL_SEED_RE = re.compile(r"^TRAIN[0-9]{1,6}-([A-Z]{1,16})-[0-9]{1,7}$")
+BLIND_ROLE = "blind"            # a frozen blind test set: not evaluated while a scheme is chosen (require_blind_access)
+OLD_SEED_PREFIX = "old"         # RngSeeds.OldSeedPrefix: such texts take the game's legacy 32-bit hash
+_M64 = (1 << 64) - 1
 
 
 class SeedSetError(ValueError):
     pass
+
+
+class BlindSetError(SeedSetError):
+    """An evaluation of games of a frozen blind seed set without ``allow_blind`` and a ``purpose``."""
+
+
+def _legacy_seed_hash(text: str) -> int:
+    """``DeterministicHash.GetDeterministicHashCodeOld`` (C# int arithmetic over the UTF-16 code units) as int32."""
+    b = text.encode("utf-16-le")
+    units = [int.from_bytes(b[k:k + 2], "little") for k in range(0, len(b), 2)]
+    num = num2 = 352654597
+    for i in range(0, len(units), 2):
+        num = (((num << 5) + num) ^ units[i]) & 0xFFFFFFFF
+        if i == len(units) - 1:
+            break
+        num2 = (((num2 << 5) + num2) ^ units[i + 1]) & 0xFFFFFFFF
+    h = (num + num2 * 1566083941) & 0xFFFFFFFF
+    return h - (1 << 32) if h >= 1 << 31 else h
+
+
+def run_seed(seed_text: str) -> int:
+    """The game's 64-bit run seed of a seed text (``RngSeeds.RunSeed``): XxHash64 of its UTF-8 bytes, or for a text
+    starting with ``old`` the legacy 32-bit hash of the rest (as uint32). Every run RNG stream, the act selection and
+    the player streams derive from it (sim/Sts2Sim.Core/Random/RngSeeds.cs), so two seed texts with the same run seed
+    play the same game: seed-set isolation compares run seeds, not only texts."""
+    from .schema import xxh64
+
+    if seed_text.startswith(OLD_SEED_PREFIX):
+        return _legacy_seed_hash(seed_text[len(OLD_SEED_PREFIX):]) & 0xFFFFFFFF
+    return xxh64(seed_text.encode("utf-8")) & _M64
 
 
 def seedset_dirs() -> list[Path]:
@@ -121,8 +160,10 @@ def validate_seedset(data: dict, origin: str = "<inline>") -> dict:
     seen = set()
     for i, g in enumerate(games):
         seed, ch = g.get("seed"), g.get("character")
-        if not isinstance(seed, str) or not _SEED_RE.match(seed):
-            raise SeedSetError(f"{origin}: games[{i}].seed {seed!r} must be 1-10 uppercase alphanumerics")
+        pool_seed = _POOL_SEED_RE.match(seed) if isinstance(seed, str) else None
+        if not isinstance(seed, str) or not (_SEED_RE.match(seed) or (pool_seed and pool_seed.group(1) == ch)):
+            raise SeedSetError(f"{origin}: games[{i}].seed {seed!r} must be 1-10 uppercase alphanumerics or a "
+                               f"training-pool seed text TRAIN<n>-{ch}-<i>")
         if ch not in CHARACTERS:
             raise SeedSetError(f"{origin}: games[{i}].character {ch!r} not in {CHARACTERS}")
         if (ch, seed) in seen:
@@ -152,6 +193,64 @@ def load_seedset(name_or_path: str) -> dict:
                 continue
     avail = sorted({x.stem for d in seedset_dirs() for x in d.glob("*.json")})
     raise SeedSetError(f"seed set {name_or_path!r} not found (known: {', '.join(avail) or 'none'})")
+
+
+def frozen_seedsets(roles=None) -> list[tuple[Path, dict]]:
+    """Every seed set file under ``seedset_dirs()`` (validated, so a frozen set's sha256 must match its content) as
+    (path, data), in directory then file-name order; ``roles`` (an iterable of role names) keeps only those roles. A
+    file that does not validate raises ``SeedSetError``: an isolation check must not skip a set it cannot read."""
+    keep = None if roles is None else set(roles)
+    out = []
+    for d in seedset_dirs():
+        for q in sorted(d.glob("*.json")):
+            data = load_seedset(str(q))
+            if keep is None or data.get("role") in keep:
+                out.append((q, data))
+    return out
+
+
+def blind_overlap(data: dict) -> list[dict]:
+    """The frozen blind sets (role ``blind`` under ``seedset_dirs()``) that share at least one game's run seed
+    (``run_seed`` of the seed text: the game, whatever the character / ascension) with seed set ``data``, plus ``data``
+    itself when its own role is ``blind``; [] = no blind game. Rows: {"id", "name", "path", "games"} (shared games)."""
+    want = {run_seed(g["seed"]) for g in data.get("games") or []}
+    out = []
+    for q, b in frozen_seedsets((BLIND_ROLE,)):
+        n = sum(1 for g in b["games"] if run_seed(g["seed"]) in want)
+        if n:
+            out.append({"id": b.get("id"), "name": b.get("name"), "path": str(q), "games": n})
+    if data.get("role") == BLIND_ROLE and not any(r["id"] == data.get("id") and r["id"] for r in out):
+        out.append({"id": data.get("id"), "name": data.get("name"), "path": None,
+                    "games": len(data.get("games") or [])})
+    return out
+
+
+def require_blind_access(data: dict, *, allow_blind: bool = False, purpose: str | None = None,
+                         out_dir: str | os.PathLike | None = None, weights_hash: str | None = None) -> dict | None:
+    """Gate of every evaluation on the frozen blind sets: None when ``data`` holds no blind game (``blind_overlap``);
+    otherwise ``BlindSetError`` unless ``allow_blind`` and a non-empty ``purpose`` are given, and then one line
+    ``{utc, weights_hash, seedset, purpose, blind_sets}`` is appended to ``out_dir/blind-access.jsonl`` (the access
+    log; created with the directory) and returned. ``sts2vec eval`` / ``sts2train eval`` / report-card / the trainer's
+    periodic eval take the flags ``--allow-blind --purpose TEXT``."""
+    blind = blind_overlap(data)
+    if not blind:
+        return None
+    sid = data.get("id") or data.get("name") or "<inline>"
+    names = ", ".join(f"{b['id'] or b['name']} ({b['games']} games)" for b in blind)
+    if not allow_blind or not (purpose or "").strip():
+        raise BlindSetError(f"seed set {sid} holds games of the frozen blind set(s) {names}: blind sets are not "
+                            f"evaluated while a scheme is chosen; pass --allow-blind --purpose \"<why>\" (the access "
+                            f"is logged to <out>/blind-access.jsonl)")
+    row = {"utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "weights_hash": weights_hash,
+           "seedset": {"id": data.get("id"), "name": data.get("name"), "sha256": checksum(data),
+                       "games": len(data.get("games") or [])},
+           "purpose": purpose.strip(), "blind_sets": blind}
+    if out_dir is not None:
+        d = Path(out_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "blind-access.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row
 
 
 def seedset_identity(data: dict | None) -> dict:

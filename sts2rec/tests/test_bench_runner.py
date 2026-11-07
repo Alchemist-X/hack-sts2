@@ -223,14 +223,36 @@ def test_baseline_labels_resolve_to_manifest_files(tmp_path, monkeypatch):
 
 def test_config_pins_each_allowed_baseline():
     config = json.loads((ROOT / 'config/bench/ironclad-a0-10seed.json').read_text())
-    assert set(config['baselines']) == {'v1', 'v2'}
+    assert set(config['baselines']) == {'v2'}
     for pinned in config['baselines'].values():
         run_bench.check_baseline(config, {'name': pinned['name'], 'sha256': pinned['sha256']})
+    with pytest.raises(SystemExit):  # the v0.107.1 baselines are not allowed on v0.111.0
+        run_bench.check_baseline(config, {'name': 'sts2-bench-baseline-v2-unlocked',
+                                          'sha256': '61f13cccbc21017e08eaf6de58a6bdd985740a588e56a1f2d10c849553e17d19'})
     with pytest.raises(SystemExit):
-        run_bench.check_baseline(config, {'name': 'sts2-bench-baseline-v1', 'sha256': '0' * 64})
+        run_bench.check_baseline(config, {'name': config['baselines']['v2']['name'], 'sha256': '0' * 64})
     with pytest.raises(SystemExit):
         run_bench.check_baseline(config, {'name': 'other', 'sha256': config['baselines']['v2']['sha256']})
     run_bench.check_baseline({'baseline': {'name': 'a', 'sha256': 'x'}}, {'name': 'a', 'sha256': 'x'})
+
+
+def test_bench_configs_match_the_pinned_game_and_knowledge():
+    """A game migration bumps the MCP lock, every benchmark config and knowledge/source together."""
+    lock = json.loads((ROOT / 'config/sts2mcp.lock.json').read_text())
+    version = lock['game']['version']
+    assert lock['compatible_game_version'] == version.lstrip('v')
+    assert lock['compatible_game_commit'] == lock['game']['commit']
+    assert (ROOT / lock['game']['knowledge_source'] / 'manifest.json').is_file()
+    manifest = json.loads((ROOT / 'knowledge/source' / version / 'manifest.json').read_text())
+    assert manifest['game_version'] == version.lstrip('v') and manifest['game_commit'] == lock['game']['commit']
+    assert manifest['sources']['assembly']['sha256'] == lock['game']['sts2_dll_sha256']['data_sts2_macos_arm64']
+    for name in ('ironclad-a0-10seed.json', 'ironclad-a10-10seed.json'):
+        config = json.loads((ROOT / 'config/bench' / name).read_text())
+        assert config['game_version'] == version and config['game_commit'] == lock['game']['commit']
+        assert run_bench.game_version_flags(config) == ['--game-version', version]
+        assert all(version in pin['name'] for pin in config['baselines'].values())
+    for patch in lock['patches']:  # the build verifies these too; keep the lock and patches/ in step
+        assert hashlib.sha256((ROOT / patch['path']).read_bytes()).hexdigest() == patch['sha256']
 
 
 def test_a10_config_pins_the_a10_baseline_and_reuses_the_a0_seeds():
@@ -339,7 +361,8 @@ def test_unusable_instance_returns_its_seed_instead_of_draining_the_queue(tmp_pa
 
     good, bad = Inst('inst1', False), Inst('inst2', True)
     monkeypatch.setattr(run_bench, 'Instance', lambda pool, n, *a: {1: good, 2: bad}[int(n)])
-    monkeypatch.setattr(run_bench.baseline_mod, 'load_manifest', lambda path: {'name': 'sts2-bench-baseline-v1', 'sha256': '72f1dd96e0edcff817cd6717368701cfe4e38eb2cd13a90277ebedbe9b697846'})
+    pinned = json.loads((ROOT / 'config/bench/ironclad-a0-10seed.json').read_text())['baselines']['v2']
+    monkeypatch.setattr(run_bench.baseline_mod, 'load_manifest', lambda path: dict(pinned))
 
     def fake_run_seed(inst, seed, *a):
         import time
@@ -354,3 +377,107 @@ def test_unusable_instance_returns_its_seed_instead_of_draining_the_queue(tmp_pa
     assert code == 0
     assert bad.ran == [] and sorted(good.ran) == ['BENCHA0S01', 'BENCHA0S02', 'BENCHA0S03']
     assert bad.unusable
+
+
+def test_verify_seed_fails_when_a_source_is_missing(tmp_path, monkeypatch):
+    class Inst:
+        dir = tmp_path
+        run = None
+
+        def current_run(self, _profile):
+            return self.run
+
+    (tmp_path / 'game.log').write_text('Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: S1\n')
+    inst = Inst()
+    ev = run_bench.verify_seed(inst, 'p', 'S1', 0, 10)  # the log alone is not enough
+    assert not ev['verified'] and not ev['ascension_verified'] and ev['missing'] == ['save']
+    readback = {'character': 'IRONCLAD', 'seed': 'S1', 'ascension': 10, 'game_mode': 'standard'}
+    inst.run = {'rng': {'seed': 'S1'}, 'game_mode': 'standard', 'ascension': 10}
+    assert run_bench.verify_seed(inst, 'p', 'S1', 0, 10, readback=readback)['verified']
+    (tmp_path / 'game.log').write_text('no embark line yet\n')  # eval start but the log never says it
+    ev = run_bench.verify_seed(inst, 'p', 'S1', 0, 10, readback=readback)
+    assert not ev['verified'] and ev['missing'] == ['log']
+
+    # A source that lags the first frame is picked up while wait_s lasts.
+    inst.run = None
+    (tmp_path / 'game.log').write_text('Embarking on a singleplayer IRONCLAD run. Ascension: 10 Seed: S1\n')
+    calls = {'n': 0}
+
+    def late_save(_profile):
+        calls['n'] += 1
+        return {'rng': {'seed': 'S1'}, 'ascension': 10} if calls['n'] >= 3 else None
+
+    inst.current_run = late_save
+    monkeypatch.setattr(run_bench.time, 'sleep', lambda s: None)
+    ev = run_bench.verify_seed(inst, 'p', 'S1', 0, 10, wait_s=60)
+    assert ev['verified'] and ev['missing'] == [] and calls['n'] == 3
+
+
+def test_game_over_on_the_last_allowed_decision_is_recorded_as_game_over(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    combat = observation('combat')
+    over = {'hash': 'end', 'state': {'state_type': 'game_over', 'run': {'act': 1, 'floor': 5}}, 'legal_actions': []}
+    frames = iter([combat, over])
+    sent = []
+
+    def fake_live(command, run_dir, port, *args, extra=(), **kwargs):
+        if command == 'observe':
+            return 0, next(frames)
+        sent.append(command)
+        return 0, {'ok': True, 'observation': over, 'steps': []}
+
+    monkeypatch.setattr(run_bench, 'live', fake_live)
+    rec = run_bench.Recorder(tmp_path / 'trajectory.jsonl')
+    inst = SimpleNamespace(port=1, name='inst1')
+    args = SimpleNamespace(limits={'max_decisions': 1, 'max_wall_s': 600, 'max_consecutive_errors': 6},
+                           live_flags=[], wiki_facts=False)
+    began = run_bench.time.monotonic()
+    end = run_bench.play(inst, 'S1', tmp_path, rec, 'stub', policies.stub_policy, args, began)
+    assert end == 'game_over' and sent == ['act']
+    assert [r['type'] for r in rec.records] == ['decision', 'terminal']
+
+    # Still alive after the last allowed decision: the cap ends the run without another act.
+    frames = iter([combat, combat])
+    sent.clear()
+    rec = run_bench.Recorder(tmp_path / 'trajectory2.jsonl')
+    assert run_bench.play(inst, 'S1', tmp_path, rec, 'stub', policies.stub_policy, args, began) == 'max_decisions'
+    assert sent == ['act'] and [r['type'] for r in rec.records] == ['decision']
+
+
+def test_baseline_labels_resolve_per_game_version(tmp_path, monkeypatch):
+    root = tmp_path / 'root'
+    (root / 'v0.111.0').mkdir(parents=True)
+    (root / 'manifest-v2-unlocked.json').write_text('{}')
+    (root / 'v0.111.0' / 'manifest-v2-unlocked.json').write_text('{}')
+    monkeypatch.setattr(baseline, 'BASELINE_ROOT', root)
+    assert baseline.manifest_path('v2', 'v0.111.0') == root / 'v0.111.0' / 'manifest-v2-unlocked.json'
+    assert baseline.manifest_path('v2', '0.111.0') == root / 'v0.111.0' / 'manifest-v2-unlocked.json'
+    assert baseline.manifest_path('v2', 'v0.107.1') == root / 'manifest-v2-unlocked.json'  # flat v0.107.1 layout
+    assert baseline.manifest_path('v2') == root / 'manifest-v2-unlocked.json'
+    assert baseline.manifest_path('v2-a10', 'v0.111.0') == root / 'manifest-v2-a10.json'  # missing: pins refuse it
+    config = tmp_path / 'c.json'
+    config.write_text(json.dumps({**json.loads((ROOT / 'config/bench/ironclad-a0-10seed.json').read_text())}))
+    a = run_bench.parse_args(['--config', str(config)])
+    assert a.baseline == str(root / 'v0.111.0' / 'manifest-v2-unlocked.json')
+
+
+def test_freeze_is_deterministic_and_restores(tmp_path):
+    inst = tmp_path / 'worker-pool-test' / 'inst1'
+    save = inst / baseline.MAC_SAVE_REL
+    saves = save / 'default/1/modded/profile1/saves'
+    (saves / 'history').mkdir(parents=True)
+    (saves / 'progress.save').write_text('{"schema_version": 24}')
+    (save / 'default/1/settings.save').write_text('{"schema_version": 8, "language": "eng"}')
+    (save / 'logs').mkdir()
+    (save / 'logs/godot.log').write_text('not part of a baseline')
+    first = baseline.freeze(inst, tmp_path / 'b1', 'bl', 'manifest-v2-unlocked.json', {'game_version': 'v0.111.0'})
+    second = baseline.freeze(inst, tmp_path / 'b2', 'bl', 'manifest-v2-unlocked.json')
+    assert first['sha256'] == second['sha256'] and first['game_version'] == 'v0.111.0'
+    assert first['save_layout'] == str(baseline.MAC_SAVE_REL) and 'logs/godot.log' not in first['files']
+    with pytest.raises(baseline.BaselineError):  # frozen baselines are never overwritten
+        baseline.freeze(inst, tmp_path / 'b1', 'bl', 'manifest-v2-unlocked.json')
+    (saves / 'current_run.save').write_text('{}')
+    info = baseline.restore(inst, tmp_path / 'b1' / 'manifest-v2-unlocked.json')
+    assert info['tarball_sha256'] == first['sha256'] and not (saves / 'current_run.save').exists()
+    with pytest.raises(baseline.BaselineError):
+        baseline.freeze(tmp_path / 'elsewhere' / 'inst1', tmp_path / 'b3', 'bl', 'm.json')

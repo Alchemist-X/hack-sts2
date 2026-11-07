@@ -37,9 +37,13 @@ import policies  # noqa: E402
 
 LIVE = ROOT / 'scripts' / 'sts2_live.py'
 SCHEMA = 'sts2-bench-trajectory/v1'
-DEFAULT_LAUNCHER = '/workspace/hack-sts2-cloud/scripts/headless_launch.sh'
+CLOUD_LAUNCHER = Path('/workspace/hack-sts2-cloud/scripts/headless_launch.sh')
+# hack-sts2-cloud's launcher on the cloud hosts; elsewhere (macOS pools provisioned by
+# scripts/headless_provision.sh) this repo's own launcher.
+DEFAULT_LAUNCHER = str(CLOUD_LAUNCHER if CLOUD_LAUNCHER.exists() else ROOT / 'scripts' / 'headless_launch.sh')
 SEED_CHARS = set('0123456789ABCDEFGHJKLMNPQRSTUVWXYZ')
-PROFILE_REL = Path('home/.local/share/SlayTheSpire2')
+SEED_EVIDENCE_WAIT_S = 15.0  # current_run.save / the embark log line can trail the first run frame
+PROFILE_REL = baseline_mod.SAVE_REL  # Linux default; per instance see baseline_mod.save_rel (macOS layout)
 _print_lock = threading.Lock()
 STOP = threading.Event()  # set on SIGINT/SIGTERM: finish the current step, stop instances
 
@@ -89,10 +93,10 @@ class Instance:
         self._launcher('--wait-s', str(wait_s))
 
     def history_dir(self, active_profile):
-        return self.dir / PROFILE_REL / active_profile / 'saves' / 'history'
+        return self.dir / baseline_mod.save_rel(self.dir) / active_profile / 'saves' / 'history'
 
     def current_run(self, active_profile):
-        path = self.dir / PROFILE_REL / active_profile / 'saves' / 'current_run.save'
+        path = self.dir / baseline_mod.save_rel(self.dir) / active_profile / 'saves' / 'current_run.save'
         return json.loads(path.read_text()) if path.exists() else None
 
 
@@ -214,9 +218,7 @@ def start_seeded_run(port, seed, character='IRONCLAD', ascension=0, timeout_s=90
     raise BenchError('timed out starting the seeded run')
 
 
-def verify_seed(inst, active_profile, seed, log_offset, ascension=None, readback=None):
-    """The seed (and, if given, ascension) the game used, from its own log line, the run save
-    and (when started through the eval API) the MCP readback; all sources must agree."""
+def _seed_sources(inst, active_profile, log_offset, readback):
     evidence = {}
     if readback:
         evidence['mcp_readback'] = {'character': readback.get('character'), 'seed': readback.get('seed'),
@@ -233,11 +235,28 @@ def verify_seed(inst, active_profile, seed, log_offset, ascension=None, readback
     if saved:
         evidence['save'] = {'seed': (saved.get('rng') or {}).get('seed'), 'game_mode': saved.get('game_mode'),
                             'ascension': saved.get('ascension')}
+    return evidence
+
+
+def verify_seed(inst, active_profile, seed, log_offset, ascension=None, readback=None, wait_s=0.0):
+    """The seed (and, if given, ascension) the game used.  Every source must be present and agree:
+    the game.log embark line, ``current_run.save`` and, when the run was started through the eval
+    API (``readback``), the MCP readback.  A missing source fails verification (listed in
+    ``missing``); ``wait_s`` keeps polling for sources that can lag the first frame."""
+    required = ['log', 'save'] + (['mcp_readback'] if readback else [])
+    deadline = time.monotonic() + wait_s
+    while True:
+        evidence = _seed_sources(inst, active_profile, log_offset, readback)
+        missing = [source for source in required if source not in evidence]
+        if not missing or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
     seeds = {v.get('seed') for v in evidence.values()}
-    evidence['verified'] = bool(evidence) and seeds == {seed}
+    evidence['missing'] = missing
+    evidence['verified'] = not missing and seeds == {seed}
     if ascension is not None:
         ascensions = {v.get('ascension') for v in evidence.values() if isinstance(v, dict)}
-        evidence['ascension_verified'] = bool(ascensions) and ascensions == {ascension}
+        evidence['ascension_verified'] = not missing and ascensions == {ascension}
         evidence['verified'] = evidence['verified'] and evidence['ascension_verified']
     return evidence
 
@@ -288,6 +307,13 @@ def _live_once(command, run_dir, port, *args, extra=()):
     return proc.returncode, payload
 
 
+def game_version_flags(config):
+    """sts2_live start --game-version: the config's game version selects knowledge/source/<version>
+    (rule authority + decision_context); without it sts2_live defaults to v0.107.1."""
+    version = str(config.get('game_version') or '').strip()
+    return ['--game-version', version if version.startswith('v') else f'v{version}'] if version else []
+
+
 def summarize_state(obs):
     state = obs.get('state') or {}
     run, player, battle = state.get('run') or {}, state.get('player') or {}, state.get('battle') or {}
@@ -317,19 +343,15 @@ def play(inst, seed, run_dir, rec, policy_name, policy, args, began):
     while True:
         if STOP.is_set():
             return 'interrupted'
-        if index >= limits['max_decisions']:
-            return 'max_decisions'
-        if time.monotonic() - began > limits['max_wall_s']:
-            return 'max_wall_s'
         code, obs = live('observe', run_dir, inst.port, extra=args.live_flags,
                          on_retry=lambda cmd, n, err: rec.write({'type': 'friction', 'kind': 'transient_observe_retry',
                                                                   'attempt': n, 'message': err}))
         if obs.get('warning_pending'):
+            if time.monotonic() - began > limits['max_wall_s']:
+                return 'max_wall_s'
             live('reconcile', run_dir, inst.port, 'bench runner: auto-reconcile after re-observing', extra=args.live_flags)
             rec.write({'type': 'friction', 'kind': 'pending_unresolved', 'index': index})
             continue
-        if not obs.get('settled', True):
-            rec.write({'type': 'friction', 'kind': 'not_settled', 'index': index, 'stage': 'observe'})
         st = (obs.get('state') or {}).get('state_type')
         if st == 'game_over':
             rec.write({'type': 'terminal', 'index': index, 'state_ref': {'decision_hash': obs.get('hash')},
@@ -337,6 +359,14 @@ def play(inst, seed, run_dir, rec, policy_name, policy, args, began):
             return 'game_over'
         if st == 'menu':
             return 'returned_to_menu'
+        # Limits apply only after observing: a run that ends on its last allowed decision is a
+        # game_over with its terminal record, not max_decisions.
+        if index >= limits['max_decisions']:
+            return 'max_decisions'
+        if time.monotonic() - began > limits['max_wall_s']:
+            return 'max_wall_s'
+        if not obs.get('settled', True):
+            rec.write({'type': 'friction', 'kind': 'not_settled', 'index': index, 'stage': 'observe'})
         if not obs.get('legal_actions'):
             consecutive_errors += 1
             if consecutive_errors > limits['max_consecutive_errors'] * 5:
@@ -407,15 +437,18 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
         log(inst.name, seed, 'stop + restore baseline')
         inst.stop()
         restore_info = baseline_mod.restore(inst.dir, args.baseline)
-        log_offset = (inst.dir / 'game.log').stat().st_size if (inst.dir / 'game.log').exists() else 0
         epoch_before = time.time()
         inst.launch()
         wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
+        # Offset taken after launch: the embark line only appears once the run starts, and
+        # scripts/headless_launch.sh truncates game.log on launch (worker_runtime.py appends).
+        log_offset = (inst.dir / 'game.log').stat().st_size if (inst.dir / 'game.log').exists() else 0
         embark, start_method = start_run(inst.port, seed, args.config['character'], args.config['ascension'],
                                          args.start_method, args.game_settings)
         first = wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
         seed_evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'),
-                                    readback=embark.get('readback') if start_method == 'eval' else None)
+                                    readback=embark.get('readback') if start_method == 'eval' else None,
+                                    wait_s=SEED_EVIDENCE_WAIT_S)
         if not seed_evidence['verified']:
             raise BenchError(f'seed/ascension not verified: {seed_evidence}')
         rec.write({'type': 'run_start', 'seed': seed, 'instance': inst.name, 'port': inst.port,
@@ -428,7 +461,7 @@ def run_seed(inst, seed, args, policy_name, policy, out_root):
                    'harness': {'mode': args.mode, 'allow_unverified_authority': args.allow_unverified_authority}})
         start = [sys.executable, str(LIVE), 'start', '--run-dir', str(run_dir), '--port', str(inst.port),
                  '--plan', str(args.plan), '--mode', args.mode, *sum((['--memory', str(m)] for m in args.memory), []),
-                 *(['--wiki-facts'] if args.wiki_facts else []), *args.live_flags]
+                 *game_version_flags(args.config), *(['--wiki-facts'] if args.wiki_facts else []), *args.live_flags]
         proc = subprocess.run(start, capture_output=True, text=True, cwd=ROOT)
         if proc.returncode != 0:
             raise BenchError(f'sts2_live start failed: {proc.stderr.strip()[-500:]}')
@@ -474,17 +507,19 @@ def fingerprint(inst, seed, args, out_dir):
     manifest = baseline_mod.load_manifest(args.baseline)
     inst.stop()
     baseline_mod.restore(inst.dir, args.baseline)
-    log_offset = (inst.dir / 'game.log').stat().st_size if (inst.dir / 'game.log').exists() else 0
     inst.launch()
     wait_for(inst.port, lambda s: s.get('state_type') == 'menu' and s.get('menu_screen') == 'main', 120, 'main menu')
+    log_offset = (inst.dir / 'game.log').stat().st_size if (inst.dir / 'game.log').exists() else 0
     embark, start_method = start_run(inst.port, seed, args.config['character'], args.config['ascension'],
                                      args.start_method, args.game_settings)
     wait_for(inst.port, lambda s: s.get('state_type') not in ('menu', None, 'unknown'), 90, 'first run frame')
     evidence = verify_seed(inst, manifest['active_profile'], seed, log_offset, args.config.get('ascension'),
-                           readback=embark.get('readback') if start_method == 'eval' else None)
+                           readback=embark.get('readback') if start_method == 'eval' else None,
+                           wait_s=SEED_EVIDENCE_WAIT_S)
     run_dir = out_dir / 'live'
     subprocess.run([sys.executable, str(LIVE), 'start', '--run-dir', str(run_dir), '--port', str(inst.port),
-                    '--plan', str(args.plan), '--memory', str(args.memory[0]), *args.live_flags],
+                    '--plan', str(args.plan), '--memory', str(args.memory[0]), *game_version_flags(args.config),
+                    *args.live_flags],
                    check=True, capture_output=True, cwd=ROOT)
     fp = {'seed_evidence': evidence, 'start_method': start_method}
     for _ in range(40):
@@ -544,6 +579,9 @@ def parse_args(argv=None):
     if a.game_settings is not None and not isinstance(a.game_settings, dict):
         raise SystemExit('--game-settings / config game_settings must be a JSON object')
     a.baseline = a.baseline or a.config.get('default_baseline') or baseline_mod.DEFAULT_BASELINE
+    # A label resolves under $STS2_BENCH_BASELINE_ROOT/<config game_version>/ (flat root as fallback);
+    # check_baseline then still requires the config's pinned name and sha256.
+    a.baseline = str(baseline_mod.manifest_path(a.baseline, a.config.get('game_version')))
     a.memory = a.memory or [ROOT / 'config/bench/bench-memory.md']
     a.limits = dict(a.config.get('limits') or {})
     a.limits.setdefault('max_decisions', 3000)
@@ -616,7 +654,7 @@ def main(argv=None):
     (out / 'bench.json').write_text(json.dumps({
         'benchmark': a.config['name'], 'config': a.config, 'policy': policy_name, 'wiki_facts': bool(a.wiki_facts),
         'instances': [i.name for i in instances], 'seeds': seeds,
-        'baseline': manifest.get('name'), 'baseline_sha256': manifest['sha256'],
+        'baseline': manifest.get('name'), 'baseline_sha256': manifest['sha256'], 'baseline_manifest': a.baseline,
         'limits': a.limits, 'mode': a.mode, 'start_method': a.start_method, 'game_settings': a.game_settings,
         'started_at': datetime.now(timezone.utc).isoformat()}, indent=2) + '\n')
     todo = queue.Queue()

@@ -1,4 +1,5 @@
-"""Gate tests: model forward on a real env step, candidate masking / pointer wiring, finite PPO loss, progress tracker."""
+"""Gate tests: model forward on a real env step, candidate masking / pointer wiring, finite PPO loss, progress tracker,
+model presets (the smoke model stays < 2M parameters; the large preset is a 10-20M parameter net)."""
 
 from __future__ import annotations
 
@@ -12,10 +13,11 @@ from sts2eval import progress as PG
 from sts2vec import PoolSpec, VecEnv, random_actions
 
 from sts2train.features import ModelSpec, RolloutStore, bind_spec, obs_to_torch
-from sts2train.model import Policy, param_count
+from sts2train.model import PRESETS, Policy, param_count
 from sts2train.progress import ProgressTracker
 
 N = 64
+TINY_TRUNK = {"d": 64, "s": 128, "depth": 1, "heads": 4, "ff_mult": 2}   # exercises the transformer path cheaply
 
 
 @pytest.fixture(scope="module")
@@ -55,10 +57,22 @@ def test_spec_has_protocol_aux_columns(spec):
 
 
 def test_param_budget(model):
-    assert param_count(model) < 2_000_000
+    assert param_count(model) < 2_000_000          # the smoke config (Policy defaults = PRESETS["smoke"])
+    assert {k: getattr(model, k) for k in ("d", "s", "depth")} == {k: PRESETS["smoke"][k] for k in ("d", "s", "depth")}
 
 
-def test_forward_on_real_env_step(env, spec, model):
+def test_preset_sizes(spec):
+    sizes = {name: param_count(Policy(spec, **kw)) for name, kw in PRESETS.items()}
+    # since e9baaefc39811631 RunActionKind has 23 members (21 before: 948,750 / 1,175,150 / 15,804,270)
+    assert sizes == {"smoke": 948_974, "small": 1_175_438, "mid": 2_827_406, "mid-deep": 4_161_998,
+                     "large": 15_805_070}, sizes
+
+
+@pytest.mark.parametrize("arch", [None, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_forward_on_real_env_step(env, spec, model, arch):
+    if arch is not None:
+        torch.manual_seed(0)
+        model = Policy(spec, **arch).eval()
     obs = _advance(env, 40)
     x = obs_to_torch(obs, "cpu")
     with torch.no_grad():
@@ -79,7 +93,11 @@ def test_forward_on_real_env_step(env, spec, model):
     assert not (status & STATUS["ILLEGAL_ACTION"]).any()
 
 
-def test_candidate_masking(env, spec, model):
+@pytest.mark.parametrize("arch", [None, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_candidate_masking(env, spec, model, arch):
+    if arch is not None:
+        torch.manual_seed(0)
+        model = Policy(spec, **arch).eval()
     obs = _advance(env, 25, seed=3)
     x = obs_to_torch(obs, "cpu")
     with torch.no_grad():
@@ -125,11 +143,13 @@ def test_candidate_pointers_matter(env, spec, model):
     assert found, "no slot with two same-kind candidates scored differently"
 
 
-def test_loss_finite_and_backward(env, spec, model):
+@pytest.mark.parametrize("arch", [None, TINY_TRUNK], ids=["smoke", "trunk"])
+def test_loss_finite_and_backward(env, spec, model, arch):
     obs = _advance(env, 20, seed=7)
     dtypes = {k: env.buffers[k].dtype for k in env.buffers.arrays}
     store = RolloutStore(spec, 2, N, 64, dtypes)
-    m = Policy(spec)
+    torch.manual_seed(0)
+    m = Policy(spec, **(arch or {}))
     opt = torch.optim.Adam(m.parameters(), lr=1e-3)
     rng = np.random.default_rng(0)
     for t in range(2):
@@ -147,9 +167,9 @@ def test_loss_finite_and_backward(env, spec, model):
         acts[obs["cand_n"] <= 0] = -1
         obs, rew, term, trunc, status, info = env.step(acts)
         store.rewards[t] = rew + rng.random(N).astype(np.float32) * 0.01
-    flat = store.flat()
     idx = np.flatnonzero(store.valid.reshape(-1))
-    x = obs_to_torch(flat, "cpu", max_rows=64, index=idx)
+    x = store.batch(idx)
+    assert x["cand"].shape[1] <= 64 and x["cand"].shape[0] == len(idx)
     lg, v = m(x)
     logp = F.log_softmax(lg, -1)
     act = torch.from_numpy(store.actions.reshape(-1)[idx])
@@ -223,3 +243,27 @@ def test_eval_entry_point_writes_protocol_report(tmp_path, spec):
     h2 = build_report(out)["headline"]
     for k in ("games", "wins", "progress_mean", "floor_mean", "replayable", "steps_total"):
         assert h2[k] == h[k], k
+
+
+def test_trunk_checkpointing_is_exact_and_saves_memory(env, spec):
+    """--grad-checkpoint recomputes the transformer blocks: same logits and gradients, fewer saved activations."""
+    from sts2train.model import activation_bytes_per_sample
+
+    obs = _advance(env, 15, seed=9)
+    x = obs_to_torch(obs, "cpu", max_rows=64)
+    torch.manual_seed(0)
+    m = Policy(spec, **TINY_TRUNK)
+    m.train()
+    grads = []
+    for ck in (False, True):
+        m.grad_ckpt = ck
+        m.zero_grad()
+        lg, v = m(x)
+        (lg.logsumexp(-1).mean() + v.mean()).backward()
+        grads.append((lg.detach(), [p.grad.clone() for p in m.parameters() if p.grad is not None]))
+    assert torch.allclose(grads[0][0], grads[1][0], atol=1e-5)
+    assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(grads[0][1], grads[1][1]))
+    m.grad_ckpt = False
+    full = activation_bytes_per_sample(m, spec)
+    m.grad_ckpt = True
+    assert 0 < activation_bytes_per_sample(m, spec) < full

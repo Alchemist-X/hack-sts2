@@ -1,0 +1,1102 @@
+<meta name="dash-one-writer">
+<style>
+  .sa10 { font-family: var(--font-anthropic-sans); color: var(--color-fg); font-variant-numeric: tabular-nums; display: grid; gap: var(--cds-gap-md); min-width: 0; }
+  .sa10 [hidden] { display: none !important; }
+  .sa10 h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+  .sa10 h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; text-wrap: balance; }
+  .sa10 h3 { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .sa10 .lede { color: var(--color-fg-muted); margin: 0; }
+  .sa10 .meta { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin: 0; }
+  .sa10 .note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; }
+  .sa10 .panel { display: grid; gap: var(--cds-gap-md); min-width: 0; }
+  .sa10 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-md); }
+  .sa10 .card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; display: grid; gap: var(--cds-gap-xs); align-content: start; }
+  .sa10 .card .label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); letter-spacing: .02em; }
+  .sa10 .card .big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; overflow-wrap: anywhere; }
+  .sa10 .card .sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); overflow-wrap: anywhere; }
+  .sa10 .card .body { font-size: var(--cds-font-size-body); overflow-wrap: anywhere; }
+  .sa10 .wide { grid-column: 1 / -1; }
+  .sa10 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+  .sa10 .mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--cds-gap-md); }
+  .sa10 .minicard { min-width: 0; display: grid; gap: var(--cds-gap-xs); align-content: start; }
+  .sa10 .minicard .label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .sa10 .pill { display: inline-block; padding: 0 .5em; border-radius: 999px; border: 1px solid var(--color-border-line); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .sa10 .pills { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); }
+  .sa10 .v-adopted, .sa10 .s-done { color: var(--color-ok); border-color: var(--color-ok); }
+  .sa10 .v-rejected, .sa10 .s-lost { color: var(--color-bad); border-color: var(--color-bad); }
+  .sa10 .v-stopped, .sa10 .s-stopped { color: var(--color-warn); border-color: var(--color-warn); }
+  .sa10 .v-pending, .sa10 .s-running { color: var(--sa-c0, var(--color-fg)); border-color: var(--sa-c0, var(--color-fg)); }
+  .sa10 .v-neutral, .sa10 .s-planned { color: var(--color-fg-muted); }
+  .sa10 .tabs { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); align-items: center; border-bottom: 1px solid var(--color-border-line); padding-bottom: var(--cds-pad-xs); }
+  .sa10 .tabs button { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); background: transparent; border: 1px solid transparent; border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); cursor: pointer; }
+  .sa10 .tabs button[aria-selected=true] { color: var(--color-fg); border-color: var(--color-border-line); background: var(--color-panel); }
+  .sa10 .tabs .spacer { flex: 1 1 auto; }
+  .sa10 .toolbar, .sa10 .ctl { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .sa10 label.c { display: inline-flex; align-items: center; gap: .35em; cursor: pointer; }
+  .sa10 select { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 2px 6px; max-width: 100%; }
+  .sa10 button.lnk { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); background: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 0 .6em; cursor: pointer; }
+  .sa10 .chart { position: relative; min-height: 120px; min-width: 0; }
+  .sa10 .chart svg { max-width: 100%; height: auto; display: block; }
+  .sa10 .ph { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding: var(--cds-pad-lg) 0; text-align: center; }
+  .sa10 .tip { position: absolute; z-index: 2; pointer-events: none; background: var(--cds-surface-popover, var(--color-panel)); border: 1px solid var(--cds-border, var(--color-border-line)); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); max-width: min(20rem, 90%); }
+  .sa10 .legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); align-items: center; }
+  .sa10 .legend i { display: inline-block; width: .7em; height: .7em; border-radius: 2px; vertical-align: -.05em; }
+  .sa10 .legend i.dsh { height: 0; border-top: 2px dashed currentColor; background: none !important; width: 1em; }
+  .sa10 .tablebox { overflow: auto; max-height: 26rem; min-width: 0; }
+  .sa10 .tablebox.tall { max-height: 36rem; }
+  .sa10 table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-body); }
+  .sa10 th, .sa10 td { text-align: left; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
+  .sa10 th { position: sticky; top: 0; z-index: 1; background: var(--color-panel); font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .sa10 td.num, .sa10 th.num { text-align: right; white-space: nowrap; }
+  .sa10 td.nw { white-space: nowrap; }
+  .sa10 td.wrap { min-width: 11rem; max-width: 22rem; }
+  .sa10 td .sub { display: block; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .sa10 tr.endpoint td { background: color-mix(in srgb, var(--color-ok) 9%, transparent); }
+  .sa10 tr.click { cursor: pointer; }
+  .sa10 tr.click:hover td, .sa10 tr.sel td { background: color-mix(in srgb, var(--color-fg) 7%, transparent); }
+  .sa10 tr.running td:first-child::before { content: "● "; color: var(--color-ok); }
+  .sa10 tr.pending td:first-child::before, .sa10 tr.planned td:first-child::before { content: "○ "; color: var(--color-fg-muted); }
+  .sa10 tr.done td:first-child::before { content: "✓ "; color: var(--color-ok); }
+  .sa10 tr.failed td:first-child::before, .sa10 tr.lost td:first-child::before { content: "✕ "; color: var(--color-bad); }
+  .sa10 tr.stopped td:first-child::before { content: "■ "; color: var(--color-warn); }
+  .sa10 .pos { color: var(--color-ok); }
+  .sa10 .neg { color: var(--color-bad); }
+  .sa10 ul.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--cds-gap-xs); }
+  .sa10 ul.tl li { display: grid; grid-template-columns: 7.5rem 1fr; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-body); min-width: 0; }
+  .sa10 ul.tl li > div { min-width: 0; overflow-wrap: anywhere; }
+  .sa10 ul.tl li time { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .sa10 ul.tl li.bad time::before { content: "● "; color: var(--color-bad); }
+  .sa10 ul.tl li.ok time::before { content: "● "; color: var(--color-ok); }
+  .sa10 ul.tl li.info time::before { content: "● "; color: var(--color-fg-muted); }
+  .sa10 ul.tl .tag { margin-left: .4em; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 0 .4em; white-space: nowrap; }
+  .sa10 ul.journey li { grid-template-columns: 7.5rem 3.2rem 1fr; }
+  .sa10 .kind { font-size: var(--cds-font-size-caption); border: 1px solid currentColor; border-radius: 999px; padding: 0 .45em; justify-self: start; white-space: nowrap; height: fit-content; }
+  .sa10 .k-start { color: var(--color-ok); }
+  .sa10 .k-segment { color: var(--sa-c0, var(--color-fg)); }
+  .sa10 .k-eval { color: var(--sa-c2, var(--color-fg-muted)); }
+  .sa10 .k-pair { color: var(--sa-c1, var(--color-warn)); }
+  .sa10 .k-decision { color: var(--color-warn); }
+  .sa10 .k-incident, .sa10 .k-stop { color: var(--color-bad); }
+  .sa10 .k-note { color: var(--color-fg-muted); }
+  .sa10 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--cds-gap-xs) var(--cds-gap-md); margin: 0; font-size: var(--cds-font-size-body); }
+  .sa10 .kv dt { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding-top: .15em; }
+  .sa10 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .sa10 code, .sa10 .mono { font-family: var(--font-anthropic-mono, ui-monospace, Menlo, monospace); font-size: .92em; overflow-wrap: anywhere; }
+  .sa10 .docs { display: grid; gap: 2px; }
+  .sa10 .lessons { font-size: var(--cds-font-size-body); margin: 0; overflow-wrap: anywhere; }
+  .sa10 .fig { margin: 0; overflow-x: auto; min-width: 0; }
+  .sa10 .fig svg { display: block; width: 100%; min-width: 640px; height: auto; font-size: 13px; font-family: var(--font-anthropic-sans); }
+  .sa10 .fig figcaption { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); padding-top: var(--cds-pad-xs); }
+  .sa10 .fig .box { fill: var(--color-panel); stroke: var(--color-border-line); stroke-width: 1.2; }
+  .sa10 .fig .band { fill: color-mix(in srgb, var(--color-fg) 5%, var(--color-panel)); stroke: var(--color-border-line); stroke-width: 1; }
+  .sa10 .fig .acc { fill: color-mix(in srgb, var(--sa-c1, var(--color-warn)) 13%, var(--color-panel)); stroke: var(--sa-c1, var(--color-warn)); stroke-width: 1.2; }
+  .sa10 .fig .alt { fill: color-mix(in srgb, var(--sa-c0, var(--color-fg-muted)) 13%, var(--color-panel)); stroke: var(--sa-c0, var(--color-fg-muted)); stroke-width: 1.2; }
+  .sa10 .fig .okb { fill: color-mix(in srgb, var(--color-ok) 13%, var(--color-panel)); stroke: var(--color-ok); stroke-width: 1.2; }
+  .sa10 .fig .warnb { fill: color-mix(in srgb, var(--color-warn) 13%, var(--color-panel)); stroke: var(--color-warn); stroke-width: 1.2; }
+  .sa10 .fig .dsh { stroke-dasharray: 5 4; }
+  .sa10 .fig .lbl { fill: var(--color-fg); }
+  .sa10 .fig .b { font-weight: 600; }
+  .sa10 .fig .sub { fill: var(--color-fg-muted); font-size: 11.5px; }
+  .sa10 .fig .m { font-family: var(--font-anthropic-mono, ui-monospace, Menlo, monospace); font-size: 11.5px; }
+  .sa10 .fig .acct { fill: var(--sa-c1, var(--color-warn)); }
+  .sa10 .fig .arrow { stroke: var(--color-fg-muted); stroke-width: 1.5; fill: none; }
+  .sa10 .fig .arrow.acc-a { stroke: var(--sa-c1, var(--color-warn)); }
+  .sa10 .fig marker path { fill: var(--color-fg-muted); }
+  .sa10 .fig marker.acc-m path { fill: var(--sa-c1, var(--color-warn)); }
+  .sa10 [data-dash-source-state=empty] { color: transparent; }
+  .sa10 [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+  @media (max-width: 520px) {
+    .sa10 ul.tl li { grid-template-columns: 1fr; gap: 0; }
+    .sa10 ul.journey li { grid-template-columns: auto 1fr; gap: 0 var(--cds-gap-sm); }
+    .sa10 ul.journey li > div { grid-column: 1 / -1; }
+    .sa10 .kv { grid-template-columns: 1fr; }
+  }
+</style>
+<div class="sa10">
+  <header class="panel">
+    <h1>静默猎手 A10 训练监控与复盘</h1>
+    <p class="lede"><span data-draw="takeaway" data-source="status" data-field="takeaway" data-row="0">—</span></p>
+    <p class="meta">数据更新于 <span data-draw="updated" data-source="status" data-field="updated_at" data-row="0">—</span> · 下次汇报 <span data-draw="next" data-source="status" data-field="next_report" data-row="0">—</span> · 指标 <span data-draw="rowsm" data-source="status" data-field="rows_metrics" data-row="0">—</span> 行 · 评测 <span data-draw="rowse" data-source="status" data-field="rows_evals" data-row="0">—</span> 行 · 本页每半小时由 Claude 刷新</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="页面分区">
+    <button type="button" role="tab" data-tab="overview">总览</button>
+    <button type="button" role="tab" data-tab="ledger">实验台账</button>
+    <button type="button" role="tab" data-tab="line">单线复盘</button>
+    <button type="button" role="tab" data-tab="tp">吞吐与过程</button>
+    <button type="button" role="tab" data-tab="arch">架构</button>
+    <span class="spacer"></span>
+    <label class="c ctl"><input type="checkbox" data-ctl="smooth"> 训练曲线平滑（滑动均值）</label>
+  </nav>
+
+  <!-- ===== 总览 ===== -->
+  <section class="panel" data-tabpanel="overview" role="tabpanel" aria-label="总览">
+    <div class="card">
+      <div class="label">当前阶段</div>
+      <div class="body"><span data-draw="stage" data-source="status" data-field="stage_label" data-row="0">—</span></div>
+      <div class="sub">GPU 会话：<span data-draw="gpu" data-source="status" data-field="gpu_session" data-row="0">—</span> · 运行中的线：<span data-draw="running" data-source="status" data-field="lines_running" data-row="0">—</span></div>
+    </div>
+    <section class="tiles" aria-label="概览">
+      <div class="card"><div class="label">训练进度（当前 run）</div><div class="big">u<span data-draw="update" data-source="status" data-field="update" data-row="0">—</span></div><div class="sub"><span data-draw="run" data-source="status" data-field="run" data-row="0">—</span> · <span data-draw="envsteps" data-source="status" data-field="env_steps_m" data-row="0">—</span> M env steps · <span data-draw="sps" data-source="status" data-field="sps" data-row="0">—</span> steps/s</div></div>
+      <div class="card"><div class="label">新开局进度（近期均值）</div><div class="big"><span data-draw="pfresh" data-source="status" data-field="progress_fresh_recent" data-row="0">—</span></div><div class="sub">熵 <span data-draw="ent" data-source="status" data-field="entropy" data-row="0">—</span> · KL <span data-draw="kl" data-source="status" data-field="approx_kl" data-row="0">—</span></div></div>
+      <div class="card"><div class="label">最佳 ab-512（段终确认集）</div><div class="big"><span data-draw="bab" data-source="status" data-field="best_ab512" data-row="0">—</span></div><div class="sub"><span data-draw="bab-line" data-source="status" data-field="best_ab512_line" data-row="0">—</span> · u<span data-draw="bab-upd" data-source="status" data-field="best_ab512_update" data-row="0">—</span></div></div>
+      <div class="card"><div class="label">最佳 dev-128（贪心·关 breaker）</div><div class="big"><span data-draw="bdv" data-source="status" data-field="best_dev128" data-row="0">—</span></div><div class="sub"><span data-draw="bdv-line" data-source="status" data-field="best_dev128_line" data-row="0">—</span> · u<span data-draw="bdv-upd" data-source="status" data-field="best_dev128_update" data-row="0">—</span></div></div>
+      <div class="card"><div class="label">ab-512 段终到第三幕（最多局数）</div><div class="big"><span data-draw="act3" data-source="status" data-field="act3_best" data-row="0">—</span></div><div class="sub">所有线的 ab-512 段终评测里的最大值</div></div>
+      <div class="card"><div class="label">UI 回访环（近期）</div><div class="big"><span data-draw="cyc" data-source="status" data-field="cycles_per_update_recent" data-row="0">—</span><span class="sub"> 次/update</span></div><div class="sub">有环的局占比 <span data-draw="cycfrac" data-source="status" data-field="cycle_games_frac_recent" data-row="0">—</span></div></div>
+      <div class="card"><div class="label">本批算力</div><div class="big"><span data-draw="units" data-source="status" data-field="units_used" data-row="0">—</span><span class="sub"> / <span data-draw="cap" data-source="status" data-field="units_cap" data-row="0">—</span> 单位</span></div><div class="sub">余额 <span data-draw="bal" data-source="status" data-field="balance" data-row="0">—</span> 单位 · 消耗 <span data-draw="rate" data-source="status" data-field="units_rate_per_h" data-row="0">—</span> 单位/小时</div></div>
+    </section>
+
+    <section class="card">
+      <h2>阶段计划</h2>
+      <div class="tablebox"><table data-source="plan" data-row-key="stage">
+        <thead><tr><th data-field="label">阶段</th><th data-field="status">状态</th><th class="num" data-field="target_updates">目标 update</th><th data-field="started">开始</th><th data-field="eta">预计</th><th data-field="note">备注</th></tr></thead>
+        <tbody data-draw="plan-rows"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>新开局进度曲线</h2>
+      <p class="note">每个 update 的训练期新开局进度（采样策略，无 breaker）。勾选要看的线；默认是运行中的线和它们的对照线。分叉的线从父线的分叉 update 接着画。</p>
+      <div class="legend" data-draw="ov-legend" data-source="metrics"></div>
+      <div class="chart" data-draw="ov-chart" data-source="metrics">—</div>
+    </section>
+
+    <section class="card">
+      <h2>评测点</h2>
+      <p class="note">dev-128 为每个周期的固定评测，ab-512 为段终确认集；绿色底色的行是段终评测。主指标是贪心·关 breaker 的进度。</p>
+      <div class="toolbar" data-draw="ev-filters" data-source="evals"></div>
+      <div class="tablebox"><table data-source="evals" data-row-key="run,update,seedset,mode">
+        <thead><tr><th data-field="run">线</th><th class="num" data-field="update">update</th><th data-field="seedset">种子集</th><th data-field="mode">模式</th><th class="num" data-field="progress_mean">进度</th><th class="num" data-field="ci_lo">CI 下</th><th class="num" data-field="ci_hi">CI 上</th><th class="num" data-field="games">局数</th><th class="num" data-field="wins">通关</th><th class="num" data-field="act3">到第三幕</th><th class="num" data-field="stuck">卡死</th><th class="num" data-field="interventions">breaker 介入</th><th class="num" data-field="cycles">循环</th><th class="num" data-field="floor_mean">平均楼层</th><th data-field="endpoint">段终</th><th data-field="time">时间（EST）</th></tr></thead>
+        <tbody data-draw="ev-rows"></tbody>
+      </table></div>
+      <p class="note" data-role="ev-note"></p>
+    </section>
+
+    <section class="card">
+      <h2>事件时间线（EST）</h2>
+      <div class="toolbar" data-draw="tl-filter" data-source="timeline"></div>
+      <ul class="tl" data-draw="timeline" data-source="timeline"></ul>
+    </section>
+  </section>
+
+  <!-- ===== 实验台账 ===== -->
+  <section class="panel" data-tabpanel="ledger" role="tabpanel" aria-label="实验台账" hidden>
+    <section class="card">
+      <h2>实验线谱系</h2>
+      <p class="note" data-draw="ld-summary" data-source="lines">—</p>
+      <div class="legend"><span><i style="background: var(--color-ok)"></i>采纳</span><span><i style="background: var(--color-fg-muted)"></i>中性</span><span><i style="background: var(--color-bad)"></i>否决</span><span><i style="background: var(--color-warn)"></i>中止</span><span><i style="background: var(--sa-c0, var(--color-fg))"></i>待定</span><span><i class="dsh"></i>计划未跑完</span></div>
+      <div class="chart" data-draw="ld-lineage" data-source="lines">—</div>
+      <p class="note">横轴是 update。每条线一行：实心条是已跑的区间，虚线框是计划但没跑的部分，竖线连到父线的分叉点。点一行进入单线复盘。</p>
+    </section>
+    <section class="card">
+      <h2>实验台账</h2>
+      <p class="note">按开始时间排列。最佳读数都是贪心·关 breaker；配对列是最近一次配对比较（实验线 − 对照线）。点一行进入单线复盘。</p>
+      <div class="tablebox tall"><table data-source="lines" data-row-key="id">
+        <thead><tr><th data-field="id">线</th><th data-field="title">内容</th><th data-field="fork_line">分叉自</th><th data-field="flags">旗标差异</th><th data-field="control">对照</th><th data-field="gpu_session">会话</th><th data-field="started">起止（EST）</th><th class="num" data-field="updates_done">已跑 update</th><th class="num" data-field="gpu_hours">GPU 小时</th><th class="num" data-field="units_est">算力单位</th><th class="num" data-field="best_ab512">最佳 ab-512</th><th class="num" data-field="best_dev128">最佳 dev-128</th><th data-field="paired">最近配对</th><th data-field="verdict">裁决</th><th data-field="stop_reason">停止原因</th></tr></thead>
+        <tbody data-draw="ld-rows"></tbody>
+      </table></div>
+    </section>
+  </section>
+
+  <!-- ===== 单线复盘 ===== -->
+  <section class="panel" data-tabpanel="line" role="tabpanel" aria-label="单线复盘" hidden>
+    <div class="toolbar" data-draw="ln-select" data-source="lines"></div>
+    <section class="card" data-draw="ln-head" data-source="lines">—</section>
+    <section class="grid2">
+      <div class="card">
+        <h2>评测曲线（贪心·关 breaker）</h2>
+        <p class="note">实线为这条线，虚线为对照线；阴影为置信区间，大圆点为段终评测，竖虚线为分叉点。</p>
+        <div class="toolbar" data-draw="ln-evset" data-source="evals"></div>
+        <div class="chart" data-draw="ln-evals" data-source="evals">—</div>
+      </div>
+      <div class="card">
+        <h2>段终读数</h2>
+        <p class="note">台账记录的每个段终点：ab-512 进度与 CI、dev-128、ab-512 里到达第三幕的局数。</p>
+        <div class="tablebox" data-draw="ln-endpoints" data-source="lines">—</div>
+        <h2>配对比较</h2>
+        <p class="note">同一 update、同一种子集上的差值（这条线 − 对比线）。</p>
+        <div class="tablebox" data-draw="ln-paired" data-source="lines">—</div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>训练侧指标</h2>
+      <p class="note">每个 update 的训练期读数；这条线实线，对照线虚线。镜像里没有的指标不画。</p>
+      <div class="mini" data-draw="ln-train" data-source="metrics">—</div>
+    </section>
+    <section class="grid2">
+      <div class="card">
+        <h2>经历</h2>
+        <p class="note">这条线从起跑到现在的事件，按时间顺序。</p>
+        <ul class="tl journey" data-draw="ln-journey" data-source="line_events"></ul>
+      </div>
+      <div class="card">
+        <h2>裁决与教训</h2>
+        <div data-draw="ln-verdict" data-source="lines">—</div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ===== 吞吐与过程 ===== -->
+  <section class="panel" data-tabpanel="tp" role="tabpanel" aria-label="吞吐与过程" hidden>
+    <section class="card">
+      <h2>每条线的训练吞吐</h2>
+      <p class="note">小时数只计活跃时长（指标相邻行间隔过长视为运行时丢失或重启，不计）。点一行查看那条线的耗时拆分和中间过程。</p>
+      <div class="tablebox"><table data-source="throughput" data-row-key="run">
+        <thead><tr><th data-field="run">线</th><th data-field="gpu_session">会话</th><th data-field="hardware">硬件</th><th class="num" data-field="updates">update</th><th class="num" data-field="hours">小时</th><th class="num" data-field="upd_per_hour">update/小时</th><th class="num" data-field="sps_mean">steps/s</th><th class="num" data-field="t_env_mean">环境 s</th><th class="num" data-field="t_infer_mean">推理 s</th><th class="num" data-field="t_update_mean">更新 s</th><th class="num" data-field="t_total_mean">合计 s</th><th class="num" data-field="gpu_peak_mb">显存峰值 MB</th><th class="num" data-field="units_per_1000_updates">单位/千 update</th><th data-field="compile">编译</th><th class="num" data-field="envs">环境数</th><th class="num" data-field="rollout_steps">rollout</th><th data-field="note">备注</th></tr></thead>
+        <tbody data-draw="tp-rows"></tbody>
+      </table></div>
+    </section>
+    <section class="grid2">
+      <div class="card">
+        <h2>每小时 update 数</h2>
+        <div class="legend"><span><i style="background: var(--sa-c0, var(--color-fg))"></i>compiled</span><span><i style="background: var(--sa-c1, var(--color-warn))"></i>eager</span><span><i style="background: var(--color-warn)"></i>mixed</span><span><i style="background: var(--color-fg-muted)"></i>unknown</span></div>
+        <div class="chart" data-draw="tp-bars" data-source="throughput">—</div>
+      </div>
+      <div class="card">
+        <h2>环境步吞吐（steps/s）</h2>
+        <p class="note">与总览的进度曲线共用同一组勾选。</p>
+        <div class="legend" data-draw="tp-legend" data-source="metrics"></div>
+        <div class="chart" data-draw="tp-sps" data-source="metrics">—</div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="toolbar" data-draw="tp-select" data-source="metrics"></div>
+      <h2>每个 update 的耗时拆分</h2>
+      <p class="note">环境步进（CPU）、推理（GPU 前向）、PPO 更新（GPU），其余为评测、存档与日志等。</p>
+      <div class="chart" data-draw="tp-split" data-source="metrics">—</div>
+    </section>
+    <section class="card">
+      <h2>中间过程指标</h2>
+      <p class="note">所选线实线，它的对照线虚线；一图一个指标。</p>
+      <div class="mini" data-draw="tp-proc" data-source="metrics">—</div>
+    </section>
+  </section>
+
+  <!-- ===== 架构 ===== -->
+  <section class="panel" data-tabpanel="arch" role="tabpanel" aria-label="架构" hidden>
+    <section class="card">
+      <h2>A10 训练流水线</h2>
+      <p class="note">从规则真值和人类存档出发，到每条实验线在 Colab 上的分段训练、持久化、本机镜像、本页，再到配对比较和下一轮分叉。</p>
+      <figure class="fig">
+      <svg viewBox="0 0 1000 540" role="img" aria-label="A10 训练流水线：环境与数据、Colab 训练、持久化与复盘三列">
+        <defs>
+          <marker id="sa10-mp" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="sa10-mpa" class="acc-m" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <text x="135" y="26" text-anchor="middle" class="lbl b">环境与数据</text>
+        <text x="470" y="26" text-anchor="middle" class="lbl b">训练（每条线一台运行时）</text>
+        <text x="835" y="26" text-anchor="middle" class="lbl b">持久化与复盘</text>
+
+        <rect x="20" y="44" width="230" height="56" rx="10" class="acc"/>
+        <text x="135" y="67" text-anchor="middle" class="lbl b">反编译源码树</text>
+        <text x="135" y="87" text-anchor="middle" class="sub">规则真值 · 只读 · 不入库</text>
+        <path d="M135,100 L135,128" class="arrow acc-a" marker-end="url(#sa10-mpa)"/>
+        <text x="145" y="119" class="sub acct">逐文件移植</text>
+        <rect x="20" y="130" width="230" height="56" rx="10" class="acc"/>
+        <text x="135" y="153" text-anchor="middle" class="m lbl b">Sts2Sim</text>
+        <text x="135" y="173" text-anchor="middle" class="sub">C# 规则内核 · 可克隆 · 可哈希</text>
+        <path d="M135,186 L135,214" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="20" y="216" width="230" height="56" rx="10" class="box"/>
+        <text x="135" y="239" text-anchor="middle" class="m lbl b">sts2vec VecEnv</text>
+        <text x="135" y="259" text-anchor="middle" class="sub">NativeAOT 原生库 · 批量并行环境</text>
+
+        <rect x="20" y="316" width="230" height="56" rx="10" class="alt"/>
+        <text x="135" y="339" text-anchor="middle" class="lbl b">真实引擎 + Sts2Recorder</text>
+        <text x="135" y="359" text-anchor="middle" class="sub">人类对局被动录制 · 存档只复制</text>
+        <path d="M135,372 L135,400" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="20" y="402" width="230" height="56" rx="10" class="okb"/>
+        <text x="135" y="425" text-anchor="middle" class="lbl b">开局存档池</text>
+        <text x="135" y="445" text-anchor="middle" class="sub">按幕与楼层分组的存档起点</text>
+
+        <rect x="300" y="44" width="340" height="376" rx="12" class="band"/>
+        <text x="470" y="68" text-anchor="middle" class="lbl b">Colab A100 运行时</text>
+        <rect x="320" y="82" width="300" height="62" rx="8" class="acc"/>
+        <text x="470" y="104" text-anchor="middle" class="m lbl b">sts2train PPO</text>
+        <text x="470" y="122" text-anchor="middle" class="sub">rollout → GAE → PPO 更新</text>
+        <text x="470" y="138" text-anchor="middle" class="sub">环境在 CPU 线程并行，网络在 GPU 上</text>
+        <path d="M470,144 L470,162" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="320" y="164" width="300" height="50" rx="8" class="box"/>
+        <text x="470" y="185" text-anchor="middle" class="lbl b">分段训练</text>
+        <text x="470" y="204" text-anchor="middle" class="sub">从分叉 checkpoint 恢复，跑到段终 update</text>
+        <path d="M392,214 L392,232" class="arrow" marker-end="url(#sa10-mp)"/>
+        <path d="M548,214 L548,232" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="320" y="234" width="145" height="56" rx="8" class="box"/>
+        <text x="392" y="257" text-anchor="middle" class="lbl b">周期评测</text>
+        <text x="392" y="276" text-anchor="middle" class="sub">dev-128 · 贪心</text>
+        <rect x="475" y="234" width="145" height="56" rx="8" class="okb"/>
+        <text x="548" y="257" text-anchor="middle" class="lbl b">段终评测</text>
+        <text x="548" y="276" text-anchor="middle" class="sub">ab-512 · 确认集</text>
+        <path d="M392,290 L392,308" class="arrow" marker-end="url(#sa10-mp)"/>
+        <path d="M548,290 L548,308" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="320" y="310" width="300" height="50" rx="8" class="box"/>
+        <text x="470" y="331" text-anchor="middle" class="m lbl">checkpoint · metrics · evals</text>
+        <text x="470" y="350" text-anchor="middle" class="sub">每个 update 追加一行指标</text>
+        <text x="470" y="392" text-anchor="middle" class="sub">实验线与对照线各占一台运行时，同一训练包</text>
+
+        <path d="M250,244 C286,244 286,113 318,113" class="arrow" marker-end="url(#sa10-mp)"/>
+        <path d="M250,430 C290,430 284,189 318,189" class="arrow" marker-end="url(#sa10-mp)"/>
+
+        <path d="M640,72 L688,72" class="arrow" marker-end="url(#sa10-mp)"/>
+        <text x="664" y="62" text-anchor="middle" class="sub">写入</text>
+
+        <rect x="690" y="44" width="290" height="56" rx="10" class="alt"/>
+        <text x="835" y="67" text-anchor="middle" class="lbl b">GCS 桶</text>
+        <text x="835" y="87" text-anchor="middle" class="sub">checkpoint · 指标 · 评测 · 段终报告</text>
+        <path d="M835,100 L835,128" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="690" y="130" width="290" height="56" rx="10" class="box"/>
+        <text x="835" y="153" text-anchor="middle" class="lbl b">Mac 本机镜像</text>
+        <text x="835" y="173" text-anchor="middle" class="sub">定时拉小文件 · 段终报告增量拉取</text>
+        <path d="M835,186 L835,214" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="690" y="216" width="290" height="56" rx="10" class="box"/>
+        <text x="835" y="239" text-anchor="middle" class="m lbl b">dash_data.py</text>
+        <text x="835" y="259" text-anchor="middle" class="sub">台账 · 线事件 · 吞吐 · 系统事实 → dataset</text>
+        <path d="M835,272 L835,300" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="690" y="302" width="290" height="56" rx="10" class="okb"/>
+        <text x="835" y="325" text-anchor="middle" class="lbl b">本监控页</text>
+        <text x="835" y="345" text-anchor="middle" class="sub">总览 · 台账 · 单线复盘 · 吞吐 · 架构</text>
+        <path d="M835,358 L835,386" class="arrow" marker-end="url(#sa10-mp)"/>
+        <rect x="690" y="388" width="290" height="66" rx="10" class="warnb"/>
+        <text x="835" y="410" text-anchor="middle" class="lbl b">配对比较与裁决</text>
+        <text x="835" y="428" text-anchor="middle" class="sub">实验线 − 对照线 · 同 update · 同种子集</text>
+        <text x="835" y="446" text-anchor="middle" class="sub">采纳 / 中性 / 否决</text>
+        <path d="M690,421 C655,421 660,189 622,189" class="arrow acc-a" marker-end="url(#sa10-mpa)"/>
+        <text x="678" y="300" text-anchor="middle" class="sub acct" transform="rotate(-90 678 300)">下一轮分叉 · 新旗标</text>
+
+        <rect x="320" y="470" width="300" height="52" rx="10" class="box dsh"/>
+        <text x="470" y="492" text-anchor="middle" class="lbl b">东京 VM 保活</text>
+        <text x="470" y="511" text-anchor="middle" class="sub">盯驱动日志 · 跑完后停掉运行时</text>
+        <path d="M470,470 L470,423" class="arrow dsh" marker-end="url(#sa10-mp)"/>
+        <text x="480" y="450" class="sub">轮询</text>
+      </svg>
+      <figcaption>训练只在模拟器上进行；真实引擎只提供存档起点和最终考场。每条线的读数先落到桶里，再由本机镜像生成本页的数据。</figcaption>
+      </figure>
+    </section>
+
+    <section class="card">
+      <h2>系统固定事实</h2>
+      <p class="note">架构页上的数字只来自这张表。</p>
+      <div class="tablebox"><table data-source="system" data-row-key="key">
+        <thead><tr><th data-field="key">项</th><th data-field="value">值</th><th data-field="note">说明</th></tr></thead>
+        <tbody data-draw="sys-rows"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>全景：真实引擎、离线工具、Sts2Sim</h2>
+      <p class="note">左边是真实游戏进程，只产生真值；中间是 Python 工具和反编译源码树；右边是 Sts2Sim。规则流从反编译树到 Core，验证流从人类录像经差分 bundle 回到模拟器逐决策比对。</p>
+      <figure class="fig">
+      <svg viewBox="0 0 1000 440" role="img" aria-label="全景图：真实引擎、离线工具与真值、Sts2Sim 三列，以及规则流与验证流">
+        <defs>
+          <marker id="sa10-m1" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="sa10-m1a" class="acc-m" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <text x="160" y="24" text-anchor="middle" class="lbl b">真实引擎（oracle · 考场）</text>
+        <text x="500" y="24" text-anchor="middle" class="lbl b">离线工具与规则真值</text>
+        <text x="840" y="24" text-anchor="middle" class="lbl b">Sts2Sim（headless 规则内核）</text>
+
+        <rect x="20" y="44" width="280" height="156" rx="10" class="alt"/>
+        <text x="160" y="70" text-anchor="middle" class="lbl b">Slay the Spire 2</text>
+        <text x="160" y="88" text-anchor="middle" class="sub">Godot + .NET，本机运行，人类操作</text>
+        <rect x="36" y="102" width="248" height="38" rx="7" class="box"/>
+        <text x="160" y="126" text-anchor="middle" class="lbl">Sts2Recorder 模组（常驻，被动录制）</text>
+        <rect x="36" y="150" width="248" height="38" rx="7" class="box dsh"/>
+        <text x="160" y="174" text-anchor="middle" class="lbl">STS2_MCP（仅 agent 评测时安装）</text>
+        <path d="M160,200 L160,228" class="arrow" marker-end="url(#sa10-m1)"/>
+        <rect x="20" y="230" width="280" height="92" rx="10" class="box"/>
+        <text x="160" y="254" text-anchor="middle" class="m lbl">sessions/&lt;run_id&gt;/</text>
+        <text x="160" y="276" text-anchor="middle" class="sub">states · actions · events（jsonl）</text>
+        <text x="160" y="296" text-anchor="middle" class="sub">native/：run_history · replay</text>
+        <rect x="20" y="350" width="280" height="70" rx="10" class="box dsh"/>
+        <text x="160" y="376" text-anchor="middle" class="lbl">MCP 覆盖农场</text>
+        <text x="160" y="396" text-anchor="middle" class="sub">无头引擎自走 · 隔离输出根</text>
+
+        <rect x="360" y="44" width="280" height="90" rx="10" class="acc"/>
+        <text x="500" y="72" text-anchor="middle" class="lbl b">反编译源码树</text>
+        <text x="500" y="92" text-anchor="middle" class="sub">规则真值 · 只读 · 不入库（git-ignored）</text>
+        <text x="500" y="112" text-anchor="middle" class="sub">游戏程序集的 IL 为最终真值</text>
+        <rect x="360" y="230" width="280" height="92" rx="10" class="box"/>
+        <text x="500" y="254" text-anchor="middle" class="lbl b">sts2rec（Python CLI）</text>
+        <text x="500" y="276" text-anchor="middle" class="sub">sessions · validate · canonical · report · pack</text>
+        <text x="500" y="296" text-anchor="middle" class="sub">export-bundles → 差分 bundle（JSON）</text>
+        <path d="M300,276 L358,276" class="arrow" marker-end="url(#sa10-m1)"/>
+        <rect x="360" y="350" width="280" height="70" rx="10" class="box"/>
+        <text x="500" y="376" text-anchor="middle" class="lbl">差分闸的原理</text>
+        <text x="500" y="396" text-anchor="middle" class="sub">同一决策序列两边各走一遍，逐决策比对投影</text>
+
+        <rect x="700" y="44" width="280" height="278" rx="10" class="acc"/>
+        <text x="840" y="70" text-anchor="middle" class="lbl b">C# .NET · 纯 BCL · 无 Godot</text>
+        <rect x="716" y="86" width="248" height="70" rx="7" class="box"/>
+        <text x="840" y="110" text-anchor="middle" class="m lbl b">Sts2Sim.Core</text>
+        <text x="840" y="130" text-anchor="middle" class="sub">状态 · 规则 · 决策 API · 克隆 / 哈希</text>
+        <text x="840" y="146" text-anchor="middle" class="sub">RunState / CombatState · Hook · Cmd · CombatSim</text>
+        <rect x="716" y="168" width="118" height="60" rx="7" class="box"/>
+        <text x="775" y="192" text-anchor="middle" class="m lbl">Sts2Sim.Diff</text>
+        <text x="775" y="212" text-anchor="middle" class="sub">差分闸 harness</text>
+        <rect x="846" y="168" width="118" height="60" rx="7" class="box"/>
+        <text x="905" y="192" text-anchor="middle" class="m lbl">Sts2Sim.Bench</text>
+        <text x="905" y="212" text-anchor="middle" class="sub">吞吐 · Clone 成本</text>
+        <rect x="716" y="240" width="248" height="68" rx="7" class="box"/>
+        <text x="840" y="264" text-anchor="middle" class="m lbl">Sts2Sim.Tests</text>
+        <text x="840" y="284" text-anchor="middle" class="sub">不变量 · 决策回放 · 门测试 · 差分集成</text>
+        <path d="M640,90 L698,100" class="arrow acc-a" marker-end="url(#sa10-m1a)"/>
+        <text x="668" y="78" text-anchor="middle" class="sub acct">逐文件移植</text>
+        <path d="M640,296 C 670,296 680,200 714,200" class="arrow" marker-end="url(#sa10-m1)"/>
+        <text x="668" y="240" text-anchor="middle" class="sub">bundles</text>
+        <rect x="700" y="350" width="280" height="70" rx="10" class="box"/>
+        <text x="840" y="374" text-anchor="middle" class="lbl b">训练 / 搜索 agent</text>
+        <text x="840" y="396" text-anchor="middle" class="m sub">LegalActions() · Step(a) · Clone() · StateHash()</text>
+        <path d="M840,322 L840,348" class="arrow" marker-end="url(#sa10-m1)"/>
+      </svg>
+      <figcaption>规则真值只来自反编译树和游戏程序集的 IL；人类轨迹只来自被动录制。两者在 Sts2Sim.Diff 处交汇。</figcaption>
+      </figure>
+    </section>
+
+    <section class="card">
+      <h2>run 层：整局是一个大循环</h2>
+      <p class="note">从开局进幕、选地图点、进房间，到战斗后的奖励，再回到地图，直到幕转换或胜负。每个屏幕都有自己的合法动作；战斗房间里嵌的是 CombatSim，玩家状态共享不复制。</p>
+      <figure class="fig">
+      <svg viewBox="0 0 1000 270" role="img" aria-label="run 层的阶段循环">
+        <defs><marker id="sa10-m8" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+        <rect x="20" y="30" width="160" height="50" rx="8" class="box"/>
+        <text x="100" y="52" text-anchor="middle" class="lbl b">新局 · Neow</text>
+        <text x="100" y="70" text-anchor="middle" class="sub">开局选项</text>
+        <path d="M180,55 L198,55" class="arrow" marker-end="url(#sa10-m8)"/>
+        <rect x="200" y="30" width="160" height="50" rx="8" class="box"/>
+        <text x="280" y="52" text-anchor="middle" class="lbl b">进幕 · 远古事件</text>
+        <text x="280" y="70" text-anchor="middle" class="sub">本作的 Boss 遗物在这里</text>
+        <path d="M360,55 L378,55" class="arrow" marker-end="url(#sa10-m8)"/>
+        <rect x="380" y="30" width="160" height="50" rx="8" class="acc"/>
+        <text x="460" y="52" text-anchor="middle" class="lbl b">地图点选择</text>
+        <text x="460" y="70" text-anchor="middle" class="sub">可走点 · 未知点掷骰</text>
+        <path d="M540,55 L558,55" class="arrow" marker-end="url(#sa10-m8)"/>
+        <rect x="560" y="30" width="120" height="50" rx="8" class="box"/>
+        <text x="620" y="60" text-anchor="middle" class="lbl b">进入房间</text>
+        <path d="M680,55 L698,55" class="arrow" marker-end="url(#sa10-m8)"/>
+        <rect x="700" y="30" width="280" height="50" rx="8" class="box"/>
+        <text x="840" y="52" text-anchor="middle" class="lbl b">幕转换 / 胜利 / 失败</text>
+        <text x="840" y="70" text-anchor="middle" class="sub">高进阶第三幕：双 Boss</text>
+        <path d="M620,80 L620,116" class="arrow" marker-end="url(#sa10-m8)"/>
+        <rect x="20" y="118" width="240" height="56" rx="8" class="acc"/>
+        <text x="140" y="140" text-anchor="middle" class="lbl b">战斗：嵌入 CombatSim</text>
+        <text x="140" y="160" text-anchor="middle" class="sub">PlayerState 共享，不复制</text>
+        <rect x="276" y="118" width="200" height="56" rx="8" class="box"/>
+        <text x="376" y="140" text-anchor="middle" class="lbl b">奖励 · 宝箱</text>
+        <text x="376" y="160" text-anchor="middle" class="sub">卡牌奖励 · 遗物抓袋</text>
+        <rect x="492" y="118" width="200" height="56" rx="8" class="box"/>
+        <text x="592" y="140" text-anchor="middle" class="lbl b">商店 · 营地</text>
+        <text x="592" y="160" text-anchor="middle" class="sub">报价表 · 休息 / 升级 / 离开</text>
+        <rect x="708" y="118" width="272" height="56" rx="8" class="box"/>
+        <text x="844" y="140" text-anchor="middle" class="lbl b">事件 · 牌组提示 · 场外药水</text>
+        <text x="844" y="160" text-anchor="middle" class="sub">事件定义按内容逐个移植</text>
+        <path d="M140,174 L140,200 L460,200 L460,82" class="arrow" marker-end="url(#sa10-m8)"/>
+        <text x="300" y="194" text-anchor="middle" class="sub">房间结束，回到地图</text>
+        <text x="20" y="236" class="lbl">存档只在三个边界写：进入地图点、战斗胜利、远古事件结束；导入器与开局存档池都按这三个相位进入。</text>
+        <text x="20" y="258" class="sub">地图点邻接按增删序枚举，赔率是浮点累加：这些是逐文件移植最容易踩的坑。</text>
+      </svg>
+      <figcaption>每个房间类型对应 run 层设计里的一类决策点。</figcaption>
+      </figure>
+    </section>
+
+    <p class="note">完整的 Sts2Sim 技术架构页（分层、决策路径、钩子分发、差分闸等）：<span class="mono">https://claude.ai/artifact/9roz2JxkbXzfW4d3tat1FQ</span></p>
+  </section>
+</div>
+<script>
+(() => {
+  const root = document.querySelector('.sa10');
+  if (!root) return;
+  const S = window.__sa10dash || (window.__sa10dash = { tab: 'overview', line: null, runs: null, tpRun: null, evRun: '', evSet: '', evEnd: false, tlLine: '', tlAll: false, smooth: true, l3Set: 'dev-128' });
+
+  // ---------- formats & helpers ----------
+  const F = { n0: d3.format(','), f1: d3.format('.1f'), f2: d3.format('.2f'), f3: d3.format('.3f'), f4: d3.format('.4f'), pct: d3.format('.1%'), d3: d3.format('+.3f'), g3: d3.format('.3~g') };
+  const isNum = (v) => typeof v === 'number' && isFinite(v);
+  const fm = (v, f) => (v === null || v === undefined || v === '') ? '' : (isNum(v) && f ? f(v) : String(v));
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = String(text); return e; };
+  const C = () => (Array.isArray(dash.colors) && dash.colors.length ? dash.colors : ['currentColor']);
+  C().slice(0, 4).forEach((c, i) => root.style.setProperty('--sa-c' + i, c));
+  const ds = (id) => { const d = dash.data(id); return d && d.status === 'ok' && Array.isArray(d.data) ? d.data : null; };
+  const notReady = (id) => !ds(id);
+  const row0 = (id) => { const d = ds(id); return d && d.length ? d[0] : null; };
+  const pj = (s) => { if (Array.isArray(s)) return s; try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+  const ids = (s) => String(s || '').split(/[,，、\s]+/).map((x) => x.trim()).filter(Boolean);
+  const ph = (box, msg) => { box.replaceChildren(mk('div', 'ph', msg)); };
+  const est = (iso) => { if (!iso) return ''; const t = Date.parse(iso); if (!isFinite(t)) return String(iso).slice(5, 16).replace('T', ' '); return d3.utcFormat('%m-%d %H:%M')(new Date(t - 5 * 3600e3)); };
+  const LSTAT = { running: '进行中', done: '完成', stopped: '已停', planned: '计划', lost: '丢失' };
+  const VERD = { adopted: '采纳', neutral: '中性', rejected: '否决', stopped: '中止', pending: '待定' };
+  const KIND = { start: '起跑', segment: '段终', eval: '评测', pair: '配对', decision: '决策', incident: '事故', stop: '停止', note: '备注' };
+  const MODE = { greedy_off: '贪心·关', greedy_on: '贪心·开', sample_off: '采样·关', sample_on: '采样·开' };
+  const pill = (text, cls) => mk('span', 'pill ' + (cls || ''), text);
+  const W_OF = (box) => Math.max(240, box.clientWidth || (box.parentNode && box.parentNode.clientWidth) || 600);
+  function cells(tr, arr) {
+    for (const c of arr) {
+      const td = mk('td', c[1] === 1 ? 'num' : (c[1] || ''));
+      if (c[0] instanceof Node) td.appendChild(c[0]); else td.textContent = c[0] == null ? '' : String(c[0]);
+      if (c[2] instanceof Node) td.appendChild(c[2]); else if (c[2]) td.appendChild(mk('span', 'sub', c[2]));
+      tr.appendChild(td);
+    }
+  }
+  function selectCtl(label, opts, value, onChange) {
+    const lab = mk('label', 'c'); lab.appendChild(document.createTextNode(label));
+    const sel = mk('select');
+    for (const [v, t] of opts) { const o = mk('option', '', t); o.value = v; if (v === value) o.selected = true; sel.appendChild(o); }
+    sel.addEventListener('change', () => onChange(sel.value));
+    lab.appendChild(sel); return lab;
+  }
+  function checkCtl(label, value, onChange) {
+    const lab = mk('label', 'c'); const cb = mk('input'); cb.type = 'checkbox'; cb.checked = !!value;
+    cb.addEventListener('change', () => onChange(cb.checked)); lab.append(cb, document.createTextNode(label)); return lab;
+  }
+
+  // ---------- draw registry (runtime draws + our own redraws on UI changes) ----------
+  const R = {};
+  const D = (name, fn) => { R[name] = fn; dash.draw(name, (el) => { try { fn(el); } catch (e) { console.error('sa10 draw', name, e); } }); };
+  const redraw = (name) => { const fn = R[name]; if (!fn) return; root.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { try { fn(el); } catch (e) { console.error('sa10 redraw', name, e); } }); };
+  const redrawMany = (names) => names.forEach(redraw);
+  const TAB_DRAWS = {
+    overview: ['plan-rows', 'ov-legend', 'ov-chart', 'ev-filters', 'ev-rows', 'tl-filter', 'timeline'],
+    ledger: ['ld-summary', 'ld-lineage', 'ld-rows'],
+    line: ['ln-select', 'ln-head', 'ln-evset', 'ln-evals', 'ln-endpoints', 'ln-paired', 'ln-train', 'ln-journey', 'ln-verdict'],
+    tp: ['tp-rows', 'tp-bars', 'tp-legend', 'tp-sps', 'tp-select', 'tp-split', 'tp-proc'],
+    arch: ['sys-rows'],
+  };
+  const redrawTab = (t) => redrawMany(TAB_DRAWS[t] || []);
+  let rafId = 0;
+  const schedule = () => { if (rafId) return; rafId = requestAnimationFrame(() => { rafId = 0; redrawTab(S.tab); }); };
+
+  // ---------- tabs ----------
+  function showTab(t, draw) {
+    if (!TAB_DRAWS[t]) t = 'overview';
+    S.tab = t;
+    root.querySelectorAll('[data-tabpanel]').forEach((p) => { p.hidden = p.dataset.tabpanel !== t; });
+    root.querySelectorAll('.tabs [data-tab]').forEach((b) => { b.setAttribute('aria-selected', String(b.dataset.tab === t)); });
+    if (draw) schedule();
+  }
+  root.querySelectorAll('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
+  const smoothCb = root.querySelector('[data-ctl=smooth]');
+  if (smoothCb) { smoothCb.checked = !!S.smooth; smoothCb.addEventListener('change', () => { S.smooth = smoothCb.checked; redrawTab(S.tab); }); }
+  showTab(S.tab, false);
+  let rsT = 0;
+  window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(() => redrawTab(S.tab), 200); });
+  dash.onData(schedule);
+
+  // ---------- caches over datasets ----------
+  const LC = { ref: null, sorted: [], by: new Map() };
+  function lines() {
+    const L = ds('lines'); if (!L) return null;
+    if (LC.ref !== L) {
+      LC.ref = L;
+      LC.sorted = [...L].sort((a, b) => (isNum(a.order) ? a.order : 1e9) - (isNum(b.order) ? b.order : 1e9) || String(a.started || '').localeCompare(String(b.started || '')));
+      LC.by = new Map(LC.sorted.map((r) => [r.id, r]));
+    }
+    return LC.sorted;
+  }
+  const lineOf = (id) => (lines() ? LC.by.get(id) || null : null);
+  const MC = { ref: null, by: null };
+  function mByRun() {
+    const m = ds('metrics'); if (!m) return null;
+    if (MC.ref !== m) {
+      MC.ref = m; MC.by = new Map();
+      for (const r of m) { if (!isNum(r.update)) continue; let a = MC.by.get(r.run); if (!a) MC.by.set(r.run, a = []); a.push(r); }
+      for (const a of MC.by.values()) a.sort((x, y) => x.update - y.update);
+    }
+    return MC.by;
+  }
+  function runOrder() {
+    const o = (lines() || []).map((r) => r.id); const seen = new Set(o);
+    const add = (k) => { if (k != null && !seen.has(k)) { seen.add(k); o.push(k); } };
+    const m = mByRun(); if (m) for (const k of m.keys()) add(k);
+    const t = ds('throughput'); if (t) for (const r of t) add(r.run);
+    return o;
+  }
+  function colorOf(run) { const o = runOrder(); const i = Math.max(0, o.indexOf(run)); const c = C(); return c[i % c.length]; }
+  function pairColors(a, b) { const c = C(); const ca = colorOf(a); let cb = b ? colorOf(b) : null; if (cb && cb === ca && c.length > 1) cb = c[(c.indexOf(ca) + 1) % c.length]; return [ca, cb]; }
+  function defaultRuns() {
+    const st = row0('status'); const L = lines() || [];
+    let run = st && st.lines_running ? ids(st.lines_running) : L.filter((r) => r.status === 'running').map((r) => r.id);
+    const out = [];
+    for (const id of run) { out.push(id); const r = lineOf(id); if (r && r.control) out.push(r.control); }
+    if (!out.length) L.slice(-3).forEach((r) => out.push(r.id));
+    return [...new Set(out)];
+  }
+  const selRuns = () => (Array.isArray(S.runs) ? S.runs : defaultRuns());
+  function curLine() {
+    const L = lines(); if (!L || !L.length) return null;
+    if (S.line && LC.by.has(S.line)) return LC.by.get(S.line);
+    const run = L.filter((r) => r.status === 'running');
+    return run.length ? run[run.length - 1] : L[L.length - 1];
+  }
+  function curTpRun() {
+    const m = mByRun(); const has = (r) => m && m.has(r);
+    if (S.tpRun && has(S.tpRun)) return S.tpRun;
+    const st = row0('status'); if (st && has(st.run)) return st.run;
+    const d = defaultRuns().find(has); if (d) return d;
+    return m && m.size ? [...m.keys()].pop() : null;
+  }
+  function smooth(pts, k) {
+    if (!S.smooth || k <= 1) return pts;
+    const out = []; const q = []; let sum = 0;
+    for (const p of pts) { q.push(p.y); sum += p.y; if (q.length > k) sum -= q.shift(); out.push(Object.assign({}, p, { y: sum / q.length })); }
+    return out;
+  }
+  function mPts(run, key, sm) {
+    const by = mByRun(); const rows = by && by.get(run); if (!rows) return [];
+    const p = []; for (const r of rows) if (isNum(r[key])) p.push({ x: r.update, y: r[key] });
+    return sm ? smooth(p, 10) : p;
+  }
+
+  // ---------- generic chart: series = [{name, color, pts:[{x,y,lo,hi,big}], band, marks, dash}] ----------
+  function axisStyle(ax, grid) {
+    ax.attr('font-size', null).attr('font-family', null);
+    ax.selectAll('text').style('fill', 'var(--color-fg-muted)').attr('font-size', 11);
+    if (grid) { ax.selectAll('line').style('stroke', 'var(--cds-chart-grid, var(--color-border-line))'); ax.select('path').remove(); }
+    else ax.selectAll('line,path').style('stroke', 'var(--cds-chart-axis, var(--color-fg-muted))');
+  }
+  function chart(box, series, o) {
+    o = o || {};
+    box.replaceChildren();
+    series = series.filter((s) => s.pts && s.pts.length);
+    if (!series.length) { ph(box, o.empty || '暂无数据'); return; }
+    if (o.keyLegend) {
+      const lg = mk('div', 'legend');
+      for (const s of series) { const sp = mk('span'); const i = mk('i', s.dash ? 'dsh' : ''); if (s.dash) i.style.color = s.color; else i.style.background = s.color; sp.append(i, document.createTextNode(' ' + s.name)); lg.appendChild(sp); }
+      box.appendChild(lg);
+    }
+    const W = W_OF(box), H = o.h || 240;
+    const yf = o.yFmt || F.f2;
+    const ys = [];
+    for (const s of series) for (const p of s.pts) { ys.push(p.y); if (s.band && isNum(p.lo)) ys.push(p.lo); if (s.band && isNum(p.hi)) ys.push(p.hi); }
+    let y0 = d3.min(ys), y1 = d3.max(ys);
+    if (isNum(o.y0)) y0 = Math.min(o.y0, y0);
+    if (!(y1 > y0)) { const d = Math.abs(y0) * 0.1 || 1; y0 -= d; y1 += d; }
+    const span = y1 - y0; y1 += span * 0.05; if (!isNum(o.y0)) y0 -= span * 0.03;
+    const xs = []; for (const s of series) for (const p of s.pts) xs.push(p.x);
+    for (const v of o.vlines || []) if (isNum(v.x)) xs.push(v.x);
+    let x0 = d3.min(xs), x1 = d3.max(xs); if (!(x1 > x0)) { x0 -= 1; x1 += 1; }
+    const svg = d3.select(box).append('svg').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const mt = 10, mb = 26, mr = 12;
+    const y = d3.scaleLinear([y0, y1], [H - mb, mt]).nice();
+    const yt = y.ticks(o.yTicks || 5);
+    let tf = yf;
+    if (new Set(yt.map((t) => yf(t))).size < yt.length) tf = y.tickFormat(o.yTicks || 5, yf === F.pct ? '%' : undefined);
+    const measure = (s) => { const t = svg.append('text').attr('font-size', 11).text(s); const w = t.node().getComputedTextLength(); t.remove(); return w; };
+    const ml = 10 + Math.max(16, ...yt.map((t) => measure(tf(t))));
+    const x = d3.scaleLinear([x0, x1], [ml, W - mr]);
+    const g = svg.append('g');
+    g.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.min(6, Math.floor((W - ml - mr) / 70)))).tickFormat(o.xFmt || F.n0)).call((ax) => axisStyle(ax, false));
+    g.append('g').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).tickValues(yt).tickFormat(tf).tickSize(-(W - ml - mr))).call((ax) => axisStyle(ax, true));
+    for (const v of o.vlines || []) {
+      if (!isNum(v.x)) continue;
+      g.append('line').attr('x1', x(v.x)).attr('x2', x(v.x)).attr('y1', mt).attr('y2', H - mb).style('stroke', 'var(--cds-chart-reference, var(--color-fg-muted))').attr('stroke-dasharray', '3 3');
+      if (v.label) g.append('text').attr('x', x(v.x) + 3).attr('y', mt + 9).attr('font-size', 10).style('fill', 'var(--color-fg-muted)').text(v.label);
+    }
+    for (const s of series) {
+      if (!s.band) continue;
+      const bp = s.pts.filter((p) => isNum(p.lo) && isNum(p.hi));
+      if (bp.length) g.append('path').attr('d', d3.area().x((p) => x(p.x)).y0((p) => y(p.lo)).y1((p) => y(p.hi))(bp)).style('fill', s.color).attr('fill-opacity', 0.12).attr('stroke', 'none');
+    }
+    for (const s of series) {
+      g.append('path').attr('d', d3.line().x((p) => x(p.x)).y((p) => y(p.y))(s.pts)).attr('fill', 'none').style('stroke', s.color)
+        .attr('stroke-width', s.width || 2).attr('stroke-dasharray', s.dash ? '5 4' : null).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('stroke-opacity', s.dash ? 0.85 : 1);
+      const marks = s.marks ? s.pts : [s.pts[s.pts.length - 1]];
+      for (const p of marks) {
+        g.append('circle').attr('cx', x(p.x)).attr('cy', y(p.y)).attr('r', p.big ? 4.5 : (s.marks ? 2.2 : 3)).style('fill', s.color)
+          .style('stroke', p.big ? 'var(--color-panel)' : 'none').attr('stroke-width', p.big ? 1.5 : 0);
+      }
+    }
+    const all = []; for (const s of series) for (const p of s.pts) all.push([x(p.x), y(p.y), s, p]);
+    const del = d3.Delaunay.from(all, (a) => a[0], (a) => a[1]);
+    const tip = mk('div', 'tip'); tip.hidden = true; box.appendChild(tip);
+    const svgTop = () => svg.node().getBoundingClientRect().top - box.getBoundingClientRect().top;
+    const hl = g.append('circle').attr('r', 5).attr('fill', 'none').attr('stroke-width', 2).style('display', 'none');
+    const hide = () => { tip.hidden = true; hl.style('display', 'none'); };
+    svg.on('pointermove', (ev) => {
+      const [mx, my] = d3.pointer(ev); const i = del.find(mx, my); const a = all[i];
+      if (!a || Math.hypot(a[0] - mx, a[1] - my) > 48) { hide(); return; }
+      const [px, py, s, p] = a;
+      hl.style('display', null).attr('cx', px).attr('cy', py).style('stroke', s.color);
+      let t = `${s.name} · u${F.n0(p.x)}：${yf(p.y)}`;
+      if (isNum(p.lo) && isNum(p.hi)) t += ` [${yf(p.lo)}, ${yf(p.hi)}]`;
+      if (p.big) t += ' · 段终';
+      if (p.note) t += ' · ' + p.note;
+      tip.textContent = t; tip.hidden = false;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      const tx = Math.min(W - tw - 2, Math.max(0, px + 10));
+      const top = svgTop(); let ty = top + py - th - 8; if (ty < 0) ty = top + py + 10;
+      tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
+    }).on('pointerleave', hide);
+  }
+
+  // ---------- status tiles ----------
+  const txt = (el, v, fmt) => { el.textContent = (v === null || v === undefined || v === '') ? '—' : (fmt ? fmt(v) : String(v)); };
+  const field = (name, key, fmt) => D(name, (el) => { const r = row0('status'); txt(el, r ? r[key] : null, fmt); });
+  const nf = (f) => (v) => (isNum(v) ? f(v) : String(v));
+  D('takeaway', (el) => {
+    const r = row0('status'); el.replaceChildren();
+    const s = r && r.takeaway ? String(r.takeaway) : '—';
+    s.split('**').forEach((part, i) => { if (!part) return; el.appendChild(i % 2 ? mk('strong', '', part) : document.createTextNode(part)); });
+  });
+  field('updated', 'updated_at'); field('next', 'next_report'); field('rowsm', 'rows_metrics', nf(F.n0)); field('rowse', 'rows_evals', nf(F.n0));
+  field('stage', 'stage_label'); field('gpu', 'gpu_session'); field('running', 'lines_running', (v) => ids(v).join('、') || '—');
+  field('update', 'update', nf(F.n0)); field('run', 'run'); field('envsteps', 'env_steps_m', nf(F.f1)); field('sps', 'sps', nf(F.n0));
+  field('pfresh', 'progress_fresh_recent', nf(F.f3)); field('ent', 'entropy', nf(F.f3)); field('kl', 'approx_kl', nf(F.f4));
+  field('bab', 'best_ab512', nf(F.f3)); field('bab-line', 'best_ab512_line'); field('bab-upd', 'best_ab512_update', nf(F.n0));
+  field('bdv', 'best_dev128', nf(F.f3)); field('bdv-line', 'best_dev128_line'); field('bdv-upd', 'best_dev128_update', nf(F.n0));
+  field('act3', 'act3_best', nf(F.n0));
+  field('cyc', 'cycles_per_update_recent', nf(F.f1)); field('cycfrac', 'cycle_games_frac_recent', nf(F.pct));
+  field('units', 'units_used', nf(F.f1)); field('cap', 'units_cap', nf(F.n0)); field('bal', 'balance', nf(F.f1)); field('rate', 'units_rate_per_h', nf(F.f2));
+
+  // ---------- shared run legend (overview progress + throughput sps) ----------
+  const RUN_CHARTS = ['ov-legend', 'ov-chart', 'tp-legend', 'tp-sps'];
+  function legendDraw(box) {
+    box.replaceChildren();
+    const by = mByRun(); if (!by) return;
+    const sel = new Set(selRuns());
+    for (const run of runOrder().filter((r) => by.has(r))) {
+      const lab = mk('label', 'c'); const cb = mk('input'); cb.type = 'checkbox'; cb.checked = sel.has(run);
+      cb.addEventListener('change', () => { const cur = new Set(selRuns()); if (cb.checked) cur.add(run); else cur.delete(run); S.runs = runOrder().filter((r) => cur.has(r)); redrawMany(RUN_CHARTS); });
+      const sw = mk('i'); sw.style.background = colorOf(run);
+      lab.append(cb, sw, document.createTextNode(run)); box.appendChild(lab);
+    }
+    const b1 = mk('button', 'lnk', '恢复默认'); b1.type = 'button'; b1.addEventListener('click', () => { S.runs = null; redrawMany(RUN_CHARTS); });
+    const b2 = mk('button', 'lnk', '全不选'); b2.type = 'button'; b2.addEventListener('click', () => { S.runs = []; redrawMany(RUN_CHARTS); });
+    box.append(b1, b2);
+  }
+  function runsChart(box, key, yf, empty) {
+    if (notReady('metrics')) return ph(box, '指标数据未就绪');
+    const ser = selRuns().map((r) => ({ name: r, color: colorOf(r), pts: mPts(r, key, true) }));
+    chart(box, ser, { yFmt: yf, h: 260, empty });
+  }
+  D('ov-legend', legendDraw);
+  D('ov-chart', (box) => runsChart(box, 'progress_fresh', F.f2, '所选线没有新开局进度数据；在上面勾选要看的线'));
+  D('tp-legend', legendDraw);
+  D('tp-sps', (box) => runsChart(box, 'sps', F.n0, '所选线没有吞吐数据；在上面勾选要看的线'));
+
+  // ---------- plan ----------
+  const PSTAT = { running: '进行中', pending: '待开始', done: '完成', failed: '失败' };
+  D('plan-rows', (tb) => {
+    tb.replaceChildren(); const P = ds('plan'); if (!P) return;
+    for (const r of P) {
+      const tr = mk('tr', r.status || ''); tr.dataset.key = encodeURIComponent(r.stage == null ? '' : r.stage);
+      cells(tr, [[r.label || r.stage], [PSTAT[r.status] || r.status, 'nw'], [fm(r.target_updates, F.n0), 1], [r.started || '', 'nw'], [r.eta || '', 'nw'], [r.note || '']]);
+      tb.appendChild(tr);
+    }
+  });
+
+  // ---------- evals table ----------
+  D('ev-filters', (box) => {
+    box.replaceChildren(); const E = ds('evals'); if (!E) return;
+    const present = new Set(E.map((e) => e.run));
+    const runs = runOrder().filter((r) => present.has(r)); for (const r of present) if (!runs.includes(r)) runs.push(r);
+    const sets = [...new Set(E.map((e) => e.seedset))].filter(Boolean).sort();
+    box.append(
+      selectCtl('线 ', [['', '全部'], ...runs.map((r) => [r, r])], S.evRun, (v) => { S.evRun = v; redraw('ev-rows'); }),
+      selectCtl('种子集 ', [['', '全部'], ...sets.map((s) => [s, s])], S.evSet, (v) => { S.evSet = v; redraw('ev-rows'); }),
+      checkCtl('只看段终', S.evEnd, (v) => { S.evEnd = v; redraw('ev-rows'); }));
+  });
+  D('ev-rows', (tb) => {
+    tb.replaceChildren(); const note = root.querySelector('[data-role=ev-note]'); const E = ds('evals');
+    if (!E) { if (note) note.textContent = '评测数据未就绪。'; return; }
+    let rows = E.filter((r) => (!S.evRun || r.run === S.evRun) && (!S.evSet || r.seedset === S.evSet) && (!S.evEnd || r.endpoint));
+    rows.sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')) || (b.update || 0) - (a.update || 0) || String(a.run).localeCompare(String(b.run)));
+    const n = rows.length; const LIM = 500; rows = rows.slice(0, LIM);
+    for (const r of rows) {
+      const tr = mk('tr', r.endpoint ? 'endpoint' : ''); tr.dataset.key = [r.run, r.update, r.seedset, r.mode].map((v) => encodeURIComponent(v == null ? '' : v)).join(',');
+      cells(tr, [[r.run], [fm(r.update, F.n0), 1], [r.seedset, 'nw'], [MODE[r.mode] || r.mode, 'nw'], [fm(r.progress_mean, F.f3), 1], [fm(r.ci_lo, F.f3), 1], [fm(r.ci_hi, F.f3), 1], [fm(r.games, F.n0), 1], [fm(r.wins, F.n0), 1], [fm(r.act3, F.n0), 1], [fm(r.stuck, F.n0), 1], [fm(r.interventions, F.n0), 1], [fm(r.cycles, F.n0), 1], [fm(r.floor_mean, F.f1), 1], [r.endpoint ? '段终' : '', 'nw'], [est(r.time), 'nw']]);
+      tb.appendChild(tr);
+    }
+    if (note) note.textContent = !n ? '没有符合筛选的评测。' : (n > rows.length ? `共 ${F.n0(n)} 行，按时间倒序显示最新 ${F.n0(rows.length)} 行；用上面的筛选缩小范围。` : `共 ${F.n0(n)} 行，按时间倒序。`);
+  });
+
+  // ---------- timeline ----------
+  D('tl-filter', (box) => {
+    box.replaceChildren(); const T = ds('timeline'); if (!T) return;
+    const present = new Set(T.flatMap((r) => ids(r.lines)));
+    const opts = runOrder().filter((i) => present.has(i)); for (const i of present) if (!opts.includes(i)) opts.push(i);
+    box.append(selectCtl('只看与某条线相关 ', [['', '全部'], ...opts.map((i) => [i, i])], S.tlLine, (v) => { S.tlLine = v; redraw('timeline'); }),
+      checkCtl('显示全部事件', S.tlAll, (v) => { S.tlAll = v; redraw('timeline'); }));
+  });
+  D('timeline', (ul) => {
+    ul.replaceChildren(); const T = ds('timeline');
+    if (!T) { ul.appendChild(mk('li', 'info', '时间线数据未就绪')); return; }
+    let rows = S.tlLine ? T.filter((r) => ids(r.lines).includes(S.tlLine)) : T;
+    const n = rows.length; if (!S.tlAll) rows = rows.slice(0, 60);
+    for (const r of rows) {
+      const li = mk('li', r.kind || 'info'); const t = mk('time', '', String(r.time || '').slice(5)); const d = mk('div');
+      d.appendChild(mk('span', '', r.event || ''));
+      for (const id of ids(r.lines)) d.appendChild(mk('span', 'tag', id));
+      li.append(t, d); ul.appendChild(li);
+    }
+    if (n > rows.length) ul.appendChild(mk('li', 'info', `还有 ${F.n0(n - rows.length)} 条更早的事件；勾选"显示全部事件"查看。`));
+    if (!n) ul.appendChild(mk('li', 'info', '没有事件。'));
+  });
+
+  // ---------- ledger ----------
+  const lastPair = (r) => { const p = pj(r.paired); return p.length ? p[p.length - 1] : null; };
+  const pairText = (p) => p ? `vs ${p.vs || '?'} ${p.seedset || ''} Δ ${isNum(p.delta) ? F.d3(p.delta) : '—'}${isNum(p.ci_lo) && isNum(p.ci_hi) ? ` [${F.d3(p.ci_lo)}, ${F.d3(p.ci_hi)}]` : ''}` : '';
+  function goLine(id) { S.line = id; showTab('line', true); const top = root.querySelector('[data-tabpanel=line]'); if (top && top.scrollIntoView) top.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  D('ld-summary', (p) => {
+    const L = lines(); if (!L) { p.textContent = '台账未就绪。'; return; }
+    const h = d3.sum(L, (r) => (isNum(r.gpu_hours) ? r.gpu_hours : 0)), u = d3.sum(L, (r) => (isNum(r.units_est) ? r.units_est : 0));
+    const cnt = d3.rollups(L, (v) => v.length, (r) => r.status);
+    p.textContent = `共 ${F.n0(L.length)} 条线（` + cnt.map(([k, n]) => `${LSTAT[k] || k} ${F.n0(n)}`).join('、') + `）；累计 GPU ${F.f1(h)} 小时，约 ${F.n0(Math.round(u))} 计算单位。`;
+  });
+  D('ld-rows', (tb) => {
+    tb.replaceChildren(); const L = lines(); if (!L) return; const cur = curLine();
+    for (const r of L) {
+      const tr = mk('tr', 'click ' + (r.status || '') + (cur && cur.id === r.id && S.line ? ' sel' : '')); tr.dataset.key = encodeURIComponent(r.id); tr.tabIndex = 0;
+      const p = lastPair(r); const vp = pill(VERD[r.verdict] || r.verdict || '—', 'v-' + (r.verdict || ''));
+      const span = `u${fm(r.updates_from, F.n0)} → u${fm(r.updates_to, F.n0)}`;
+      cells(tr, [
+        [r.id, 'nw'], [r.title || '', 'wrap'],
+        [r.fork_line ? `${r.fork_line} @u${fm(r.fork_update, F.n0)}` : '—', 'nw'],
+        [r.flags || '—', 'wrap'], [r.control || '—', 'nw'], [r.gpu_session || '—', 'nw'],
+        [r.started || '—', 'nw', '→ ' + (r.ended || (r.status === 'running' ? '进行中' : '—'))],
+        [fm(r.updates_done, F.n0), 1, span],
+        [fm(r.gpu_hours, F.f1), 1], [fm(r.units_est, F.f1), 1],
+        [fm(r.best_ab512, F.f3), 1, isNum(r.best_ab512_update) ? 'u' + F.n0(r.best_ab512_update) : ''],
+        [fm(r.best_dev128, F.f3), 1, isNum(r.best_dev128_update) ? 'u' + F.n0(r.best_dev128_update) : ''],
+        [p ? pairText(p) : '—', 'wrap', p && p.conclusion ? p.conclusion : ''],
+        [vp], [r.stop_reason || '', 'wrap'],
+      ]);
+      tr.addEventListener('click', () => goLine(r.id));
+      tr.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') goLine(r.id); });
+      tb.appendChild(tr);
+    }
+  });
+  const VCOL = { adopted: 'var(--color-ok)', rejected: 'var(--color-bad)', stopped: 'var(--color-warn)', pending: 'var(--sa-c0, var(--color-fg))', neutral: 'var(--color-fg-muted)' };
+  D('ld-lineage', (box) => {
+    box.replaceChildren(); const L = lines(); if (!L) return ph(box, '台账未就绪'); if (!L.length) return ph(box, '台账里还没有实验线');
+    const W = W_OF(box), rh = 22, mt = 6, mb = 26, ml = 52, mr = 12, H = mt + mb + L.length * rh;
+    const from = (r) => (isNum(r.updates_from) ? r.updates_from : 0);
+    const done = (r) => from(r) + (isNum(r.updates_done) ? r.updates_done : 0);
+    const plan = (r) => Math.max(done(r), isNum(r.updates_to) ? r.updates_to : 0);
+    const x = d3.scaleLinear([0, d3.max(L, plan) || 1], [ml, W - mr]).nice();
+    const yi = new Map(L.map((r, i) => [r.id, i])); const yc = (id) => mt + yi.get(id) * rh + rh / 2;
+    const svg = d3.select(box).append('svg').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    svg.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.min(7, Math.floor((W - ml - mr) / 70)))).tickFormat(F.n0)).call((ax) => axisStyle(ax, false));
+    svg.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.min(7, Math.floor((W - ml - mr) / 70)))).tickSize(-(H - mb - mt)).tickFormat(() => '')).call((ax) => axisStyle(ax, true));
+    const cur = curLine();
+    const tip = mk('div', 'tip'); tip.hidden = true; box.appendChild(tip);
+    const conn = svg.append('g'), bars = svg.append('g');
+    L.forEach((r, i) => {
+      const yy = yc(r.id);
+      if (r.fork_line && yi.has(r.fork_line) && isNum(r.fork_update)) {
+        const fx = x(r.fork_update), py = yc(r.fork_line);
+        conn.append('path').attr('d', `M${fx},${py} V${yy} H${x(from(r))}`).attr('fill', 'none').style('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1).attr('stroke-opacity', 0.6);
+        conn.append('circle').attr('cx', fx).attr('cy', py).attr('r', 2.2).style('fill', 'var(--color-fg-muted)');
+      }
+      const row = bars.append('g').style('cursor', 'pointer');
+      row.append('rect').attr('x', 0).attr('y', yy - rh / 2).attr('width', W).attr('height', rh).style('fill', cur && cur.id === r.id ? 'var(--color-fg)' : 'transparent').attr('fill-opacity', cur && cur.id === r.id ? 0.07 : 0);
+      row.append('text').attr('x', ml - 6).attr('y', yy + 4).attr('text-anchor', 'end').attr('font-size', 11).style('fill', 'var(--color-fg)').text(r.id);
+      if (plan(r) > done(r)) row.append('rect').attr('x', x(done(r))).attr('y', yy - 4).attr('width', Math.max(1, x(plan(r)) - x(done(r)))).attr('height', 8).attr('rx', 2).style('fill', 'none').style('stroke', 'var(--color-fg-muted)').attr('stroke-dasharray', '3 2');
+      if (done(r) > from(r)) row.append('rect').attr('x', x(from(r))).attr('y', yy - 5).attr('width', Math.max(2, x(done(r)) - x(from(r)))).attr('height', 10).attr('rx', 2).style('fill', VCOL[r.verdict] || 'var(--color-fg-muted)');
+      else row.append('circle').attr('cx', x(from(r))).attr('cy', yy).attr('r', 3).style('fill', VCOL[r.verdict] || 'var(--color-fg-muted)');
+      row.on('click', () => goLine(r.id));
+      row.on('pointermove', (ev) => {
+        const [mx] = d3.pointer(ev, svg.node());
+        tip.textContent = `${r.id} · ${r.title || ''} · u${F.n0(from(r))} → u${F.n0(done(r))}${plan(r) > done(r) ? `（计划 u${F.n0(plan(r))}）` : ''} · ${LSTAT[r.status] || r.status || ''} · ${VERD[r.verdict] || r.verdict || ''}`;
+        tip.hidden = false; const tw = tip.offsetWidth; tip.style.left = Math.min(W - tw - 2, Math.max(0, mx + 10)) + 'px';
+        let ty = yy - tip.offsetHeight - 6; if (ty < 0) ty = yy + 12; tip.style.top = ty + 'px';
+      }).on('pointerleave', () => { tip.hidden = true; });
+    });
+  });
+
+  // ---------- single line ----------
+  D('ln-select', (box) => {
+    box.replaceChildren(); const L = lines(); if (!L || !L.length) return; const cur = curLine();
+    box.appendChild(selectCtl('实验线 ', L.map((r) => [r.id, `${r.id} · ${r.title || ''}`]), cur ? cur.id : '', (v) => { S.line = v; redrawTab('line'); }));
+    const tip = mk('span', '', '默认显示最新的运行中线；也可以在台账里点选。'); box.appendChild(tip);
+  });
+  function kv(dl, k, v) { const dt = mk('dt', '', k); const dd = mk('dd'); if (v instanceof Node) dd.appendChild(v); else dd.textContent = (v === null || v === undefined || v === '') ? '—' : String(v); dl.append(dt, dd); }
+  D('ln-head', (box) => {
+    box.replaceChildren(); const r = curLine();
+    if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '台账里还没有实验线');
+    const pills = mk('div', 'pills'); pills.append(pill(LSTAT[r.status] || r.status || '—', 's-' + (r.status || '')), pill('裁决：' + (VERD[r.verdict] || r.verdict || '—'), 'v-' + (r.verdict || '')));
+    const dl = mk('dl', 'kv');
+    kv(dl, '假设', r.hypothesis);
+    kv(dl, '分叉自', r.fork_line ? `${r.fork_line} @u${fm(r.fork_update, F.n0)}` : '无（从头训练）');
+    kv(dl, '旗标差异', r.flags);
+    kv(dl, '对照线', r.control);
+    kv(dl, 'GPU 会话', r.gpu_session);
+    kv(dl, '镜像目录', r.run);
+    kv(dl, '起止（EST）', `${r.started || '—'} → ${r.ended || (r.status === 'running' ? '进行中' : '—')}`);
+    kv(dl, 'update', `u${fm(r.updates_from, F.n0) || '—'} → u${fm(r.updates_to, F.n0) || '—'}（计划）· 已跑 ${fm(r.updates_done, F.n0) || '—'}`);
+    kv(dl, '算力', `GPU ${fm(r.gpu_hours, F.f1) || '—'} 小时 · 约 ${fm(r.units_est, F.f1) || '—'} 单位`);
+    kv(dl, '最佳读数', `ab-512 ${fm(r.best_ab512, F.f3) || '—'}${isNum(r.best_ab512_update) ? ' @u' + F.n0(r.best_ab512_update) : ''} · dev-128 ${fm(r.best_dev128, F.f3) || '—'}${isNum(r.best_dev128_update) ? ' @u' + F.n0(r.best_dev128_update) : ''}`);
+    const docs = ids(r.docs); const dd = mk('div', 'docs'); docs.forEach((d) => dd.appendChild(mk('code', '', d)));
+    kv(dl, '文档', docs.length ? dd : '—');
+    box.append(mk('h2', '', `${r.id} · ${r.title || ''}`), pills, dl);
+  });
+  function miniTable(box, head, rows, empty) {
+    box.replaceChildren(); if (!rows.length) return ph(box, empty);
+    const t = mk('table'); const th = mk('thead'); const tr = mk('tr');
+    head.forEach(([h, n]) => tr.appendChild(mk('th', n ? 'num' : '', h))); th.appendChild(tr); t.appendChild(th);
+    const tb = mk('tbody'); rows.forEach((cs) => { const r = mk('tr'); cells(r, cs); tb.appendChild(r); }); t.appendChild(tb); box.appendChild(t);
+  }
+  D('ln-endpoints', (box) => {
+    const r = curLine(); if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '未选中实验线');
+    const eps = pj(r.endpoints).slice().sort((a, b) => (a.update || 0) - (b.update || 0));
+    miniTable(box, [['update', 1], ['ab-512', 1], ['CI', 1], ['dev-128', 1], ['到第三幕', 1]],
+      eps.map((e) => [[fm(e.update, F.n0), 1], [fm(e.ab512, F.f3) || '—', 1], [isNum(e.ab512_lo) && isNum(e.ab512_hi) ? `[${F.f3(e.ab512_lo)}, ${F.f3(e.ab512_hi)}]` : '—', 1], [fm(e.dev128, F.f3) || '—', 1], [fm(e.act3_ab512, F.n0) || '—', 1]]),
+      '这条线还没有段终读数');
+  });
+  D('ln-paired', (box) => {
+    const r = curLine(); if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '未选中实验线');
+    const ps = pj(r.paired).slice().sort((a, b) => (a.update || 0) - (b.update || 0));
+    miniTable(box, [['update', 1], ['对比线'], ['种子集'], ['Δ', 1], ['CI 下', 1], ['CI 上', 1], ['结论']],
+      ps.map((p) => { const d = mk('span', isNum(p.delta) ? (p.delta > 0 ? 'pos' : (p.delta < 0 ? 'neg' : '')) : '', isNum(p.delta) ? F.d3(p.delta) : '—'); return [[fm(p.update, F.n0), 1], [p.vs || '—'], [p.seedset || '—', 'nw'], [d, 1], [fm(p.ci_lo, F.d3), 1], [fm(p.ci_hi, F.d3), 1], [p.conclusion || '', 'wrap']]; }),
+      '这条线没有配对比较');
+  });
+  D('ln-evset', (box) => {
+    box.replaceChildren(); const E = ds('evals'); if (!E) return;
+    const sets = ['dev-128', 'ab-512'].concat([...new Set(E.map((e) => e.seedset))].filter((s) => s && s !== 'dev-128' && s !== 'ab-512').sort());
+    box.appendChild(selectCtl('种子集 ', sets.map((s) => [s, s]), S.l3Set, (v) => { S.l3Set = v; redraw('ln-evals'); }));
+  });
+  D('ln-evals', (box) => {
+    if (notReady('evals')) return ph(box, '评测数据未就绪');
+    const r = curLine(); if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '未选中实验线');
+    const E = ds('evals'); const [ca, cb] = pairColors(r.id, r.control);
+    const pts = (id) => E.filter((e) => e.run === id && e.seedset === S.l3Set && e.mode === 'greedy_off' && isNum(e.progress_mean) && isNum(e.update))
+      .sort((a, b) => a.update - b.update).map((e) => ({ x: e.update, y: e.progress_mean, lo: e.ci_lo, hi: e.ci_hi, big: !!e.endpoint, note: isNum(e.games) ? `${F.n0(e.games)} 局` : '' }));
+    const ser = [{ name: r.id, color: ca, band: true, marks: true, pts: pts(r.id) }];
+    if (r.control) ser.push({ name: `${r.control}（对照）`, color: cb, band: true, marks: true, dash: true, pts: pts(r.control) });
+    chart(box, ser, { yFmt: F.f3, h: 250, keyLegend: true, vlines: isNum(r.fork_update) && r.fork_line ? [{ x: r.fork_update, label: '分叉' }] : [], empty: `这条线和对照线都没有 ${S.l3Set} 贪心·关 breaker 评测` });
+  });
+  const TRAIN_KEYS = [['progress_fresh', '新开局进度（训练期，采样）', F.f3, true, true], ['save_wins', '存档开局胜场（每 update）', F.f1, true], ['boss2_kills', 'boss2 击杀（每 update）', F.f1, true], ['act3_frac', '到达第三幕的局占比', F.pct, true], ['fresh_win_rate', '新开局胜率', F.pct, true]];
+  function multiples(box, runIds, keys, emptyMsg) {
+    box.replaceChildren();
+    const [ca, cb] = pairColors(runIds[0], runIds[1]);
+    const todo = [];
+    for (const [k, label, f, sm, wide] of keys) {
+      const ser = runIds.filter(Boolean).map((id, i) => ({ name: i ? `${id}（对照）` : id, color: i ? cb : ca, dash: i > 0, width: i ? 1.5 : 2, pts: mPts(id, k, sm) }));
+      const has = ser.some((s) => s.pts.length);
+      if (!has && keys.length <= 6) continue;
+      const card = mk('div', 'minicard' + (wide ? ' wide' : '')); card.appendChild(mk('div', 'label', label));
+      const c = mk('div', 'chart'); card.appendChild(c); box.appendChild(card);
+      todo.push([c, has ? ser : null, f, wide]);
+    }
+    if (!todo.length) { ph(box, emptyMsg); return; }
+    // draw after every card is in the grid, so each chart measures its final column width
+    let drawn = 0;
+    for (const [c, ser, f, wide] of todo) {
+      if (!ser) { ph(c, '这条线没有此指标'); continue; }
+      drawn++; chart(c, ser, { h: wide ? 220 : 140, yFmt: f, keyLegend: drawn === 1, yTicks: wide ? 5 : 3 });
+    }
+  }
+  D('ln-train', (box) => {
+    if (notReady('metrics')) return ph(box, '指标数据未就绪');
+    const r = curLine(); if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '未选中实验线');
+    multiples(box, [r.id, r.control], TRAIN_KEYS, '镜像里没有这条线的训练指标');
+  });
+  D('ln-journey', (ul) => {
+    ul.replaceChildren(); const r = curLine();
+    const E = ds('line_events');
+    if (!E) { ul.appendChild(mk('li', 'info', '线事件数据未就绪')); return; }
+    if (!r) { ul.appendChild(mk('li', 'info', '未选中实验线')); return; }
+    const rows = E.filter((e) => e.line === r.id).sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')) || (a.update || 0) - (b.update || 0));
+    if (!rows.length) { ul.appendChild(mk('li', 'info', '台账里还没有这条线的事件')); return; }
+    for (const e of rows) {
+      const li = mk('li'); const t = mk('time', '', String(e.time || '').slice(5)); const k = mk('span', 'kind k-' + (e.kind || 'note'), KIND[e.kind] || e.kind || '备注');
+      const d = mk('div'); d.appendChild(mk('span', '', e.event || ''));
+      const extra = [isNum(e.update) ? 'u' + F.n0(e.update) : '', isNum(e.value) ? '读数 ' + F.g3(e.value) : ''].filter(Boolean).join(' · ');
+      if (extra) d.appendChild(mk('span', 'tag', extra));
+      li.append(t, k, d); ul.appendChild(li);
+    }
+  });
+  D('ln-verdict', (box) => {
+    box.replaceChildren(); const r = curLine(); if (!r) return ph(box, notReady('lines') ? '台账未就绪' : '未选中实验线');
+    const pills = mk('div', 'pills'); pills.append(pill(VERD[r.verdict] || r.verdict || '—', 'v-' + (r.verdict || '')));
+    const dl = mk('dl', 'kv');
+    const p = lastPair(r); kv(dl, '最近配对', p ? `${pairText(p)}${p.conclusion ? ' · ' + p.conclusion : ''}` : '—');
+    kv(dl, '停止原因', r.stop_reason);
+    box.append(pills, dl, mk('h3', '', '教训'), mk('p', 'lessons', r.lessons || '台账里还没有写这条线的教训。'));
+  });
+
+  // ---------- throughput ----------
+  const TP_DEP = ['tp-rows', 'tp-select', 'tp-split', 'tp-proc'];
+  D('tp-rows', (tb) => {
+    tb.replaceChildren(); const T = ds('throughput'); if (!T) return; const o = runOrder(); const cur = curTpRun();
+    const rows = [...T].sort((a, b) => o.indexOf(a.run) - o.indexOf(b.run));
+    for (const r of rows) {
+      const tr = mk('tr', 'click' + (r.run === cur ? ' sel' : '')); tr.dataset.key = encodeURIComponent(r.run); tr.tabIndex = 0;
+      cells(tr, [[r.run, 'nw'], [r.gpu_session || '—', 'nw'], [r.hardware || '—', 'nw'], [fm(r.updates, F.n0), 1], [fm(r.hours, F.f2), 1], [fm(r.upd_per_hour, F.n0), 1], [fm(r.sps_mean, F.n0), 1], [fm(r.t_env_mean, F.f2), 1], [fm(r.t_infer_mean, F.f2), 1], [fm(r.t_update_mean, F.f2), 1], [fm(r.t_total_mean, F.f2), 1], [fm(r.gpu_peak_mb, F.n0), 1], [fm(r.units_per_1000_updates, F.f1), 1], [r.compile || '—', 'nw'], [fm(r.envs, F.n0), 1], [fm(r.rollout_steps, F.n0), 1], [r.note || '', 'wrap']]);
+      const pick = () => { S.tpRun = r.run; redrawMany(TP_DEP); };
+      tr.addEventListener('click', pick); tr.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') pick(); });
+      tb.appendChild(tr);
+    }
+  });
+  const CCOL = { compiled: 'var(--sa-c0, var(--color-fg))', eager: 'var(--sa-c1, var(--color-warn))', mixed: 'var(--color-warn)' };
+  D('tp-bars', (box) => {
+    box.replaceChildren(); const T = ds('throughput'); if (!T) return ph(box, '吞吐数据未就绪');
+    const o = runOrder(); const rows = T.filter((r) => isNum(r.upd_per_hour)).sort((a, b) => o.indexOf(a.run) - o.indexOf(b.run));
+    if (!rows.length) return ph(box, '暂无数据');
+    const W = W_OF(box), rh = 18, mt = 4, mb = 24, ml = 52, mr = 40, H = mt + mb + rows.length * rh;
+    const x = d3.scaleLinear([0, d3.max(rows, (r) => r.upd_per_hour) || 1], [ml, W - mr]).nice();
+    const svg = d3.select(box).append('svg').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    svg.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.min(6, Math.floor((W - ml - mr) / 60)))).tickFormat(F.n0)).call((ax) => axisStyle(ax, false));
+    const cur = curTpRun();
+    rows.forEach((r, i) => {
+      const yy = mt + i * rh;
+      const g = svg.append('g').style('cursor', 'pointer').on('click', () => { S.tpRun = r.run; redrawMany(TP_DEP); });
+      g.append('text').attr('x', ml - 6).attr('y', yy + rh / 2 + 4).attr('text-anchor', 'end').attr('font-size', 11).style('fill', r.run === cur ? 'var(--color-fg)' : 'var(--color-fg-muted)').attr('font-weight', r.run === cur ? 600 : null).text(r.run);
+      g.append('rect').attr('x', ml).attr('y', yy + 3).attr('height', rh - 6).attr('width', Math.max(1, x(r.upd_per_hour) - ml)).attr('rx', 2).style('fill', CCOL[r.compile] || 'var(--color-fg-muted)');
+      g.append('text').attr('x', x(r.upd_per_hour) + 4).attr('y', yy + rh / 2 + 4).attr('font-size', 10).style('fill', 'var(--color-fg-muted)').text(F.n0(r.upd_per_hour));
+    });
+  });
+  D('tp-select', (box) => {
+    box.replaceChildren(); const m = mByRun(); if (!m) return;
+    const runs = runOrder().filter((r) => m.has(r)); const cur = curTpRun();
+    box.appendChild(selectCtl('查看线 ', runs.map((r) => [r, r]), cur || '', (v) => { S.tpRun = v; redrawMany(TP_DEP); }));
+    const l = lineOf(cur); if (l && l.control) box.appendChild(mk('span', '', `对照线 ${l.control}（中间过程图里以虚线叠加）`));
+  });
+  D('tp-split', (box) => {
+    box.replaceChildren(); if (notReady('metrics')) return ph(box, '指标数据未就绪');
+    const run = curTpRun(); const rows = (mByRun().get(run) || []).filter((r) => isNum(r.t_total_s) || isNum(r.t_env_s));
+    if (!rows.length) return ph(box, '这条线没有耗时数据');
+    const keys = ['t_env_s', 't_infer_s', 't_update_s', 'other'], names = { t_env_s: '环境步进', t_infer_s: '推理', t_update_s: 'PPO 更新', other: '其他' };
+    const c = C(); const col = { t_env_s: c[0 % c.length], t_infer_s: c[1 % c.length], t_update_s: c[2 % c.length], other: 'var(--color-fg-muted)' };
+    let data = rows.map((r) => { const e = isNum(r.t_env_s) ? r.t_env_s : 0, i = isNum(r.t_infer_s) ? r.t_infer_s : 0, u = isNum(r.t_update_s) ? r.t_update_s : 0; const tot = isNum(r.t_total_s) ? r.t_total_s : e + i + u; return { x: r.update, t_env_s: e, t_infer_s: i, t_update_s: u, other: Math.max(0, tot - e - i - u), total: tot }; });
+    if (S.smooth) { for (const k of keys.concat(['total'])) { const sm = smooth(data.map((d) => ({ x: d.x, y: d[k] })), 10); sm.forEach((p, j) => { data[j] = Object.assign({}, data[j], { [k]: p.y }); }); } }
+    const lg = mk('div', 'legend'); for (const k of keys) { const sp = mk('span'); const i = mk('i'); i.style.background = col[k]; sp.append(i, document.createTextNode(' ' + names[k])); lg.appendChild(sp); }
+    box.appendChild(lg);
+    const W = W_OF(box), H = 240, mt = 10, mb = 26, mr = 12;
+    const stack = d3.stack().keys(keys)(data);
+    const svg = d3.select(box).append('svg').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const y = d3.scaleLinear([0, d3.max(stack[stack.length - 1], (d) => d[1]) || 1], [H - mb, mt]).nice();
+    const ml = 40;
+    const x = d3.scaleLinear(d3.extent(data, (d) => d.x), [ml, W - mr]);
+    svg.append('g').attr('transform', `translate(0,${H - mb})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.min(6, Math.floor((W - ml - mr) / 70)))).tickFormat(F.n0)).call((ax) => axisStyle(ax, false));
+    svg.append('g').attr('transform', `translate(${ml},0)`).call(d3.axisLeft(y).ticks(4).tickFormat((v) => F.n0(v) + 's').tickSize(-(W - ml - mr))).call((ax) => axisStyle(ax, true));
+    const area = d3.area().x((d) => x(d.data.x)).y0((d) => y(d[0])).y1((d) => y(d[1]));
+    stack.forEach((s) => svg.append('path').attr('d', area(s)).style('fill', col[s.key]).attr('fill-opacity', s.key === 'other' ? 0.35 : 0.75));
+    const tip = mk('div', 'tip'); tip.hidden = true; box.appendChild(tip); const svgTop = () => svg.node().getBoundingClientRect().top - box.getBoundingClientRect().top;
+    const vl = svg.append('line').attr('y1', mt).attr('y2', H - mb).style('stroke', 'var(--color-fg-muted)').style('display', 'none');
+    const bis = d3.bisector((d) => d.x).center;
+    svg.on('pointermove', (ev) => {
+      const [mx] = d3.pointer(ev); const d = data[bis(data, x.invert(mx))]; if (!d) return;
+      vl.style('display', null).attr('x1', x(d.x)).attr('x2', x(d.x));
+      tip.textContent = `${run} · u${F.n0(d.x)}：` + keys.map((k) => `${names[k]} ${F.f1(d[k])}s`).join(' · ') + ` · 合计 ${F.f1(d.total)}s`;
+      tip.hidden = false; const tw = tip.offsetWidth; tip.style.left = Math.min(W - tw - 2, Math.max(0, x(d.x) + 10)) + 'px'; tip.style.top = (svgTop() + mt) + 'px';
+    }).on('pointerleave', () => { tip.hidden = true; vl.style('display', 'none'); });
+  });
+  const PROC_KEYS = [['entropy', '策略熵', F.f3, true], ['approx_kl', 'approx KL', F.f4, true], ['explained_variance', '价值函数解释方差', F.f3, true], ['clipfrac', 'clip 比例', F.f3, true], ['grad_norm', '梯度范数', F.f3, true], ['harvest_live', 'harvest 存活存档数', F.n0, false], ['harvest_start_share', '存档开局占比', F.pct, true], ['save_episodes', '存档开局局数（每 update）', F.n0, true], ['save_progress_gain_mean', '存档局平均进度增益', F.f3, true], ['cycles_total', 'UI 回访环（每 update）', F.n0, true], ['act3_frac', '到达第三幕的局占比', F.pct, true], ['gpu_mem_peak_mb', '显存峰值 MB', F.n0, false]];
+  D('tp-proc', (box) => {
+    if (notReady('metrics')) return ph(box, '指标数据未就绪');
+    const run = curTpRun(); if (!run) return ph(box, '暂无数据');
+    const l = lineOf(run);
+    multiples(box, [run, l && l.control ? l.control : null], PROC_KEYS, '这条线没有中间过程指标');
+  });
+
+  // ---------- system facts ----------
+  const SYS = { model_preset: '模型预设', model_params: '模型参数量', envs: '并行环境数', rollout_steps: '每 update rollout 步数', env_steps_per_update: '每 update 环境步', machine: '机器', gpu_cost_units_per_hour: '每小时计算单位', bundle: '训练包', bundle_sha: '训练包 sha', env_hash: '环境哈希', seedset_dev128: '种子集 dev-128', seedset_ab512: '种子集 ab-512', seedset_blind256: '种子集 blind-256', seedset_test100: '种子集 test-100', gcs_bucket: 'GCS 桶', keepalive_host: '保活主机' };
+  D('sys-rows', (tb) => {
+    tb.replaceChildren(); const Y = ds('system'); if (!Y) return;
+    for (const r of Y) {
+      const tr = mk('tr'); tr.dataset.key = encodeURIComponent(r.key);
+      const v = isNum(r.value) ? (Number.isInteger(r.value) ? F.n0(r.value) : String(r.value)) : (r.value == null ? '' : String(r.value));
+      const k = mk('span', '', SYS[r.key] || r.key); const kk = mk('span', 'sub mono', r.key);
+      cells(tr, [[k, 'nw', SYS[r.key] ? kk : ''], [mk('code', '', v)], [r.note || '', 'wrap']]);
+      tb.appendChild(tr);
+    }
+  });
+})();
+</script>

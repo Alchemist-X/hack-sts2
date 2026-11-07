@@ -74,22 +74,7 @@ public static partial class PassiveStateBuilder
     }
 
     private static object? GetInstanceFieldValue(object source, string fieldName)
-    {
-        const System.Reflection.BindingFlags Flags =
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.DeclaredOnly;
-
-        for (var type = source.GetType(); type != null; type = type.BaseType)
-        {
-            var field = type.GetField(fieldName, Flags);
-            if (field != null)
-                return field.GetValue(source);
-        }
-
-        return null;
-    }
+        => Sts2Recorder.Core.FieldReaders.Read(source, fieldName);
 
     private static List<T> FindAll<T>(Node start) where T : Node
     {

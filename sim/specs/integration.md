@@ -1279,3 +1279,473 @@ Open (fidelity), from the triage report §4, unchanged by the merge:
 - G1 on the human combat gate is 99.50 %, under the 99.9 % target. Farm combat G1: decisions 2,664/2,673 (99.66 %;
   the 9 are 8 `select.screen_type` projection gaps and 1 `turn.phase`), outcomes 126/159 (the 33 are `final_hp`,
   recorder timing).
+
+## Train-cycle integrate (2026-11-03)
+
+Scope: the environment and trainer branches of the Silent A10 training cycle. Base:
+`claude/recorder-performance-lag-0f9d6d` at `b1d4a21` (PR #30); the three owner branches are cut from `b1d4a21`.
+
+Merged, in order (all `--no-ff`): train/env-cap-schema `5fd17d6`+`c20f882` (merge `86d2ac5`), train/trainer-colab
+`3540ea7`+`19857d5`+`ef35697` (merge `5918a05`), train/silent-seedsets `8eb7382` (merge `353d136`). Conflicts: none
+(Vec + `sim/tools/vec`; `sim/tools/train` + `scripts/train`; seed sets + two tests).
+
+Seams checked:
+- Schema: the libraries built from `b1d4a21` and from the merged tree differ only in encoder_version
+  (`fc2eb34c07bc8513` → `5dbfa09dd9dcb5ed`), the six appended buffers, four caps, `EndKind` (+FloorStall) and the new
+  `ItemKind` enum; the 35 old buffer entries (dtype, shape, fields) are identical. The trainer's 27 inputs, its
+  vocabularies and embedded enums are unchanged; preset sizes too (948,750 / 1,175,150 / 15,804,270).
+- Floor cap: the trainer passes `--floor-step-cap` only when given; unset, `VecEnv`'s default (80) applies on the new
+  library, so the cap is on in training by default. `sts2vec eval` now uses the env cap; NN track re-measured on the
+  merged tree: random 0.087 / 0.045, first 0.194 / 0.103, heuristic 0.221 / 0.110 (unchanged), replay 20/20.
+
+Follow-ups (integration):
+- `5cf12ec` resume across encoder versions (`features.check_spec_compat`): a checkpoint resumes when the model's inputs
+  are identical (27 buffers' shapes and column maps, MODEL_VOCABS / ENUMS sizes, pointer-enum members, card_vars);
+  anything else is refused before the env is built (exit 2, every difference listed, run directory untouched).
+  config.json records `encoder_version`, `checkpoint_encoder_version`, `resume_compat` (also per session) and
+  `env.floor_step_cap` (the cap in effect); metrics count `floor_stall`. `sts2train eval` applies the same rule.
+  `tests/test_resume_compat.py` (14 tests) pins the real Stage-1 spec (`tests/data/spec-fc2eb34c07bc8513.json`).
+- `0b1bbd3` `smoke_bundle.sh`: the CPU run passes `--floor-step-cap 80` and checks it in config.json; new step checks
+  the six appended buffers (documented shapes, filled) under the bundled library.
+- `79acb96` docs: `docs/HANDOVER.md` (§1 rows 1.1 / 1.2, §1.6 items 2-3 done, §2, §3 training / bundle commands, §4
+  Silent sets, §8); the trainer README changed with `5cf12ec` / `0b1bbd3`; this record.
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=6`), `scripts/gates.sh --quick` on `79acb96` (docs only after `0b1bbd3`),
+161 s, logs `tmp/gates/train-cycle-integrate-quick/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 5 | Release: 0 warnings, 0 errors (`--no-incremental`) |
+| build-debug | PASS | 3 | Debug: 0 warnings, 0 errors |
+| tests | PASS | 40 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 125/125 passed, 0 failed, PENDING 0 |
+| selftest | PASS | 6 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 0 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 8 | 84 passed |
+| pytest-vec | PASS | 18 | 104 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 77 | 762 passed, 6 skipped (no rerun) |
+| py-scripts | PASS | 1 | unittest 53 OK; `gen_prompt_sites --check` OK; `kernel_map --check` OK (564 files, mapped 374, no_port 190): the decompile tree no longer has the 3,761 `._*` sidecars (0 left) |
+
+Also on the final tree: full C# suite 1,144/1,144 passed (E3's 1,139 + VecTests FloorCap 2 + Append 3), 0 failed,
+PENDING 0, 461 s in the runner; `-- Vec` 50/50; `uv run --project sim/tools/train pytest -q` 41 passed (27 + the 14
+resume-compat tests); `gen_env_spec.py --check` up to date (5dbfa09dd9dcb5ed).
+
+Colab bundle `tmp/colab/sts2train-0b1bbd3a4e.tar.gz` (5,450,745 bytes, sha256
+`c754754f5f284f326c62d1b1a81551fbbb6bbbda4056827de31543b96365d74b`; AOT key `64d964770dd0`, built on raven in 160 s,
+`Sts2Sim.Vec.so` sha256 `99bfc2b6…d8793c`, newest symbol GLIBC_2.34; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-train-20261103/`). Validated on raven (8 vCPU, idle) in a plain `python:3.13`
+container, no dotnet:
+- `sts2vec check` on the AOT library: `version sts2vec/5dbfa09dd9dcb5ed`, 41 buffers, 30,942 bytes/env, threads 1 vs 8
+  byte-identical, `check: OK`.
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, `--floor-step-cap 80`): config.json `config.floor_step_cap` 80 and
+  `env.floor_step_cap` 80; 4 updates, 32,768 env steps, 395 episodes, 370 env-steps/s with the CPU learner (env only
+  43,328), 0 sim errors / content gaps, std-a0-v1 eval at u4 progress 0.151 (20/20 replayable); raw bench 74,709
+  env-steps/s (1024 envs x 8 threads).
+- Appended buffers under NativeAOT (256 envs x 400 random steps): event_option_rows 9,438, with_numbers 2,014,
+  with_items 873, numbers_nonzero 2,503, ancient_shown 102,400, discard_rows 285,346, exhaust_rows 25,675,
+  draw_marked_rows 2,190, hand_x_nonzero 303, equal to the managed build on the same rollout. Per-buffer sha256 of a
+  seeded 256 x 400 rollout: all 41 buffers and the state hash (`7735fd5fd42aa068`) identical between the NativeAOT
+  linux-x64 library and the managed macOS build, so the publish keeps every reflected event member (no rd.xml /
+  DynamicDependency needed; Sts2Sim.Core is a TrimmerRootAssembly).
+- Resume across encoder versions with real bundles: the old bundle (`sts2train-ef356974fa`, fc2eb34c07bc8513) trains 2
+  updates; the new bundle's `run_train.sh` resumes that run (`--resume auto`) to update 4: config.json
+  `checkpoint_encoder_version` fc2eb34c07bc8513, `encoder_version` 5dbfa09dd9dcb5ed, `resume_compat.model_inputs`
+  identical (other differences: encoder_version, EndKind 5 -> 6, ItemKind new), `env.floor_step_cap` 80. `sts2train
+  eval` of the old checkpoint on silent-a10-v1 (seed set from the bundle): 20 games, 20/20 replayable.
+
+## Deckbuild integrate (2026-11-04)
+
+Scope: the two simulator-side branches of the Silent A10 cycle and one trainer follow-up. Base:
+`claude/recorder-performance-lag-0f9d6d` at `ef70ee6` (PR #30); both owner branches are cut from `e80ea22`.
+
+Merged, in order (both `--no-ff`): train/vec-branch `9fad18f` (merge `568710c`), train/env-deckbuild
+`810eae7`+`874ce2f`+`f2430c6`+`5be2376` (merge `4ba5de4`). Textual conflicts: none (git merged `sim/ENV_SPEC.md`,
+`VEC.md`, `CONTRACTS.md`, `VecEnv.cs`, `VecTests.cs`, the trainer README and `gen_env_spec.py` on disjoint hunks).
+
+Seams resolved in `4ba5de4`:
+- `sim/ENV_SPEC.md`: the generated §5 block was already right for the merged library (`gen_env_spec.py --check`:
+  `3b73317739c650bd`, 43 buffers, 35,062 bytes/env, `start_entry >= -1`); the two branches' prose came to 410 lines, so
+  it is condensed back to the 400-line budget without dropping a rule (the rewards-screen paragraph folded into the
+  `TakeRewardCard` row; §6 rewrapped; §3 / §7 / §8 / §10 sentences shortened); §9 keeps 21 exports; §11 35.1 KB.
+- `VecEnv.BeginBranchEpisode` also clears the `Raw` legal-action scratch, as `StartSlot` does since the macros.
+  Branch destinations copy `reward_choices` / `map_routes` with the rest of the view (`BranchCopy` = every buffer but
+  the signals); the branch tests (determinized copied view = each destination's own encoding) pass on the merged tree.
+
+Merged library: ABI 2, 21 exports, encoder_version `3b73317739c650bd` (branch: `5dbfa09dd9dcb5ed` →
+`e9baaefc39811631` macros → `dcbee4daff61c155` map_routes → `3b73317739c650bd` card_static), 43 buffers, 35,062
+bytes/env. NN track (`sts2vec eval`, 20 games each, every row 20/20 replayable; std rows equal the branch's):
+
+| seed set | random | first | heuristic |
+| --- | --- | --- | --- |
+| `silent-a0-v1` | 0.074 | 0.141 | 0.183 |
+| `silent-a10-v1` | 0.037 | 0.112 | 0.117 |
+| `std-a0-v1` | 0.082 | 0.194 | 0.221 |
+| `std-a10-v1` | 0.044 | 0.103 | 0.110 |
+
+Follow-ups (integration):
+- `b86167e` enum-widening resume / eval: `features.spec_diff` → (block, widened, other); an embedded enum that only
+  gained members appended at its end (checked by member names; `ModelSpec` now records them for all 15 embedded enums)
+  is "widened", not refused. `model.ENUM_EMBEDDINGS` names the tables each enum sizes (`RunActionKind`: `kind_emb`,
+  `c_kind`); `widen_state_dict` keeps the checkpoint's rows and zeroes the new ones, `restore_checkpoint` does the same
+  for their Adam moments; config.json `resume_compat.model_inputs` = `widened` + `widened_enums` (also per session);
+  `sts2train eval` builds a widened checkpoint's model with `load_checkpoint(library=...)` and records `spec_compat`.
+  Everything else refused before is still refused. `tests/test_resume_compat.py` 25 tests: real Stage-1
+  (`fc2eb34c07bc8513`) and pre-macro (`5dbfa09dd9dcb5ed`, new `tests/data` copy from the s4a checkpoint) specs widen
+  `RunActionKind` 21 → 23; widened logits of kinds < 21 and values equal the checkpoint model's bit for bit on real
+  observations with macro rows; preset pins 948,974 / 1,175,438 / 15,805,070.
+- `e877036` `smoke_bundle.sh`: also checks `reward_choices` rows = rewards-screen macro candidates, `map_routes` only at
+  map nodes, `card_static`, ABI ≥ 2 and an exact branch; `--torch-threads THREADS`.
+- `b26a383` `Test_VecBranch_ConcurrentWithStepSerialises` waits for real overlap (one `-- Vec` run on the loaded box
+  saw 2 of the required 10 mid-run branches; the assertion depended on thread scheduling).
+
+Gates (macOS M4 Pro, load 6-9 from other agents, `DOTNET_PROCESSOR_COUNT=4`): `scripts/gates.sh --quick` on
+`e877036`, 194 s, logs `tmp/gates/deckbuild-integrate-quick/` (repeated on the final tree, last bullet below):
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 4 | Release: 0 warnings, 0 errors (rc 0) |
+| build-debug | PASS | 4 | Debug: 0 warnings, 0 errors (rc 0) |
+| tests | PASS | 44 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 142/142 passed, 0 failed, PENDING 0, 42 s in runner (rc 0) |
+| selftest | PASS | 5 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps (rc 0) |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 (rc 0) |
+| pytest-eval | PASS | 40 | 84 passed in 39.66s |
+| pytest-vec | PASS | 16 | 117 passed in 15.59s |
+| sts2rec | PASS | 77 | 762 passed, 6 skipped in 76.64s (0:01:16) |
+| py-scripts | PASS | 0 | unittest 53 tests OK; prompt_sites --check OK; kernel_map --check OK: 564 kernel files; mapped 374, no_port 190; lines mapped 104637, no_port 34344 |
+
+Also: full C# suite 1,162/1,162 passed, 0 failed, PENDING 0 (481 s in the runner); `-- Vec` 67/67 (after `b26a383`);
+`-- Parity Server` 45/45; `uv run --project sim/tools/train pytest -q` 97 passed; `gen_env_spec.py --check` up to date.
+
+Colab bundle `tmp/colab/sts2train-e877036880.tar.gz` (7,029,564 bytes, sha256
+`ead2435b9ebb732d85f5bd9fadbe84c66c865f3c6dc8cf832f0d2b3a3e027fba`; AOT key `8f89eba48d17`, built on raven in 236 s,
+`Sts2Sim.Vec.so` sha256 `254efb10…f9fd6cc`, newest symbol GLIBC_2.34; 148 Silent A9 start saves; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-deckbuild-20261104/`). `b26a383` and the docs commit change nothing the bundle
+ships. Validated on raven in plain `python:3.13` containers (`--cpus 4`, 4 threads; box shared with a lookahead job,
+load 9-10), torch 2.15.0+cpu in a venv on `/data/raven`:
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5): `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; floor cap 80 in
+  effect; 1 update (31 s per update on the contended box), eval u1 std-a0-v1 0.078 (20 games); under the NativeAOT
+  library the appended-buffer counts equal the managed macOS build's on the same rollout (`reward_choice_rows` 12,777
+  = `macro_candidates` 12,777, `map_route_cells` 6,155,123, `event_option_rows` 9,574, ...), card_static 598 × 30, exact
+  branch = source; raw bench 32,961 env-steps/s (1024 envs × 4 threads).
+- Signal flags (`--aux-heads --deck-counts --acq-shaping --start-saves <bundle>/saves --save-mix 0.35 --floor-step-cap
+  80`, small preset, 2 min): 1,210,256 parameters, 4 updates, 16,384 env steps, 0 sim errors / content gaps,
+  `aux_win_loss` 0.6939 → 0.6789; final eval on silent-a0-v1 progress 0.162, 20/20 replayable.
+- Widening with a real checkpoint: s4a `best.pt` (large preset, update 120, encoder `5dbfa09dd9dcb5ed`, 21 kinds;
+  sha256 `f3a10db4…3088fc8ad`) resumed for one update on the new library (cpu, `--allow-big-local`, 32 envs, rollout
+  4, minibatch 128, `--max-updates 121`): config.json `resume_compat.model_inputs` widened, `widened_enums`
+  RunActionKind 21 → 23 (+TakeRewardCard, +TakeRewardAlternative); checkpoint u121 on `3b73317739c650bd`, 15,805,070
+  parameters. `sts2train eval` on silent-a0-v1 (greedy, 20/20 replayable each): `best.pt` on the old library
+  (`sts2train-ef70ee6273`) 0.272 [0.244, 0.299]; `best.pt` widened on the new library 0.302 [0.268, 0.336]; u121
+  0.291 [0.254, 0.328]. The policy carries over (the new library also differs in the shop potion rule and in how card
+  rewards are taken, so the scores need not match).
+- raven cleanup: build cache unused for 2.5 h pruned before the AOT build (3.3 GB, on `/data/raven`; the root disk is
+  not involved); the venv and checkpoint copies under the validation directory were deleted afterwards.
+- Not verified: CUDA (no GPU run of this bundle); the Colab A100 path is unchanged code.
+- Final tree: `scripts/gates.sh --quick` on `2aa46dd` (code as of `b26a383`; only this line changed after it), 158 s,
+  every step PASS with the same key numbers as above except the timings (tests 142/142 in 41 s, pytest-eval 84,
+  pytest-vec 117, sts2rec 762 + 6 skipped), logs `tmp/gates/deckbuild-integrate-final/`; trainer pytest 97 passed.
+
+## Loopbreak integrate (2026-11-04)
+
+Scope: train/loopbreak `059604a` (on `ef70ee6`): a loop breaker for the greedy eval policy. `sts2train/loopbreak.py`
+keeps, per env slot, a 64-bit digest of the 27 model-read buffers for the last 64 decisions and the action taken there;
+back at a seen observation it masks the rows already taken there, and from the 3rd return (`--loop-breaker-k`) keeps
+only the rows that leave the screen (ProceedRewards, LeaveShop, LeaveRestSite, LeaveEvent, SkipTreasureRelic, EndTurn,
+PromptConfirm, PromptCancel) when one is legal. On by default in `sts2train eval` and the periodic eval
+(`--loop-breaker {off,on}`; summaries gain `loop_breaks` / `no_op_actions` / `cycle_revisits`); `--rollout-loop-breaker`
+(default off) applies the same mask to the rollout sampling. Merged `--no-ff` into the Deckbuild tree (`91d43ea`) as
+`a8d91cf`.
+
+Conflicts, both sides kept: `evaluate.py` imports, the `evaluate_model` / `evaluate` signatures (`spec_compat` and
+`loop_breaker` / `loop_breaker_k`), `evaluate`'s `load_checkpoint(library=...)` and its call; `ppo.py` imports
+(`LoopBreaker` next to `widen_state_dict` / `widened_tensors`).
+
+Seams resolved in `a8d91cf`:
+- The leave kinds resolve by name against the library's `RunActionKind`: `evaluate_model` builds the breaker from the
+  library's spec (`ModelSpec.from_schema(schema_of(load()))`), not from a widened checkpoint's; the trainer from
+  `env.schema`'s. config.json `loop_breaker.leave_kinds` lists the names found, so appended kinds shift no id.
+- `TakeRewardCard` (21) / `TakeRewardAlternative` (22) are real actions, never leave rows (`ProceedRewards` declines).
+- `loopbreak.py` / README: library `3b73317739c650bd` removes the potion no-op and the card-reward cycle at the source;
+  illegal indices and the shop removal / cancel cycle remain.
+- `tests/test_loop_breaker.py` +3: leave kinds by name (appended / inserted members), the macros on a rewards screen
+  (the k-th return takes ProceedRewards over a better-ranked TakeRewardCard; without a leave row the best remaining
+  macro row), the library's own enum.
+
+Owner validation (library `5dbfa09dd9dcb5ed`, 4 CPU threads, breaker off → on): s3c A10 u160 on silent-a10-v1 progress
+0.156 → 0.160, stuck 2 → 0, no-op actions 152 → 3; s5b A0 u160 on silent-a0-v1 0.330 → 0.500, stuck 12 → 0, no-ops
+232 → 9, cycle revisits 681 → 12; 20/20 replayable both.
+
+Gates: `scripts/gates.sh --quick` on `a8d91cf`, 159 s, every step PASS (Release / Debug 0 warnings; tests 142/142;
+selftest 100/100; g0 4/4, 69/69; pytest-eval 84; pytest-vec 117; sts2rec 762 + 6 skipped; py-scripts unittest 53,
+prompt_sites / kernel_map `--check` OK), logs `tmp/gates/loopbreak-integrate-quick/`; trainer pytest 111 passed (97 +
+14 loop-breaker tests).
+
+Colab bundle `tmp/colab/sts2train-a8d91cf636.tar.gz` (7,036,915 bytes, sha256
+`2e3ee66cde758a0b9f70de3b1e949ecf8964b5fee4477544b7e9b5b737f362ff`; AOT key `8f89eba48d17`, cached: the Deckbuild
+library, `Sts2Sim.Vec.so` sha256 `254efb10…f9fd6cc`; 148 Silent A9 start saves; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-loopbreak-20261104/`, with `validate.log` / `validate-s5b.log`). Validated on raven
+in a plain `python:3.13` container (4 threads, torch 2.15.0+cpu in a venv on `/data/raven`):
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5): `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; config.json
+  `loop_breaker` on (k 3), `rollout_loop_breaker` off; 1 update, eval u1 std-a0-v1 0.078 (20 games).
+- `sts2train eval` on silent-a0-v1 of two `5dbfa09dd9dcb5ed` checkpoints widened on load, breaker off / on: s4a
+  `best.pt` 0.302 [0.268, 0.336] both, s5b `best.pt` (A0 u160) 0.403 [0.345, 0.461] both; 0 loop breaks, 0 no-op
+  actions, 0 cycle revisits, 20/20 replayable, `spec_compat` widened, the 8 leave kinds resolved. On this library the
+  two policies' loops are gone at the source (shop potion rule, reward macros), so the breaker has nothing to break; the
+  owner's s5b gain (0.330 → 0.500) was measured on the pre-macro library.
+
+## Fidelity integrate (2026-11-04)
+
+Scope: train/fidelity `87adda1` (12 commits on `ef70ee6`): the 7 open sim-vs-game divergences of the E3 farm, owner
+record in `sim/specs/diff-report-e3-farm-2026-11-02.md` §7. The only Core rule change is the SDR1 turn counter
+(`CombatState.TurnsTakenAtCombatEnd`: EndCombatInternal captures TurnNumber, `RunLoop.OnCombatVictory` writes it to the
+map-point history; `37c6ac3`); the rest is in Sts2Sim.Diff (turn phase at the recorder's resolution, draw-pile grids as a
+multiset, relic run-time state through the mcr join, G1 `final_hp` before the victory heal and not for abandoned
+combats), the sts2rec exporter (abandoned card reward → open + `card_reward_skip`, PUNCH_OFF FIGHT back into the event
+segment, `deck_index` of same-name cards from the saves, backed-out SMITH selection), tests, specs and the ratchet
+baseline. Merged `--no-ff` into the loop-breaker tree (`a8d91cf`) as `9f66087`.
+
+Conflicts: none. `sim/specs/kernel-map.json` merged on disjoint lines (CombatManager.cs gains the RunLoop / CombatState
+cites; env-deckbuild's PotionCmd / MerchantEntry / MerchantPotionEntry / Player cites); `scripts/kernel_map.py`
+regenerates it byte-identical and `--check` passes (564 files, mapped 374, no_port 190). RunLoop.cs and the sts2rec
+tests were touched on one side only.
+
+Seams checked (no code change needed):
+- `TurnsTakenAtCombatEnd` is copied by CombatState's copy constructor (clone / branch / restore) and is not canonical
+  (set and consumed within one Step); the map-point history's `TurnsTaken` it feeds is. `sts2vec digest` (256 envs x
+  400 random steps, seed 0, 4 threads): managed macOS build of `9f66087` = NativeAOT library of the new bundle (state
+  hash sha256 `d84ed099…`, obs sha256 `98d362bf…`); the pre-merge library (`sts2train-a8d91cf636`) gives the same obs
+  sha256 and another state hash (`97a9a7be…`). So the rule reaches the AOT build, and observations / encoder_version
+  (`3b73317739c650bd`) are unchanged.
+- env-deckbuild's shop rule (no `BuyEntry` for a potion with a full belt or under Sozu) and the potion-reward refusal
+  check change no replay (gates below equal the owner's).
+
+Diff gates on the merged tree (Release build of `9f66087`). The farm's raw recordings are on the unplugged external
+drive, so nothing was re-exported here: the inputs are copies of the owner's self-contained re-exported bundles
+(`train-fidelity` worktree `tmp/fid/bundles-x56`, `hbundles-x8`, `w41i-in`; shasum-identical copies under the
+git-ignored `tmp/fid-int/in/`, logs in `tmp/fid-int/merged1/`). Every log the owner also ran is, path-stripped,
+identical to the owner's final run (`tmp/fid/final`, code as of `dbcd128`; the ratchet run against the old baseline
+included):
+
+| gate | merged tree (`9f66087`) = owner |
+| --- | --- |
+| G3 farm, from the seed | 3,522/3,522 decisions; 36/39 runs to the recorded end, 3 at a `decision_unresolved` truncation |
+| G3 farm `--anchors` | 787/787 segments, 3,690/3,690, 0 divergences |
+| G2 (`g3 --anchors-every`) | 3,676/3,676; only the 4 out_of_scope `extra_rewards` combat_exit imports |
+| G3 `--save-check` | 787/787; the 259 exportable segments differ only in `unlock_state` and `map_point_history` (180 not exportable) |
+| G1/G2 farm (`--v2`) | 2,810/3,059 decisions; combats 168/177 (outcome 168/168; 9 exporter_ineligible) |
+| human combat gate (G1, `w41i-in`) | 1,666/1,671 (99.70 %), 5 rows: 4 v0.107.1 exporter_ineligible, Q3X6PF8S37GA s5 |
+| human G3, re-exported (`hbundles-x8`) | 2,348/2,352 (99.83 %) |
+| human G3, W4.1 bundles | 1,921/1,924 |
+| G0 | 4/4, 69/69 |
+
+Ratchet: against the pre-merge baseline (`a8d91cf`) pass, 2,664 agreed decisions checked, 0 violations, 42 newly
+agreeing; `--update-baseline` on the merged tree then writes a file byte-identical to the branch's
+`sim/specs/diff-baseline-e3-farm.json` (sha256 `36e1a7ee9d5aac29…`), which passes with 2,810 checked, 0 violations.
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=4`, nice 10): `scripts/gates.sh --quick` on `9f66087`, 157 s, every step
+PASS, logs `tmp/gates/fidelity-integrate-quick/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 6 | Release: 0 warnings, 0 errors (rc 0) |
+| build-debug | PASS | 6 | Debug: 0 warnings, 0 errors (rc 0) |
+| tests | PASS | 39 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 142/142 passed, 0 failed, PENDING 0 |
+| selftest | PASS | 5 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 4 | 84 passed |
+| pytest-vec | PASS | 15 | 117 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 78 | 767 passed, 6 skipped |
+| py-scripts | PASS | 1 | unittest 53 OK; prompt_sites --check OK; kernel_map --check OK (564 files, mapped 374, no_port 190) |
+
+Also: full C# suite 1,170/1,170 passed, 0 failed, PENDING 0 (457 s in the runner; FidelityTests 7, DiffV2Tests 11);
+`uv run --project sim/tools/train pytest -q` 111 passed.
+
+Colab bundle `tmp/colab/sts2train-9f6608701d.tar.gz` (7,037,357 bytes, sha256
+`708102c126c924b6bb2ddecf32dd4e06c1000671afb09d55da799c8c66b087c0`; AOT key `5c80f4e6ba70`, built on raven in 233 s,
+`Sts2Sim.Vec.so` 13,593,256 bytes, sha256 `2d035a9b…fa984ce`, newest symbol GLIBC_2.34; 148 Silent A9 start saves; copy
+on raven under `/data/raven/hack-sts2/tmp/integrate-fidelity-20261104/`). The docs commit after `9f66087` changes
+nothing the bundle ships. Validated on raven in a plain `python:3.13` container (`--cpus 4`, 4 threads; box shared with
+a lookahead job, load about 8), torch 2.15.0+cpu in a venv on `/data/raven`:
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5), 163 s: `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; floor cap 80 in
+  effect; 1 update, 8,192 env steps, 105 episodes, 0 sim errors / content gaps; eval u1 std-a0-v1 0.078 (20 games);
+  appended buffers under the NativeAOT library: `reward_choice_rows` 12,777 = `macro_candidates` 12,777,
+  `map_route_cells` 6,155,123, `event_option_rows` 9,574, card_static 598 × 30, ABI 2 exact-branch check OK; raw
+  bench 37,103 env-steps/s (1024 envs × 4 threads).
+- `sts2vec digest`: the cross-check in the seams above.
+- raven cleanup: this build's BuildKit cache record (1.565 GB) pruned; the extracted bundles, the old bundle copy and
+  the venv removed (the validation directory keeps the tarball, logs, digests and the smoke run, 35 MB).
+- Not verified: CUDA (no GPU run of this bundle); the four exporter fixes on a fresh export of the raw farm recordings
+  (drive unplugged): the merged tree was checked on the owner's re-exported bundles only.
+
+## Live twin integrate (2026-11-04)
+
+Scope: train/live-twin `87c409f` (2 commits on `ef70ee6`: `ca9cfbd` code + tests + README, `87c409f` README results).
+`scripts/live/nn_twin_play.py` + `scripts/live/nn_twin/` let a trained sts2train checkpoint play the real game: the
+network reads a sim twin (one sts2vec slot from the run's seed or the game's `current_run.save`), its row is matched by
+meaning onto STS2_MCP's candidates (`/api/v1/singleplayer`; `/api/v1/eval` optional) and executed there, and the twin
+takes the same row; per-decision view diffs, follow mode after a desync, resync from the game's save at the next save
+point (a room-entry save's floor = `len(map_point_history) + 1`); `--dry-run-server` stands the sim play server in for
+the game. Owner validation on a headless instance (pre-macro library `5dbfa09dd9dcb5ed`, s3c `best.pt`): 255 decisions,
+0 desync, 0 resync, the dry run's result. Guide: `scripts/live/README-nn-twin.md`. Merged `--no-ff` into the Fidelity
+tree (`1b2f10a`) as `2011f65`.
+
+Conflicts: none (the branch adds `scripts/live/` only).
+
+Seams resolved in `2011f65` (the branch predates env-deckbuild's rewards-screen macros):
+- `Twin._macro` reads its choice from `reward_choices` row `option_index` (card + upgrade, `CardRewardAlt`) and expands
+  as `RewardMacros.Expand`: ClaimReward(A), then PickRewardCard(B) / RewardAlternative(B). TakeRewardAlternative used to
+  decode as `#B`, which matches no game alternative.
+- `Runner.map_row` pairs a macro's open step by card reward A's rank among the twin's unclaimed card rewards (was:
+  always the game's first card reward).
+- Dry-run audit: a macro row's token is its plan's tokens (`reward A; card B`, `reward A; reroll` / `alt B`), compared
+  with the executed wires joined; both dry-run tests failed on this before the fix (no desync).
+- A macro step the game does not offer after the open (its card reward differs: hidden state) enters follow mode
+  (`macro_step`) and benches the twin until the next save point; in follow mode the step is matched relaxed.
+- `Policy.bind` reloads a checkpoint whose embedded enums only widened (`load_checkpoint(library=...)`), as
+  `sts2train eval` does. Pre-macro checkpoints (s3c / s4a / s5b) ran unwidened before: the model clamps kinds 21 / 22
+  to PromptCancel, so no error, but other scores on every rewards screen with a card reward.
+- Tests: `test_mapping` +4 (TakeRewardAlternative plan, open-step rank, stand-in macro tokens, the library's 23
+  `RunActionKind` enumerated through `Twin.acts` / `row_to_token`); `test_dry_run` +2 (the CLI dry run with a pre-macro
+  checkpoint, widened; a widening check); the random runs must cover macros.
+
+Tests: `uv run --project sim/tools/train pytest -q scripts/live/tests` 54 passed (50 unit + 4 integration that start
+their own play server; the 5 random dry runs: 580 decisions, 14 TakeRewardCard, 0 desync, 0 token mismatches);
+`uv run --project sim/tools/train pytest -q` 111 passed (its `testpaths` stops at `sim/tools/train/tests`).
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=4`, nice 10): `scripts/gates.sh --quick` on `2011f65`, 156 s, every step
+PASS (Release / Debug 0 warnings; tests 142/142; selftest 100/100; g0 4/4, 69/69; pytest-eval 84; pytest-vec 117;
+sts2rec 767 + 6 skipped; py-scripts unittest 53, prompt_sites / kernel_map `--check` OK), logs
+`tmp/gates/livetwin-integrate-quick/`.
+
+No Colab bundle: nothing it ships changed (`git diff 1b2f10a 2011f65` is empty on its source paths), so
+`sts2train-9f6608701d` stays current. Not verified: the real game on the merged library (macros through STS2_MCP, a
+widened checkpoint live); TakeRewardAlternative outside unit tests (needs Driftwood / Pael's Wing).
+
+## Lookahead + report-card integrate (2026-11-04)
+
+Scope: train/lookahead `5c6ba5d` (7 commits; `6914040` already merged the integration head `b26a383`) and
+train/report-card `8fd563e` (2 commits on `a8d91cf`), merged `--no-ff` in that order into the Live twin tree
+(`826265f`) as `2ee7e4f` and `c778682`, then `26f1d80` wires the card to the lookahead's run directories.
+- `sts2train/lookahead.py` (`python -m sts2train.lookahead eval | paired`): a checkpoint's greedy policy plus a
+  combat-only search on determinized clones (K candidates, R roots, turn / combat horizon, `value+hp` leaf), an
+  ordinary `sts2vec` policy that the unmodified evaluator plays, scores and replay-audits through a private mirror env;
+  ABI 2 `env.branch` path (no pool growth), pool / rebuild path for older libraries; `--record` ExIt rows; per-seed
+  paired statistics. Measurements: `docs/lookahead-2026-11-04.md` (A10 dev +0.0152 [+0.0080, +0.0223], below the +0.02
+  bar: ExIt go signal not fired). Seed sets `silent-a10-dev-v1` (128), `silent-a10-test-v1` (100), `silent-a0-dev-v1`
+  (100).
+- `sts2train/reportcard.py` + CLI: `sts2train report-card` (greedy protocol evals run or reused per seed set, cached
+  random / first / heuristic baselines, staged tables with Wilson intervals, endings, floor histogram, win-prob
+  readout → `model-card.md` / `.json`), `sts2train pack` (tar.gz weights bundle with README-weights.md and a sha256
+  manifest, re-read and verified), `sts2train probe` (an eval's games replayed, the checkpoint read at every decision).
+
+Conflicts: none. The two seed-set files both branches add are byte-identical (blobs `a768bf3` / `30903be`); `cli.py`
+and the README change on the report-card side only.
+
+`1dfb0c7` (the padded-row cut: 0.71–0.81× the rollout forward time, rounding-level output change) is confined to the
+lookahead's rollout forwards (`trim_padding` in `LookaheadPolicy._forward`); the root greedy forward,
+`sts2train.evaluate` and the trainer are untouched: `test_perf` (eager update = legacy loop, train default path = head
+loop, bit for bit) passes, and K = 1 stays identical to greedy.
+
+Seams resolved:
+- `2ee7e4f`: the lookahead branch predates the loop breaker (`a8d91cf`). Its `--greedy` baseline runs
+  `sts2train.evaluate.evaluate`, whose greedy policy now goes through the breaker by default, while the lookahead's
+  own choices outside the search are the plain argmax. `evaluate_greedy` passes `loop_breaker=False` (config.json
+  `loop_breaker.mode` off, stats.json `loop_breaker` off), so the paired comparison still differs only by the search
+  and K = 1 = `--greedy` (`test_k1_is_greedy` asserts the mode); doc §7 notes it.
+- `26f1d80`: the card's `--lookahead-dir` predates `sts2train.lookahead` on the tree. On real directories a `--greedy`
+  run came out as a second "lookahead, determinized" row, and the only comparison on offer was the lookahead row (no
+  loop breaker) against the card's greedy row (loop breaker on). Now `lookahead_row` classifies a directory by its
+  config.json (search run → "lookahead, determinized: la(K,R,horizon,honest) <score>"; `--greedy` run → kind
+  `greedy-ref`, "NN greedy, loop breaker off"; anything else refused before a game is played); every lookahead row is
+  paired per seed (`lookahead.paired`) against a `greedy-ref` row of the same weights with the breaker off (like for
+  like), else against the card's greedy row (flagged "(loop breaker on)"); `stats.json` counters (searched / changed
+  decisions, ms per searched decision, rollout errors, desyncs, api, code sha) land in `search_stats`; model-card.md
+  gains a "Lookahead: declared search, paired per seed" table and the CLI JSON a `lookahead` list; README-weights.md a
+  lookahead section (and the live twin runner is on this tree now). `reportcard` imports `lookahead.paired` at module
+  level (imported lazily under a test that monkeypatches `sts2vec.evaluate.evaluate`, the module kept the patched
+  function). `scripts/live/README-nn-twin.md`: `sts2train.lookahead` is merged; `nn_twin_play --lookahead` still exits 2
+  (its mirror env cannot follow save resyncs).
+
+Tests: `uv run --project sim/tools/train pytest -q` 137 passed (111 + 16 lookahead + 10 report-card, of which 2 new:
+`test_lookahead_dir_rows`, `test_card_reads_lookahead_eval_dirs`, which runs `lookahead eval` and `--greedy` through
+their CLI on two games, then `report-card --lookahead-dir`); `uv run --project sim/tools/train pytest -q
+scripts/live/tests` 54 passed.
+
+Gates (macOS M4 Pro, `DOTNET_PROCESSOR_COUNT=4`, nice 10): `scripts/gates.sh --quick` on `26f1d80`, 157 s, every step
+PASS, logs `tmp/gates/lookahead-reportcard-integrate-quick/`:
+
+| step | status | secs | key numbers |
+| --- | --- | --- | --- |
+| build-release | PASS | 6 | Release: 0 warnings, 0 errors (rc 0) |
+| build-debug | PASS | 6 | Debug: 0 warnings, 0 errors (rc 0) |
+| tests | PASS | 39 | quick (Server Vec Parity EndToEnd SelfConsistency W1Gate): 142/142 passed, 0 failed, PENDING 0 |
+| selftest | PASS | 4 | 100/100 completed, 0 crashed, 0 capped, 0 server errors, mean 67.8 steps |
+| g0 | PASS | 1 | bundles 4/4 agree (hard 0, error 0, sim exception 0); decisions 69/69, 0 unobserved; outcome 4/4 |
+| pytest-eval | PASS | 5 | 84 passed |
+| pytest-vec | PASS | 15 | 117 passed (`STS2VEC_REQUIRE_FULL=1`) |
+| sts2rec | PASS | 78 | 767 passed, 6 skipped |
+| py-scripts | PASS | 0 | unittest 53 OK; prompt_sites --check OK; kernel_map --check OK (564 files, mapped 374, no_port 190) |
+
+Lookahead + card on `s7b` (`latest.pt`, A10 update 300, 2.9M parameters, aux heads, encoder `3b73317739c650bd`,
+weights `644755f6b76c9fa6`) on `silent-a10-v1`, Mac, 4 threads, all 20/20 replayable:
+
+| row | progress [95% CI] | results | reached the Act-1 boss | wall |
+| --- | --- | --- | --- | --- |
+| NN greedy (the card's eval, loop breaker on) | 0.240 [0.205, 0.275] | loss 20 | 9/20 | 5 s |
+| lookahead, determinized: la(8,1,turn,honest) value+hp | 0.227 [0.181, 0.272] | loss 17, stuck 3 | 8/20 | 26 s |
+| NN greedy, loop breaker off (`--greedy`) | 0.217 [0.180, 0.253] | loss 17, stuck 3 | 6/20 | 5 s |
+| random / first / heuristic | 0.037 / 0.112 / 0.117 | loss 20 | 0/20 | |
+
+Paired like for like (lookahead − `--greedy`): +0.0101, t [−0.0192, +0.0394], bootstrap [−0.0137, +0.0392], 4 better / 2
+worse / 14 same; 2,775 searched decisions (62 % of live), 20.6 % changed, 7.2 ms per searched decision, 0 rollout
+errors, 0 desyncs, ABI 2 branch path. On this checkpoint the loop breaker is worth more than the search (+0.023 vs
++0.010: the 3 stuck games are prompt / shop cycles, which the breaker breaks: 4 loop breaks in 3 games); the lookahead
+has no loop breaker, so on the card its row sits below the breaker-on greedy row. Composing the two (the breaker on the
+lookahead's root greedy) is a lookahead semantics change (`la-v2`), not done here.
+
+Colab bundle `tmp/colab/sts2train-26f1d805a0.tar.gz` (7,077,176 bytes, sha256
+`9d69c30fc00152f61ffd0d44f05efabb67d4170899a060e17471f69869617f70`; AOT key `5c80f4e6ba70`, cached, not rebuilt: the
+Fidelity library, `Sts2Sim.Vec.so` sha256 `2d035a9b…fa984ce`, newest symbol GLIBC_2.34; 148 Silent A9 start saves;
+the wheel ships `lookahead.py` / `reportcard.py`, the bundle 8 seed sets incl. the three new ones; copy on raven under
+`/data/raven/hack-sts2/tmp/integrate-la-rc-20261104/`). The docs commit after `26f1d80` changes nothing the bundle
+ships. Validated on raven in a plain `python:3.13` container (`--cpus 4`, 4 threads), torch 2.15.0+cpu in a venv on
+`/data/raven` (`validate_la_rc.sh`, `validate.log` there):
+- `smoke_bundle.sh` (small preset, 256 envs, 2 min, saves at 0.5), 163 s: `sts2vec check` ABI 2, 21 exports,
+  `sts2vec/3b73317739c650bd`, 43 buffers, 35,062 bytes/env, threads 1 vs 4 byte-identical, `check: OK`; floor cap 80
+  in effect; 4 updates, 32,768 env steps, 698 episodes (384 save-started), 0 sim errors / content gaps; eval u4
+  std-a0-v1 0.088 (20 games); appended buffers, card_static, ABI 2 branch OK; raw bench 53,920 env-steps/s.
+- The bundle's new entry points on `s7b` / `silent-a10-v1`: `python -m sts2train.lookahead eval --greedy` 17 s, `eval`
+  (K 8, turn, value+hp) 66 s (18.0 ms per searched decision, 0 rollout errors, 0 desyncs, branch path), `paired`,
+  `sts2train report-card --lookahead-dir` both (with the three baselines) 21 s, `sts2train pack` (31.4 MB, 8 files,
+  verified): every number equals the Mac's, and both runs replay the Mac's game histories 20/20.
+- raven cleanup: the container ran `--rm`; the venv, the extracted bundle, the checkpoint copy, the weights bundle and
+  the smoke run's checkpoints removed (the validation directory keeps the tarball, logs and run directories, 8 MB).
+- Not verified: CUDA; the lookahead on the 128 / 100-game sets on the merged tree (the owner's numbers in
+  `docs/lookahead-2026-11-04.md` predate the loop breaker; nothing on the search path changed); `--record` through the
+  bundle.
+
+## Live twin real-game fixes integrate (2026-11-04)
+
+Merged `train/live-twin` `6df51ba`, `c89a0bc`, `39c5b46`, `7df2777` (a linear extension of `e2f7272`) as `0fa1fa3`; only
+`scripts/live/` changes. `nn_twin_play.py --loop-breaker` (default on; `sts2train.loopbreak.LoopBreaker`), and three
+interface differences the first real-game runs of the s8a checkpoint exposed, all in the runner / twin glue, none in the
+library:
+- event reward screen: the game closes the reward screen itself once the rewards are taken; the twin now takes an
+  explicit "leave rewards" step, follow mode no longer borrows the twin's action while the screens differ, and a
+  potion discard is executed only when it is the network's first choice;
+- id-less relic rewards: the MCP reward list carries `("relic", None)` (confirmed in its source); relic rewards without
+  an id are matched and compared by type, so the network's relic pick is executed instead of "leave";
+- upgrade preview cancel: in the game a cancel on the upgrade preview returns to the card grid, in the simulator it
+  closes the whole upgrade; the glue sends a second cancel when the game is still on the grid and never confirms there.
+
+Real game (headless instance `train-live-twin/headless-instances/inst1`, eval API, `ckpt-0002050.pt`, greedy +
+loop breaker, Silent A10, library encoder `3b73317739c650bd`): seed `TW1NA10S02` 233 decisions, 0 desync / 0 resync,
+floor 17 killed by THE_KIN_BOSS (score 442, 453 s); seed `TW1NA10S03` 228 decisions, 0 / 0, floor 17 killed by
+WATERFALL_GIANT_BOSS (score 348, 433 s); each run identical to its dry run decision by decision, one loop-breaker
+intervention each (rest site HEAL instead of a repeated SMITH). Before the fixes: S02 2 desyncs (both resynced), S03
+1 desync and an Act-2 floor-22 death reached through a fallback path (kept under
+`output/nn-twin/…-S03-real-c89a0bc`, not counted). `scripts/live/tests` 59 pass (4 s), ruff clean; the trainer's own
+tests were not rerun (no change under `sim/tools/train`). The headless instance and play server were stopped; the
+user's `mods/` holds only Sts2Recorder; no recorder session was created or changed.

@@ -2,8 +2,9 @@
 """Run the same benchmark seeds across several LLMs and compare them.
 
     export XAI_API_KEY=...            # never printed or logged
+    export ANTHROPIC_API_KEY=...      # only when an anthropic: model is in --models
     export STS2_GAME_INSTALL_DIR=/workspace/private/sts2-linux-0.107.1
-    python3 scripts/bench/compare_models.py --models grok-4.3,grok-4.20-0309-non-reasoning \\
+    python3 scripts/bench/compare_models.py --models grok-4.3,anthropic:claude-opus-5-5 \\
         --instances 1,2 --seeds BENCHA0S01,BENCHA0S02 [--instances-per-model 1] [--wiki-facts]
 
     # summary only (no game, no API), e.g. after an interrupted comparison
@@ -12,7 +13,10 @@
 Every model gets its own ``run_bench.py`` process with ``--policy py:llm_policy:policy`` and
 ``LLM_MODEL=<model>``, on a disjoint set of instances of ``--pool`` (default
 ``/workspace/private/worker-pool-llm``, ports 15641+; the other pools are refused), writing to
-``<out>/<model>/``. Models run in parallel while free instances last. The summary
+``<out>/<model>/``. A ``<provider>:`` prefix (``anthropic:claude-opus-5-5``, ``openai:grok-4.3``)
+also sets ``LLM_PROVIDER`` for that model only, so one comparison can mix providers; each provider
+then reads its own default key variable (leave ``LLM_API_KEY_ENV`` and ``LLM_BASE_URL`` unset when
+mixing: they apply to every model). Models run in parallel while free instances last. The summary
 (``summary.md`` / ``summary.json`` in ``<out>``) joins score.py's per-run results with the
 per-decision ``llm`` telemetry from the trajectories: floor, act, boss kills, wins, decisions,
 tokens, latency and $.
@@ -32,6 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import llm_policy  # noqa: E402
 import score  # noqa: E402
 
 DEFAULT_POOL = Path('/workspace/private/worker-pool-llm')
@@ -40,6 +45,53 @@ MIN_PORT = 15641  # STS2_HEADLESS_PORT_BASE=15640; 15601-15633 belong to other p
 
 def slug(model):
     return re.sub(r'[^A-Za-z0-9._-]+', '_', model)
+
+
+def split_model(spec):
+    """``anthropic:claude-opus-5-5`` -> ``('anthropic', 'claude-opus-5-5')``. Without a known
+    provider prefix -> ``(None, spec)``: LLM_PROVIDER from the environment (default openai)."""
+    head, sep, rest = spec.partition(':')
+    name = head.strip().lower()
+    name = llm_policy.PROVIDER_ALIASES.get(name, name)
+    if sep and rest.strip() and name in llm_policy.PROVIDERS:
+        return name, rest.strip()
+    return None, spec.strip()
+
+
+def model_env(spec, environ=None):
+    """The run_bench environment for one ``--models`` entry."""
+    provider, model = split_model(spec)
+    env = {**(os.environ if environ is None else environ), 'LLM_MODEL': model}
+    if provider:
+        env['LLM_PROVIDER'] = provider
+    return env
+
+
+def check_models(specs, environ=None, need_keys=True):
+    """Resolve each model's llm_policy config; refuse duplicate ids, bad settings and missing keys.
+
+    Returns ``{spec: provider}``. Keys are checked by variable name only, never printed.
+    """
+    environ = os.environ if environ is None else environ
+    ids = [slug(split_model(s)[1]) for s in specs]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        raise SystemExit(f'duplicate model ids {duplicates}: every model writes <out>/<model id>/')
+    providers, missing = {}, {}
+    for spec in specs:
+        env = model_env(spec, environ)
+        try:
+            cfg = llm_policy.config(env)
+            llm_policy.check_config(cfg)
+        except llm_policy.LLMPolicyError as error:
+            raise SystemExit(f'{spec}: {error}') from None
+        providers[spec] = cfg['provider']
+        if need_keys and not env.get(cfg['key_env']):
+            missing.setdefault(cfg['key_env'], []).append(spec)
+    if missing:
+        raise SystemExit('; '.join(f'{k} is not set (needed by {", ".join(v)})' for k, v in missing.items())
+                         + '; export it before a model comparison')
+    return providers
 
 
 def check_pool(pool, numbers):
@@ -66,7 +118,9 @@ def bench_cmd(a, model_dir, instances):
     cmd = [sys.executable, str(HERE / 'run_bench.py'), '--pool', str(a.pool), '--instances',
            ','.join(map(str, instances)), '--policy', 'py:llm_policy:policy', '--out', str(model_dir)]
     for flag, value in (('--seeds', a.seeds), ('--config', a.config), ('--baseline', a.baseline),
-                        ('--max-decisions', a.max_decisions), ('--max-wall-s', a.max_wall_s)):
+                        ('--max-decisions', a.max_decisions), ('--max-wall-s', a.max_wall_s),
+                        ('--start-method', getattr(a, 'start_method', None)),
+                        ('--game-settings', getattr(a, 'game_settings', None))):
         if value is not None:
             cmd += [flag, str(value)]
     if a.wiki_facts:
@@ -83,12 +137,10 @@ def run_models(a, out):
     sim = getattr(a, 'engine', 'live') == 'sim'
     if sim:
         groups = [['sim'] for _ in a.models]  # every model runs in parallel; nothing to share
-    if not a.dry_run:
-        if not sim:
-            check_pool(a.pool, numbers)
-        key_env = os.environ.get('LLM_API_KEY_ENV') or 'XAI_API_KEY'
-        if not os.environ.get(key_env):
-            raise SystemExit(f'{key_env} is not set; export it before a model comparison')
+    if not a.dry_run and not sim:
+        check_pool(a.pool, numbers)
+    environ = {**os.environ, **({'LLM_REASONING_EFFORT': a.reasoning_effort} if a.reasoning_effort else {})}
+    providers = check_models(a.models, environ, need_keys=not a.dry_run)
     free = queue.Queue()
     for g in groups:
         free.put(g)
@@ -97,18 +149,17 @@ def run_models(a, out):
     def one(model):
         group = free.get()
         try:
-            model_dir = out / slug(model)
+            name = slug(split_model(model)[1])
+            model_dir = out / name
             cmd = bench_cmd(a, model_dir, group)
-            env = {**os.environ, 'LLM_MODEL': model}
-            if a.reasoning_effort:
-                env['LLM_REASONING_EFFORT'] = a.reasoning_effort
-            print(f'[{model}] instances {group}: {" ".join(cmd)}', flush=True)
+            env = model_env(model, environ)
+            print(f'[{model}] provider {providers[model]}, instances {group}: {" ".join(cmd)}', flush=True)
             if a.dry_run:
                 status[model] = 'dry-run'
                 return
             out.mkdir(parents=True, exist_ok=True)
             began = time.monotonic()
-            with open(out / f'{slug(model)}.log', 'w') as log:
+            with open(out / f'{name}.log', 'w') as log:
                 rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, cwd=HERE.parents[1]).returncode
             status[model] = f'exit {rc} after {time.monotonic() - began:.0f}s'
             print(f'[{model}] {status[model]}', flush=True)
@@ -129,9 +180,9 @@ def _mean(values):
 
 
 def llm_totals(model_dir):
-    t = {'model': None, 'decisions': 0, 'llm_decisions': 0, 'prompt_tokens': 0, 'cached_tokens': 0,
-         'output_tokens': 0, 'reasoning_tokens': 0, 'cost_usd': 0.0, 'cost_known': True, 'retries': 0,
-         'policy_errors': 0}
+    t = {'model': None, 'provider': None, 'decisions': 0, 'llm_decisions': 0, 'prompt_tokens': 0,
+         'cached_tokens': 0, 'output_tokens': 0, 'reasoning_tokens': 0, 'cost_usd': 0.0, 'cost_known': True,
+         'retries': 0, 'policy_errors': 0}
     latencies, policy_lat, act_lat = [], [], []
     for traj in sorted(Path(model_dir).glob('*/trajectory.jsonl')):
         for line in traj.read_text().splitlines():
@@ -150,6 +201,7 @@ def llm_totals(model_dir):
                 continue
             t['llm_decisions'] += 1
             t['model'] = t['model'] or llm.get('model')
+            t['provider'] = t['provider'] or llm.get('provider')  # absent in pre-provider trajectories
             for part in (llm, llm.get('carried_from_failed') or {}):
                 for key in ('prompt_tokens', 'cached_tokens', 'output_tokens', 'reasoning_tokens'):
                     t[key] += int(part.get(key) or 0)
@@ -215,7 +267,8 @@ def write_summary(out, status=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--models', help='comma-separated model ids (see llm_policy.py --list-models)')
+    ap.add_argument('--models', help='comma-separated model ids (see llm_policy.py --list-models); prefix '
+                                     'anthropic: or openai: to set LLM_PROVIDER for one model')
     ap.add_argument('--aggregate', type=Path, metavar='OUT', help='only (re)build the summary of OUT')
     ap.add_argument('--pool', type=Path, default=DEFAULT_POOL)
     ap.add_argument('--instances', default='1', help='instance numbers of --pool shared by all models')
@@ -227,6 +280,10 @@ def main(argv=None):
     ap.add_argument('--reasoning-effort', help='LLM_REASONING_EFFORT for every model')
     ap.add_argument('--max-decisions', type=int)
     ap.add_argument('--max-wall-s', type=float)
+    ap.add_argument('--start-method', choices=('auto', 'eval', 'menu'),
+                    help='passed to run_bench (live engine): eval makes the /api/v1/eval start mandatory')
+    ap.add_argument('--game-settings', help='JSON passed to run_bench (live engine), e.g. '
+                                            '\'{"fast_mode":"fast","screenshake":0,"text_effects":false,"skip_tutorials":true}\'')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--dry-run', action='store_true', help='print the run_bench commands only')
     ap.add_argument('--engine', choices=('live', 'sim'), default='live',
@@ -239,6 +296,16 @@ def main(argv=None):
         return 0
     if not a.models:
         ap.error('--models or --aggregate is required')
+    if a.game_settings is not None:
+        try:
+            settings = json.loads(a.game_settings)
+        except json.JSONDecodeError as error:
+            ap.error(f'--game-settings is not JSON: {error}')
+        if not isinstance(settings, dict):
+            ap.error('--game-settings must be a JSON object')
+        a.game_settings = json.dumps(settings, separators=(',', ':'))
+    if a.engine == 'sim' and (a.start_method or a.game_settings):
+        ap.error('--start-method / --game-settings apply to the live engine only')
     a.models = [m.strip() for m in a.models.split(',') if m.strip()]
     out = a.out or Path('/workspace/private/bench-runs') / f'{datetime.now():%Y%m%d-%H%M%S}-models'
     status = run_models(a, out)

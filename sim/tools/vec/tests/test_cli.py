@@ -38,12 +38,28 @@ def test_bench_warm_flag(capsys):
     assert "pool warm: off" in capsys.readouterr().out
 
 
+def test_bench_branch_smoke(capsys):
+    args = ["bench-branch", "--envs", "20", "--threads", "2", "--k", "4", "--rounds", "1", "--warmup-rounds", "1",
+            "--advance", "3", "--pool", "4"]
+    assert main(args + ["--json"]) == 0
+    r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert r["roots"] == 4 and r["branched_slots_per_round"] == 16 and r["abi_version"] == 2
+    for key in ("branch_exact", "branch_det", "many_exact", "many_det", "old_exact", "old_det", "restore_many",
+                "restore_loop", "reset_mask"):
+        assert r["us_per_slot"][key] > 0, key
+    assert r["old_path_entries_created"] == 2 * (4 + 16) and r["sim_error_or_content_gap_slots"] == 0
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "branch, one call for all roots" in out and "restore_many" in out
+
+
 def test_check_smoke(capsys):
     assert main(["check", "--envs", "4", "--steps", "5", "--pool", "2"]) == 0
     out = capsys.readouterr().out
     assert "schema/buffers: consistent" in out
     assert "state hashes equal" in out and "byte-identical every step" in out
     assert "check: OK" in out
+    assert "ABI 2 | exports 21" in out
 
 
 def test_digest_json(capsys):

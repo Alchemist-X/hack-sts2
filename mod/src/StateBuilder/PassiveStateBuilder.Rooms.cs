@@ -39,7 +39,13 @@ public static partial class PassiveStateBuilder
     {
         var state = new Dictionary<string, object?>();
 
-        var eventModel = eventRoom.CanonicalEvent;
+        // CanonicalEvent is a template: its Description/options are not the
+        // current player's page. The local mutable model is what NEventRoom
+        // displays (Description is only ever set on it — SetEventState asserts
+        // mutability); fall back to the template if the synchronizer has none.
+        EventModel? localEvent = null;
+        try { localEvent = eventRoom.LocalMutableEvent; } catch { }
+        var eventModel = localEvent ?? eventRoom.CanonicalEvent;
         bool isAncient = eventModel is AncientEventModel;
         state["event_id"] = eventModel.Id.Entry;
         state["event_name"] = SafeGetText(() => eventModel.Title);
@@ -59,26 +65,27 @@ public static partial class PassiveStateBuilder
         }
         state["in_dialogue"] = inDialogue;
 
-        // Event body text and page (R5). Description is only ever set on the local
-        // mutable event (SetEventState asserts mutability), never on CanonicalEvent.
-        EventModel? localEvent = null;
-        try { localEvent = eventRoom.LocalMutableEvent; } catch { }
-        var pageEvent = localEvent ?? eventModel;
-        state["body"] = SafeGetText(() => pageEvent.Description);
+        // Event body text and page (R5).
+        state["body"] = SafeGetText(() => eventModel.Description);
         string? descriptionKey = null;
-        try { descriptionKey = pageEvent.Description?.LocEntryKey; } catch { }
+        try { descriptionKey = eventModel.Description?.LocEntryKey; } catch { }
         state["description_key"] = descriptionKey;
         state["page_key"] = LocKeys.PageKey(descriptionKey);
 
-        // Options from UI (read-only)
+        // Read the exact current page, including locked alternatives, in the
+        // synchronizer's index order. Do not invoke GenerateInitialOptions. A
+        // finished event (proceed button) or a missing local event falls back
+        // to the UI buttons.
         var options = new List<Dictionary<string, object?>>();
-        if (uiRoom != null)
+        bool optionsFromUi = localEvent == null || localEvent.IsFinished;
+        if (uiRoom != null && !inDialogue)
         {
-            var buttons = FindAll<NEventOptionButton>(uiRoom);
+            var offered = optionsFromUi
+                ? FindAll<NEventOptionButton>(uiRoom).Select(b => b.Option).ToList()
+                : localEvent!.CurrentOptions.ToList();
             int index = 0;
-            foreach (var button in buttons)
+            foreach (var opt in offered)
             {
-                var opt = button.Option;
                 var optData = new Dictionary<string, object?>
                 {
                     ["index"] = index,
@@ -101,6 +108,9 @@ public static partial class PassiveStateBuilder
             }
         }
         state["options"] = options;
+        state["options_source"] = optionsFromUi
+            ? (localEvent == null ? "ui_buttons" : "ui_proceed")
+            : "local_event_current_options";
 
         return state;
     }

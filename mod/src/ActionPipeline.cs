@@ -2,6 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using HarmonyLib;
+using Sts2Recorder.Core;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -38,6 +39,8 @@ public static class ActionPipeline
         public required JsonObject Params;
         public required long StateSeq;
         public required string Source;
+        public required TrajectorySession Session;
+        public DecisionCapture? Decision;
         public bool Finalized;
     }
 
@@ -48,6 +51,7 @@ public static class ActionPipeline
     private static ConditionalWeakTable<GameAction, PendingAction> _pending = new();
 
     private static string? _humanScopeSource;
+    private static DecisionCapture? _humanDecision;
 
     /// <summary>
     /// True while EndPlayerTurnAction.ExecuteAction runs (main thread; the game
@@ -117,6 +121,7 @@ public static class ActionPipeline
     {
         _pending = new ConditionalWeakTable<GameAction, PendingAction>();
         _humanScopeSource = null;
+        _humanDecision = null;
         _endPlayerTurnActionExecuting = false;
     }
 
@@ -124,6 +129,7 @@ public static class ActionPipeline
     {
         _pending = new ConditionalWeakTable<GameAction, PendingAction>();
         _humanScopeSource = null;
+        _humanDecision = null;
         _endPlayerTurnActionExecuting = false;
     }
 
@@ -133,15 +139,25 @@ public static class ActionPipeline
     /// genuine human input with the given source. Always paired with
     /// <see cref="EndHumanScope"/> in a Harmony finalizer so a throw cannot leak
     /// the scope onto a later programmatic action.
+    /// Decision capture (0.4.0): the scope also takes a synchronous pre-input
+    /// snapshot (<paramref name="screen"/> = the UI owner, if known) and pins it
+    /// to every action enqueued inside it. <paramref name="combatInput"/> marks
+    /// per-input combat actions (card play, end turn, in-combat potion
+    /// use/discard): those capture only when decision_capture_combat_inputs is
+    /// on, otherwise they keep the 0.3.1 latest-snapshot state_seq.
     /// </summary>
-    internal static void BeginHumanScope(string source)
+    internal static void BeginHumanScope(string source, object? screen = null, bool combatInput = false)
     {
         _humanScopeSource = source;
+        _humanDecision = combatInput && !RecorderMod.DecisionCaptureCombatInputs
+            ? null
+            : Snapshots.CaptureDecision(screen);
     }
 
     internal static void EndHumanScope()
     {
         _humanScopeSource = null;
+        _humanDecision = null;
     }
 
     private static void RequestEnqueuePrefix(GameAction action)
@@ -167,6 +183,8 @@ public static class ActionPipeline
                 Params = parameters,
                 StateSeq = session.LatestStateSeq,
                 Source = _humanScopeSource ?? "hook:ActionQueueSynchronizer.RequestEnqueue",
+                Session = session,
+                Decision = human ? _humanDecision : null,
             };
             _pending.Add(action, pending);
 
@@ -185,12 +203,16 @@ public static class ActionPipeline
         try
         {
             var session = RecorderMod.Session;
-            if (session == null || !_pending.TryGetValue(action, out var pending) || pending.Finalized)
+            if (session == null || !_pending.TryGetValue(action, out var pending) || pending.Finalized
+                || !ReferenceEquals(session, pending.Session))
             {
                 return;
             }
             pending.Finalized = true;
-            session.RecordAction(pending.Source, pending.Kind, pending.Params, status, pending.StateSeq);
+            if (pending.Decision != null)
+                pending.Decision.Record(session, pending.Source, pending.Kind, pending.Params, status);
+            else
+                session.RecordAction(pending.Source, pending.Kind, pending.Params, status, pending.StateSeq);
             if (status == "executed")
             {
                 // One frame later so state_after exists for canonical alignment.

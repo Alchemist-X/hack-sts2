@@ -20,6 +20,9 @@ public sealed class PaelsLegion : RelicModel
 
     public override RelicRarity Rarity => RelicRarity.Ancient;
 
+    // [SavedProperty] Skin (Models.Relics/PaelsLegion.cs): cosmetic pet skin (eyes / horns / spikes / wings), held so saves import it.
+    public string Skin { get; set; } = "eyes";
+
     public override bool ShowCounter => DisplayAmount > 0;
 
     public override int DisplayAmount

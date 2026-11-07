@@ -2,6 +2,9 @@
 
 - ``sts2vec bench``  random-policy throughput: env-steps/s, ms per batch, obs MB per batch, GC mode, resets/s, status counts;
   the pool's fresh templates are warmed first and that time is printed separately (``--no-warm`` measures cold starts).
+- ``sts2vec bench-branch``  search primitives (ABI 2): µs per branched slot (``branch`` exact / determinized) and per
+  ``restore_many`` element, against the pre-ABI-2 paths (snapshot / clone_determinized + ``reset(mask, start_ids)``,
+  one ``restore`` per slot), plus the pool entries and RSS those old paths leave behind.
 - ``sts2vec check``  library/schema/buffer consistency + determinism (two envs with identical config, threads 1 vs 8,
   seeded random policy, byte-identical buffers every step and equal state hashes at the end).
 - ``sts2vec digest`` a JSON digest of a seeded random rollout (state hashes + observation bytes); two processes with the
@@ -16,13 +19,14 @@ import argparse
 import hashlib
 import json
 import os
+import statistics
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-from .env import VecEnv, random_actions
+from .env import FLOOR_STEP_CAP, VecEnv, random_actions
 from .loader import load
 from .pool import ALL_CHARACTERS, PoolSpec
 from .schema import STATUS, SIGNAL_BUFFERS, Schema, status_counts
@@ -34,13 +38,14 @@ def _pool(args) -> PoolSpec:
 
 
 def _env(args, threads: int) -> VecEnv:
-    return VecEnv(args.envs, threads=threads, step_cap=args.step_cap, seed_text=args.seed_text, content=args.content,
-                  pool=_pool(args), dll=args.dll)
+    return VecEnv(args.envs, threads=threads, step_cap=args.step_cap, floor_step_cap=args.floor_step_cap,
+                  seed_text=args.seed_text, content=args.content, pool=_pool(args), macros=args.macros, dll=args.dll)
 
 
-def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int, pool: int) -> None:
+def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int | None, pool: int) -> None:
     p.add_argument("--envs", type=int, default=envs, help=f"number of env slots (default {envs})")
-    p.add_argument("--steps", type=int, default=steps, help=f"batched steps (default {steps})")
+    if steps is not None:
+        p.add_argument("--steps", type=int, default=steps, help=f"batched steps (default {steps})")
     p.add_argument("--characters", default=",".join(ALL_CHARACTERS), help="fresh pool characters (comma separated)")
     p.add_argument("--pool", type=int, default=pool, help=f"fresh pool entries (default {pool})")
     p.add_argument("--ascension", type=int, default=0)
@@ -48,6 +53,12 @@ def _add_env_args(p: argparse.ArgumentParser, *, envs: int, steps: int, pool: in
     p.add_argument("--seed-text", default="VEC", help="config.seed_text (per-slot start sequences)")
     p.add_argument("--content", default="ported_only", choices=["ported_only", "all"])
     p.add_argument("--step-cap", type=int, default=3000)
+    p.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
+                   help=f"non-combat decisions on one floor before truncation (FLOOR_STALL; default {FLOOR_STEP_CAP}; 0 = off)")
+    p.add_argument("--macros", default=None,
+                   help="macro candidates, comma-separated: rest (SMITH = one row per upgradable card), shop (card "
+                        "removal = one row per removable card), prompt (no cancel row at any prompt, a complete pick "
+                        "confirms in the same step), all = rest,shop,prompt; default off")
     p.add_argument("--seed", type=int, default=0, help="random policy seed")
 
 
@@ -126,6 +137,161 @@ def cmd_bench(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------------ bench-branch
+
+def cmd_bench_branch(args) -> int:
+    lib = load(args.dll)
+    if not lib.supports_branch and not args.old_only:
+        print(f"library {lib.path} is ABI {lib.abi_version}: sts2vec_branch is not supported; rebuild it, or pass "
+              "--old-only to time the snapshot + reset path alone", file=sys.stderr)
+        return 2
+    k = args.k
+    with VecEnv(args.envs, threads=args.threads, step_cap=args.step_cap, floor_step_cap=args.floor_step_cap,
+                seed_text=args.seed_text, content=args.content, pool=_pool(args), dll=args.dll) as env:
+        n = env.num_envs
+        roots_n = n // (k + 1)
+        if roots_n < 1:
+            print(f"--envs {n} is too small for --k {k}", file=sys.stderr)
+            return 2
+        env.pool.warm()
+        env.reset()
+        rng = np.random.default_rng(args.seed)
+        for _ in range(args.advance):  # move every slot into the run (map, combat, rewards, shops, prompts)
+            env.step(random_actions(rng, env.obs["cand_n"]))
+        gi = env.schema.cols("global_i")
+        roots = np.arange(roots_n, dtype=np.int32)
+        dsts = (roots_n + np.arange(roots_n * k, dtype=np.int32)).reshape(roots_n, k)
+        flat = dsts.ravel()
+        owner = np.repeat(roots, k)  # the root of each destination, in flat order
+        mask = np.zeros(n, np.uint8)
+        mask[flat] = 1
+        slots_total = roots_n * k
+        in_combat = int(np.count_nonzero(env.obs["global_i"][roots, gi.is_combat]))
+        pool0 = len(env.pool)
+        res: dict[str, list[float]] = {}
+        created = 0
+        # one snapshot per root, created once: the start entries of the restore comparisons (the roots never move)
+        root_entry = np.array([env.snapshot(int(r)) for r in roots], dtype=np.int32)
+        dst_entry = root_entry[owner]
+        start_ids = np.full(n, -1, np.int32)
+        start_ids[flat] = dst_entry
+        sid = np.full(n, -1, np.int32)
+        root_of_dst = np.repeat(np.arange(roots_n), k)
+
+        def old_exact(t: dict, rnd: int) -> list[int]:
+            t0 = time.perf_counter()
+            snaps = [env.snapshot(int(r)) for r in roots]
+            t["old_exact_snapshot"] = time.perf_counter() - t0
+            sid[flat] = np.asarray(snaps, np.int32)[root_of_dst]
+            env.reset(mask=mask, start_ids=sid)
+            t["old_exact"] = time.perf_counter() - t0
+            return snaps
+
+        def old_det(t: dict, rnd: int) -> list[int]:
+            t0 = time.perf_counter()
+            dets = [env.clone_determinized(int(r), rnd * k + j) for r in roots for j in range(k)]
+            t["old_det_clone"] = time.perf_counter() - t0
+            sid[flat] = np.asarray(dets, np.int32)
+            env.reset(mask=mask, start_ids=sid)
+            t["old_det"] = time.perf_counter() - t0
+            return dets
+
+        def timed(key: str, fn):
+            def run(t: dict, rnd: int) -> list[int]:
+                t0 = time.perf_counter()
+                fn(rnd)
+                t[key] = time.perf_counter() - t0
+                return []
+            return run
+
+        ops = [
+            old_exact,
+            old_det,
+            timed("restore_loop", lambda rnd: [env.restore(int(d), int(e)) for d, e in zip(flat, dst_entry)]),
+            timed("reset_mask", lambda rnd: env.reset(mask=mask, start_ids=start_ids)),
+        ]
+        if not args.old_only:
+            ops += [
+                timed("branch_exact", lambda rnd: [env.branch(int(r), dsts[i], determinized=False) for i, r in enumerate(roots)]),
+                timed("branch_det", lambda rnd: [env.branch(int(r), dsts[i], seed=rnd) for i, r in enumerate(roots)]),
+                timed("many_exact", lambda rnd: env.branch(owner, flat, determinized=False)),
+                timed("many_det", lambda rnd: env.branch(owner, flat, seed=rnd)),
+                timed("restore_many", lambda rnd: env.restore_many(flat, dst_entry)),
+            ]
+        can_release = lib.supports_pool_release
+        for rnd in range(args.warmup_rounds + args.rounds):  # the warm-up rounds tier up the JIT and are not reported
+            t: dict[str, float] = {}
+            entries: list[int] = []
+            shift = rnd % len(ops)  # rotate the order, so GC pauses do not always land on the same operation
+            for op in ops[shift:] + ops[:shift]:
+                entries += op(t, rnd)
+            created += len(entries)
+            if can_release:
+                env.pool.release(entries)  # ABI 1 cannot: there these entries stay in the pool for good
+            if rnd >= args.warmup_rounds:
+                for key, sec in t.items():
+                    res.setdefault(key, []).append(sec / slots_total * 1e6)
+        bad = int(np.count_nonzero(env.status & (STATUS["SIM_ERROR"] | STATUS["CONTENT_GAP"])))
+        if can_release:
+            env.pool.release(root_entry)
+            assert len(env.pool) == pool0
+        pool_end = len(env.pool)
+        med = {key: statistics.median(v) for key, v in res.items()}
+        best = {key: min(v) for key, v in res.items()}
+
+        def ratio(old: str, new: str) -> float | None:
+            return med[old] / med[new] if old in med and new in med else None
+        result = {
+            "envs": n, "threads": args.threads, "k": k, "roots": roots_n, "branched_slots_per_round": slots_total,
+            "rounds": args.rounds, "warmup_rounds": args.warmup_rounds, "advance": args.advance,
+            "roots_in_combat": in_combat, "mode": lib.mode, "abi_version": lib.abi_version, "us_per_slot": med,
+            "us_per_slot_best": best,
+            "old_only": bool(args.old_only),
+            "us_per_branch_call": {"exact": med["branch_exact"] * k, "determinized": med["branch_det"] * k}
+            if "branch_exact" in med else None,
+            "speedup_vs_old": {"branch_exact": ratio("old_exact", "branch_exact"), "branch_det": ratio("old_det", "branch_det"),
+                               "many_exact": ratio("old_exact", "many_exact"), "many_det": ratio("old_det", "many_det"),
+                               "restore_many_vs_loop": ratio("restore_loop", "restore_many"),
+                               "restore_many_vs_reset_mask": ratio("reset_mask", "restore_many")},
+            "old_path_entries_per_round": {"exact": roots_n, "determinized": slots_total},
+            "old_path_entries_created": created, "pool_entries_at_end": pool_end, "sim_error_or_content_gap_slots": bad,
+            "load_average": os.getloadavg()[0] if hasattr(os, "getloadavg") else None,
+        }
+    if args.json:
+        print(json.dumps(result))
+        return 0
+    r, m, x, b = result, result["us_per_slot"], result["speedup_vs_old"], result["us_per_slot_best"]
+    print(f"library {lib.path} ({lib.mode}), ABI {lib.abi_version}; envs={n} threads={args.threads} k={k}: {roots_n} roots "
+          f"({in_combat} in combat after {args.advance} random steps) x {k} = {slots_total} branched slots per round; "
+          f"us per branched slot (wall): median of {args.rounds} rounds after {args.warmup_rounds} warm-up rounds (best)")
+    print(f"  {'':34s} {'exact':>15s} {'determinized':>15s}")
+
+    def row(label: str, a: str, c: str, note: str = "") -> None:
+        print(f"  {label:34s} {m[a]:7.2f} ({b[a]:5.2f}) {m[c]:7.2f} ({b[c]:5.2f})   {note}")
+
+    if not r["old_only"]:
+        row("branch, one call per root", "branch_exact", "branch_det",
+            f"{r['us_per_branch_call']['exact']:.0f} / {r['us_per_branch_call']['determinized']:.0f} us per call")
+        row("branch, one call for all roots", "many_exact", "many_det", "sts2vec_branch_many")
+    row("old: snapshot/clone_det + reset", "old_exact", "old_det",
+        f"of which snapshot {m['old_exact_snapshot']:.2f} / clone_determinized {m['old_det_clone']:.2f}")
+    if not r["old_only"]:
+        print(f"  speedup vs old: per root {x['branch_exact']:.1f}x / {x['branch_det']:.1f}x, all roots {x['many_exact']:.1f}x / "
+              f"{x['many_det']:.1f}x")
+        print(f"  restore_many {m['restore_many']:.2f} ({b['restore_many']:.2f}) us/element -> {x['restore_many_vs_loop']:.1f}x "
+              f"one restore call per slot, {x['restore_many_vs_reset_mask']:.1f}x reset(mask, start_ids)")
+    print(f"  one restore call per slot {m['restore_loop']:.2f} ({b['restore_loop']:.2f}) us/element; reset(mask, start_ids) "
+          f"{m['reset_mask']:.2f} ({b['reset_mask']:.2f})")
+    print(f"  pool entries the old paths create: {roots_n} + {slots_total} per round ({r['old_path_entries_created']:,} in this "
+          f"run; {'released after each round here' if can_release else 'ABI 1 cannot release them'}; pool at the end "
+          f"{r['pool_entries_at_end']:,}){'; branch creates none' if not r['old_only'] else ''}")
+    if r["load_average"] is not None:
+        print(f"  load average {r['load_average']:.1f} (other processes share the cores: compare rows of one run)")
+    if bad:
+        print(f"  WARNING: {bad} slots with SIM_ERROR/CONTENT_GAP")
+    return 0
+
+
 # ------------------------------------------------------------------------------------------------ check
 
 def _schema_problems(lib, schema: Schema, n: int) -> list[str]:
@@ -177,6 +343,7 @@ def cmd_check(args) -> int:
     schema = Schema.from_json(text)
     print(f"library {lib.path} ({lib.mode})")
     print(f"  runtimeconfig {lib.runtimeconfig} | hostfxr {lib.hostfxr} | dotnet root {lib.dotnet_root} | GC {lib.gc_mode}")
+    print(f"  ABI {lib.abi_version} | exports {len(lib.exports)}" + (f" (missing: {', '.join(lib.missing_exports)})" if lib.missing_exports else ""))
     print(f"  version {lib.version()} | schema {len(text):,} bytes, {len(schema.buffers)} buffers, "
           f"{schema.bytes_per_env:,} bytes/env | vocab " +
           ", ".join(f"{k} {len(v)}" for k, v in schema.vocab.lists.items()))
@@ -238,9 +405,16 @@ def cmd_eval(args) -> int:
 
     stem = Path(args.policy.split(":")[0]).stem if ":" in args.policy else args.policy
     out = args.out or f"tmp/eval/vec-{stem}-{Path(args.seedset).stem}-{time.strftime('%Y%m%d-%H%M%S')}"
-    rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
-                   floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
-                   log=lambda m: print(m, flush=True))
+    from .protocol import BlindSetError
+
+    try:
+        rep = evaluate(args.seedset, args.policy, out, threads=args.threads, step_cap=args.step_cap,
+                       floor_step_cap=args.floor_step_cap, seed=args.seed, dll=args.dll,
+                       log=lambda m: print(m, flush=True), allow_blind=args.allow_blind, purpose=args.purpose,
+                       macros=args.macros)
+    except BlindSetError as e:
+        print(f"error: {e}", file=sys.stderr, flush=True)
+        return 2
     h = rep["headline"]
     print(json.dumps({"out": out, "progress_mean": h["progress_mean"], "progress_ci95": h["progress_ci95"],
                       "wins": h["wins"], "games": h["games"], "results": {k: v for k, v in h["results"].items() if v},
@@ -265,6 +439,19 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--json", action="store_true", help="print one JSON object instead of text")
     b.set_defaults(fn=cmd_bench)
 
+    bb = sub.add_parser("bench-branch", help="search primitives: branch / restore_many vs the snapshot + reset path (ABI 2)")
+    _add_env_args(bb, envs=1024, steps=None, pool=64)
+    bb.add_argument("--threads", type=int, default=8)
+    bb.add_argument("--k", type=int, default=8, help="destinations per root (default 8)")
+    bb.add_argument("--rounds", type=int, default=7, help="timed rounds; medians are reported (default 7)")
+    bb.add_argument("--warmup-rounds", type=int, default=3, help="untimed rounds first, so the JIT has tiered up (default 3)")
+    bb.add_argument("--advance", type=int, default=60, help="random steps before timing, so roots are mid-run (default 60)")
+    bb.add_argument("--old-only", action="store_true",
+                    help="time only the pre-ABI-2 paths (snapshot / clone_determinized + reset, one restore per slot); "
+                         "runs against an ABI 1 library")
+    bb.add_argument("--json", action="store_true", help="print one JSON object instead of text")
+    bb.set_defaults(fn=cmd_bench_branch)
+
     c = sub.add_parser("check", help="schema/buffer consistency and determinism (threads A vs B)")
     _add_env_args(c, envs=64, steps=200, pool=16)
     c.add_argument("--threads-a", type=int, default=1)
@@ -284,8 +471,16 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--threads", type=int, default=8)
     e.add_argument("--seed", type=int, default=0, help="seed of the per-game policy RNGs (ctx.rngs)")
     e.add_argument("--step-cap", type=int, default=1200, help="protocol step cap (result 'capped'; default 1200)")
-    e.add_argument("--floor-step-cap", type=int, default=80,
-                   help="non-combat decisions on one floor before 'stuck' (protocol default 80; 0 = off)")
+    e.add_argument("--floor-step-cap", type=int, default=FLOOR_STEP_CAP,
+                   help=f"non-combat decisions on one floor before 'stuck' (env floor_step_cap; protocol default "
+                        f"{FLOOR_STEP_CAP}; 0 = off)")
+    e.add_argument("--macros", default=None,
+                   help="macro candidates of the env (rest, shop, prompt, all; comma-separated; default off): must match the "
+                        "policy's training env")
+    e.add_argument("--allow-blind", action="store_true",
+                   help="allow a seed set with games of a frozen blind set (role blind; refused otherwise); needs "
+                        "--purpose, logged to OUT/blind-access.jsonl")
+    e.add_argument("--purpose", default=None, help="why a blind set is evaluated (with --allow-blind)")
     e.set_defaults(fn=cmd_eval)
 
     args = p.parse_args(argv)

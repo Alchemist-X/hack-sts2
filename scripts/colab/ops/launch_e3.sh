@@ -1,0 +1,30 @@
+#!/bin/bash
+# launch_e3.sh — wave-12 arm: e3 = explored samples get the bounded exploration push (--explore-push 1.0, policy log-probs),
+# policy-drawn samples get PPO with dual-clip 3.0; --macros all unless stated; bundle = symlink /content/sts2/bundle-w12.
+# Waits for the predecessor marker 'w3m-e2: done' in /content/sts2/runs/w9-e2.driver.log, then for the bundle.
+set -u
+L=/content/sts2/runs/w9-e2.driver.log; TAGN=w9-e3
+say() { echo "$(date -u '+%F %T') $TAGN: $*"; }
+t0=$SECONDS
+while ! grep -q "w3m-e2: done" "$L" 2>/dev/null; do
+  last=$(tail -1 "$L" 2>/dev/null)
+  if echo "$last" | grep -qE '(: stop|failed [0-9]+ times in a row: stop|check failed|fetch failed|pins it\)|nothing to continue: done|giving up: done|exited rc [0-9]+: done)$'; then
+    say "predecessor ended abnormally ($last); continuing anyway"; break
+  fi
+  (( SECONDS - t0 > 86400 )) && { say "predecessor not done after 24 h; giving up: done"; exit 1; }
+  say "waiting for the predecessor (${last:0:80})"; sleep 300
+done
+t1=$SECONDS
+until [ -f /content/sts2/bundle-w12/run_train.sh ]; do
+  (( SECONDS - t1 > 43200 )) && { say "no wave-12 bundle (bundle-w12) after 12 h; giving up: done"; exit 1; }
+  say "waiting for the wave-12 bundle at /content/sts2/bundle-w12"; sleep 60
+done
+B=$(readlink -f /content/sts2/bundle-w12); say "bundle $B"
+mkdir -p /content/sts2/fork
+python3 /content/sts2/w3m-src/scripts/colab/w3m_fetch.py --key /content/sts2/gcs-sts2-ckpt.json --bucket gomoku-zero-20260816-ai-sts2train \
+  --blob runs/w3m-a/checkpoints/pinned-0007664.pt --dest /content/sts2/fork/$(basename runs/w3m-a/checkpoints/pinned-0007664.pt .pt)-e3.pt --wait 43200 || { say "fork checkpoint fetch failed: done"; exit 1; }
+FORK=/content/sts2/fork/$(basename runs/w3m-a/checkpoints/pinned-0007664.pt .pt)-e3.pt
+TAG=e3 WAIT_RUN=/content/sts2/runs/w9-e2 WAIT_MAX_S=3600 ENT0=0.005 ENT1=0.005 FORK_U=7664 LAST=9664 ENDS="8164 8664 9164 9664" MACROS=rest,shop \
+  EXTRA="--explore-kinds ChooseRestOption,BuyEntry:remove --explore-eps 0.3 --explore-logp policy --explore-push 1.0 --dual-clip 3.0" \
+  bash /content/sts2/w5-src/scripts/colab/w3m_line.sh "$B" /content/sts2/runs/w9-e3 a "$FORK" off
+rc=$?; [ $rc -ne 0 ] && say "line driver exited rc $rc: done"; exit $rc

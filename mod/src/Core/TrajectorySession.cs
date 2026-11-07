@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using System.Threading;
 
 namespace Sts2Recorder.Core;
 
@@ -12,6 +13,13 @@ namespace Sts2Recorder.Core;
 /// (states/actions/events) plus manifest.json, per docs/design.md session format
 /// schema_version 1. Thread-safe: a single lock serializes all writes, and the
 /// record seq is session-global and strictly monotonic across all three streams.
+///
+/// Flushing: the recurring save-heartbeat flush (queue drain + fsync + manifest
+/// rewrite) runs on a dedicated background flusher thread via
+/// <see cref="RequestFlush"/>, so the game thread never blocks on disk latency.
+/// Lock order everywhere: _flushLock before _lock (never the reverse); _flushSignal
+/// is a leaf lock and is never held while taking another. Native snapshot copies
+/// (<see cref="ArchiveNativeSnapshot"/>) keep their own writer thread and drain.
 /// </summary>
 public sealed class TrajectorySession : IDisposable
 {
@@ -21,6 +29,8 @@ public sealed class TrajectorySession : IDisposable
     private static readonly TimeSpan NativeDrainTimeout = TimeSpan.FromSeconds(10);
 
     private readonly object _lock = new();
+    private readonly object _flushLock = new();
+    private readonly object _flushSignal = new();
     private readonly IClock _clock;
     private readonly SessionMeta _meta;
     private readonly int _part;
@@ -30,6 +40,15 @@ public sealed class TrajectorySession : IDisposable
     private readonly ErrorLog _errorLog;
     private readonly NativeFileWriter _native;
     private readonly List<string> _degradedHooks = new();
+    private readonly Thread _flushThread;
+    private bool _flushRequested;
+    private bool _flushShutdown;
+
+    // Last cut successfully fsynced + published by FlushCore. Guarded by
+    // _flushLock (both the flusher thread and sync Flush hold it).
+    private long _flushedStateLines = -1;
+    private long _flushedActionLines = -1;
+    private long _flushedEventLines = -1;
 
     private long _nextSeq = 1;
     private long _latestStateSeq;
@@ -42,6 +61,13 @@ public sealed class TrajectorySession : IDisposable
     private long _snapshotBuildCount;
     private double _snapshotBuildTotalMs;
     private double _snapshotBuildMaxMs;
+    // Distribution of the same per-snapshot cost that feeds count/avg/max
+    // (bounded buckets: p95/p99 upper bounds), plus the split by trigger.
+    private readonly LatencyHistogram _snapshotBuildLatency = new();
+    private readonly Dictionary<string, LatencyHistogram> _snapshotBuildByTrigger = new();
+    private long _statesDeduplicated;
+    private long _decisionInputs;
+    private long _nestedInputs;
 
     private TrajectorySession(string directory, int part, SessionMeta meta, IClock clock)
     {
@@ -65,6 +91,12 @@ public sealed class TrajectorySession : IDisposable
             _actions = actions;
             _events = events;
             WriteManifestLocked();
+            _flushThread = new Thread(FlusherLoop)
+            {
+                IsBackground = true,
+                Name = "sts2rec-session-flusher",
+            };
+            _flushThread.Start();
         }
         catch
         {
@@ -105,6 +137,18 @@ public sealed class TrajectorySession : IDisposable
         }
     }
 
+    /// <summary>True after Complete(); late lifecycle handlers use this to skip work whose records would be dropped anyway.</summary>
+    public bool IsCompleted
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _completed;
+            }
+        }
+    }
+
     /// <summary>
     /// Records a state snapshot. Hash-dedup: when the serialized state is identical
     /// to the previous snapshot, nothing is written and the previous seq is returned.
@@ -117,24 +161,18 @@ public sealed class TrajectorySession : IDisposable
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(screen);
         ArgumentNullException.ThrowIfNull(state);
-        // Two serializations of the state, both on the caller thread and both
-        // unavoidable: ONE canonical (key-sorted) form for the dedup hash — so
-        // dedup is independent of the builder's key insertion order — and ONE
-        // original-order form for the stored payload (the state keeps the
-        // builder's key order). The former envelope did THREE full state
-        // serializations (direct, canonical-hash, and the writer's re-serialize)
-        // plus a JsonNode.Parse round trip; those extras are gone.
-        var canonical = Hashing.CanonicalJson(state);
-        var hash = Hashing.HashFromCanonical(canonical);
-        var serialized = state.ToJsonString();
+        // Dedup hash first, via the streaming canonical form (no cloned tree, no
+        // intermediate string). The payload serialization is deferred until the
+        // dedup check has passed, so a discarded duplicate pays only the hash —
+        // ~30% of builds dedup in practice and previously paid a full
+        // serialization each.
+        var hash = Hashing.HashState(state);
         lock (_lock)
         {
             ThrowIfUnusable();
             if (buildMillis is { } ms)
             {
-                _snapshotBuildCount++;
-                _snapshotBuildTotalMs += ms;
-                _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, ms);
+                AddSnapshotCostLocked(ms, trigger);
             }
             if (_completed)
             {
@@ -143,18 +181,44 @@ public sealed class TrajectorySession : IDisposable
             }
             if (hash == _lastStateHash)
             {
+                _statesDeduplicated++;
                 return _latestStateSeq;
             }
             var seq = _nextSeq++;
-            // Build the exact envelope bytes here (still cheap, no re-serialize of
-            // the state) and enqueue; the write+flush syscall runs off-thread.
-            // LatestStateSeq is updated synchronously below, so a subsequent
-            // RecordAction sees this seq regardless of whether the bytes have
-            // physically been written yet.
-            _states.Enqueue(JsonlLine.State(seq, _clock.Now, trigger, screen, hash, serialized));
+            // Kept state is written straight into the UTF-8 envelope buffer
+            // (builder's key order; canonical order is a hash-only concept) —
+            // no intermediate UTF-16 string. The write+flush syscall runs
+            // off-thread. LatestStateSeq is updated synchronously below, so a
+            // subsequent RecordAction sees this seq regardless of whether the
+            // bytes have physically been written yet.
+            _states.Enqueue(JsonlLine.State(seq, _clock.Now, trigger, screen, hash, state));
             _latestStateSeq = seq;
             _lastStateHash = hash;
             return seq;
+        }
+    }
+
+    /// <summary>
+    /// Counts a decision-input hook entry for the manifest perf detail:
+    /// <paramref name="nested"/> true = a synchronous nested input on the same
+    /// binding that reused the outer pre-input capture (no build).
+    /// </summary>
+    public void NoteDecisionInput(bool nested)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _completed)
+            {
+                return;
+            }
+            if (nested)
+            {
+                _nestedInputs++;
+            }
+            else
+            {
+                _decisionInputs++;
+            }
         }
     }
 
@@ -163,9 +227,11 @@ public sealed class TrajectorySession : IDisposable
     /// (already-final decisions), "executed" or "cancelled" (GameAction lifecycle).
     /// <paramref name="stateSeq"/> null means "the latest snapshot" (LatestStateSeq).
     /// When no snapshot exists yet (LatestStateSeq == 0, or a caller passes a
-    /// stale 0), state_seq is written as JSON null — the contract for "action
-    /// fired before the first snapshot"; sts2rec canonical degrades gracefully
-    /// (next snapshot as best-effort state_before, flagged in info).
+    /// 0), state_seq is written as JSON null. DecisionCapture explicitly passes
+    /// 0 on failure and marks params._decision; consumers must not substitute a
+    /// future observation for such failures. Legacy no-snapshot records retain
+    /// the canonical estimated-state compatibility behavior (next snapshot as
+    /// best-effort state_before, flagged in info).
     /// </summary>
     public long RecordAction(
         string source, string kind, JsonNode parameters, string status, long? stateSeq)
@@ -214,19 +280,70 @@ public sealed class TrajectorySession : IDisposable
         }
     }
 
-    /// <summary>Marks a hook as degraded (disabled after a game update); deduplicated.</summary>
-    public void AddDegradedHook(string hookId)
+    /// <summary>
+    /// Adds main-thread snapshot cost (state build + hash + envelope
+    /// serialization, measured by the caller around the whole snapshot) to the
+    /// manifest "perf.snapshot_build_ms" counters — the alternative to passing
+    /// <c>buildMillis</c> to <see cref="RecordState"/>, for callers that want
+    /// the hash/serialize cost included. <paramref name="trigger"/> (optional)
+    /// also files the cost under "perf.capture_by_trigger_ms". Never throws
+    /// after Dispose (perf bookkeeping must not break the snapshot path).
+    /// </summary>
+    public void RecordSnapshotCost(double millis, string? trigger = null)
     {
-        ArgumentNullException.ThrowIfNull(hookId);
         lock (_lock)
         {
-            ThrowIfUnusable();
-            if (_degradedHooks.Contains(hookId))
+            if (_disposed)
             {
                 return;
             }
-            _degradedHooks.Add(hookId);
-            WriteManifestLocked();
+            AddSnapshotCostLocked(millis, trigger);
+        }
+    }
+
+    private void AddSnapshotCostLocked(double millis, string? trigger)
+    {
+        _snapshotBuildCount++;
+        _snapshotBuildTotalMs += millis;
+        _snapshotBuildMaxMs = Math.Max(_snapshotBuildMaxMs, millis);
+        _snapshotBuildLatency.Add(millis);
+        if (trigger is null)
+        {
+            return;
+        }
+        // Bounded key set: unexpected trigger labels fold into "other".
+        var key = _snapshotBuildByTrigger.ContainsKey(trigger) || _snapshotBuildByTrigger.Count < 32
+            ? trigger
+            : "other";
+        if (!_snapshotBuildByTrigger.TryGetValue(key, out var latency))
+        {
+            _snapshotBuildByTrigger[key] = latency = new LatencyHistogram();
+        }
+        latency.Add(millis);
+    }
+
+    /// <summary>
+    /// Marks a hook as degraded (disabled after a game update); deduplicated.
+    /// Deliberately synchronous (manifest rewritten before returning): hooks
+    /// degrade at patch/subscribe time — startup and run-start, never mid-combat —
+    /// so this is off the hot path, and the degraded marker must survive an
+    /// immediate crash.
+    /// </summary>
+    public void AddDegradedHook(string hookId)
+    {
+        ArgumentNullException.ThrowIfNull(hookId);
+        lock (_flushLock)
+        {
+            lock (_lock)
+            {
+                ThrowIfUnusable();
+                if (_degradedHooks.Contains(hookId))
+                {
+                    return;
+                }
+                _degradedHooks.Add(hookId);
+                WriteManifestLocked();
+            }
         }
     }
 
@@ -330,13 +447,152 @@ public sealed class TrajectorySession : IDisposable
         _errorLog.Record(where, ex);
     }
 
-    /// <summary>Flushes all streams and atomically rewrites the manifest (still incomplete).</summary>
+    /// <summary>
+    /// Synchronously drains + fsyncs all streams and atomically rewrites the
+    /// manifest (still incomplete). Graceful-teardown path; the recurring save
+    /// heartbeat uses <see cref="RequestFlush"/> so the game thread never blocks
+    /// here. After Complete/Dispose the manifest part is a no-op (the terminal
+    /// manifest is authoritative).
+    /// </summary>
     public void Flush()
     {
+        lock (_flushLock)
+        {
+            lock (_lock)
+            {
+                ThrowIfUnusable();
+            }
+            FlushCore();
+        }
+    }
+
+    /// <summary>
+    /// Queues an asynchronous flush (drain + fsync + manifest rewrite) on the
+    /// background flusher thread and returns immediately — the save-heartbeat
+    /// entry point. Requests coalesce: any number of calls while a flush is in
+    /// flight collapse into one trailing flush. Never throws; after
+    /// Complete/Dispose it is a silent no-op.
+    /// </summary>
+    public void RequestFlush()
+    {
+        lock (_flushSignal)
+        {
+            if (_flushShutdown)
+            {
+                return;
+            }
+            _flushRequested = true;
+            Monitor.Pulse(_flushSignal);
+        }
+    }
+
+    private void FlusherLoop()
+    {
+        while (true)
+        {
+            lock (_flushSignal)
+            {
+                while (!_flushRequested && !_flushShutdown)
+                {
+                    Monitor.Wait(_flushSignal);
+                }
+                if (_flushShutdown)
+                {
+                    return;
+                }
+                _flushRequested = false;
+            }
+            try
+            {
+                lock (_flushLock)
+                {
+                    FlushCore();
+                }
+            }
+            catch (Exception ex)
+            {
+                // The flusher must neither die silently nor throw; surface disk
+                // trouble through the session error channel and keep serving.
+                _errorLog.Record("TrajectorySession.FlusherLoop", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Drain + fsync + manifest rewrite. Must hold <c>_flushLock</c>; must NOT
+    /// hold <c>_lock</c> across the I/O. Counts are captured as ONE consistent
+    /// cross-stream cut under the session lock (records enqueue under that same
+    /// lock, so an action inside the cut always has its referenced state inside
+    /// the cut too), the streams are drained to exactly those counts —
+    /// referents (states) before dependents (actions/events) — and the manifest
+    /// claims exactly them. Lines enqueued while the drain runs are not
+    /// claimed, so the manifest may briefly undercount the file but never
+    /// overcount it (the crash contract). On a disk fault the previous
+    /// checkpoint is kept (the fault is already in recorder.log). Perf counters
+    /// may lag one flush behind when only deduped builds occurred; the terminal
+    /// manifest refreshes them. Native snapshot files are NOT waited for here
+    /// (their own writer thread drains them; Complete/Dispose wait for it).
+    /// </summary>
+    private void FlushCore()
+    {
+        long stateLines, stateBytes, actionLines, actionBytes, eventLines, eventBytes;
         lock (_lock)
         {
-            ThrowIfUnusable();
-            WriteManifestLocked();
+            if (_disposed || _completed)
+            {
+                return;
+            }
+            (stateLines, stateBytes) = _states.Counts();
+            (actionLines, actionBytes) = _actions.Counts();
+            (eventLines, eventBytes) = _events.Counts();
+        }
+        if (stateLines == _flushedStateLines
+            && actionLines == _flushedActionLines
+            && eventLines == _flushedEventLines)
+        {
+            // Idle heartbeat: this cut is already durable and published — skip
+            // the 4 fsyncs + manifest rewrite entirely.
+            return;
+        }
+        if (!_states.FlushUpTo(stateLines)
+            || !_actions.FlushUpTo(actionLines)
+            || !_events.FlushUpTo(eventLines))
+        {
+            return;
+        }
+        JsonObject manifest;
+        lock (_lock)
+        {
+            if (_disposed || _completed)
+            {
+                // The terminal manifest (Complete/Dispose) is authoritative; a
+                // late flush must not resurrect an incomplete one over it.
+                return;
+            }
+            manifest = BuildManifestLocked(
+                stateLines, actionLines, eventLines,
+                stateBytes, actionBytes, eventBytes);
+        }
+        ManifestWriter.WriteAtomic(Directory, manifest);
+        _flushedStateLines = stateLines;
+        _flushedActionLines = actionLines;
+        _flushedEventLines = eventLines;
+    }
+
+    /// <summary>
+    /// Signals the flusher to exit and joins it. Idempotent; called outside
+    /// <c>_flushLock</c> so an in-flight flush can finish and observe shutdown.
+    /// </summary>
+    private void StopFlusher()
+    {
+        lock (_flushSignal)
+        {
+            _flushShutdown = true;
+            Monitor.PulseAll(_flushSignal);
+        }
+        if (!ReferenceEquals(Thread.CurrentThread, _flushThread))
+        {
+            _flushThread.Join();
         }
     }
 
@@ -352,51 +608,89 @@ public sealed class TrajectorySession : IDisposable
     public void Complete(RunResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
-        lock (_lock)
+        try
         {
-            ThrowIfUnusable();
-            if (_completed)
+            // _flushLock first (lock order): a flusher-thread flush in flight
+            // finishes before the terminal manifest is written and can never
+            // overwrite it afterwards (FlushCore rechecks _completed).
+            lock (_flushLock)
             {
-                throw new InvalidOperationException("session already completed");
+                lock (_lock)
+                {
+                    ThrowIfUnusable();
+                    if (_completed)
+                    {
+                        throw new InvalidOperationException("session already completed");
+                    }
+                    _result = result;
+                    _completed = true;
+                    _native.WaitIdle(NativeDrainTimeout);
+                    // Freeze the streams (final flush + close) so the compressor sees
+                    // stable bytes; LineCount/BytesWritten remain readable afterwards.
+                    _states.Dispose();
+                    _actions.Dispose();
+                    _events.Dispose();
+                    if (SessionCompressor.TryCompressStreams(
+                            Directory, (where, ex) => _errorLog.Record(where, ex)))
+                    {
+                        _compression = SessionCompressor.Format;
+                    }
+                    WriteManifestLocked();
+                }
             }
-            _result = result;
-            _completed = true;
-            _native.WaitIdle(NativeDrainTimeout);
-            // Freeze the streams (final flush + close) so the compressor sees
-            // stable bytes; LineCount/BytesWritten remain readable afterwards.
-            _states.Dispose();
-            _actions.Dispose();
-            _events.Dispose();
-            if (SessionCompressor.TryCompressStreams(
-                    Directory, (where, ex) => _errorLog.Record(where, ex)))
-            {
-                _compression = SessionCompressor.Format;
-            }
-            WriteManifestLocked();
+        }
+        finally
+        {
+            // Even a disk-full IOException from the terminal manifest write must
+            // not leak the flusher thread.
+            StopFlusher();
         }
     }
 
-    /// <summary>Flushes and closes; without a prior Complete() the manifest stays incomplete:true.</summary>
+    /// <summary>
+    /// Flushes and closes; without a prior Complete() the manifest stays
+    /// incomplete:true. Teardown order: an in-flight async flush finishes first
+    /// (_flushLock), then a final SYNCHRONOUS drain + fsync + manifest rewrite
+    /// covers every record enqueued so far, then the JSONL writers and the
+    /// native writer (which drains its queued copies) are disposed, and the
+    /// flusher thread is stopped.
+    /// </summary>
     public void Dispose()
     {
-        lock (_lock)
+        try
         {
-            if (_disposed)
+            lock (_flushLock)
             {
-                return;
+                lock (_lock)
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+                    _disposed = true;
+                    try
+                    {
+                        // After Complete the terminal manifest is already on disk
+                        // and authoritative — do not rewrite it here, or a fault
+                        // mid-rewrite could replace a finalized manifest.
+                        if (!_completed)
+                        {
+                            WriteManifestLocked();
+                        }
+                    }
+                    finally
+                    {
+                        _states.Dispose();
+                        _actions.Dispose();
+                        _events.Dispose();
+                        _native.Dispose();
+                    }
+                }
             }
-            _disposed = true;
-            try
-            {
-                WriteManifestLocked();
-            }
-            finally
-            {
-                _states.Dispose();
-                _actions.Dispose();
-                _events.Dispose();
-                _native.Dispose();
-            }
+        }
+        finally
+        {
+            StopFlusher();
         }
     }
 
@@ -417,18 +711,34 @@ public sealed class TrajectorySession : IDisposable
         _events?.Flush();
     }
 
+    /// <summary>
+    /// Terminal/constructor manifest write with LIVE counts. Streams must be
+    /// flushed BEFORE the rewrite: the manifest counts reflect in-memory
+    /// LineCount, so buffered-but-unflushed lines would make a crash-terminated
+    /// session's manifest claim lines that never reached disk. Heartbeat flushes
+    /// go through <see cref="FlushCore"/> with captured counts instead.
+    /// </summary>
     private void WriteManifestLocked()
     {
-        // Streams must be flushed BEFORE every manifest rewrite: the manifest
-        // counts reflect in-memory LineCount, so buffered-but-unflushed lines
-        // would make a crash-terminated session's manifest claim lines that
-        // never reached disk (or vice versa).
         FlushStreamsLocked();
+        var (stateLines, stateBytes) = _states?.Counts() ?? (0L, 0L);
+        var (actionLines, actionBytes) = _actions?.Counts() ?? (0L, 0L);
+        var (eventLines, eventBytes) = _events?.Counts() ?? (0L, 0L);
+        var manifest = BuildManifestLocked(
+            stateLines, actionLines, eventLines,
+            stateBytes, actionBytes, eventBytes);
+        ManifestWriter.WriteAtomic(Directory, manifest);
+    }
+
+    private JsonObject BuildManifestLocked(
+        long stateCount, long actionCount, long eventCount,
+        long statesBytes, long actionsBytes, long eventsBytes)
+    {
         var manifest = SessionMetaJson.BuildManifest(
             _meta,
-            stateCount: _states?.LineCount ?? 0,
-            actionCount: _actions?.LineCount ?? 0,
-            eventCount: _events?.LineCount ?? 0,
+            stateCount: stateCount,
+            actionCount: actionCount,
+            eventCount: eventCount,
             incomplete: !_completed,
             result: _result,
             part: _part,
@@ -438,10 +748,42 @@ public sealed class TrajectorySession : IDisposable
                 SnapshotBuildCount: _snapshotBuildCount,
                 SnapshotBuildTotalMs: _snapshotBuildTotalMs,
                 SnapshotBuildMaxMs: _snapshotBuildMaxMs,
-                StatesBytes: _states?.BytesWritten ?? 0,
-                ActionsBytes: _actions?.BytesWritten ?? 0,
-                EventsBytes: _events?.BytesWritten ?? 0));
-        ManifestWriter.WriteAtomic(Directory, manifest);
+                StatesBytes: statesBytes,
+                ActionsBytes: actionsBytes,
+                EventsBytes: eventsBytes));
+        AddPerfDetailLocked((JsonObject)manifest["perf"]!);
+        return manifest;
+    }
+
+    /// <summary>
+    /// Optional manifest "perf" detail on top of the schema-1 counters:
+    /// p95/p99 upper bounds for snapshot_build_ms (count/avg/max unchanged),
+    /// the same cost split by snapshot trigger, the hash-dedup count, and the
+    /// writer queue depths (current + peak).
+    /// </summary>
+    private void AddPerfDetailLocked(JsonObject perf)
+    {
+        var build = (JsonObject)perf["snapshot_build_ms"]!;
+        var distribution = _snapshotBuildLatency.Describe();
+        build["p95_upper_bound"] = distribution["p95_upper_bound"]!.DeepClone();
+        build["p99_upper_bound"] = distribution["p99_upper_bound"]!.DeepClone();
+        var byTrigger = new JsonObject();
+        foreach (var pair in _snapshotBuildByTrigger)
+        {
+            byTrigger[pair.Key] = pair.Value.Describe();
+        }
+        perf["capture_by_trigger_ms"] = byTrigger;
+        perf["states_deduplicated"] = _statesDeduplicated;
+        perf["decision_input_scopes"] = _decisionInputs;
+        perf["nested_inputs_coalesced"] = _nestedInputs;
+        perf["writer_queues"] = new JsonObject
+        {
+            // Null-conditional: the constructor's first manifest write can run
+            // before every writer is assigned (see FlushStreamsLocked).
+            ["states"] = _states?.QueueStats(),
+            ["actions"] = _actions?.QueueStats(),
+            ["events"] = _events?.QueueStats(),
+        };
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Sts2Recorder.Core;
 
@@ -34,17 +35,41 @@ internal static class JsonlLine
     {
         return Build(stateJson.Length + 128, writer =>
         {
-            writer.WriteStartObject();
-            writer.WriteNumber("seq", seq);
-            writer.WriteNumber("t", t);
-            writer.WriteString("type", "state");
-            writer.WriteString("trigger", trigger);
-            writer.WriteString("screen", screen);
-            writer.WriteString("hash", hash);
-            writer.WritePropertyName("state");
+            WriteStateEnvelope(writer, seq, t, trigger, screen, hash);
             writer.WriteRawValue(stateJson, skipInputValidation: true);
             writer.WriteEndObject();
         });
+    }
+
+    /// <summary>
+    /// State envelope written straight from the node — no intermediate UTF-16
+    /// serialization or transcode on the caller (the recorder hot path).
+    /// <see cref="JsonNode.WriteTo"/> uses the same default STJ writer as
+    /// <c>ToJsonString()</c>, so the bytes are identical to the raw-splice
+    /// overload above (pinned by the async-writer byte-identity tests).
+    /// </summary>
+    public static byte[] State(
+        long seq, double t, string trigger, string screen, string hash, JsonNode state)
+    {
+        return Build(8 * 1024, writer =>
+        {
+            WriteStateEnvelope(writer, seq, t, trigger, screen, hash);
+            state.WriteTo(writer);
+            writer.WriteEndObject();
+        });
+    }
+
+    private static void WriteStateEnvelope(
+        Utf8JsonWriter writer, long seq, double t, string trigger, string screen, string hash)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("seq", seq);
+        writer.WriteNumber("t", t);
+        writer.WriteString("type", "state");
+        writer.WriteString("trigger", trigger);
+        writer.WriteString("screen", screen);
+        writer.WriteString("hash", hash);
+        writer.WritePropertyName("state");
     }
 
     /// <summary>

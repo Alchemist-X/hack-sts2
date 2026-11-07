@@ -106,4 +106,21 @@ public sealed class SnapshotThrottle
             return true;
         }
     }
+
+    /// <summary>
+    /// Clears a pending trailing snapshot without taking it; returns whether one
+    /// was pending. Used at session teardown, where the caller either takes the
+    /// final snapshot itself (bypassing windows) or a forced terminal snapshot
+    /// has already covered it — the orphaned pump callback then finds
+    /// <see cref="TrailingPending"/> false and stops re-deferring.
+    /// </summary>
+    public bool CancelTrailing()
+    {
+        lock (_lock)
+        {
+            var wasPending = _trailingPending;
+            _trailingPending = false;
+            return wasPending;
+        }
+    }
 }

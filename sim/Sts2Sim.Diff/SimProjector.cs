@@ -90,16 +90,19 @@ public static class SimProjector
         };
     }
 
+    // The oracle's turn phase has the recorder's resolution: the battle block records the side and whether the local
+    // player is in PlayerTurnPhase.Play (mod/src/StateBuilder/PassiveStateBuilder.Combat.cs:37, :40), and the exporter names
+    // the rest `player_not_play` / `<side>_turn` (sts2rec/sts2rec/diff_bundle.py:574-581). The sim projects its phase
+    // (Combat/PlayerTurnPhase.cs: None, Start, AutoPrePlay, Play, AutoPostPlay, End) at that resolution: a start-of-turn
+    // prompt such as GAMBLING_CHIP's hand select (Models.Relics/GamblingChip.cs AfterPlayerTurnStart) runs in Start in
+    // both, after SetPhaseForAllPlayers(Start) (Combat/CombatManager.cs:5293) and before AutoPrePlay / Play (:3902, :3914).
     public static string Phase(CombatState cs)
     {
         if (cs.CurrentSide != CombatSide.Player)
         {
-            return DeterministicHash.SnakeCase(cs.CurrentSide.ToString());
+            return DeterministicHash.SnakeCase(cs.CurrentSide.ToString()) + "_turn";
         }
-        var phase = cs.Player.Phase;
-        return phase == PlayerTurnPhase.Play
-            ? ProjectionJson.PhasePlayerPlay
-            : "player_" + DeterministicHash.SnakeCase(phase.ToString());
+        return cs.Player.Phase == PlayerTurnPhase.Play ? ProjectionJson.PhasePlayerPlay : ProjectionJson.PhasePlayerNotPlay;
     }
 
     public static CardCost CostOf(CombatState cs, CardInstance card)

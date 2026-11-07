@@ -7,6 +7,10 @@
 > **NOTE (2026-11-01):** re-verified against **v0.111.0** (commit `41cef1ea`) for recorder v0.3.0,
 > which adds the passive native anchors R1–R5, R7, R11 — see the "**v0.111.0 drift addendum**"
 > at the very bottom (it wins over both earlier sections).
+>
+> **NOTE (2026-11-02):** recorder v0.4.0 adds decision capture (R6) — see the
+> "**Appendix: decision-capture hooks (recorder v0.4.0)**" after the v0.111.0 addendum. Those
+> `decision:`-prefixed hooks are checked by `scripts/RecorderContractCheck`, not by `hook_drift.py`.
 
 Definitive hook map for the Sts2Recorder mod. Every entry below was proposed by a
 static-analysis pass over the decompiled tree and then **adversarially re-verified against the
@@ -565,7 +569,7 @@ synchronization) and **class → interface** (`CombatState` → `ICombatState`).
 
 | Target | Drift | Recorder response |
 |---|---|---|
-| `ChecksumTracker.ChecksumGenerated` | NEW gate `IsEnabled` (public setter, :60): `GenerateChecksum` returns default and fires NOTHING when disabled (:89-92). `RunManager.InitializeShared` enables ONLY for Host/Client/Replay (:391-399) — **"fires in SP too" is no longer true by default**. | `EventTap.OnRunStarted` sets `tracker.IsEnabled = true` per run (SP-only recording) to restore the v0.99.1-vanilla SP integrity stream. Call sites still execute unconditionally; observation-side only. |
+| `ChecksumTracker.ChecksumGenerated` | NEW gate `IsEnabled` (public setter, :60): `GenerateChecksum` returns default and fires NOTHING when disabled (:89-92). `RunManager.InitializeShared` enables ONLY for Host/Client/Replay (:391-399) — **"fires in SP too" is no longer true by default**. | Config-gated (`sp_checksum_enabled`, default **off**): when set, `EventTap.OnRunStarted` sets `tracker.IsEnabled = true` per run (SP-only recording) to restore the v0.99.1-vanilla SP integrity stream. Off by default because re-enabling makes the game hash its full combat state at every checksum call site (per action/turn) on the main thread — measured stutter contributor. The `ChecksumGenerated` subscription stays unconditional (it records whatever the game generates). Call sites still execute unconditionally; observation-side only. The effective setting is in each part's `recorder_config` event. |
 | `CombatHistory.Add` | Only appends (and fires `Changed`) when `combatState.IsLiveCombat()` (CombatHistory.cs:123-130); entries from simulated/scratch states silently dropped. All 17 logger methods take `ICombatState`; `CardGenerated` logger now `(ICombatState, CardModel, Player? creator)`. | None — live human combat unaffected; `Clear()` still fires `Changed`; flush-before-`CombatEnded` guidance still valid (Clear at CombatManager.cs:918/:989). |
 | `UsePotionAction` | Invalid potion/target now **self-Cancels** instead of throwing (new `IsValidTarget` gate; CancelAction :136) — `BeforeCancelled` fires in more situations. UI callback renamed `OnPotionUseCanceled` → `OnPotionUseOrDiscardCanceled` (NPotionContainer). | Already handled — ActionPipeline finalizes via `BeforeExecuted`/`BeforeCancelled` for every action. |
 | `DiscardPotionGameAction` | NEW `CancelAction()` override (:74) — discards are now cancellable like uses (null-slot discard cancels instead of throwing). | Same — `BeforeCancelled` is already a normal terminal for both potion action types. |
@@ -788,7 +792,7 @@ private `CombatHistoryEntry.RoundNumber`/`CurrentSide` (`Combat.History/CombatHi
 
 | Member | v0.107.1 | v0.111.0 | Effect on the recorder |
 |---|---|---|---|
-| `ChecksumTracker.IsEnabled` default | enabled only for Host/Client/Replay (v107 `Runs/RunManager.cs:389-399`) | `IsEnabled = !TestMode.IsOn` (`Runs/RunManager.cs:3781`): singleplayer checksums are on by default | `EventTap` still sets `IsEnabled = true` per run; now a no-op. The v0.111.0 corpus nevertheless holds no `checksum` events (open question below). |
+| `ChecksumTracker.IsEnabled` default | enabled only for Host/Client/Replay (v107 `Runs/RunManager.cs:389-399`) | `IsEnabled = !TestMode.IsOn` (`Runs/RunManager.cs:3781`): singleplayer checksums are on by default | `EventTap` forces `IsEnabled = true` only with `sp_checksum_enabled` (default off, see the v0.107.1 table); on v0.111.0 that is a no-op either way, and the unconditional subscription records the game's own SP checksums. The `sp_checksum_enabled` gate therefore saves no game-side hashing on v0.111.0. The v0.111.0 corpus nevertheless holds no `checksum` events (open question below). |
 | `NTreasureRoom._chestButton` type | `NButton` (v107 :169) | `NTreasureButton` (:440), `NTreasureButton : NButton` (`Nodes.TreasureRooms/NTreasureButton.cs:15`) | none: the state builder casts to `NClickableControl`. |
 | `CombatManager.SetReadyToEndTurn` internals | `PlayersReadyToEndTurn` set on the manager | per-turn `CombatTurnState` with `ReadyLock` (:6817-6834) | none: the dedupe still precedes the `PlayerEndedTurn` invoke. |
 
@@ -825,8 +829,9 @@ convention: states use `Id.Entry`, actions/events the full `CATEGORY.ENTRY`.
 | R7 | observation | state builder relics | the game's prebuilt `[SavedProperty]` list `ModelIdSerializationCache.GetJsonPropertiesForType` (`Multiplayer.Serialization/ModelIdSerializationCache.cs:406-419`, pure lookup) and the type dispatch of `SavedProperties.FromInternal` (`Saves.Runs/SavedProperties.cs:63-203`). `SavedProperties.From` is deliberately not called: its default check instantiates models into a game-side cache (`Saves.Runs/SerializationConditionExtensions.cs:23-51`) | `player.relics[].props: {ints\|bools\|strings\|int_arrays\|model_ids\|cards\|card_arrays: [{name, value}]}` — the save's `props` shape, but default values are kept |
 | R11 | privileged | `OnRunStarted`, once per session part | `SaveManager.Progress` (`Saves/SaveManager.cs:999`): `DiscoveredActs` (`Saves/ProgressState.cs:88`), `WongoPoints` (:151), `TestSubjectKills` (:178), `Wins`/`Losses` (:197/:199), `NumberOfRuns` (:225), `GetStatsForCharacter` (:458). Read by `Models/ActModel.cs:487`, `Runs/RunManager.cs:4241`, `Models.Events/WelcomeToWongos.cs:419,634`, `Models.Events/TheArchitect.cs:1044-1045`, `Models.Monsters/TestSubject.cs:1119`; changed only at run end (`Saves.Managers/ProgressSaveManager.cs:217-262`), so every part sees the run-start values | event `unlock_profile` |
 
-Not in this release (other R items of `docs/sim-port/design-diff-gate.md` §4.3): R6 choice
-identity, R8 settled post-action snapshot, R9 RNG counters, R10 Crystal Sphere clicks.
+Not in this release (other R items of `docs/sim-port/design-diff-gate.md` §4.3): R8 settled
+post-action snapshot, R9 RNG counters, R10 Crystal Sphere clicks. R6 choice identity is **done in
+recorder v0.4.0** — see the decision-capture appendix at the bottom.
 
 ### Formats
 
@@ -871,3 +876,75 @@ session to check that `native/saves/`, `native/replays/` and the new events appe
   reading does not explain the gap; check after the next install whether `checksum` events appear.
 - `run_saved.floor` and `anchor_kind` are derived as above; the exporter's anchor index (X2) should
   cross-check them against the save's own `map_point_history` and `visited_map_coords`.
+
+## Appendix: decision-capture hooks (recorder v0.4.0)
+
+R6 of `docs/sim-port/design-diff-gate.md` §4.3, ported from the October 2026 archive
+(`archive/oct-2026-recorder-decision-capture-and-training`, 7665421) onto recorder 0.3.1. Contract
+and field list: `docs/design.md` (actions.jsonl, "Decision capture") and
+`docs/recorder-decision-capture-2026-10-16.md`. All hooks are passive: they read UI/model state
+and build a snapshot; none selects, rerolls or regenerates candidates.
+
+**Status: R6 done** — every pick links to the full candidate list of a pinned pre-choice snapshot
+(`state_seq`), candidates carry the game's synchronized `choice_index`, and card picks carry
+`card_instances` (`id` + recorder-local `instance_id`, matching the candidates' `instance_id`).
+Not covered by this release: the `PopModel` half of R6 (`context_model` is still the last
+`PlayerChoiceContext.PushModel`, not the top of the stack), and grid/hand candidates carry
+`is_upgraded` but not `upgrade_level` / `enchantment` (card-reward candidates and the deck do).
+
+### `decision:` hooks (`mod/src/DecisionHooks.cs`, `GetPatchPlan()`)
+
+Hook ids are `decision:<Type>.<Method>` (built at runtime, so `hook_drift.py`, which matches only
+literal `patch:` / `event:` / `fieldref:` ids, does not see them). A failed patch degrades that
+hook only, like every other patch.
+
+| Target | Patch | Role |
+|---|---|---|
+| `PlayerChoiceSynchronizer.ReserveChoiceId` | postfix | reserve the local player's choice id |
+| `NCardRewardSelectionScreen.OptionSelected`, `NCardGridSelectionScreen.CardsSelected`, `NChooseACardSelectionScreen.CardsSelected`, `NChooseARelicSelection.RelicsSelected`, `NChooseABundleSelectionScreen.CardsSelected` | prefix | bind the screen to the reserved id, `decision:opened` capture |
+| `NPlayerHand.SelectCards` | postfix (first await) | same, for in-combat hand selection |
+| `NCardRewardSelectionScreen.SelectCard` / `OnAlternateRewardSelected`, `NChooseACardSelectionScreen.SelectHolder` / `OnSkipButtonReleased`, `NChooseARelicSelection.SelectHolder` / `OnSkipButtonReleased` | prefix + finalizer | `decision:before_input` capture |
+| `OnCardClicked` and the completion methods of `NDeckUpgradeSelectScreen`, `NDeckTransformSelectScreen`, `NDeckCardSelectScreen`, `NDeckEnchantSelectScreen` (`ConfirmSelection`, `CloseSelection`, `CancelSelection`, `CheckIfSelectionComplete` / `CompleteSelection`), `NSimpleCardSelectScreen` and `NCombatPileCardSelectScreen` (`CheckIfSelectionComplete`, `CompleteSelection`); `NChooseABundleSelectionScreen.OnBundleClicked` / `CancelSelection` / `ConfirmSelection`; `NPlayerHand.SelectCardInSimpleMode` / `SelectCardInUpgradeMode` / `DeselectCard` / `OnSelectModeConfirmButtonPressed` / `CheckIfSelectionComplete` | prefix + postfix + finalizer | `decision:before_input` before the input (nested inputs on the same binding reuse it), `decision:updated` after |
+| `NCardRewardSelectionScreen.RefreshOptions`, `NEventRoom.SetOptions`, `NMapScreen.Open`, `NMapScreen.RefreshAllPointVisuals` (open map only), `NCombatPileCardSelectScreen.UpdatePileContents` (bound only) | postfix | `decision:updated` observation |
+
+Explicit completion-method lists are deliberate: a renamed method must show up as a degraded hook,
+not silently vanish from a reflection scan.
+
+### Captures added to existing hooks (`HumanFunnels`, `ActionPipeline`)
+
+- `patch:MerchantEntry.OnTryPurchaseWrapper` and `patch:MerchantCardRemovalEntry.OnTryPurchaseWrapper`
+  gain a prefix (`MerchantPurchasePrefix`) that captures the shop and hands item/cost/capture to the
+  postfix through Harmony `__state`; `patch:Reward.SelectUnsynchronized` gains `RewardSelectPrefix`
+  (reuses the `SelectLocalReward` capture). `patch:NEventRoom.OptionButtonClicked` and
+  `patch:NMapScreen.OnMapPointSelectedLocally` now bind `__instance` (both instance methods,
+  `Nodes/Rooms/NEventRoom.cs:297`, `Nodes/Screens/Map/NMapScreen.cs:915` in the v0.107.1 tree).
+- New subscription `RestSiteSynchronizer.BeforePlayerOptionChosen` (`Action<RestSiteOption, ulong>`,
+  `Multiplayer.Game/RestSiteSynchronizer.cs:52`), made and degraded together with the existing
+  `event:RestSiteSynchronizer.AfterPlayerOptionChosen`.
+- Human scopes (`ActionPipeline.BeginHumanScope`) capture before the input. Card play, end turn and
+  in-combat potion use/discard only do so when `decision_capture_combat_inputs` is on (default off).
+
+### Candidate fields read by reflection
+
+`NCardRewardSelectionScreen._options` / `_extraOptions`, `NChooseACardSelectionScreen._cards`,
+`NChooseABundleSelectionScreen._bundles`, `NChooseARelicSelection._relics`, `_cards` / `_prefs` /
+`_selectedCards` of the four `NDeck*SelectScreen`s and `NSimpleCardSelectScreen`,
+`NCombatPileCardSelectScreen._grid` / `_prefs` / `_selectedCards` with `NCardGrid._cards` (the grid's
+publicly sorted full list; the draw pile's private order is never read), `NPlayerHand._prefs` /
+`_selectedCards`. Reads go through `Core/FieldReaders` (cached `FieldInfo`, values read afresh).
+
+### Checking after a game update
+
+```bash
+dotnet build mod/Sts2Recorder.csproj -c Release
+dotnet run --project scripts/RecorderContractCheck -c Release -- \
+  mod/bin/Release/net9.0/Sts2Recorder.dll \
+  "$HOME/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64"
+```
+
+Read-only: it loads the built mod and the game assemblies by reflection, resolves every
+`GetPatchPlan()` target to exactly one concrete method, checks each injected parameter
+(`__instance`, `__result`, `__state`, named arguments) against it, checks the three funnel
+`__state` prefix/postfix pairs above, and resolves the candidate fields. It never initializes
+Godot or the game, applies a patch, or touches saves. v0.111.0 (`41cef1ea`), 2026-11-02:
+`PASS: 55 decision-hook targets/signatures and 26 candidate fields resolve.`

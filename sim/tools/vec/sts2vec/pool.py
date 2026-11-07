@@ -11,6 +11,10 @@ created with:
 At run time ``env.pool.add_fresh(...)`` / ``env.pool.add_save(path)`` append more, and ``env.snapshot(slot)`` appends a
 clone of a live slot. Fresh templates are created lazily on first use (``RunSim.NewRun``, ~10–20 ms) and cached up to
 ``config.pool_cache``; every reset clones a template (~15 µs). ``env.pool.warm()`` creates them ahead of time.
+
+``env.pool.release(ids)`` (ABI 2) drops entries for good: ``len(env.pool)`` counts live entries, the start sequence runs
+over the live entries in id order, and a released id is never issued again (reset / restore / release with it raise).
+Without releases the live ids are ``0 .. len-1`` as before. Search loops that branch with ``env.branch`` need no entries.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Union
+
+import numpy as np
 
 if TYPE_CHECKING:
     from .env import VecEnv
@@ -131,13 +137,44 @@ class PoolSpec:
                 for i in range(self.count)]
 
 
+# Macro names of config_json ``macros`` (sim/Sts2Sim.Vec/RoomMacros.cs, rest / shop W3 2026-11-04;
+# sim/Sts2Sim.Vec/PromptMacros.cs, prompt W4 2026-11-04). "all" = every name.
+MACRO_NAMES = ("rest", "shop", "prompt")
+MACRO_ALIASES = {"all": MACRO_NAMES}
+
+
+def parse_macros(macros) -> tuple[str, ...]:
+    """Normalised macro names (``MACRO_NAMES`` order, no duplicates) of ``macros``: None / "" / "none" = (),
+    a comma-separated string ("rest,shop", "all") or an iterable of names. ValueError for an unknown name."""
+    if macros is None:
+        return ()
+    items = macros.split(",") if isinstance(macros, str) else list(macros)
+    names = {str(m).strip().lower() for m in items} - {"", "none", "off"}
+    for alias, members in MACRO_ALIASES.items():
+        if alias in names:
+            names = (names - {alias}) | set(members)
+    bad = sorted(names - set(MACRO_NAMES))
+    if bad:
+        raise ValueError(f"unknown macro(s) {', '.join(bad)} (known: {', '.join(MACRO_NAMES)}, all)")
+    return tuple(m for m in MACRO_NAMES if m in names)
+
+
 def make_config(num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                 seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = None,
-                pool_cache: int = 4096, fast_path: bool = True) -> dict:
+                pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int | None = None,
+                macros=None) -> dict:
     """The ``config_json`` object of ``sts2vec_create`` (§D5); snake_case keys. Values are validated natively (unknown
-    content / num_envs < 1 … make ``sts2vec_create`` fail with the reason)."""
+    content / num_envs < 1 … make ``sts2vec_create`` fail with the reason). ``floor_step_cap=None`` leaves the key out
+    (the library's default, 80; a library built before the key existed rejects it as unknown). ``macros``
+    (``parse_macros``): the room macro candidates to list; the key is written only when some are on, so the default
+    config is the one every earlier build accepts."""
     cfg = {"num_envs": int(num_envs), "threads": int(threads), "step_cap": int(step_cap), "auto_reset": bool(auto_reset),
            "seed_text": str(seed_text), "content": content, "pool_cache": int(pool_cache), "fast_path": bool(fast_path)}
+    if floor_step_cap is not None:
+        cfg["floor_step_cap"] = int(floor_step_cap)
+    m = parse_macros(macros)
+    if m:
+        cfg["macros"] = list(m)
     if pool is not None:
         pool.validate()
         p = pool.to_json()
@@ -146,8 +183,24 @@ def make_config(num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_r
     return cfg
 
 
+def int32_list(values, name: str) -> np.ndarray:
+    """A C-contiguous 1-D int32 copy of ``values`` (an int or a sequence/array of integers) for a pointer argument."""
+    a = np.asarray(values)
+    if a.ndim == 0:
+        a = a.reshape(1)
+    if a.ndim != 1:
+        raise ValueError(f"{name} must be 1-D, got shape {a.shape}")
+    if a.size == 0:
+        return np.zeros(0, dtype=np.int32)
+    if a.dtype.kind not in "iu":
+        raise TypeError(f"{name} must hold integers, got dtype {a.dtype}")
+    if int(a.min()) < -2**31 or int(a.max()) >= 2**31:
+        raise ValueError(f"{name} holds values outside int32")
+    return np.ascontiguousarray(a, dtype=np.int32)
+
+
 class Pool:
-    """``env.pool``: the env's start entries (ids ``0 .. len-1`` in insertion order)."""
+    """``env.pool``: the env's start entries (ids in insertion order; released ids are gone for good)."""
 
     def __init__(self, env: "VecEnv"):
         self._env = env
@@ -195,7 +248,23 @@ class Pool:
         fn = env._lib.require("sts2vec_pool_warm")
         return env._check(fn(h, -1 if max_entries is None else int(max_entries)), "pool_warm")
 
+    def release(self, ids) -> int:
+        """Release pool entries (``sts2vec_pool_release``, ABI 2); returns how many were released.
+
+        ``ids`` is an entry id or a sequence of them. All or nothing: an id that is not live (never issued, or released
+        already) or listed twice raises ``Sts2VecError`` and releases nothing. A released entry's template is dropped (a
+        snapshot's RunSim, ~20-90 KB, becomes garbage; a cached fresh template frees its ``pool_cache`` slot), ``len(pool)`` and the
+        start sequence no longer include it, and its id is never reused: ``reset`` / ``restore`` / ``restore_many`` /
+        ``release`` with it raise. Slots that started from it keep running. Use it to keep a search's snapshot /
+        ``clone_determinized`` entries bounded; ``env.branch`` needs no entries at all."""
+        env = self._env
+        h = env._live_handle()
+        fn = env._lib.require("sts2vec_pool_release")
+        a = int32_list(ids, "ids")
+        return env._check(fn(h, a.ctypes.data if len(a) else None, len(a)), "pool_release")
+
     def __len__(self) -> int:
+        """Number of live entries (released entries are not counted)."""
         env = self._env
         return env._check(env._lib.sts2vec_pool_count(env._live_handle()), "pool_count")
 

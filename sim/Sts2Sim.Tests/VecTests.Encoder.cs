@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Sts2Sim.Core;
+using Sts2Sim.Core.Registry;
 using Sts2Sim.Core.Run;
 using Sts2Sim.Server;
 using Sts2Sim.Vec;
@@ -11,7 +12,7 @@ namespace Sts2Sim.Tests;
 /// Player-view observation encoder tests (CONTRACTS.md §D7 T2/T3, owner V1): purity, the draw-order leak test, parity
 /// with the play server's observation, no move ids, hidden treasure / card-reward contents, table capacities.
 /// </summary>
-public static class VecEncoderTests
+public static partial class VecEncoderTests
 {
     private static readonly string[] Characters = { "IRONCLAD", "SILENT", "DEFECT", "REGENT", "NECROBINDER" };
 
@@ -159,6 +160,24 @@ public static class VecEncoderTests
         Col(Buf.Shop, 7, 1);
         Col(Buf.Rest, 2, 0);
         Col(Buf.EventOptions, 6, 5);
+        int pw = Schema.PileCardFields.Length;
+        foreach (int k in new[] { Buf.DrawMarked, Buf.DiscardOrder, Buf.ExhaustOrder })
+        {
+            Col(k, pw, PileCol.CardId);
+            Col(k, pw, PileCol.EnchantId);
+            Col(k, pw, PileCol.AfflictionId);
+        }
+        int ew = Schema.EventOptionValueFields.Length;
+        var ev = nb.All<int>(Buf.EventOptionValues);
+        for (int r = 0; r < Caps.EventOptions; r++)
+        {
+            for (int k = 0; k < Caps.EventItems; k++)
+            {
+                int c = r * ew + EvValCol.ItemKind0 + k * EvValCol.ItemStride;
+                n += ev[c] == VocabList.Unknown || (ev[c] != 0 && ev[c + 1] <= VocabList.Unknown) ? 1 : 0;
+            }
+        }
+        n += nb.All<int>(Buf.GlobalX)[GX.AncientId] == VocabList.Unknown ? 1 : 0;
         var gi = nb.All<int>(Buf.GlobalI);
         foreach (int c in new[] { GI.Character, GI.ActId, GI.BossId, GI.SecondBossId, GI.EventId, GI.TreasureRelicId })
         {
@@ -179,6 +198,7 @@ public static class VecEncoderTests
         using var nb = new NativeBuffers(1);
         using var nb2 = new NativeBuffers(1);
         int tested = 0;
+        int markedTested = 0;
         int visits = 0;
         Playouts(80, 1200, 23, heal: true, sim =>
         {
@@ -203,10 +223,40 @@ public static class VecEncoderTests
             Assert.Equal(st, st2);
             Assert.Null(FirstDifference(nb, nb2), "the observation must not depend on the draw-pile order (H1)");
             tested++;
+            // The same with marked draw cards (draw_marked lists them sorted by content, never in pile order).
+            var marked = sim.Clone();
+            var pile = marked.State.Combat!.Player.DrawPile.Cards;
+            var a = pile[visits % pile.Count];
+            var b = pile[(visits + 1) % pile.Count];
+            if (a.Enchantment == null)
+            {
+                a.EnchantInternal(EnchantmentRegistry.Create(EnchantmentRegistry.AllIds[visits % EnchantmentRegistry.AllIds.Count]), 1 + visits % 3);
+            }
+            if (b.Affliction == null)
+            {
+                b.AfflictInternal(AfflictionRegistry.Create(AfflictionRegistry.AllIds[visits % AfflictionRegistry.AllIds.Count]), 1 + visits % 2);
+            }
+            var markedShuffled = marked.Clone();
+            var mc = markedShuffled.State.Combat!.Player.DrawPile.MutableCards;
+            for (int i = mc.Count - 1; i > 0; i--)
+            {
+                int j = shuffle.Next(i + 1);
+                (mc[i], mc[j]) = (mc[j], mc[i]);
+            }
+            if (markedShuffled.StateHash() != marked.StateHash())
+            {
+                EncodeInto(marked, nb, out st);
+                EncodeInto(markedShuffled, nb2, out st2);
+                Assert.Equal(st, st2);
+                Assert.Null(FirstDifference(nb, nb2), "draw_marked must not depend on the draw-pile order (H1)");
+                Assert.True(nb.All<int>(Buf.GlobalX)[GX.DrawMarkedN] >= 1, "the marked cards are listed");
+                markedTested++;
+            }
             return tested < 600;
         });
-        Console.WriteLine($"     leak test: {tested} combat decision points with a reshuffled draw pile, identical observations");
+        Console.WriteLine($"     leak test: {tested} combat decision points with a reshuffled draw pile ({markedTested} also with marked draw cards), identical observations");
         Assert.True(tested >= 500, $"only {tested} reshuffled combat states");
+        Assert.True(markedTested >= 400, $"only {markedTested} reshuffled states with marked draw cards");
     }
 
     public static void Test_VecEncoder_ParityWithServer()
@@ -235,6 +285,7 @@ public static class VecEncoderTests
             Assert.Equal(player["max_energy"]!.GetValue<int>(), gi[GI.MaxEnergy], where + " max_energy");
             Assert.Equal(obs["floor"]!.GetValue<int>(), gi[GI.TotalFloor], where + " floor");
             Assert.Equal(obs["act"]!.GetValue<int>(), gi[GI.ActIndex] + 1, where + " act");
+            Assert.Equal(Vocab.Event(obs["ancient"]?["id"]?.GetValue<string>()), nb.All<int>(Buf.GlobalX)[GX.AncientId], where + " ancient");
             var combatNode = obs["combat"];
             Assert.Equal(combatNode != null ? 1 : 0, gi[GI.IsCombat], where + " is_combat");
             if (combatNode != null)
@@ -316,6 +367,9 @@ public static class VecEncoderTests
                 Assert.Equal(expected, actual, where + $" hand {i} cost");
             }
             Assert.Equal(c["playable"]!.GetValue<bool>(), row[HC.Playable] == 1, where + $" hand {i} playable");
+            var hx = nb.All<int>(Buf.HandX).Slice(i * Schema.HandXFields.Length, Schema.HandXFields.Length);
+            Assert.Equal(c["affliction"]?["amount"]?.GetValue<int>() ?? 0, hx[HX.AfflictionAmount], where + $" hand {i} affliction amount");
+            Assert.Equal(c["dampened"]!.GetValue<bool>(), hx[HX.Dampened] == 1, where + $" hand {i} dampened");
             var dmg = handDmg.Slice(i * Caps.Enemies, Caps.Enemies);
             var effDamage = c["effective"]?["damage"] as JsonObject;
             foreach (var (uid, j) in slotOfUid)
@@ -434,12 +488,35 @@ public static class VecEncoderTests
                         continue;
                     }
                     EncodeInto(sim, nb, out _);
-                    Assert.True(nb.All<int>(Buf.CardReward).ToArray().All(v => v == 0), "H7: no card-reward cards in the Rewards phase");
-                    Assert.True(nb.All<int>(Buf.CardRewardAlts).ToArray().All(v => v == 0), "H7: no card-reward alternatives in the Rewards phase");
+                    Assert.True(nb.All<int>(Buf.CardReward).ToArray().All(v => v == 0), "card_reward is the open card screen only");
+                    Assert.True(nb.All<int>(Buf.CardRewardAlts).ToArray().All(v => v == 0), "card_reward_alts is the open card screen only");
                     var row = nb.All<int>(Buf.Rewards).Slice(i * 4, 4);
                     Assert.Equal((int)RewardType.Card, row[0]);
                     Assert.Equal(1, row[3]);
                     Assert.Equal(0, row[2], "the card reward row names no card");
+                    // H7 since 2026-11-04 (rewards-screen macros): the cards of an unopened card reward are one free click
+                    // away (opening the screen and closing it leaves the reward unclaimed, game Rewards/CardReward.cs:660,
+                    // :738), so reward_choices lists them on the rewards screen (the TakeRewardCard targets)
+                    var rc = nb.All<int>(Buf.RewardChoices);
+                    int rw = Schema.RewardChoiceFields.Length;
+                    var listed = new List<int>();
+                    int rows = 0;
+                    for (int k = 0; k < Caps.RewardChoices; k++)
+                    {
+                        if (rc[k * rw + RcCol.Card] != 0 || rc[k * rw + RcCol.AltId] != 0)
+                        {
+                            rows++;
+                        }
+                        if (rc[k * rw + RcCol.RewardIndex] == i && rc[k * rw + RcCol.AltId] == 0 && rc[k * rw + RcCol.Card] != 0)
+                        {
+                            listed.Add(rc[k * rw + RcCol.Card]);
+                            Assert.Equal(listed.Count - 1, rc[k * rw + RcCol.Option], "reward_choices.option = card index");
+                        }
+                    }
+                    if (rows < Caps.RewardChoices)
+                    {
+                        Assert.SequenceEqual(cardReward.Cards.Select(c => Vocab.Card(c.Card.Id)), listed, "reward_choices lists the unopened card reward's cards");
+                    }
                     rewardsHidden++;
                     var claim = sim.Clone();
                     claim.Step(RunAction.Of(RunActionKind.ClaimReward, i));
@@ -448,6 +525,7 @@ public static class VecEncoderTests
                         continue;
                     }
                     EncodeInto(claim, nb, out _);
+                    Assert.True(nb.All<int>(Buf.RewardChoices).ToArray().All(v => v == 0), "no reward_choices while the card screen is open");
                     var open = RunLegalActionGenerator.OpenCardReward(claim.State, claim.Loop)!;
                     var cr = nb.All<int>(Buf.CardReward);
                     for (int c = 0; c < Math.Min(open.Cards.Count, Caps.CardReward); c++)
@@ -477,7 +555,7 @@ public static class VecEncoderTests
             }
             return -1;
         });
-        Console.WriteLine($"     hidden info: treasure closed {treasureClosed} / opened {treasureOpened}; card rewards hidden {rewardsHidden} / shown {cardRewardShown}");
+        Console.WriteLine($"     hidden info: treasure closed {treasureClosed} / opened {treasureOpened}; card rewards on the rewards screen {rewardsHidden} (cards in reward_choices) / opened {cardRewardShown}");
         Assert.True(treasureOpened >= 3, $"only {treasureOpened} treasure chests checked");
         Assert.True(cardRewardShown >= 10, $"only {cardRewardShown} card rewards checked");
     }

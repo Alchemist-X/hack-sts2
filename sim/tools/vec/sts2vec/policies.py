@@ -88,8 +88,12 @@ class HeuristicPolicy:
        d. else any other card (first listed).
        Potions are never used.
     3. EndTurn when listed (combat with nothing to play).
-    4. Card reward: pick the first card (PickRewardCard with the lowest option index).
-    5. Rewards screen: claim the first reward, skipping potion rewards while the belt is full; then ProceedRewards.
+    4. Open card screen (after a REROLL, or a reward that allows more picks): pick the first card (PickRewardCard with
+       the lowest option index).
+    5. Rewards screen: claim the rewards in screen order — a one-click ClaimReward (potion rewards are skipped while the
+       belt is full; the env no longer lists a claim the game would refuse), or for a card reward its first offered card
+       (TakeRewardCard: open the reward and take card 0 in one decision, which is what this rule did in two steps before
+       the rewards-screen macros) — then ProceedRewards.
     6. Map: travel to the first option (lowest column).
     7. Rest site: HEAL when hp < 50 % of max (else SMITH; else the first option); LeaveRestSite when nothing is left.
     8. Treasure: OpenChest, then TakeTreasureRelic.
@@ -115,6 +119,7 @@ class HeuristicPolicy:
         ct = s.vocab.enums["CardType"]
         self.ATTACK, self.SKILL, self.POWER = ct.index_of("Attack"), ct.index_of("Skill"), ct.index_of("Power")
         self.POTION_REWARD = s.vocab.enums["RewardType"].index_of("Potion")
+        self.TAKE_CARD = self.K.get("TakeRewardCard", -999)          # rewards-screen macro kind (libraries since 2026-11-04)
         ro = s.vocab.enums["RestOption"]
         self.HEAL, self.SMITH = ro.lookup.get("HEAL", -99), ro.lookup.get("SMITH", -99)
         self._bound = s
@@ -156,12 +161,15 @@ class HeuristicPolicy:
         j = first("PickRewardCard")
         if j is not None:
             return j
-        # 5. rewards screen
-        claims = np.flatnonzero(kinds == K["ClaimReward"])
+        # 5. rewards screen: claims in screen order (a card reward's TakeRewardCard rows sit where its ClaimReward was,
+        #    card 0 first, so the first claim row of a card reward takes its first card)
+        claims = np.flatnonzero((kinds == K["ClaimReward"]) | (kinds == self.TAKE_CARD))
         if len(claims):
             pots = obs["potions"][i]
             belt_full = int(np.count_nonzero(pots[:, self.P.potion_id])) >= int(obs["global_i"][i, self.G.potion_slots])
             for j in claims:
+                if kinds[j] == self.TAKE_CARD:
+                    return int(j)
                 r = int(cand[j, C.option_index])
                 if belt_full and 0 <= r < obs["rewards"].shape[1] and \
                         int(obs["rewards"][i, r, self.R.reward_type]) == self.POTION_REWARD:

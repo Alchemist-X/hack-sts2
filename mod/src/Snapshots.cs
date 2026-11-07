@@ -19,25 +19,49 @@ namespace Sts2Recorder.Game;
 /// drops empty-state callbacks. Post-action snapshots are deferred one frame
 /// via the ProcessFrame pump so state_after exists for canonical alignment.
 /// All snapshots go through PassiveStateBuilder.TryBuildSnapshot + RecordState
-/// (hash-deduped by the session, so redundant triggers are cheap).
+/// (dedup saves serialization/I/O, but building a redundant state still costs CPU).
 ///
 /// Throttle (docs/design.md, "Snapshot throttling"): StateTracker bursts are
 /// trailing-coalesced through a Core SnapshotThrottle with window
 /// snapshot_min_interval_ms (config, default 150 ms) — a request inside the
 /// window is never dropped, it defers ONE trailing snapshot via the
-/// main-thread pump. Unconditional triggers (RunStarted header, CombatSetUp,
-/// Turn/CombatEnded/Won, RoomEntered/Exited, post-action deferred) bypass the
-/// throttle by calling TakeSnapshot directly.
+/// main-thread pump.
+///
+/// Burst coalescing: phase triggers (CombatSetUp, Turn boundaries,
+/// RoomEntered/Exited) and the post-action deferred snapshot go through a
+/// second, SHORT trailing-coalesce window (burst_min_interval_ms, default
+/// 100 ms) — adjacent triggers (TurnEnded+TurnStarted, rapid card plays) merge
+/// into one trailing build instead of paying a full main-thread state build
+/// each. The includeDeck request of CombatSetUp survives coalescing (OR-ed over
+/// every request merged into the pending snapshot). Truly terminal triggers
+/// (RunStarted header, CombatEnded/Won, run end) still bypass everything and
+/// build immediately: their snapshot must exist before Complete()/teardown can
+/// run.
 /// </summary>
 public static class Snapshots
 {
     private static bool _staticSubscribed;
     private static bool _deferredPending;
+    // Label for the pending coalesced snapshot: the LATEST deferring/coalescing
+    // requester wins, because the merged trailing snapshot represents the
+    // settled state after the last trigger (e.g. "action" when a card play
+    // folded into a pending phase trailing).
+    private static string _burstTrigger = "phase";
+    // includeDeck for the pending coalesced snapshot: OR over every request
+    // merged into it (CombatSetUp asks for the master deck; a later TurnStarted
+    // folded into the same trailing must not drop it). Consumed when the
+    // coalesced snapshot is taken; cleared on cancel. Main-thread only.
+    private static bool _burstIncludeDeck;
     private static SnapshotThrottle? _throttle;
+    private static SnapshotThrottle? _burstThrottle;
 
     private static SnapshotThrottle Throttle =>
         _throttle ??= new SnapshotThrottle(
             SystemClock.Instance, RecorderMod.SnapshotMinIntervalMs);
+
+    private static SnapshotThrottle BurstThrottle =>
+        _burstThrottle ??= new SnapshotThrottle(
+            SystemClock.Instance, RecorderMod.BurstMinIntervalMs);
 
     /// <summary>
     /// RunManager.Instance and CombatManager.Instance are eager static
@@ -61,11 +85,11 @@ public static class Snapshots
                 () => CombatManager.Instance.StateTracker.CombatStateChanged += OnCombatStateChanged);
         }
         RecorderMod.TrySubscribe("event:CombatManager.CombatSetUp",
-            () => CombatManager.Instance.CombatSetUp += _ => TakeSnapshot("phase", includeDeck: true));
+            () => CombatManager.Instance.CombatSetUp += _ => RequestCoalescedSnapshot("phase", includeDeck: true));
         RecorderMod.TrySubscribe("event:CombatManager.TurnStarted",
-            () => CombatManager.Instance.TurnStarted += _ => TakeSnapshot("phase"));
+            () => CombatManager.Instance.TurnStarted += _ => RequestCoalescedSnapshot("phase"));
         RecorderMod.TrySubscribe("event:CombatManager.TurnEnded",
-            () => CombatManager.Instance.TurnEnded += _ => TakeSnapshot("phase"));
+            () => CombatManager.Instance.TurnEnded += _ => RequestCoalescedSnapshot("phase"));
         // Unconditional end-of-combat snapshots: the StateTracker drops snapshots
         // when creatures are empty, and CombatEnded is the only signal on losses.
         RecorderMod.TrySubscribe("event:CombatManager.CombatEnded",
@@ -81,14 +105,37 @@ public static class Snapshots
     }
 
     /// <summary>
-    /// Builds and records one snapshot now, bypassing the throttle (but still
-    /// resetting its window). Never throws into game code; a builder failure
-    /// is reported and the snapshot skipped. The builder is timed and reported
-    /// into the session's perf counters (manifest "perf.snapshot_build_ms").
+    /// Builds and records one snapshot now, bypassing the throttles (but still
+    /// resetting both windows). Never throws into game code; a builder failure
+    /// is reported and the snapshot skipped. The whole main-thread cost — state
+    /// build plus the session's canonical hash and envelope serialization — is
+    /// timed and reported into the session's perf counters (manifest
+    /// "perf.snapshot_build_ms").
     /// <paramref name="includeDeck"/> adds the master deck to an in-combat
     /// snapshot (combat setup); non-combat snapshots always carry it.
     /// </summary>
     public static void TakeSnapshot(string trigger, bool includeDeck = false)
+    {
+        CaptureSnapshot(trigger, includeDeck);
+    }
+
+    /// <summary>
+    /// Decision capture (recorder 0.4.0): builds the pre-choice snapshot NOW,
+    /// synchronously, bypassing both throttle windows and the burst coalescing,
+    /// and pins its seq to the decision — the action must reference this exact
+    /// observation, never a later trailing one. <paramref name="screen"/> is the
+    /// UI owner of the choice (null = whatever the builder sees on top). Returns
+    /// null without a session; a failed build yields StateSeq 0, which the
+    /// action records as <c>_decision.status: "missing"</c>.
+    /// </summary>
+    internal static DecisionCapture? CaptureDecision(object? screen, string stage = "before_input")
+    {
+        var session = RecorderMod.Session;
+        if (session == null) return null;
+        return new DecisionCapture(session, CaptureSnapshot("decision:" + stage, includeDeck: false, screen), stage);
+    }
+
+    private static long CaptureSnapshot(string trigger, bool includeDeck, object? decisionScreen = null)
     {
         try
         {
@@ -96,17 +143,24 @@ public static class Snapshots
             var runState = RecorderMod.CurrentRunState;
             if (session == null || runState == null)
             {
-                return;
+                return 0;
             }
             var stopwatch = Stopwatch.StartNew();
-            PassiveStateBuilder.TryBuildSnapshot(runState, includeDeck, out var screen, out var state);
+            bool built = PassiveStateBuilder.TryBuildSnapshot(
+                runState, includeDeck, out var screen, out var state, decisionScreen);
+            long seq = session.RecordState(trigger, screen, state);
             stopwatch.Stop();
-            session.RecordState(trigger, screen, state, stopwatch.Elapsed.TotalMilliseconds);
+            session.RecordSnapshotCost(stopwatch.Elapsed.TotalMilliseconds, trigger);
+            // Any snapshot resets BOTH windows, so a poll or phase trigger right
+            // after a forced snapshot coalesces instead of building again.
             Throttle.NoteSnapshotTaken();
+            BurstThrottle.NoteSnapshotTaken();
+            return built ? seq : 0;
         }
         catch (Exception ex)
         {
             RecorderMod.Report($"Snapshots.TakeSnapshot:{trigger}", ex);
+            return 0;
         }
     }
 
@@ -126,7 +180,7 @@ public static class Snapshots
                     TakeSnapshot(trigger);
                     break;
                 case SnapshotRequestOutcome.Deferred:
-                    ScheduleTrailingSnapshot(trigger);
+                    ScheduleTrailingSnapshot(Throttle, static () => ("poll", false));
                     break;
                 case SnapshotRequestOutcome.Coalesced:
                     break;
@@ -138,27 +192,122 @@ public static class Snapshots
         }
     }
 
-    private static void ScheduleTrailingSnapshot(string trigger)
+    /// <summary>
+    /// Burst-coalesced snapshot entry point for non-terminal phase triggers.
+    /// Same trailing-coalesce contract as <see cref="RequestThrottledSnapshot"/>
+    /// but over the short burst window, so adjacent phase events (TurnEnded +
+    /// TurnStarted) cost one state build instead of one each. The final state of
+    /// a burst is never lost — only intermediate states inside the window merge.
+    /// <paramref name="includeDeck"/> is OR-ed into the pending snapshot, so a
+    /// coalesced CombatSetUp still records the master deck.
+    /// </summary>
+    internal static void RequestCoalescedSnapshot(string trigger, bool includeDeck = false)
+    {
+        try
+        {
+            _burstTrigger = trigger;
+            _burstIncludeDeck |= includeDeck;
+            switch (BurstThrottle.Request())
+            {
+                case SnapshotRequestOutcome.TakeNow:
+                {
+                    var (takeTrigger, takeDeck) = ConsumeBurstRequest();
+                    TakeSnapshot(takeTrigger, takeDeck);
+                    break;
+                }
+                case SnapshotRequestOutcome.Deferred:
+                    // Trigger + includeDeck resolved at release time (latest
+                    // requester's label, OR of every merged includeDeck).
+                    ScheduleTrailingSnapshot(BurstThrottle, static () => ConsumeBurstRequest());
+                    break;
+                case SnapshotRequestOutcome.Coalesced:
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report($"Snapshots.RequestCoalescedSnapshot:{trigger}", ex);
+        }
+    }
+
+    /// <summary>Reads and resets the pending coalesced snapshot's label + includeDeck.</summary>
+    private static (string Trigger, bool IncludeDeck) ConsumeBurstRequest()
+    {
+        var includeDeck = _burstIncludeDeck;
+        _burstIncludeDeck = false;
+        return (_burstTrigger, includeDeck);
+    }
+
+    /// <summary>
+    /// Session teardown hook, called from RunLifecycle BEFORE the session is
+    /// detached. A trailing snapshot still pending in either window (or the
+    /// one-frame action defer) would otherwise be lost on save-and-quit — no
+    /// terminal fires on that path — so its final state is captured now,
+    /// bypassing the windows. Cancelling first also stops the orphaned pump
+    /// callbacks from building against the next run's session.
+    /// </summary>
+    internal static void FlushPendingSnapshot()
+    {
+        try
+        {
+            var pollPending = Throttle.CancelTrailing();
+            var burstTrailing = BurstThrottle.CancelTrailing();
+            var actionDeferred = _deferredPending;
+            _deferredPending = false;
+            var (burstTrigger, burstDeck) = ConsumeBurstRequest();
+            var session = RecorderMod.Session;
+            if ((pollPending || burstTrailing || actionDeferred) && session is { IsCompleted: false })
+            {
+                // Label by which window was actually pending: a pure poll
+                // trailing must not inherit the stale burst trigger, and a
+                // one-frame action defer that never reached the burst window
+                // is an "action" snapshot.
+                var trigger = burstTrailing ? burstTrigger : actionDeferred ? "action" : "poll";
+                TakeSnapshot(trigger, includeDeck: burstTrailing && burstDeck);
+            }
+        }
+        catch (Exception ex)
+        {
+            RecorderMod.Report("Snapshots.FlushPendingSnapshot", ex);
+        }
+    }
+
+    /// <summary>
+    /// Cancels pending trailing work without building — for the terminal path,
+    /// where the forced run-end snapshot that follows captures the final state.
+    /// </summary>
+    internal static void CancelPendingSnapshots()
+    {
+        Throttle.CancelTrailing();
+        BurstThrottle.CancelTrailing();
+        _burstIncludeDeck = false;
+        _deferredPending = false;
+    }
+
+    private static void ScheduleTrailingSnapshot(
+        SnapshotThrottle throttle, Func<(string Trigger, bool IncludeDeck)> release)
     {
         RecorderMod.RunOnMainThread(() =>
         {
-            if (Throttle.TryReleaseTrailing())
+            if (throttle.TryReleaseTrailing())
             {
-                TakeSnapshot(trigger);
+                var (trigger, includeDeck) = release();
+                TakeSnapshot(trigger, includeDeck);
             }
-            else if (Throttle.TrailingPending)
+            else if (throttle.TrailingPending)
             {
                 // Still inside the window: re-defer one more frame. If the
                 // session ends meanwhile, TakeSnapshot no-ops harmlessly once
                 // the window finally expires.
-                ScheduleTrailingSnapshot(trigger);
+                ScheduleTrailingSnapshot(throttle, release);
             }
         });
     }
 
     /// <summary>
-    /// Post-action snapshot one frame later (coalesced per frame) so the
-    /// action's effects are visible in the recorded state.
+    /// Post-action snapshot one frame later (coalesced per frame, then through
+    /// the burst window) so the action's effects are visible in the recorded
+    /// state and rapid action sequences merge into one build.
     /// </summary>
     public static void RequestDeferredSnapshot()
     {
@@ -170,7 +319,7 @@ public static class Snapshots
         RecorderMod.RunOnMainThread(() =>
         {
             _deferredPending = false;
-            TakeSnapshot("action");
+            RequestCoalescedSnapshot("action");
         });
     }
 
@@ -195,7 +344,7 @@ public static class Snapshots
                     ["floor"] = JsonDescribe.Try<int?>(() => runState.TotalFloor),
                 });
             }
-            TakeSnapshot("phase");
+            RequestCoalescedSnapshot("phase");
         }
         catch (Exception ex)
         {
@@ -222,7 +371,7 @@ public static class Snapshots
                     session.RecordEvent("floor_summary", SerializeMapPointEntry(entry));
                 }
             }
-            TakeSnapshot("phase");
+            RequestCoalescedSnapshot("phase");
         }
         catch (Exception ex)
         {

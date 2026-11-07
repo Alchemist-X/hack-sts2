@@ -20,6 +20,19 @@ Discovery (first match wins):
 Only one CLR can live in a process (hostfxr cannot re-initialise); the first successful load is cached and reused, and
 asking for a different library afterwards raises ``LoaderError``. hostfxr's own error messages are captured and put into
 the ``LoaderError`` text.
+
+ABI additions come in two forms, both optional for older library builds: exports appended after the freeze
+(``OPTIONAL_EXPORTS`` below) and ``config_json`` keys appended after it (``CONFIG_ADDITIONS``). A library rejects
+unknown config keys, so the Python side only sends an appended key when the library's schema shows the feature
+(``Schema.supports_floor_step_cap``: the ``EndKind`` enum lists ``FloorStall``); the version string
+``sts2vec/<encoder_version>`` changes with every such addition because the schema does.
+
+ABI version (``sts2vec_abi_version``, ``Library.abi_version``): 2 adds the search exports ``sts2vec_branch``,
+``sts2vec_branch_many``, ``sts2vec_restore_many`` and ``sts2vec_pool_release`` (released pool entries); a build without
+the export is ABI 1.
+``Library.supports(feature)`` / ``supports_branch`` / ``supports_restore_many`` / ``supports_pool_release`` say whether the
+loaded build has a feature (``ABI_FEATURES``); the wrappers that need one raise ``Sts2VecError`` ("not exported ...
+rebuild") on an older build. The ABI version is independent of ``encoder_version`` (the observation schema).
 """
 
 from __future__ import annotations
@@ -64,11 +77,40 @@ EXPORTS: dict[str, tuple[type, list[type]]] = {
     "sts2vec_last_error": (c_int32, [c_int64, c_int32, c_void_p, c_int32]),
     "sts2vec_pool_warm": (c_int32, [c_int64, c_int32]),  # additive (E2c)
     "sts2vec_clone_determinized": (c_int32, [c_int64, c_int32, c_uint64]),  # additive (determinized clones)
+    "sts2vec_abi_version": (c_int32, []),  # additive (ABI 2)
+    # (h, src_slot, dst_slots*, n, mode, seed, buffers) -> 0 / -1
+    "sts2vec_branch": (c_int32, [c_int64, c_int32, c_void_p, c_int32, c_int32, c_uint64, c_void_p]),  # additive (ABI 2)
+    # (h, src_slots*, dst_slots*, n, mode, seed, buffers) -> 0 / -1
+    "sts2vec_branch_many": (c_int32, [c_int64, c_void_p, c_void_p, c_int32, c_int32, c_uint64, c_void_p]),  # additive (ABI 2)
+    # (h, slots*, entries*, n, buffers) -> 0 / -1
+    "sts2vec_restore_many": (c_int32, [c_int64, c_void_p, c_void_p, c_int32, c_void_p]),  # additive (ABI 2)
+    # (h, entries*, n) -> n released / -1
+    "sts2vec_pool_release": (c_int32, [c_int64, c_void_p, c_int32]),  # additive (ABI 2)
 }
 
 # Exports added after the scaffold froze the ABI. A library built before one of them still loads: its attribute is None,
 # ``Library.missing_exports`` names it, and the Python wrapper that needs it raises Sts2VecError ("rebuild the library").
-OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm", "sts2vec_clone_determinized"})
+OPTIONAL_EXPORTS = frozenset({"sts2vec_pool_warm", "sts2vec_clone_determinized", "sts2vec_abi_version", "sts2vec_branch",
+                              "sts2vec_branch_many", "sts2vec_restore_many", "sts2vec_pool_release"})
+
+# The ABI version this package is written against (sts2vec_abi_version; a build without that export is ABI 1).
+ABI_VERSION = 2
+
+# feature -> (export, minimum ABI version): what Library.supports(feature) checks.
+ABI_FEATURES: dict[str, tuple[str, int]] = {
+    "branch": ("sts2vec_branch", 2),
+    "branch_many": ("sts2vec_branch_many", 2),
+    "restore_many": ("sts2vec_restore_many", 2),
+    "pool_release": ("sts2vec_pool_release", 2),
+}
+
+# config_json keys appended after the freeze -> how the Python side detects that a library build accepts them.
+# floor_step_cap (int, default 80, 0 = off): truncate after that many non-combat decisions on one floor (FLOOR_STALL).
+# macros (["rest", "shop"]; absent = off; W3 2026-11-04): room macro candidates (sim/VEC.md "Room macros"). Not visible in
+# the schema (macro rows reuse the ChooseRestOption / BuyEntry kinds): a build without it rejects the key at create.
+# The name "prompt" (W4 2026-11-04, PromptMacros) is newer still: a W3 build rejects it at create ('unknown macro').
+CONFIG_ADDITIONS = {"floor_step_cap": "schema EndKind lists FloorStall (Schema.supports_floor_step_cap)",
+                    "macros": "none (an older build rejects the key: sts2vec_create fails with 'unknown config key')"}
 
 # hostfxr / hostpolicy status codes worth naming (src/native/corehost/error_codes.h)
 HOSTFXR_CODES = {
@@ -269,9 +311,41 @@ class Library:
         """The ctypes function of ``export``; raises Sts2VecError when this (older) library build lacks it."""
         fn = self._functions.get(export)
         if fn is None:
-            raise Sts2VecError(f"{export}: not exported by {self.path} (built before the export was added); rebuild it "
-                               "(dotnet build sim/Sts2Sim.sln -c Release, or scripts/vec_publish_aot.sh for NativeAOT)")
+            raise Sts2VecError(f"{export}: not exported by {self.path} (library ABI {self.abi_version}, built before the "
+                               "export was added), so it is not supported; rebuild it (dotnet build sim/Sts2Sim.sln -c "
+                               "Release, or scripts/vec_publish_aot.sh for NativeAOT)")
         return fn
+
+    @property
+    def abi_version(self) -> int:
+        """``sts2vec_abi_version()`` of this build; 1 for a build that predates the export (its additive exports are then
+        detected by presence, ``floor_step_cap`` by the schema)."""
+        fn = self._functions.get("sts2vec_abi_version")
+        return int(fn()) if fn is not None else 1
+
+    def supports(self, feature: str) -> bool:
+        """Whether this build implements ``feature`` (a key of ``ABI_FEATURES``: "branch", "branch_many", "restore_many",
+        "pool_release"): its export is present and the build's ABI version is high enough."""
+        try:
+            export, version = ABI_FEATURES[feature]
+        except KeyError:
+            raise KeyError(f"unknown feature {feature!r} (known: {', '.join(ABI_FEATURES)})") from None
+        return self._functions.get(export) is not None and self.abi_version >= version
+
+    @property
+    def supports_branch(self) -> bool:
+        """``sts2vec_branch`` and ``sts2vec_branch_many`` (``VecEnv.branch``) are available (ABI >= 2)."""
+        return self.supports("branch") and self.supports("branch_many")
+
+    @property
+    def supports_restore_many(self) -> bool:
+        """``sts2vec_restore_many`` (``VecEnv.restore_many``) is available (ABI >= 2)."""
+        return self.supports("restore_many")
+
+    @property
+    def supports_pool_release(self) -> bool:
+        """``sts2vec_pool_release`` (``env.pool.release``) is available (ABI >= 2)."""
+        return self.supports("pool_release")
 
     @property
     def gc_server(self) -> bool | None:

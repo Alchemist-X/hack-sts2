@@ -10,7 +10,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using System.Threading;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -27,6 +29,15 @@ namespace Sts2Recorder.Game;
 
 public static partial class PassiveStateBuilder
 {
+    private sealed record RecordedCardIdentity(long Value);
+    private static readonly ConditionalWeakTable<CardModel, RecordedCardIdentity> CardIdentities = new();
+    private static long _nextCardIdentity;
+
+    // Recorder-local identity distinguishes duplicate cards with different upgrades
+    // or enchantments. It is an observation identifier, not a game/RNG identifier.
+    internal static long CardInstanceId(CardModel card) =>
+        CardIdentities.GetValue(card, _ => new RecordedCardIdentity(Interlocked.Increment(ref _nextCardIdentity))).Value;
+
     private static Dictionary<string, object?> BuildPlayerState(Player player, bool includeDeck = false)
     {
         var state = new Dictionary<string, object?>();
@@ -329,6 +340,7 @@ public static partial class PassiveStateBuilder
         return new Dictionary<string, object?>
         {
             ["id"] = card.Id.Entry,
+            ["instance_id"] = CardInstanceId(card),
             ["name"] = SafeGetText(() => card.Title),
             ["type"] = card.Type.ToString(),
             ["cost"] = GetCostDisplay(card),

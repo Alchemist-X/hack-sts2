@@ -11,10 +11,9 @@ import os
 from pathlib import Path
 import re
 
-from export_sts2_knowledge import pascal_to_model_id
+from export_sts2_knowledge import core_file, core_files, pascal_to_model_id
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = "MegaCrit/sts2/Core/"
 
 # These summaries are reviewed interpretations. Required fragments make a
 # changed rule fail export, rather than silently carrying an old interpretation.
@@ -43,6 +42,40 @@ CHECKS = [
       ("Models/Powers/WitheringPresencePower.cs", ["CardsLeft", "PileType.Hand, 1", "= 6m;"])]),
 ]
 
+# Game versions whose cited source was re-read against every summary above, not
+# only the required fragments (several summary numbers are not fragment-pinned).
+# Exporting an unlisted version fails until that review is repeated; a check
+# whose meaning changed gets a version override (summary, sources).
+# - 0.107.1: original review.
+# - 0.111.0 (41cef1ea), 2026-10-30: every cited file diffed against 0.107.1.
+#   Hook/AttackIntent/TaintedPower only thread a CardPlay argument, CardPileCmd
+#   keeps the same draw loop and shuffle test, InfestedPower only delays the
+#   Wriggler reveal; PhrogParasite, Instinct, WitheringPresencePower,
+#   AscensionHelper and AscensionLevel are unchanged. Aeonglass EBB damage fell
+#   from 32/26 to 26/22, so AEONGLASS_CYCLE is overridden and its numbers pinned.
+REVIEWED_VERSIONS = {
+    '0.107.1': {},
+    '0.111.0': {
+        'AEONGLASS_CYCLE': (
+            "沙漏从 EBB_MOVE→EYE_LASERS_MOVE→INCREASING_INTENSITY_MOVE 循环。A10 起始基础攻击26与12×2（后续力量会改变），EBB另获33格挡。开场3人工制品；每打6张牌向手牌加入一张 Wither。强化回合升级现存 Wither，A10向弃牌堆加入2张，并增加力量；新生成 Wither 也匹配已累计的升级次数。规划时检查公开计数、当前Wither文本和下一次洗牌，不能只看本回合面板伤害。",
+            [("Models/Monsters/Aeonglass.cs", ["EyeLasersRepeat => 2", "EbbBlock => 33", "wither.FakeUpgrade();", "WitherUpgradeCount++;", "AdditionalStrength++;",
+                                               "EbbDamage => AscensionHelper.GetValueIfAscension(AscensionLevel.DeadlyEnemies, 26, 22)",
+                                               "EyeLasersDamage => AscensionHelper.GetValueIfAscension(AscensionLevel.DeadlyEnemies, 12, 11)",
+                                               "WitherAmount => AscensionHelper.GetValueIfAscension(AscensionLevel.DeadlyEnemies, 2, 1)",
+                                               "PowerCmd.Apply<ArtifactPower>(new ThrowingPlayerChoiceContext(), base.Creature, 3m"]),
+             ("Models/Powers/WitheringPresencePower.cs", ["CardsLeft", "PileType.Hand, 1", "= 6m;"])]),
+    },
+}
+
+
+def reviewed_checks(version):
+    overrides = REVIEWED_VERSIONS.get(version.lstrip('v'))
+    if overrides is None:
+        raise ValueError(f'Reviewed rule checks cover {sorted(REVIEWED_VERSIONS)}, not {version}; '
+                         'review the cited source before exporting another version')
+    return [(identity, models, *overrides.get(identity, (summary, sources)))
+            for identity, models, summary, sources in CHECKS]
+
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -50,11 +83,10 @@ def sha(path):
 
 def export(decompiled, output):
     manifest = json.loads((output / 'manifest.json').read_text())
-    if manifest['game_version'].lstrip('v') != '0.107.1':
-        raise ValueError('Reviewed rule checks require v0.107.1; review before exporting another version')
+    checks = reviewed_checks(manifest['game_version'])
     entities = []
     for kind, folder, prefix in [('powers', 'Powers', 'POWER'), ('enchantments', 'Enchantments', 'ENCHANTMENT'), ('afflictions', 'Afflictions', 'AFFLICTION')]:
-        for path in sorted((decompiled / CORE / 'Models' / folder).glob('*.cs')):
+        for path in core_files(decompiled, 'Models/' + folder, recursive=False):
             code = path.read_text()
             if not re.search(r'public (?:sealed )?class ' + path.stem + r'\s*:', code):
                 continue
@@ -65,22 +97,24 @@ def export(decompiled, output):
                     'rule_source': code,
                     'related_types': sorted(set(re.findall(r'\b(?:ModelDb\.(?:Card|Power|Monster|Enchantment|Affliction)<)(\w+)', code)))}})
     rules = []
-    for identity, models, summary, sources in CHECKS:
+    for identity, models, summary, sources in checks:
         refs = []
         for relative, fragments in sources:
-            path = decompiled / CORE / relative
+            path = core_file(decompiled, relative)
             code = path.read_text()
             for fragment in fragments:
                 if fragment not in code:
                     raise ValueError(f'{identity}: missing required source fragment in {relative}: {fragment}')
-            refs.append({'decompiled_path': CORE + relative, 'sha256': sha(path),
+            refs.append({'decompiled_path': str(path.relative_to(decompiled)), 'sha256': sha(path),
                          'line': next(i for i, line in enumerate(code.splitlines(), 1) if fragments[0] in line),
                          'required_fragments': fragments})
         rules.append({'id': identity, 'related_models': models, 'summary': summary,
                       'evidence': 'reviewed_interpretation_of_versioned_game_source', 'sources': refs})
+    # abspath, not resolve(): a tree linked into artifacts/ keeps its repo-relative path.
     result = {'schema_version': 1, 'game_version': manifest['game_version'],
               'assembly_sha256': manifest['sources']['assembly']['sha256'],
-              'decompiled_root': os.path.relpath(decompiled.resolve(), output.resolve()), 'entities': entities, 'checks': rules}
+              'decompiled_root': os.path.relpath(os.path.abspath(decompiled), os.path.abspath(output)),
+              'entities': entities, 'checks': rules}
     target = output / 'rule-evidence.json'
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'path': str(target), 'entities': len(entities), 'reviewed_checks': len(rules)}))

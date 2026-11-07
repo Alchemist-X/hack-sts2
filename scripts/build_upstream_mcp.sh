@@ -6,29 +6,29 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-LOCK_FILE="$REPO_ROOT/config/sts2mcp.lock.json"
-SOURCE_REPO="${STS2_MCP_SOURCE_REPO:-$(dirname "$REPO_ROOT")/STS2MCP}"
-GAME_DIR="${STS2_GAME_INSTALL_DIR:-$HOME/Library/Application Support/Steam/steamapps/common/Slay the Spire 2}"
+source "$SCRIPT_DIR/mcp_build_env.sh"
 
 die() { printf '[build-upstream-mcp] ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf '[build-upstream-mcp] %s\n' "$*"; }
 
-[[ -f "$LOCK_FILE" ]] || die "lock file missing: $LOCK_FILE"
-[[ -d "$SOURCE_REPO/.git" ]] || die "source repository missing: $SOURCE_REPO"
-[[ -d "$GAME_DIR/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64" ]] \
-    || die "game assembly directory missing below: $GAME_DIR"
 command -v git >/dev/null || die "git is required"
 command -v dotnet >/dev/null || die "dotnet is required"
 command -v python3 >/dev/null || die "python3 is required"
+mcp_resolve_game
+mcp_resolve_source_repo
 
-readarray_value() {
-    local expression="$1"
-    python3 -c 'import json,sys; print(eval(sys.argv[2], {}, {"d": json.load(open(sys.argv[1], encoding="utf-8"))}))' \
-        "$LOCK_FILE" "$expression"
-}
+# The pinned artifact is the *unpatched* upstream build for one game version.
+# Unpatched upstream does not compile on later builds (v0.111.0 removed
+# StartRunLobby.MaxPlayers and LoadRunLobby.ConnectedPlayerIds); workers never
+# need it: build_selection_mcp.sh builds them from source with the compat patches.
+ARTIFACT_GAME="$(mcp_lock 'd["artifact"].get("game_version")')"
+INSTALLED_GAME="$(mcp_game_version)"
+if [[ -n "$ARTIFACT_GAME" && "${INSTALLED_GAME#v}" != "${ARTIFACT_GAME#v}" ]]; then
+    die "the pinned upstream artifact is the unpatched build for game $ARTIFACT_GAME; installed game is $INSTALLED_GAME. Workers use scripts/build_selection_mcp.sh instead"
+fi
 
-COMMIT="$(readarray_value 'd["commit"]')"
-EXPECTED_SHA="$(readarray_value 'd["artifact"]["sha256"]')"
+COMMIT="$(mcp_lock 'd["commit"]')"
+EXPECTED_SHA="$(mcp_lock 'd["artifact"]["sha256"]')"
 OUTPUT_DIR="$REPO_ROOT/artifacts/mcp/$COMMIT"
 
 git -C "$SOURCE_REPO" cat-file -e "$COMMIT^{commit}" 2>/dev/null \

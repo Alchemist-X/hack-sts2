@@ -1,0 +1,1447 @@
+diff --git a/McpMod.Eval.cs b/McpMod.Eval.cs
+new file mode 100644
+index 0000000..4d7b538
+--- /dev/null
++++ b/McpMod.Eval.cs
+@@ -0,0 +1,1426 @@
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using System.Net;
++using System.Runtime.CompilerServices;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using System.Threading;
++using System.Threading.Tasks;
++using Godot;
++using MegaCrit.Sts2.Core.Combat;
++using MegaCrit.Sts2.Core.Context;
++using MegaCrit.Sts2.Core.Entities.Players;
++using MegaCrit.Sts2.Core.Logging;
++using MegaCrit.Sts2.Core.Models;
++using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
++using MegaCrit.Sts2.Core.Models.Modifiers;
++using MegaCrit.Sts2.Core.Nodes;
++using MegaCrit.Sts2.Core.Nodes.Combat;
++using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
++using MegaCrit.Sts2.Core.Nodes.Rooms;
++using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
++using MegaCrit.Sts2.Core.Nodes.Screens.CustomRun;
++using MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen;
++using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
++using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
++using MegaCrit.Sts2.Core.Nodes.Screens.Timeline;
++using MegaCrit.Sts2.Core.Runs;
++using MegaCrit.Sts2.Core.Saves;
++using MegaCrit.Sts2.Core.Settings;
++
++namespace STS2_MCP;
++
++/// <summary>
++/// Evaluation API (/api/v1/eval). Benchmark-oriented surface on top of the existing
++/// singleplayer endpoint: headless run start with readback, settled snapshots with a
++/// monotonic state_version, lifecycle (abandon / run result), checkpoints, batched
++/// actions with per-step verification and logic-neutral speed settings.
++/// Nothing here changes game rules; run start drives the game's own menu path so RNG
++/// and act selection are identical to a run started by hand.
++/// </summary>
++public static partial class McpMod
++{
++    internal const int EvalSchemaVersion = 1;
++    private const string SeedAlphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
++
++    private static readonly object EvalLock = new();
++    private static readonly SemaphoreSlim EvalLongOp = new(1, 1);
++    private static long _evalStateVersion;
++    private static string? _evalLastFingerprint;
++    private static Dictionary<string, object?>? _lastRunResult;
++    private static string? _lastRunResultKey;
++    private static readonly Dictionary<string, object?> _evalSettingsApplied = new();
++    private static bool _evalEnvSettingsApplied;
++    private static readonly Dictionary<string, string> EvalCheckpoints = new();
++    private static Task? _evalSaveTask;
++
++    // Stable per-object card ids: deck cards get "d<n>" on first observation (deck order),
++    // combat copies inherit their deck card's uid, generated cards get "g<n>".
++    private static readonly ConditionalWeakTable<CardModel, string> CardUids = new();
++    private static int _nextDeckUid;
++    private static int _nextGenUid;
++
++    // ------------------------------------------------------------------ routing
++
++    private static void HandleEvalRequest(HttpListenerRequest request, HttpListenerResponse response)
++    {
++        if (IsMultiplayerRun())
++        {
++            SendError(response, 409, "Eval API is singleplayer-only; a multiplayer run is active.");
++            return;
++        }
++        if (request.HttpMethod == "GET")
++        {
++            int waitMs = ParseQueryInt(request, "wait_settled_ms", 0, 0, 120000);
++            int stableMs = ParseQueryInt(request, "stable_ms", 200, 0, 5000);
++            bool includeState = request.QueryString["include_state"] != "false";
++            try { SendJson(response, EvalWaitSettled(waitMs, stableMs, includeState)); }
++            catch (Exception ex) { SendError(response, 500, $"Eval snapshot failed: {ex.Message}"); }
++            return;
++        }
++        if (request.HttpMethod != "POST")
++        {
++            SendError(response, 405, "Method not allowed");
++            return;
++        }
++
++        string body;
++        using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
++            body = reader.ReadToEnd();
++        Dictionary<string, JsonElement>? data;
++        try { data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body); }
++        catch { SendError(response, 400, "Invalid JSON"); return; }
++        if (data == null || !data.TryGetValue("action", out var actionElem) || actionElem.ValueKind != JsonValueKind.String)
++        {
++            SendError(response, 400, "Missing 'action' field");
++            return;
++        }
++        string action = actionElem.GetString() ?? "";
++        try
++        {
++            SendJson(response, ExecuteEvalAction(action, data));
++        }
++        catch (Exception ex)
++        {
++            GD.PrintErr($"[STS2 MCP] eval {action}: {ex}");
++            SendError(response, 500, $"Eval action '{action}' failed: {ex.GetType().Name}: {ex.Message}");
++        }
++    }
++
++    private static Dictionary<string, object?> ExecuteEvalAction(string action, Dictionary<string, JsonElement> data)
++    {
++        EnsureEnvSettingsApplied();
++        switch (action)
++        {
++            case "snapshot":
++                return EvalWaitSettled(GetInt(data, "wait_settled_ms", 0, 0, 120000), GetInt(data, "stable_ms", 200, 0, 5000), GetBool(data, "include_state", true));
++            case "configure":
++                return OnMain(() => ApplyEvalSettings(data));
++            case "start_run":
++                return WithLongOp(() => EvalStartRun(data));
++            case "abandon":
++                return WithLongOp(() => EvalAbandon(data));
++            case "return_to_menu":
++                return WithLongOp(() => EvalReturnToMenu(GetInt(data, "timeout_ms", 30000, 1000, 120000)));
++            case "run_result":
++                return OnMain(() =>
++                {
++                    var result = TryCaptureRunResult();
++                    if (result == null && RunManager.Instance.IsInProgress)
++                        return new Dictionary<string, object?>
++                        {
++                            // Never hand back an earlier run's summary while a new run is still being played.
++                            ["status"] = "in_progress",
++                            ["error"] = "The current run is not over yet (abandon it to get an abandoned result)",
++                            ["run_result"] = null
++                        };
++                    result ??= _lastRunResult;
++                    return new Dictionary<string, object?>
++                    {
++                        ["status"] = result == null ? "error" : "ok",
++                        ["error"] = result == null ? "No finished run recorded since the game started" : null,
++                        ["run_result"] = result
++                    };
++                });
++            case "checkpoint_save":
++                return WithLongOp(() => EvalCheckpointSave(data));
++            case "checkpoint_restore":
++                return WithLongOp(() => EvalCheckpointRestore(data));
++            case "checkpoint_list":
++                return OnMain(EvalCheckpointList);
++            case "act":
++                return WithLongOp(() => EvalBatch(new List<Dictionary<string, JsonElement>> { data }, data, singleStep: true));
++            case "batch":
++            {
++                if (!data.TryGetValue("steps", out var stepsElem) || stepsElem.ValueKind != JsonValueKind.Array)
++                    return Error("batch requires 'steps': [ {action: ...}, ... ]");
++                var steps = new List<Dictionary<string, JsonElement>>();
++                foreach (var s in stepsElem.EnumerateArray())
++                {
++                    if (s.ValueKind != JsonValueKind.Object) return Error("batch step is not an object");
++                    steps.Add(JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(s.GetRawText())!);
++                }
++                return WithLongOp(() => EvalBatch(steps, data, singleStep: false));
++            }
++            default:
++                return Error($"Unknown eval action: {action}. Use: snapshot, configure, start_run, abandon, return_to_menu, run_result, checkpoint_save, checkpoint_restore, checkpoint_list, act, batch");
++        }
++    }
++
++    private static Dictionary<string, object?> WithLongOp(Func<Dictionary<string, object?>> op)
++    {
++        if (!EvalLongOp.Wait(0))
++            return Error("Another eval operation is in progress on this instance");
++        try { return op(); }
++        finally { EvalLongOp.Release(); }
++    }
++
++    private static T OnMain<T>(Func<T> func) => RunOnMainThread(func).GetAwaiter().GetResult();
++
++    // ------------------------------------------------------------------ snapshot
++
++    private sealed class EvalProbe
++    {
++        public Dictionary<string, object?> Snapshot = new();
++        public string Fingerprint = "";
++        public bool Busy;
++        public string BusyReason = "";
++    }
++
++    private static EvalProbe BuildEvalProbe(bool includeState)
++    {
++        var probe = new EvalProbe();
++        Dictionary<string, object?> state;
++        try { state = BuildGameState(); }
++        catch (Exception ex)
++        {
++            state = new Dictionary<string, object?> { ["state_type"] = "unknown", ["error"] = $"state build failed: {ex.Message}" };
++        }
++
++        var refs = AnnotateStableRefs(state);
++        var stateForHash = state.Where(kv => kv.Key != "execution").ToDictionary(kv => kv.Key, kv => kv.Value);
++        string json = JsonSerializer.Serialize(stateForHash, _jsonOptions);
++        probe.Fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant()[..16];
++        (probe.Busy, probe.BusyReason) = EvalBusy(state);
++
++        long version;
++        lock (EvalLock)
++        {
++            if (_evalLastFingerprint != probe.Fingerprint)
++            {
++                _evalLastFingerprint = probe.Fingerprint;
++                _evalStateVersion++;
++            }
++            version = _evalStateVersion;
++        }
++
++        var runResult = TryCaptureRunResult();
++        var snap = new Dictionary<string, object?>
++        {
++            ["schema"] = "sts2-eval-snapshot",
++            ["schema_version"] = EvalSchemaVersion,
++            ["state_version"] = version,
++            ["state_fingerprint"] = probe.Fingerprint,
++            ["state_type"] = state.TryGetValue("state_type", out var st) ? st : null,
++            ["busy"] = probe.Busy,
++            ["busy_reason"] = probe.Busy ? probe.BusyReason : null,
++            ["run"] = BuildEvalRunInfo(),
++            ["pending_epoch_ids"] = SafePendingEpochs(),
++            ["refs"] = refs,
++            ["run_result"] = runResult ?? (RunManager.Instance.IsInProgress ? null : _lastRunResult),
++            ["eval_meta"] = BuildEvalMeta(),
++        };
++        if (includeState) snap["state"] = state;
++        probe.Snapshot = snap;
++        return probe;
++    }
++
++    private static (bool, string) EvalBusy(Dictionary<string, object?> state)
++    {
++        var game = NGame.Instance;
++        if (game?.Transition != null && game.Transition.InTransition) return (true, "scene_transition");
++        if (SaveManager.Instance?.CurrentRunSaveTask != null) return (true, "run_save_in_progress");
++        if (_evalSaveTask != null && !_evalSaveTask.IsCompleted) return (true, "checkpoint_write_in_progress");
++        if (!RunManager.Instance.IsInProgress) return (false, "");
++        if (NRun.Instance == null) return (true, "run_scene_loading");
++        var queues = RunManager.Instance.ActionQueueSet;
++        var executor = RunManager.Instance.ActionExecutor;
++        if (queues != null && !queues.IsEmpty) return (true, "action_queue_not_empty");
++        if (executor != null && (executor.IsRunning || executor.CurrentlyRunningAction != null)) return (true, "action_executing");
++        string stateType = state.TryGetValue("state_type", out var st) ? st as string ?? "" : "";
++        // Between the last enemy dying and the rewards screen the state builder reports the
++        // combat room with only "Combat ended. Waiting for rewards..." and nothing actionable.
++        if (stateType is "monster" or "elite" or "boss" && !state.ContainsKey("battle"))
++            return (true, "combat_ending_awaiting_rewards");
++        if (CombatManager.Instance.IsInProgress && stateType is "monster" or "elite" or "boss")
++        {
++            var run = RunManager.Instance.DebugOnlyGetState();
++            var player = run == null ? null : LocalContext.GetMe(run);
++            var pc = player?.PlayerCombatState;
++            var manager = CombatManager.Instance;
++            var hand = NCombatRoom.Instance?.Ui?.Hand;
++            if (player == null || pc == null) return (true, "combat_player_missing");
++            if (pc.Phase != PlayerTurnPhase.Play) return (true, $"combat_phase_{pc.Phase}");
++            if (manager.PlayerActionsDisabled || manager.EndingPlayerTurnPhaseOne || manager.EndingPlayerTurnPhaseTwo)
++                return (true, "combat_player_actions_disabled");
++            if (manager.IsExecutingCardOrPotionEffect(player)) return (true, "combat_effect_executing");
++            if (hand != null && hand.InCardPlay) return (true, "combat_card_in_play");
++        }
++        return (false, "");
++    }
++
++    /// <summary>
++    /// Polls snapshots until the state is not busy and its fingerprint has been unchanged
++    /// for stable_ms. waitMs=0 returns one immediate snapshot.
++    /// </summary>
++    private static Dictionary<string, object?> EvalWaitSettled(int waitMs, int stableMs, bool includeState)
++    {
++        EnsureEnvSettingsApplied();
++        var start = DateTime.UtcNow;
++        var deadline = start.AddMilliseconds(waitMs);
++        string? lastFp = null;
++        DateTime lastChange = start;
++        EvalProbe probe;
++        while (true)
++        {
++            probe = OnMain(() => BuildEvalProbe(includeState));
++            var now = DateTime.UtcNow;
++            if (probe.Fingerprint != lastFp) { lastFp = probe.Fingerprint; lastChange = now; }
++            bool stable = waitMs == 0 || (now - lastChange).TotalMilliseconds >= stableMs;
++            if (!probe.Busy && stable)
++            {
++                probe.Snapshot["settled"] = true;
++                break;
++            }
++            if (now >= deadline)
++            {
++                probe.Snapshot["settled"] = false;
++                probe.Snapshot["settle_timeout"] = waitMs > 0;
++                break;
++            }
++            Thread.Sleep(50);
++        }
++        probe.Snapshot["waited_ms"] = (int)(DateTime.UtcNow - start).TotalMilliseconds;
++        return probe.Snapshot;
++    }
++
++    private static Dictionary<string, object?> BuildEvalRunInfo()
++    {
++        var rm = RunManager.Instance;
++        var run = rm.DebugOnlyGetState();
++        if (run == null)
++            return new Dictionary<string, object?> { ["in_progress"] = false, ["has_saved_run"] = SafeHasRunSave() };
++        var player = LocalContext.GetMe(run);
++        var coord = run.CurrentMapCoord;
++        return new Dictionary<string, object?>
++        {
++            ["in_progress"] = true,
++            ["character"] = player?.Character?.Id.Entry,
++            ["seed"] = run.Rng?.StringSeed,
++            ["ascension"] = run.AscensionLevel,
++            ["game_mode"] = run.GameMode.ToString().ToLowerInvariant(),
++            ["modifiers"] = run.Modifiers.Select(DescribeModifier).ToList(),
++            ["act"] = run.CurrentActIndex + 1,
++            ["act_index"] = run.CurrentActIndex,
++            ["act_id"] = run.CurrentActIndex >= 0 && run.CurrentActIndex < run.Acts.Count ? run.Acts[run.CurrentActIndex].Id.Entry : null,
++            ["acts"] = run.Acts.Select(a => a.Id.Entry).ToList(),
++            ["floor"] = run.TotalFloor,
++            ["act_floor"] = run.ActFloor,
++            ["map_coord"] = coord == null ? null : new Dictionary<string, object?> { ["col"] = coord.Value.col, ["row"] = coord.Value.row },
++            ["room"] = run.CurrentRoom?.GetType().Name,
++            ["is_game_over"] = run.IsGameOver,
++            ["run_time_s"] = rm.RunTime,
++            ["hp"] = player?.Creature?.CurrentHp,
++            ["max_hp"] = player?.Creature?.MaxHp,
++            ["gold"] = player?.Gold,
++        };
++    }
++
++    private static string DescribeModifier(ModifierModel m)
++    {
++        if (m is CharacterCards cc)
++        {
++            try { return $"{m.Id.Entry}:{cc.CharacterModel.Entry}"; } catch { }
++        }
++        return m.Id.Entry;
++    }
++
++    private static Dictionary<string, object?> BuildEvalMeta()
++    {
++        var meta = new Dictionary<string, object?>
++        {
++            ["harness_only"] = true,
++            ["note"] = "Strip eval_meta before showing state to a policy: rng counters are not visible to a human player.",
++            ["mod_version"] = Version,
++            ["eval_api"] = "eval-api-v1",
++            ["settings"] = SafeReadSettings(),
++        };
++        var run = RunManager.Instance.DebugOnlyGetState();
++        if (run?.Rng != null)
++        {
++            try
++            {
++                var rng = run.Rng.ToSerializable();
++                meta["rng"] = new Dictionary<string, object?>
++                {
++                    ["seed"] = run.Rng.StringSeed,
++                    ["seed_uint"] = run.Rng.Seed,
++                    ["counters"] = rng.Counters.ToDictionary(kv => kv.Key.ToString(), kv => (object?)kv.Value),
++                };
++            }
++            catch (Exception ex) { meta["rng_error"] = ex.Message; }
++        }
++        return meta;
++    }
++
++    private static List<string> SafePendingEpochs()
++    {
++        try { return GetProgressEpochIdsByState("Obtained", "ObtainedNoSlot"); }
++        catch { return new List<string>(); }
++    }
++
++    private static bool SafeHasRunSave()
++    {
++        try { return SaveManager.Instance.HasRunSave; } catch { return false; }
++    }
++
++    // Adds stable references to the state in place and returns a compact ref table.
++    private static Dictionary<string, object?> AnnotateStableRefs(Dictionary<string, object?> state)
++    {
++        var refs = new Dictionary<string, object?>();
++        var run = RunManager.Instance.DebugOnlyGetState();
++        var player = run == null ? null : LocalContext.GetMe(run);
++        if (player == null) return refs;
++
++        var deck = new List<Dictionary<string, object?>>();
++        var deckIndex = new Dictionary<CardModel, int>(ReferenceEqualityComparer.Instance);
++        int i = 0;
++        foreach (var card in player.Deck.Cards)
++        {
++            deckIndex[card] = i;
++            deck.Add(new Dictionary<string, object?>
++            {
++                ["deck_index"] = i++, ["uid"] = CardUid(card, isDeck: true), ["id"] = card.Id.Entry, ["upgraded"] = card.IsUpgraded
++            });
++        }
++        refs["deck"] = deck;
++        refs["relics"] = player.Relics.Select((r, idx) => new Dictionary<string, object?> { ["index"] = idx, ["id"] = r.Id.Entry }).ToList();
++        refs["potions"] = player.PotionSlots.Select((p, idx) => new Dictionary<string, object?> { ["slot"] = idx, ["id"] = p?.Id.Entry }).ToList();
++
++        var pc = player.PlayerCombatState;
++        if (pc != null && CombatManager.Instance.IsInProgress)
++        {
++            var hand = new List<Dictionary<string, object?>>();
++            int hi = 0;
++            List<Dictionary<string, object?>>? handState = null;
++            if (state.TryGetValue("player", out var p) && p is Dictionary<string, object?> pd && pd.TryGetValue("hand", out var h))
++                handState = h as List<Dictionary<string, object?>>;
++            foreach (var card in pc.Hand.Cards)
++            {
++                string uid = CardUid(card, isDeck: false);
++                int? dIdx = card.DeckVersion != null && deckIndex.TryGetValue(card.DeckVersion, out var x) ? x : null;
++                hand.Add(new Dictionary<string, object?> { ["index"] = hi, ["card_uid"] = uid, ["id"] = card.Id.Entry, ["deck_index"] = dIdx });
++                if (handState != null && hi < handState.Count)
++                {
++                    handState[hi]["card_uid"] = uid;
++                    handState[hi]["deck_index"] = dIdx;
++                }
++                hi++;
++            }
++            refs["hand"] = hand;
++            if (state.TryGetValue("battle", out var b) && b is Dictionary<string, object?> battle &&
++                battle.TryGetValue("enemies", out var e) && e is List<Dictionary<string, object?>> enemies)
++            {
++                refs["enemies"] = enemies.Select(en => new Dictionary<string, object?>
++                {
++                    ["entity_id"] = en.TryGetValue("entity_id", out var id) ? id : null,
++                    ["combat_id"] = en.TryGetValue("combat_id", out var cid) ? cid : null,
++                }).ToList();
++            }
++        }
++        return refs;
++    }
++
++    private static string CardUid(CardModel card, bool isDeck)
++    {
++        if (CardUids.TryGetValue(card, out var existing)) return existing;
++        string uid;
++        if (!isDeck && card.DeckVersion != null)
++            uid = CardUid(card.DeckVersion, isDeck: true);
++        else
++            uid = isDeck ? $"d{_nextDeckUid++}" : $"g{_nextGenUid++}";
++        CardUids.AddOrUpdate(card, uid);
++        return uid;
++    }
++
++    private static void ResetCardUids()
++    {
++        CardUids.Clear();
++        _nextDeckUid = 0;
++        _nextGenUid = 0;
++    }
++
++    // ------------------------------------------------------------------ settings
++
++    private static void EnsureEnvSettingsApplied()
++    {
++        if (_evalEnvSettingsApplied) return;
++        _evalEnvSettingsApplied = true;
++        string? raw = System.Environment.GetEnvironmentVariable("STS2_MCP_EVAL_SETTINGS");
++        if (string.IsNullOrWhiteSpace(raw)) return;
++        try
++        {
++            var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(raw);
++            if (data == null) return;
++            var result = OnMain(() => ApplyEvalSettings(data));
++            GD.Print($"[STS2 MCP] eval settings from STS2_MCP_EVAL_SETTINGS: status={result["status"]} error={result.GetValueOrDefault("error")}");
++        }
++        catch (Exception ex) { GD.PrintErr($"[STS2 MCP] STS2_MCP_EVAL_SETTINGS ignored: {ex.Message}"); }
++    }
++
++    private static Dictionary<string, object?> SafeReadSettings()
++    {
++        try
++        {
++            var prefs = SaveManager.Instance.PrefsSave;
++            return new Dictionary<string, object?>
++            {
++                ["fast_mode"] = prefs.FastMode.ToString().ToLowerInvariant(),
++                ["screenshake"] = prefs.ScreenShakeOptionIndex,
++                ["text_effects"] = prefs.TextEffectsEnabled,
++                ["tutorials_enabled"] = SaveManager.Instance.Progress?.EnableFtues,
++                ["applied_by_eval"] = _evalSettingsApplied.Count == 0 ? null : new Dictionary<string, object?>(_evalSettingsApplied),
++            };
++        }
++        catch (Exception ex) { return new Dictionary<string, object?> { ["error"] = ex.Message }; }
++    }
++
++    // Main thread. Presentation settings only; none of them is read by game logic or RNG.
++    private static Dictionary<string, object?> ApplyEvalSettings(Dictionary<string, JsonElement> data)
++    {
++        var prefs = SaveManager.Instance.PrefsSave;
++        var changed = new List<string>();
++        if (data.TryGetValue("fast_mode", out var fm) && fm.ValueKind == JsonValueKind.String)
++        {
++            string v = (fm.GetString() ?? "").Trim().ToLowerInvariant();
++            FastModeType mode;
++            switch (v)
++            {
++                case "normal": mode = FastModeType.Normal; break;
++                case "fast": mode = FastModeType.Fast; break;
++                case "instant":
++                    if (!GetBool(data, "allow_experimental", false))
++                        return Error("fast_mode=instant skips engine waits (dev-only; the game resets it to fast at startup). Pass allow_experimental=true to use it.");
++                    mode = FastModeType.Instant; break;
++                default: return Error($"Unknown fast_mode '{v}'. Use: normal, fast, instant (experimental)");
++            }
++            prefs.FastMode = mode;
++            _evalSettingsApplied["fast_mode"] = v;
++            changed.Add("fast_mode");
++        }
++        if (data.TryGetValue("screenshake", out var ss) && ss.ValueKind == JsonValueKind.Number && ss.TryGetInt32(out int shake))
++        {
++            if (shake < 0 || shake > 4) return Error("screenshake must be an option index 0-4 (0 = off)");
++            prefs.ScreenShakeOptionIndex = shake;
++            try { NGame.Instance?.SetScreenshakeMultiplier(MegaCrit.Sts2.Core.Nodes.Screens.Settings.NScreenshakePaginator.GetShakeMultiplier(shake)); } catch { }
++            _evalSettingsApplied["screenshake"] = shake;
++            changed.Add("screenshake");
++        }
++        if (data.TryGetValue("text_effects", out var te) && (te.ValueKind == JsonValueKind.True || te.ValueKind == JsonValueKind.False))
++        {
++            prefs.TextEffectsEnabled = te.GetBoolean();
++            _evalSettingsApplied["text_effects"] = te.GetBoolean();
++            changed.Add("text_effects");
++        }
++        if (data.TryGetValue("skip_tutorials", out var sk) && (sk.ValueKind == JsonValueKind.True || sk.ValueKind == JsonValueKind.False))
++        {
++            // Writes progress.save (EnableFtues only gates tutorial popups; run logic ignores it).
++            SaveManager.Instance.SetFtuesEnabled(!sk.GetBoolean());
++            _evalSettingsApplied["skip_tutorials"] = sk.GetBoolean();
++            changed.Add("skip_tutorials");
++        }
++        bool persist = GetBool(data, "persist", false);
++        if (persist && changed.Count > 0) SaveManager.Instance.SavePrefsFile();
++        if (changed.Count > 0)
++            Log.Info($"[STS2 MCP eval] settings applied: {string.Join(",", changed)} persist={persist}");
++        return new Dictionary<string, object?>
++        {
++            ["status"] = "ok",
++            ["changed"] = changed,
++            ["persisted_to_prefs_save"] = persist,
++            ["settings"] = SafeReadSettings(),
++            ["logic_impact"] = new Dictionary<string, object?>
++            {
++                ["fast_mode"] = "presentation timing only (tween/VFX waits); VFX randomness uses the non-gameplay chaotic RNG. 'instant' also skips Cmd.Wait and is experimental.",
++                ["screenshake"] = "camera only",
++                ["text_effects"] = "rich-text animation only",
++                ["skip_tutorials"] = "tutorial popups only (progress.save EnableFtues); run generation and rules ignore it",
++            }
++        };
++    }
++
++    // ------------------------------------------------------------------ start_run
++
++    private sealed class StartRunCtx
++    {
++        public string Character = "";
++        public int Ascension;
++        public string? Seed;
++        public bool Custom;
++        public List<string> ModifierIds = new();
++        public List<ModifierModel>? Modifiers;
++        public bool AbandonExisting;
++        public bool Embarked;
++        public bool ModifiersSet;
++        public List<string> Steps = new();
++        public int Clicks;
++    }
++
++    private enum StepOutcome { Continue, Done, Fail }
++
++    private static Dictionary<string, object?> EvalStartRun(Dictionary<string, JsonElement> data)
++    {
++        var ctx = new StartRunCtx();
++        ctx.Character = (GetString(data, "character") ?? "").Trim().ToUpperInvariant();
++        if (ctx.Character.StartsWith("CHARACTER.")) ctx.Character = ctx.Character["CHARACTER.".Length..];
++        if (ctx.Character.Length == 0) return Error("start_run requires 'character' (e.g. IRONCLAD)");
++        var knownCharacters = OnMain(() => ModelDb.AllCharacters.Select(c => c.Id.Entry.ToUpperInvariant()).ToList());
++        if (!knownCharacters.Contains(ctx.Character))
++            return Error($"Unknown character '{ctx.Character}'. Known: {string.Join(", ", knownCharacters)}");
++        if (!data.TryGetValue("ascension", out var ascElem) || ascElem.ValueKind != JsonValueKind.Number || !ascElem.TryGetInt32(out ctx.Ascension))
++            return Error("start_run requires integer 'ascension' (0-10)");
++        if (ctx.Ascension < 0 || ctx.Ascension > 10) return Error($"ascension {ctx.Ascension} out of range 0-10");
++        string mode = (GetString(data, "mode") ?? "standard").Trim().ToLowerInvariant();
++        if (mode != "standard" && mode != "custom") return Error("mode must be 'standard' or 'custom'");
++        ctx.Custom = mode == "custom";
++        string? seed = GetString(data, "seed");
++        if (!string.IsNullOrWhiteSpace(seed))
++        {
++            var canonical = MegaCrit.Sts2.Core.Helpers.SeedHelper.CanonicalizeSeed(seed.Trim());
++            if (canonical.Length == 0 || canonical.Any(ch => !SeedAlphabet.Contains(ch)))
++                return Error($"Invalid seed '{seed}': use characters 0-9 A-Z (O/I map to 0/1)");
++            ctx.Seed = canonical;
++        }
++        else if (GetBool(data, "require_seed", true))
++        {
++            return Error("start_run requires 'seed' for reproducible evaluation (pass require_seed=false for a random seed)");
++        }
++        if (data.TryGetValue("modifiers", out var mods) && mods.ValueKind == JsonValueKind.Array)
++        {
++            foreach (var m in mods.EnumerateArray())
++                if (m.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(m.GetString()))
++                    ctx.ModifierIds.Add(m.GetString()!.Trim().ToUpperInvariant());
++        }
++        if (ctx.ModifierIds.Count > 0 && !ctx.Custom) return Error("modifiers require mode='custom' (standard runs have none)");
++        ctx.AbandonExisting = GetBool(data, "abandon_existing", false);
++        int timeoutMs = GetInt(data, "timeout_ms", 90000, 5000, 300000);
++
++        if (ctx.Custom && ctx.ModifierIds.Count > 0)
++        {
++            var built = OnMain(() => BuildModifiers(ctx.ModifierIds));
++            if (built.error != null) return Error(built.error);
++            ctx.Modifiers = built.list;
++        }
++
++        Dictionary<string, object?>? settingsResult = null;
++        if (data.TryGetValue("settings", out var settingsElem) && settingsElem.ValueKind == JsonValueKind.Object)
++        {
++            var settings = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(settingsElem.GetRawText())!;
++            settingsResult = OnMain(() => ApplyEvalSettings(settings));
++            if ((string?)settingsResult["status"] != "ok") return settingsResult;
++        }
++
++        // A run already in progress is never silently replaced.
++        bool inRun = OnMain(() => RunManager.Instance.IsInProgress);
++        Dictionary<string, object?>? abandoned = null;
++        if (inRun)
++        {
++            if (!ctx.AbandonExisting)
++                return Error("A run is already in progress. Call abandon first or pass abandon_existing=true.");
++            abandoned = EvalAbandon(new Dictionary<string, JsonElement>());
++            if ((string?)abandoned["status"] != "ok") return abandoned;
++        }
++
++        var start = DateTime.UtcNow;
++        var deadline = start.AddMilliseconds(timeoutMs);
++        string? failure = null;
++        while (DateTime.UtcNow < deadline)
++        {
++            var (outcome, message) = OnMain(() => StartRunStep(ctx));
++            if (message != null && (ctx.Steps.Count == 0 || ctx.Steps[^1] != message)) ctx.Steps.Add(message);
++            if (outcome == StepOutcome.Done) break;
++            if (outcome == StepOutcome.Fail) { failure = message; break; }
++            Thread.Sleep(120);
++        }
++        if (failure != null)
++            return new Dictionary<string, object?> { ["status"] = "error", ["error"] = failure, ["steps"] = ctx.Steps };
++        if (!OnMain(() => RunManager.Instance.IsInProgress))
++            return new Dictionary<string, object?> { ["status"] = "error", ["error"] = $"Run did not start within {timeoutMs} ms", ["steps"] = ctx.Steps };
++
++        OnMain(() => { ResetCardUids(); return true; });
++        var remaining = Math.Max(1000, (int)(deadline - DateTime.UtcNow).TotalMilliseconds);
++        var snapshot = EvalWaitSettled(Math.Min(remaining, 30000), 300, includeState: false);
++        var readback = OnMain(BuildEvalRunInfo);
++
++        var mismatches = new List<string>();
++        if (!string.Equals(readback["character"] as string, ctx.Character, StringComparison.OrdinalIgnoreCase))
++            mismatches.Add($"character: requested {ctx.Character}, got {readback["character"]}");
++        if (readback["ascension"] is not int asc || asc != ctx.Ascension)
++            mismatches.Add($"ascension: requested {ctx.Ascension}, got {readback["ascension"]}");
++        if (ctx.Seed != null && !string.Equals(readback["seed"] as string, ctx.Seed, StringComparison.Ordinal))
++            mismatches.Add($"seed: requested {ctx.Seed}, got {readback["seed"]}");
++        if ((readback["game_mode"] as string) != mode)
++            mismatches.Add($"game_mode: requested {mode}, got {readback["game_mode"]}");
++        var gotMods = (readback["modifiers"] as List<string>) ?? new List<string>();
++        var wantMods = ctx.Modifiers?.Select(DescribeModifier).ToList() ?? new List<string>();
++        if (!gotMods.OrderBy(x => x).SequenceEqual(wantMods.OrderBy(x => x)))
++            mismatches.Add($"modifiers: requested [{string.Join(",", wantMods)}], got [{string.Join(",", gotMods)}]");
++
++        var verified = mismatches.Count == 0;
++        Log.Info($"[STS2 MCP eval] start_run {ctx.Character} A{ctx.Ascension} seed={ctx.Seed ?? "random"} mode={mode} verified={verified} readback_seed={readback["seed"]} readback_asc={readback["ascension"]}");
++        return new Dictionary<string, object?>
++        {
++            ["status"] = verified ? "ok" : "error",
++            ["error"] = verified ? null : "Run started but readback does not match the request: " + string.Join("; ", mismatches),
++            ["verified"] = verified,
++            ["requested"] = new Dictionary<string, object?>
++            {
++                ["character"] = ctx.Character, ["ascension"] = ctx.Ascension, ["seed"] = ctx.Seed,
++                ["mode"] = mode, ["modifiers"] = wantMods
++            },
++            ["readback"] = readback,
++            ["mismatches"] = mismatches,
++            ["seed_mechanism"] = ctx.Custom ? "StartRunLobby.SetSeed (custom)" : (ctx.Seed == null ? "random" : "NGame.DebugSeedOverride (standard)"),
++            ["settings"] = settingsResult?["settings"] ?? OnMain(SafeReadSettings),
++            ["abandoned_previous"] = abandoned?["run_result"],
++            ["steps"] = ctx.Steps,
++            ["elapsed_ms"] = (int)(DateTime.UtcNow - start).TotalMilliseconds,
++            ["state_version"] = snapshot["state_version"],
++            ["state_type"] = snapshot["state_type"],
++            ["settled"] = snapshot["settled"],
++        };
++    }
++
++    private static (List<ModifierModel>? list, string? error) BuildModifiers(List<string> ids)
++    {
++        var all = ModelDb.GoodModifiers.Concat(ModelDb.BadModifiers).ToList();
++        var list = new List<ModifierModel>();
++        var canon = new List<ModifierModel>();
++        foreach (var raw in ids)
++        {
++            var parts = raw.Split(':', 2);
++            var id = parts[0];
++            var model = all.FirstOrDefault(m => string.Equals(m.Id.Entry, id, StringComparison.OrdinalIgnoreCase));
++            if (model == null)
++                return (null, $"Unknown modifier '{id}'. Available: {string.Join(", ", all.Select(m => m.Id.Entry).Distinct())}");
++            if (model is not CharacterCards && canon.Contains(model))
++                return (null, $"Duplicate modifier '{id}'");
++            var mutable = model.ToMutable();
++            if (mutable is CharacterCards cc)
++            {
++                if (parts.Length < 2) return (null, $"{id} needs a character, e.g. {id}:SILENT");
++                var ch = ModelDb.AllCharacters.FirstOrDefault(c => string.Equals(c.Id.Entry, parts[1], StringComparison.OrdinalIgnoreCase));
++                if (ch == null) return (null, $"Unknown character '{parts[1]}' for {id}");
++                cc.CharacterModel = ch.Id;
++            }
++            else if (parts.Length > 1) return (null, $"Modifier '{id}' takes no argument");
++            canon.Add(model);
++            list.Add(mutable);
++        }
++        foreach (var set in ModelDb.MutuallyExclusiveModifiers)
++        {
++            var hit = canon.Where(set.Contains).Select(m => m.Id.Entry).Distinct().ToList();
++            if (hit.Count > 1) return (null, $"Mutually exclusive modifiers: {string.Join(", ", hit)}");
++        }
++        return (list, null);
++    }
++
++    // Main thread. One navigation step towards a started run.
++    private static (StepOutcome, string?) StartRunStep(StartRunCtx ctx)
++    {
++        var tree = Engine.GetMainLoop() as SceneTree;
++        if (tree?.Root == null) return (StepOutcome.Continue, "waiting for scene tree");
++        var game = NGame.Instance;
++        bool transitioning = game?.Transition != null && game.Transition.InTransition;
++
++        if (ctx.Embarked)
++        {
++            if (RunManager.Instance.IsInProgress && NRun.Instance != null && !transitioning)
++                return (StepOutcome.Done, "run loaded");
++            return (StepOutcome.Continue, "waiting for run to load");
++        }
++        if (transitioning) return (StepOutcome.Continue, "waiting for transition");
++        if (RunManager.Instance.IsInProgress && !RunManager.Instance.IsGameOver)
++            return (StepOutcome.Fail, "A run is in progress; cannot start a new one");
++        if (++ctx.Clicks > 60) return (StepOutcome.Fail, "start_run made too many menu steps without starting a run");
++
++        var gameOver = NOverlayStack.Instance?.Peek() as NGameOverScreen ?? FindAll<NGameOverScreen>(tree.Root).FirstOrDefault(IsNodeVisible);
++        if (gameOver != null)
++        {
++            TryCaptureRunResult();
++            return StepFromMenu("main_menu", "game over -> main menu");
++        }
++        var tutorial = FindVisibleAcceptTutorialsFtue(tree.Root);
++        if (tutorial != null && IsFtueNodeActive(tutorial))
++            return StepFromMenu("no", "declined tutorials prompt");
++        if (FindVisibleGenericFtue(tree.Root) != null)
++            return StepFromMenu("advance", "dismissed tutorial popup");
++        if (FindVisibleVerticalPopup(tree.Root) != null || GetVisiblePopupButtonOptions(tree.Root).Count > 0)
++            return (StepOutcome.Fail, "An unexpected modal popup is open; resolve it via /api/v1/singleplayer menu_select first");
++        var timeline = FindFirst<NTimelineScreen>(tree.Root);
++        if (timeline != null && IsNodeVisible(timeline))
++        {
++            var pending = SafePendingEpochs();
++            return (StepOutcome.Fail, pending.Count > 0
++                ? $"Timeline screen is open with unrevealed epochs [{string.Join(",", pending)}]; reveal them manually (not automated)"
++                : "Timeline screen is open; go back to the main menu first");
++        }
++
++        var custom = FindFirst<NCustomRunScreen>(tree.Root);
++        if (custom != null && IsNodeVisible(custom))
++        {
++            if (!ctx.Custom) return ClickField(custom, "_backButton", "custom screen -> back (standard requested)");
++            return CustomRunStep(custom, ctx);
++        }
++        var charSelect = FindFirst<NCharacterSelectScreen>(tree.Root);
++        if (charSelect != null && IsNodeVisible(charSelect))
++        {
++            if (ctx.Custom) return ClickField(charSelect, "_backButton", "character select -> back (custom requested)");
++            return StandardRunStep(charSelect, ctx);
++        }
++        var mainMenu = FindFirst<NMainMenu>(tree.Root);
++        if (mainMenu == null) return (StepOutcome.Continue, "waiting for main menu");
++        var sp = FindFirst<NSingleplayerSubmenu>(tree.Root);
++        if (sp != null && IsNodeVisible(sp))
++            return StepFromMenu(ctx.Custom ? "custom" : "standard", $"singleplayer -> {(ctx.Custom ? "custom" : "standard")}");
++        if (SaveManager.Instance.HasRunSave)
++        {
++            if (!ctx.AbandonExisting)
++                return (StepOutcome.Fail, "A saved run exists (main menu shows Continue). Pass abandon_existing=true to abandon it, or checkpoint_restore/continue it.");
++            mainMenu.RefreshButtons();
++            RecordSavedRunAbandon();
++            mainMenu.AbandonRun();
++            return (StepOutcome.Continue, "abandoned saved run from main menu");
++        }
++        return StepFromMenu("singleplayer", "main menu -> singleplayer");
++    }
++
++    private static (StepOutcome, string?) StepFromMenu(string option, string label)
++    {
++        var r = ExecuteMenuSelect(option);
++        if ((string?)r["status"] == "ok") return (StepOutcome.Continue, label);
++        return (StepOutcome.Continue, $"{label}: {r.GetValueOrDefault("error")} (retrying)");
++    }
++
++    private static (StepOutcome, string?) ClickField(object owner, string field, string label)
++    {
++        if (GetInstanceFieldValue(owner, field) is NClickableControl c && c.IsEnabled)
++        {
++            c.ForceClick();
++            return (StepOutcome.Continue, label);
++        }
++        return (StepOutcome.Continue, $"{label}: control not ready (retrying)");
++    }
++
++    private static string? SelectCharacterAndAscension(Node screen, StartRunLobby? lobby, StartRunCtx ctx, out bool acted)
++    {
++        acted = false;
++        if (lobby == null) return null;
++        var buttons = FindAll<NCharacterSelectButton>(screen);
++        var btn = buttons.FirstOrDefault(b => b.Character != null && string.Equals(b.Character.Id.Entry, ctx.Character, StringComparison.OrdinalIgnoreCase));
++        if (btn == null)
++            return $"Character '{ctx.Character}' not found. Unlocked: {string.Join(", ", buttons.Where(b => !b.IsLocked).Select(b => b.Character?.Id.Entry))}";
++        if (btn.IsLocked)
++            return $"Character '{ctx.Character}' is locked on this profile. Unlocked: {string.Join(", ", buttons.Where(b => !b.IsLocked).Select(b => b.Character?.Id.Entry))}";
++        if (!string.Equals(lobby.LocalPlayer.character?.Id.Entry, ctx.Character, StringComparison.OrdinalIgnoreCase))
++        {
++            btn.Select();
++            acted = true;
++            return null;
++        }
++        if (ctx.Ascension > lobby.MaxAscension)
++            return $"Ascension {ctx.Ascension} is not unlocked for {ctx.Character} (max unlocked: {lobby.MaxAscension})";
++        if (lobby.Ascension != ctx.Ascension)
++        {
++            if (GetInstanceFieldValue(screen, "_ascensionPanel") is NAscensionPanel panel)
++                panel.SetAscensionLevel(ctx.Ascension);
++            if (lobby.Ascension != ctx.Ascension)
++                lobby.SyncAscensionChange(ctx.Ascension);
++            acted = true;
++        }
++        return null;
++    }
++
++    private static (StepOutcome, string?) StandardRunStep(NCharacterSelectScreen charSelect, StartRunCtx ctx)
++    {
++        var lobby = charSelect.Lobby;
++        if (lobby == null) return (StepOutcome.Continue, "waiting for lobby");
++        var err = SelectCharacterAndAscension(charSelect, lobby, ctx, out bool acted);
++        if (err != null) return (StepOutcome.Fail, err);
++        if (acted) return (StepOutcome.Continue, $"selected {ctx.Character} / A{ctx.Ascension}");
++        if (lobby.Ascension != ctx.Ascension) return (StepOutcome.Continue, "waiting for ascension");
++        var r = ExecuteCharacterSelectMenuOption(charSelect, "embark", ctx.Seed);
++        if ((string?)r["status"] != "ok") return (StepOutcome.Continue, $"embark: {r.GetValueOrDefault("error")} (retrying)");
++        ctx.Embarked = true;
++        return (StepOutcome.Continue, $"embarked standard {ctx.Character} A{ctx.Ascension} seed={ctx.Seed ?? "random"}");
++    }
++
++    private static (StepOutcome, string?) CustomRunStep(NCustomRunScreen screen, StartRunCtx ctx)
++    {
++        var lobby = screen.Lobby;
++        if (lobby == null) return (StepOutcome.Continue, "waiting for lobby");
++        var err = SelectCharacterAndAscension(screen, lobby, ctx, out bool acted);
++        if (err != null) return (StepOutcome.Fail, err);
++        if (acted) return (StepOutcome.Continue, $"selected {ctx.Character} / A{ctx.Ascension}");
++        if (!ctx.ModifiersSet)
++        {
++            lobby.SetModifiers(ctx.Modifiers ?? new List<ModifierModel>());
++            ctx.ModifiersSet = true;
++            return (StepOutcome.Continue, $"set modifiers [{string.Join(",", ctx.ModifierIds)}]");
++        }
++        if (NGame.Instance != null) NGame.Instance.DebugSeedOverride = null;
++        if (lobby.Seed != ctx.Seed)
++        {
++            lobby.SetSeed(ctx.Seed);
++            if (GetInstanceFieldValue(screen, "_seedInput") is LineEdit input) input.Text = ctx.Seed ?? "";
++            return (StepOutcome.Continue, $"set seed {ctx.Seed ?? "random"}");
++        }
++        if (GetInstanceFieldValue(screen, "_confirmButton") is NClickableControl confirm && confirm.IsEnabled)
++        {
++            confirm.ForceClick();
++            ctx.Embarked = true;
++            return (StepOutcome.Continue, $"embarked custom {ctx.Character} A{ctx.Ascension} seed={ctx.Seed ?? "random"}");
++        }
++        return (StepOutcome.Continue, "waiting for custom confirm button");
++    }
++
++    // ------------------------------------------------------------------ lifecycle
++
++    private static Dictionary<string, object?>? TryCaptureRunResult()
++    {
++        var rm = RunManager.Instance;
++        var run = rm.DebugOnlyGetState();
++        if (run == null || !run.IsGameOver) return null;
++        var player = LocalContext.GetMe(run);
++        var history = rm.History;
++        string key = $"{run.Rng?.StringSeed}|{rm.GetHashCode()}|{run.GetHashCode()}";
++        if (_lastRunResultKey == key && _lastRunResult != null) return _lastRunResult;
++
++        var tree = Engine.GetMainLoop() as SceneTree;
++        NGameOverScreen? screen = NOverlayStack.Instance?.Peek() as NGameOverScreen;
++        if (screen == null && tree?.Root != null) screen = FindAll<NGameOverScreen>(tree.Root).FirstOrDefault(IsNodeVisible);
++
++        bool victory = history?.Win ?? false;
++        bool abandoned = rm.IsAbandoned || (history?.WasAbandoned ?? false);
++        string cause;
++        if (abandoned) cause = "abandoned";
++        else if (victory) cause = "victory";
++        else if (history != null && history.KilledByEncounter != ModelId.none) cause = $"encounter:{history.KilledByEncounter.Entry}";
++        else if (history != null && history.KilledByEvent != ModelId.none) cause = $"event:{history.KilledByEvent.Entry}";
++        else cause = $"room:{run.CurrentRoom?.GetType().Name}";
++
++        object? score = null;
++        if (screen != null && GetInstanceFieldValue(screen, "_score") is int s && s != 0) score = s;
++        if (score == null) { try { score = ScoreUtility.CalculateScore(run, victory); } catch { } }
++
++        var result = new Dictionary<string, object?>
++        {
++            ["schema"] = "sts2-run-result",
++            ["schema_version"] = EvalSchemaVersion,
++            ["victory"] = victory,
++            ["abandoned"] = abandoned,
++            ["cause"] = cause,
++            ["score"] = score,
++            ["character"] = player?.Character?.Id.Entry,
++            ["seed"] = run.Rng?.StringSeed,
++            ["ascension"] = run.AscensionLevel,
++            ["game_mode"] = run.GameMode.ToString().ToLowerInvariant(),
++            ["modifiers"] = run.Modifiers.Select(DescribeModifier).ToList(),
++            ["act"] = run.CurrentActIndex + 1,
++            ["floor"] = run.TotalFloor,
++            ["act_floor"] = run.ActFloor,
++            ["hp"] = player?.Creature?.CurrentHp,
++            ["max_hp"] = player?.Creature?.MaxHp,
++            ["gold"] = player?.Gold,
++            ["deck"] = player?.Deck.Cards.Select(c => c.Id.Entry + (c.IsUpgraded ? "+" : "")).ToList(),
++            ["relics"] = player?.Relics.Select(r => r.Id.Entry).ToList(),
++            ["potions"] = player?.Potions.Select(p => p.Id.Entry).ToList(),
++            ["run_time_s"] = history?.RunTime ?? (object)rm.RunTime,
++            ["history_available"] = history != null,
++            ["game_over_screen_visible"] = screen != null,
++            ["source"] = "live_run",
++        };
++        // Only cache once the history exists (it is created when the game-over flow runs).
++        if (history != null || screen != null)
++        {
++            _lastRunResult = result;
++            _lastRunResultKey = key;
++            Log.Info($"[STS2 MCP eval] run_result victory={victory} abandoned={abandoned} cause={cause} floor={run.TotalFloor} score={score} seed={run.Rng?.StringSeed} ascension={run.AscensionLevel}");
++        }
++        return result;
++    }
++
++    // Main thread. Summary for a save abandoned from the main menu (no live run state).
++    private static void RecordSavedRunAbandon()
++    {
++        try
++        {
++            var read = SaveManager.Instance.LoadRunSave();
++            if (!read.Success || read.SaveData == null) return;
++            var save = read.SaveData;
++            var info = DescribeSave(save);
++            info["schema"] = "sts2-run-result";
++            info["schema_version"] = EvalSchemaVersion;
++            info["victory"] = false;
++            info["abandoned"] = true;
++            info["cause"] = "abandoned";
++            try { info["score"] = ScoreUtility.CalculateScore(save, false); } catch { info["score"] = null; }
++            info["source"] = "run_save_abandoned_from_menu";
++            _lastRunResult = info;
++            _lastRunResultKey = $"save|{save.SerializableRng?.Seed}|{save.SaveTime}";
++            Log.Info($"[STS2 MCP eval] run_result (saved run abandoned from menu) seed={info["seed"]} ascension={info["ascension"]} floor={info["floor"]}");
++        }
++        catch (Exception ex) { GD.PrintErr($"[STS2 MCP] RecordSavedRunAbandon: {ex.Message}"); }
++    }
++
++    private static Dictionary<string, object?> DescribeSave(SerializableRun save)
++    {
++        return new Dictionary<string, object?>
++        {
++            ["character"] = save.Players.FirstOrDefault()?.CharacterId?.Entry,
++            ["seed"] = save.SerializableRng?.Seed,
++            ["ascension"] = save.Ascension,
++            ["game_mode"] = save.GameMode.ToString().ToLowerInvariant(),
++            ["modifiers"] = save.Modifiers?.Select(m => m.Id?.Entry).Where(id => id != null).ToList() ?? new List<string?>(),
++            ["act"] = save.CurrentActIndex + 1,
++            ["floor"] = SafeSaveFloor(save),
++            ["resume_floor"] = SafeResumeFloor(save),
++            ["num_reloads"] = save.NumReloads,
++            ["save_time"] = save.SaveTime,
++            ["run_time_s"] = save.RunTime,
++            ["pre_finished_room"] = save.PreFinishedRoom != null,
++        };
++    }
++
++    private static object? SafeSaveFloor(SerializableRun save)
++    {
++        try { return save.FloorReached; } catch { return null; }
++    }
++
++    // The autosave is written as a room is entered, before its history entry exists:
++    // floor (history count) lags the floor the game resumes on by one. The room being
++    // resumed is the last visited map coord of the current act.
++    private static object? SafeResumeFloor(SerializableRun save)
++    {
++        try
++        {
++            int previousActs = save.MapPointHistory.Take(save.CurrentActIndex).Sum(c => c.Count);
++            return Math.Max(save.FloorReached, previousActs + save.VisitedMapCoords.Count);
++        }
++        catch { return null; }
++    }
++
++    private static Dictionary<string, object?> EvalAbandon(Dictionary<string, JsonElement> data)
++    {
++        int timeoutMs = GetInt(data, "timeout_ms", 30000, 1000, 120000);
++        bool toMenu = GetBool(data, "return_to_menu", true);
++        var start = DateTime.UtcNow;
++        var deadline = start.AddMilliseconds(timeoutMs);
++        string phase = OnMain(() =>
++        {
++            var rm = RunManager.Instance;
++            if (rm.IsInProgress)
++            {
++                if (rm.IsGameOver) return "already_over";
++                rm.Abandon();
++                return "abandoned_live";
++            }
++            if (SaveManager.Instance.HasRunSave)
++            {
++                var tree = Engine.GetMainLoop() as SceneTree;
++                var mainMenu = tree?.Root == null ? null : FindFirst<NMainMenu>(tree.Root);
++                if (mainMenu == null) return "error:no main menu";
++                mainMenu.RefreshButtons();
++                RecordSavedRunAbandon();
++                mainMenu.AbandonRun();
++                return "abandoned_save";
++            }
++            return "nothing";
++        });
++        if (phase.StartsWith("error:")) return Error(phase[6..]);
++        if (phase == "nothing")
++            return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "No run in progress and no saved run", ["run_result"] = null };
++
++        Dictionary<string, object?>? result = phase == "abandoned_save" ? _lastRunResult : null;
++        if (phase != "abandoned_save")
++        {
++            while (DateTime.UtcNow < deadline)
++            {
++                var (r, screenVisible) = OnMain(() =>
++                {
++                    var res = TryCaptureRunResult();
++                    return (res, res != null && (bool)(res["game_over_screen_visible"] ?? false));
++                });
++                if (r != null) result = r;
++                if (screenVisible && r != null && (bool)(r["history_available"] ?? false)) break;
++                Thread.Sleep(100);
++            }
++        }
++        Dictionary<string, object?>? menu = null;
++        if (toMenu && phase != "abandoned_save")
++            menu = EvalReturnToMenu(Math.Max(1000, (int)(deadline - DateTime.UtcNow).TotalMilliseconds));
++        return new Dictionary<string, object?>
++        {
++            ["status"] = result != null && (menu == null || (string?)menu["status"] == "ok") ? "ok" : "error",
++            ["error"] = result == null ? "Abandon issued but no run result was captured" : menu?.GetValueOrDefault("error"),
++            ["phase"] = phase,
++            ["run_result"] = result,
++            ["returned_to_menu"] = menu == null ? phase == "abandoned_save" : (string?)menu["status"] == "ok",
++            ["elapsed_ms"] = (int)(DateTime.UtcNow - start).TotalMilliseconds,
++        };
++    }
++
++    private static Dictionary<string, object?> EvalReturnToMenu(int timeoutMs)
++    {
++        var start = DateTime.UtcNow;
++        var deadline = start.AddMilliseconds(timeoutMs);
++        bool issued = false;
++        string how = "none";
++        while (DateTime.UtcNow < deadline)
++        {
++            var status = OnMain(() =>
++            {
++                var tree = Engine.GetMainLoop() as SceneTree;
++                var game = NGame.Instance;
++                bool transitioning = game?.Transition != null && game.Transition.InTransition;
++                if (transitioning) return "wait";
++                var rm = RunManager.Instance;
++                if (!rm.IsInProgress && tree?.Root != null && FindFirst<NMainMenu>(tree.Root) != null) return "done";
++                if (issued) return "wait";
++                if (rm.IsInProgress && rm.IsGameOver)
++                {
++                    TryCaptureRunResult();
++                    var r = ExecuteMenuSelect("main_menu");
++                    if ((string?)r["status"] == "ok") { issued = true; how = "game_over_main_menu"; }
++                    return "wait";
++                }
++                if (rm.IsInProgress && game != null)
++                {
++                    if (SaveManager.Instance.CurrentRunSaveTask != null) return "wait";
++                    TaskHelperRun(game.ReturnToMainMenu());
++                    issued = true;
++                    how = "save_and_quit";
++                    return "wait";
++                }
++                return "wait";
++            });
++            if (status == "done")
++                return new Dictionary<string, object?>
++                {
++                    ["status"] = "ok", ["method"] = how, ["has_saved_run"] = OnMain(SafeHasRunSave),
++                    ["elapsed_ms"] = (int)(DateTime.UtcNow - start).TotalMilliseconds
++                };
++            Thread.Sleep(100);
++        }
++        return new Dictionary<string, object?> { ["status"] = "error", ["error"] = $"Did not reach main menu within {timeoutMs} ms", ["method"] = how };
++    }
++
++    private static void TaskHelperRun(Task task)
++    {
++        task.ContinueWith(t => GD.PrintErr($"[STS2 MCP] eval background task failed: {t.Exception?.GetBaseException().Message}"),
++            TaskContinuationOptions.OnlyOnFaulted);
++    }
++
++    // ------------------------------------------------------------------ checkpoints
++    // A checkpoint is a copy of the game's own run save (current_run.save). The game only
++    // autosaves at room boundaries, so a checkpoint restores the state as of the last
++    // autosave (e.g. map node / room entry), not mid-combat.
++
++    private static string CheckpointDir() => Path.Combine(OS.GetUserDataDir(), "mcp_checkpoints");
++
++    private static bool ValidCheckpointName(string? name) =>
++        !string.IsNullOrEmpty(name) && name.Length <= 64 && name.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_' || ch == '-');
++
++    private static Dictionary<string, object?> EvalCheckpointSave(Dictionary<string, JsonElement> data)
++    {
++        string? name = GetString(data, "name");
++        if (!ValidCheckpointName(name)) return Error("checkpoint name must match [A-Za-z0-9_-]{1,64}");
++        int timeoutMs = GetInt(data, "timeout_ms", 15000, 1000, 60000);
++        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
++        while (OnMain(() => SaveManager.Instance.CurrentRunSaveTask != null))
++        {
++            if (DateTime.UtcNow > deadline) return Error("Timed out waiting for the game's run autosave to finish");
++            Thread.Sleep(50);
++        }
++        var result = OnMain(() =>
++        {
++            if (!SaveManager.Instance.HasRunSave) return Error("No run save exists (start a run and reach the map first)");
++            var read = SaveManager.Instance.LoadRunSave();
++            if (!read.Success || read.SaveData == null) return Error($"Run save could not be read: {read.Status}");
++            string json = JsonSerializationUtility.ToJson(read.SaveData);
++            EvalCheckpoints[name!] = json;
++            var info = DescribeSave(read.SaveData);
++            var live = RunManager.Instance.DebugOnlyGetState();
++            return new Dictionary<string, object?>
++            {
++                ["status"] = "ok",
++                ["name"] = name,
++                ["checkpoint"] = info,
++                ["live_floor"] = live?.TotalFloor,
++                ["matches_live_floor"] = live == null ? null : (object)(Equals(info["resume_floor"], live.TotalFloor)),
++                ["bytes"] = json.Length,
++                ["json"] = json,
++                ["granularity"] = "last game autosave (room boundary); in-room progress since then is not captured",
++            };
++        });
++        if ((string?)result["status"] != "ok") return result;
++        string jsonText = (string)result["json"]!;
++        result.Remove("json");
++        try
++        {
++            Directory.CreateDirectory(CheckpointDir());
++            string path = Path.Combine(CheckpointDir(), name + ".save.json");
++            File.WriteAllText(path, jsonText);
++            result["path"] = path;
++        }
++        catch (Exception ex) { result["file_error"] = ex.Message; }
++        Log.Info($"[STS2 MCP eval] checkpoint_save {name} floor={((Dictionary<string, object?>)result["checkpoint"]!)["floor"]}");
++        return result;
++    }
++
++    private static Dictionary<string, object?> EvalCheckpointList()
++    {
++        var names = new SortedSet<string>(EvalCheckpoints.Keys);
++        try
++        {
++            if (Directory.Exists(CheckpointDir()))
++                foreach (var f in Directory.GetFiles(CheckpointDir(), "*.save.json"))
++                    names.Add(Path.GetFileName(f)[..^".save.json".Length]);
++        }
++        catch { }
++        return new Dictionary<string, object?> { ["status"] = "ok", ["checkpoints"] = names.ToList(), ["dir"] = CheckpointDir() };
++    }
++
++    private static Dictionary<string, object?> EvalCheckpointRestore(Dictionary<string, JsonElement> data)
++    {
++        string? name = GetString(data, "name");
++        if (!ValidCheckpointName(name)) return Error("checkpoint name must match [A-Za-z0-9_-]{1,64}");
++        int timeoutMs = GetInt(data, "timeout_ms", 60000, 5000, 180000);
++        var start = DateTime.UtcNow;
++        var deadline = start.AddMilliseconds(timeoutMs);
++        string? json = null;
++        lock (EvalLock) { EvalCheckpoints.TryGetValue(name!, out json); }
++        if (json == null)
++        {
++            string path = Path.Combine(CheckpointDir(), name + ".save.json");
++            if (!File.Exists(path)) return Error($"Unknown checkpoint '{name}'");
++            json = File.ReadAllText(path);
++        }
++
++        if (OnMain(() => RunManager.Instance.IsInProgress))
++        {
++            var menu = EvalReturnToMenu(Math.Min(30000, timeoutMs));
++            if ((string?)menu["status"] != "ok") return menu;
++        }
++
++        var write = OnMain(() =>
++        {
++            var parsed = JsonSerializationUtility.FromJson<SerializableRun>(json);
++            if (!parsed.Success || parsed.SaveData == null) return Error($"Checkpoint JSON did not parse: {parsed.Status}");
++            var save = parsed.SaveData;
++            save.NumReloads -= 1; // IncrementNumReloads adds it back; it is the game's public run-save writer.
++            _evalSaveTask = SaveManager.Instance.IncrementNumReloads(save, false);
++            return new Dictionary<string, object?> { ["status"] = "ok", ["checkpoint"] = DescribeSave(save) };
++        });
++        if ((string?)write["status"] != "ok") return write;
++        while (true)
++        {
++            var t = _evalSaveTask;
++            if (t == null || t.IsCompleted) break;
++            if (DateTime.UtcNow > deadline) return Error("Timed out writing the run save");
++            Thread.Sleep(50);
++        }
++        if (_evalSaveTask?.IsFaulted == true)
++            return Error($"Writing run save failed: {_evalSaveTask.Exception?.GetBaseException().Message}");
++
++        bool clicked = false;
++        while (DateTime.UtcNow < deadline)
++        {
++            var status = OnMain(() =>
++            {
++                var game = NGame.Instance;
++                if (game?.Transition != null && game.Transition.InTransition) return "wait";
++                if (RunManager.Instance.IsInProgress && NRun.Instance != null) return clicked ? "done" : "wait";
++                if (clicked) return "wait";
++                var tree = Engine.GetMainLoop() as SceneTree;
++                var mainMenu = tree?.Root == null ? null : FindFirst<NMainMenu>(tree.Root);
++                if (mainMenu == null) return "wait";
++                mainMenu.RefreshButtons();
++                var r = ClickMenuButtonField(mainMenu, "_continueButton", "Continue");
++                if ((string?)r["status"] == "ok") clicked = true;
++                return "wait";
++            });
++            if (status == "done") break;
++            Thread.Sleep(120);
++        }
++        if (!OnMain(() => RunManager.Instance.IsInProgress && NRun.Instance != null))
++            return Error($"Run did not load from checkpoint within {timeoutMs} ms");
++
++        OnMain(() => { ResetCardUids(); return true; });
++        var snap = EvalWaitSettled(Math.Max(1000, Math.Min(30000, (int)(deadline - DateTime.UtcNow).TotalMilliseconds)), 300, includeState: false);
++        var readback = OnMain(BuildEvalRunInfo);
++        var expected = (Dictionary<string, object?>)write["checkpoint"]!;
++        var mismatches = new List<string>();
++        foreach (var k in new[] { "seed", "ascension" })
++            if (!Equals(expected[k]?.ToString(), readback.GetValueOrDefault(k)?.ToString()))
++                mismatches.Add($"{k}: checkpoint {expected[k]}, live {readback.GetValueOrDefault(k)}");
++        string liveFloor = readback.GetValueOrDefault("floor")?.ToString() ?? "";
++        if (liveFloor != expected.GetValueOrDefault("resume_floor")?.ToString() && liveFloor != expected.GetValueOrDefault("floor")?.ToString())
++            mismatches.Add($"floor: checkpoint resume_floor {expected.GetValueOrDefault("resume_floor")}, live {liveFloor}");
++        Log.Info($"[STS2 MCP eval] checkpoint_restore {name} verified={mismatches.Count == 0}");
++        return new Dictionary<string, object?>
++        {
++            ["status"] = mismatches.Count == 0 ? "ok" : "error",
++            ["error"] = mismatches.Count == 0 ? null : "Restored run does not match checkpoint: " + string.Join("; ", mismatches),
++            ["name"] = name,
++            ["checkpoint"] = expected,
++            ["readback"] = readback,
++            ["state_version"] = snap["state_version"],
++            ["state_type"] = snap["state_type"],
++            ["settled"] = snap["settled"],
++            ["elapsed_ms"] = (int)(DateTime.UtcNow - start).TotalMilliseconds,
++            ["note"] = "Restores the run save; the game rebuilds the room from it. RNG counters are restored from the save, so the continuation is deterministic given the same actions.",
++        };
++    }
++
++    // ------------------------------------------------------------------ batch
++
++    private static Dictionary<string, object?> EvalBatch(List<Dictionary<string, JsonElement>> steps, Dictionary<string, JsonElement> options, bool singleStep)
++    {
++        if (steps.Count == 0) return Error("No steps");
++        if (steps.Count > 50) return Error("At most 50 steps per batch");
++        int waitMs = GetInt(options, "wait_settled_ms", 15000, 0, 120000);
++        int stableMs = GetInt(options, "stable_ms", 200, 0, 5000);
++        bool stopOnNoChange = GetBool(options, "stop_on_no_change", true);
++        bool includeState = GetBool(options, "include_state", true);
++
++        var results = new List<Dictionary<string, object?>>();
++        var current = EvalWaitSettled(Math.Min(waitMs, 5000), stableMs, includeState: false);
++        string stopReason = "completed";
++        for (int i = 0; i < steps.Count; i++)
++        {
++            var step = steps[i];
++            Dictionary<string, JsonElement> action = step;
++            if (singleStep)
++            {
++                if (!step.TryGetValue("game_action", out var ga) || ga.ValueKind != JsonValueKind.Object)
++                    return Error("act requires 'game_action': {action: ..., ...} (the /api/v1/singleplayer POST body)");
++                action = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(ga.GetRawText())!;
++            }
++            string? name = GetString(action, "action");
++            var entry = new Dictionary<string, object?>
++            {
++                ["index"] = i, ["action"] = name,
++                ["state_version_before"] = current["state_version"], ["state_type_before"] = current["state_type"],
++            };
++            results.Add(entry);
++            if (string.IsNullOrEmpty(name)) { entry["status"] = "error"; entry["error"] = "step missing 'action'"; stopReason = "error"; break; }
++
++            if (step.TryGetValue("expect_state_version", out var ev) && ev.ValueKind == JsonValueKind.Number &&
++                ev.GetInt64() != Convert.ToInt64(current["state_version"]))
++            {
++                entry["status"] = "error";
++                entry["error"] = $"expect_state_version {ev.GetInt64()} != current {current["state_version"]}";
++                stopReason = "stale_state_version"; break;
++            }
++            if (step.TryGetValue("expect_state_type", out var et) && et.ValueKind == JsonValueKind.String &&
++                et.GetString() != current["state_type"] as string)
++            {
++                entry["status"] = "error";
++                entry["error"] = $"expect_state_type {et.GetString()} != current {current["state_type"]}";
++                stopReason = "unexpected_state_type"; break;
++            }
++
++            Dictionary<string, object?> actionResult;
++            try
++            {
++                if (name == "menu_select")
++                {
++                    string option = GetString(action, "option") ?? "";
++                    string? seed = GetString(action, "seed");
++                    var captured = action;
++                    actionResult = OnMain(() => RunTrackedAction(name, captured, () => ExecuteMenuSelect(option, seed)));
++                }
++                else
++                {
++                    var captured = action;
++                    actionResult = OnMain(() => RunTrackedAction(name, captured, () => ExecuteAction(name, captured)));
++                }
++            }
++            catch (Exception ex) { actionResult = Error($"{ex.GetType().Name}: {ex.Message}"); }
++            entry["result"] = actionResult;
++
++            var after = EvalWaitSettled(waitMs, stableMs, includeState: false);
++            bool changed = !Equals(after["state_fingerprint"], current["state_fingerprint"]);
++            entry["state_version_after"] = after["state_version"];
++            entry["state_type_after"] = after["state_type"];
++            entry["changed"] = changed;
++            entry["settled"] = after["settled"];
++            entry["waited_ms"] = after["waited_ms"];
++            current = after;
++
++            if ((string?)actionResult.GetValueOrDefault("status") != "ok")
++            {
++                entry["status"] = "error"; stopReason = "error"; break;
++            }
++            if (!changed)
++            {
++                entry["status"] = "no_change";
++                if (stopOnNoChange) { stopReason = "no_change"; break; }
++                continue;
++            }
++            entry["status"] = "ok";
++            if (!(bool)(after["settled"] ?? false)) { stopReason = "unsettled"; break; }
++        }
++
++        var final = EvalWaitSettled(0, 0, includeState);
++        int ok = results.Count(r => (string?)r.GetValueOrDefault("status") == "ok");
++        return new Dictionary<string, object?>
++        {
++            ["status"] = stopReason switch { "completed" => "ok", "no_change" => "no_change", "unsettled" => "partial", _ => "error" },
++            ["stop_reason"] = stopReason,
++            ["steps_requested"] = steps.Count,
++            ["steps_executed"] = results.Count,
++            ["steps_ok"] = ok,
++            ["steps"] = results,
++            ["snapshot"] = final,
++        };
++    }
++
++    // ------------------------------------------------------------------ helpers
++
++    private static int ParseQueryInt(HttpListenerRequest request, string key, int dflt, int min, int max)
++    {
++        var raw = request.QueryString[key];
++        if (raw == null || !int.TryParse(raw, out int v)) return dflt;
++        return Math.Clamp(v, min, max);
++    }
++
++    private static string? GetString(Dictionary<string, JsonElement> data, string key) =>
++        data.TryGetValue(key, out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
++
++    private static int GetInt(Dictionary<string, JsonElement> data, string key, int dflt, int min, int max)
++    {
++        if (!data.TryGetValue(key, out var e) || e.ValueKind != JsonValueKind.Number || !e.TryGetInt32(out int v)) return dflt;
++        return Math.Clamp(v, min, max);
++    }
++
++    private static bool GetBool(Dictionary<string, JsonElement> data, string key, bool dflt)
++    {
++        if (!data.TryGetValue(key, out var e)) return dflt;
++        return e.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => dflt };
++    }
++}
+diff --git a/McpMod.cs b/McpMod.cs
+index d67bacc..9ceec78 100644
+--- a/McpMod.cs
++++ b/McpMod.cs
+@@ -253,6 +253,10 @@ public static partial class McpMod
+                 else
+                     SendError(response, 405, "Method not allowed");
+             }
++            else if (path == "/api/v1/eval")
++            {
++                HandleEvalRequest(request, response);
++            }
+             else if (path == "/api/v1/wiki")
+             {
+                 if (request.HttpMethod == "GET")

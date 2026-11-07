@@ -9,6 +9,15 @@ Return codes are never swallowed: a non-zero return raises ``Sts2VecError`` with
 problems are not exceptions — they are the ``status`` bits (``sts2vec.Status``), which ``step`` returns and which the
 caller must look at (``ILLEGAL_ACTION``, ``CONTENT_GAP``, ``SIM_ERROR``, ``POOL_EMPTY`` …; ``slot_errors()`` gives the
 native exception text of failed slots).
+
+Threads: the native library serialises every call on one env (a lock per env, held for the whole call; the GIL is
+released during it). ``branch`` / ``restore_many`` / ``pool.release`` keep no Python-side scratch, so they may be called
+from another thread while one thread steps; they then wait for the step (and vice versa). ``reset`` / ``step`` /
+``restore`` share per-env scratch arrays: drive them from one thread.
+
+Search (ABI 2, sim/VEC.md "Search"): ``branch(src, dsts)`` copies a live slot into other slots in one call (exact or
+determinized, no pool entry), ``restore_many(slots, entries)`` restores many slots at once, ``pool.release(ids)`` frees
+pool entries.
 """
 
 from __future__ import annotations
@@ -20,11 +29,18 @@ import numpy as np
 
 from .errors import SERVER_GC_MARKER, ServerGCError, Sts2VecError
 from .loader import Library, load
-from .pool import ALL_CHARACTERS, Entry, FreshEntry, Pool, PoolSpec, SaveEntry, make_config
+from .pool import ALL_CHARACTERS, Entry, FreshEntry, Pool, PoolSpec, SaveEntry, int32_list, make_config, parse_macros
 from .schema import SIGNAL_BUFFERS, STATUS, Buffers, Schema, status_counts
 
-__all__ = ["ALL_CHARACTERS", "Entry", "FreshEntry", "PoolSpec", "SaveEntry", "Sts2VecError", "VecEnv",
-           "random_actions", "schema_of"]
+__all__ = ["ALL_CHARACTERS", "Entry", "FLOOR_STEP_CAP", "FreshEntry", "PoolSpec", "SaveEntry", "Sts2VecError",
+           "VecEnv", "branch_seed", "random_actions", "schema_of"]
+
+_M64 = (1 << 64) - 1
+
+# Default floor stall cap: truncate an episode after this many non-combat decisions on one floor without the floor
+# advancing (status FLOOR_STALL, last_episode.end_kind FloorStall). The protocol's limit (v0.2 §5, `stuck`); the C#
+# default (VecConfig.DefaultFloorStepCap) and the evaluator (`sts2vec eval`) use the same value.
+FLOOR_STEP_CAP = 80
 
 _schema_cache: dict[int, Schema] = {}
 
@@ -35,6 +51,17 @@ def schema_of(lib: Library) -> Schema:
     if s is None:
         s = _schema_cache[id(lib)] = Schema.from_json(lib.schema_json())
     return s
+
+
+def branch_seed(seed: int, index: int) -> int:
+    """The determinization seed of destination position ``index`` in ``env.branch(src, dsts, seed=seed)``
+    (``VecEnv.BranchSeed``): the SplitMix64 finaliser of ``seed + (index + 1) * 0x9E3779B97F4A7C15`` mod 2**64. So
+    ``branch(src, [d], seed=s)`` puts into ``d`` exactly what ``restore(d, clone_determinized(src, branch_seed(s, 0)))``
+    would, and destination j of any branch call is a function of (state, seed, j) only."""
+    z = (int(seed) + 0x9E3779B97F4A7C15 * (int(index) + 1)) & _M64
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & _M64
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & _M64
+    return z ^ (z >> 31)
 
 
 def random_actions(rng: np.random.Generator, cand_n: np.ndarray, out: np.ndarray | None = None) -> np.ndarray:
@@ -58,21 +85,44 @@ class VecEnv:
     Parameters mirror ``config_json`` (§D5): ``threads`` worker threads, ``step_cap`` decisions per episode before
     truncation, ``auto_reset`` (finished slots restart in the same step), ``seed_text`` (per-slot start sequences),
     ``content`` ("ported_only" | "all"), ``pool`` (``PoolSpec``; None = empty pool), ``pool_cache`` (template cache size),
-    ``fast_path`` (clone-free stepping when the static prompt-site predicate proves no prompt can occur; same outputs).
+    ``fast_path`` (clone-free stepping when the static prompt-site predicate proves no prompt can occur; same outputs),
+    ``floor_step_cap`` (truncate an episode after this many non-combat decisions — legal or illegal, no-ops excluded —
+    on one floor without the floor advancing: ``truncated``, status ``FLOOR_STALL``, ``end_kind`` FloorStall; 0 = off;
+    default ``FLOOR_STEP_CAP`` = 80, the protocol evaluator's ``stuck`` rule; combat decisions never count).
+    ``macros`` (None / "rest,shop" / ("rest", "shop"); default off): room macro candidates — at a rest site one
+    ``ChooseRestOption(A, B=deck card)`` row per upgradable card in place of SMITH, in a shop one ``BuyEntry(A, B=deck
+    card)`` row per removable card in place of the card removal, each running open → select → confirm in one step
+    (sim/VEC.md "Room macros"; ``self.macros`` = the normalised names). ``prompt`` (W4; sim/VEC.md "Prompt macros
+    v2"): every pending prompt lists no PromptCancel row and a pick that completes the selection also confirms it in
+    the same step; with it the rest / shop rows fall back to the plain open row past 64 candidates (status
+    ``MACRO_FALLBACK``). ``"all"`` = rest, shop, prompt. Off, the config and every output are those of a build without
+    the option.
     ``dll`` picks the library (default: ``STS2VEC_AOT_LIB`` / ``STS2VEC_DLL`` / the Release build; see ``sts2vec.loader``).
     """
 
     def __init__(self, num_envs: int, *, threads: int = 8, step_cap: int = 3000, auto_reset: bool = True,
                  seed_text: str = "VEC", content: str = "ported_only", pool: PoolSpec | None = PoolSpec(),
-                 pool_cache: int = 4096, fast_path: bool = True, dll: str | os.PathLike | None = None):
+                 pool_cache: int = 4096, fast_path: bool = True, floor_step_cap: int = FLOOR_STEP_CAP,
+                 macros=None, dll: str | os.PathLike | None = None):
         self._h = 0
         self._lib = load(dll)
         self.schema = schema_of(self._lib)
         self.num_envs = int(num_envs)
         self.pool_spec = pool
+        if int(floor_step_cap) < 0:
+            raise ValueError(f"floor_step_cap must be >= 0 (0 = off), got {floor_step_cap}")
+        cap: int | None = int(floor_step_cap)
+        if not self.schema.supports_floor_step_cap:
+            # a library built before floor_step_cap: it has no cap and rejects the config key
+            if cap:
+                raise Sts2VecError(f"floor_step_cap={cap}: {self._lib.path} was built before floor_step_cap existed; "
+                                   "rebuild it (dotnet build sim/Sts2Sim.sln -c Release) or pass floor_step_cap=0")
+            cap = None
+        self.floor_step_cap = int(floor_step_cap)
+        self.macros = parse_macros(macros)
         self.config = make_config(self.num_envs, threads=threads, step_cap=step_cap, auto_reset=auto_reset,
                                   seed_text=seed_text, content=content, pool=pool, pool_cache=pool_cache,
-                                  fast_path=fast_path)
+                                  fast_path=fast_path, floor_step_cap=cap, macros=self.macros)
         cfg = json.dumps(self.config).encode("utf-8")
         h = self._lib.sts2vec_create(cfg, len(cfg))
         if h <= 0:
@@ -83,6 +133,12 @@ class VecEnv:
                 raise ServerGCError(f"sts2vec_create: {text} [loader: {self._lib.mode}, {self._lib.gc_mode}, "
                                     f"runtimeconfig {self._lib.runtimeconfig}"
                                     + (f"; environment overrides {overrides}" if overrides else "") + "]")
+            if self.macros and "macros" in text:
+                text += (f" [{self._lib.path} was built before the room macros (config key 'macros'); rebuild it "
+                         "(dotnet build sim/Sts2Sim.sln -c Release) or drop macros]")
+            elif self.macros and "unknown macro" in text:
+                text += (f" [{self._lib.path} was built before this macro name (prompt / all: W4 2026-11-04); rebuild "
+                         "it or use rest,shop]")
             raise Sts2VecError(f"sts2vec_create: {text}")
         self._h = int(h)
         self.pool = Pool(self)
@@ -201,6 +257,76 @@ class VecEnv:
         """Restart one slot from one pool entry and write that slot's observation (E4 search)."""
         self._check(self._lib.sts2vec_restore(self._live_handle(), int(slot), int(entry), self.buffers.ptr), "restore")
         return self._obs(copy)
+
+    def branch(self, src, dsts, determinized: bool = True, seed: int = 0, *,
+               copy: bool = False) -> dict[str, np.ndarray]:
+        """Copy a live slot's state into every slot of ``dsts`` in one native call (ABI 2).
+
+        ``src`` is one slot (``sts2vec_branch``) or one source slot per destination (``sts2vec_branch_many``: many roots in
+        one call, one parallel region and one observation encode per source; the cheaper form for batched search).
+        ``determinized=True`` (honest search): the destination at position j of the call gets
+        ``CloneDeterminized(branch_seed(seed, j))`` of its source, the same player view (identical observation bytes) with
+        the hidden state resampled (draw order, RNG streams, future monster moves, run queues); ``determinized=False``
+        (oracle): an exact clone (same ``state_hash``, steps exactly like the source). Pending prompts are kept. No pool
+        entry is created, so nothing accumulates.
+
+        Every destination starts a new episode: status ``RESET``, a new ``episode_id``, ``step_index`` 0,
+        ``start_entry`` -1, floor stall count 0; ``last_episode`` is left as it was. Its observation, candidates and
+        signals are written in this call (like ``reset``); the sources and every other slot are untouched. Raises
+        ``Sts2VecError`` (nothing changed) when a source holds no run or ``dsts`` has a slot out of range, a source of the
+        call, or a duplicate. Returns the observation views (``copy=True``: copies). Serialised with other calls on this
+        env."""
+        d = int32_list(dsts, "dsts")
+        mode, s64 = 1 if determinized else 0, int(seed) & _M64
+        if np.ndim(src) == 0:
+            fn = self._lib.require("sts2vec_branch")
+            rc = fn(self._live_handle(), int(src), d.ctypes.data if len(d) else None, len(d), mode, s64, self.buffers.ptr)
+            self._check(rc, "branch")
+        else:
+            fn = self._lib.require("sts2vec_branch_many")
+            srcs = int32_list(src, "src")
+            if len(srcs) != len(d):
+                raise ValueError(f"src has {len(srcs)} entries but dsts has {len(d)} (one source per destination)")
+            rc = fn(self._live_handle(), srcs.ctypes.data if len(d) else None, d.ctypes.data if len(d) else None, len(d),
+                    mode, s64, self.buffers.ptr)
+            self._check(rc, "branch_many")
+        return self._obs(copy)
+
+    def restore_many(self, slots, entries, *, copy: bool = False) -> dict[str, np.ndarray]:
+        """``restore(slots[j], entries[j])`` for every j in one native call, in parallel (``sts2vec_restore_many``, ABI 2).
+
+        Same per-slot result as ``restore`` (status ``RESET``, new ``episode_id``, ``step_index`` 0, ``start_entry`` = the
+        entry; ``last_episode`` untouched); other slots are untouched. Several slots may start from one entry. Raises
+        ``Sts2VecError`` (nothing changed) for a slot out of range or listed twice, a length mismatch, or an entry that is
+        not live (never issued or released). Returns the observation views (``copy=True``: copies)."""
+        fn = self._lib.require("sts2vec_restore_many")
+        s = int32_list(slots, "slots")
+        e = int32_list(entries, "entries")
+        if len(s) != len(e):
+            raise ValueError(f"slots has {len(s)} entries but entries has {len(e)}")
+        self._check(fn(self._live_handle(), s.ctypes.data if len(s) else None, e.ctypes.data if len(e) else None, len(s),
+                       self.buffers.ptr), "restore_many")
+        return self._obs(copy)
+
+    @property
+    def abi_version(self) -> int:
+        """The loaded library's ABI version (``Library.abi_version``; 1 = built before ``sts2vec_abi_version``)."""
+        return self._lib.abi_version
+
+    @property
+    def supports_branch(self) -> bool:
+        """``branch`` is available in the loaded library (ABI >= 2)."""
+        return self._lib.supports_branch
+
+    @property
+    def supports_restore_many(self) -> bool:
+        """``restore_many`` is available in the loaded library (ABI >= 2)."""
+        return self._lib.supports_restore_many
+
+    @property
+    def supports_pool_release(self) -> bool:
+        """``pool.release`` is available in the loaded library (ABI >= 2)."""
+        return self._lib.supports_pool_release
 
     def state_hash(self, slots=None) -> np.ndarray:
         """``RunSim.StateHash`` per slot (uint64; 0 for a slot without a run). Debug/test only (14–131 µs each)."""

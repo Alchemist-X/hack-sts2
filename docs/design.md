@@ -85,8 +85,8 @@ seconds (float). One session = one run (menu time between runs is not recorded).
   hash-deduped (not re-written). The stored `state` payload keeps the builder's
   original key order.
 - `actions.jsonl`: `{seq, t, type:"action", source:"hook:<PatchId>",
-  action:{kind, params:{…}}, status, state_seq:<seq of latest snapshot before
-  the action>}` — `status` (recorder ≥ 0.1, optional for older sessions) is the
+  action:{kind, params:{…}}, status, state_seq:<seq of the associated
+  pre-decision snapshot>}` — `status` (recorder ≥ 0.1, optional for older sessions) is the
   GameAction lifecycle: `"committed"` (already-final decisions such as map/shop
   picks) | `"executed"` | `"cancelled"` (enqueued then backed out). `sts2rec`
   accepts both the nested `params` object and the older inline spread.
@@ -97,6 +97,41 @@ seconds (float). One session = one run (menu time between runs is not recorded).
   best-effort `state_before`, flagging the step with
   `info.state_before_estimated = true` (`state_before` is null when the session
   has no later snapshot).
+  **Decision capture (recorder ≥ 0.4.0).** For a decision capture the recorder
+  builds the pre-choice snapshot synchronously at the decision input and pins
+  its seq to the action, across async completion and any number of unrelated
+  newer snapshots; `params._decision = {status:"captured"|"missing", stage}`
+  marks such actions (`stage`: `before_input` | `opened` — the screen's
+  readiness capture when no input was observed — | `unbound_choice` |
+  `missing_event_input` | `missing_rest_input`). Decision snapshots carry
+  `trigger: "decision:<stage>"`; `decision:updated` snapshots (candidate
+  refresh, e.g. reroll, map/event page change) are observations only.
+  `state_seq` is then NOT necessarily the latest snapshot before the action.
+  A failed capture writes `state_seq: null` with `_decision.status:"missing"`;
+  `sts2rec canonical` keeps `state_before: null` for it and never substitutes
+  a future snapshot. Captured surfaces (always on): reward claims, the card
+  reward screen and its alternatives (Skip / Reroll / relic options), card
+  grids, choose-a-card / bundle / relic screens, in-combat hand and pile
+  selections, map travel, event options and proceed, rest-site options, shop
+  purchases and card removal, treasure relic picks, out-of-combat potion
+  use/discard. Per-input combat actions (manual card play, end turn,
+  in-combat potion use/discard) capture only when
+  `decision_capture_combat_inputs` (`Sts2Recorder.conf`, default `false`) is
+  on — each capture is a full main-thread state build — and otherwise keep the
+  latest-snapshot `state_seq` with no `_decision`. The effective value is
+  in the `recorder_config` event. Candidate data recorded for decisions:
+  selection screens list every offered model (not only the visible UI holders)
+  with `choice_index` (the game's synchronized choice index), `min_select` /
+  `max_select` / `require_manual_confirmation` / `cancelable`, `selected`
+  flags and `candidate_source`; the card reward lists `alternatives[]`
+  (`id`, `title`, `choice_index`, `after_selected`) and `can_skip` means a
+  real Skip option; cards carry a recorder-local `instance_id` (stable within
+  one recorder process only, not across parts) matched by `card_instances` in
+  `player_choice` params; events read the local event's `CurrentOptions`
+  (`options_source`) and `event_option` params carry `index` and `text_key`;
+  the map state gains `is_open` / `travel_enabled`. `sts2rec canonical` adds
+  `info.decision_audit` and `sts2rec validate` warns on decision-coverage
+  issues. See docs/recorder-decision-capture-2026-10-16.md.
 - `events.jsonl`: `{seq, t, type:"event", entry:"card_drawn"|"damage_received"|…,
   data:{…}}` — privileged channel (true draw order lives here, never in states).
 - `manifest.json`: `{schema_version, recorder_version, game:{version, commit,
@@ -181,24 +216,92 @@ plain files are kept, the error is logged through the session's error channel
 resolution. Snapshot builds are the recorder's main CPU cost, so bursts are
 **trailing-coalesced** (Core `SnapshotThrottle`, unit-tested without Godot):
 
-- Window = `snapshot_min_interval_ms` from `Sts2Recorder.conf` (default 150;
-  0 disables the throttle).
-- A throttled request outside the window is taken immediately. Inside the
+- Poll window = `snapshot_min_interval_ms` from `Sts2Recorder.conf` (default
+  150; 0 disables the throttle). Gates only the CombatStateChanged poll path.
+- Burst window = `burst_min_interval_ms` (default 100; 0 disables) — a second,
+  short trailing-coalesce window over the **phase triggers** (CombatSetUp,
+  TurnStarted/TurnEnded, RoomEntered/RoomExited) and the **post-action deferred
+  snapshot**, so adjacent triggers (TurnEnded+TurnStarted, rapid card plays)
+  cost one main-thread state build instead of one each. The merged snapshot
+  takes the latest requester's trigger label, and CombatSetUp's master-deck
+  request (`includeDeck`) survives coalescing (OR over every merged request).
+- A throttled request outside its window is taken immediately. Inside the
   window it is **never dropped**: the first one schedules exactly ONE trailing
   snapshot via the existing main-thread ProcessFrame pump (re-deferred
   frame-by-frame until the window expires); later requests inside the window
   coalesce into it. The last state of a burst is therefore always recorded —
   an action can at worst reference a snapshot ≤ window ms stale, and the
-  unconditional post-action snapshot still captures the settled state.
-- **Bypass list** (unconditional, throttle-free; they still reset the window):
-  the RunStarted header snapshot, CombatSetUp, TurnStarted/TurnEnded,
-  CombatEnded/CombatWon, RoomEntered/RoomExited, and the post-action deferred
-  snapshot. Only the CombatStateChanged poll path is throttled.
+  post-action trailing snapshot still captures the settled state. This does
+  not bound the age of observations for UI decisions that never emit
+  CombatStateChanged — that is what decision capture (above) is for — and a
+  post-action snapshot may precede the end of an animation/async resolution;
+  it is not a settlement barrier.
+- **Bypass list** (unconditional, throttle-free; they still reset both
+  windows): the RunStarted header snapshot, CombatEnded/CombatWon, the
+  terminal run-end snapshot — their snapshot must exist before
+  Complete()/teardown can run — and decision captures (`decision:*`
+  triggers, recorder ≥ 0.4.0), whose seq the action must reference. The terminal path cancels any pending trailing
+  snapshot first; session teardown without a terminal (save-and-quit, CleanUp
+  detach) instead takes a still-pending trailing snapshot immediately, so the
+  last state of a burst is never lost from the part.
+- The ProcessFrame pump drains only the callbacks queued before the frame's
+  drain began, so a trailing callback that re-defers itself runs once per
+  frame instead of spinning the main thread until its window expires.
 
 Perf counters accumulate per session in Core and are written to the manifest
 `perf` object on every Flush/Complete: `snapshot_build_ms` (count/avg/max of
-the PassiveStateBuilder wall time per build, including builds whose snapshot
-hash-deduped) and `bytes_written` (uncompressed bytes appended per stream).
+the main-thread wall time per snapshot, including snapshots that hash-deduped)
+and `bytes_written` (uncompressed bytes appended per stream). Since the
+2026-11 perf port the timed span covers the PassiveStateBuilder build PLUS the
+session's canonical hash and envelope serialization (the whole main-thread
+snapshot cost); earlier sessions timed the build alone, so their numbers are
+not directly comparable.
+
+Optional perf detail (recorder ≥ 0.4.0; schema unchanged, readers must
+tolerate its absence): `snapshot_build_ms` also carries `p95_upper_bound` /
+`p99_upper_bound` from a fixed-memory histogram over the same measurement
+(~19% bucket width, upper bounds; `count/avg/max` unchanged);
+`capture_by_trigger_ms` splits that measurement by snapshot trigger
+(`{count, avg, max, p95_upper_bound, p99_upper_bound}` per trigger, at most 32
+triggers plus `other`); `states_deduplicated` counts hash-deduped snapshots;
+`writer_queues.{states,actions,events}` reports current and peak queued
+lines/bytes per JSONL writer; `decision_input_scopes` /
+`nested_inputs_coalesced` count outer decision inputs and the synchronous
+nested inputs that reused the outer capture without a build. See
+docs/recorder-performance-2026-10-16.md.
+
+Per-snapshot cost reductions (same recorded bytes): the dedup hash streams the
+key-sorted canonical form straight into SHA-256 (no cloned tree, no
+intermediate string); the payload is serialized only after the dedup check
+passes, written straight from the node into the UTF-8 envelope; and the
+popup/FTUE probes share one lazily built scene-tree walk instead of up to five.
+
+Flush scheduling: the recurring save-heartbeat flush (`SaveManager.Saved`,
+combat end) is **asynchronous** — the game thread only signals a dedicated
+per-session flusher thread, which captures the per-stream line counts as one
+cross-stream cut under the session lock, drains the writers to exactly those
+counts (states first), fsyncs, and rewrites the manifest claiming exactly the
+captured counts. A heartbeat with nothing new since the last published cut
+skips the fsyncs and the rewrite; on a disk fault the previous checkpoint is
+kept. The manifest may therefore briefly *undercount* the files (never
+overcount), which the validation contract above already treats as a warning
+for `incomplete=true` sessions. On `SaveManager.Saved` the native save copy
+(`native/saves/`, its own writer thread) is captured first and the flush is
+requested after it, so the cut covers its `run_saved` event. Session teardown
+(CleanUp detach) flushes synchronously; `Dispose` waits for an in-flight async
+flush, does a final synchronous drain + fsync + manifest rewrite, disposes the
+JSONL and native writers, then stops the flusher. Terminal manifests
+(Complete/Dispose) always win over an in-flight async flush.
+
+Recorder config provenance: every session part records one
+`recorder_config` event at session start (before the header snapshot)
+carrying the effective `snapshot_min_interval_ms`,
+`burst_min_interval_ms`, `sp_checksum_enabled` and `checksum_tracker_enabled`
+(the game's ChecksumTracker gate after per-run init; null when unreadable).
+`sp_checksum_enabled` (`Sts2Recorder.conf`, default `false`) decides whether
+the recorder forces singleplayer checksums on (see docs/hook-map.md drift
+tables); the `checksum` events themselves are recorded whenever the game
+generates them. `sts2rec` treats `recorder_config` as non-state bookkeeping.
 
 ## Run reports
 

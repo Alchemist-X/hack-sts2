@@ -24,7 +24,7 @@ Every ID list is derived from the game itself: the script decompiles
 ``$STS2_GAME_DATA_DIR/sts2.dll`` with ILSpy (cached under
 ``artifacts/knowledge/decompiled-sts2-<sha12>``, git-ignored) and parses ModelDb,
 the character/pool/act/encounter models and the timeline epochs. Nothing is
-hand-typed. progress.save is plain JSON (schema 21) without a checksum
+hand-typed. progress.save is plain JSON (schema 21 on v0.107.1, 24 on v0.111.0) without a checksum
 or signature; the game falls back to ``progress.save.backup`` when the primary is
 unreadable, so both are written identically.
 
@@ -45,6 +45,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 MAX_ASCENSION = 10  # AscensionManager clamps at 10 (UnlockConsoleCmd uses 10)
 FIXED_OBTAIN_DATE = 1793000000  # deterministic timestamp for newly revealed epochs
+# progress.save schema versions whose fields this edit has been checked against:
+# 21 = v0.107.1; 24 = v0.111.0 (v22 drops non-enemy monsters from enemy_stats, v23 renames
+# ids, v24 derives total_unlocks from the obtained agnostic epochs, which revealing every
+# epoch keeps equal to the agnostic unlock count written below).
+PROGRESS_SCHEMAS = (21, 24)
 
 
 # --------------------------------------------------------------------------- ids
@@ -163,10 +168,16 @@ def derive(root: Path) -> dict:
         # monster the encounter class references (a superset; all real MonsterModels).
         add(monsters, _refs(src, "Monster"))
 
-    # Epochs: EpochModel.EpochIds lists GetId<XEpoch>(); each class overrides Id.
+    # Epochs; each class overrides Id. v0.107.1: EpochModel.EpochIds lists GetId<XEpoch>().
+    # v0.111+: the static constructor fills _allEpochs with typeof(XEpoch) and
+    # AllEpochIds = _allEpochs.Select(GetId) (UnlockConsoleCmd unlocks AllEpochIds).
     tl = "MegaCrit.Sts2.Core.Timeline"
     epoch_model = _read(root, tl, "EpochModel")
-    epoch_classes = _refs(_block(epoch_model, "EpochIds"), "GetId")
+    if "_allEpochs.Select(GetId)" in epoch_model:
+        epoch_classes = list(dict.fromkeys(
+            re.findall(r"\btypeof\((\w+Epoch)\)", _block(epoch_model, "static EpochModel()"))))
+    else:
+        epoch_classes = _refs(_block(epoch_model, "EpochIds"), "GetId")
     epochs = []
     for cls in epoch_classes:
         src = _read(root, f"{tl}.Epochs", cls)
@@ -176,7 +187,10 @@ def derive(root: Path) -> dict:
         epochs.append(m.group(1))
 
     savemgr = _read(root, "MegaCrit.Sts2.Core.Saves", "SaveManager")
-    agnostic = _refs(_block(savemgr, "_agnosticEpochUnlockOrder ="), "GetId")
+    if "_agnosticEpochUnlockOrder =" in savemgr:  # v0.107.1
+        agnostic = _refs(_block(savemgr, "_agnosticEpochUnlockOrder ="), "GetId")
+    else:  # v0.111+: EpochModel.AgnosticUnlocks pairs each agnostic epoch with its score threshold
+        agnostic = _refs(_block(epoch_model, "public static IReadOnlyList<AgnosticUnlock> AgnosticUnlocks"), "GetId")
 
     ftues: list[str] = []
     for p in sorted(root.rglob("*.cs")):
@@ -216,8 +230,9 @@ def unlock(progress: dict, ids: dict, preferred_ascension: int = 0) -> dict:
     if not 0 <= preferred_ascension <= MAX_ASCENSION:
         raise SystemExit(f"preferred ascension must be 0..{MAX_ASCENSION}")
     p = json.loads(json.dumps(progress))
-    if p.get("schema_version") != 21:
-        raise SystemExit(f"unexpected progress schema_version {p.get('schema_version')} (expected 21)")
+    if p.get("schema_version") not in PROGRESS_SCHEMAS:
+        raise SystemExit(f"unexpected progress schema_version {p.get('schema_version')} "
+                         f"(expected one of {PROGRESS_SCHEMAS})")
 
     by_id = {e["id"]: e for e in p.get("epochs", [])}
     for eid in ids["epochs"]:
@@ -346,8 +361,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     sd = args.saves_dir.resolve()
-    real = Path.home() / ".local" / "share" / "SlayTheSpire2"
-    if str(sd).startswith(str(real.resolve())) or "worker-pool" not in str(sd):
+    human = (Path.home() / ".local" / "share" / "SlayTheSpire2",  # Linux
+             Path.home() / "Library" / "Application Support" / "SlayTheSpire2")  # macOS
+    if any(str(sd).startswith(str(real.resolve())) for real in human) or "worker-pool" not in str(sd):
         raise SystemExit(f"refusing to edit {sd}: only worker-pool copies may be edited")
     prog = sd / "progress.save"
     before = json.loads(prog.read_text(encoding="utf-8"))

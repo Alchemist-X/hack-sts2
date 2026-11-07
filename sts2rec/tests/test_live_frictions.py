@@ -289,6 +289,9 @@ def test_select_screen_auto_confirms(harness, capsys):
         block = state['card_select']
         if action['action'] == 'select_card':
             block['selected_indices'] = block.get('selected_indices', []) + [action['index']]
+            # The live state tracks the count alongside the indices; the
+            # upgrade/enchant confirm is only offered once a card is selected.
+            block['selected_count'] = len(block['selected_indices'])
             for c in block['cards']:
                 if c['index'] == action['index']:
                     c['is_selected'] = True

@@ -132,6 +132,32 @@ if [[ "$DISPLAY_MODE" == "visible" ]]; then
     done < <(ps -axo command=)
 fi
 
+# Mute the worker before launch. Godot's --headless drops the window but the FMOD
+# plugin still opens CoreAudio, and every baseline restore re-writes settings.save
+# with audible defaults — so zero the game's four volume fields at the one choke
+# point every launch passes through. STS2_HEADLESS_AUDIBLE=1 keeps sound.
+if [[ "${STS2_HEADLESS_AUDIBLE:-0}" != "1" ]]; then
+    for settings_save in \
+        "$INST_HOME/Library/Application Support/SlayTheSpire2/default/1/settings.save" \
+        "$INST_HOME/Library/Application Support/SlayTheSpire2/steam/"*/settings.save; do
+        [[ -f "$settings_save" ]] || continue
+        python3 - "$settings_save" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as handle:
+    settings = json.load(handle)
+for key in ('volume_master', 'volume_bgm', 'volume_sfx', 'volume_ambience'):
+    settings[key] = 0.0
+with open(path, 'w') as handle:
+    json.dump(settings, handle, indent=2)
+    handle.write('\n')
+PYEOF
+        log "muted game audio in $(basename "$(dirname "$settings_save")")/settings.save (STS2_HEADLESS_AUDIBLE=1 keeps sound)"
+    done
+fi
+
 RECORDER_ROOT="${RECORDER_ROOT:-$INST_DIR/recordings}"
 mkdir -p "$RECORDER_ROOT"
 RECORDER_DISABLED=1

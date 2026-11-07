@@ -97,9 +97,13 @@ class ActionRecord:
     t: float
     source: str
     action: Mapping[str, Any]
-    # Seq of the latest snapshot before the action. None means the action fired
-    # before any snapshot existed (recorder >= 0.1 writes JSON null; older
-    # recorders wrote 0, which is normalized to None at parse time).
+    # Seq of the associated pre-decision snapshot. Recorder >= 0.4 pins it at
+    # input for decision captures (params._decision present), retaining it
+    # across async completion and unrelated newer snapshots; other actions
+    # (e.g. combat inputs while decision_capture_combat_inputs is off) keep the
+    # latest snapshot before the action. None means unavailable (explicit
+    # failure in params._decision, or a legacy action before the first
+    # snapshot); legacy 0 is normalized to None.
     state_seq: int | None
     # Optional GameAction lifecycle marker written by recorder >= 0.1:
     # "committed" (already-final decisions) | "executed" | "cancelled".

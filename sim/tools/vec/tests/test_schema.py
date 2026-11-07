@@ -11,6 +11,12 @@ BUFFER_ORDER = [
     "relics", "potions", "powers_player", "orbs", "enemies", "enemy_intents", "enemy_powers", "allies", "ally_powers",
     "map_nodes", "rewards", "card_reward", "card_reward_alts", "shop", "rest", "event_options", "prompt_options",
     "cand", "cand_n", "reward", "terminated", "truncated", "status", "episode", "aux", "last_episode",
+    # appended (player-view schema append, docs/parity-audit-2026-11-02.md §5.2)
+    "global_x", "hand_x", "draw_marked", "discard_order", "exhaust_order", "event_option_values",
+    # appended with the rewards-screen macro candidates (2026-11-04)
+    "reward_choices",
+    # appended with the map-routing features (2026-11-04)
+    "map_routes",
 ]
 
 DTYPES = {  # §D3.1
@@ -53,7 +59,21 @@ def test_buffer_order_dtypes_and_fields(schema):
     assert schema["cand"].shape == (schema.caps["CANDIDATES"], 9)
     assert schema["prompt_options"].shape[0] == schema.caps["PROMPT_OPTIONS"] == 128
     assert schema["episode"].fields == ("episode_id", "step_index", "start_entry")
-    assert len(schema.vocab.enums["RunActionKind"]) == 21
+    # 21 RunSim action kinds, then the Vec-only rewards-screen macro kinds
+    assert len(schema.vocab.enums["RunActionKind"]) == 23
+    assert list(schema.vocab.enums["RunActionKind"])[21:] == ["TakeRewardCard", "TakeRewardAlternative"]
+    assert schema["reward_choices"].shape == (schema.caps["REWARD_CHOICES"], 3 + len(schema["hand"].fields))
+    assert schema["reward_choices"].fields == ("reward_index", "option", "alt_id") + tuple(schema["hand"].fields)
+    assert schema["map_routes"].shape == schema["map_nodes"].shape[:2] + (5,)
+    assert schema["map_routes"].fields == ("elites_min", "elites_max", "rests", "shops", "boss_dist")
+    # the appended buffers (shapes from the caps; every pile table shares one column list)
+    assert schema["global_x"].fields == ("ancient_id", "draw_marked_n")
+    assert schema["hand_x"].shape == (schema.caps["HAND"], 2)
+    assert schema["draw_marked"].shape == (schema.caps["DRAW_MARKED"], 6)
+    assert schema["discard_order"].shape == schema["exhaust_order"].shape == (schema.caps["PILE_ORDER"], 6)
+    assert schema["draw_marked"].fields == schema["discard_order"].fields == schema["exhaust_order"].fields
+    assert schema["event_option_values"].shape[0] == schema["event_options"].shape[0]
+    assert schema.vocab.enums["ItemKind"] == ["", "?", "affliction", "card", "enchantment", "potion", "relic"]
 
 
 def test_columns_helpers(schema):
@@ -86,7 +106,7 @@ def test_vocab_reverse_maps(schema):
     assert k.index_of("PlayCard") == 0 and k.index_of("EndTurn") == 1 and k.name(1) == "EndTurn"
     with pytest.raises(KeyError):
         k.index_of("NotAKind")
-    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError"]
+    assert schema.vocab.enums["EndKind"] == ["None", "Terminal", "Truncated", "ContentGap", "SimError", "FloorStall"]
     assert "Prompt" in schema.vocab.enums["RunPhase"]
     assert len(schema.card_vars) == 133 and schema.card_vars[:2] == ["", "?"]
     assert schema.playable_reason_bits["None"] == 0
@@ -96,9 +116,26 @@ def test_vocab_reverse_maps(schema):
     assert schema.playable_reason_names(0) == ["None"]
 
 
+def test_card_static_table(schema):
+    """The static card table published in the schema JSON (appended 2026-11-04): one row per cards vocab id."""
+    k = schema.card_static_cols()
+    t = schema.card_static
+    assert t.dtype == np.int32 and t.shape == (len(schema.vocab.cards), len(schema.card_static_fields))
+    assert not t[:2].any(), "rows 0 (none) and 1 (unknown) are zero"
+    strike = t[schema.vocab.cards.index_of("STRIKE_IRONCLAD")]
+    assert strike[k.ported] == 1 and strike[k.cost] == 1 and (strike[k.damage], strike[k.damage_upgraded]) == (6, 9)
+    assert schema.vocab.enums["CardType"].name(int(strike[k.type])) == "Attack"
+    assert schema.card_vars[int(strike[k.var_id_0])] == "Damage" and strike[k.var_val_upgraded_0] == 9
+    defend = t[schema.vocab.cards.index_of("DEFEND_SILENT")]
+    assert (defend[k.block], defend[k.block_upgraded]) == (5, 8)
+    assert t[2:, k.ported].sum() == len(t) - 2 - int((t[2:, k.ported] == 0).sum()) > 500
+    with pytest.raises(AttributeError):
+        _ = k.nope
+
+
 def test_status_flags():
     assert STATUS == {s.name: int(s) for s in Status}
-    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128
+    assert STATUS["RESET"] == 64 and STATUS["POOL_EMPTY"] == 128 and STATUS["FLOOR_STALL"] == 256
     assert status_names(0) == ["OK"]
     assert status_names(Status.NOOP | Status.RESET) == ["NOOP", "RESET"]
     c = status_counts(np.array([0, 1, 65, 8], dtype=np.int32))
@@ -129,7 +166,9 @@ def test_buffer_sizes_and_pointer_order(schema):
     raw = (ctypes.c_void_p * len(BUFFER_ORDER)).from_address(bufs.ptr)
     assert [raw[i] for i in range(len(BUFFER_ORDER))] == bufs.pointers()
     assert bufs.nbytes == n * schema.bytes_per_env
-    assert schema.bytes_per_env == 26_726  # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke)
+    # changes only with a schema change (26,710 + 4 aux columns in E3 train-smoke + 4,216 for the six appended buffers
+    # + 1,600 for reward_choices + 2,520 for map_routes)
+    assert schema.bytes_per_env == 35_062
     with pytest.raises(ValueError):
         schema.allocate(0)
 

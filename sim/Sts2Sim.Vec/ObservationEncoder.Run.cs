@@ -1,3 +1,4 @@
+using System.Numerics;
 using Sts2Sim.Core;
 using Sts2Sim.Core.Choice;
 using Sts2Sim.Core.Run;
@@ -72,6 +73,115 @@ public static partial class ObservationEncoder
         }
     }
 
+    private const int MapCells = Caps.MapRows * Caps.MapCols;
+
+    private static void SetBit(ref ulong lo, ref ulong hi, int k)
+    {
+        if (k < 64)
+        {
+            lo |= 1UL << k;
+        }
+        else
+        {
+            hi |= 1UL << (k - 64);
+        }
+    }
+
+    // map_routes[row][col] (appended 2026-11-04): routing features of the drawn map graph exactly as map_nodes publishes it
+    // (point_type, child_mask: an edge always leads to the next row), for every node of the current act's map: the fewest /
+    // most Elite rooms on a path from the node to the act's boss (the node included; -1 when the boss is not reachable
+    // from it, e.g. the A10 second boss), the distinct rest sites / shops reachable from it (the node included), and its
+    // distance in moves to the boss (0 at the boss). One pass over the cells from the last row up computes every node from
+    // its children (18 x 7 = 126 cells: reachability is a 128-bit set). Computed from the published columns, so the features
+    // cannot disagree with map_nodes. A free-travel hook (Hook.ShouldAllowFreeTravel) is not modelled: the features describe
+    // the drawn edges. Pure and allocation-free.
+    private static void EncodeMapRoutes(ActMap map, ReadOnlySpan<int> nodes, Span<int> routes)
+    {
+        int w = Schema.MapRouteFields.Length;
+        var bossPoint = map.BossMapPoint;
+        int boss = (uint)bossPoint.coord.row < Caps.MapRows && (uint)bossPoint.coord.col < Caps.MapCols
+            ? bossPoint.coord.row * Caps.MapCols + bossPoint.coord.col : -1;
+        Span<int> dist = stackalloc int[MapCells];
+        Span<int> emin = stackalloc int[MapCells];
+        Span<int> emax = stackalloc int[MapCells];
+        Span<ulong> lo = stackalloc ulong[MapCells];
+        Span<ulong> hi = stackalloc ulong[MapCells];
+        ulong restLo = 0, restHi = 0, shopLo = 0, shopHi = 0;
+        for (int k = 0; k < MapCells; k++)
+        {
+            switch ((MapPointType)nodes[k * MapW])
+            {
+                case MapPointType.RestSite:
+                    SetBit(ref restLo, ref restHi, k);
+                    break;
+                case MapPointType.Shop:
+                    SetBit(ref shopLo, ref shopHi, k);
+                    break;
+            }
+        }
+        const int colMask = (1 << Caps.MapCols) - 1;
+        for (int k = MapCells - 1; k >= 0; k--)
+        {
+            int type = nodes[k * MapW];
+            if (type == 0)
+            {
+                continue;
+            }
+            ulong rl = 0, rh = 0;
+            SetBit(ref rl, ref rh, k);
+            int d = -1, mn = int.MaxValue, mx = -1;
+            int next = (k / Caps.MapCols + 1) * Caps.MapCols;
+            if (k == boss)
+            {
+                d = 0;
+                mn = 0;
+                mx = 0;
+            }
+            else if (next < MapCells)
+            {
+                int mask = nodes[k * MapW + 4] & colMask;
+                while (mask != 0)
+                {
+                    int ci = next + BitOperations.TrailingZeroCount(mask);
+                    mask &= mask - 1;
+                    if (nodes[ci * MapW] == 0)
+                    {
+                        continue;
+                    }
+                    rl |= lo[ci];
+                    rh |= hi[ci];
+                    if (dist[ci] >= 0)
+                    {
+                        d = d < 0 ? dist[ci] + 1 : Math.Min(d, dist[ci] + 1);
+                        mn = Math.Min(mn, emin[ci]);
+                        mx = Math.Max(mx, emax[ci]);
+                    }
+                }
+                if (d >= 0 && type == (int)MapPointType.Elite)
+                {
+                    mn++;
+                    mx++;
+                }
+            }
+            if (d < 0)
+            {
+                mn = -1;
+                mx = -1;
+            }
+            dist[k] = d;
+            emin[k] = mn;
+            emax[k] = mx;
+            lo[k] = rl;
+            hi[k] = rh;
+            var row = routes.Slice(k * w, w);
+            row[MrCol.ElitesMin] = mn;
+            row[MrCol.ElitesMax] = mx;
+            row[MrCol.Rests] = BitOperations.PopCount(rl & restLo) + BitOperations.PopCount(rh & restHi);
+            row[MrCol.Shops] = BitOperations.PopCount(rl & shopLo) + BitOperations.PopCount(rh & shopHi);
+            row[MrCol.BossDist] = d;
+        }
+    }
+
     private static Span<int> Cell(Span<int> nodes, int row, int col)
         => (uint)row < Caps.MapRows && (uint)col < Caps.MapCols ? nodes.Slice((row * Caps.MapCols + col) * MapW, MapW) : Span<int>.Empty;
 
@@ -103,6 +213,7 @@ public static partial class ObservationEncoder
         {
             case RunPhase.Rewards:
                 EncodeRewards(rs, b.Rewards, gi, ref overflow);
+                EncodeRewardChoices(rs, b.RewardChoices, ref overflow);
                 break;
             case RunPhase.CardReward:
                 EncodeRewards(rs, b.Rewards, gi, ref overflow);
@@ -121,7 +232,7 @@ public static partial class ObservationEncoder
                 gi[GI.TreasureClaimed] = treasure.RelicClaimed ? 1 : treasure.SingleplayerSkipped ? 2 : 0;
                 break;
             case RunPhase.Event:
-                EncodeEvent(rs, b.EventOptions, gi, ref overflow);
+                EncodeEvent(rs, b.EventOptions, b.EventOptionValues, gi, ref overflow);
                 break;
         }
     }
@@ -173,6 +284,40 @@ public static partial class ObservationEncoder
             }
         }
         gi[GI.RewardN] = unclaimed;
+    }
+
+    // reward_choices row k = RewardMacros choice k: the cards of every unopened card reward on the rewards screen, then
+    // its alternatives other than Skip (rewards ascending). Row k is the option_index of the k-th TakeRewardCard /
+    // TakeRewardAlternative candidate. Written in the Rewards loop phase (the cards are one free click away: opening a card
+    // reward and closing it leaves the reward unclaimed, game Rewards/CardReward.cs:660, :738).
+    private static void EncodeRewardChoices(RunState rs, Span<int> table, ref bool overflow)
+    {
+        var choices = S.RewardChoices;
+        RewardMacros.Choices(rs, choices);
+        int w = Schema.RewardChoiceFields.Length;
+        int hc = Schema.HC;
+        int n = choices.Count;
+        if (n > Caps.RewardChoices)
+        {
+            overflow = true;
+            n = Caps.RewardChoices;
+        }
+        for (int k = 0; k < n; k++)
+        {
+            var c = choices[k];
+            var row = table.Slice(k * w, w);
+            row[RcCol.RewardIndex] = c.Reward;
+            row[RcCol.Option] = c.Option;
+            if (c.Card != null)
+            {
+                WriteCard(row.Slice(RcCol.Card, hc), c.Card, null);
+            }
+            else
+            {
+                row[RcCol.AltId] = Vocab.CardRewardAlt(c.AltId);
+            }
+        }
+        choices.Clear();
     }
 
     private static void EncodeCardReward(RunState rs, RunLoopState loop, Span<int> table, Span<int> alts, Span<int> gi, ref bool overflow)
@@ -284,7 +429,7 @@ public static partial class ObservationEncoder
 
     // Row i = EventModel.CurrentOptions[i] (= ChooseEventOption A), while the event is not finished. H11: no event
     // internals; an option is identified by the hash of "<eventId>:<TextKey>".
-    private static void EncodeEvent(RunState rs, Span<int> table, Span<int> gi, ref bool overflow)
+    private static void EncodeEvent(RunState rs, Span<int> table, Span<int> values, Span<int> gi, ref bool overflow)
     {
         const int w = 6;
         var ev = RunLegalActionGenerator.CurrentEvent(rs);
@@ -316,6 +461,64 @@ public static partial class ObservationEncoder
             row[3] = opt.IsLocked ? 1 : 0;
             row[4] = opt.IsProceed ? 1 : 0;
             row[5] = Vocab.Relic(opt.RelicId);
+        }
+        EncodeEventOptionValues(ev, rs, values, ref overflow);
+    }
+
+    /// <summary>
+    /// <c>event_option_values</c> row i = the numbers and items option i's text names (EventOptionVars: the game's
+    /// localisation placeholders, resolved on the live event like the play server's option text), in the text's order:
+    /// value_n numbers (first CAP_EVENT_VALUES in value_k), item_n items (first CAP_EVENT_ITEMS as (ItemKind, id) in
+    /// item_kind_k / item_id_k). Written while the event is not finished; more values or items than the caps set
+    /// TABLE_OVERFLOW (value_n / item_n keep the true counts).
+    /// </summary>
+    public static void EncodeEventOptionValues(EventModel ev, RunState rs, Span<int> table, ref bool overflow)
+    {
+        if (ev.IsFinished)
+        {
+            return;
+        }
+        int w = Schema.EventOptionValueFields.Length;
+        var options = ev.CurrentOptions;
+        int n = Math.Min(options.Count, Caps.EventOptions);
+        for (int i = 0; i < n; i++)
+        {
+            var opt = options[i];
+            var names = EventOptionVars.NamesOf(opt.TextKey);
+            if (names == null)
+            {
+                continue;
+            }
+            var row = table.Slice(i * w, w);
+            int nv = 0;
+            int ni = 0;
+            foreach (string name in names)
+            {
+                switch (EventOptionVars.Resolve(ev, opt, rs, name, out int number, out string? kind, out int id))
+                {
+                    case EventOptionVars.ValueKind.Number:
+                        if (nv < Caps.EventValues)
+                        {
+                            row[EvValCol.Value0 + nv] = number;
+                        }
+                        nv++;
+                        break;
+                    case EventOptionVars.ValueKind.Item:
+                        if (ni < Caps.EventItems)
+                        {
+                            row[EvValCol.ItemKind0 + ni * EvValCol.ItemStride] = Vocab.ItemKind(kind);
+                            row[EvValCol.ItemId0 + ni * EvValCol.ItemStride] = id;
+                        }
+                        ni++;
+                        break;
+                }
+            }
+            row[EvValCol.ValueN] = nv;
+            row[EvValCol.ItemN] = ni;
+            if (nv > Caps.EventValues || ni > Caps.EventItems)
+            {
+                overflow = true;
+            }
         }
     }
 

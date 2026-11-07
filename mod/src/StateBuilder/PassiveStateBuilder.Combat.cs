@@ -161,11 +161,9 @@ public static partial class PassiveStateBuilder
             {
                 var card = holder.CardModel;
                 if (card == null) continue;
-                selectedCards.Add(new Dictionary<string, object?>
-                {
-                    ["index"] = selIdx,
-                    ["name"] = SafeGetText(() => card.Title)
-                });
+                var selectedInfo = BuildCardInfo(card);
+                selectedInfo["index"] = selIdx;
+                selectedCards.Add(selectedInfo);
                 selIdx++;
             }
             if (selectedCards.Count > 0)
@@ -175,6 +173,15 @@ public static partial class PassiveStateBuilder
         // Confirm button state (read-only)
         var confirmBtn = hand.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.CommonUi.NConfirmButton>("%SelectModeConfirmButton");
         state["can_confirm"] = confirmBtn?.IsEnabled ?? false;
+        AddSelectionPrefs(state, hand);
+        // Upgrade selection moves its selected card into a different container.
+        // Read the selection model so it is retained in both selection modes.
+        if (GetInstanceFieldValue(hand, "_selectedCards") is IEnumerable<MegaCrit.Sts2.Core.Models.CardModel> chosen)
+        {
+            var selected = new List<Dictionary<string, object?>>();
+            foreach (var card in chosen) selected.Add(BuildCardInfo(card));
+            state["selected_cards"] = selected;
+        }
 
         return state;
     }

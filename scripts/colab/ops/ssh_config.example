@@ -1,0 +1,16 @@
+# ssh_config.example — one Host entry per Colab runtime, reached through the colab CLI's ssh proxy.
+# Copy this block into ~/.ssh/config (or a file you Include there) once per session, replacing NAME by the
+# session name that `colab sessions` lists (e.g. sts2c, sts2b3); then `ssh colab-NAME` / `scp ... colab-NAME:/content/sts2/`.
+#   - ProxyCommand runs through your shell: `colab` must be on PATH (or write its absolute path, e.g. ~/.local/bin/colab).
+#   - Check `colab sessions` before connecting: an ssh/scp to a session name that no longer exists makes the proxy
+#     create a fresh CPU session under that name.
+#   - The proxy allows one ssh per runtime at a time (a second one gets HTTP 429): batch commands into one ssh.
+#   - Host keys change with every runtime, hence no known_hosts.
+Host colab-NAME
+  User root
+  ProxyCommand colab --auth=adc ssh --proxy-mode -s NAME
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  LogLevel ERROR
+  ServerAliveInterval 30
+  ConnectTimeout 60

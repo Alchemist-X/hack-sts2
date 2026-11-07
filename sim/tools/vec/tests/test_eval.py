@@ -47,6 +47,26 @@ def test_builtin_policies_write_protocol_run(tmp_path, full, policy):
         assert s["progress"] == pytest.approx(rep["games"][[g["seed"] for g in rep["games"]].index(s["seed"])]["progress"])
 
 
+def test_reward_macros_are_taken_and_replay(tmp_path, full):
+    """Rewards-screen macros (2026-11-04): the heuristic takes its cards through TakeRewardCard rows (one decision each),
+    never sees a Skip row, and the recorded candidate indices replay to the same end (replay audit n/n)."""
+    kinds_taken: list[str] = []
+    inner = policies.HeuristicPolicy()
+
+    def recording(obs, ctx):
+        a = inner(obs, ctx)
+        names = ctx.schema.vocab.enums["RunActionKind"]
+        col = ctx.cols("cand").kind
+        for i in np.flatnonzero(ctx.live & (a >= 0)):
+            kinds_taken.append(names.name(int(obs["cand"][i, a[i], col])))
+        return a
+
+    rep = evaluate(SS, recording, tmp_path / "macros", threads=2, log=_quiet)
+    assert rep["headline"]["replayable"] == 3
+    assert kinds_taken.count("TakeRewardCard") >= 3, sorted(set(kinds_taken))
+    assert "PickRewardCard" not in kinds_taken, "the heuristic never needs the open card screen without a REROLL"
+
+
 def test_results_independent_of_threads_and_batch(tmp_path, full):
     a = _summaries((evaluate(SS, "random", tmp_path / "a", threads=1, log=_quiet), tmp_path / "a")[1])
     b = _summaries((evaluate(SS, "random", tmp_path / "b", threads=4, log=_quiet), tmp_path / "b")[1])

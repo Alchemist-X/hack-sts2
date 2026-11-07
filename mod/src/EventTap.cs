@@ -20,9 +20,11 @@ namespace Sts2Recorder.Game;
 /// last-seen count (a decrease means Clear -> resync) and serialized IMMEDIATELY
 /// because entries hold live mutable model references. Everything is flushed
 /// before CombatEnded tears the history down. Also taps
-/// ChecksumTracker.ChecksumGenerated for integrity — v0.107.1 gates checksum
-/// generation to Host/Client/Replay (IsEnabled), so the tap re-enables it per
-/// run to keep the singleplayer integrity stream.
+/// ChecksumTracker.ChecksumGenerated for integrity, recording whatever checksums
+/// the game generates. v0.107.1 gates generation to Host/Client/Replay
+/// (IsEnabled); only when sp_checksum_enabled is set does the tap force it on per
+/// run to restore the singleplayer integrity stream. v0.111.0 enables SP
+/// checksums itself, so the tap records them there without any forcing.
 /// </summary>
 public static class EventTap
 {
@@ -73,13 +75,22 @@ public static class EventTap
             var tracker = RunManager.Instance.ChecksumTracker;
             _checksumSession = session;
             _checksumHandler = OnChecksumGenerated;
+            // The subscription itself is unconditional and cheap: it only records
+            // checksums the game already computes (v0.111.0 enables singleplayer
+            // checksums by default, IsEnabled = !TestMode.IsOn).
             tracker.ChecksumGenerated += _checksumHandler;
             // v0.107.1: InitializeShared disables checksums outside Host/Client/Replay
-            // (ChecksumTracker.IsEnabled). Recording is singleplayer-only, so re-enable
-            // to restore the v0.99.1-vanilla SP integrity stream. Observation-side only:
-            // GenerateChecksum call sites run unconditionally, this just un-gates the
-            // computation + event; no gameplay effect.
-            tracker.IsEnabled = true;
+            // (ChecksumTracker.IsEnabled). Forcing it back on restores the
+            // v0.99.1-vanilla SP integrity stream but makes the GAME hash its full
+            // combat state at every action/turn checksum call site — measurable
+            // main-thread cost — so it is config-gated (sp_checksum_enabled, default
+            // off) instead of always-on. Off is intentional, not a degraded hook.
+            // Observation-side only: GenerateChecksum call sites run unconditionally,
+            // this just un-gates the computation + event; no gameplay effect.
+            if (RecorderMod.SpChecksumEnabled)
+            {
+                tracker.IsEnabled = true;
+            }
         }
         catch (Exception ex)
         {
@@ -114,10 +125,11 @@ public static class EventTap
     {
         try
         {
-            // Persist before History.Clear(): entries are already serialized in the
-            // Changed handler, so an explicit stream flush is all that is needed —
-            // this is also the loss-side flush (WriteReplay never fires on losses).
-            RecorderMod.Session?.Flush();
+            // Persist before History.Clear(): entries are already serialized (and
+            // enqueued in order) by the Changed handler, so an async flush request
+            // suffices — this is also the loss-side flush (WriteReplay never fires
+            // on losses). Runs on the game thread mid-transition; must not block.
+            RecorderMod.Session?.RequestFlush();
         }
         catch (Exception ex)
         {
