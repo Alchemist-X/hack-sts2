@@ -214,3 +214,6 @@
 {"line": "S2", "time": "2026-11-06 20:16", "kind": "decision", "event": "隔夜切换条件预注册：若 u11664 配对 S − C3 的 ab-512 ≥ +0.015 且 dev-128 ≥ 0，隔夜改跑 S2 = S u12164 → u13164", "update": 12164, "value": null}
 {"line": "S2", "time": "2026-11-06 21:10", "kind": "decision", "event": "未达切换条件：S2 启动器与存档池预置在 sts2a2，不启动", "update": 12164, "value": null}
 {"line": "S2", "time": "2026-11-06 21:30", "kind": "decision", "event": "充值后在新卡 sts2b4 上起 S2，与 C4 同 fork u12164 配对；预注册 s2-vs-c4.json（一对训练种子最多判 REPLICATE）", "update": 12164, "value": null}
+{"line": "C3", "time": "2026-11-06 21:58", "kind": "stop", "event": "最后一段 11664→12164 训完，段终评测完成，驱动打印 w3m-c3: done；同一运行时链式接 C4", "update": 12164, "value": null}
+{"line": "C3", "time": "2026-11-06 21:58", "kind": "eval", "event": "段终 u12164：ab-512 0.485 [0.470, 0.500]（act3 34/512），dev-128 0.478（act3 7/128）；三个段终 0.486 / 0.489 / 0.485，平台", "update": 12164, "value": 0.485}
+{"line": "C4", "time": "2026-11-06 21:59", "kind": "start", "event": "在 sts2a2 上从 C3 的 pinned-0012164 本地 fork 起跑（对照旗标不变，段终 12664 / 13164）；启动器等待标记已按审计修正为 w3m-c3: done", "update": 12164, "value": null}
