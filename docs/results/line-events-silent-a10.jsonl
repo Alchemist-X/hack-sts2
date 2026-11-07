@@ -1,0 +1,216 @@
+{"line": "W0", "time": "2026-11-04 12:30", "kind": "decision", "event": "用户指令新主线 self-play v2：人类存档出局、种子 RNG 解耦、种子流新开局、UI 循环成本单因素对照；工程波启动", "update": null, "value": null}
+{"line": "W0", "time": "2026-11-04 14:08", "kind": "note", "event": "集成门禁全过，包 sts2train-542a1e4eb8 就绪", "update": null, "value": null}
+{"line": "W0", "time": "2026-11-04 14:13", "kind": "start", "event": "sts2train（A100）上从随机初始化起跑，382 update（约 5000 万步），固定评测点 u191 / u382", "update": 0, "value": null}
+{"line": "W0", "time": "2026-11-04 14:55", "kind": "incident", "event": "运行时丢失（约 u160）：Mac 端 ping 卡在 rsync 里，GPU 运行时无内核活动约 20 分钟后被回收", "update": null, "value": null}
+{"line": "W0", "time": "2026-11-04 15:10", "kind": "incident", "event": "新运行时上用 gcs_pull 从桶恢复，从 checkpoint u150 续训（--resume auto）", "update": 150, "value": null}
+{"line": "W0", "time": "2026-11-04 15:23", "kind": "segment", "event": "u191 段终：dev-128 0.229 [0.214, 0.244]（到 act 3 0/128）", "update": 191, "value": 0.229}
+{"line": "W0", "time": "2026-11-04 15:59", "kind": "segment", "event": "u382 段终：dev-128 0.251 [0.235, 0.266]（到 act 3 0/128）；greedy-on 0.254，开关差 0.003（旧谱系 0.120），5 局 stuck", "update": 382, "value": 0.2506}
+{"line": "W0", "time": "2026-11-04 16:00", "kind": "stop", "event": "到 u382 结束；C0 / C1 从 pinned-0000382 分叉", "update": 382, "value": null}
+{"line": "C0", "time": "2026-11-04 16:01", "kind": "start", "event": "从 W0 的 pinned-0000382 分叉，原奖励续训 382 update（对照）", "update": 382, "value": null}
+{"line": "C0", "time": "2026-11-04 16:37", "kind": "segment", "event": "u573 段终：dev-128 0.286 [0.266, 0.306]（到 act 3 0/128）", "update": 573, "value": 0.286}
+{"line": "C0", "time": "2026-11-04 17:14", "kind": "segment", "event": "u764 段终：dev-128 0.287 [0.267, 0.307]（到 act 3 0/128）；有 UI 循环的局 9/128、10 局 stuck → 不是欠触发（> 6）", "update": 764, "value": 0.2869}
+{"line": "C0", "time": "2026-11-04 17:17", "kind": "stop", "event": "到 u764 结束；同一 GPU 接着跑 C1", "update": 764, "value": null}
+{"line": "C0", "time": "2026-11-04 18:35", "kind": "decision", "event": "作为对照完成：C1 − C0 配对 +0.023，循环成本采纳", "update": 764, "value": 0.0228}
+{"line": "C1", "time": "2026-11-04 17:16", "kind": "start", "event": "从 W0 的 pinned-0000382 分叉，只加 --cycle-cost 0.01", "update": 382, "value": null}
+{"line": "C1", "time": "2026-11-04 17:40", "kind": "note", "event": "训练期循环约 2 次 / update（C0 同阶段 13–50），新开局进度 0.245 与 C0 相近", "update": 511, "value": null}
+{"line": "C1", "time": "2026-11-04 17:52", "kind": "segment", "event": "u573 段终：dev-128 0.291 [0.271, 0.311]（到 act 3 0/128）", "update": 573, "value": 0.2907}
+{"line": "C1", "time": "2026-11-04 18:29", "kind": "segment", "event": "u764 段终：dev-128 0.310 [0.288, 0.331]（到 act 3 0/128）；有 UI 循环的局 0/128", "update": 764, "value": 0.3097}
+{"line": "C1", "time": "2026-11-04 18:29", "kind": "stop", "event": "到 u764 结束；终点评测与配对比较", "update": 764, "value": null}
+{"line": "C1", "time": "2026-11-04 18:35", "kind": "pair", "event": "官方终点 C1 − C0 dev-128 greedy-off +0.0228 [+0.0021, +0.0434]；有环局 9 → 0（McNemar p = 0.0039）", "update": 764, "value": 0.0228}
+{"line": "C1", "time": "2026-11-04 18:35", "kind": "pair", "event": "C1 − C0 ab-512 greedy-off −0.0042 [−0.0148, +0.0063]：无明显劣化", "update": 764, "value": -0.0042}
+{"line": "C1", "time": "2026-11-04 18:35", "kind": "decision", "event": "循环成本采纳进主线；主线 M 从 C1 u764 续训，种子 2 复验 R 在 GPU B 上跑", "update": 764, "value": null}
+{"line": "M", "time": "2026-11-04 18:42", "kind": "start", "event": "sts2train 上从 C1 的 pinned-0000764 续训到 u3064（+3 亿步），每 500 update 固定评测，--max-hours 6", "update": 764, "value": null}
+{"line": "M", "time": "2026-11-04 20:20", "kind": "segment", "event": "u1264 段终：dev-128 0.347 [0.323, 0.372]（到 act 3 0/128）", "update": 1264, "value": 0.3475}
+{"line": "M", "time": "2026-11-04 22:02", "kind": "segment", "event": "u1764 段终：dev-128 0.367 [0.345, 0.389]（到 act 3 0/128）", "update": 1764, "value": 0.3674}
+{"line": "M", "time": "2026-11-04 23:47", "kind": "segment", "event": "u2264 段终：dev-128 0.389 [0.364, 0.413]（到 act 3 0/128）", "update": 2264, "value": 0.3885}
+{"line": "M", "time": "2026-11-05 00:42", "kind": "incident", "event": "--max-hours 6 到点，约 u2560 提前停下；A 线驱动也因等待超时退出", "update": null, "value": null}
+{"line": "M", "time": "2026-11-05 01:00", "kind": "incident", "event": "resume_sp3.sh 续训到 u3064；A 线驱动以 WAIT_MAX_S=28800 重启", "update": null, "value": null}
+{"line": "M", "time": "2026-11-05 01:45", "kind": "note", "event": "死亡分析 u2264：128 局全死于战斗；Act 1 boss 到达者 38.7% 死亡，Act 2 boss 9/9 死亡；最大单一杀手 DECIMILLIPEDE_ELITE 12.5% → wave 6 补日志字段", "update": 2264, "value": null}
+{"line": "M", "time": "2026-11-05 01:51", "kind": "segment", "event": "u2764 段终：dev-128 0.390 [0.368, 0.413]（到 act 3 0/128）", "update": 2764, "value": 0.3903}
+{"line": "M", "time": "2026-11-05 02:55", "kind": "segment", "event": "u3064 段终：dev-128 0.404 [0.378, 0.430]（到 act 3 0/128）；64/128 进二幕，0 通关，当时的诚实最高", "update": 3064, "value": 0.4042}
+{"line": "M", "time": "2026-11-05 02:56", "kind": "stop", "event": "到 u3064 结束；A（02:56）/ B（02:58）从 pinned-0003064 分叉", "update": 3064, "value": null}
+{"line": "M", "time": "2026-11-05 14:30", "kind": "note", "event": "决策时搜索在 M u3064 上为负：turn value+hp −0.079 [−0.108, −0.050]；价值头不能当叶子，ExIt 移出候选", "update": 3064, "value": -0.079}
+{"line": "M", "time": "2026-11-05 18:05", "kind": "note", "event": "火堆塌缩溯源：M u3064 火堆 439/439 休息、删牌 0/116（C1 u764 已如此）→ 塌缩早于宏动作", "update": 3064, "value": null}
+{"line": "M", "time": "2026-11-05 19:15", "kind": "note", "event": "只在 boss / 精英战、按血量打分的搜索网格全部低于贪心（0.368–0.388 对 0.404）→ 评测侧搜索暂停", "update": 3064, "value": null}
+{"line": "W0r", "time": "2026-11-04 18:45", "kind": "start", "event": "复验 R 在 sts2b（GPU B）上起跑：种子 2（SP2，init / sample / env seed 2）串行重跑 W0 → C0 → C1", "update": 0, "value": null}
+{"line": "W0r", "time": "2026-11-04 19:29", "kind": "segment", "event": "u191 段终：dev-128 0.234 [0.217, 0.252]（到 act 3 0/128）", "update": 191, "value": 0.2345}
+{"line": "W0r", "time": "2026-11-04 20:05", "kind": "segment", "event": "u382 段终：dev-128 0.261 [0.244, 0.278]（到 act 3 0/128）；greedy-on 0.262（种子 1：0.254 / 0.251）", "update": 382, "value": 0.2611}
+{"line": "W0r", "time": "2026-11-04 20:05", "kind": "stop", "event": "到 u382 结束；C0′ / C1′ 从 pinned-0000382 分叉", "update": 382, "value": null}
+{"line": "C0r", "time": "2026-11-04 20:06", "kind": "start", "event": "从 W0′ 的 pinned-0000382 分叉，原奖励（种子 2 对照）", "update": 382, "value": null}
+{"line": "C0r", "time": "2026-11-04 20:44", "kind": "segment", "event": "u573 段终：dev-128 0.257 [0.239, 0.275]（到 act 3 0/128）", "update": 573, "value": 0.2569}
+{"line": "C0r", "time": "2026-11-04 21:24", "kind": "segment", "event": "u764 段终：dev-128 0.304 [0.283, 0.324]（到 act 3 0/128）；有 UI 循环的局 12/128", "update": 764, "value": 0.3037}
+{"line": "C0r", "time": "2026-11-04 21:24", "kind": "stop", "event": "到 u764 结束", "update": 764, "value": null}
+{"line": "C1r", "time": "2026-11-04 21:26", "kind": "start", "event": "从 W0′ 的 pinned-0000382 分叉，--cycle-cost 0.01（种子 2）", "update": 382, "value": null}
+{"line": "C1r", "time": "2026-11-04 22:03", "kind": "segment", "event": "u573 段终：dev-128 0.284 [0.268, 0.299]（到 act 3 0/128）", "update": 573, "value": 0.2838}
+{"line": "C1r", "time": "2026-11-04 22:42", "kind": "segment", "event": "u764 段终：dev-128 0.310 [0.289, 0.332]（到 act 3 0/128）；有 UI 循环的局 0/128", "update": 764, "value": 0.3105}
+{"line": "C1r", "time": "2026-11-04 22:49", "kind": "stop", "event": "复验 R 结束（含终点评测与比较）", "update": 764, "value": null}
+{"line": "C1r", "time": "2026-11-04 23:00", "kind": "pair", "event": "C1′ − C0′ dev-128 greedy-off +0.0068 [−0.018, +0.032]（n.s.）；有环局 12 → 0（McNemar p ≈ 0.0005）", "update": 764, "value": 0.0068}
+{"line": "C1r", "time": "2026-11-04 23:00", "kind": "pair", "event": "C1′ − C0′ ab-512 +0.0006（n.s.）；ab-512 有环局 37 → 0", "update": 764, "value": 0.0006}
+{"line": "C1r", "time": "2026-11-04 23:00", "kind": "decision", "event": "循环成本在两个种子上都消灭循环、无劣化 → 采纳维持；种子 1 的进度增益未复现，效应记为小且不确定；harvest 比较解锁", "update": 764, "value": null}
+{"line": "A", "time": "2026-11-04 23:00", "kind": "note", "event": "过夜计划预注册：宏回退规则（A 的 u3564、u4064 都显著低于 M u3064 则回退），官方读数 u7664", "update": null, "value": null}
+{"line": "A", "time": "2026-11-05 02:56", "kind": "start", "event": "sts2train 上从 M 的 pinned-0003064 分叉：--macros rest,shop + 熵退火 0.02→0.005，+4600 update（约 6 亿步）", "update": 3064, "value": null}
+{"line": "A", "time": "2026-11-05 03:48", "kind": "eval", "event": "u3300 dev-128 0.434（到 act 3 1/128）；宏环境切换后固定评测没有回落", "update": 3300, "value": 0.4344}
+{"line": "A", "time": "2026-11-05 04:45", "kind": "segment", "event": "u3564 段终：dev-128 0.429 [0.404, 0.455]（到 act 3 1/128），ab-512 0.431 [0.418, 0.445]（到 act 3 6/512）", "update": 3564, "value": 0.4314}
+{"line": "A", "time": "2026-11-05 06:36", "kind": "segment", "event": "u4064 段终：dev-128 0.418 [0.392, 0.444]（到 act 3 0/128），ab-512 0.440 [0.426, 0.454]（到 act 3 12/512）", "update": 4064, "value": 0.44}
+{"line": "A", "time": "2026-11-05 07:20", "kind": "incident", "event": "为规避 24 小时上限做先停后开的轮换：新 A100 分配失败（Service Unavailable）且未重试，A 停在 u4252", "update": 4252, "value": null}
+{"line": "A", "time": "2026-11-05 11:52", "kind": "incident", "event": "sts2c 新建成功，gcs_pull 恢复 w3m-a，驱动与第二轮包装脚本重启；停机约 4.5 小时，无数据损失", "update": 4252, "value": null}
+{"line": "A", "time": "2026-11-05 12:00", "kind": "decision", "event": "规则读数 u4064：宏回退规则不触发（A u3564 0.429、u4064 0.418 对 M u3064 0.404）", "update": 4064, "value": null}
+{"line": "A", "time": "2026-11-05 13:18", "kind": "segment", "event": "u4564 段终：dev-128 0.432 [0.405, 0.459]（到 act 3 1/128），ab-512 0.438 [0.424, 0.451]（到 act 3 17/512）", "update": 4564, "value": 0.4377}
+{"line": "A", "time": "2026-11-05 13:30", "kind": "note", "event": "漏斗（ab-512 u4064）：到 Act 1 boss 87%、打过 66%，到 Act 2 boss 17%、打过 2.3%，通关 0", "update": 4064, "value": null}
+{"line": "A", "time": "2026-11-05 15:08", "kind": "segment", "event": "u5064 段终：dev-128 0.435 [0.408, 0.463]（到 act 3 2/128），ab-512 0.445 [0.431, 0.460]（到 act 3 14/512）", "update": 5064, "value": 0.4454}
+{"line": "A", "time": "2026-11-05 16:58", "kind": "segment", "event": "u5564 段终：dev-128 0.405 [0.374, 0.435]（到 act 3 3/128），ab-512 0.418 [0.403, 0.433]（到 act 3 15/512）", "update": 5564, "value": 0.4181}
+{"line": "A", "time": "2026-11-05 17:15", "kind": "decision", "event": "u5564 前后连续走低（ab-512 0.445 → 0.418），可能是熵退火后期探索收缩；待 u6064 再判", "update": 5564, "value": null}
+{"line": "A", "time": "2026-11-05 17:45", "kind": "note", "event": "行为审计（A u5064 回放 128 局）：火堆 453/453 休息、从不锻造，商店从不删牌，可避精英 0/257，跳卡 6.3% → 稀有决策类型失去探索；第三轮改为探索修复", "update": 5064, "value": null}
+{"line": "A", "time": "2026-11-05 18:48", "kind": "segment", "event": "u6064 段终：dev-128 0.448 [0.422, 0.474]（到 act 3 1/128），ab-512 0.439 [0.425, 0.453]（到 act 3 11/512）", "update": 6064, "value": 0.439}
+{"line": "A", "time": "2026-11-05 20:36", "kind": "segment", "event": "u6564 段终：dev-128 0.456 [0.428, 0.483]（到 act 3 5/128），ab-512 0.467 [0.452, 0.482]（到 act 3 26/512）", "update": 6564, "value": 0.4668}
+{"line": "A", "time": "2026-11-05 21:45", "kind": "decision", "event": "u6564 之后连续三点 ≥ 0.45，判为熵退火末段的收敛而非噪声；第三轮分叉点大概率改回 A", "update": 6800, "value": null}
+{"line": "A", "time": "2026-11-05 22:24", "kind": "segment", "event": "u7064 段终：dev-128 0.449 [0.422, 0.477]（到 act 3 2/128），ab-512 0.454 [0.440, 0.468]（到 act 3 15/512）", "update": 7064, "value": 0.4536}
+{"line": "A", "time": "2026-11-06 00:14", "kind": "segment", "event": "u7564 段终：dev-128 0.459 [0.432, 0.485]（到 act 3 2/128），ab-512 0.451 [0.436, 0.465]（到 act 3 18/512）", "update": 7564, "value": 0.4508}
+{"line": "A", "time": "2026-11-06 00:39", "kind": "segment", "event": "u7664 段终：dev-128 0.444 [0.416, 0.473]（到 act 3 2/128），ab-512 0.464 [0.449, 0.479]（到 act 3 33/512）；greedy-on 同为 0.464；dev-128 采样 ×3 池化 0.416；0 通关", "update": 7664, "value": 0.4642}
+{"line": "A", "time": "2026-11-06 00:41", "kind": "stop", "event": "到 u7664 结束（sts2c），随后端点评测；C 在同一运行时接着起跑", "update": 7664, "value": null}
+{"line": "A", "time": "2026-11-06 00:50", "kind": "decision", "event": "配对 B − A 后第三轮 E′ / F′ 的分叉点改为 A 的 u7664（确认集 A 高 0.030 且区间排除 0）", "update": 7664, "value": null}
+{"line": "B", "time": "2026-11-05 02:58", "kind": "start", "event": "sts2b 上从同一分叉点 M u3064 起跑：A 的配方 + harvest（boss:1536,elite:512,act2:1024，prob 0.25，share 0.33）", "update": 3064, "value": null}
+{"line": "B", "time": "2026-11-05 04:47", "kind": "segment", "event": "u3564 段终：dev-128 0.403 [0.379, 0.428]（到 act 3 0/128），ab-512 0.425 [0.412, 0.438]（到 act 3 8/512）", "update": 3564, "value": 0.4251}
+{"line": "B", "time": "2026-11-05 06:34", "kind": "segment", "event": "u4064 段终：dev-128 0.426 [0.401, 0.451]（到 act 3 1/128），ab-512 0.433 [0.420, 0.446]（到 act 3 6/512）", "update": 4064, "value": 0.4328}
+{"line": "B", "time": "2026-11-05 08:22", "kind": "segment", "event": "u4564 段终：dev-128 0.448 [0.422, 0.474]（到 act 3 3/128），ab-512 0.450 [0.435, 0.464]（到 act 3 19/512）", "update": 4564, "value": 0.4498}
+{"line": "B", "time": "2026-11-05 10:10", "kind": "segment", "event": "u5064 段终：dev-128 0.420 [0.392, 0.448]（到 act 3 3/128），ab-512 0.444 [0.430, 0.458]（到 act 3 13/512）", "update": 5064, "value": 0.4444}
+{"line": "B", "time": "2026-11-05 11:03", "kind": "eval", "event": "u5300 dev-128 0.461（到 act 3 2/128）；B 的 dev-128 最高点，之后进入平台", "update": 5300, "value": 0.4607}
+{"line": "B", "time": "2026-11-05 11:58", "kind": "segment", "event": "u5564 段终：dev-128 0.425 [0.398, 0.452]（到 act 3 0/128），ab-512 0.442 [0.428, 0.456]（到 act 3 10/512）", "update": 5564, "value": 0.4417}
+{"line": "B", "time": "2026-11-05 12:00", "kind": "pair", "event": "u4064 B − A：dev-128 +0.008、ab-512 −0.007 → 止损规则不触发", "update": 4064, "value": 0.008}
+{"line": "B", "time": "2026-11-05 13:45", "kind": "segment", "event": "u6064 段终：dev-128 0.444 [0.417, 0.471]（到 act 3 4/128），ab-512 0.432 [0.418, 0.446]（到 act 3 12/512）", "update": 6064, "value": 0.4316}
+{"line": "B", "time": "2026-11-05 14:00", "kind": "decision", "event": "ab-512 从 u4564 的 0.450 回落到 0.432：判定 B 在 u4500 之后没有再进步，第三轮必须换杠杆", "update": 6064, "value": null}
+{"line": "B", "time": "2026-11-05 15:32", "kind": "segment", "event": "u6564 段终：dev-128 0.447 [0.419, 0.474]（到 act 3 3/128），ab-512 0.446 [0.433, 0.459]（到 act 3 9/512）", "update": 6564, "value": 0.446}
+{"line": "B", "time": "2026-11-05 17:19", "kind": "segment", "event": "u7064 段终：dev-128 0.426 [0.399, 0.453]（到 act 3 2/128），ab-512 0.443 [0.429, 0.457]（到 act 3 16/512）", "update": 7064, "value": 0.4429}
+{"line": "B", "time": "2026-11-05 18:43", "kind": "incident", "event": "sts2b 在启动后 24 小时被回收（约 u7440）；轮换守护建 sts2b2；18:58 对旧名 scp 又自动造出一个 CPU 会话", "update": null, "value": null}
+{"line": "B", "time": "2026-11-05 18:55", "kind": "decision", "event": "第二轮 C / D 的分叉点改为 B 的 u7664（A 停机推迟，避免 GPU B 空等约 5 小时）", "update": 7664, "value": null}
+{"line": "B", "time": "2026-11-05 19:12", "kind": "incident", "event": "B 在 sts2b2 上从 ckpt-0007425 恢复（驱动 b + launch_d2 + launch_f）", "update": 7425, "value": null}
+{"line": "B", "time": "2026-11-05 19:33", "kind": "segment", "event": "u7564 段终：dev-128 0.444 [0.417, 0.471]（到 act 3 3/128），ab-512 0.441 [0.427, 0.454]（到 act 3 9/512）", "update": 7564, "value": 0.4405}
+{"line": "B", "time": "2026-11-05 19:55", "kind": "incident", "event": "恢复后的训练器写了新的 metrics.jsonl，gcs_sync 覆盖了桶内 u3064–u7425 的训练期 metrics / episodes（评测与 checkpoint 完好）", "update": 7425, "value": null}
+{"line": "B", "time": "2026-11-05 19:57", "kind": "segment", "event": "u7664 段终：dev-128 0.440 [0.413, 0.466]（到 act 3 2/128），ab-512 0.434 [0.420, 0.449]（到 act 3 12/512）；greedy-on 同为 0.434；dev-128 采样 ×3 池化 0.425；0 通关，最远楼层 48", "update": 7664, "value": 0.434}
+{"line": "B", "time": "2026-11-05 20:00", "kind": "stop", "event": "到 u7664 结束；D 在同一运行时从 B 的 u7664 起跑", "update": 7664, "value": null}
+{"line": "B", "time": "2026-11-06 00:50", "kind": "pair", "event": "u7664 配对 B − A dev-128 greedy-off −0.0045 [−0.035, +0.026]（n.s.）", "update": 7664, "value": -0.0045}
+{"line": "B", "time": "2026-11-06 00:50", "kind": "pair", "event": "u7664 配对 B − A ab-512 greedy-off −0.0301 [−0.047, −0.013]（A 高）", "update": 7664, "value": -0.0301}
+{"line": "B", "time": "2026-11-06 00:50", "kind": "decision", "event": "官方结论：harvest 无可检测差异；第三轮改从 A 的 u7664 分叉", "update": 7664, "value": null}
+{"line": "D", "time": "2026-11-05 01:30", "kind": "note", "event": "第二轮预注册：C（--macros all）对照 D（rest,shop），熵恒定 0.005，+1500 update，判据为 u9164 配对 dev-128", "update": null, "value": null}
+{"line": "D", "time": "2026-11-05 18:55", "kind": "decision", "event": "分叉点改为 B 的 u7664（原为 A 的 u7664），两臂同起点", "update": 7664, "value": null}
+{"line": "D", "time": "2026-11-05 20:03", "kind": "start", "event": "sts2b2 上从 B 的 pinned-0007664 起跑：--macros rest,shop，熵恒定 0.005（对照）", "update": 7664, "value": null}
+{"line": "D", "time": "2026-11-05 21:47", "kind": "segment", "event": "u8164 段终：dev-128 0.442 [0.416, 0.468]（到 act 3 0/128），ab-512 0.431 [0.417, 0.445]（到 act 3 8/512）", "update": 8164, "value": 0.4309}
+{"line": "D", "time": "2026-11-05 23:34", "kind": "segment", "event": "u8664 段终：dev-128 0.437 [0.410, 0.464]（到 act 3 2/128），ab-512 0.446 [0.431, 0.460]（到 act 3 14/512）", "update": 8664, "value": 0.4459}
+{"line": "D", "time": "2026-11-05 23:37", "kind": "incident", "event": "第三段训练器在 compiled-vs-eager 门槛上退出：loss 相对误差 2.31e-2 > 1e-2，而梯度全部一致——是 bf16 舍入噪声不是后端错误", "update": 8664, "value": null}
+{"line": "D", "time": "2026-11-05 23:45", "kind": "incident", "event": "驱动判\"异常结束: done\"，东京保活按规则停掉 sts2b2；Mac 守护当作正常结束，不轮换", "update": null, "value": null}
+{"line": "D", "time": "2026-11-06 00:40", "kind": "incident", "event": "sts2b3 上 md5 校验后从 ckpt-0008664 续训；驱动改为失败重试 3 次、遇该门槛自动加 --compile off", "update": 8664, "value": null}
+{"line": "D", "time": "2026-11-06 00:50", "kind": "incident", "event": "再次在同一门槛上退出（数值逐位相同，确定性误触发），自动转 eager，u8676 起 update 3.6 s 对 3.2 s", "update": 8676, "value": null}
+{"line": "D", "time": "2026-11-06 01:17", "kind": "eval", "event": "u8800 dev-128 0.465（到 act 3 3/128）；D 的 dev-128 最高点", "update": 8800, "value": 0.4648}
+{"line": "D", "time": "2026-11-06 02:36", "kind": "segment", "event": "u9164 段终：dev-128 0.430 [0.403, 0.457]（到 act 3 1/128），ab-512 0.453 [0.438, 0.467]（到 act 3 19/512）", "update": 9164, "value": 0.4527}
+{"line": "D", "time": "2026-11-06 02:41", "kind": "stop", "event": "到 u9164 结束；F′ 在同一运行时起跑", "update": 9164, "value": null}
+{"line": "D", "time": "2026-11-06 10:00", "kind": "note", "event": "作为对照：C − D dev-128 +0.049（采纳 --macros all），ab-512 −0.004", "update": 9164, "value": 0.049}
+{"line": "C", "time": "2026-11-05 01:30", "kind": "note", "event": "第二轮预注册并武装为自动接续：C = 过夜线终点 + --macros all，对照 D", "update": null, "value": null}
+{"line": "C", "time": "2026-11-05 18:55", "kind": "decision", "event": "分叉点改为 B 的 u7664，两臂同起点", "update": 7664, "value": null}
+{"line": "C", "time": "2026-11-06 00:50", "kind": "start", "event": "sts2c 上从 B 的 u7664 起跑（--macros all，熵恒定 0.005）；首个 update 过编译门（rel 1.35e-4）", "update": 7664, "value": null}
+{"line": "C", "time": "2026-11-06 01:05", "kind": "note", "event": "核对：C 与 D 的 config 都从 B 的 checkpoint 继承了 harvest——仍是只差宏动作的比较，但两臂都带 harvest", "update": 7664, "value": null}
+{"line": "C", "time": "2026-11-06 02:35", "kind": "segment", "event": "u8164 段终：dev-128 0.454 [0.424, 0.485]（到 act 3 5/128），ab-512 0.443 [0.429, 0.456]（到 act 3 9/512）", "update": 8164, "value": 0.4429}
+{"line": "C", "time": "2026-11-06 04:31", "kind": "segment", "event": "u8664 段终：dev-128 0.420 [0.391, 0.449]（到 act 3 3/128），ab-512 0.460 [0.446, 0.474]（到 act 3 19/512）", "update": 8664, "value": 0.4596}
+{"line": "C", "time": "2026-11-06 06:25", "kind": "segment", "event": "u9164 段终：dev-128 0.479 [0.452, 0.506]（到 act 3 5/128），ab-512 0.449 [0.434, 0.463]（到 act 3 15/512）；最后 4 个固定评测点都 ≥ 0.457", "update": 9164, "value": 0.4485}
+{"line": "C", "time": "2026-11-06 06:27", "kind": "stop", "event": "到 u9164 结束；E′ 在同一运行时起跑", "update": 9164, "value": null}
+{"line": "C", "time": "2026-11-06 10:00", "kind": "pair", "event": "r2_compare u9164：C − D dev-128 greedy-off +0.049 [+0.018, +0.080]", "update": 9164, "value": 0.049}
+{"line": "C", "time": "2026-11-06 10:00", "kind": "pair", "event": "C − D ab-512 greedy-off −0.004 [−0.021, +0.013]（n.s.）", "update": 9164, "value": -0.004}
+{"line": "C", "time": "2026-11-06 10:00", "kind": "decision", "event": "按预注册规则采纳 --macros all（主集区间整体 > 0）；保留意见：确认集无差异，后续线默认 macros all", "update": 9164, "value": null}
+{"line": "C", "time": "2026-11-06 14:45", "kind": "note", "event": "反事实评测（C u9164，dev-128 贪心配对）：总是升级 −0.14、总是删牌 −0.03、总是进精英 −0.08、总是跳卡 −0.25，区间全在 0 以下", "update": 9164, "value": null}
+{"line": "C", "time": "2026-11-06 17:25", "kind": "decision", "event": "C-rep 未复现 +0.05：--macros all 不撤回，效果下调为中性到正向；采纳门槛改为两个种子同号", "update": 9164, "value": null}
+{"line": "C", "time": "2026-11-06 21:30", "kind": "note", "event": "复盘：macros-all 采纳过早——按 5 点窗口重读只有 +0.019，dev-128 单点噪声带 ±0.03", "update": null, "value": null}
+{"line": "F", "time": "2026-11-05 15:10", "kind": "note", "event": "第三轮 v1 预注册：E（HP 势能塑形 κ=0.1）对照 F（无塑形），共同加学习率余弦衰减", "update": null, "value": null}
+{"line": "F", "time": "2026-11-05 18:40", "kind": "decision", "event": "第三轮改版 v2：E′ = 探索修复 对照 F′ = 纯续训（HP 塑形顺延）", "update": null, "value": null}
+{"line": "F", "time": "2026-11-06 00:50", "kind": "decision", "event": "分叉点改为 A 的 u7664（配对 B − A 的确认集 A 高）", "update": 7664, "value": null}
+{"line": "F", "time": "2026-11-06 02:46", "kind": "start", "event": "sts2b3 上 D 之后起跑：从桶取 A 的 pinned-0007664，纯续训（rest,shop，熵 0.005）+2000 update", "update": 7664, "value": null}
+{"line": "F", "time": "2026-11-06 04:30", "kind": "segment", "event": "u8164 段终：dev-128 0.428 [0.402, 0.454]（到 act 3 0/128），ab-512 0.446 [0.432, 0.461]（到 act 3 12/512）", "update": 8164, "value": 0.4464}
+{"line": "F", "time": "2026-11-06 06:17", "kind": "segment", "event": "u8664 段终：dev-128 0.443 [0.415, 0.472]（到 act 3 2/128），ab-512 0.452 [0.438, 0.466]（到 act 3 13/512）", "update": 8664, "value": 0.4521}
+{"line": "F", "time": "2026-11-06 08:12", "kind": "segment", "event": "u9164 段终：dev-128 0.457 [0.430, 0.484]（到 act 3 3/128），ab-512 0.459 [0.444, 0.473]（到 act 3 18/512）", "update": 9164, "value": 0.4588}
+{"line": "F", "time": "2026-11-06 10:06", "kind": "segment", "event": "u9664 段终：dev-128 0.446 [0.418, 0.475]（到 act 3 3/128），ab-512 0.437 [0.422, 0.452]（到 act 3 23/512）；对分叉点 A u7664（dev-128 0.444、ab-512 0.464）没有提升", "update": 9664, "value": 0.4374}
+{"line": "F", "time": "2026-11-06 10:11", "kind": "stop", "event": "到 u9664 结束；E2 在同一运行时起跑", "update": 9664, "value": null}
+{"line": "F", "time": "2026-11-06 10:30", "kind": "decision", "event": "A 的 u7664 纯续训 2000 update 无提升；探索臂（E′ / E2 / E3）都没跑到终点，E − F 配对未计算", "update": 9664, "value": null}
+{"line": "E", "time": "2026-11-05 17:45", "kind": "decision", "event": "行为审计发现锻造 / 删牌概率为 0、PPO 永远采不到 → 启动 wave 9（rollout 期对指定决策类型做 ε 探索）", "update": null, "value": null}
+{"line": "E", "time": "2026-11-05 18:40", "kind": "note", "event": "wave 9 合入（--explore-kinds / --explore-eps / --explore-logp）；E′ 预注册：火堆 + 删牌，eps 0.3，policy 对数概率；判据配对 E′ − F′ 与 P(SMITH) ≥ 0.2", "update": null, "value": null}
+{"line": "E", "time": "2026-11-06 00:50", "kind": "decision", "event": "分叉点改为 A 的 u7664", "update": 7664, "value": null}
+{"line": "E", "time": "2026-11-06 06:35", "kind": "start", "event": "sts2c 上 C 之后起跑：A 的 u7664 + 火堆 / 删牌探索（eps 0.3，policy logp）", "update": 7664, "value": null}
+{"line": "E", "time": "2026-11-06 06:41", "kind": "incident", "event": "被探索且 π_old≈0 的行使 PPO 比率无界：kl 0.08 → 3.2 → 5870（u7670）→ 2.9e12（u7676），训练器 non-finite loss 退出", "update": 7676, "value": null}
+{"line": "E", "time": "2026-11-06 06:42", "kind": "incident", "event": "重试先撞编译门（rel 1.31e-2）转 eager，再起即 kl 5e14、进度变为非有限值；3 次失败后驱动退出", "update": null, "value": null}
+{"line": "E", "time": "2026-11-06 06:45", "kind": "stop", "event": "东京保活停掉 sts2c；轮换守护此前已停用，GPU A 空转到 09:40（约 3 小时）", "update": 7676, "value": null}
+{"line": "E", "time": "2026-11-06 09:55", "kind": "decision", "event": "失败是数值问题不是假设问题（A<0 一侧 r·A 无裁剪）：wave 11 加 dual-clip 与对数比率上限，在 GPU B 重启为 E2", "update": null, "value": null}
+{"line": "C2", "time": "2026-11-06 09:43", "kind": "note", "event": "新建 sts2a2（A100），恢复 w3m-a（分叉 checkpoint）与 w4-c（md5 全部一致）", "update": null, "value": null}
+{"line": "C2", "time": "2026-11-06 09:55", "kind": "decision", "event": "GPU A 空转期间最省事的有效用法：C 纯续训 u9164 → 10664，同时检验 0.48 是否站得住", "update": 9164, "value": null}
+{"line": "C2", "time": "2026-11-06 10:01", "kind": "start", "event": "sts2a2 上 w4-c 从 u9164 续训（TAG c2，--macros all，熵 0.005，eager）", "update": 9164, "value": null}
+{"line": "C2", "time": "2026-11-06 11:59", "kind": "segment", "event": "u9664 段终：dev-128 0.452 [0.424, 0.480]（到 act 3 4/128），ab-512 0.458 [0.442, 0.473]（到 act 3 21/512）", "update": 9664, "value": 0.4575}
+{"line": "C2", "time": "2026-11-06 13:53", "kind": "segment", "event": "u10164 段终：dev-128 0.454 [0.425, 0.483]（到 act 3 2/128），ab-512 0.446 [0.430, 0.461]（到 act 3 22/512）", "update": 10164, "value": 0.4456}
+{"line": "C2", "time": "2026-11-06 15:12", "kind": "eval", "event": "u10500 dev-128 0.483（到 act 3 3/128）；到 act 2 的局 92/128，当时 dev-128 最高", "update": 10500, "value": 0.4834}
+{"line": "C2", "time": "2026-11-06 15:49", "kind": "segment", "event": "u10664 段终：dev-128 0.489 [0.460, 0.518]（到 act 3 6/128），ab-512 0.475 [0.461, 0.489]（到 act 3 19/512）；greedy-on 同为 0.4753（当时所有线确认集最高）", "update": 10664, "value": 0.4753}
+{"line": "C2", "time": "2026-11-06 15:54", "kind": "stop", "event": "到 u10664 结束；G 在同一运行时起跑；C2 u10664 成为 G / S / C3 的分叉点", "update": 10664, "value": null}
+{"line": "C2", "time": "2026-11-06 16:00", "kind": "note", "event": "第二关 boss 复盘（C2 u10400 + u10500 的 256 局）：到达 61、打过 9；KAISER_CRAB 0/24、KNOWLEDGE_DEMON 5/23、THE_INSATIABLE 4/14；赢家进门 HP 87% 对 73%、升级卡 5.2 对 3.0", "update": 10500, "value": null}
+{"line": "C2", "time": "2026-11-06 16:45", "kind": "note", "event": "G 的读数说明 C 系在 u10664 已自己学会有条件升级（升级行质量 0.34），是 C2 后半段 0.46–0.48 的来源之一", "update": 10664, "value": 0.34}
+{"line": "E2", "time": "2026-11-06 10:18", "kind": "start", "event": "sts2b3 上 F′ 之后起跑：A 的 u7664 + 火堆 / 删牌探索 + --dual-clip 3.0（包 sts2train-69463a9f85）；新门槛通过（rel 1.8e-4）", "update": 7664, "value": null}
+{"line": "E2", "time": "2026-11-06 10:26", "kind": "eval", "event": "u7700 dev-128 0.434（到 act 3 1/128）；与 A 的 u7664（0.444）同水平", "update": 7700, "value": 0.4341}
+{"line": "E2", "time": "2026-11-06 10:30", "kind": "note", "event": "loss 不再出现非有限值，但 approx_kl 在 0.4 与 1e6 之间交替：被探索样本几乎每个在一轮内 log π 移动 ≥ 20 nat，触顶样本数 ≈ 探索步数", "update": null, "value": null}
+{"line": "E2", "time": "2026-11-06 10:48", "kind": "eval", "event": "u7800 dev-128 0.391（到 act 3 2/128）；策略在被探索行上震荡", "update": 7800, "value": 0.391}
+{"line": "E2", "time": "2026-11-06 11:08", "kind": "stop", "event": "人工停止于 u7896，pinned 7700 / 7800 留桶备审计", "update": 7896, "value": null}
+{"line": "E2", "time": "2026-11-06 11:10", "kind": "decision", "event": "机制已证明不可取（震荡），不等 u8164；改用有界推力（wave 12）的 E3 接替", "update": 7896, "value": null}
+{"line": "E3", "time": "2026-11-06 11:10", "kind": "note", "event": "wave 12 完成（--explore-push：被探索样本退出比率、有界原始策略梯度；commit 26c074a，raven 285 项通过）", "update": null, "value": null}
+{"line": "E3", "time": "2026-11-06 11:15", "kind": "start", "event": "sts2b3 上起跑：A 的 u7664 + 探索 + --explore-push 1.0 + --dual-clip 3.0；首次尝试在编译门上失败（带推力 loss 0.0218 对 0.0311），自动转 eager", "update": 7664, "value": null}
+{"line": "E3", "time": "2026-11-06 11:25", "kind": "eval", "event": "u7700 dev-128 0.418（到 act 3 2/128）；低于 A 的 0.444 与 E2 的 0.434", "update": 7700, "value": 0.4176}
+{"line": "E3", "time": "2026-11-06 11:30", "kind": "note", "event": "push_clamped 0.89–0.93、push_dlogp −124 … −1575：约 90% 的被探索样本超出 ±1 nat 信任域，推力梯度实际为零 → wave 13 诊断启动", "update": null, "value": null}
+{"line": "E3", "time": "2026-11-06 11:40", "kind": "stop", "event": "人工停止于 u7761：push_dlogp 到 −1.2e5，非探索样本 kl 升到 0.043–0.066", "update": 7761, "value": null}
+{"line": "E3", "time": "2026-11-06 12:10", "kind": "note", "event": "wave 13 结论：SMITH 行 logit 间隔中位 −92，梯度范数 238（删牌 754）对战斗行 1.1；Adam 逐参数归一化让一步推力 ±12 nat → 推力必须离开共享 loss、Adam 与全局裁剪", "update": null, "value": null}
+{"line": "C-rep", "time": "2026-11-06 11:41", "kind": "start", "event": "sts2b3 上从 B 的 pinned-0007664 起跑：--macros all + 种子流 SP2，+1500 update", "update": 7664, "value": null}
+{"line": "C-rep", "time": "2026-11-06 11:45", "kind": "decision", "event": "GPU B 空出来做第二轮复现：采纳 --macros all 只靠一次配对、确认集 n.s.", "update": 7664, "value": null}
+{"line": "C-rep", "time": "2026-11-06 13:25", "kind": "segment", "event": "u8164 段终：dev-128 0.431 [0.404, 0.458]（到 act 3 1/128），ab-512 0.449 [0.435, 0.463]（到 act 3 12/512）", "update": 8164, "value": 0.4493}
+{"line": "C-rep", "time": "2026-11-06 15:22", "kind": "segment", "event": "u8664 段终：dev-128 0.447 [0.420, 0.473]（到 act 3 3/128），ab-512 0.449 [0.435, 0.464]（到 act 3 12/512）", "update": 8664, "value": 0.4494}
+{"line": "C-rep", "time": "2026-11-06 17:20", "kind": "segment", "event": "u9164 段终：dev-128 0.433 [0.406, 0.461]（到 act 3 2/128），ab-512 0.437 [0.423, 0.452]（到 act 3 9/512）；同点 C 0.479、D 0.430", "update": 9164, "value": 0.4372}
+{"line": "C-rep", "time": "2026-11-06 17:21", "kind": "stop", "event": "到 u9164 结束；S 在同一运行时起跑", "update": 9164, "value": null}
+{"line": "C-rep", "time": "2026-11-06 17:25", "kind": "decision", "event": "+0.05 不可复现：C-rep ≈ D；--macros all 不撤回、下调为中性到正向；采纳门槛改为两个种子同号", "update": 9164, "value": null}
+{"line": "C-rep", "time": "2026-11-06 18:20", "kind": "pair", "event": "C-rep − D dev-128 +0.003 [−0.027, +0.034]（n.s.）", "update": 9164, "value": 0.003}
+{"line": "C-rep", "time": "2026-11-06 18:20", "kind": "pair", "event": "C-rep − D ab-512 −0.016 [−0.031, +0.000]（n.s.）", "update": 9164, "value": -0.016}
+{"line": "C-rep", "time": "2026-11-06 18:20", "kind": "pair", "event": "C-rep − C dev-128 −0.046 [−0.075, −0.016]（C-rep 显著低）", "update": 9164, "value": -0.046}
+{"line": "C-rep", "time": "2026-11-06 18:20", "kind": "pair", "event": "C-rep − C ab-512 −0.011 [−0.028, +0.005]（n.s.）", "update": 9164, "value": -0.011}
+{"line": "C-rep", "time": "2026-11-06 18:20", "kind": "decision", "event": "官方规则读数 NO CONCLUSION：--macros all 无可复现的效果，保留为中性", "update": 9164, "value": null}
+{"line": "G", "time": "2026-11-05 21:15", "kind": "decision", "event": "用户方向\"回头搞精英\"：wave 10 启动（Travel:<MapPointType> 与 ProceedRewards 探索选择器）", "update": null, "value": null}
+{"line": "G", "time": "2026-11-05 22:00", "kind": "note", "event": "wave 10 合入（5006cdf）；第四轮草案预注册：G = E′ 配方 + 精英 / 跳卡探索 + 精英课程，对照 H", "update": null, "value": null}
+{"line": "G", "time": "2026-11-06 10:10", "kind": "decision", "event": "第四轮修订：G = C2 的 u10664 + 四类探索（eps 0.3，policy logp，dual-clip 3.0），H = 同起点只探索火堆 / 删牌", "update": 10664, "value": null}
+{"line": "G", "time": "2026-11-06 11:10", "kind": "decision", "event": "第二次修订：G / H 改用 wave 12 的有界推力", "update": 10664, "value": null}
+{"line": "G", "time": "2026-11-06 12:15", "kind": "decision", "event": "G 的包装器改等 wave 14 包（推力独立归一步长），避免带着失效的推力起跑", "update": 10664, "value": null}
+{"line": "G", "time": "2026-11-06 14:45", "kind": "decision", "event": "wave 14b（推力预算按自身累计量）部署；launch_g4：--explore-push 3.0 --explore-push-step 0.5", "update": 10664, "value": null}
+{"line": "G", "time": "2026-11-06 14:45", "kind": "note", "event": "反事实评测：总是做 X 全部更差，当前战斗力下的回避是局部理性；硬零只有升级与删牌", "update": null, "value": null}
+{"line": "G", "time": "2026-11-06 15:55", "kind": "start", "event": "sts2a2 上从 C2 的 pinned-0010664 起跑（bundle-w14b，四类探索 + 推力预算 3 nat / 轮）", "update": 10664, "value": null}
+{"line": "G", "time": "2026-11-06 16:10", "kind": "incident", "event": "update 阶段 22–23 s（原 3.2 s）、sps 4,500（原 10,800）：预算用完后推力仍按系数 0 计算，2000 update 要 16 小时 → wave 14c", "update": 10677, "value": null}
+{"line": "G", "time": "2026-11-06 16:17", "kind": "eval", "event": "u10700 dev-128 0.398（到 act 3 1/128）；分叉点 C2 u10500 0.483；到 act 2 的局 57/128（C2 83–92）", "update": 10700, "value": 0.3975}
+{"line": "G", "time": "2026-11-06 16:30", "kind": "stop", "event": "人工停止于 u10715：策略自己的升级行质量 0.34 → 7e-28，删牌 1e-10 → 3e-6，push_step_dlogp 每步 −0.1 … −0.4", "update": 10715, "value": 7e-28}
+{"line": "G", "time": "2026-11-06 16:30", "kind": "decision", "event": "探索修复只应作用于策略硬零的行（如 pmass < 1e-6），不能动已学会的行；GPU A 改跑 C3", "update": 10715, "value": null}
+{"line": "G", "time": "2026-11-06 16:50", "kind": "note", "event": "wave 14c 完成（逐位相同，51.7 → 10.2 s / 32 批）但不部署，留给下一版带门控的推力", "update": null, "value": null}
+{"line": "C3", "time": "2026-11-06 16:27", "kind": "start", "event": "sts2a2 上从 C2 的 pinned-0010664 起跑（compiled，编译门通过 rel 1.2e-4），+1500 update", "update": 10664, "value": null}
+{"line": "C3", "time": "2026-11-06 16:30", "kind": "decision", "event": "G 停止后 GPU A 改跑 C3：C2 的 u10664 纯续训、bundle-w17 新特性全关，作为 S 的配对对照", "update": 10664, "value": null}
+{"line": "C3", "time": "2026-11-06 16:35", "kind": "eval", "event": "u10700 dev-128 0.475（到 act 3 7/128）；起点水平", "update": 10700, "value": 0.4751}
+{"line": "C3", "time": "2026-11-06 17:38", "kind": "eval", "event": "u11000 dev-128 0.492（到 act 3 7/128）；当时 dev-128 最高", "update": 11000, "value": 0.4918}
+{"line": "C3", "time": "2026-11-06 18:13", "kind": "segment", "event": "u11164 段终：dev-128 0.484 [0.456, 0.512]（到 act 3 7/128），ab-512 0.486 [0.471, 0.502]（到 act 3 36/512）", "update": 11164, "value": 0.4863}
+{"line": "C3", "time": "2026-11-06 18:45", "kind": "eval", "event": "u11300 dev-128 0.499（到 act 3 11/128）；act 3 11/128 为历史最多；dev-128 单点噪声带 ±0.03", "update": 11300, "value": 0.4987}
+{"line": "C3", "time": "2026-11-06 20:03", "kind": "segment", "event": "u11664 段终：dev-128 0.496 [0.469, 0.524]（到 act 3 8/128），ab-512 0.489 [0.474, 0.504]（到 act 3 32/512）", "update": 11664, "value": 0.4886}
+{"line": "C3", "time": "2026-11-06 20:16", "kind": "decision", "event": "C 系确认集斜率放缓（每 500 update +0.026 → +0.011 → +0.003），纯续训逼近平台", "update": 11664, "value": null}
+{"line": "C3", "time": "2026-11-06 20:56", "kind": "eval", "event": "u11900 dev-128 0.499（到 act 3 7/128）；最后一段", "update": 11900, "value": 0.4992}
+{"line": "C3", "time": "2026-11-06 21:10", "kind": "decision", "event": "隔夜 C4 接在 C3 之后（东京保活的 sts2a2 条目改指 w4-c4.driver.log）", "update": 12164, "value": null}
+{"line": "S", "time": "2026-11-06 14:15", "kind": "decision", "event": "用户问如何尽快打赢第二关 boss：方案为 act-2 boss 击杀奖励 + 用人类存档做起点的 boss 学校；判据改为先行指标", "update": null, "value": null}
+{"line": "S", "time": "2026-11-06 14:15", "kind": "note", "event": "存档盘点：原生存档副本 333 份（Silent 236）；Silent A10 的 act≥2 存档全部来自同一局，加 A9 后 3 个种子——多样性是主要风险", "update": null, "value": null}
+{"line": "S", "time": "2026-11-06 15:30", "kind": "note", "event": "wave 17 落地（--boss-bonus、stream 模式 --start-saves、boss2 环；commit 5ad8ef4，关掉时逐位相同）；预注册先行指标 act_reached[3]：基线 3–6/128，采纳 ≥ 12/128", "update": null, "value": null}
+{"line": "S", "time": "2026-11-06 16:30", "kind": "decision", "event": "对照改为 C3（同分叉、同包、同步数）：主判据为配对 S − C3", "update": 10664, "value": null}
+{"line": "S", "time": "2026-11-06 17:30", "kind": "start", "event": "sts2b3 上 C-rep 之后起跑：C2 的 u10664 + 25% 人类存档起局（121 份）+ boss 奖励 0.2（compiled，12.9 s / 轮）", "update": 10664, "value": null}
+{"line": "S", "time": "2026-11-06 17:38", "kind": "eval", "event": "u10700 dev-128 0.471（到 act 3 4/128）；起点水平", "update": 10700, "value": 0.4715}
+{"line": "S", "time": "2026-11-06 17:50", "kind": "note", "event": "训练期：每轮存档起局 114–133、boss2 击杀 41–50、存档局通关 9–11 次；新开局进度 0.46–0.50 不变——策略能从人类后期状态打通全局", "update": null, "value": null}
+{"line": "S", "time": "2026-11-06 18:40", "kind": "eval", "event": "u11000 dev-128 0.485（到 act 3 7/128）；与 C3 同点 0.492 持平", "update": 11000, "value": 0.4855}
+{"line": "S", "time": "2026-11-06 19:14", "kind": "segment", "event": "u11164 段终：dev-128 0.475 [0.445, 0.504]（到 act 3 5/128），ab-512 0.492 [0.477, 0.507]（到 act 3 30/512）", "update": 11164, "value": 0.4923}
+{"line": "S", "time": "2026-11-06 20:16", "kind": "pair", "event": "配对 S − C3 @u11164：dev-128 −0.009 [−0.042, +0.024]（n.s.）", "update": 11164, "value": -0.009}
+{"line": "S", "time": "2026-11-06 20:16", "kind": "pair", "event": "配对 S − C3 @u11164：ab-512 +0.006 [−0.010, +0.022]（n.s.）", "update": 11164, "value": 0.006}
+{"line": "S", "time": "2026-11-06 21:01", "kind": "segment", "event": "u11664 段终：dev-128 0.504 [0.477, 0.532]（到 act 3 7/128），ab-512 0.500 [0.485, 0.515]（到 act 3 36/512）", "update": 11664, "value": 0.4999}
+{"line": "S", "time": "2026-11-06 21:10", "kind": "pair", "event": "配对 S − C3 @u11664：dev-128 +0.0077 [−0.023, +0.038]（n.s.）", "update": 11664, "value": 0.0077}
+{"line": "S", "time": "2026-11-06 21:10", "kind": "pair", "event": "配对 S − C3 @u11664：ab-512 +0.0113 [−0.005, +0.028]（n.s.），两点都为正且在变大", "update": 11664, "value": 0.0113}
+{"line": "S", "time": "2026-11-06 21:10", "kind": "decision", "event": "未达预注册的隔夜切换条件（ab-512 ≥ +0.015 且 dev-128 ≥ 0）→ 隔夜跑 C4；第三个配对点 u12164 约 23:15", "update": 11664, "value": null}
+{"line": "C4", "time": "2026-11-06 20:16", "kind": "decision", "event": "隔夜预注册：余额只够约 7.7 小时，只开一张 A100（sts2a2）接在 C3 之后：C4 = C3 u12164 → u13164，约 4 小时、约 27 单位", "update": 12164, "value": null}
+{"line": "C4", "time": "2026-11-06 21:10", "kind": "decision", "event": "S − C3 未达切换阈值 → 隔夜线为 C4；launch_c4.sh 安装在 sts2a2，验证在等 C3 结束", "update": 12164, "value": null}
+{"line": "C4", "time": "2026-11-06 21:22", "kind": "incident", "event": "审计发现 C4 启动器等的结束标记 C3 永远不会打印（约 6 小时、40 单位空转风险）：改等 \"w3m-c3: done\" 并重启等待进程", "update": 12164, "value": null}
+{"line": "S2", "time": "2026-11-06 20:16", "kind": "decision", "event": "隔夜切换条件预注册：若 u11664 配对 S − C3 的 ab-512 ≥ +0.015 且 dev-128 ≥ 0，隔夜改跑 S2 = S u12164 → u13164", "update": 12164, "value": null}
+{"line": "S2", "time": "2026-11-06 21:10", "kind": "decision", "event": "未达切换条件：S2 启动器与存档池预置在 sts2a2，不启动", "update": 12164, "value": null}
+{"line": "S2", "time": "2026-11-06 21:30", "kind": "decision", "event": "充值后在新卡 sts2b4 上起 S2，与 C4 同 fork u12164 配对；预注册 s2-vs-c4.json（一对训练种子最多判 REPLICATE）", "update": 12164, "value": null}
