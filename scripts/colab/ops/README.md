@@ -97,3 +97,9 @@ LINE `a` 用 `--overlap $OVERLAP`；LINE `b` 另加 `--overlap off --harvest bos
 | `mirror_loop.sh` | Mac | 桶 → 本机小文件镜像（监控页数据源） |
 | `watch_rotate.sh` | Mac | 轮换守护 v2（见 (b)） |
 | `ssh_config.example` | Mac | `Host colab-NAME` 模板（ProxyCommand `colab --auth=adc ssh --proxy-mode -s NAME`） |
+
+- **Colab CLI 的会话名是客户端本地的**（`~/.config/colab-cli/sessions.json`）：在 Mac 上 `colab new -s NAME` 之后，东京保活机对 NAME 做 `colab exec` 会报
+  "Session not found"（它的 `colab sessions` 只显示 `[?] <id>`，按 id 也不能 exec）。每建一个会话都要把这份 `sessions.json` 拷到东京的同一路径
+  （`gcloud compute scp`），保活才能 ping 到它（2026-11-06 23:10，sts2b4）。线规格运行器 v2 的 `keepalive_v3.sh` 同样依赖这个注册表。
+- **远端起启动器不要用内联 `bash -c "pgrep … ; bash launch_x.sh"`**：pgrep 会匹配到这条 bash -c 自己（命令行里含 `bash launch_x.sh`），报 already-running
+  却什么都没起（2026-11-06 两次：C4、W20a）。统一用运行时上的 `start_line.sh LAUNCHER DRIVER_LOG`（pgrep 的模式 `bash launch_x[.]sh` 不会匹配该脚本自己）。
