@@ -30,30 +30,49 @@ game process remains the state-transition engine.
 （协议 v0.2 计分），以及 Colab A100 上的线驱动与运维脚本（`scripts/colab/`）。目标：THE SILENT · Ascension 10，在 dev-128 上
 贪心、关 loop breaker 的**平均通关进度 ≥ 0.60、通关率 ≥ 0.10**，信息对等（不读隐藏信息、不读档）。
 
-**当前数字**（全部 0 通关；来源见括号）：
+**当前数字**（全部 0 通关；来源见括号；截至 2026-11-06 22:30 EST）：
 
 | 读数 | 值 | 来源 |
 | --- | --- | --- |
 | 随机初始化、5,007 万步后（W0） | dev-128 0.251 | `sp2-w0` evals.jsonl，u382 |
 | 主线 M，4 亿步 | dev-128 0.404 [0.378, 0.430] | `sp3-main` evals.jsonl，u3064 |
-| 线 A 官方终点（宏动作 + 熵退火） | dev-128 0.444 [0.416, 0.473]；ab-512 0.464 [0.449, 0.479] | `w3m-a` evals.jsonl / 端点 report.json，u7664 |
-| 线 B 官方终点（A + harvest） | dev-128 0.440 [0.413, 0.466]；ab-512 0.434 | `w3m-b`，u7664；研究日志 20:15 |
-| 最高 ab-512 段终 | 0.467 [0.452, 0.482] | `w3m-a` 端点 report.json，u6564 |
+| 线 A 官方终点（宏动作 + 熵退火） | dev-128 0.444 [0.416, 0.473]；ab-512 0.464 [0.449, 0.479] | `w3m-a`，u7664 |
+| C 系纯续训（`--macros all`）各段终 | ab-512 0.449 (u9164) → 0.475 (u10664) → 0.486 (u11164) → 0.489 (u11664) → 0.485 (u12164) | `w4-c` / `w4-c3` 端点 report.json |
+| boss 学校 S（25% 人类存档起局 + act-2+ boss 击杀奖励 0.2）段终 | ab-512 0.492 (u11164)、**0.500 (u11664，所有线最高)**；配对 S − C3 +0.006 / +0.011（均不显著，单训练种子） | `w10-s` 端点 report.json；配对日志 |
 
-dev-128 = `silent-a10-dev-v1`（训练从不使用的 128 个开局），ab-512 = `silent-a10-ab-v1`（确认集），截至 2026-11-06 00:50 EST（研究日志最新条目；A u7664 的 ab-512 取自其后完成的端点 report.json）。
-进度卡在 0.43–0.47 的平台：Act 2 boss 打过率约 2%；行为审计发现策略从不锻造、从不删牌、从不主动选精英。
+dev-128 = `silent-a10-dev-v1`（训练从不使用的 128 个开局），ab-512 = `silent-a10-ab-v1`（确认集）。纯续训已到平台（5 点窗口斜率 +0.002/500 update，
+`scripts/analysis/evalstats.py`）；Act 2 boss 通过率约 7%，第三幕到达 5–11/128；行为审计：策略不锻造、不删牌，最终 boss 战输在输出不足（30–66/回合对
+535–636 血池）与格挡供给（见 [最终 boss 复盘](docs/diag-2026-11-06/final-boss-losses.md)）。
 
-**现在在跑**（两台 Colab A100）：GPU A 线 A 已到终点，接第二轮 C（`--macros all`）→ 第三轮 E′（火堆 / 删牌探索修复）；
-GPU B 第二轮 D（对照）→ 第三轮 F′（对照）。预注册判据与第四轮草案见下面的计划文档。
+**现在在跑**（两台 Colab A100）：GPU A 线 C4（C3 u12164 → u13164，纯续训对照）；GPU B 线 S 收尾后，按 [wave 20 试点预注册](docs/wave20-pilot-plan-2026-11-06.md)
+二选一：S2（boss 学校续训）或 W20a（`--boss-hp-bonus 0.1`：boss 战失败时按打掉的血池比例给终局奖励），都与 C4 同 fork 配对。
+
+**实验监控平台（对所有人可见）**：<https://claude.ai/artifact/492zmT59ngRDmG3GqkmMC7>
+
+- 总览：当前状态、各线最佳读数、新开局进度曲线（可勾选线）、评测表（可筛线 / 种子集 / 只看段终）、事件时间线；
+- 实验台账：自 11-04 起的每条线一行（假设、fork、旗标差、对照、段终读数、配对、裁决、教训、GPU 小时与单位）与谱系图；
+- 单线复盘：点任一条线看它的事件经历、与对照线的评测曲线（带置信区间）、段终与配对表、训练侧过程、裁决与教训；
+- 吞吐与过程：每个 run 的 update/小时、每 update 的环境 / 推理 / 更新耗时拆分、GPU 峰值内存、每千次更新单位成本，以及熵 / KL / harvest / 存档起局等中间过程；
+- 架构：A10 训练流水线图、Sts2Sim 全景与 run 层循环图（完整架构说明：<https://claude.ai/artifact/9roz2JxkbXzfW4d3tat1FQ>）、系统参数表。
+
+台账事实在仓库 [`docs/results/lines-silent-a10.json`](docs/results/lines-silent-a10.json) 与 [`line-events-silent-a10.jsonl`](docs/results/line-events-silent-a10.jsonl)
+（新线起跑时追加一行与事件），数字由训练镜像自动填充；刷新一条命令 `scripts/dashboard/dash_refresh.sh`，数据契约与发布步骤见
+[`scripts/dashboard/README.md`](scripts/dashboard/README.md)。
 
 **入口文档**：
 
-- [交接：给新人的一页](docs/handoff-2026-11-06.md)（目标、架构、十波工程、主要发现、复现、测试、数据、预算、文档索引）
+- [交接：给新人的一页](docs/handoff-2026-11-06.md)（目标、架构、各波工程、主要发现、复现、测试、数据、预算、文档索引）
+- [两天复盘与重构清单](docs/retro-2026-11-06.md)（2026-11-05/06：成果、浪费与原因、基础设施代价、20 项重构的排序与状态）
 - [结果表](docs/results-silent-a10-2026-11-06.md)（+ [JSON](docs/results/evals-silent-a10-2026-11-06.json)）
 - [研究日志](docs/research-log-2026-11-05.md)（每半小时的观察 → 判断 → 行动，决策以此为准）
-- [第三轮计划](docs/round3-plan-2026-11-05.md)（另见 [第二轮](docs/round2-plan-2026-11-05.md)、[第四轮草案](docs/round4-plan-2026-11-06.md)）
-- [Colab 运维脚本](scripts/colab/ops/README.md)（线链、保活、轮换、恢复、事故教训）
-- [sts2train README](sim/tools/train/README.md)（所有训练 / 评测参数）
+- 计划与预注册：[第二轮](docs/round2-plan-2026-11-05.md)、[第三轮](docs/round3-plan-2026-11-05.md)、[第四轮](docs/round4-plan-2026-11-06.md)、
+  [boss 学校](docs/boss-school-plan-2026-11-06.md)、[wave 20 试点](docs/wave20-pilot-plan-2026-11-06.md)、`scripts/analysis/prereg/*.json`
+- 评测统计与判决工具：[`scripts/analysis/README-eval.md`](scripts/analysis/README-eval.md)（5 点窗口逐 seed 配对、斜率、扁平 summary.json、
+  预注册 → ADOPT / REJECT / CONTINUE / REPLICATE / KILL）
+- 线规格运行器 v2、kill 规则守卫、保活 v3：[`scripts/colab/lab/README.md`](scripts/colab/lab/README.md)（影子模式上线计划）；
+  旧版线驱动与运维：[`scripts/colab/ops/README.md`](scripts/colab/ops/README.md)
+- [sts2train README](sim/tools/train/README.md)（所有训练 / 评测参数，含 wave 20 的 boss 血量比例与 DropPotion 门控）
+- 录制人类对局前先跑 `scripts/recording_preflight.sh`（游戏必须在 v0.111.0；mods 只装 Sts2Recorder）
 
 **co-author 上手五步**：
 
