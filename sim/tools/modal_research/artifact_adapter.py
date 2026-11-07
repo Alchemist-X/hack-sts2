@@ -185,7 +185,9 @@ def _check_checkpoint(data, is_tensor, job, seed_range):
 
 METRIC_FIELDS = {
     "update", "env_steps", "env_steps_update", "learning_samples_update", "env_steps_per_s", "t_env_s",
-    "t_infer_s", "t_update_s", "t_ckpt_s", "episodes", "wins", "progress_mean", "entropy", "approx_kl",
+    "t_infer_s", "t_update_s", "t_ckpt_s", "t_eval_s", "t_other_s", "t_total_s",
+    "t_stream_s", "t_prefetch_s", "t_prefetch_wait_s", "starts_update", "stream_lookahead",
+    "episodes", "wins", "progress_mean", "entropy", "approx_kl",
     "value_loss", "policy_loss", "grad_norm", "clipfrac", "cycles_total", "floor_stall", "sim_error", "content_gap",
     "illegal", "cand_over_max_rows", "prompt_over_max_rows", "native_candidate_overflow", "native_table_overflow",
     "bootstrap_step_caps", "gpu_mem_peak_mb",
