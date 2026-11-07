@@ -1,0 +1,11 @@
+# Task115 disabled once-analysis independent review
+
+PASS — offline preparation only. Pins af129dffd0cb6ab5dce32ad37651cc29a42d2f32215f610e1ba5c28e25e99682 and all14 files match. Independent two stdlib tests PASS0.000s, no NumPy import, RNG/matrix/bootstrap, actual outcomes, checkpoint, SDK or native invocation.
+
+Inspected accepted114 kernel diff: only seed115114 and both progress/win endpoints of the sole endpoint-minus-baseline contrast change. One20000x256 PCG64 index is generated outside endpoint loops, shared by both; float64/linear95% CI and little-endian int64 digest are retained. Fixed complete256 canonical keys are required before RNG, missing/null values reject rather than inner join; original failure/cap/stall rows remain. Wilson and descriptive summaries are unchanged.
+
+Fixed baseline is the accepted114 control7f4d495845376/u3783, never treatment/109/another checkpoint or a new evaluation. Actual endpoint must advance donor by full131072-step updates and remain within695861248/u5309; donor0-step and live midpoint reject. Full200M fills planned_200M_primary. A root-accepted resource-censored stop requires class/reason and produces only actual-dose descriptive paired CI, with planned_200M_primary null. No quality-based choice or plateau claim from a censored outcome is allowed.
+
+Crosschecked accepted eval d7e267 field names: ready/preflight science_plan_sha256, root_terminal_decision_sha256, exact five-field terminal_evaluation, checkpoint counters/hash and preflight control_continuation/beta0 agree. Both endpoint payloads/full256/protocol and separate receipt/independent acceptance hashes must be bound; the same root terminal decision SHA is required by authority and eval metadata. Actual decision authenticity/lineage still relies on future exact root acceptance, not a boolean self-claim.
+
+Disabled null endpoint/decision/once authority is not an execution binding. Exclusive once marker and output protect one actual authorized resampling; typed failure retains marker and prevents automatic retry. No budget/production/current-training changes or actual analysis were performed. Exposed-dev paired episode intervals exclude training-seed variability; no automatic promotion, blind or new call is implemented.

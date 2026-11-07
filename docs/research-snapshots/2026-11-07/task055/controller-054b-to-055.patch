@@ -1,0 +1,82 @@
+--- /private/tmp/sts2-task054/work/controller.py	2026-11-04 19:28:28
++++ /private/tmp/sts2-task055/work/sim/tools/modal_research/controller.py	2026-11-04 19:40:17
+@@ -248,6 +248,19 @@
+             }
+             if event["kind"] == "result":
+                 payload["matched_comparisons"] = self._matched_results(db, experiment, spec)
++                payload["longitudinal_dev_history"] = self._longitudinal_results(db, experiment, spec)
++                payload["longitudinal_dev_history_basis"] = (
++                    "Earlier completed dev evaluations of this same frozen experiment and config, "
++                    "with the same evaluation protocol and dev seed manifest. Compare across training "
++                    "decisions; these are longitudinal observations, not matched cross-capacity results."
++                )
++                if experiment_id == "silent-a10-capacity-s-formal-v1" and experiment["decisions"] == 25034752:
++                    payload["research_plan_context"] = {
++                        "status": "approved research direction, not an automatic decision rule",
++                        "next_review_decisions": 25034752,
++                        "baseline_decisions": 10092544,
++                        "guidance": "At the 25,034,752 decision dev evaluation, compare S with its 10,092,544 decision dev baseline. Weigh progress, wins, uncertainty, abnormal result denominators, and cost. Clear improvement may justify considering 50,069,504 decisions; stagnation or regression calls for diagnosing one factor. If the goal is met, freeze the candidate before blind evaluation. Training curves are diagnostic, not dev evidence. Use scientific judgment rather than a new statistical gate.",
++                    }
+         try:
+             self._create_job(
+                 db, f"research-{digest(event['id'])[:32]}", 1, "research", payload,
+@@ -281,6 +294,59 @@
+                               "headline": {key: headline[key] for key in
+                                            ("games", "wins", "win_rate_ci95", "progress_mean", "progress_ci95", "results")
+                                            if key in headline}})
++        return summaries
++
++    @staticmethod
++    def _longitudinal_results(db, experiment, spec):
++        """Earlier accepted dev evaluations of the same frozen experiment."""
++        rows = db.execute(
++            """SELECT e.id AS event_id,e.payload,j.id AS job_id,j.payload AS job_payload,j.outcome
++               FROM events e JOIN research_origins o ON o.event_id=e.id
++               JOIN jobs j ON j.id=o.job_id
++               WHERE e.kind='result' AND o.experiment_id=? AND j.experiment_id=?
++               AND j.kind='eval' AND j.state='done' AND j.error IS NULL AND j.outcome IS NOT NULL
++               AND json_extract(e.payload,'$.manifest.identity.config_hash')=?
++               AND json_extract(e.payload,'$.manifest.identity.eval_protocol')=?
++               AND json_extract(e.payload,'$.manifest.identity.dev_seed_manifest_hash')=?
++               AND json_extract(e.payload,'$.manifest.metadata.decisions')<?
++               ORDER BY json_extract(e.payload,'$.manifest.metadata.decisions') DESC,e.rowid DESC LIMIT 8""",
++            (experiment["id"], experiment["id"], experiment["config_hash"], spec["eval_protocol"],
++             spec["dev_seed_manifest_hash"], experiment["decisions"]),
++        )
++        summaries = []
++        for row in rows:
++            result, job_payload, outcome = (json.loads(row[key]) for key in ("payload", "job_payload", "outcome"))
++            manifest = result.get("manifest", {})
++            identity, metadata = manifest.get("identity", {}), manifest.get("metadata", {})
++            source = job_payload.get("checkpoint") or {}
++            evaluation = result.get("checkpoint") or {}
++            metrics = result.get("metrics", {})
++            if (identity.get("experiment_id") != experiment["id"] or identity.get("kind") != "eval"
++                    or metadata.get("termination") != "completed"
++                    or job_payload.get("config_hash") != experiment["config_hash"]
++                    or job_payload.get("start_decisions") != metadata.get("decisions")
++                    or not all(isinstance(ref.get("manifest_hash"), str) and
++                               len(ref["manifest_hash"]) == 64 and
++                               all(c in "0123456789abcdef" for c in ref["manifest_hash"])
++                               for ref in (source, evaluation))
++                    or outcome.get("checkpoint") != evaluation or outcome.get("manifest") != manifest
++                    or outcome.get("metrics") != metrics
++                    or metrics.get("games") != spec["dev_seed_count"]):
++                continue
++            headline = {key: metrics[key] for key in
++                        ("games", "wins", "win_rate", "win_rate_ci95", "progress_mean", "progress_ci95",
++                         "progress_games", "replayable", "results") if key in metrics}
++            summaries.append({
++                "comparison_kind": "same_experiment_longitudinal_dev",
++                "event_id": row["event_id"], "eval_job_id": row["job_id"],
++                "experiment_id": experiment["id"], "config_hash": experiment["config_hash"],
++                "eval_protocol": spec["eval_protocol"],
++                "dev_seed_manifest_hash": spec["dev_seed_manifest_hash"],
++                "decisions": metadata["decisions"],
++                "evaluated_checkpoint_manifest_hash": source["manifest_hash"],
++                "evaluation_manifest_hash": evaluation["manifest_hash"],
++                "headline": headline,
++            })
+         return summaries
+ 
+     def _schedule_experiment(self, db, experiment):

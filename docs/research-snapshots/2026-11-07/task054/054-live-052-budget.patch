@@ -1,0 +1,324 @@
+diff --git a/sim/tools/modal_research/controller.py b/sim/tools/modal_research/controller.py
+index 196938f..4e3d3df 100644
+--- a/sim/tools/modal_research/controller.py
++++ b/sim/tools/modal_research/controller.py
+@@ -69,6 +69,13 @@ class Controller:
+             raise DispatchBlocked("positive job reserve required")
+         if deadline <= self.store.clock():
+             raise DispatchBlocked("job deadline elapsed")
++        if self.store.budget_policy_mode(db):
++            raw = state["platform_snapshot"]
++            snapshot = json.loads(raw) if raw else {}
++            observed = snapshot.get("metered_observed_at")
++            if (type(observed) not in (int, float)
++                    or not 0 <= self.store.clock() - observed <= 120):
++                raise DispatchBlocked("fresh workspace gross/net snapshot required")
+         spent, held = self.store.ledger(db)
+         if state["approved_budget"] is None:
+             raise DispatchBlocked("approved_budget is null")
+@@ -379,6 +386,12 @@ class Controller:
+         if (state["stopped"] or state["analysis_paused"] or job.deadline <= self.store.clock()
+                 or self.store.provider_paused(db, job.kind)):
+             return False
++        if self.store.budget_policy_mode(db):
++            snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else {}
++            observed = snapshot.get("metered_observed_at")
++            if (type(observed) not in (int, float)
++                    or not 0 <= self.store.clock() - observed <= 120):
++                return False
+         if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
+             return False
+         if job.kind in {"train", "eval"}:
+diff --git a/sim/tools/modal_research/raven_runtime.py b/sim/tools/modal_research/raven_runtime.py
+index b67b4f5..447dd00 100644
+--- a/sim/tools/modal_research/raven_runtime.py
++++ b/sim/tools/modal_research/raven_runtime.py
+@@ -272,6 +272,20 @@ IDENTITY_052_REQUEST = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.re
+ IDENTITY_052_CLAIM = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.claimed")
+ IDENTITY_052_RESULT = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.result.json")
+ IDENTITY_052_MARKER = b"diagnose-sandbox-identity-052\n"
++RESUME_S_054_REQUEST = MONITOR_GRANT.with_name("resume-s-budget-054.request")
++RESUME_S_054_CLAIM = MONITOR_GRANT.with_name("resume-s-budget-054.claimed")
++RESUME_S_054_RESULT = MONITOR_GRANT.with_name("resume-s-budget-054.result.json")
++RESUME_S_054_MARKER = b"resume-s-budget-054\n"
++RESUME_S_054_EVENT = "operator-budget-override-054"
++RESUME_S_054_REFERENCE = "user-terminal-modal-budget-054"
++RESUME_S_054_STOP_SHA = "bf0d6c9c45a5a756758a26018fcdd3303cb29df710d46eb3beb1fddc3565aef1"
++RESUME_S_054_PAUSE = "decision-d63c1f6d5211cf42cb85fa7d6e01a226"
++RESUME_S_054_EXPERIMENT = "silent-a10-capacity-s-formal-v1"
++RESUME_S_054_CONFIG = "0e4c9e4efe112de322825f918112dc9815962e4b904847610e6c06389b0dc53d"
++RESUME_S_054_CHECKPOINT = {"generation": "24c93e4866794d47b0586b938c859c11",
++                           "job_key": "train-37a7c0e32d847f9c9f4cae2b39cac948:1",
++                           "manifest_hash": "3540f041fc77a5228d8157471194380d054298e480b31dfafd8b279db8dd19cd"}
++RESUME_S_054_TARGET = 25_034_752
+ RECONCILE_APP_ID = "ap-L4Cw92tMyFuR9tzEqYjAHC"
+ RECONCILE_BILLING_REF_SHA = {
+     job_id: ("4bc81b2d1388ef2c516c32b9d658b3918f6ae9de31866afd5d41f5f14099b945" if index < 3
+@@ -404,6 +418,112 @@ def _run_identity_052_once(config):
+     return True
+ 
+ 
++def _claim_resume_s_054_request():
++    if RESUME_S_054_CLAIM.exists() or RESUME_S_054_CLAIM.is_symlink():
++        return False
++    if not RESUME_S_054_REQUEST.exists() and not RESUME_S_054_REQUEST.is_symlink():
++        return False
++    parent = RESUME_S_054_REQUEST.parent
++    metadata = RESUME_S_054_REQUEST.lstat()
++    folder = parent.stat()
++    if (os.geteuid() != 0 or parent.resolve() != parent or folder.st_uid != 0
++            or stat.S_IMODE(folder.st_mode) != 0o700 or not stat.S_ISREG(metadata.st_mode)
++            or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o600
++            or RESUME_S_054_REQUEST.read_bytes() != RESUME_S_054_MARKER):
++        raise ValueError("054 root-only request marker differs")
++    os.link(RESUME_S_054_REQUEST, RESUME_S_054_CLAIM)
++    RESUME_S_054_REQUEST.unlink()
++    return True
++
++
++def _activate_resume_s_054(runtime):
++    """Bind the explicit policy, precise PAUSE override and one S intent atomically."""
++    store = runtime.broker.store
++    controller = runtime.broker.controller
++    expected_job = f"train-{digest([RESUME_S_054_EXPERIMENT, 3])[:32]}:1"
++    with store.transaction() as db:
++        state = db.execute("SELECT * FROM study WHERE singleton=1").fetchone()
++        latest = db.execute("SELECT id,payload FROM decisions ORDER BY rowid DESC LIMIT 1").fetchone()
++        experiment = db.execute("SELECT * FROM experiments WHERE id=?", (RESUME_S_054_EXPERIMENT,)).fetchone()
++        if (state["mode"] != "local" or not state["stopped"]
++                or hashlib.sha256(state["stopped"].encode()).hexdigest() != RESUME_S_054_STOP_SHA
++                or state["analysis_paused"] is not None or latest is None
++                or latest["id"] != RESUME_S_054_PAUSE
++                or json.loads(latest["payload"])["action"] != "PAUSE"
++                or db.execute("SELECT 1 FROM budget_policy WHERE singleton=1").fetchone()
++                or db.execute("SELECT 1 FROM events WHERE id=?", (RESUME_S_054_EVENT,)).fetchone()
++                or db.execute("SELECT 1 FROM jobs WHERE actual IS NULL AND state IN "
++                              "('intent','running','uncertain','external_reserved') LIMIT 1").fetchone()):
++            raise ValueError("054 exact PAUSE, policy, or active state differs")
++        if (experiment is None or experiment["config_hash"] != RESUME_S_054_CONFIG
++                or experiment["stage"] != "await_decision" or experiment["decisions"] != 10_092_544
++                or experiment["segment"] != 2 or experiment["target"] != 10_092_544
++                or json.loads(experiment["checkpoint"]) != RESUME_S_054_CHECKPOINT):
++            raise ValueError("054 frozen S lineage differs")
++        spec = json.loads(experiment["spec"])
++        if (digest(spec) != RESUME_S_054_CONFIG
++                or spec["evaluation_milestones"] != [10_092_544, 25_034_752, 50_069_504]
++                or spec["resource_request"]["train_cost"] != "7.30"
++                or spec["dev_seed_manifest_hash"] != "ee1be1ba52dd1fa597f600df91fbca46f0f291c6c59c4dedb49e81f561c9e340"):
++            raise ValueError("054 S recipe or dev256 binding differs")
++        snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else {}
++        observed = snapshot.get("metered_observed_at")
++        if (type(observed) not in (float, int) or not 0 <= store.clock() - observed <= 120
++                or snapshot["gross_limit"] != 4250 or snapshot["net_limit"] != 3000
++                or state["approved_budget"] != 10_000 or state["execution_cap"] != 10_000):
++            raise ValueError("054 fresh platform or original approved limits differ")
++        db.execute("INSERT INTO budget_policy VALUES (1,'terminal_modal_history_v1',?,?)",
++                   (RESUME_S_054_REFERENCE, store.clock()))
++        store.append_event(db, RESUME_S_054_EVENT, "operator_budget_override", {
++            "reference": RESUME_S_054_REFERENCE,
++            "policy": "terminal_modal_history_v1",
++            "previous_stop_sha256": RESUME_S_054_STOP_SHA,
++            "accepted_pause_decision": RESUME_S_054_PAUSE,
++            "experiment_id": RESUME_S_054_EXPERIMENT,
++            "target_decisions": RESUME_S_054_TARGET,
++            "checkpoint": RESUME_S_054_CHECKPOINT,
++            "workspace_observed_at": observed,
++            "workspace_gross_used_cents": snapshot["gross_used"],
++            "workspace_net_spent_cents": snapshot["net_spent"],
++        }, store.clock())
++        db.execute("UPDATE study SET stopped=NULL,version=version+1,next_wake=? WHERE singleton=1",
++                   ("operator budget override 054; S continuation",))
++        controller._dispatch_experiment(db, "CONTINUE", {
++            "experiment_spec": {"experiment_id": RESUME_S_054_EXPERIMENT},
++            "reserve_budget_usd": "7.30",
++        })
++        row = db.execute("SELECT payload,state,reserve FROM jobs WHERE id=?", (expected_job,)).fetchone()
++        if (row is None or row["state"] != "intent" or row["reserve"] != 730
++                or json.loads(row["payload"])["checkpoint"] != RESUME_S_054_CHECKPOINT
++                or json.loads(row["payload"])["target_decisions"] != RESUME_S_054_TARGET):
++            raise ValueError("054 unique S train intent differs")
++    return expected_job, store.clock()
++
++
++def _run_resume_s_054_once(config):
++    if not _claim_resume_s_054_request():
++        return False
++    try:
++        if (config.get("state") != "/var/lib/sts2-modal-production/operation.sqlite3"
++                or config.get("sandbox", {}).get("app_id") != RECONCILE_APP_ID
++                or config.get("modal_metering") is None):
++            raise ValueError("054 exact production service binding differs")
++        runtime, _ = load_runtime(config)
++        if runtime.refresh_metering is None:
++            raise ValueError("054 requires verified live workspace metering")
++        runtime.refresh_metering()
++        expected_job, observed_at = _activate_resume_s_054(runtime)
++        _write_status(RESUME_S_054_RESULT, {"status": "complete", "job_id": expected_job,
++                                            "target_decisions": RESUME_S_054_TARGET,
++                                            "policy_reference": RESUME_S_054_REFERENCE,
++                                            "observed_at": observed_at})
++    except (ValueError, KeyError, TypeError, OSError, TimeoutError) as error:
++        _write_status(RESUME_S_054_RESULT, {"status": "failed", "reason": type(error).__name__,
++                                            "observed_at": time.time()})
++        raise RuntimeError("054 budget override failed") from None
++    return True
++
++
+ def active_grant(runtime):
+     if runtime.modal_provider is None:
+         return {"schema_version": 1, "active": False}
+@@ -570,6 +690,8 @@ def main():
+             return  # read-only maintenance replaces this one timer tick; no model/GPU dispatch
+         if args.command == "tick" and _run_identity_052_once(config):
+             return  # no ledger writes, usage RPC, model, or GPU dispatch
++        if args.command == "tick" and _run_resume_s_054_once(config):
++            return  # one fixed user opt-in transaction; ordinary next tick submits the intent
+         runtime, queue = load_runtime(config)
+         if args.command == "tick":
+             try:
+diff --git a/sim/tools/modal_research/store.py b/sim/tools/modal_research/store.py
+index b82c830..00c7813 100644
+--- a/sim/tools/modal_research/store.py
++++ b/sim/tools/modal_research/store.py
+@@ -100,6 +100,11 @@ CREATE TABLE IF NOT EXISTS cost_holds (
+     reserve INTEGER NOT NULL, proven_bound INTEGER NOT NULL,
+     created REAL NOT NULL, settled_at REAL, actual INTEGER
+ );
++CREATE TABLE IF NOT EXISTS budget_policy (
++    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
++    mode TEXT NOT NULL CHECK (mode = 'terminal_modal_history_v1'),
++    reference TEXT NOT NULL UNIQUE, created REAL NOT NULL
++);
+ """
+ 
+ 
+@@ -663,12 +668,48 @@ class Store:
+ 
+     @staticmethod
+     def ledger(db, experiment_id=None):
++        policy = db.execute("SELECT mode FROM budget_policy WHERE singleton=1").fetchone()
++        if policy:
++            if policy["mode"] != "terminal_modal_history_v1":
++                raise ValueError("unknown budget policy")
++            snapshot = db.execute("SELECT platform_snapshot FROM study WHERE singleton=1").fetchone()[0]
++            if not snapshot:
++                raise ValueError("opt-in budget requires observed workspace usage")
++            gross = json.loads(snapshot)["gross_used"]
++            scope = "AND j.experiment_id=?" if experiment_id else ""
++            args = (experiment_id,) if experiment_id else ()
++            known_non_modal, unknown_held = db.execute(
++                """SELECT COALESCE(SUM(CASE WHEN b.vendor='non_modal' THEN j.actual ELSE 0 END),0),
++                          COALESCE(SUM(CASE WHEN j.actual IS NULL AND NOT (
++                            COALESCE(b.vendor,'modal')='modal' AND j.kind IN ('train','eval')
++                            AND j.state IN ('done','failed') AND EXISTS (
++                              SELECT 1 FROM broker_jobs bj WHERE bj.job_id=j.id AND bj.state='finished'
++                            )) THEN j.reserve ELSE 0 END),0)
++                   FROM jobs j LEFT JOIN job_billing b ON b.job_id=j.id WHERE 1=1 """ + scope, args,
++            ).fetchone()
++            return gross + known_non_modal, unknown_held
+         where = " WHERE experiment_id=?" if experiment_id else ""
+         return tuple(db.execute(
+             "SELECT COALESCE(SUM(actual),0), COALESCE(SUM(CASE WHEN actual IS NULL THEN reserve ELSE 0 END),0)"
+             f" FROM jobs{where}", (experiment_id,) if experiment_id else (),
+         ).fetchone())
+ 
++    @staticmethod
++    def budget_policy_mode(db):
++        row = db.execute("SELECT mode FROM budget_policy WHERE singleton=1").fetchone()
++        return row["mode"] if row else None
++
++    @staticmethod
++    def terminal_modal_historical_reserve(db):
++        return db.execute(
++            """SELECT COALESCE(SUM(j.reserve),0) FROM jobs j
++               LEFT JOIN job_billing b ON b.job_id=j.id
++               WHERE COALESCE(b.vendor,'modal')='modal' AND j.actual IS NULL
++                 AND j.kind IN ('train','eval') AND j.state IN ('done','failed')
++                 AND EXISTS (SELECT 1 FROM broker_jobs bj
++                             WHERE bj.job_id=j.id AND bj.state='finished')"""
++        ).fetchone()[0]
++
+     @staticmethod
+     def provider_paused(db, kind):
+         provider = {"train": "modal", "eval": "modal", "research": "member_models", "sol": "member_models"}.get(kind)
+@@ -707,6 +748,24 @@ class Store:
+ 
+     @staticmethod
+     def modal_ledger(db):
++        policy = db.execute("SELECT mode FROM budget_policy WHERE singleton=1").fetchone()
++        if policy:
++            if policy["mode"] != "terminal_modal_history_v1":
++                raise ValueError("unknown budget policy")
++            snapshot = db.execute("SELECT platform_snapshot FROM study WHERE singleton=1").fetchone()[0]
++            if not snapshot:
++                raise ValueError("opt-in budget requires observed workspace usage")
++            held = db.execute(
++                """SELECT COALESCE(SUM(j.reserve),0) FROM jobs j
++                   LEFT JOIN job_billing b ON b.job_id=j.id
++                   WHERE COALESCE(b.vendor,'modal')='modal' AND j.actual IS NULL
++                     AND NOT (j.kind IN ('train','eval') AND j.state IN ('done','failed')
++                       AND EXISTS (SELECT 1 FROM broker_jobs bj
++                                   WHERE bj.job_id=j.id AND bj.state='finished'))"""
++            ).fetchone()[0]
++            # The observed workspace gross is already in platform_headroom;
++            # passing it as local spend would subtract it a second time.
++            return 0, held
+         return tuple(db.execute(
+             """SELECT COALESCE(SUM(j.actual),0),
+                       COALESCE(SUM(CASE WHEN j.actual IS NULL THEN j.reserve ELSE 0 END),0)
+@@ -747,14 +806,19 @@ class Store:
+         modal_spent, modal_reserved = self.modal_ledger(db)
+         snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
+         platform = self.platform_headroom(state, modal_spent)
++        policy = self.budget_policy_mode(db)
++        historical = self.terminal_modal_historical_reserve(db) if policy else 0
++        displayed_modal_spent = snapshot["gross_used"] if policy and snapshot else modal_spent
+         if snapshot:
+             snapshot = {**snapshot, "remaining_after_holds_cents": platform - modal_reserved}
+             if "recorded_at" not in snapshot:
+                 snapshot["recorded_at"] = snapshot["observed_at"]
+                 snapshot["observed_at"] = None
+         return {"approved_cents": state["approved_budget"], "execution_cap_cents": state["execution_cap"],
+-                "spent_and_reserved_cents": [spent, reserved], "modal_spent_and_reserved_cents": [modal_spent, modal_reserved],
+-                "non_modal_spent_and_reserved_cents": [spent - modal_spent, reserved - modal_reserved],
++                "spent_and_reserved_cents": [spent, reserved], "modal_spent_and_reserved_cents": [displayed_modal_spent, modal_reserved],
++                "non_modal_spent_and_reserved_cents": [spent - displayed_modal_spent, reserved - modal_reserved],
++                "budget_policy_mode": policy,
++                "historical_terminal_modal_reserve_cents": historical,
+                 "platform_snapshot_cents": snapshot}
+ 
+     def status(self):
+@@ -783,6 +847,10 @@ class Store:
+             snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else None
+             modal_spent, modal_reserved = self.modal_ledger(db)
+             platform_remaining = self.platform_headroom(state, modal_spent)
++            policy = self.budget_policy_mode(db)
++            historical = self.terminal_modal_historical_reserve(db) if policy else 0
++            displayed_modal_spent = snapshot["gross_used"] if policy and snapshot else modal_spent
++            raw_unknown = db.execute("SELECT COALESCE(SUM(reserve),0) FROM jobs WHERE actual IS NULL").fetchone()[0]
+             held = db.execute(
+                 "SELECT job_id,reserve,proven_bound FROM cost_holds WHERE settled_at IS NULL ORDER BY job_id",
+             ).fetchall()
+@@ -811,6 +879,8 @@ class Store:
+                 "approved_budget": None if approved is None else approved / 100,
+                 "approval_ref": state["approval_ref"],
+                 "execution_cap_usd": None if approved is None else state["execution_cap"] / 100,
++                "budget_policy_mode": policy,
++                "historical_terminal_modal_reserve_usd": historical / 100,
+                 "execution_remaining_usd": (
+                     None if approved is None else (state["execution_cap"] - spent - reserved) / 100
+                 ),
+@@ -827,10 +897,10 @@ class Store:
+                 } if snapshot else None,
+                 "platform_gross_remaining_usd": None if platform_remaining is None else (platform_remaining - modal_reserved) / 100,
+                 "platform_reserved_usd": modal_reserved / 100,
+-                "platform_spent_usd": modal_spent / 100,
++                "platform_spent_usd": displayed_modal_spent / 100,
+                 "non_modal_reserved_usd": (reserved - modal_reserved) / 100,
+-                "non_modal_spent_usd": (spent - modal_spent) / 100,
+-                "spent_usd": spent / 100, "spend_complete": reserved == 0,
++                "non_modal_spent_usd": (spent - displayed_modal_spent) / 100,
++                "spent_usd": spent / 100, "spend_complete": raw_unknown == 0,
+                 "provider_pauses": [dict(row) for row in db.execute("SELECT * FROM provider_pauses ORDER BY rowid")],
+                 "research_pauses": [dict(row) for row in db.execute(
+                     "SELECT event_id,experiment_id,reason FROM research_pauses ORDER BY rowid"

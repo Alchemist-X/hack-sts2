@@ -25,7 +25,7 @@ game process remains the state-transition engine.
 
 ## Silent A10 自主训练监控与复盘
 
-打开 [STS2 研究监控台](https://sts2-modal-research-console.crazy-kfc.chatgpt.site) 查看本分支的 Modal 实验。站点为只读私有页面，仅站点所有者登录后可访问。运行卡片分别显示各实验的采样时刻、检查点进度与训练器状态。
+打开 [STS2 研究监控台](https://sts2-modal-research-console.crazy-kfc.chatgpt.site) 查看本分支的 Modal 实验。站点为只读私有页面，仅站点所有者登录后可访问。运行卡片分别显示各实验的采样时刻、检查点进度与训练器状态。 本轮结果和代码归档见[研究收尾记录](docs/modal-research-closeout-2026-11-07.md)。
 
 - [实验档案](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#experiments)记录每次实验的假设、配方改动、权重父模型、实际与目标剂量、正式评测结果、故障恢复和证据引用。
 - [架构演变](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#architecture)按型号和版本展示共享编码、动作评分与价值估计的演变，保留早期资源探针的结果。

@@ -1,0 +1,22 @@
+from ops_common import *
+import sqlite3,dataclasses,tempfile,subprocess
+from decimal import Decimal,ROUND_CEILING
+from project_obligations import shared_liabilities,PROJECT_APPROVAL
+from plan_liabilities import liabilities
+AUTH,BOUND=sys.argv[1:3];a,r=inputs(AUTH,BOUND)
+R=Path('/var/lib/sts2-modal-production');sys.path.insert(0,str(R/'control-047-m/sim/tools'));from modal_research.store import Store
+import modal
+ws=modal.Workspace.from_context().hydrate();assert ws.name=='hycrpg';sm=ws.billing.summary();rawrates=ws.billing.rates();keys=['gpu_hour_cost_h100','cpu_hour_cost','mem_gib_hour_cost','cpu_hour_cost_sandbox','mem_gib_hour_cost_sandbox','volume_storage_gib_month_cost','egress_gib_cost'];rates={k:str(rawrates[k])for k in keys}
+fids={'104':'fu-OpuDzkImcq8qdSKA94997A','109':'fu-rvPCtflk4V7gVDkMmNa1zu','110':'fu-12BqVnqAu3beEDtlkRwHaJ','113':'fu-F0kRZFdZs9mPckjbD8gINt','114train':'fu-AJtUKrtwWSFJBa8dezoD07','114control_dev':'fu-vSjw4YetEiIz9Z4Bb2xAxm','114treatment_dev':'fu-OuRPYoXjAixVVBgpIEwQLy','115segment1':'fu-7uOTlWd7wtCXAOI4fkA6yI'}
+stats={k:dataclasses.asdict(modal.Function.from_id(v).hydrate().get_current_stats())for k,v in fids.items()}
+validate_concurrency(stats)
+for u in ['sts2-modal-production-tick','sts2-modal-production-agent','sts2-modal-blind-final','sts2-modal-monitor']:
+ for ext,cmd,valid in [('.timer','is-enabled',{'disabled'}),('.timer','is-active',{'inactive'}),('.service','is-active',{'inactive','failed'})]:
+  q=subprocess.run(['systemctl',cmd,u+ext],capture_output=True,text=True,timeout=10);assert q.stdout.strip()in valid
+c=sqlite3.connect('file:'+str(R/'operation.sqlite3')+'?mode=ro',uri=True);c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');c.execute('BEGIN');s=Store.__new__(Store);state=dict(c.execute('SELECT * FROM study').fetchone());assert state['approved_budget']==state['execution_cap']==60000 and state['approval_ref']==PROJECT_APPROVAL
+b=s.budget_evidence(c,state);ob=shared_liabilities(c,s115_reader=liabilities);assert ob['M116_active_commitment_cents']==0 and not c.execute('SELECT 1 FROM events WHERE id=?',('operator-task116-M100m-budget-commitment-v1',)).fetchone()
+dir=Path(tempfile.mkdtemp(prefix='task116-ledger.',dir='/data/raven/hack-sts2-modal-research'));os.chmod(dir,0o700);path=dir/'ledger.sqlite3';dest=sqlite3.connect(path);c.backup(dest);dest.close();os.chmod(path,0o400);c.rollback();c.close()
+D=Decimal;ceil=lambda x:int((D(str(x))*100).to_integral_value(rounding=ROUND_CEILING));p={k:D(v)for k,v in rates.items()};gross=max(ceil(sm.metered_cost),b['spent_and_reserved_cents'][0]);net=max(ceil(sm.billed_cost),b['platform_snapshot_cents']['net_spent']);held=b['spent_and_reserved_cents'][1];prior=ob['total_direct_commitments_cents'];project=60000-gross-held-1000-prior-5762
+hour=p['gpu_hour_cost_h100']+32*p['cpu_hour_cost']+64*p['mem_gib_hour_cost'];train=ceil(hour*21680/3600+4*2*p['volume_storage_gib_month_cost']+D('56.25')*5/28*p['volume_storage_gib_month_cost']+D('56.25')*p['egress_gib_cost']+D('.25')*(2+D(5)/28)*p['volume_storage_gib_month_cost']+D('.25')*p['egress_gib_cost'])
+extra=(1*(2+D(5)/28)+4*2)*p['volume_storage_gib_month_cost']+D('1.25')*p['egress_gib_cost'];dev=ceil(hour*3900/3600+extra);bhour=p['gpu_hour_cost_h100']+16*p['cpu_hour_cost_sandbox']+64*p['mem_gib_hour_cost_sandbox'];blind=ceil(bhour*9300/3600+extra);assert train<=3992 and dev<=744 and blind<=2101 and project>=0
+out={'status':'PASS','root_authority_sha256':AUTH,'bound_release_sha256':BOUND,'science_plan_sha256':SCIENCE,'root_scope_sha256':SCOPE,'observed_at':time.time(),'source_sha256':H(Path(__file__).read_bytes()),'authoritative_ledger_path':str(path),'authoritative_ledger_sha256':H(path.read_bytes()),'cycle_start':sm.start.date().isoformat(),'gross_effective_cents':gross,'net_effective_cents':net,'raw_gross_usd':str(sm.metered_cost),'raw_net_usd':str(sm.billed_cost),'rates':rates,'old_unknown_holds_cents':held,'archive_commitment_cents':1000,'existing_direct_obligations':ob,'new_commitment_cents':5762,'new_allocations':{'train':3992,'final_dev':744,'shared_blind_increment':1026},'quote_train_cents':train,'quote_dev_cents':dev,'full_shared_blind_quote_cents':blind,'existing_shared_blind_base_cents':1075,'project_room_after_cents':project,'platform_admission_policy':POLICY,'legacy_platform_snapshot_only':b['platform_snapshot_cents'],'known_owned_function_stats':stats,'permit_only_existingS_parallel':True,'ledger_mutations':0,'new_compute':0};print(CAN(out))

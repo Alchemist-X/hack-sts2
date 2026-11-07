@@ -1,0 +1,12 @@
+# M116 train terminal closeout — disabled candidate
+
+Only M116 train3992 is implemented. No provider/SDK/model/real database access was performed. True provider-terminal evidence is mandatory; writer final, observer end, timeout/poll/network ambiguity are insufficient. Scientific checkpoint acceptance is separate from financial slot retirement.
+
+Future sole-owner CLI: `python retire_train.py --proof PROOF --proof-sha SHA --authority AUTH --authority-sha SHA`.
+Root must issue a new exact accounting authority after verified terminal; no actual authority is supplied here. Proof fields: slot=train, arm_id=M116, fixed call_id/attempt/training_root_authority_sha256/training_bound_release_sha256 (constants), call_terminal=true, provider_terminal_verified=true, status in exact project reader terminal classes, observation_class verified returned/terminal exception/cancel, provider_terminal_receipt_sha256 and raw_provider_evidence_file. Adjacent submission-receipt.json and named provider terminal JSON are SHA/identity checked before Store import. Root authority action ACCEPT_TASK116_EXACT_PROVIDER_TERMINAL_FOR_ACCOUNTING binds all fixed proof fields, terminal_proof_sha256, provider receipt hash, terminal_status, original_plan_event and allocation_cents3992. Future authority must be unique to this actual terminal proof.
+
+Transaction validates copied exact liability readers, fixed original M5762 source provenance, then appends only operator-task116-slot-train-terminal-history-v1. Equal repeat no-op; conflicting repeat rejects. Original plan remains immutable, historical maximum3992 is not actual spend; actual_cost stays null. Remaining M744+1026, all outstanding S first/S2 obligations, archive1000, unknown holds and old fee records remain unchanged. No global blind retirement. Store source must match2d5c4ba55d694e48513c72c1b84da806fc42f068f64df31e0f66d9441403cd7c. Caller is the unique authorized operations owner.
+
+Disabled dev templates deliberately contain null actual eval identity/authority. Train CLI cannot retire S222 or M744; future exact evaluator terminal binding plus a separately reviewed narrow adapter is required. Templates are preparation, not executable grants.
+
+Tests: `python -m unittest discover -s . -p 'test_*.py'` (two stdlib private SQLite fixtures; no SDK/Torch/import-time Store). Exact existing first_slot_budget/plan_liabilities/project_obligations copied unchanged from accepted S2 candidate. No new budget pledge, actual fees unknown.

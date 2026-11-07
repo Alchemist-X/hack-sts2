@@ -1,0 +1,142 @@
+--- a/sim/tools/modal_research/store.py
++++ b/sim/tools/modal_research/store.py
+@@ -12,6 +12,21 @@
+ from pathlib import Path
+ 
+ from .contracts import canonical, cents, digest, identifier, validate_spec
++
++# Independently checked Task056 evidence. These are historical, completed Modal
++# access probes, not a rule that all access-probe statuses imply completion.
++# Each tuple pins category, status, reserve cents, report reference, and report hash.
++TERMINAL_MODAL_PROBES_056 = {
++    'reservation_capacity_l_018': ('gpu_smoke', 'gpu_failed', 250, '/var/lib/sts2-modal-production/capacity-probe-046/probe-l/result.json', 'a04ecca5495de8e4b399536075feae827429d546c0298df26a06ab3632b7bae6'),
++    'reservation_capacity_m_017': ('gpu_smoke', 'gpu_verified', 250, '/var/lib/sts2-modal-production/capacity-probe-046/probe-m/result.json', '5ba2e2d978c011ce8729581dab6926d54c515156eba7efdbe3611b8d4a722a70'),
++    'reservation_gpu_batch_008': ('gpu_smoke', 'gpu_failed', 200, 'artifacts/modal-research/2026-11-04/task022/sandbox-package/result.json', '2ec39ba95dacd25fc1a5ed3df7ab0bde498ba6a69f20cdc93ca1b1d828a0f331'),
++    'reservation_gpu_fp32_009': ('gpu_smoke', 'gpu_verified', 100, 'artifacts/modal-research/2026-11-04/task023/sandbox-package/result.json', '6798e72e22c1bfa33af7acfca63da6c618b2352fde4bb29a5af2b6b2929da54b'),
++    'reservation_gpu_smoke_006': ('gpu_smoke', 'gpu_failed', 200, 'artifacts/modal-research/2026-11-04/task020/sandbox-package/result.json', '45a27cf11a2d3019d699b023c2720960b5b139bc79c3a502cd000c4dd502df33'),
++    'reservation_gpu_smoke_007': ('gpu_smoke', 'gpu_verified', 200, 'artifacts/modal-research/2026-11-04/task021/sandbox-package/result.json', '24362cbeaa044e7bb1f6354988d36499ef5fc3e58c0a185cd101a637c903b748'),
++    'reservation_runtime_cpu_012': ('env_cpu_validation', 'env_failed', 10, 'artifacts/modal-research/2026-11-04/task028/execution-summary.json', '78b0a0fe44ae14204b4fbe73e58aa42afdc39db4422a10d8902a522b950b12a3'),
++    'reservation_runtime_cpu_013': ('env_cpu_validation', 'env_verified', 10, 'artifacts/modal-research/2026-11-04/task029/result.json', 'be8428a3aece1614d12cc5b9cf393f0dee55c166cb4dcc7769b016c50bc16f8b'),
++    'reservation_runtime_gpu_015': ('runtime_gpu_acceptance', 'runtime_gpu_verified', 200, 'artifacts/modal-research/2026-11-04/task033/verified/result.json', 'd29eef95a94499ee4a112b247501b2ef6e2f15e1173b02da5b9ec93efe1cefe0'),
++}
+ 
+ SCHEMA = """
+ CREATE TABLE IF NOT EXISTS study (
+@@ -678,6 +693,8 @@
+             gross = json.loads(snapshot)["gross_used"]
+             scope = "AND j.experiment_id=?" if experiment_id else ""
+             args = (experiment_id,) if experiment_id else ()
++            released = Store.terminal_modal_probe_ids(db)
++            probe_clause = " AND j.id NOT IN (" + ",".join("?" for _ in released) + ")" if released else ""
+             known_non_modal, unknown_held = db.execute(
+                 """SELECT COALESCE(SUM(CASE WHEN b.vendor='non_modal' THEN j.actual ELSE 0 END),0),
+                           COALESCE(SUM(CASE WHEN j.actual IS NULL AND NOT (
+@@ -685,7 +702,8 @@
+                             AND j.state IN ('done','failed') AND EXISTS (
+                               SELECT 1 FROM broker_jobs bj WHERE bj.job_id=j.id AND bj.state='finished'
+                             )) THEN j.reserve ELSE 0 END),0)
+-                   FROM jobs j LEFT JOIN job_billing b ON b.job_id=j.id WHERE 1=1 """ + scope, args,
++                   FROM jobs j LEFT JOIN job_billing b ON b.job_id=j.id WHERE 1=1 """ + scope + probe_clause,
++                args + released,
+             ).fetchone()
+             return gross + known_non_modal, unknown_held
+         where = " WHERE experiment_id=?" if experiment_id else ""
+@@ -700,8 +718,65 @@
+         return row["mode"] if row else None
+ 
+     @staticmethod
++    def terminal_modal_probe_ids(db):
++        """Release only the nine exact historical proofs under the user opt-in."""
++        if Store.budget_policy_mode(db) != "terminal_modal_history_v1":
++            return ()
++        marks = ",".join("?" for _ in TERMINAL_MODAL_PROBES_056)
++        rows = db.execute(
++            f"""SELECT j.id,j.state,j.reserve,j.actual,j.payload,j.outcome,j.remote_id,
++                       j.submit_started,b.vendor FROM jobs j
++                 LEFT JOIN job_billing b ON b.job_id=j.id WHERE j.id IN ({marks})""",
++            tuple(TERMINAL_MODAL_PROBES_056),
++        ).fetchall()
++        released = []
++        for row in rows:
++            category, status, reserve, report_ref, report_sha = TERMINAL_MODAL_PROBES_056[row["id"]]
++            if (row["state"] != "external_finished_cost_unknown" or row["actual"] is not None
++                    or row["reserve"] != reserve or row["vendor"] != "modal" or not row["outcome"]):
++                continue
++            try:
++                payload, outcome = json.loads(row["payload"]), json.loads(row["outcome"])
++                details = outcome.get("details", {})
++                if (payload.get("category") != category or outcome.get("status") != status
++                        or outcome.get("report_ref") != report_ref or details.get("report_sha256") != report_sha):
++                    continue
++                if category == "gpu_smoke":
++                    exit_code = details.get("provider_exit_code")
++                    if (row["submit_started"] != 1 or not row["remote_id"]
++                            or details.get("sandbox_id") != row["remote_id"] or type(exit_code) is not int
++                            or (status == "gpu_verified") != (exit_code == 0)):
++                        continue
++                elif category == "runtime_gpu_acceptance":
++                    children = details.get("child_receipts")
++                    approved = payload.get("authorized_jobs")
++                    if (type(children) is not list or type(approved) is not list or len(children) != 4
++                            or [child.get("job_id") for child in children] != approved
++                            or len({child.get("sandbox_id") for child in children}) != 4
++                            or any(type(child.get("provider_exit_code")) is not int
++                                   or child["provider_exit_code"] != 0
++                                   or not isinstance(child.get("sandbox_id"), str)
++                                   or not child["sandbox_id"].startswith("sb-") for child in children)):
++                        continue
++                elif row["id"] == "reservation_runtime_cpu_012":
++                    if details.get("sandbox_creates") != 0 or details.get("unit_inactive") is not True:
++                        continue
++                elif row["id"] == "reservation_runtime_cpu_013":
++                    # The pinned isolated acceptance report contains the three
++                    # finished CPU child receipts; they are not in this live DB.
++                    if (details.get("cpu_sandboxes") != 3 or details.get("gpu_sandboxes") != 0
++                            or details.get("model_calls") != 0 or
++                            len({details.get("stopped_id"), details.get("resumed_id"),
++                                 details.get("lost_receipt_same_id")}) != 3):
++                        continue
++            except (TypeError, ValueError, KeyError, AttributeError):
++                continue
++            released.append(row["id"])
++        return tuple(sorted(released))
++
++    @staticmethod
+     def terminal_modal_historical_reserve(db):
+-        return db.execute(
++        formal = db.execute(
+             """SELECT COALESCE(SUM(j.reserve),0) FROM jobs j
+                LEFT JOIN job_billing b ON b.job_id=j.id
+                WHERE COALESCE(b.vendor,'modal')='modal' AND j.actual IS NULL
+@@ -709,6 +784,13 @@
+                  AND EXISTS (SELECT 1 FROM broker_jobs bj
+                              WHERE bj.job_id=j.id AND bj.state='finished')"""
+         ).fetchone()[0]
++        released = Store.terminal_modal_probe_ids(db)
++        if not released:
++            return formal
++        marks = ",".join("?" for _ in released)
++        return formal + db.execute(
++            f"SELECT COALESCE(SUM(reserve),0) FROM jobs WHERE id IN ({marks})", released,
++        ).fetchone()[0]
+ 
+     @staticmethod
+     def provider_paused(db, kind):
+@@ -755,13 +837,16 @@
+             snapshot = db.execute("SELECT platform_snapshot FROM study WHERE singleton=1").fetchone()[0]
+             if not snapshot:
+                 raise ValueError("opt-in budget requires observed workspace usage")
++            released = Store.terminal_modal_probe_ids(db)
++            probe_clause = " AND j.id NOT IN (" + ",".join("?" for _ in released) + ")" if released else ""
+             held = db.execute(
+                 """SELECT COALESCE(SUM(j.reserve),0) FROM jobs j
+                    LEFT JOIN job_billing b ON b.job_id=j.id
+                    WHERE COALESCE(b.vendor,'modal')='modal' AND j.actual IS NULL
+                      AND NOT (j.kind IN ('train','eval') AND j.state IN ('done','failed')
+                        AND EXISTS (SELECT 1 FROM broker_jobs bj
+-                                   WHERE bj.job_id=j.id AND bj.state='finished'))"""
++                                   WHERE bj.job_id=j.id AND bj.state='finished'))""" + probe_clause,
++                released,
+             ).fetchone()[0]
+             # The observed workspace gross is already in platform_headroom;
+             # passing it as local spend would subtract it a second time.

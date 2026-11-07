@@ -1,0 +1,127 @@
+diff --git a/sim/tools/modal_research/broker.py b/sim/tools/modal_research/broker.py
+index 8d1ba25..4fc0546 100644
+--- a/sim/tools/modal_research/broker.py
++++ b/sim/tools/modal_research/broker.py
+@@ -110,7 +110,7 @@ class RavenBroker:
+ 
+     def __init__(self, store, artifacts, *, authorize_spawn=None, verify_cost_bound=None, reserve_bound=None, conservative_reserve=None, research_policy=None,
+                  tool_enabled=False, experiment_reserve_limits=None, billing_sources=None,
+-                 grant_seconds=30, kill_grace_seconds=10):
++                 grant_seconds=30, kill_grace_seconds=10, budget_snapshot_max_age_seconds=None):
+         self.store = store
+         self.artifacts = Path(artifacts)
+         self.authorize_spawn = authorize_spawn
+@@ -127,7 +127,8 @@ class RavenBroker:
+             raise ValueError("unbounded worker lease settings")
+         self.controller = Controller(store, self, artifacts, admission_policy=authorize_spawn if reserve_bound or conservative_reserve or research_policy else None,
+                                      research_seconds=180 if research_policy else 600,
+-                                     research_cents=research_policy.reserve_cents if research_policy else 25)
++                                     research_cents=research_policy.reserve_cents if research_policy else 25,
++                                     budget_snapshot_max_age_seconds=budget_snapshot_max_age_seconds)
+         with self.store.transaction() as db:
+             db.executescript(SCHEMA)
+ 
+diff --git a/sim/tools/modal_research/controller.py b/sim/tools/modal_research/controller.py
+index 4e3d3df..d94bfec 100644
+--- a/sim/tools/modal_research/controller.py
++++ b/sim/tools/modal_research/controller.py
+@@ -21,7 +21,8 @@ class DispatchBlocked(ValueError):
+ 
+ 
+ class Controller:
+-    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50, admission_policy=None, research_seconds=600):
++    def __init__(self, store, backend, artifacts, *, research_cents=25, sol_cents=50, admission_policy=None,
++                 research_seconds=600, budget_snapshot_max_age_seconds=None):
+         self.store = store
+         self.backend = backend
+         self.artifacts = Path(artifacts)
+@@ -29,6 +30,7 @@ class Controller:
+         self.sol_cents = sol_cents
+         self.admission_policy = admission_policy
+         self.research_seconds = research_seconds
++        self.budget_snapshot_max_age_seconds = budget_snapshot_max_age_seconds
+ 
+     def tick(self):
+         owner = uuid4().hex
+@@ -73,8 +75,9 @@ class Controller:
+             raw = state["platform_snapshot"]
+             snapshot = json.loads(raw) if raw else {}
+             observed = snapshot.get("metered_observed_at")
+-            if (type(observed) not in (int, float)
+-                    or not 0 <= self.store.clock() - observed <= 120):
++            age = self.budget_snapshot_max_age_seconds
++            if (type(age) is not int or age <= 0 or type(observed) not in (int, float)
++                    or not 0 <= self.store.clock() - observed <= age):
+                 raise DispatchBlocked("fresh workspace gross/net snapshot required")
+         spent, held = self.store.ledger(db)
+         if state["approved_budget"] is None:
+@@ -389,8 +392,9 @@ class Controller:
+         if self.store.budget_policy_mode(db):
+             snapshot = json.loads(state["platform_snapshot"]) if state["platform_snapshot"] else {}
+             observed = snapshot.get("metered_observed_at")
+-            if (type(observed) not in (int, float)
+-                    or not 0 <= self.store.clock() - observed <= 120):
++            age = self.budget_snapshot_max_age_seconds
++            if (type(age) is not int or age <= 0 or type(observed) not in (int, float)
++                    or not 0 <= self.store.clock() - observed <= age):
+                 return False
+         if state["mode"] != "fixture" and db.execute("SELECT 1 FROM access_status").fetchone():
+             return False
+diff --git a/sim/tools/modal_research/raven_runtime.py b/sim/tools/modal_research/raven_runtime.py
+index 447dd00..f85d046 100644
+--- a/sim/tools/modal_research/raven_runtime.py
++++ b/sim/tools/modal_research/raven_runtime.py
+@@ -144,9 +144,9 @@ class WorkspaceMetering:
+             ("volume_per_gib_month", "volume_storage_gib_month_cost", 1),
+         )}
+ 
+-    def refresh(self):
++    def refresh(self, *, force=False):
+         last = (self.snapshot or {}).get("metered_observed_at", 0)
+-        if self.store.clock() - last < self.interval_seconds:
++        if not force and self.store.clock() - last < self.interval_seconds:
+             return
+         try:
+             observation = self.sandbox.workspace_metering(self.workspace)
+@@ -256,7 +256,8 @@ def load_runtime(config, *, clock=time.time):
+     broker = RavenBroker(store, artifacts, billing_sources=billing, authorize_spawn=authorize, reserve_bound=bound, conservative_reserve=estimated,
+                          research_policy=research_policy,
+                          tool_enabled=bool(runner and "sol" in runner.bindings),
+-                         experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None)
++                         experiment_reserve_limits=sandbox.binding.max_reserved_cents_by_config if sandbox else None,
++                         budget_snapshot_max_age_seconds=metering.max_age_seconds if metering else None)
+     queue = AgentQueueProvider(broker, runner) if runner is not None else None
+     return RavenRuntime(broker, modal_provider=sandbox, agent_provider=queue,
+                         archive_deadline=rates.storage_verified_until if rates else None,
+@@ -272,10 +273,10 @@ IDENTITY_052_REQUEST = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.re
+ IDENTITY_052_CLAIM = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.claimed")
+ IDENTITY_052_RESULT = MONITOR_GRANT.with_name("diagnose-sandbox-identity-052.result.json")
+ IDENTITY_052_MARKER = b"diagnose-sandbox-identity-052\n"
+-RESUME_S_054_REQUEST = MONITOR_GRANT.with_name("resume-s-budget-054.request")
+-RESUME_S_054_CLAIM = MONITOR_GRANT.with_name("resume-s-budget-054.claimed")
+-RESUME_S_054_RESULT = MONITOR_GRANT.with_name("resume-s-budget-054.result.json")
+-RESUME_S_054_MARKER = b"resume-s-budget-054\n"
++RESUME_S_054_REQUEST = MONITOR_GRANT.with_name("resume-s-budget-054b.request")
++RESUME_S_054_CLAIM = MONITOR_GRANT.with_name("resume-s-budget-054b.claimed")
++RESUME_S_054_RESULT = MONITOR_GRANT.with_name("resume-s-budget-054b.result.json")
++RESUME_S_054_MARKER = b"resume-s-budget-054b\n"
+ RESUME_S_054_EVENT = "operator-budget-override-054"
+ RESUME_S_054_REFERENCE = "user-terminal-modal-budget-054"
+ RESUME_S_054_STOP_SHA = "bf0d6c9c45a5a756758a26018fcdd3303cb29df710d46eb3beb1fddc3565aef1"
+@@ -476,6 +477,7 @@ def _activate_resume_s_054(runtime):
+                    (RESUME_S_054_REFERENCE, store.clock()))
+         store.append_event(db, RESUME_S_054_EVENT, "operator_budget_override", {
+             "reference": RESUME_S_054_REFERENCE,
++                "retry_of_failed_marker": "resume-s-budget-054",
+             "policy": "terminal_modal_history_v1",
+             "previous_stop_sha256": RESUME_S_054_STOP_SHA,
+             "accepted_pause_decision": RESUME_S_054_PAUSE,
+@@ -511,7 +513,7 @@ def _run_resume_s_054_once(config):
+         runtime, _ = load_runtime(config)
+         if runtime.refresh_metering is None:
+             raise ValueError("054 requires verified live workspace metering")
+-        runtime.refresh_metering()
++        runtime.refresh_metering(force=True)
+         expected_job, observed_at = _activate_resume_s_054(runtime)
+         _write_status(RESUME_S_054_RESULT, {"status": "complete", "job_id": expected_job,
+                                             "target_decisions": RESUME_S_054_TARGET,

@@ -1,0 +1,2060 @@
+{
+  "scope": "Read-only archival source and authored summaries; no deployment or execution authorization. Paths in archived reports refer to ignored local evidence, not shipped data.",
+  "files": [
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/analyze_current.py",
+      "snapshot": "task121-current-comparison/analyze_current.py",
+      "sha256": "8f625868db0d4d511557ef81f0278f021d4b9b3f143a702b76a05276683aa872",
+      "size": 11236
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/endpoint_validation.py",
+      "snapshot": "task121-current-comparison/endpoint_validation.py",
+      "sha256": "a243576eac188d9b746ec57efd867408d1ec9ef7aa0fb53dd1efcb811978c234",
+      "size": 3366
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/eval_summary.py",
+      "snapshot": "task121-current-comparison/eval_summary.py",
+      "sha256": "4159019dae36dcf759abca3c5863a77675db3ee86508b5fd0c36a0ae0c42ffa7",
+      "size": 1193
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/paired_statistics.py",
+      "snapshot": "task121-current-comparison/paired_statistics.py",
+      "sha256": "1ccd4662f6158db834e70a64d90c299c2e4b10af268588e9eefb3fa0499d30f2",
+      "size": 4280
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/validation.py",
+      "snapshot": "task121-current-comparison/validation.py",
+      "sha256": "006ccd87f2e50db4961600e5756037e7102e665ad310490137126a5ab1dbc958",
+      "size": 3220
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/test_current.py",
+      "snapshot": "task121-current-comparison/test_current.py",
+      "sha256": "148e4dce664ad845bedc3eedc08989b8c66f032cfa4b9572fd14e779a2d55fd7",
+      "size": 3043
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/README.md",
+      "snapshot": "task121-current-comparison/README.md",
+      "sha256": "f27cd59106213a494c43913f1d5c263f63b3541171e70d23bc91ef4c1a417698",
+      "size": 2904
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task121-current-comparison/operator-optimization-audit.md",
+      "snapshot": "task121-current-comparison/operator-optimization-audit.md",
+      "sha256": "37d368278293f2c922fae13380def7967aacba501c4a4990c3bc5a252dcc8fe7",
+      "size": 9792
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/architecture-performance/report.md",
+      "snapshot": "task119-monitor/architecture-performance/report.md",
+      "sha256": "1cbd828af68ab68897cb7871cbb4301cddfc0245a8beb5d95d1dfa97cf0c8391",
+      "size": 3826
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/history/report.md",
+      "snapshot": "task119-monitor/history/report.md",
+      "sha256": "1eb45218ba48080a6b48c81f0c23334e6e9b78136c0bc51aac28935aa2139a53",
+      "size": 81150
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/budget/report.md",
+      "snapshot": "task119-monitor/budget/report.md",
+      "sha256": "563face76cc01103b13b9a30aac76de40d73a9574802f6f2cd8f2ab326b90656",
+      "size": 4949
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/bridge/RUNBOOK.md",
+      "snapshot": "task119-monitor/integration/bridge/RUNBOOK.md",
+      "sha256": "4863bfecdaa5c2ac5e07f325b775df13135b18883b2c4bff25c901c5e647eca7",
+      "size": 5477
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/plan_liabilities.py",
+      "snapshot": "task116/ops/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/deploy_once.py",
+      "snapshot": "task116/ops/deploy_once.py",
+      "sha256": "274b89e18e64b831f34a119093875f4f559f4f431396226d4a4f00f09a6779b9",
+      "size": 1637,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/verify_m_constructor.py",
+      "snapshot": "task116/ops/verify_m_constructor.py",
+      "sha256": "219863cdb815c70637e8708e083ca29f690b068a0cf33baa4b87a1dc1c3bfc92",
+      "size": 2276,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/test_project_obligations.py",
+      "snapshot": "task116/ops/test_project_obligations.py",
+      "sha256": "c8be9ecf38a083eb9764310c856d434fa9fcba530a5b27d018948e06d5368e64",
+      "size": 2689,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/runtime_worker.py",
+      "snapshot": "task116/ops/runtime_worker.py",
+      "sha256": "1b0e320cfb97eab9cf5fd43b11c14264e6cd9f5a4043632309b8ea8b2754ea2c",
+      "size": 11578,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/spawn_once.py",
+      "snapshot": "task116/ops/spawn_once.py",
+      "sha256": "68c57dba4318317c8b7eff17d282e21d642be715d24564e8ff8db92940720a06",
+      "size": 2259,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/read_initial_only.py",
+      "snapshot": "task116/ops/read_initial_only.py",
+      "sha256": "1a3be6cb42ae8659faab7da6942f9544fb82d25500e6c46fe33e2c0b8d23a260",
+      "size": 1536,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/OPS-RUN.md",
+      "snapshot": "task116/ops/OPS-RUN.md",
+      "sha256": "3f6b6fe75b4c50f6f9ce99b1090271717a377e0f8129bd536064b4d561a6d123",
+      "size": 3651,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/test_ops_boundaries.py",
+      "snapshot": "task116/ops/test_ops_boundaries.py",
+      "sha256": "2a05a1b2f0430fb08a364961c988be325a9f48140f31318fe67895139c94092b",
+      "size": 4846,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/record_commitment.py",
+      "snapshot": "task116/ops/record_commitment.py",
+      "sha256": "a60d12708250d033d30742c7088991f7748b1bb1e3e55f90b9d3aedb643d2d4d",
+      "size": 4155,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/funding_snapshot.py",
+      "snapshot": "task116/ops/funding_snapshot.py",
+      "sha256": "176aa5b99da69dd6e9ec2bd78f558f749631d788957a01fd70faa582646cc650",
+      "size": 4467,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/ops_common.py",
+      "snapshot": "task116/ops/ops_common.py",
+      "sha256": "f69fe4d29d83e36652afbaeddb9201bf4d4f6cda2db3d45550d285529cf12804",
+      "size": 1802,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/function_app.py",
+      "snapshot": "task116/ops/function_app.py",
+      "sha256": "6241adad20cdc6f571849628a397a38f8e9fab03e9860716ff8b3dea49fc61d4",
+      "size": 7747,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/test_candidate.py",
+      "snapshot": "task116/ops/test_candidate.py",
+      "sha256": "eea1fbc3739071476bc4fcd122ce5f9cb6b02d7a6a6a4e054e57089289037d33",
+      "size": 12994,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/project_obligations.py",
+      "snapshot": "task116/ops/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/create_metadata.py",
+      "snapshot": "task116/ops/create_metadata.py",
+      "sha256": "e5adf518e904ccf18bb2c1f2ec893b3de41942372d51fee1970f14b0110ae8f8",
+      "size": 2662,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/README.md",
+      "snapshot": "task116/ops/README.md",
+      "sha256": "3c9a860ad75c44cb5fd2dbc89805b92f34decd5c987e810b627121849a06c18f",
+      "size": 6919,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/watch_M_readonly_v2.py",
+      "snapshot": "task116/ops/watch_M_readonly_v2.py",
+      "sha256": "d8e877602e2aad65443133f3589bc0e7a3e30f8234434b1a8dde4329d14020fe",
+      "size": 4064,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/first_slot_budget.py",
+      "snapshot": "task116/ops/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/OBSERVER-RESUME.md",
+      "snapshot": "task116/ops/OBSERVER-RESUME.md",
+      "sha256": "a3bca2fa0d403dadba013cc0b55192d12bceaebb5895fdf5562c39d6bda30da3",
+      "size": 722,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/m_profile.py",
+      "snapshot": "task116/ops/m_profile.py",
+      "sha256": "68da8a96ee3898fced3351db70c53b6f8cef2385fc21ac2d2ef542eb01ff862e",
+      "size": 2632,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/watch_M_readonly.py",
+      "snapshot": "task116/ops/watch_M_readonly.py",
+      "sha256": "f4dbbde64a40f38fb23c105b122d88d101d8cf9b2cbb65bfe577c17321a0045f",
+      "size": 4022,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/watch_M_readonly.v1.preimage.py",
+      "snapshot": "task116/ops/watch_M_readonly.v1.preimage.py",
+      "sha256": "f4dbbde64a40f38fb23c105b122d88d101d8cf9b2cbb65bfe577c17321a0045f",
+      "size": 4022,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/preparation-readonly.py",
+      "snapshot": "task116/ops/preparation-readonly.py",
+      "sha256": "66a3d7db4cd019199b3cfdb17093fb7209a563f42d503abeb0b723543f8eb65a",
+      "size": 3557,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/increase_project_budget.py",
+      "snapshot": "task116/ops/increase_project_budget.py",
+      "sha256": "bcb8e7f75b995802e73a41e5f6dce5cf214c8c93b1502091b56651cdfda0b2c8",
+      "size": 3631,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/learning-overlay/ppo.py",
+      "snapshot": "task116/ops/learning-overlay/ppo.py",
+      "sha256": "a516334bf2cc82046a89beccdf926f81cb57b58e99ff3433871dadba0905ce14",
+      "size": 140911,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/learning-overlay/strategic_kl.py",
+      "snapshot": "task116/ops/learning-overlay/strategic_kl.py",
+      "sha256": "ed4ebfd9b0b0e622646f68bf34dfa3b56f2a7907f3cdbd15e34f3ba20b07c6f1",
+      "size": 3332,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/profile-overlay/transition_contract.py",
+      "snapshot": "task116/ops/profile-overlay/transition_contract.py",
+      "sha256": "cebd63e6468138637b076e431242d4fe54b1adec2fbb0f71e6681d02d8684686",
+      "size": 34732,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/profile-overlay/transition_gpu_gate.py",
+      "snapshot": "task116/ops/profile-overlay/transition_gpu_gate.py",
+      "sha256": "663a19669c7f34583a279cb44e1029055db437ed020225eb83e6cc4420589b8b",
+      "size": 16110,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/artifact_adapter.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/artifact_adapter.py",
+      "sha256": "67a1a7e599539a346d25aeef0fbbf767481b5bc24bd1d087fd2033833c36c547",
+      "size": 30012,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/controller.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/controller.py",
+      "sha256": "35a683593ec8b7c754843b6f158b981f8a4b5d581e63f6a823c258743f674fce",
+      "size": 31417,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/manifests.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/manifests.py",
+      "sha256": "ea2ac436c9fb66294da5219dcd879bf905330cc6973d34ea6ade5bb7ec29f4a4",
+      "size": 9025,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/native_worker.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/native_worker.py",
+      "sha256": "df3b7eb55cdabf3296fbbf3a40c8461589de6a07c9cc9ff83ab822558ec7cccf",
+      "size": 14238,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/modal_provider.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/modal_provider.py",
+      "sha256": "6057afb1ac380f6febe6f8b02a7e6ada9570d27cb9dc100395caf8f64edb8fae",
+      "size": 10237,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/transition_contract.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/transition_contract.py",
+      "sha256": "74a43e0577a2baa21823230b78ad68ee610bbd402dd443910b9a04355a3049dc",
+      "size": 34705,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/__init__.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/sandbox_provider.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/sandbox_provider.py",
+      "sha256": "bac3fe7f07a29dbc791a4c2808bc00903b2d4affe5ae3c6e929db56a7fe19082",
+      "size": 22731,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/contracts.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/contracts.py",
+      "sha256": "29cd822ae277bbf2215256ebff6f1cea70561b1ad6a5da04379f8fda79a3317e",
+      "size": 14687,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/broker.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/broker.py",
+      "sha256": "692b8c90f358c44908215677962c75130629b1a32399dc49914dd25f6db56e71",
+      "size": 50463,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/lineage.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/lineage.py",
+      "sha256": "70bd442b84bffdb4c9c5d0678c0837534f3e18cfa7c391d6ad741dcfa307ab10",
+      "size": 7023,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/modal_research/adapters.py",
+      "snapshot": "task116/ops/frozen_source/modal_research/adapters.py",
+      "sha256": "cf1b235ad5cafed830303bce34ec497ab618acb715092ab37e6ba7be85d570df",
+      "size": 1910,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/env.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/env.py",
+      "sha256": "17d950709ce1b83ef0156f05f095a64ff949fd1879da4732440e07287034082b",
+      "size": 21571,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/protocol.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/protocol.py",
+      "sha256": "105225d1411d04f1a77cceaab2d5c089489b2de944aff34131e76fc1cfeb3434",
+      "size": 24666,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/__init__.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/__init__.py",
+      "sha256": "017cc4f1e1f744abfcceb4f664afa96e5b08dda2f39ee6acae928db839e187d2",
+      "size": 1047,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/loader.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/loader.py",
+      "sha256": "2d369347079352bd7c7bdbd596d1d8e43672db9bee6d700fb5ce75571d657b88",
+      "size": 24472,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/evaluate.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/evaluate.py",
+      "sha256": "3f145a7aa01d45362112ae10d581d77599ed9948d0f64b1977fa16f809b8d9f0",
+      "size": 16207,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/errors.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/errors.py",
+      "sha256": "56828317c3c663dd353a079e456e6e9c44a776a92d85c01bf0b59280e163f3b0",
+      "size": 973,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/pool.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/pool.py",
+      "sha256": "6b0dd82a85b1016267fb1e3df9b17c4ce63b4f410ba0bf0e7fcf947d412413c9",
+      "size": 11902,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/policies.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/policies.py",
+      "sha256": "f4915fd29bfd5093614c7730a9d6cfe3fbdd8b866ad2896055fcd1c37998535d",
+      "size": 12473,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2vec/schema.py",
+      "snapshot": "task116/ops/frozen_source/sts2vec/schema.py",
+      "sha256": "e4cafa2415767939d860e3b20f6b883818f1ee103299aef54b6daa512f00c7ff",
+      "size": 15122,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/transition_vector.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/transition_vector.py",
+      "sha256": "faaa9fef0cb6b4da3a58922f19841c0f5868cdddde36c3f5220612601ce5f5bd",
+      "size": 6976,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/isolation.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/isolation.py",
+      "sha256": "4a627ff887f15093344e40219930a5f742776c67dae18d599022d5e5468c4ca7",
+      "size": 10154,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/objective.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/objective.py",
+      "sha256": "9098473be747f5d3d8c2fa5a28769b0f1bf5a0152ac43ec076841cfbc79802a5",
+      "size": 11325,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/transition_aux.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/transition_aux.py",
+      "sha256": "8723438ce4f7edd402418e102e5c43b9a7cb8a99badd5858dbaf468f5dd419c8",
+      "size": 9754,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/seedstream.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/seedstream.py",
+      "sha256": "6f4ac9bb936997c8dc8ae49720dae424ed8996ad0012f3746774b4ea4a23900b",
+      "size": 26769,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/startpool.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/startpool.py",
+      "sha256": "9554a7dddf2b58a09f3e5708d05b483d956371aa12aec4ab5e2b5090e0593df1",
+      "size": 23194,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/__init__.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/__init__.py",
+      "sha256": "51098b80b81edf0744cda2e2c21b478c3b04f9f7dda8413776c9999b845a12ce",
+      "size": 255,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/features.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/features.py",
+      "sha256": "316e969717284df7aefc1ac459b02b508097db0e2b755476ba42337476529030",
+      "size": 27150,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/gae.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/gae.py",
+      "sha256": "a34b95be5c2dd01169a320718892f3cbcf987792cd441d8958f71d0d34dcca8e",
+      "size": 1193,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/model.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/model.py",
+      "sha256": "1c0f48bbe45154417f5952d734673aa96874098c57010b765cdfa0b190becb21",
+      "size": 45423,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/cycles.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/cycles.py",
+      "sha256": "7a27ce9185765f38a8fa6bd46e20e7173a4684bd834c4cd451c71f27ff6c8305",
+      "size": 22082,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/critic_diagnostics.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/critic_diagnostics.py",
+      "sha256": "0df080b9448177a58695b7ac5c1b76c82f758a0dd9261c860ddf8557796b1f54",
+      "size": 5487,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/transition_gpu_gate.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/transition_gpu_gate.py",
+      "sha256": "cd4f9b535a4e353b935c53501edda24b0b8f91d87c51859998a5638ea22a8716",
+      "size": 16108,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/runlog.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/runlog.py",
+      "sha256": "614545e8265d2ae129e821408e074025126328947e13cb733d74878eb1fb1716",
+      "size": 6685,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/evaluate.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/evaluate.py",
+      "sha256": "d4db3106a8018d7fe1dd9ecbeaa4384cc5528a650500f8dc76fa24161ce57f98",
+      "size": 25473,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/loopbreak.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/loopbreak.py",
+      "sha256": "a91edce801a0c159052e2c4c9b9ed2cf62cc9a5fe5f5d76e6686d4e472f47f1a",
+      "size": 12393,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/episodes.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/episodes.py",
+      "sha256": "4c65cb9b35be698331d7e3d1d25cad8aa46971df2de3b42e42be6df859fee1fe",
+      "size": 6964,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/progress.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/progress.py",
+      "sha256": "c37943665d902e3d52b7e2f8180165aa0ba9edacebf0fdca355df31d95895578",
+      "size": 3320,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/ppo.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/ppo.py",
+      "sha256": "a516334bf2cc82046a89beccdf926f81cb57b58e99ff3433871dadba0905ce14",
+      "size": 140911,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/transition_state.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/transition_state.py",
+      "sha256": "407fffeafa5f0cebc4a33b54ebfdbe28693efd49c2469335bacdfbf3577664ae",
+      "size": 10884,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/strategic_kl.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/strategic_kl.py",
+      "sha256": "ed4ebfd9b0b0e622646f68bf34dfa3b56f2a7907f3cdbd15e34f3ba20b07c6f1",
+      "size": 3332,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/ops/frozen_source/sts2train/heads.py",
+      "snapshot": "task116/ops/frozen_source/sts2train/heads.py",
+      "sha256": "a46e3f5904cb201d5e18712dc764cb9e1292574bead7cbadef76386422f3a49f",
+      "size": 8494,
+      "status": "accepted current M runtime and frozen worker source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/independent-review-v2.md",
+      "snapshot": "task115/ops/independent-review-v2.md",
+      "sha256": "b13822b41b204a8d5de03b2b32e1b126792b2d522423579ab4ac8d629c3de690",
+      "size": 2810,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/deploy_once.py",
+      "snapshot": "task115/ops/deploy_once.py",
+      "sha256": "2624bdce54c8dee4425cca0813c721fad9829db78c071f60f22a2120457d8d27",
+      "size": 1577,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/runtime_worker.py",
+      "snapshot": "task115/ops/runtime_worker.py",
+      "sha256": "5af712a4bdb3bef0acae307a682eeccf33f7ee432a165e97725cb46078d58e76",
+      "size": 14275,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/spawn_once.py",
+      "snapshot": "task115/ops/spawn_once.py",
+      "sha256": "eda9f72aba7b597c349ac3f2d3e573452a171613e2a04d601c7c106da213f4a5",
+      "size": 2017,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/test_ops_boundaries.py",
+      "snapshot": "task115/ops/test_ops_boundaries.py",
+      "sha256": "2c6265e118f4d62b0ce240f72c383ef1ae8c1118ca9ac04df3e62e1d2a52665c",
+      "size": 5928,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/read-terminal-metadata-only.py",
+      "snapshot": "task115/ops/read-terminal-metadata-only.py",
+      "sha256": "4b187df2aec20d0547e4df12d30172400096b9b4790ee3e925d763a673936a45",
+      "size": 1724,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/record_commitment.py",
+      "snapshot": "task115/ops/record_commitment.py",
+      "sha256": "bde9adebee14dca833f5cae26901d6214c28a7878c47c24b91a398e1025794a3",
+      "size": 3446,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/funding_snapshot.py",
+      "snapshot": "task115/ops/funding_snapshot.py",
+      "sha256": "520f93fec810ad29ffa8216d124c23aeeef73e4ed14ec2a9fece3053f8fe2973",
+      "size": 5418,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/ops_common.py",
+      "snapshot": "task115/ops/ops_common.py",
+      "sha256": "cab65551fc14bd18cd3e882e633a953de44c8116216698931f0340ac64d20712",
+      "size": 1177,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/function_app.py",
+      "snapshot": "task115/ops/function_app.py",
+      "sha256": "15d294ef01ffb1db2bdec8969d5d9b8361d6c39ac4c7fc3b8239457d36649213",
+      "size": 8929,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/create_metadata.py",
+      "snapshot": "task115/ops/create_metadata.py",
+      "sha256": "ccc0ddde2e2d8f6bafd7b9dbd5d5e36b56947ca19985cd7c0d885b985b130521",
+      "size": 2752,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/README.md",
+      "snapshot": "task115/ops/README.md",
+      "sha256": "de63a9a8eb7a3dd50acb3bcd3b580009e7c209c449fcf30df4826c026f70980f",
+      "size": 2167,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/OBSERVER-RESUME.md",
+      "snapshot": "task115/ops/OBSERVER-RESUME.md",
+      "sha256": "07834d8b408a02fddd4033205f1af7d1c0160bbee91e41b11ac7beb4bb848129",
+      "size": 1128,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/seed-boundary-preflight.py",
+      "snapshot": "task115/ops/seed-boundary-preflight.py",
+      "sha256": "95c5621b47d8b92adf1854e66eb969202119cc4692ec0d9c747e8608e1cb1389",
+      "size": 1306,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/watch_segment1_readonly.py",
+      "snapshot": "task115/ops/watch_segment1_readonly.py",
+      "sha256": "c6d8b391a763641d7e68f4021768118688f052dadc05db8aa528991c69187e7b",
+      "size": 3847,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/read_first_periodic_metadata.py",
+      "snapshot": "task115/ops/read_first_periodic_metadata.py",
+      "sha256": "5330c302dc8df24447e4b9eb504bd212a210b09269d9d67a134492ec61285e7c",
+      "size": 1202,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/learning-overlay/ppo.py",
+      "snapshot": "task115/ops/learning-overlay/ppo.py",
+      "sha256": "a516334bf2cc82046a89beccdf926f81cb57b58e99ff3433871dadba0905ce14",
+      "size": 140911,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/ops/learning-overlay/strategic_kl.py",
+      "snapshot": "task115/ops/learning-overlay/strategic_kl.py",
+      "sha256": "ed4ebfd9b0b0e622646f68bf34dfa3b56f2a7907f3cdbd15e34f3ba20b07c6f1",
+      "size": 3332,
+      "status": "accepted first S runtime; preserved historical deployed source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/plan_liabilities.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/deploy_once.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/deploy_once.py",
+      "sha256": "a8c013aade2bbbc9e962a5ad3d23565366ae80a450e3ecb0ad8d5f5c774e4ff6",
+      "size": 1628,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/independent-review-v2-addendum.md",
+      "snapshot": "task115/segment2-ops-with116-candidate/independent-review-v2-addendum.md",
+      "sha256": "eb07d6385cc6dbdb29065920a8b4c67d39239f3469b263f67ab38e3d82e3e791",
+      "size": 688,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/runtime_worker.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/runtime_worker.py",
+      "sha256": "5af712a4bdb3bef0acae307a682eeccf33f7ee432a165e97725cb46078d58e76",
+      "size": 14275,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/independent-review.md",
+      "snapshot": "task115/segment2-ops-with116-candidate/independent-review.md",
+      "sha256": "9b14ba86a420b1ff37aed5bfd5416578556d388145588fc6d60946f6d7f9ee9e",
+      "size": 2403,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/spawn_once.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/spawn_once.py",
+      "sha256": "5b07f4a41de41b7f70f820f606f52d66b7ff8a7d9d6ba3d845d16d7c0bc48656",
+      "size": 2068,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/record_commitment.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/record_commitment.py",
+      "sha256": "9c23cbb7387ca3da12dde5c80c96c9331412d5ce32271611f84cfe9fdfe8c9f5",
+      "size": 4565,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/funding_snapshot.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/funding_snapshot.py",
+      "sha256": "528fa2e321f949c1c25dc321ab134d2d2e67641ec32fe2148e89e149760aa82e",
+      "size": 7358,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/ops_common.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/ops_common.py",
+      "sha256": "affaccc9d7033a9a8f31d40ecc1a075cecb884f657bef4a5cc390b53b02b7ab0",
+      "size": 2741,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/function_app.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/function_app.py",
+      "sha256": "4b72177962606fc950b4a8b225a44593525bf5b00a6340312c033f15c2aa6441",
+      "size": 8929,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/project_obligations.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/create_metadata.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/create_metadata.py",
+      "sha256": "5093337acd703e84658338ac972baf916d51965e99a0e19b65de635b1d09bea9",
+      "size": 2982,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/test_segment2_ops.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/test_segment2_ops.py",
+      "sha256": "e27a330ba4ae862c73a7bc94425d3b6765c835fb2d304919f515eecc19cdf108",
+      "size": 4049,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/README.md",
+      "snapshot": "task115/segment2-ops-with116-candidate/README.md",
+      "sha256": "6d099b9e467c215d5959f58be11e0a7faa5f8a86c27e0d0a985cc89384e1da20",
+      "size": 1306,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/first_slot_budget.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/test_forward_admission.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/test_forward_admission.py",
+      "sha256": "21975cf5f07a3bd5bfee40f6be63323443179edbf4efb4aeb2928479b5642607",
+      "size": 14537,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/learning-overlay/ppo.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/learning-overlay/ppo.py",
+      "sha256": "a516334bf2cc82046a89beccdf926f81cb57b58e99ff3433871dadba0905ce14",
+      "size": 140911,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-ops-with116-candidate/learning-overlay/strategic_kl.py",
+      "snapshot": "task115/segment2-ops-with116-candidate/learning-overlay/strategic_kl.py",
+      "sha256": "ed4ebfd9b0b0e622646f68bf34dfa3b56f2a7907f3cdbd15e34f3ba20b07c6f1",
+      "size": 3332,
+      "status": "accepted S segment2 deployed operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/plan_liabilities.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/project_obligations.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/README.md",
+      "snapshot": "task115/segment2-terminal-collection-candidate/README.md",
+      "sha256": "59265afc3f4741d5c6553b2d8a23c9f677c109e2e5f465e50dbdfb96f66e139f",
+      "size": 2097,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/first_slot_budget.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/test_retire.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/test_retire.py",
+      "sha256": "232cd132a3f6cdf0839245809734105888a1ac6b1be3b644933f0efa95b76c9a",
+      "size": 3056,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/test_collector.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/test_collector.py",
+      "sha256": "cf0186732059f52c79f1a94d36ec27c23203c35eca0c20cf32c23f01dc99a1a5",
+      "size": 4424,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/retire_segment2.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/retire_segment2.py",
+      "sha256": "a8964b5b5983fa3cdb58a6c7da3bab06b0b707dac56329b12ee118a435c58098",
+      "size": 4802,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-collection-candidate/collect_terminal.py",
+      "snapshot": "task115/segment2-terminal-collection-candidate/collect_terminal.py",
+      "sha256": "e46f020b84fa76442967bb4f97bc4375f967d8820b7cf176c2cfe1204ad2bf77",
+      "size": 9382,
+      "status": "accepted S terminal collection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-nullresult-candidate/accepted_fixture.py",
+      "snapshot": "task115/segment2-terminal-nullresult-candidate/accepted_fixture.py",
+      "sha256": "cf0186732059f52c79f1a94d36ec27c23203c35eca0c20cf32c23f01dc99a1a5",
+      "size": 4424,
+      "status": "accepted S terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-nullresult-candidate/README.md",
+      "snapshot": "task115/segment2-terminal-nullresult-candidate/README.md",
+      "sha256": "1b0e4a2ebc1455e9cf32ad0c5b9e05770ca592f4e81cab4e680827a8704c72c1",
+      "size": 1017,
+      "status": "accepted S terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-nullresult-candidate/test_null_terminal.py",
+      "snapshot": "task115/segment2-terminal-nullresult-candidate/test_null_terminal.py",
+      "sha256": "246f86aa7cf419453f8a1d66bd8a71914c4a8060aed04d0212da4603758b4bee",
+      "size": 1114,
+      "status": "accepted S terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/segment2-terminal-nullresult-candidate/collect_terminal.py",
+      "snapshot": "task115/segment2-terminal-nullresult-candidate/collect_terminal.py",
+      "sha256": "740af20540f3e3e14c799aa135bb7b48be67d8ecee26f9b9f402b267fed6a063",
+      "size": 9383,
+      "status": "accepted S terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/task114_slot_budget.py",
+      "snapshot": "task115/eval-ops-with116-candidate/task114_slot_budget.py",
+      "sha256": "307e094b1bad9835404a8ed1cf96c13e3b85ddfc5edd9582f7c617e22b9e0356",
+      "size": 4764,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/plan_liabilities.py",
+      "snapshot": "task115/eval-ops-with116-candidate/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/test_known_M_plan.py",
+      "snapshot": "task115/eval-ops-with116-candidate/test_known_M_plan.py",
+      "sha256": "d76c304ea50455590e13e98288e83f4c23755281db0d2a2214a8f7649a4dbd47",
+      "size": 2372,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/test_inventory_with116.py",
+      "snapshot": "task115/eval-ops-with116-candidate/test_inventory_with116.py",
+      "sha256": "86af9be713b0a57f437db73b4eebd4ee9cd9b752498018b38a35df81352259b4",
+      "size": 814,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/ops_common.py",
+      "snapshot": "task115/eval-ops-with116-candidate/ops_common.py",
+      "sha256": "4766bfd7b3df71eaad3041002dfb9a829cb467b01a69d6d0297332a871844f3b",
+      "size": 9931,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/function_app.py",
+      "snapshot": "task115/eval-ops-with116-candidate/function_app.py",
+      "sha256": "193d9a4d2454374635533957873307b01df310cc366c63dc4cd48a27ec36879d",
+      "size": 7509,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/project_obligations.py",
+      "snapshot": "task115/eval-ops-with116-candidate/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/create_metadata.py",
+      "snapshot": "task115/eval-ops-with116-candidate/create_metadata.py",
+      "sha256": "1e008f1f2ec665fd042a84b71dc5352f62769c8f9752638375f102ec255f131b",
+      "size": 1934,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/README.md",
+      "snapshot": "task115/eval-ops-with116-candidate/README.md",
+      "sha256": "91bd3d95c0f0460e46f7836b80ae504f7742c29a86ab7b0a4b28380fc00ac9c1",
+      "size": 2417,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/first_slot_budget.py",
+      "snapshot": "task115/eval-ops-with116-candidate/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/eval_worker.py",
+      "snapshot": "task115/eval-ops-with116-candidate/eval_worker.py",
+      "sha256": "9407cea936378f578f7d6305c1b0fbb204828da21e835268183bad08c0cb4082",
+      "size": 9143,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/claim_slot.py",
+      "snapshot": "task115/eval-ops-with116-candidate/claim_slot.py",
+      "sha256": "5e5343c924e12fe6c3fb93567139fa893c68c280bbedc8e5005d5e587a26e5ae",
+      "size": 1932,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/fresh_admission.py",
+      "snapshot": "task115/eval-ops-with116-candidate/fresh_admission.py",
+      "sha256": "c57c9719d9ae2d01ce65016278da21d47248f637bf9a4a6b412b04d007c08501",
+      "size": 7983,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/test_terminal_enum_compat.py",
+      "snapshot": "task115/eval-ops-with116-candidate/test_terminal_enum_compat.py",
+      "sha256": "5799b2cdee3f79754b731bc5e4439b0785e35310e5106208db188825d998c575",
+      "size": 810,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/stage.py",
+      "snapshot": "task115/eval-ops-with116-candidate/stage.py",
+      "sha256": "c860bbe46351d67df0a7e0902351bd9064721dac1bdc67898b9dd5eb46e23cb8",
+      "size": 652,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/test_ops.py",
+      "snapshot": "task115/eval-ops-with116-candidate/test_ops.py",
+      "sha256": "053ea1603b3460adec5b2d2af7ca11f4a1a6deb354c7019401d3e043b369fcd7",
+      "size": 10017,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-ops-with116-candidate/deploy_and_spawn.py",
+      "snapshot": "task115/eval-ops-with116-candidate/deploy_and_spawn.py",
+      "sha256": "ee35c3f92aea3a12057129cbb50d468ea8d7eee146d964d0b9738b7267536e63",
+      "size": 4947,
+      "status": "accepted original S formaldev operations"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-candidate/test_final_binding.py",
+      "snapshot": "task115/eval-candidate/test_final_binding.py",
+      "sha256": "439c2bfab3045dd21abf335facd5ca6ce4fa5a0ca221bbec1ea2c6c4e9e6b2a3",
+      "size": 5516,
+      "status": "accepted original S formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-candidate/independent-review.md",
+      "snapshot": "task115/eval-candidate/independent-review.md",
+      "sha256": "ac1d95854b18ff990e69a0ae4337ec18aed976414e571d1af2078aedfb5dbeba",
+      "size": 2176,
+      "status": "accepted original S formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-candidate/function_app.py",
+      "snapshot": "task115/eval-candidate/function_app.py",
+      "sha256": "cb3d85cdc9d43f56ffdfc1632197b7ddc03886c85a8152affb6e7994afcb66fa",
+      "size": 7470,
+      "status": "accepted original S formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-candidate/README.md",
+      "snapshot": "task115/eval-candidate/README.md",
+      "sha256": "52ca4eb59c755553db0e031a6c82e294b2ab8e0e5b91b626735695bb4377feee",
+      "size": 4319,
+      "status": "accepted original S formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/eval-candidate/eval_worker.py",
+      "snapshot": "task115/eval-candidate/eval_worker.py",
+      "sha256": "9407cea936378f578f7d6305c1b0fbb204828da21e835268183bad08c0cb4082",
+      "size": 9143,
+      "status": "accepted original S formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/training-analysis-candidate/test_fixture.py",
+      "snapshot": "task115/training-analysis-candidate/test_fixture.py",
+      "sha256": "f18a4fd874ae0653a0892caeb7e132fb014f99574b44e09b8c772ed03fd7adc3",
+      "size": 7302,
+      "status": "accepted S training analysis source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/training-analysis-candidate/independent-review.md",
+      "snapshot": "task115/training-analysis-candidate/independent-review.md",
+      "sha256": "6aa0d8f098b48465d3be5db0eba8334483f2d9cdd59ddba9c8a74d88732dc629",
+      "size": 2656,
+      "status": "accepted S training analysis source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/training-analysis-candidate/analyze_training.py",
+      "snapshot": "task115/training-analysis-candidate/analyze_training.py",
+      "sha256": "d400089c7002694d203d630a9dd64888864428b5f394e477d13c4b37ca450326",
+      "size": 23176,
+      "status": "accepted S training analysis source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/training-analysis-candidate/README.md",
+      "snapshot": "task115/training-analysis-candidate/README.md",
+      "sha256": "5015202d0e3b7c1daba32baca16d34059fbde889fcc617b2deb7bfaf0428e14e",
+      "size": 5834,
+      "status": "accepted S training analysis source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/analyze115.py",
+      "snapshot": "task115/analysis-candidate/analyze115.py",
+      "sha256": "b07f0689eb2200069ebf40f3b3c68bb4c88a1781052077f78bbad671152cdc96",
+      "size": 8044,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/independent-review.md",
+      "snapshot": "task115/analysis-candidate/independent-review.md",
+      "sha256": "e48c84ce768504b8ef3d18dadf73eae74c6e719cb70b589b3768c88a97769b7e",
+      "size": 2255,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/test_candidate.py",
+      "snapshot": "task115/analysis-candidate/test_candidate.py",
+      "sha256": "2e7d0036b16ba04b712a2f20eec300f1c54a81dc94f0c8dcd3959ade0a5874c3",
+      "size": 2276,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/README.md",
+      "snapshot": "task115/analysis-candidate/README.md",
+      "sha256": "832305f06f62acfa6031d5987cf8788100c541f769cccad4d0cdf1e97f187e8a",
+      "size": 4312,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/eval_summary.py",
+      "snapshot": "task115/analysis-candidate/eval_summary.py",
+      "sha256": "4159019dae36dcf759abca3c5863a77675db3ee86508b5fd0c36a0ae0c42ffa7",
+      "size": 1193,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/endpoint_validation.py",
+      "snapshot": "task115/analysis-candidate/endpoint_validation.py",
+      "sha256": "a243576eac188d9b746ec57efd867408d1ec9ef7aa0fb53dd1efcb811978c234",
+      "size": 3366,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/paired_statistics.py",
+      "snapshot": "task115/analysis-candidate/paired_statistics.py",
+      "sha256": "81a04c3989d3f9de4fcf57d1a2dd413b03fef16bc69e321108910eadce8e8dea",
+      "size": 3968,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task115/analysis-candidate/validation.py",
+      "snapshot": "task115/analysis-candidate/validation.py",
+      "sha256": "006ccd87f2e50db4961600e5756037e7102e665ad310490137126a5ab1dbc958",
+      "size": 3220,
+      "status": "accepted S-v114C comparison source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/inspect_terminal.py",
+      "snapshot": "task116/terminal-collection-candidate/inspect_terminal.py",
+      "sha256": "1b178aaa045526f43769bfee03f1a094eb4c71a53ec357615f9c307702a68ecd",
+      "size": 20309,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/test_inspection.py",
+      "snapshot": "task116/terminal-collection-candidate/test_inspection.py",
+      "sha256": "092e9286379300281994fc90262a7404fe4fc47e4890e224006f691c7ab1c780",
+      "size": 8044,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/README.md",
+      "snapshot": "task116/terminal-collection-candidate/README.md",
+      "sha256": "af482d608c9e0c4b7602e1605b597a484f57d9e4e85da98220d16cea8157738e",
+      "size": 4783,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/test_collector.py",
+      "snapshot": "task116/terminal-collection-candidate/test_collector.py",
+      "sha256": "c1cf38a206010c1fad3dec4abbfe7cf844b91cfd93a845f0c7b1bf22f80ac0cb",
+      "size": 3650,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/base_115_helper.py",
+      "snapshot": "task116/terminal-collection-candidate/base_115_helper.py",
+      "sha256": "d400089c7002694d203d630a9dd64888864428b5f394e477d13c4b37ca450326",
+      "size": 23176,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/collect_terminal.py",
+      "snapshot": "task116/terminal-collection-candidate/collect_terminal.py",
+      "sha256": "f3da96d5080d78dde9d3678c2b39276ac359b7b6fb0ab1eeea9e24cc18c4b670",
+      "size": 9654,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/profile-overlay/transition_contract.py",
+      "snapshot": "task116/terminal-collection-candidate/profile-overlay/transition_contract.py",
+      "sha256": "cebd63e6468138637b076e431242d4fe54b1adec2fbb0f71e6681d02d8684686",
+      "size": 34732,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/profile-overlay/transition_gpu_gate.py",
+      "snapshot": "task116/terminal-collection-candidate/profile-overlay/transition_gpu_gate.py",
+      "sha256": "663a19669c7f34583a279cb44e1029055db437ed020225eb83e6cc4420589b8b",
+      "size": 16110,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/artifact_adapter.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/artifact_adapter.py",
+      "sha256": "67a1a7e599539a346d25aeef0fbbf767481b5bc24bd1d087fd2033833c36c547",
+      "size": 30012,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/controller.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/controller.py",
+      "sha256": "35a683593ec8b7c754843b6f158b981f8a4b5d581e63f6a823c258743f674fce",
+      "size": 31417,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/manifests.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/manifests.py",
+      "sha256": "ea2ac436c9fb66294da5219dcd879bf905330cc6973d34ea6ade5bb7ec29f4a4",
+      "size": 9025,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/native_worker.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/native_worker.py",
+      "sha256": "df3b7eb55cdabf3296fbbf3a40c8461589de6a07c9cc9ff83ab822558ec7cccf",
+      "size": 14238,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/modal_provider.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/modal_provider.py",
+      "sha256": "6057afb1ac380f6febe6f8b02a7e6ada9570d27cb9dc100395caf8f64edb8fae",
+      "size": 10237,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/transition_contract.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/transition_contract.py",
+      "sha256": "74a43e0577a2baa21823230b78ad68ee610bbd402dd443910b9a04355a3049dc",
+      "size": 34705,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/__init__.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/sandbox_provider.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/sandbox_provider.py",
+      "sha256": "bac3fe7f07a29dbc791a4c2808bc00903b2d4affe5ae3c6e929db56a7fe19082",
+      "size": 22731,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/contracts.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/contracts.py",
+      "sha256": "29cd822ae277bbf2215256ebff6f1cea70561b1ad6a5da04379f8fda79a3317e",
+      "size": 14687,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/broker.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/broker.py",
+      "sha256": "692b8c90f358c44908215677962c75130629b1a32399dc49914dd25f6db56e71",
+      "size": 50463,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/lineage.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/lineage.py",
+      "sha256": "70bd442b84bffdb4c9c5d0678c0837534f3e18cfa7c391d6ad741dcfa307ab10",
+      "size": 7023,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/modal_research/adapters.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/modal_research/adapters.py",
+      "sha256": "cf1b235ad5cafed830303bce34ec497ab618acb715092ab37e6ba7be85d570df",
+      "size": 1910,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/env.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/env.py",
+      "sha256": "17d950709ce1b83ef0156f05f095a64ff949fd1879da4732440e07287034082b",
+      "size": 21571,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/protocol.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/protocol.py",
+      "sha256": "105225d1411d04f1a77cceaab2d5c089489b2de944aff34131e76fc1cfeb3434",
+      "size": 24666,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/__init__.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/__init__.py",
+      "sha256": "017cc4f1e1f744abfcceb4f664afa96e5b08dda2f39ee6acae928db839e187d2",
+      "size": 1047,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/loader.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/loader.py",
+      "sha256": "2d369347079352bd7c7bdbd596d1d8e43672db9bee6d700fb5ce75571d657b88",
+      "size": 24472,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/evaluate.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/evaluate.py",
+      "sha256": "3f145a7aa01d45362112ae10d581d77599ed9948d0f64b1977fa16f809b8d9f0",
+      "size": 16207,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/errors.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/errors.py",
+      "sha256": "56828317c3c663dd353a079e456e6e9c44a776a92d85c01bf0b59280e163f3b0",
+      "size": 973,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/pool.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/pool.py",
+      "sha256": "6b0dd82a85b1016267fb1e3df9b17c4ce63b4f410ba0bf0e7fcf947d412413c9",
+      "size": 11902,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/policies.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/policies.py",
+      "sha256": "f4915fd29bfd5093614c7730a9d6cfe3fbdd8b866ad2896055fcd1c37998535d",
+      "size": 12473,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2vec/schema.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2vec/schema.py",
+      "sha256": "e4cafa2415767939d860e3b20f6b883818f1ee103299aef54b6daa512f00c7ff",
+      "size": 15122,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/transition_vector.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/transition_vector.py",
+      "sha256": "faaa9fef0cb6b4da3a58922f19841c0f5868cdddde36c3f5220612601ce5f5bd",
+      "size": 6976,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/isolation.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/isolation.py",
+      "sha256": "4a627ff887f15093344e40219930a5f742776c67dae18d599022d5e5468c4ca7",
+      "size": 10154,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/objective.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/objective.py",
+      "sha256": "9098473be747f5d3d8c2fa5a28769b0f1bf5a0152ac43ec076841cfbc79802a5",
+      "size": 11325,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/transition_aux.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/transition_aux.py",
+      "sha256": "8723438ce4f7edd402418e102e5c43b9a7cb8a99badd5858dbaf468f5dd419c8",
+      "size": 9754,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/seedstream.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/seedstream.py",
+      "sha256": "6f4ac9bb936997c8dc8ae49720dae424ed8996ad0012f3746774b4ea4a23900b",
+      "size": 26769,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/startpool.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/startpool.py",
+      "sha256": "9554a7dddf2b58a09f3e5708d05b483d956371aa12aec4ab5e2b5090e0593df1",
+      "size": 23194,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/__init__.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/__init__.py",
+      "sha256": "51098b80b81edf0744cda2e2c21b478c3b04f9f7dda8413776c9999b845a12ce",
+      "size": 255,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/features.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/features.py",
+      "sha256": "316e969717284df7aefc1ac459b02b508097db0e2b755476ba42337476529030",
+      "size": 27150,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/gae.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/gae.py",
+      "sha256": "a34b95be5c2dd01169a320718892f3cbcf987792cd441d8958f71d0d34dcca8e",
+      "size": 1193,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/model.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/model.py",
+      "sha256": "1c0f48bbe45154417f5952d734673aa96874098c57010b765cdfa0b190becb21",
+      "size": 45423,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/cycles.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/cycles.py",
+      "sha256": "7a27ce9185765f38a8fa6bd46e20e7173a4684bd834c4cd451c71f27ff6c8305",
+      "size": 22082,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/critic_diagnostics.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/critic_diagnostics.py",
+      "sha256": "0df080b9448177a58695b7ac5c1b76c82f758a0dd9261c860ddf8557796b1f54",
+      "size": 5487,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/transition_gpu_gate.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/transition_gpu_gate.py",
+      "sha256": "cd4f9b535a4e353b935c53501edda24b0b8f91d87c51859998a5638ea22a8716",
+      "size": 16108,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/runlog.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/runlog.py",
+      "sha256": "614545e8265d2ae129e821408e074025126328947e13cb733d74878eb1fb1716",
+      "size": 6685,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/evaluate.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/evaluate.py",
+      "sha256": "d4db3106a8018d7fe1dd9ecbeaa4384cc5528a650500f8dc76fa24161ce57f98",
+      "size": 25473,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/loopbreak.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/loopbreak.py",
+      "sha256": "a91edce801a0c159052e2c4c9b9ed2cf62cc9a5fe5f5d76e6686d4e472f47f1a",
+      "size": 12393,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/episodes.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/episodes.py",
+      "sha256": "4c65cb9b35be698331d7e3d1d25cad8aa46971df2de3b42e42be6df859fee1fe",
+      "size": 6964,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/progress.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/progress.py",
+      "sha256": "c37943665d902e3d52b7e2f8180165aa0ba9edacebf0fdca355df31d95895578",
+      "size": 3320,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/ppo.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/ppo.py",
+      "sha256": "a516334bf2cc82046a89beccdf926f81cb57b58e99ff3433871dadba0905ce14",
+      "size": 140911,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/transition_state.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/transition_state.py",
+      "sha256": "407fffeafa5f0cebc4a33b54ebfdbe28693efd49c2469335bacdfbf3577664ae",
+      "size": 10884,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/strategic_kl.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/strategic_kl.py",
+      "sha256": "ed4ebfd9b0b0e622646f68bf34dfa3b56f2a7907f3cdbd15e34f3ba20b07c6f1",
+      "size": 3332,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-collection-candidate/safe_source/sts2train/heads.py",
+      "snapshot": "task116/terminal-collection-candidate/safe_source/sts2train/heads.py",
+      "sha256": "a46e3f5904cb201d5e18712dc764cb9e1292574bead7cbadef76386422f3a49f",
+      "size": 8494,
+      "status": "accepted disabled M terminal collection and inspection preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-nullresult-candidate/accepted_fixture.py",
+      "snapshot": "task116/terminal-nullresult-candidate/accepted_fixture.py",
+      "sha256": "c1cf38a206010c1fad3dec4abbfe7cf844b91cfd93a845f0c7b1bf22f80ac0cb",
+      "size": 3650,
+      "status": "accepted disabled M terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-nullresult-candidate/README.md",
+      "snapshot": "task116/terminal-nullresult-candidate/README.md",
+      "sha256": "d82f009e84b81187d9161f2011930a955022435200a8c8c5635810ba5d4d627c",
+      "size": 1006,
+      "status": "accepted disabled M terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-nullresult-candidate/test_null_terminal.py",
+      "snapshot": "task116/terminal-nullresult-candidate/test_null_terminal.py",
+      "sha256": "246f86aa7cf419453f8a1d66bd8a71914c4a8060aed04d0212da4603758b4bee",
+      "size": 1114,
+      "status": "accepted disabled M terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-nullresult-candidate/collect_terminal.py",
+      "snapshot": "task116/terminal-nullresult-candidate/collect_terminal.py",
+      "sha256": "44fb2e14573a83e19fdc9b6c8b5df87709a48410c3776902f887122adf339e03",
+      "size": 9655,
+      "status": "accepted disabled M terminal collector correction"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/plan_liabilities.py",
+      "snapshot": "task116/terminal-accounting-candidate/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/project_obligations.py",
+      "snapshot": "task116/terminal-accounting-candidate/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/README.md",
+      "snapshot": "task116/terminal-accounting-candidate/README.md",
+      "sha256": "9468ce582e7ef689c44dff65c943ce215b8c58340e4000c4bb6ddbad8b801df1",
+      "size": 2488,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/first_slot_budget.py",
+      "snapshot": "task116/terminal-accounting-candidate/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/test_retire.py",
+      "snapshot": "task116/terminal-accounting-candidate/test_retire.py",
+      "sha256": "dd6538e49e51b4253021146d3a43a487e84e4a78cf2718c89a0aadf73ab38091",
+      "size": 3209,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/terminal-accounting-candidate/retire_train.py",
+      "snapshot": "task116/terminal-accounting-candidate/retire_train.py",
+      "sha256": "c60b13c6bacc2ae905a5a92d2996ce8a54206b8ad401be9c06b6a4f7c929ef41",
+      "size": 4894,
+      "status": "accepted disabled M terminal accounting preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/task114_slot_budget.py",
+      "snapshot": "task116/eval-ops-candidate/task114_slot_budget.py",
+      "sha256": "307e094b1bad9835404a8ed1cf96c13e3b85ddfc5edd9582f7c617e22b9e0356",
+      "size": 4764,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/plan_liabilities.py",
+      "snapshot": "task116/eval-ops-candidate/plan_liabilities.py",
+      "sha256": "9d9984151ae06a6e46aacc5e0ab1e2b9e4cabed75a352169719cf9768c6b0502",
+      "size": 2196,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/test_ops_adapter.py",
+      "snapshot": "task116/eval-ops-candidate/test_ops_adapter.py",
+      "sha256": "6ee11d4190083d72b5bd60d5fe23a9e6c6a87df0e11b93145b46c7a964e42589",
+      "size": 10625,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/ops_common.py",
+      "snapshot": "task116/eval-ops-candidate/ops_common.py",
+      "sha256": "eef4c4215967c97cbda677c21d887b4cf86d1e4b680f5ecdd67d8674be8b0975",
+      "size": 10787,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/m_eval_profile.py",
+      "snapshot": "task116/eval-ops-candidate/m_eval_profile.py",
+      "sha256": "cc3085ec339f3a83570be4f742532acd394449c549639bf3c01b3d417593ba30",
+      "size": 2042,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/function_app.py",
+      "snapshot": "task116/eval-ops-candidate/function_app.py",
+      "sha256": "8c07915fc586532663d84d7b4b4312ac8d595678f2784d39e899570d0c68987d",
+      "size": 8067,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/project_obligations.py",
+      "snapshot": "task116/eval-ops-candidate/project_obligations.py",
+      "sha256": "2d09581016806a2f2b5d08934873d479ecd340d62809553c1f6886c1482cd125",
+      "size": 3387,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/create_metadata.py",
+      "snapshot": "task116/eval-ops-candidate/create_metadata.py",
+      "sha256": "99c609315598b8f3caf61f261e84e00f0102eb8985c31bca42d4d6ecea3aa421",
+      "size": 1938,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/README.md",
+      "snapshot": "task116/eval-ops-candidate/README.md",
+      "sha256": "4d2cc240b7826f1ce6be4ca75504d82b54f502c0752b20c41b4068ddd2875ac0",
+      "size": 3076,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/first_slot_budget.py",
+      "snapshot": "task116/eval-ops-candidate/first_slot_budget.py",
+      "sha256": "30b9815aed824d3c19145c7692f7a1fa3d2d201c0fa2b322445fa4ba907ab94d",
+      "size": 4796,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/eval_worker.py",
+      "snapshot": "task116/eval-ops-candidate/eval_worker.py",
+      "sha256": "f49d5dc5e87f8f896dc0a8f4729fa17a33e182c6d53a2c63dba74b4e50af61c9",
+      "size": 10118,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/claim_slot.py",
+      "snapshot": "task116/eval-ops-candidate/claim_slot.py",
+      "sha256": "a082a9658d02badd205f5060dcb6a432490f9d822099d621b86e5824d82fd434",
+      "size": 2079,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/fresh_admission.py",
+      "snapshot": "task116/eval-ops-candidate/fresh_admission.py",
+      "sha256": "d5d2647d68d28db15471a416fddff7bcc23ec4fda8664a75aa05e3f93974e926",
+      "size": 8359,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/stage.py",
+      "snapshot": "task116/eval-ops-candidate/stage.py",
+      "sha256": "be8ba721d8e30d1d35cd1253c3f86771344bd3542963456898de393de3dacb4d",
+      "size": 690,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/deploy_and_spawn.py",
+      "snapshot": "task116/eval-ops-candidate/deploy_and_spawn.py",
+      "sha256": "616794e255a5cbd98afb861c93736f0f3031327e038d02e5d5f3ecad16f82747",
+      "size": 4966,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/profile-overlay/transition_contract.py",
+      "snapshot": "task116/eval-ops-candidate/profile-overlay/transition_contract.py",
+      "sha256": "cebd63e6468138637b076e431242d4fe54b1adec2fbb0f71e6681d02d8684686",
+      "size": 34732,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-ops-candidate/profile-overlay/transition_gpu_gate.py",
+      "snapshot": "task116/eval-ops-candidate/profile-overlay/transition_gpu_gate.py",
+      "sha256": "663a19669c7f34583a279cb44e1029055db437ed020225eb83e6cc4420589b8b",
+      "size": 16110,
+      "status": "accepted disabled original M formaldev preparation"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/independent-review.md",
+      "snapshot": "task116/eval-candidate/independent-review.md",
+      "sha256": "4bf6279a3df04df2c300c813359279e73028f9befae81e4bb6771eece7a684d4",
+      "size": 2422,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/m_eval_profile.py",
+      "snapshot": "task116/eval-candidate/m_eval_profile.py",
+      "sha256": "cc3085ec339f3a83570be4f742532acd394449c549639bf3c01b3d417593ba30",
+      "size": 2042,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/function_app.py",
+      "snapshot": "task116/eval-candidate/function_app.py",
+      "sha256": "8c07915fc586532663d84d7b4b4312ac8d595678f2784d39e899570d0c68987d",
+      "size": 8067,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/README.md",
+      "snapshot": "task116/eval-candidate/README.md",
+      "sha256": "f604ac71e6c90dbd6372ce0ca1d0a54d47efb5458c02cab4dd858da19cbd4980",
+      "size": 3950,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/eval_worker.py",
+      "snapshot": "task116/eval-candidate/eval_worker.py",
+      "sha256": "f49d5dc5e87f8f896dc0a8f4729fa17a33e182c6d53a2c63dba74b4e50af61c9",
+      "size": 10118,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/test_m_eval.py",
+      "snapshot": "task116/eval-candidate/test_m_eval.py",
+      "sha256": "0b011bfd09d41039fc3ca8620792a83925dafb034ff39ac3daad6f22eaaea2f9",
+      "size": 4935,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/profile-overlay/transition_contract.py",
+      "snapshot": "task116/eval-candidate/profile-overlay/transition_contract.py",
+      "sha256": "cebd63e6468138637b076e431242d4fe54b1adec2fbb0f71e6681d02d8684686",
+      "size": 34732,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/eval-candidate/profile-overlay/transition_gpu_gate.py",
+      "snapshot": "task116/eval-candidate/profile-overlay/transition_gpu_gate.py",
+      "sha256": "663a19669c7f34583a279cb44e1029055db437ed020225eb83e6cc4420589b8b",
+      "size": 16110,
+      "status": "accepted disabled original M formaldev worker"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/test_projection.py",
+      "snapshot": "task119-monitor/integration/test_projection.py",
+      "sha256": "139fe2cdca44d60fc207b160cd82ed554b5a26caf010281bafbf8b5e413fe645",
+      "size": 2255,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/project_live.py",
+      "snapshot": "task119-monitor/integration/project_live.py",
+      "sha256": "0e4904032ee896bfbbfd7c9f9fbac0e9ad04647a467a1750ac01863e84f0a660",
+      "size": 7299,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/assemble.py",
+      "snapshot": "task119-monitor/integration/assemble.py",
+      "sha256": "586ce886c8860f1f818cc7c014e5087772ab8fd2b21d5cae8b1f4df60bfa5e06",
+      "size": 5471,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/README.md",
+      "snapshot": "task119-monitor/integration/README.md",
+      "sha256": "9b1c3042d7922d4de07eb1f741468e221a2be0aa4f4e07f26141261f28bfe45f",
+      "size": 3728,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/push_live.py",
+      "snapshot": "task119-monitor/integration/push_live.py",
+      "sha256": "46da199f6dbbfa3b9fc4ee31377881b525eee510842190be17356e1fc6a44b76",
+      "size": 2606,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/bridge/test_live_bridge.py",
+      "snapshot": "task119-monitor/integration/bridge/test_live_bridge.py",
+      "sha256": "4c40b89e0bb39470f8aa9fdf4d6244fa3ac256c20b766090e4e482b74704979e",
+      "size": 6379,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/bridge/project_live.py",
+      "snapshot": "task119-monitor/integration/bridge/project_live.py",
+      "sha256": "3b1de0e42ad18af1ca22cfe3a36d3c5cf2bee5c57da27893e0b9a34a2430ab10",
+      "size": 7328,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/bridge/live_bridge.py",
+      "snapshot": "task119-monitor/integration/bridge/live_bridge.py",
+      "sha256": "bc1a348e7f798f71658e5f17e1b5649cd719abf38421cef01ae9fd6608324906",
+      "size": 7837,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/integration/bridge/push_live.py",
+      "snapshot": "task119-monitor/integration/bridge/push_live.py",
+      "sha256": "f06578b8a664af407188b0e59e27c8f304f22be03d50e8b0d4ddaa644682e570",
+      "size": 4436,
+      "status": "accepted published bridge and integration source"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/README.md",
+      "snapshot": "monitor-site/README.md",
+      "sha256": "a96449d81e90c01df1eb3a51e1178df813577712d00ca3695b77bd9a81714e99",
+      "size": 954,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/package.json",
+      "snapshot": "monitor-site/package.json",
+      "sha256": "5314513e9a77e1bf5602ae4db24ef674bbaf6e6dbc9a006eccd852b33b66f5a5",
+      "size": 191,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/scripts/build.sh",
+      "snapshot": "monitor-site/scripts/build.sh",
+      "sha256": "7a5a0fbb4f9bb6348c899969dfca37a361ac3e19caa8d1e06616b60883b2dc6a",
+      "size": 378,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/scripts/bundle-worker.mjs",
+      "snapshot": "monitor-site/scripts/bundle-worker.mjs",
+      "sha256": "4bc78ab44735d8a0392901789f6ce19292b78398f3143fbe572017d82eec8fa9",
+      "size": 1381,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/scripts/preview.mjs",
+      "snapshot": "monitor-site/scripts/preview.mjs",
+      "sha256": "543424ddf7daa6b6db3f3806671ce5f1739b789580f5643ce555d31bf760d4ad",
+      "size": 977,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/scripts/test-research-api.mjs",
+      "snapshot": "monitor-site/scripts/test-research-api.mjs",
+      "sha256": "d5e72ff24651f1995a4584e98cea718e2b0543a0e4c7cb9ef9327ba081f6ab7e",
+      "size": 6239,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/scripts/validate-artifact.mjs",
+      "snapshot": "monitor-site/scripts/validate-artifact.mjs",
+      "sha256": "ed15d5a610970c18b6b32fba8ad73c45df5f63b472eb2b41f2d312eed7e8dec8",
+      "size": 1146,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/worker/dashboard-page.js",
+      "snapshot": "monitor-site/worker/dashboard-page.js",
+      "sha256": "91fe195e481c968a315aa5fa5fbd8a7fd0daf604bdd1284661a9f522ea3fe99f",
+      "size": 68970,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/worker/index.js",
+      "snapshot": "monitor-site/worker/index.js",
+      "sha256": "ab96950c5886f23be22eb619a26a1d85220788c47a621948414aa7c9ce78fa63",
+      "size": 33037,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/monitor/site/worker/research-api.js",
+      "snapshot": "monitor-site/worker/research-api.js",
+      "sha256": "680bd2e65531fe6c9e61297fc33dee82594f06f8e77da73d23fc097aab21914f",
+      "size": 8382,
+      "status": "published site source shared by commits 7b867098 and 08f6519a. Hosting config and payload excluded."
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/ObservationEncoder.cs",
+      "snapshot": "task112/evidence/native-9f/ObservationEncoder.cs",
+      "sha256": "147159e77a3196be24895fbc0eebe72cf62f7e457cd9ba2bdbe2ed4813920ff1",
+      "size": 18600,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/ObservationEncoder.Combat.cs",
+      "snapshot": "task112/evidence/native-9f/ObservationEncoder.Combat.cs",
+      "sha256": "4e8dbe77d91ab275eebcea1d0f3668479821b82895b371f6658d334111b0b7c2",
+      "size": 12601,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/ObservationEncoder.Run.cs",
+      "snapshot": "task112/evidence/native-9f/ObservationEncoder.Run.cs",
+      "sha256": "0458bb646bf32a5a204d7518057ab7f0bc3691818784fc06e0f1ad4eb1b1d1d3",
+      "size": 22201,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/Status.cs",
+      "snapshot": "task112/evidence/native-9f/Status.cs",
+      "sha256": "482b8cd8359b4660c6242a708ad5652c6d943434c6fd5383230ecfc235be2bfc",
+      "size": 2298,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/Schema.cs",
+      "snapshot": "task112/evidence/native-9f/Schema.cs",
+      "sha256": "e8fb29c7965906e06a863fc4530b45e022f0c8afdaebb506958ceab971da4ea6",
+      "size": 30168,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task112/evidence/native-9f/VecEnv.cs",
+      "snapshot": "task112/evidence/native-9f/VecEnv.cs",
+      "sha256": "a70d986365760062750b4c2a35055407149417e383abcecc2e6ac7667276ff37",
+      "size": 43333,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task105/integration/native-provenance/RunLoop.cs",
+      "snapshot": "task105/integration/native-provenance/RunLoop.cs",
+      "sha256": "279660810943f8984bc26c3f6d47ae3b85e7556d68ff21573f84b900c9fc31ef",
+      "size": 18935,
+      "status": "native audit source excerpt; complete build provenance not independently reverified during closeout"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task054/acceptance-054.md",
+      "snapshot": "task054/acceptance-054.md",
+      "sha256": "ec0324bb8e8687ca3dbada5ff05e87aad5dd08c838e66a2b996fb847c648e337",
+      "size": 7958,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task054/production-outcome.md",
+      "snapshot": "task054/production-outcome.md",
+      "sha256": "e410b049c4ea561340102bd5571a6f464531e99618e1390d722333373f20423b",
+      "size": 7181,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task054/054-live-052-budget.patch",
+      "snapshot": "task054/054-live-052-budget.patch",
+      "sha256": "fbe3d5cffb078e9bb32e14af410dc7634599987b614ce49ebbdf86f24d80d01e",
+      "size": 19675,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task054/054b-live-054.patch",
+      "snapshot": "task054/054b-live-054.patch",
+      "sha256": "011bc6ee54865c17f47b9ddb426a210ee76bfba0c0985a9db0e55caac342ee50",
+      "size": 7855,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task055/report.md",
+      "snapshot": "task055/report.md",
+      "sha256": "3da45db523cbcdc755f36ee6438dee5cd71f0f2bd144284eda9a0981222acbc9",
+      "size": 3680,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task055/acceptance-055.md",
+      "snapshot": "task055/acceptance-055.md",
+      "sha256": "daa406dced1158a5353d2ae1008d6b20b49ece29d43a92b3cf714523f4f31842",
+      "size": 3146,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task055/controller-054b-to-055.patch",
+      "snapshot": "task055/controller-054b-to-055.patch",
+      "sha256": "636d4226ec8930ff1177aa37b38d811155879bbdbb1e3865ba92c4c53d776a21",
+      "size": 5772,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task055/test_longitudinal_input_055.py",
+      "snapshot": "task055/test_longitudinal_input_055.py",
+      "sha256": "b74234764b16ea249400c515028dfd7bfc860c49c06ba44add962a7fdd93ffe5",
+      "size": 6606,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task056/056-live-store.patch",
+      "snapshot": "task056/056-live-store.patch",
+      "sha256": "bca54d4aa2fdac3b71ceac875b9c562f36aad910ae1c1db8480f9c50fe75d1ab",
+      "size": 9522,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task056/production-outcome.md",
+      "snapshot": "task056/production-outcome.md",
+      "sha256": "08fd92d1b0baef3605f7444bcf06100a9098f47afe361a059ba023abdb704c01",
+      "size": 3783,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task056/acceptance-056.md",
+      "snapshot": "task056/acceptance-056.md",
+      "sha256": "933f70d8f047a323eff74d993ed71b13292195c2092432362b9002d6c58cf089",
+      "size": 4354,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task056/test_budget_056.py",
+      "snapshot": "task056/test_budget_056.py",
+      "sha256": "7bfb406cce2d0e96c7c0a48f2ad9a2020690d2a371c2c340bc12b16f27bcc50f",
+      "size": 5990,
+      "status": "accepted historical production patch/test/authored acceptance report; not applied to main entry points"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/finaldev-execution-preparation/watch_and_archive_original_M_dev.v2.py",
+      "snapshot": "task116/finaldev-execution-preparation/watch_and_archive_original_M_dev.v2.py",
+      "sha256": "7b56d0cedd93e029a69f383e01edb0e70def148f631e0c1b7a3c9e7706192706",
+      "size": 6449,
+      "status": "independently accepted original M formaldev read-only observer/archiver source",
+      "independent_acceptance_sha256": "7ad1b7d3aeed954706f7244adec0d83a6fee9c86945192fde008e301d0193609"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task116/finaldev-execution-preparation/existing-deployment-resume/spawn_existing_once.py",
+      "snapshot": "task116/finaldev-execution-preparation/existing-deployment-resume/spawn_existing_once.py",
+      "sha256": "e174d13229e1207a5e623bfab7ba4cfa25576741097ffd653143de601e23aca6",
+      "size": 5403,
+      "status": "independently accepted one-shot resume helper for the existing M116 original formaldev deployment",
+      "independent_acceptance_sha256": "59d8aa4448f16e12220a7df507dc9f07390a9fb5b510e2e7e7a563556d8d80b8"
+    },
+    {
+      "source": "artifacts/modal-research/2026-11-04/research/task119-monitor/current-comparison-update/v2-final-closeout/curate.py",
+      "snapshot": "task119-monitor/current-comparison-update/v2-final-closeout/curate.py",
+      "sha256": "1ba827106d2081899689bc037d48213da540b7984dbca4d38171650b2f629dc0",
+      "size": 23704,
+      "status": "frozen final monitor curator author source; generated site data and runtime evidence excluded"
+    }
+  ],
+  "excluded_generated_site_payload": {
+    "source": "artifacts/modal-research/2026-11-04/monitor/site/worker/research-archive.js",
+    "sha256": "cdb4872caa6738cfeabce616c325ab1e25c9cfdb568e085f9e2cb35c38ca9a12",
+    "size": 607355,
+    "published_site_commit": "08f6519a79bc53bae02fa5d57218f7bd04a8f687",
+    "reason": "Generated ledger/history/budget/performance/live projection, not source; retained only in separately published site repository."
+  },
+  "historical_excluded_generated_site_payload": {
+    "source": "artifacts/modal-research/2026-11-04/monitor/site/worker/research-archive.js",
+    "sha256": "a81e5a1fc24982cda3c2cea735289de39622847304cd79a8e57c51b18d980a5e",
+    "size": 588779,
+    "published_site_commit": "7b867098a64e7ce1149958f4897213f852a6a8fd",
+    "reason": "Generated ledger/history/budget/performance/live projection, not source; retained only in separately published site repository."
+  }
+}
