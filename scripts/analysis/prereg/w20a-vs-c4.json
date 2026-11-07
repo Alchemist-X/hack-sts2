@@ -1,0 +1,65 @@
+{
+ "schema": "sts2.prereg/1",
+ "name": "w20a-vs-c4",
+ "written": "2026-11-06 22:25 EST (pre-registered before the line starts; W20a staged on the sts2b4 package, not started; the slot choice between S2 and W20a is decided by the rule in docs/wave20-pilot-plan-2026-11-06.md at the u12164 S-C3 pairing)",
+ "question": "Does a terminal reward proportional to the fraction of the act-boss HP pool removed in a lost boss fight (--boss-hp-bonus 0.1, wave 20) beat pure continuation from the same u12164 fork?",
+ "arms": {
+  "treat": [
+   "w11-w20a"
+  ],
+  "control": [
+   "w4-c4"
+  ]
+ },
+ "labels": {
+  "treat": "W20a = C3 u12164 -> u13164 with --boss-hp-bonus 0.1 (wave-20 bundle sts2train-f3668bf66a; mask off)",
+  "control": "C4 = C3 u12164 -> u13164 (control flags, wave-17 bundle)"
+ },
+ "fork": 12164,
+ "fork_note": "both arms fork the SAME checkpoint (w4-c3 pinned-0012164): one training seed / stream pair, bit-identical code paths with the flag off (wave-20 det gate on 6 configs)",
+ "at": [
+  12664,
+  13164
+ ],
+ "max_at": 13164,
+ "primary": {
+  "seedset": [
+   "dev512",
+   "dev128"
+  ],
+  "window": 5,
+  "mode": "greedy-off",
+  "note": "dev-512 when both arms have it (EVAL-C), else dev-128; window = the 5 latest pinned per-100 evals after the fork, per seed"
+ },
+ "confirm": {
+  "seedset": "ab512",
+  "mode": "greedy-off",
+  "endpoint": true,
+  "note": "segment-end eval at exactly u12664 / u13164; read only through decide.py (logged to ab-access.jsonl)"
+ },
+ "mde": 0.015,
+ "margin": 0.01,
+ "kill": {
+  "after_updates": 300,
+  "delta": -0.03,
+  "ref": "control",
+  "note": "from u12464 on (any per-100 read): treat - control window delta < -0.03 with CI upper < 0 -> KILL S2"
+ },
+ "futility": {
+  "from_read": 2
+ },
+ "leading": [
+  "act3",
+  "act2_boss_pass"
+ ],
+ "expected_outcome_note": "one training-seed pair: best possible verdict REPLICATE; a second seed pair (W20a-prime / C4-prime) before any ADOPT; if boss_death_hp_frac_mean does not rise by u12664 the mechanism is absent and the line stops at u12664",
+ "mechanism": {
+  "metrics": [
+   "boss_death_hp_frac_mean_act2",
+   "boss_death_hp_frac_mean_act3",
+   "boss_deaths_act3",
+   "boss_hp_bonus_sum"
+  ],
+  "note": "the bonus targets boss_death_hp_frac directly: it must rise under the treatment before any progress effect is credible; a rise in boss HP removed without a rise in act3 reach / fresh_win_rate points at glass-cannon play (no block)"
+ }
+}
