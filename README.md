@@ -23,6 +23,17 @@ game process remains the state-transition engine.
 > uploaded. Sandbox workers use isolated save directories and never touch human
 > saves.
 
+## Silent A10 自主训练监控与复盘
+
+打开 [STS2 研究监控台](https://sts2-modal-research-console.crazy-kfc.chatgpt.site) 查看本分支的 Modal 实验。站点为只读私有页面，仅站点所有者登录后可访问。运行卡片分别显示各实验的采样时刻、检查点进度与训练器状态。
+
+- [实验档案](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#experiments)记录每次实验的假设、配方改动、权重父模型、实际与目标剂量、正式评测结果、故障恢复和证据引用。
+- [架构演变](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#architecture)按型号和版本展示共享编码、动作评分与价值估计的演变，保留早期资源探针的结果。
+- [训练吞吐](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#performance)展示 PPO 更新、检查点里程碑和分阶段耗时。训练奖励与进度用于诊断，正式能力对照使用固定开发集的平均进度、胜率与样本数。
+- [费用](https://sts2-modal-research-console.crazy-kfc.chatgpt.site#budget)分别列出工作区毛计量、账单净额与抵扣、App 归属和共享用量、估算及预留。缺少逐调用账单时标为未知。
+
+本轮收尾范围是完成当前 S、M 训练和正式开发集对照，随后暂停训练。
+
 ## How it works
 
 - **`mod/`** — a C# mod (`Sts2Recorder.dll`) loaded by STS2's *official* first-party
