@@ -59,6 +59,8 @@ dev-128 = `silent-a10-dev-v1`（训练从不使用的 128 个开局），ab-512 
 （新线起跑时追加一行与事件），数字由训练镜像自动填充；刷新一条命令 `scripts/dashboard/dash_refresh.sh`，数据契约与发布步骤见
 [`scripts/dashboard/README.md`](scripts/dashboard/README.md)。
 
+**科普动画《教 AI 爬塔》（约 12 分钟，分 14 幕）**：<https://claude.ai/artifact/4nRxgWB7WL1fau6fk6xJAo> — 问题为什么难、为什么自己造模拟器、PPO 一图看懂、探索历程谱系、探索推进为什么失败、奖励塑形与 boss 血量信号、测量的噪声与配对、五组取舍、工程教训、参考文献（已核实）；页面源码在 `scripts/explainer/`。
+
 **入口文档**：
 
 - [交接：给新人的一页](docs/handoff-2026-11-06.md)（目标、架构、各波工程、主要发现、复现、测试、数据、预算、文档索引）
