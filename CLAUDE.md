@@ -101,3 +101,10 @@ cache:
 3. Division of labor: Fable does precise orchestration — briefs, synthesis,
    final review. Opus does cost-effective execution — reading, porting,
    tests, verification.
+
+## Before recording human runs
+
+- Run `scripts/recording_preflight.sh` (read-only); record only when it exits 0.
+- The game must be on v0.111.0 (the only version `sim/` implements); if not, ask the user to switch the Steam branch (agents never change the install).
+- mods/ holds only Sts2Recorder (STS2_MCP stashed per the rule above, no QuickSL), with
+  `decision_capture_combat_inputs: true` in `mods/Sts2Recorder.conf`.
