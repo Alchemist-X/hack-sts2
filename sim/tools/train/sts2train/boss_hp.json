@@ -1,0 +1,290 @@
+{
+ "_doc": "Boss encounter HP table for sts2train.bosshp (wave 20). Generated: do not edit; regenerate with `uv run python -m sts2train.bosshp --write` in sim/tools/train.",
+ "encounters": {
+  "AEONGLASS_BOSS": {
+   "act": 3,
+   "minions": [],
+   "pool": {
+    "base": 512,
+    "tough": 535
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       512
+      ],
+      "tough": [
+       535
+      ]
+     },
+     "monster": "AEONGLASS"
+    }
+   ]
+  },
+  "CEREMONIAL_BEAST_BOSS": {
+   "act": 1,
+   "minions": [],
+   "pool": {
+    "base": 252,
+    "tough": 262
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       252
+      ],
+      "tough": [
+       262
+      ]
+     },
+     "monster": "CEREMONIAL_BEAST"
+    }
+   ]
+  },
+  "KAISER_CRAB_BOSS": {
+   "act": 2,
+   "minions": [],
+   "pool": {
+    "base": 408,
+    "tough": 428
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       209
+      ],
+      "tough": [
+       219
+      ]
+     },
+     "monster": "CRUSHER"
+    },
+    {
+     "forms": {
+      "base": [
+       199
+      ],
+      "tough": [
+       209
+      ]
+     },
+     "monster": "ROCKET"
+    }
+   ]
+  },
+  "KNOWLEDGE_DEMON_BOSS": {
+   "act": 2,
+   "minions": [],
+   "pool": {
+    "base": 379,
+    "tough": 399
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       379
+      ],
+      "tough": [
+       399
+      ]
+     },
+     "monster": "KNOWLEDGE_DEMON"
+    }
+   ]
+  },
+  "LAGAVULIN_MATRIARCH_BOSS": {
+   "act": 1,
+   "minions": [],
+   "pool": {
+    "base": 222,
+    "tough": 233
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       222
+      ],
+      "tough": [
+       233
+      ]
+     },
+     "monster": "LAGAVULIN_MATRIARCH"
+    }
+   ]
+  },
+  "QUEEN_BOSS": {
+   "act": 3,
+   "minions": [
+    "TORCH_HEAD_AMALGAM"
+   ],
+   "pool": {
+    "base": 400,
+    "tough": 419
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       400
+      ],
+      "tough": [
+       419
+      ]
+     },
+     "monster": "QUEEN"
+    }
+   ]
+  },
+  "SOUL_FYSH_BOSS": {
+   "act": 1,
+   "minions": [],
+   "pool": {
+    "base": 211,
+    "tough": 221
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       211
+      ],
+      "tough": [
+       221
+      ]
+     },
+     "monster": "SOUL_FYSH"
+    }
+   ]
+  },
+  "TEST_SUBJECT_BOSS": {
+   "act": 3,
+   "minions": [],
+   "pool": {
+    "base": 600,
+    "tough": 636
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       100,
+       200,
+       300
+      ],
+      "tough": [
+       111,
+       212,
+       313
+      ]
+     },
+     "monster": "TEST_SUBJECT"
+    }
+   ]
+  },
+  "THE_INSATIABLE_BOSS": {
+   "act": 2,
+   "minions": [],
+   "pool": {
+    "base": 321,
+    "tough": 341
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       321
+      ],
+      "tough": [
+       341
+      ]
+     },
+     "monster": "THE_INSATIABLE"
+    }
+   ]
+  },
+  "THE_KIN_BOSS": {
+   "act": 1,
+   "minions": [
+    "KIN_FOLLOWER"
+   ],
+   "pool": {
+    "base": 190,
+    "tough": 199
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       190
+      ],
+      "tough": [
+       199
+      ]
+     },
+     "monster": "KIN_PRIEST"
+    }
+   ]
+  },
+  "VANTOM_BOSS": {
+   "act": 1,
+   "minions": [],
+   "pool": {
+    "base": 173,
+    "tough": 183
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       173
+      ],
+      "tough": [
+       183
+      ]
+     },
+     "monster": "VANTOM"
+    }
+   ]
+  },
+  "WATERFALL_GIANT_BOSS": {
+   "act": 1,
+   "minions": [],
+   "pool": {
+    "base": 240,
+    "tough": 250
+   },
+   "units": [
+    {
+     "forms": {
+      "base": [
+       240
+      ],
+      "tough": [
+       250
+      ]
+     },
+     "monster": "WATERFALL_GIANT"
+    }
+   ]
+  }
+ },
+ "minion_classes": [
+  "Fabricator",
+  "GasBomb",
+  "KinFollower",
+  "Ovicopter",
+  "TorchHeadAmalgam"
+ ],
+ "sources": [
+  "sim/specs/inventory/encounters.json",
+  "sim/specs/inventory/monsters.json",
+  "sim/Sts2Sim.Core/Monsters/Encounters/*Boss.cs",
+  "sim/Sts2Sim.Core/Monsters/Defs/*.cs"
+ ],
+ "tough_enemies_ascension": 8
+}

@@ -122,7 +122,7 @@ FLAG_GROUPS = (
     ("explore", ("explore_kinds", "explore_eps", "explore_logp", "explore_push", "explore_push_coef",
                  "explore_push_step")),
     ("model flags", ("aux_heads", "aux_coef", "deck_counts")),
-    ("rollouts", ("rollout_loop_breaker", "step_cap", "floor_step_cap")),
+    ("rollouts", ("rollout_loop_breaker", "mask_drop_potion", "step_cap", "floor_step_cap")),
     ("runtime", ("device", "amp", "compile", "seed", "max_hours")),
     ("training evals", ("eval_seedset", "eval_every", "loop_breaker", "eval_at", "no_best")),
 )
@@ -339,10 +339,10 @@ def read_run(run_dir) -> tuple[dict, list[dict], dict]:
 
 def stale_reason(run_dir, ss: dict, *, library_version: str, weights_hash: str | None = None,
                  policy: str | None = None, loop_breaker: str | None = None, eval_mode: str | None = None,
-                 sample_seed: int | None = None) -> str | None:
+                 sample_seed: int | None = None, mask_drop_potion: bool | None = None) -> str | None:
     """None when `run_dir` holds a finished protocol evaluation of `ss` (same content) on `library_version` with the
-    protocol limits (and these weights / this policy with eval seed 0 / this loop breaker mode), every game
-    summarised; else why it cannot be reused."""
+    protocol limits (and these weights / this policy with eval seed 0 / this loop breaker mode / this DiscardPotion
+    mask: config.json ``mask_drop_potion``, absent = off), every game summarised; else why it cannot be reused."""
     d = Path(run_dir)
     cfg = _read_json(d / "config.json")
     if cfg is None:
@@ -367,6 +367,9 @@ def stale_reason(run_dir, ss: dict, *, library_version: str, weights_hash: str |
         lb = cfg.get("loop_breaker") or {}
         if lb.get("mode") != loop_breaker or (loop_breaker == "on" and lb.get("k") != DEFAULT_K):
             return f"loop breaker {lb.get('mode')} k {lb.get('k')}"
+    if mask_drop_potion is not None and bool(cfg.get("mask_drop_potion", False)) != bool(mask_drop_potion):
+        return f"DiscardPotion mask {'on' if cfg.get('mask_drop_potion') else 'off'}, not " \
+               f"{'on' if mask_drop_potion else 'off'}"
     if eval_mode is not None:            # an execution-mode row (sts2train.evaluate): the same mode, seed and play
         m = cfg.get("eval_mode") or {}
         if m.get("name") != eval_mode:
@@ -612,7 +615,9 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
         used.add(name)
         runs = []
         d = out / "evals" / name
-        reason = stale_reason(d, ss, library_version=lib["version"], weights_hash=wh, loop_breaker="on")
+        mask_dp = bool(getattr(model, "mask_drop_potion", False))   # the checkpoint's (load_checkpoint)
+        reason = stale_reason(d, ss, library_version=lib["version"], weights_hash=wh, loop_breaker="on",
+                              mask_drop_potion=mask_dp)
         if reason is None:
             log(f"[{sid}] greedy eval: reusing {d}")
         else:
@@ -628,7 +633,8 @@ def report_card(checkpoint, out, *, seedsets=DEFAULT_SEEDSETS, threads: int = 4,
             pol, br = parse_mode(m)
             md = out / "evals" / f"{name}@{m}"
             mr = stale_reason(md, ss, library_version=lib["version"], weights_hash=wh,
-                              loop_breaker="on" if br else "off", eval_mode=m, sample_seed=int(sample_seed))
+                              loop_breaker="on" if br else "off", eval_mode=m, sample_seed=int(sample_seed),
+                              mask_drop_potion=mask_dp)
             if mr is None:
                 log(f"[{sid}] {m} eval: reusing {md}")
             else:

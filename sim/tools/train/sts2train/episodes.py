@@ -24,6 +24,11 @@ Rows (``EpisodeLog.write``; one JSON object per line, appended once per update, 
   progress, and ``progress - start_progress``.
 - ``boss_bonus_total`` / ``boss2_kills`` (wave 17, only with ``--boss-bonus`` != 0): the boss bonus paid in the
   episode (part of ``return``) and its act-2+ boss kills (``objective.EpisodeRewards``).
+- ``boss_death_hp_frac`` / ``boss_death_fight_frac`` / ``boss_death_encounter`` (wave 20, always on; only on rows that
+  ended by a death or step cap inside an act-boss fight of act >= ``--boss-hp-min-act``): the per-act fraction of the
+  boss HP removed (``sts2train.bosshp``: ``(k + f) / n`` over the act's n boss fights), the death fight's own fraction f
+  and its encounter id. ``boss_hp_bonus_total`` (only with ``--boss-hp-bonus`` != 0, every row): the boss HP bonus paid
+  in the episode (part of ``return``).
 - ``cycles``: the verified UI revisit cycles (``sts2train.cycles``: rest-site / shop prompt -> cancel back to the same
   observation) the episode closed, counted with or without ``--cycle-cost`` (null on ``dropped`` / ``start_failed``
   rows); the per-cycle rows (path, room, floor) are in ``cycles.jsonl``.
@@ -64,7 +69,8 @@ from .runlog import JsonlWriter
 END_RESULT = {2: "trunc", 3: "error", 4: "error", 5: "stall"}     # EndKind (sim/Sts2Sim.Vec/Status.cs) -> result
 BASE_KEYS = ("update", "session", "slot", "seed_text", "n", "result", "act", "floor", "steps", "progress", "return",
              "end_kind", "cycles", "start_kind", "start_act", "start_floor", "start_progress", "progress_gain",
-             "boss_bonus_total", "boss2_kills")
+             "boss_bonus_total", "boss2_kills", "boss_death_hp_frac", "boss_death_fight_frac", "boss_death_encounter",
+             "boss_hp_bonus_total")
 
 EpisodeHook = Callable[[dict], "Mapping | None"]
 
@@ -153,6 +159,12 @@ class EpisodeLog:
             if "boss_bonus_total" in e:
                 row["boss_bonus_total"] = _r(e["boss_bonus_total"])
                 row["boss2_kills"] = int(e.get("boss2_kills", 0))
+            if "boss_death_hp_frac" in e:
+                row.update(boss_death_hp_frac=_r(e["boss_death_hp_frac"]),
+                           boss_death_fight_frac=_r(e.get("boss_death_fight_frac")),
+                           boss_death_encounter=e.get("boss_death_encounter"))
+            if "boss_hp_bonus_total" in e:
+                row["boss_hp_bonus_total"] = _r(e["boss_hp_bonus_total"])
             row.update(e.get("fields") or {})
             self._write(row)
 

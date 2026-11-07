@@ -647,19 +647,22 @@ def evaluate_lookahead(seedset, checkpoint, out, cfg: LookaheadConfig | None = N
     pol = LookaheadPolicy(model, spec, cfg, content=ss["content"], win_bonus=_win_bonus(ck), dll=dll, log=log,
                           record=hook)
     name = f"nn:{Path(checkpoint).name}+{cfg.label}"
+    mask_dp = bool(getattr(model, "mask_drop_potion", False))     # the checkpoint's --mask-drop-potion (load_checkpoint)
+    if mask_dp:
+        name += ":mask-drop-potion"
     search = dict(cfg.search(), threads=cfg.threads, pool_budget=cfg.pool_budget, device=cfg.device,
                   win_bonus=pol.win_bonus, tie_eps=TIE_EPS, hp_w=HP_W, enemy_w=ENEMY_W, sha8=cfg.sha8)
     t0 = time.monotonic()
     try:
         rep = vec_evaluate(
             ss, pol, out, threads=cfg.threads, step_cap=step_cap, floor_step_cap=floor_step_cap, policy_name=name,
-            policy_hash=f"weights:{wh}+la:{cfg.sha8}", log=log, dll=dll,
+            policy_hash=f"weights:{wh}+la:{cfg.sha8}" + ("+mask-drop-potion" if mask_dp else ""), log=log, dll=dll,
             summary_extra={"weights_hash": wh, "lookahead": cfg.search()},
             config_extra={"model": "sts2train entity-encoder PPO", "checkpoint": str(checkpoint), "weights_hash": wh,
                           "params": sum(p.numel() for p in model.parameters()), "arch": getattr(model, "arch", None),
                           "device": cfg.device, "greedy": False, "checkpoint_encoder_version": spec.encoder_version,
                           "resume_compat": compat, "search": search, "information": "determinized, combat-only",
-                          "mirror_env": True})
+                          "mirror_env": True, "mask_drop_potion": mask_dp})
     finally:
         pol.close()
         if rec_f:

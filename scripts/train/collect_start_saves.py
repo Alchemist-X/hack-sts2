@@ -13,7 +13,9 @@ dependency on it): character, ascension, act, the floor the sim starts on (the s
 "entering a map point": the sim enters that room), the room type, HP, gold, deck, relics; the session's
 ``manifest.json`` adds the game version and the run seed.
 
-Filters: ``--character`` (e.g. SILENT), ``--ascension N``, ``--min-floor N``; saves the sim's importer rejects
+Filters: ``--character`` (e.g. SILENT), ``--ascension N``, ``--min-floor N``, ``--act N`` (1-based act of the saved
+state), ``--max-floors-to-boss N`` (keep saves whose act floor is at most N floors before the act's first boss floor;
+the boss floors themselves, the A10 second boss (-1) and boss Rewards screens (0) included); saves the sim's importer rejects
 regardless of content (another schema, non-standard mode, modifiers, multiplayer) are skipped. ``--check`` also imports
 every candidate with sts2vec (``env.pool.add_save`` + the first observation, content ``ported_only`` like the trainer)
 and skips the ones that fail, with the importer's reasons; it needs the sts2vec package and a built library (run it
@@ -21,7 +23,14 @@ with ``uv run --project sim/tools/vec``).
 
 Output: ``DIR/<CHARACTER>_A<asc>_f<floor>_<run seed>_<sha256[:8]>.save`` (byte copies, de-duplicated by sha256) and
 ``DIR/manifest.json`` (filters, counts, total bytes, floor / act / room histograms, skipped and duplicate files, and
-one row per save: file, session, source, sha256, bytes, character, ascension, act, floor, entry point, room type, ...).
+one row per save: file, session, source, sha256, bytes, character, ascension, act, floor, act floor, floors to boss,
+boss ids, entry point, room type, deck size, upgraded cards, ...).
+
+Act floor = the save's map-point count in the current act (the act's Ancient start point counts as floor 1), + 1 when
+entering a map point, so it equals the current map row + 1; the act's first boss sits on act floor ``boss row + 1``
+(``acts[i].saved_map.boss.coord.row``), and ``floors_to_boss`` = boss act floor - act floor (0 on the first boss and its
+Rewards screen, -1 on the A10 second boss). ``--sessions`` may also be a staging tree of symlinks laid out as
+``<session>/native/saves/*.save`` (e.g. to re-filter an existing pool); the copies are made from the link targets.
 ``--out`` must be empty or new unless ``--clean`` (removes its ``*.save`` files and manifest first).
 """
 
@@ -99,11 +108,21 @@ def describe(data: dict) -> dict:
     else:
         entry, room, floor = "no_visited_coord", "map", floors
     rng = data.get("rng") if isinstance(data.get("rng"), dict) else {}
+    act = acts[ai] if 0 <= ai < len(acts) and isinstance(acts[ai], dict) else {}
+    act_hist = history[ai] if 0 <= ai < len(history) and isinstance(history[ai], list) else []
+    act_floor = len(act_hist) + (1 if entry == "entering_map_point" else 0)
+    sm = act.get("saved_map") if isinstance(act.get("saved_map"), dict) else {}
+    boss = _coord((sm.get("boss") or {}).get("coord")) if isinstance(sm.get("boss"), dict) else None
+    rooms = act.get("rooms") if isinstance(act.get("rooms"), dict) else {}
+    deck = [c for c in p.get("deck") or [] if isinstance(c, dict)]
     return {"character": strip(p.get("character_id")), "ascension": data.get("ascension"), "act": ai + 1,
-            "floor": floor, "history_floors": floors, "entry_point": entry, "room_type": room,
+            "floor": floor, "history_floors": floors, "act_floor": act_floor,
+            "floors_to_boss": boss[1] + 1 - act_floor if boss is not None else None,
+            "boss_id": strip(rooms.get("boss_id")) or None, "second_boss_id": strip(rooms.get("second_boss_id")) or None,
+            "entry_point": entry, "room_type": room,
             "hp": p.get("current_hp"), "max_hp": p.get("max_hp"), "gold": p.get("gold"),
-            "deck_n": len(p.get("deck") or []), "relic_n": len(p.get("relics") or []),
-            "run_seed": rng.get("seed"), "reasons": reasons}
+            "deck_n": len(p.get("deck") or []), "upgraded_n": sum(1 for c in deck if (c.get("current_upgrade_level") or 0) > 0),
+            "relic_n": len(p.get("relics") or []), "run_seed": rng.get("seed"), "reasons": reasons}
 
 
 def session_info(session_dir: Path, cache: dict) -> dict:
@@ -161,6 +180,9 @@ def main(argv=None) -> int:
     ap.add_argument("--character", help="keep only this character (e.g. SILENT)")
     ap.add_argument("--ascension", type=int, help="keep only this ascension")
     ap.add_argument("--min-floor", dest="min_floor", type=int, default=0, help="keep saves starting on floor >= N")
+    ap.add_argument("--act", type=int, help="keep only saves whose state is in this act (1-based)")
+    ap.add_argument("--max-floors-to-boss", dest="max_floors_to_boss", type=int,
+                    help="keep saves at most N floors before the act's first boss floor (boss floors included)")
     ap.add_argument("--check", action="store_true", help="import every candidate with sts2vec; skip the failures")
     ap.add_argument("--clean", action="store_true", help="remove --out's *.save files and manifest.json first")
     a = ap.parse_args(argv)
@@ -212,6 +234,12 @@ def main(argv=None) -> int:
         if d["floor"] < a.min_floor:
             filtered["min_floor"] += 1
             continue
+        if a.act is not None and d["act"] != a.act:
+            filtered["act"] += 1
+            continue
+        if a.max_floors_to_boss is not None and (d["floors_to_boss"] is None or d["floors_to_boss"] > a.max_floors_to_boss):
+            filtered["max_floors_to_boss"] += 1
+            continue
         if d["reasons"]:
             skipped.append({"source": rel, "reason": "; ".join(d["reasons"])})
             continue
@@ -234,10 +262,13 @@ def main(argv=None) -> int:
         shutil.copyfile(src, out / row["file"])          # read the source, write the copy; the source is untouched
     rows = [r for _, r in kept]
     total = sum(r["bytes"] for r in rows)
-    hist = {k: dict(sorted(Counter(r[k] for r in rows).items(), key=lambda kv: str(kv[0]) if k != "floor" else kv[0]))
-            for k in ("floor", "act", "entry_point", "room_type", "ascension", "character")}
+    num = ("floor", "floors_to_boss")
+    hist = {k: dict(sorted(Counter(r[k] for r in rows).items(),
+                           key=lambda kv: (kv[0] is None, kv[0] or 0) if k in num else (0, str(kv[0]))))
+            for k in ("floor", "act", "floors_to_boss", "entry_point", "room_type", "ascension", "character")}
     manifest = {"created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "sessions_root": str(root),
-                "filters": {"character": character, "ascension": a.ascension, "min_floor": a.min_floor},
+                "filters": {"character": character, "ascension": a.ascension, "min_floor": a.min_floor,
+                            "act": a.act, "max_floors_to_boss": a.max_floors_to_boss},
                 "checked_with_sim": check is not None, "sim_library": check.library if check else None,
                 "source_files": len(sources), "count": len(rows), "bytes_total": total, "histograms": hist,
                 "filtered_out": dict(filtered), "skipped": skipped, "duplicates": duplicates, "saves": rows}
@@ -249,6 +280,7 @@ def main(argv=None) -> int:
         print(f"  skipped x{n}: {r}")
     print(f"  act {hist['act']}")
     print(f"  floor " + " ".join(f"{k}:{v}" for k, v in hist["floor"].items()))
+    print(f"  floors to boss {hist['floors_to_boss']}")
     print(f"  entry point {hist['entry_point']}")
     print(f"  room type {hist['room_type']}")
     return 0

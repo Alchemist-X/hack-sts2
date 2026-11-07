@@ -18,6 +18,12 @@ Optional parts (``MODEL_FLAGS``, off by default; with all of them off this is ex
 the combat piles by a count-aware bag (each distinct card weighted log(1 + copies)), adds deck count features (size,
 distinct cards, upgraded / enchanted / afflicted cards) and gives the candidate scorer the number of copies of the
 candidate's card in the deck.
+
+Runtime switch (not architecture: no parameters, the state_dict and weights hash are unchanged): ``mask_drop_potion``
+(wave 20, ``--mask-drop-potion``; ``Policy.set_mask_drop_potion``) treats the legal DiscardPotion rows as illegal
+(logit NEG, like the rows past cand_n) unless the belt is full and a potion is on offer (``drop_potion_masked``).
+Every logit consumer goes through ``forward``, so rollout sampling, the PPO update's log-probs / ratio / entropy and
+every evaluation see the same masked distribution. Off = the forward above, op for op.
 """
 
 from __future__ import annotations
@@ -54,6 +60,13 @@ ARCH_DEFAULTS = PRESETS["smoke"]
 # on the state (sts2train.heads); `deck_counts` = count-aware deck / pile pooling (Policy._deck_bag). A checkpoint's
 # "arch" lists the ones that are on; `arch_of` defaults the rest to off.
 MODEL_FLAGS = ("aux_heads", "deck_counts")
+# --mask-drop-potion (wave 20; `Policy.drop_potion_masked`): the RunActionKind of a potion drop row, the RewardType of a
+# potion reward and the ShopCategory of a shop potion. Specs written before 2026-11-04 record no ShopCategory names:
+# its members are then Vocab.cs ShopCategoryIds behind the vocabulary convention ("" at 0, "?" at 1), checked by size.
+DROP_POTION_KIND = "DiscardPotion"
+POTION_REWARD = "Potion"
+POTION_SHOP_CATEGORY = "potion"
+SHOP_CATEGORY_NAMES = ("", "?", "card", "colorless_card", "relic", "potion", "card_removal")
 DECK_STATS = 7      # deck_counts: size / distinct / upgraded / enchanted / afflicted counts of the deck (_deck_stats)
 PILE_STATS = 6      # deck_counts: distinct ids and upgraded copies of each combat pile (_piles)
 # Embedding tables sized by an enum the model embeds (features.ENUMS) -> their modules in `Policy`. A checkpoint whose
@@ -160,6 +173,7 @@ class Policy(nn.Module):
         self.d, self.s = d, s
         self.depth, self.heads, self.ff_mult = depth, heads, ff_mult
         self.grad_ckpt = False   # runtime switch (not architecture): recompute trunk blocks in backward
+        self.mask_drop_potion = False   # runtime switch (not architecture): set_mask_drop_potion
         V, E = spec.vocab, spec.enums
         self.card_emb = nn.Embedding(V["cards"], 48, padding_idx=0)
         self.relic_emb = nn.Embedding(V["relics"], 32, padding_idx=0)
@@ -288,6 +302,7 @@ class Policy(nn.Module):
         self.register_buffer("kind_prompt", is_prompt, persistent=False)
         pik = spec.enum_names["PromptItemKind"]
         self._pik_card, self._pik_relic, self._pik_potion = pik.index("card"), pik.index("relic"), pik.index("potion")
+        self._drop_ids = self._drop_potion_ids(spec)     # python ints only (no parameter, no buffer, no RNG draw)
 
         # MODEL_FLAGS parts come last: with them off this is the model above parameter for parameter, and with them on
         # every other parameter starts from the same values (the same draws of the init RNG).
@@ -301,6 +316,65 @@ class Policy(nn.Module):
             ha = max(s // 4, 16)
             self.win_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
             self.combat_head = nn.Sequential(nn.Linear(s, ha), nn.ReLU(), nn.Linear(ha, 1))
+
+    # ------------------------------------------------------------------------------------------------ drop mask
+
+    @staticmethod
+    def _drop_potion_ids(spec: ModelSpec) -> dict | str:
+        """The enum values / columns `drop_potion_masked` reads, or why the spec cannot drive the mask (a string)."""
+        names = spec.enum_names or {}
+        kinds, rtypes = names.get("RunActionKind") or [], names.get("RewardType") or []
+        shop = names.get("ShopCategory")
+        if shop is None and spec.enums.get("ShopCategory") == len(SHOP_CATEGORY_NAMES):
+            shop = list(SHOP_CATEGORY_NAMES)
+        for what, lst, name in (("RunActionKind", kinds, DROP_POTION_KIND), ("RewardType", rtypes, POTION_REWARD),
+                                ("ShopCategory", shop or [], POTION_SHOP_CATEGORY)):
+            if name not in lst:
+                return f"the spec's {what} names do not list {name!r}"
+        C = spec.cols
+        try:
+            return {"kind": kinds.index(DROP_POTION_KIND), "reward": rtypes.index(POTION_REWARD),
+                    "shop": list(shop).index(POTION_SHOP_CATEGORY), "kind_col": C["cand"]["kind"],
+                    "slots_col": C["global_i"]["potion_slots"], "potion_col": C["potions"]["potion_id"],
+                    "reward_col": C["rewards"]["reward_type"], "cat_col": C["shop"]["category"],
+                    "stocked_col": C["shop"]["stocked"], "afford_col": C["shop"]["affordable"]}
+        except KeyError as e:
+            return f"the spec has no column {e}"
+
+    def set_mask_drop_potion(self, on: bool) -> None:
+        """Turn the DiscardPotion mask on / off (`drop_potion_masked`; a runtime switch: set it before torch.compile
+        traces the forward). Refused when the model's spec cannot express it."""
+        on = bool(on)
+        if on and isinstance(self._drop_ids, str):
+            raise ValueError(f"--mask-drop-potion: {self._drop_ids}")
+        self.mask_drop_potion = on
+
+    def drop_potion_masked(self, x: dict[str, torch.Tensor], valid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """(masked [B, C] bool: the legal rows the DiscardPotion mask removes, fallback [B] bool) for the inputs `x`
+        and the legal rows `valid` [B, C] (j < cand_n).
+
+        A legal DiscardPotion row stays only when the belt is full (potions held, rows with a potion id, >= the
+        global_i.potion_slots of the run, > 0) and a potion is on offer: an unclaimed Potion reward on the rewards
+        screen (the rewards table is written in the Rewards / CardReward phases only; with a full belt the reward's
+        ClaimReward row is withheld, so a drop is the only way to take it) or a stocked, affordable potion in the shop
+        (likewise: no BuyEntry row with a full belt). Everywhere else (combat, map, rest site, event, treasure) it is
+        removed; potions offered by events are not readable from the observation and so never keep a drop row.
+        `fallback`: decisions whose legal rows would all be removed; they keep every legal row (nothing masked).
+        Per-sample and per-row, so it does not depend on how many candidate rows the batch carries."""
+        ids = self._drop_ids
+        if isinstance(ids, str):
+            raise ValueError(f"--mask-drop-potion: {ids}")
+        drop = (x["cand"][..., ids["kind_col"]] == ids["kind"]) & valid
+        slots = x["global_i"][:, ids["slots_col"]]
+        held = (x["potions"][..., ids["potion_col"]] != 0).sum(1)
+        full = (slots > 0) & (held >= slots)
+        sh = x["shop"]
+        offer = (x["rewards"][..., ids["reward_col"]] == ids["reward"]).any(1) \
+            | ((sh[..., ids["cat_col"]] == ids["shop"]) & (sh[..., ids["stocked_col"]] != 0)
+               & (sh[..., ids["afford_col"]] != 0)).any(1)
+        masked = drop & ~(full & offer).unsqueeze(1)
+        fallback = masked.any(1) & ~(valid & ~masked).any(1)
+        return masked & ~fallback.unsqueeze(1), fallback
 
     # ------------------------------------------------------------------------------------------------ tables
 
@@ -576,9 +650,10 @@ class Policy(nn.Module):
         return state, h[:, o:o + H], h[:, o + H:o + H + E], h[:, o + H + E:]
 
     def forward(self, x: dict[str, torch.Tensor], aux: bool = False):
-        """-> (logits [B, C] float32, masked to j < cand_n, value [B] float32); with `aux` (a model with aux_heads)
-        also the heads' logits {"win_logit": [B], "combat_logit": [B]} float32 (sts2train.heads: win_prob =
-        sigmoid(win_logit), combat_hp_pred = sigmoid(combat_logit))."""
+        """-> (logits [B, C] float32, masked to j < cand_n (and, with mask_drop_potion, the removed DiscardPotion rows),
+        value [B] float32); with `aux` (a model with aux_heads) also the heads' logits {"win_logit": [B],
+        "combat_logit": [B]} float32 (sts2train.heads: win_prob = sigmoid(win_logit), combat_hp_pred =
+        sigmoid(combat_logit))."""
         if aux and not self.aux_heads:
             raise ValueError("forward(aux=True) needs a model built with aux_heads=True")
         state, tables = self.encode(x)
@@ -614,6 +689,8 @@ class Policy(nn.Module):
         h2 = F.relu(self.c_l2(h1))
         logits = (h2 * self.q_state(state).unsqueeze(1)).sum(-1) / math.sqrt(self.d) + self.c_bias(h2).squeeze(-1)
         valid = torch.arange(Cn, device=cand.device).view(1, -1) < x["cand_n"].view(-1, 1)
+        if self.mask_drop_potion:       # --mask-drop-potion: the removed DiscardPotion rows join the illegal ones
+            valid = valid & ~self.drop_potion_masked(x, valid)[0]
         logits = logits.float().masked_fill(~valid, NEG)          # float32 even under autocast
         if aux:
             return logits, value.float(), {"win_logit": self.win_head(state).squeeze(-1).float(),

@@ -514,7 +514,7 @@ class OverlapRollout:
         """After ``env.reset()``: every lane's trackers see the first observations (as ``train`` does for one env)."""
         for L in self.lanes:
             o, info = self._views(L), self.pair.lane_info(L.k)
-            L.rewards.reset(o["aux"], start_entry=info["start_entry"])
+            L.rewards.reset(o["aux"], start_entry=info["start_entry"], obs=o)
             if L.shaper is not None:
                 L.shaper.reset(o["aux"], o["deck"])
             L.cycles.observe(o, episode_ids=info["episode_id"])
@@ -587,7 +587,7 @@ class OverlapRollout:
             done = (term | trunc).astype(bool)
             if L.breaker is not None:
                 L.breaker.reset(done)
-            r, fin = L.rewards.step(rew, done, info["last_episode"], o["aux"], start_entry=info["start_entry"])
+            r, fin = L.rewards.step(rew, done, info["last_episode"], o["aux"], start_entry=info["start_entry"], obs=o)
             for e in fin:
                 e["slot"] = int(e["slot"]) + lo                 # global slot numbers from here on
             if done.any():

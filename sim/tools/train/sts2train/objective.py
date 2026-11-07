@@ -23,6 +23,14 @@ or past it, is not paid for that kill; counted as ``boss2_transitions_unearned``
 it) and ``boss2_kills`` (act-2+ boss kills: transitions k >= 1 plus a win), and ``pop_boss_counts`` gives the trainer's
 per-update counts. A save start that begins in act 2 is paid on its act-2 boss kill like any other episode; a slot's
 first observation (reset / auto-reset / save / anchor start) never pays (no transition is observed there).
+``boss_hp_bonus`` (``--boss-hp-bonus B``, wave 20, any objective; default 0 = off, rewards bit-identical): with the
+library schema and the full observation passed (``schema=``, ``reset(..., obs=)`` / ``step(..., obs=)``), every
+finished episode that ended by a death (``end_kind`` 1, not a win) or a step cap (``end_kind`` 2) while its last decision
+was in an act-boss fight of act >= ``boss_hp_min_act`` carries ``boss_death_hp_frac`` (``sts2train.bosshp``: the
+per-act fraction of the boss HP removed, measured from the fight's first decision the episode observed; always on, a
+diagnostic) plus ``boss_death_fight_frac`` / ``boss_death_encounter``; with B != 0 the terminal step's reward gets
+``B * boss_death_hp_frac`` (part of the return, never of progress / ``start_progress`` / ``progress_gain``) and every
+finished episode carries ``boss_hp_bonus_total``. ``boss_hp_stats`` gives the trainer's per-update metrics.
 ``win``: the env's own reward (1 at a Victory terminal, else 0; CONTRACTS.md D5).
 ``AcqShaping`` (``--acq-shaping``, any objective): potential-based shaping for deck size, relics and upgrades on top
 of the objective's reward; the trainer logs it apart, and episode returns / progress stay the objective's.
@@ -67,11 +75,15 @@ class EpisodeRewards:
     ``start_act`` (1-based), ``start_progress`` (protocol progress of its first observation: 0 for a fresh run, the
     save's progress for a save start) and ``progress_gain`` = ``progress - start_progress`` (for the protocol
     objective: the return without the win bonus and the boss bonus). With ``boss_bonus`` != 0 also ``boss_bonus_total``
-    and ``boss2_kills`` (module docstring).
+    and ``boss2_kills`` (module docstring). With ``schema`` and ``obs`` (``reset(..., obs=)`` / ``step(..., obs=)``: the
+    full new observation; ``obs["aux"]`` is ``aux``) the boss-HP fields ``boss_death_hp_frac`` / ``boss_death_fight_frac``
+    / ``boss_death_encounter`` on boss-fight deaths of act >= ``boss_hp_min_act``, and with ``boss_hp_bonus`` != 0
+    ``boss_hp_bonus_total`` on every finished episode (module docstring; ``sts2train.bosshp``).
     """
 
     def __init__(self, objective: str, aux_fields, last_episode_fields, num_envs: int, ascension: int = 0,
-                 win_bonus: float = 1.0, shaped_floors: float = 48.0, boss_bonus: float = 0.0):
+                 win_bonus: float = 1.0, shaped_floors: float = 48.0, boss_bonus: float = 0.0,
+                 boss_hp_bonus: float = 0.0, boss_hp_min_act: int = 2, schema=None):
         if objective not in OBJECTIVES:
             raise ValueError(f"objective {objective!r}: expected one of {OBJECTIVES}")
         self.objective = objective
@@ -97,6 +109,23 @@ class EpisodeRewards:
         fields = list(aux_fields)
         self._comb = fields.index("is_combat") if "is_combat" in fields else None
         self.seen_combat = np.ones(num_envs, dtype=bool)      # a combat observed in the current act of the episode
+        # --boss-hp-bonus / boss_death_hp_frac (sts2train.bosshp): per-slot boss-fight state of the decision observations
+        self.boss_hp_bonus = float(boss_hp_bonus)
+        self.boss_hp_min_act = int(boss_hp_min_act)
+        self.boss_hp = None
+        self.boss_hp_missing: list[str] = [] if schema is not None else ["schema"]
+        if schema is not None:
+            from .bosshp import BossHpTracker
+
+            self.boss_hp = BossHpTracker(schema, num_envs, ascension=ascension, min_act=boss_hp_min_act)
+            self.boss_hp_missing = list(self.boss_hp.missing)
+            if not self.boss_hp.ok:
+                if self.boss_hp_bonus != 0.0:
+                    raise ValueError(f"--boss-hp-bonus needs the library's {self.boss_hp.missing}")
+                self.boss_hp = None
+        elif self.boss_hp_bonus != 0.0:
+            raise ValueError("boss_hp_bonus != 0 needs the library schema (EpisodeRewards(..., schema=env.schema))")
+        self.boss_hp_paid = np.zeros(num_envs, dtype=np.float64)
 
     def pop_boss_counts(self) -> dict:
         """Act-2+ boss kills since the last call (``boss2_kills`` = ``boss2_kills_transition`` (act k -> k + 1 with
@@ -124,7 +153,7 @@ class EpisodeRewards:
         if start_entry is not None:
             self.start_entry[slots] = np.asarray(start_entry, dtype=np.int64)[slots]
 
-    def reset(self, aux: np.ndarray, start_entry: np.ndarray | None = None) -> None:
+    def reset(self, aux: np.ndarray, start_entry: np.ndarray | None = None, obs: dict | None = None) -> None:
         self.tracker.observe(aux)
         self._key[:] = -1
         self._refresh()
@@ -135,10 +164,18 @@ class EpisodeRewards:
             self.seen_combat = np.asarray(aux)[:, self._comb] != 0
         self.start_entry[:] = -1
         self._mark_starts(np.ones(self.n, dtype=bool), start_entry)
+        self.boss_hp_paid[:] = 0.0
+        if self.boss_hp is not None:
+            self.boss_hp.clear()
+            if obs is not None:
+                self.boss_hp.observe(obs)
 
     def step(self, env_reward: np.ndarray, done: np.ndarray, last_episode: np.ndarray,
-             aux: np.ndarray, start_entry: np.ndarray | None = None) -> tuple[np.ndarray, list[dict]]:
+             aux: np.ndarray, start_entry: np.ndarray | None = None,
+             obs: dict | None = None) -> tuple[np.ndarray, list[dict]]:
         done = np.asarray(done, dtype=bool)
+        if obs is None and self.boss_hp_bonus != 0.0:
+            raise ValueError("boss_hp_bonus != 0: EpisodeRewards.step needs obs= (the full new observation)")
         old_p = self.progress.copy()
         old_floor = self.tracker.prev[:, 1].copy()
         old_act = self.tracker.prev[:, 0].copy()
@@ -181,6 +218,26 @@ class EpisodeRewards:
                 r[kill] += self.boss_bonus
                 self.boss_paid[kill] += self.boss_bonus
                 W["boss_bonus_sum"] += self.boss_bonus * (n_tr + len(wins))
+        # boss-HP fraction of the episodes that ended (death / step cap) inside an act-boss fight: from the tracker's
+        # state, i.e. the slot's last decision observation (obs is already the auto-reset successor's)
+        bh = {}
+        if self.boss_hp is not None:
+            for e in finished:
+                if e["win"] or e["end_kind"] not in (1, 2):
+                    continue
+                m = self.boss_hp.end(e["slot"])
+                if m is not None:
+                    bh[e["slot"]] = m
+            if self.boss_hp_bonus != 0.0:
+                for i, m in bh.items():
+                    pay = self.boss_hp_bonus * m["frac"]
+                    r[i] += pay
+                    self.boss_hp_paid[i] += pay
+            if obs is not None:
+                self.boss_hp.clear(done)
+                self.boss_hp.observe(obs)
+            else:                                   # no observation: the slots' fight state is unknown from here on
+                self.boss_hp.clear()
         self.ret += r
         for e in finished:
             i = e["slot"]
@@ -191,11 +248,34 @@ class EpisodeRewards:
             if self.boss_bonus != 0.0:
                 e["boss_bonus_total"] = float(self.boss_paid[i])
                 e["boss2_kills"] = int(self.boss_kills[i])
+            m = bh.get(i)
+            if m is not None:
+                e.update(boss_death_hp_frac=float(m["frac"]), boss_death_fight_frac=float(m["fight_frac"]),
+                         boss_death_encounter=m["encounter"])
+            if self.boss_hp_bonus != 0.0:
+                e["boss_hp_bonus_total"] = float(self.boss_hp_paid[i])
         self.ret[done] = 0.0
+        self.boss_hp_paid[done] = 0.0
         self.boss_paid[done] = 0.0
         self.boss_kills[done] = 0
         self._mark_starts(done, start_entry)        # auto-reset: the next episodes' first observations
         return r.astype(np.float32), finished
+
+
+def boss_hp_stats(eps: list[dict], min_act: int = 2) -> dict:
+    """Per-update boss-HP metrics of the finished episodes `eps` (``EpisodeRewards.step`` dicts): ``boss_deaths`` (episodes
+    that ended by a death / step cap inside an act-boss fight of act >= `min_act`) and ``boss_death_hp_frac_mean``
+    (their mean ``boss_death_hp_frac``; None without any), the same per act (``boss_deaths_act{a}`` /
+    ``boss_death_hp_frac_mean_act{a}`` for a = `min_act` .. 3) and ``boss_hp_bonus_sum`` (the ``--boss-hp-bonus`` paid;
+    0 with the bonus off: the deaths are measured anyway)."""
+    fr = [(int(e["act"]), float(e["boss_death_hp_frac"])) for e in eps if e.get("boss_death_hp_frac") is not None]
+    out = {"boss_deaths": len(fr), "boss_death_hp_frac_mean": float(np.mean([f for _, f in fr])) if fr else None}
+    for a in range(int(min_act), 4):
+        fa = [f for x, f in fr if x == a]
+        out[f"boss_deaths_act{a}"] = len(fa)
+        out[f"boss_death_hp_frac_mean_act{a}"] = float(np.mean(fa)) if fa else None
+    out["boss_hp_bonus_sum"] = round(sum(float(e.get("boss_hp_bonus_total") or 0.0) for e in eps), 6)
+    return out
 
 
 ACQ_DEFAULTS = {"deck": 0.003, "relic": 0.01, "upgrade": 0.004}

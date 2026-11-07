@@ -88,10 +88,14 @@ class LoopBreaker:
 
     ``num_envs`` may be left out: the arrays are sized at the first call. `spec` is the library's (the one the env's
     observations follow): the leave kinds resolve by name against its RunActionKind members (`leave_kinds`, in
-    `LEAVE_KINDS` order; a name the library does not have is left out) and the kind column is its ``cand.kind``."""
+    `LEAVE_KINDS` order; a name the library does not have is left out) and the kind column is its ``cand.kind``.
+
+    ``skip_neg`` (a model with ``--mask-drop-potion``): rows whose incoming logit is already NEG (removed by the model's
+    own mask) never count as remaining rows, so the breaker cannot leave a slot with only masked rows; with every
+    unmasked row banned nothing is masked, as when every legal row is banned. Off: the rows below cand_n."""
 
     def __init__(self, spec: ModelSpec, num_envs: int | None = None, *, k: int = DEFAULT_K,
-                 window: int = DEFAULT_WINDOW, enabled: bool = True):
+                 window: int = DEFAULT_WINDOW, enabled: bool = True, skip_neg: bool = False):
         if int(k) < 1 or int(window) < 1:
             raise ValueError(f"loop breaker k {k} and window {window} must be >= 1")
         names = list(spec.enum_names["RunActionKind"])
@@ -101,6 +105,7 @@ class LoopBreaker:
         self.k = int(k)
         self.window = int(window)
         self.enabled = bool(enabled)
+        self.skip_neg = bool(skip_neg)
         self.digest = ObsDigest()
         self.keys: list[str] | None = None     # slot labels (the evaluator's game keys), set by the caller
         self.n = 0
@@ -155,12 +160,16 @@ class LoopBreaker:
         if not self.enabled:
             return logits
         mask = None
-        for r in np.flatnonzero(rev):
+        revs = np.flatnonzero(rev)
+        alive = None
+        if self.skip_neg:           # the model's own masked rows (NEG) are not candidates: one host copy per call
+            alive = (logits[torch.from_numpy(idx[revs]).to(logits.device)] > NEG / 10).cpu().numpy()
+        for q, r in enumerate(revs):
             s = int(idx[r])
             tried = ra[r][match[r]]
             lim = min(int(cand_n[s]), w)
             banned = set(tried.tolist())
-            ok = [j for j in range(lim) if j not in banned]
+            ok = [j for j in range(lim) if j not in banned and (alive is None or alive[q, j])]
             if not ok:              # every legal row already led back here: nothing to break
                 continue
             if len(tried) >= self.k:

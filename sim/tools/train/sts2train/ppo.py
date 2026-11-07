@@ -119,7 +119,7 @@ from .explore import KindExplorer, format_kinds, parse_kinds
 from .loopbreak import LoopBreaker
 from .model import (PRESETS, Policy, activation_bytes_per_sample, arch_of, model_arch, param_count, widen_state_dict,
                     widened_tensors)
-from .objective import OBJECTIVES, EpisodeRewards, annotate_shaping, make_shaper
+from .objective import OBJECTIVES, EpisodeRewards, annotate_shaping, boss_hp_stats, make_shaper
 from .progress import ProgressTracker
 from .runlog import CheckpointManager, JsonlWriter, atomic_torch_save, atomic_write_json, read_jsonl
 from .overlap import OVERLAP_MODES, LaneStreamEnv, OverlapRollout, VecPair
@@ -182,6 +182,9 @@ class TrainConfig:
     win_bonus: float = 1.0          # protocol objective: extra reward at a Victory terminal (progress is 1.0 there)
     boss_bonus: float = 0.0         # wave 17: one-time reward at every act-2+ boss kill (act k -> k+1, k >= 1, and the
                                     # Victory terminal on top of win_bonus); in the return, never in progress (0 = off)
+    boss_hp_bonus: float = 0.0      # wave 20: reward B x boss_death_hp_frac at the terminal step of a death / step cap in
+                                    # an act-boss fight (sts2train.bosshp); in the return, never in progress (0 = off)
+    boss_hp_min_act: int = 2        # wave 20: lowest act (1-based) whose boss fights are measured / paid
     shaped: bool = False            # LEGACY flag: same as objective="shaped" (delta(total_floor) / shaped_floors)
     shaped_floors: float = 48.0
     acq_shaping: bool = False       # potential-based acquisition shaping on top of the objective (objective.AcqShaping)
@@ -251,6 +254,8 @@ class TrainConfig:
     loop_breaker: bool = True       # the periodic eval's greedy policy runs with the loop breaker (sts2train.loopbreak)
     loop_breaker_k: int = 3         # returns to an observation before the breaker prefers leaving the screen
     rollout_loop_breaker: bool = False  # the breaker's mask on the rollout sampling distribution
+    mask_drop_potion: bool = False  # wave 20: DiscardPotion rows illegal unless the belt is full and a potion is on offer
+                                    # (model.Policy.drop_potion_masked; rollout, update and every eval of the model)
     # exploration for rare decision kinds (sts2train.explore; rollout only, never in evaluation)
     explore_kinds: str = ""         # RunActionKind names [:selector], comma-separated ("" = off)
     explore_eps: float = 0.0        # mixture weight of the uniform draw over the explore rows (0 = off)
@@ -325,6 +330,8 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
         out.loop_breaker = out.loop_breaker == "on"
     if int(out.loop_breaker_k) < 1:
         raise ValueError(f"loop_breaker_k {out.loop_breaker_k} must be >= 1")
+    if not isinstance(out.mask_drop_potion, bool):
+        raise ValueError(f"mask_drop_potion {out.mask_drop_potion!r} must be true / false")
     resolve_seeds(out, given, base)
     if out.start_mode not in START_MODES:
         raise ValueError(f"start_mode {out.start_mode!r}: expected one of {START_MODES}")
@@ -362,6 +369,12 @@ def resolve_config(given: dict, base: dict | None = None) -> TrainConfig:
     out.boss_bonus = float(out.boss_bonus)
     if not np.isfinite(out.boss_bonus):
         raise ValueError(f"boss_bonus {out.boss_bonus} must be a finite number (0 = off)")
+    out.boss_hp_bonus = float(out.boss_hp_bonus)
+    if not np.isfinite(out.boss_hp_bonus):
+        raise ValueError(f"boss_hp_bonus {out.boss_hp_bonus} must be a finite number (0 = off)")
+    out.boss_hp_min_act = int(out.boss_hp_min_act)
+    if out.boss_hp_min_act not in (1, 2, 3):
+        raise ValueError(f"boss_hp_min_act {out.boss_hp_min_act} must be 1, 2 or 3")
     out.hp_shaping_coef = float(out.hp_shaping_coef)
     if not (out.hp_shaping_coef >= 0.0 and np.isfinite(out.hp_shaping_coef)):
         raise ValueError(f"hp_shaping_coef {out.hp_shaping_coef} must be a finite number >= 0 (0 = off)")
@@ -613,8 +626,18 @@ def head_record(model: Policy) -> dict:
     return {"heads": dict(HEAD_OUTPUTS)} if getattr(model, "aux_heads", False) else {}
 
 
-def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tuple[Policy, ModelSpec, dict]:
+def checkpoint_mask_drop_potion(ck: dict | None) -> bool:
+    """--mask-drop-potion of a checkpoint's training config (checkpoints from before the option: off)."""
+    return bool(((ck or {}).get("config") or {}).get("mask_drop_potion", False))
+
+
+def load_checkpoint(path, device="cpu", library: ModelSpec | None = None,
+                    mask_drop_potion: bool | None = None) -> tuple[Policy, ModelSpec, dict]:
     """A checkpoint's model on `device` (eval mode), its spec and the checkpoint dict.
+
+    The model's DiscardPotion mask (`Policy.set_mask_drop_potion`) is `mask_drop_potion`, None = the checkpoint's
+    training config (`checkpoint_mask_drop_potion`), so every path that loads a checkpoint here (sts2train eval, the
+    report card, the probe, the lookahead) plays the policy the run trained; ``ck["mask_drop_potion"]`` records it.
 
     With `library` (the spec of the library the model will run on) the checkpoint must pass
     `features.check_spec_compat` (raises `SpecMismatch` otherwise) and ``ck["spec_compat"]`` holds the record; when it
@@ -630,6 +653,8 @@ def load_checkpoint(path, device="cpu", library: ModelSpec | None = None) -> tup
             spec = widen_spec(spec, library, widened)
     model = Policy(spec, **arch_of(ck.get("arch") or ck.get("config")))
     model.load_state_dict(widen_state_dict(ck["model"], model, widened) if widened else ck["model"])
+    ck["mask_drop_potion"] = checkpoint_mask_drop_potion(ck) if mask_drop_potion is None else bool(mask_drop_potion)
+    model.set_mask_drop_potion(ck["mask_drop_potion"])
     model.to(device).eval()
     return model, spec, ck
 
@@ -1383,6 +1408,35 @@ def check_compiled_forward(runner: "InferenceRunner", x: dict[str, torch.Tensor]
     return {"logits_rel": dl, "value_rel": dv, "tol": tol, "ok": bool(dl <= tol and dv <= tol)}
 
 
+DROP_POTION_METRICS = ("drop_potion_actions", "drop_potion_rows_masked", "drop_potion_mask_fallbacks")
+
+
+def drop_potion_stats(model: Policy, store: RolloutStore) -> dict:
+    """This rollout's DiscardPotion metrics (wave 20), from the stored model inputs and actions: drop_potion_actions
+    (decisions whose taken row is a DiscardPotion row; counted with the mask off too), drop_potion_rows_masked (legal
+    DiscardPotion rows the model's mask removed, summed over decisions) and drop_potion_mask_fallbacks (decisions
+    whose legal rows would all have been removed, played unmasked); both 0 with the mask off. The store holds the
+    very tensors the rollout forward ran on, so this is the mask the samples were drawn under (both overlap lanes)."""
+    ids = model._drop_ids
+    if isinstance(ids, str):                # a spec without the names (never the live library's)
+        return {k: (None if k == "drop_potion_actions" else 0) for k in DROP_POTION_METRICS}
+    with torch.no_grad():
+        cand = store.obs["cand"].flatten(0, 1)
+        dev = cand.device
+        ok = torch.from_numpy(store.valid.reshape(-1)).to(dev)
+        a = torch.from_numpy(store.actions.reshape(-1)).to(dev).clamp(0, cand.shape[1] - 1)
+        kind = cand[..., ids["kind_col"]].gather(1, a.view(-1, 1)).squeeze(1)
+        out = [((kind == ids["kind"]) & ok).sum()]
+        if model.mask_drop_potion:
+            x = {k: store.obs[k].flatten(0, 1) for k in ("cand", "cand_n", "global_i", "potions", "rewards", "shop")}
+            valid = torch.arange(cand.shape[1], device=dev).view(1, -1) < x["cand_n"].view(-1, 1)
+            masked, fb = model.drop_potion_masked(x, valid)
+            out += [(masked.sum(1) * ok).sum(), (fb & ok).sum()]
+        vals = torch.stack(out).cpu().tolist()
+    vals += [0] * (3 - len(vals))
+    return dict(zip(DROP_POTION_METRICS, (int(v) for v in vals)))
+
+
 class InferenceRunner:
     """The rollout's policy forward (no grad; bf16 autocast when `amp`; eager or `torch.compile`d) and the action
     sampling: `sample(x)` -> (actions, log-probs, values) on the device. The categorical distribution skips its
@@ -1563,6 +1617,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             model = Policy(spec, **arch)                   # on the CPU until the size guard has passed
         init_hash = weights_hash(model) if resume is None else None
         model.grad_ckpt = bool(cfg.grad_ckpt)
+        model.set_mask_drop_potion(cfg.mask_drop_potion)   # runtime switch: before any compile traces the forward
         n_params = param_count(model)
         act = activation_bytes_per_sample(model, spec, rows=cfg.max_rows)
         check_local_size(cfg, n_params, act, device)
@@ -1596,10 +1651,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                f"({len(guard.by_seed)} run seeds): no collision"))
         rewards = EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, cfg.envs,
                                  cfg.ascension, win_bonus=cfg.win_bonus, shaped_floors=cfg.shaped_floors,
-                                 boss_bonus=cfg.boss_bonus)
+                                 boss_bonus=cfg.boss_bonus, boss_hp_bonus=cfg.boss_hp_bonus,
+                                 boss_hp_min_act=cfg.boss_hp_min_act, schema=env.schema)
         log(f"objective: {cfg.objective}" + (f" (win bonus {cfg.win_bonus})" if cfg.objective == "protocol" else "")
             + (f"; boss bonus {cfg.boss_bonus:g} at every act-2+ boss kill (act k -> k+1 with k >= 1, and a win), in "
-               f"the return, not in progress" if cfg.boss_bonus else ""))
+               f"the return, not in progress" if cfg.boss_bonus else "")
+            + (f"; boss HP bonus {cfg.boss_hp_bonus:g} x boss_death_hp_frac at a death / step cap in an act-"
+               f"{cfg.boss_hp_min_act}+ boss fight, in the return, not in progress" if cfg.boss_hp_bonus else "")
+            + ("" if rewards.boss_hp is not None else
+               f"; boss HP fraction off (the library lacks {', '.join(rewards.boss_hp_missing)})"))
         acq_coefs = {"deck": cfg.acq_deck_coef, "relic": cfg.acq_relic_coef, "upgrade": cfg.acq_upgrade_coef}
         hp_coef = float(cfg.hp_shaping_coef)
         shaper = make_shaper(spec.aux_fields, spec.cols["deck"], cfg.envs, cfg.gamma, acq=bool(cfg.acq_shaping),
@@ -1620,9 +1680,15 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                 f"{cfg.aux_coef}; running episodes / combats at the window end: "
                 + ("bootstrapped from the heads" if cfg.aux_bootstrap else "masked"))
 
+        if cfg.mask_drop_potion:
+            log("DiscardPotion mask (--mask-drop-potion): a legal drop row stays only with a full belt and a potion on "
+                "offer (an unclaimed potion reward / a stocked, affordable shop potion); applied in the model's forward, "
+                "so rollouts, the PPO update and every eval of this model see it; metrics drop_potion_rows_masked / "
+                "drop_potion_actions / drop_potion_mask_fallbacks")
         breaker = None
         if cfg.rollout_loop_breaker:
-            breaker = LoopBreaker(spec, cfg.envs, k=cfg.loop_breaker_k)     # the library's spec: leave kinds by name
+            breaker = LoopBreaker(spec, cfg.envs, k=cfg.loop_breaker_k,     # the library's spec: leave kinds by name
+                                  skip_neg=cfg.mask_drop_potion)
             log(f"rollout loop breaker: back at an observation of its last {breaker.window} decisions a slot gives "
                 f"probability 0 to the candidates it took there; back there {cfg.loop_breaker_k} times or more, only "
                 f"the rows that leave the screen stay (when legal)")
@@ -1643,10 +1709,13 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             def lane_trackers(n: int) -> dict:
                 return {"rewards": EpisodeRewards(cfg.objective, spec.aux_fields, env.schema["last_episode"].fields, n,
                                                   cfg.ascension, win_bonus=cfg.win_bonus,
-                                                  shaped_floors=cfg.shaped_floors, boss_bonus=cfg.boss_bonus),
+                                                  shaped_floors=cfg.shaped_floors, boss_bonus=cfg.boss_bonus,
+                                                  boss_hp_bonus=cfg.boss_hp_bonus,
+                                                  boss_hp_min_act=cfg.boss_hp_min_act, schema=env.schema),
                         "shaper": make_shaper(spec.aux_fields, spec.cols["deck"], n, cfg.gamma,
                                               acq=bool(cfg.acq_shaping), acq_coefs=acq_coefs, hp_coef=hp_coef),
-                        "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k) if cfg.rollout_loop_breaker else None,
+                        "breaker": LoopBreaker(spec, n, k=cfg.loop_breaker_k, skip_neg=cfg.mask_drop_potion)
+                        if cfg.rollout_loop_breaker else None,
                         "cycles": CycleDetector(spec, n, card_name=env.schema.vocab.cards.name),
                         "run_stats": RunStats(env.schema, n) if cfg.episodes_log else None}
 
@@ -1958,7 +2027,7 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
         obs = env.reset()
         track.count_starts(None, env.info())           # pool mode: the reset's starts (stream: counted itself)
         if ov is None:
-            rewards.reset(obs["aux"], start_entry=env.info()["start_entry"])
+            rewards.reset(obs["aux"], start_entry=env.info()["start_entry"], obs=obs)
         if harvester is not None:                       # --harvest is refused with --overlap double
             harvester.reset(obs, env.info()["start_entry"])
         r_obj = None
@@ -2050,7 +2119,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
                         harvester.step(obs, done, info["start_entry"], status, upd + 1, t)
                     if breaker is not None:             # auto-reset slots start new episodes
                         breaker.reset(done)
-                    r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"])
+                    r, fin = rewards.step(rew, done, info["last_episode"], obs["aux"], start_entry=info["start_entry"],
+                                          obs=obs)
                     if done.any():
                         track.count_starts(done, info)          # pool mode: the auto-reset starts
                     if fin:
@@ -2223,6 +2293,8 @@ def train(cfg: TrainConfig, log=print, resume: dict | None = None, resume_path: 
             ss = split_stats(ep_this, starts, harvester)  # fresh_* / save_* / harvest_* ({} without saves / anchors)
             hs = harvester.pop_stats() if harvester is not None else {}
             bs = pop_boss_counts([rewards] if ov is None else [L.rewards for L in ov.lanes])   # act-2+ boss kills
+            bs.update(boss_hp_stats(ep_this, cfg.boss_hp_min_act))     # boss-fight deaths: boss HP removed (wave 20)
+            bs.update(drop_potion_stats(model, store))          # DiscardPotion rows taken / masked (wave 20)
             lb_st = {}
             if breaker is not None:
                 lb_n, no_n, cy_n = breaker.pop_counts()

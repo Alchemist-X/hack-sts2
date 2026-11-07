@@ -601,7 +601,9 @@ explorer off）都不受影响；没有存档时 stream 的开局序列逐位不
 - **Resume**：存档目录在 config 里（绝对路径），resume 保留；`--start-saves none` 关掉。
 
 **做一个池**：录制器在每次游戏存档时复制 `current_run.save`（`<sessions>/<session>/native/saves/*.save`，schema 20）。
-`scripts/train/collect_start_saves.py --out DIR --character SILENT [--ascension 10] [--min-floor 18] --check`
+`scripts/train/collect_start_saves.py --out DIR --character SILENT [--ascension 10] [--min-floor 18] [--act 3] [--max-floors-to-boss 6] --check`
+（`--act` = 存档状态所在的幕；`--max-floors-to-boss N` 保留距该幕第一个 boss ≤ N 层的存档，boss 层本身（0）和 A10 第二 boss（−1）也算；
+`--sessions` 也可以是 `<session>/native/saves/*.save` 形式的符号链接树，用来从现有池再筛）
 只读地复制它们（按 sha256 去重，`--check` 用 sts2vec 试导入并跳过失败的），并写 `DIR/manifest.json`（会话、种子、
 floor / act / 房间直方图）；A9 + A10 混合池就别给 `--ascension`。trainer 的 probe 还会再按内容去重，并跳过导入器
 不支持的存档（原因写进 config.json 的 `start_pool.skipped_files`）。manifest 只作来源记录，可选。
@@ -613,10 +615,14 @@ floor / act / 房间直方图）；A9 + A10 混合池就别给 `--ascension`。t
 | silent-a9a10-late | 122 | 121 | 1（`pre_finished_room extra_rewards are not supported`） | 61 / 60（A9 64，A10 57） | 54 / 32 / 15 / 11 / 5 / 4 | 0.650 | 2（A43U5UZ5W8BS A9，WWVGBDEYNG19 A10） |
 | silent-a10-late | 58 | 57 | 1（同上） | 27 / 30 | 24 / 13 / 8 / 7 / 3 / 2 | 0.668 | 1 |
 | silent-a10-all | 88 | 87 | 1（同上） | act 1/2/3 = 30 / 27 / 30 | 36 / 21 / 12 / 12 / 3 / 3 | 0.488 | 1 |
+| silent-a9a10-act3（wave 20，`--act 3`） | 60 | 60 | 0 | 0 / 60（A9 30，A10 30） | 26 / 16 / 9 / 5 / 2 / 2 | — | 2 |
+| silent-a9a10-act3-late（`--act 3 --max-floors-to-boss 6`） | 30 | 30 | 0 | 0 / 30（A9 15，A10 15） | 14 / 8 / 3 / 4 / 1 / 0 | — | 2 |
 
 a10-late 是 a9a10-late 的子集（57 个 sha 重合），三池并集 151 个；没有存档停在地图屏（存档点只有进房间 / 战后 Rewards /
 Ancient 之后），≈ 45% 从战斗第一回合开局；没有 holdout 碰撞；没有 pending prompt。注意多样性很低：121 个存档只来自
 2 局人类游戏（每局约 60 个存档点），determinized 副本只重采样隐藏状态，牌组 / 地图只有两种。
+两个第三幕池（`docs/diag-2026-11-06/act3-save-pools.md`）由 a9a10-late + a10-late 再筛得到；boss 战开局实际只有 3 个状态
+（A9 TEST_SUBJECT、A10 QUEEN ×5 份重存、A10 第二 boss AEONGLASS）。
 
 ### harvest ring `boss2`（`harvest.KINDS`）
 
@@ -639,6 +645,130 @@ Ancient 之后），≈ 45% 从战斗第一回合开局；没有 holdout 碰撞�
 `--copies-mode` 是 `--save-copies` 的别名。Colab 上 `/content/sts2/saves-silent-a9a10-late` 需要先把 122 个存档
 （含 manifest.json）放进去；`--save-mix 0.25` 时每个 update 约 1/4 的新局从存档开（由于存档局比 fresh 局短，
 episode 份额会更高）。
+
+## Boss HP fraction and --boss-hp-bonus (wave 20)
+
+为什么：wave 19 的三局（`docs/diag-2026-11-06/final-boss-losses.md`）都死在第三幕第一个 boss 房，协议 progress 都是
+0.958333：打掉 boss 多少 HP 不影响 progress，训练器对"这场 boss 战打得多深"没有任何信号。wave 20 加一个**常开的诊断**
+（每局 boss 战死亡记下打掉的 boss HP 比例）和一个**默认关闭的终局奖励** `--boss-hp-bonus B`。B = 0 时 reward、loss 和
+原有 metrics 逐位不变；新增的只有下面列出的 metrics 键和 boss 战死亡行上的 episodes.jsonl 字段。
+
+### 定义（`sts2train.bosshp`）
+
+- **哪些局**：结束方式是死亡（`end_kind` 1 且非胜利）或步数上限（`end_kind` 2），且该局**最后一个决策观测**在 act-boss
+  战里、act ≥ `--boss-hp-min-act`（默认 2）。act-boss 战 = `global_i.is_combat > 0` 且当前地图节点
+  （`map_nodes[map_row, map_col].point_type`）是 `Boss`；第几个 boss：`map_routes[row, col].boss_dist != 0`（第二个 boss
+  处为 −1）→ 第二个（`second_boss_id`），否则第一个（`boss_id`）。(act, floor, 第几个) 变了就是新的一场战斗。
+  胜利、FloorStall / 错误结束、boss 战外的死亡不测。auto-reset 后 step 返回的观测已经是下一局的第一个观测，所以测量用的是
+  上一步决策时的观测（`EpisodeRewards` 每步先结算结束的槽，再清空、再观测后继）。
+- **遭遇表**（`sts2train/boss_hp.json`，由 `uv run python -m sts2train.bosshp --write` 从
+  `sim/specs/inventory/{encounters,monsters}.json`、`sim/Sts2Sim.Core/Monsters/Encounters/*Boss.cs`（刷怪表）和
+  `Monsters/Defs/*.cs`（`Apply<MinionPower>` = 仆从；`TestSubject.cs` 的形态 HP 常量）生成；`tests/test_boss_hp.py`
+  重新生成并比对，`--write` 不带时只检查）：每个 boss 遭遇的**必杀单位**（仆从不算：QUEEN 的 TORCH_HEAD_AMALGAM、
+  THE_KIN 的 KIN_FOLLOWER 随首领死）及其**形态**（同一个 uid 的每条命：TEST_SUBJECT 原地复活为 111 / 212 / 313，其余
+  boss 单位只有一个形态），分 `base`（ascension < 8）和 `tough`（≥ 8 = `ToughEnemies`）两档，按每个槽的
+  `global_i.ascension` 取（存档保留自己的 ascension）。**pool** = 必杀单位所有形态 HP 之和。A8+ 的值：act 1
+  CEREMONIAL_BEAST 262、LAGAVULIN_MATRIARCH 233、SOUL_FYSH 221、THE_KIN 199、VANTOM 183、WATERFALL_GIANT 250；act 2
+  KAISER_CRAB 428（CRUSHER 219 + ROCKET 209）、KNOWLEDGE_DEMON 399、THE_INSATIABLE 341；act 3 AEONGLASS 535、QUEEN 419、
+  TEST_SUBJECT 636。观测本身给不出总量（TEST_SUBJECT 的第一个决策只看得到 max_hp 111），所以要表。
+- **剩余必杀 HP**：
+
+  ```
+  R = Σ_u  hp(u 的行) + Σ(当前形态之后的形态)     u 的行在场（当前形态 = HP 等于该行 max_hp 的形态；都不等时沿用上一个）
+           Σ(最后见到的形态之后的形态)            u 见过、行不在场（死了，或 TEST_SUBJECT 等待复活；最后一个形态之后 = 0）
+           Σ(u 的全部形态)                       u 从没见过
+  ```
+
+  行按 `enemies.uid` 对应到单位（第一次按 `monster_id` 的名字）。一场战斗的
+  **`f = clip((R_first − R_last) / pool, 0, 1)`**，R_last 取该局最后一个决策观测。
+- **挣来的规则（earned）**：R_first = **本局观测到的这场战斗的第一个决策**。fresh 局、harvest anchor 和存档开局里这就是
+  进场（anchor 在战斗第一个决策时捕获，存档从房间开头恢复），所以 f 就是本局打掉的比例；从战斗中间恢复的开局从恢复时的 HP
+  起算，人类在开局前打掉的不算。boss 的 Rewards 屏开局不是战斗，什么都不测。
+- **每幕的值（`boss_death_hp_frac`，B 付的就是它）**：**`F = (k + f) / n`**。n = 2 当该幕有第二个 boss
+  （`global_i.second_boss_id > 0`：A10 最后一幕，`AscensionLevel.DoubleBoss`），否则 1；k = 1 当死在第二个 boss 且本局
+  观测到过同一幕的第一个 boss 战（即本局杀了它），否则 0（从第二个 boss 进场的存档 k = 0）。理由：A10 第三幕第一个 boss 的
+  击杀不付 `--boss-bonus`（没有 act 过渡），progress 也只多 ≈ 0.021（48 → 49 层），按场算的 f 不单调（第一个 boss 打到 90%
+  死会比打到第二个 boss 早死更值钱）；F 在一幕的两场 boss 战上单调。按场的 f 另记为 `boss_death_fight_frac`。
+- **回退**：遭遇 id 不在表里（或没有 boss id）时，这场战斗里见过的每个敌人行都当作一个单形态单位：pool = 各自第一次见到时的
+  max_hp 之和，R_first = 第一次见到时的 HP 之和（后来召唤的也加进来），R = 在场行的当前 HP（不在场 = 0）；记录里
+  `boss_death_encounter` 照写 id 名。
+- **wave 19 三局核对**（离线：把 wave 19 回放 decisions.jsonl 里第 48 层 boss 战每个决策的敌方行喂给 `bosshp.Fight`）：SI005 TEST_SUBJECT
+  死于第三形态 287/313 → f = 349/636 = 0.549；SI116 QUEEN 最后决策 373/419 → f = 0.110（Amalgam 的伤害不算）；SI032
+  AEONGLASS 最后决策 124/535 → f = 0.768。三局都是 A10 第三幕第一个 boss，所以 F = f / 2（0.274 / 0.055 / 0.384）。
+
+### `--boss-hp-bonus B` 与 `--boss-hp-min-act A`
+
+- **奖励**：上面那些局的终局那一步 reward 加 `B × boss_death_hp_frac`。只进 reward / `return` / GAE，不进 `progress`、
+  `start_progress`、`progress_gain`（与 `--boss-bonus` 相同），eval 读数不受影响。胜利不付（那里是 `--win-bonus` 和
+  `--boss-bonus`）；建议 B < `--win-bonus`。对任意 objective 都加。
+- **记录**：episodes.jsonl 的 boss 战死亡行（常开）：`boss_death_hp_frac`（F）、`boss_death_fight_frac`（f）、
+  `boss_death_encounter`；B ≠ 0 时每行 `boss_hp_bonus_total`（本局付的 B·F）。每个 update 的 metrics（常开，
+  `objective.boss_hp_stats`）：`boss_deaths`、`boss_death_hp_frac_mean`、按幕 `boss_deaths_act{a}` /
+  `boss_death_hp_frac_mean_act{a}`（a = A .. 3，默认 act2 / act3；没有样本时 mean 为 null）、`boss_hp_bonus_sum`
+  （B = 0 时为 0）。
+- **配置**：`TrainConfig.boss_hp_bonus`（默认 0.0，非有限值报错）和 `boss_hp_min_act`（默认 2，取 1 / 2 / 3），checkpoint 的
+  config 记录它们；旧 checkpoint resume 得默认值；resume 继承，`--boss-hp-bonus 0` 关掉。`EpisodeRewards(..., schema=)` 加
+  `reset(..., obs=)` / `step(..., obs=)` 拿完整观测；训练器两个调用点和 `--overlap double` 的两个 lane 都传了。库缺列时诊断
+  自动关闭（日志说明），B ≠ 0 时报错。
+- **代价**：每步一次 `global_i` 列 gather，战斗中的槽再 gather 一次当前地图节点；只有 boss 战里的槽走 Python（≤ 6 个敌人行）。
+
+## DropPotion mask (wave 20)
+
+为什么：wave 19 的三局（`docs/diag-2026-11-06/final-boss-losses.md` §4）在 boss 前随手丢药：SI116 在地图上丢了
+FLEX_POTION，SI005 在火堆丢了 2 瓶 FOUL_POTION。丢药行在任何非 prompt 决策点都合法（战斗内 play phase、地图、Rewards、
+CardReward、Shop、RestSite、Treasure、Event，只要槽里有药），策略几乎没有理由要它，却会随机采到。`--mask-drop-potion`
+（默认关）在**策略侧**把它屏蔽掉；env / sim 不变（没有 C# 改动，库缓存不受影响）。
+
+### 定义（`model.Policy.drop_potion_masked`）
+
+- **哪一行**：env 里没有叫 DropPotion 的 kind；丢药是 `RunActionKind` `DiscardPotion`（= 3，`A` = 槽位，`potion_slot`
+  = `A`），按名字在 spec 的 `enum_names` 里查。
+- **保留条件**：一条合法（j < cand_n）的 `DiscardPotion` 行只在 **槽满** 且 **有药在供** 时保留，否则 logit 置 `NEG`
+  （与 cand_n 之后的行相同）。
+  - 槽满 = 持有药水数（`potions.potion_id != 0` 的行数）≥ `global_i.potion_slots`（> 0；POTION_BELT 等会加槽）。
+  - 有药在供 = 奖励屏上有未领取的 `Potion` 奖励（`rewards.reward_type`，该表只在 Rewards / CardReward 阶段写入，已领的行为 0），
+    或商店里有 `category == potion` 且 `stocked`、`affordable` 的条目（`shop` 表只在 Shop 阶段写入）。槽满时这两者的
+    `ClaimReward` / `BuyEntry` 行被 env 扣掉（`RewardMacros.cs`、`RunLegalActionGenerator.cs`），丢一瓶是换药的唯一路径，
+    所以不能一刀切。
+  - 读不到的：事件给的药不在观测里，事件中的丢药行一律屏蔽（文档化的取舍）；prompt 里本来就没有丢药行。
+  - 不改 `UsePotion`：策略仍可能把药浪费在使用上，这个 mask 只管丢。
+- **回退**：若一个决策的合法行全部会被屏蔽，该决策不加 mask（全部合法行照旧），计入 `drop_potion_mask_fallbacks`。
+- **位置**：在 `Policy.forward` 构造 `valid` 处，只读模型输入本身（`cand.kind`、`global_i.potion_slots`、`potions`、
+  `rewards`、`shop`，都在 `USED_BUFFERS` 里），逐样本逐行，与 batch 带多少候选行无关。开关是 Python 属性
+  （`Policy.mask_drop_potion`，`set_mask_drop_potion`），**不是** `MODEL_FLAGS`：没有参数，state_dict / weights hash /
+  参数量不变，C3 / S 的 checkpoint 可以 fork 后打开（`plan_run` 的 arch 检查不涉及它）。关时 forward 逐 op 不变。
+- 旧 spec（2026-11-04 之前，tests/data 的两个）没记录 `ShopCategory` 名字：按 `Vocab.cs` 的 `ShopCategoryIds`（"" / "?" 在前）
+  补，且只在枚举大小为 7 时；名字查不到时打开 mask 直接报错，不会静默屏蔽错。
+
+### 每条路径上都一样
+
+- **Rollout**：`InferenceRunner`（eager 或 compiled）调 `model(x)`，采样的分布就是屏蔽后的；`--explore-kinds` 的混合抽样
+  本来就排除 `NEG` 行；`--rollout-loop-breaker` 下 breaker 以 `skip_neg` 构造，被 mask 掉的行不算"剩余行"。
+- **PPO update**：`ppo_loss` / push 步对 `RolloutStore` 里同一份张量重新跑 `model(xb)`，mask 由观测确定性地重算，所以
+  log-prob、ratio、entropy 与 rollout 逐位一致（`tests/test_potion_mask.py`）；compile 门（`check_compiled_forward` /
+  `check_compiled`）覆盖带 mask 的 forward。
+- **Eval**：所有 NN 路径都经过 `Policy.forward`：`sts2train eval`（`load_checkpoint` 从 checkpoint 的 config 读
+  `mask_drop_potion`），训练器内的 periodic / `--eval-at` eval（活模型），`scripts/colab/w3m_line.sh` 的 per-100 eval
+  （就是训练器内的 eval）和端点 eval（`sts2train.cli eval --checkpoint pinned-*.pt`，auto = checkpoint 的值），report card、
+  probe、lookahead（都走 `load_checkpoint`）。`sts2vec eval` 不能加载 checkpoint（只收 builtin / module:callable），
+  `nn:` 策略名只出自 `sts2train.evaluate`，所以没有绕过 mask 的 NN 路径。
+- **eval 覆盖**：`sts2train eval --mask-drop-potion auto|on|off`（默认 auto = checkpoint 训练时的值，旧 checkpoint 为 off；
+  on / off 用于消融）。config.json 记 `mask_drop_potion` 与 `mask_drop_potion_source`（mode、checkpoint 的值、生效值）。
+
+### 被评估的 agent = 权重 + mask
+
+mask 开时策略名加 `:mask-drop-potion`，policy hash 为 `weights:<hash>+mask-drop-potion`（lookahead 为
+`...+la:<sha8>+mask-drop-potion`）；config.json 的 `weights_hash` 仍是纯权重的。report card 的 eval 复用检查
+（`stale_reason`）比较 config.json 的 `mask_drop_potion`，训练 flag 表把它列在 rollouts 组。每局 summary 和 report.json
+（`drop_potion`）记 `drop_potion_actions`、`drop_potion_rows_masked`、`drop_potion_mask_fallbacks`（mask 关时后两项为 0）。
+
+### 训练 flag 与 metrics
+
+- `TrainConfig.mask_drop_potion`（默认 False），CLI `--mask-drop-potion` / `--no-mask-drop-potion`；checkpoint config 记录，
+  resume 继承，旧 checkpoint 为 off。打开时训练日志有一行说明。
+- 每个 update 的 metrics（常在）：`drop_potion_actions`（本次 rollout 实际选中的丢药行数，mask 关也计数，作为对照）、
+  `drop_potion_rows_masked`（被 mask 去掉的合法丢药行，按决策求和）、`drop_potion_mask_fallbacks`；后两项 mask 关时为 0。
+  由 `ppo.drop_potion_stats` 从 `RolloutStore` 里 rollout 实际用的张量算，覆盖 `--overlap double` 的两个 lane。
 
 ## Loop breaker (`--loop-breaker`, `--rollout-loop-breaker`)
 

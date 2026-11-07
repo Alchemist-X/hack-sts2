@@ -244,6 +244,15 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                    help="wave 17: one-time reward B at every act-2+ boss kill (the act k -> k+1 transition with k >= 1, "
                         "and the Victory terminal on top of --win-bonus); part of the return, never of progress; "
                         "episodes.jsonl boss_bonus_total, metrics boss2_kills (default 0 = off)")
+    g.add_argument("--boss-hp-bonus", dest="boss_hp_bonus", type=float,
+                   help="wave 20: reward B x boss_death_hp_frac at the terminal step of an episode that ends by a "
+                        "death or step cap inside an act-boss fight of act >= --boss-hp-min-act (the per-act fraction "
+                        "of the boss HP removed, from the fight's first observed decision; sts2train.bosshp); part of "
+                        "the return, never of progress; episodes.jsonl boss_hp_bonus_total, metrics boss_hp_bonus_sum "
+                        "(default 0 = off; boss_death_hp_frac / boss_deaths are recorded either way)")
+    g.add_argument("--boss-hp-min-act", dest="boss_hp_min_act", type=int, choices=[1, 2, 3],
+                   help=f"lowest act whose boss fights are measured and paid by --boss-hp-bonus (default "
+                        f"{D.boss_hp_min_act})")
     g.add_argument("--shaped", action="store_true", help="LEGACY (= --objective shaped)")
     g.add_argument("--acq-shaping", dest="acq_shaping", action=argparse.BooleanOptionalAction,
                    help="potential-based acquisition shaping added to the objective's reward: phi = deck_coef x "
@@ -265,6 +274,15 @@ def _train_parser(sub) -> argparse.ArgumentParser:
                         "64 decisions a slot samples with probability 0 for the candidates taken there (stored "
                         "log-probs are the masked distribution's); logs loop_breaks / no_op_actions / cycle_revisits "
                         "per update (default off)")
+    g.add_argument("--mask-drop-potion", dest="mask_drop_potion", action=argparse.BooleanOptionalAction,
+                   help="wave 20: the policy treats the legal DiscardPotion rows as illegal unless the potion belt is "
+                        "full and a potion is on offer (an unclaimed potion reward, a stocked affordable shop potion: "
+                        "with a full belt their claim / buy rows are withheld, so a drop is the only way to take "
+                        "them); applied in the model's forward, so rollout sampling, the PPO update's log-probs / "
+                        "ratio / entropy and every eval of the model see it; recorded in the checkpoint's config "
+                        "(a resume and sts2train eval inherit it; eval --mask-drop-potion on / off overrides); "
+                        "metrics drop_potion_rows_masked / drop_potion_actions / drop_potion_mask_fallbacks "
+                        "(default off: the forward is unchanged)")
     g.add_argument("--loop-breaker-k", dest="loop_breaker_k", type=int,
                    help=f"returns to one observation after which the loop breaker prefers the rows that leave the "
                         f"screen (eval and rollouts; default {D.loop_breaker_k})")
@@ -617,6 +635,10 @@ def main(argv=None) -> int:
     ev.add_argument("--force-mode", dest="force_mode", choices=["greedy", "uniform"], default="greedy",
                     help="greedy = the forced row with the highest logit (default); uniform = uniform among them, "
                          "the play's draw seeded from (--sample-seed, game key)")
+    ev.add_argument("--mask-drop-potion", dest="mask_drop_potion", choices=["auto", "on", "off"], default="auto",
+                    help="the model's DiscardPotion mask (train --mask-drop-potion): auto = as the checkpoint trained "
+                         "(its config; off for checkpoints from before the option), on / off = override for "
+                         "ablations; with it on the policy name / hash carry +mask-drop-potion (default auto)")
     pl = sub.add_parser("plot", help="draw curve.png of a train run directory")
     pl.add_argument("out")
     cp = sub.add_parser("compare", help="per-seed paired comparison of protocol evaluations of one seed set "
@@ -729,7 +751,8 @@ def main(argv=None) -> int:
                            loop_breaker=a.loop_breaker == "on", loop_breaker_k=a.loop_breaker_k, policy=a.policy,
                            sample_seed=a.sample_seed, repeats=a.repeats, chunk=a.chunk,
                            log=lambda m: print(m, flush=True), allow_blind=a.allow_blind, blind_purpose=a.purpose,
-                           macros=a.macros, force=a.force, force_mode=a.force_mode)
+                           macros=a.macros, force=a.force, force_mode=a.force_mode,
+                           mask_drop_potion=a.mask_drop_potion)
         except (SpecMismatch, BlindSetError) as e:
             print(f"error: {e}", flush=True)
             return 2
@@ -748,6 +771,7 @@ def main(argv=None) -> int:
                           **({"repeats": {k: rep["repeats"][k] for k in ("repeats", "plays", "progress_mean_pooled",
                                                                          "runs")}} if "repeats" in rep else {}),
                           **({"head_readout": rep["head_readout"]} if "head_readout" in rep else {}),
+                          **({"drop_potion": rep["drop_potion"]} if "drop_potion" in rep else {}),
                           **({"force": {k: rep["force"][k] for k in ("selectors", "mode", "forced_decisions",
                                                                      "available", "changed", "forced_total")}}
                              if "force" in rep else {})}, indent=1))
