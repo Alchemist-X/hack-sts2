@@ -1,5 +1,6 @@
 # scripts/analysis
 
+- Eval readouts and decisions (`eval_summary.py`, `evalstats.py`, `decide.py`, `prereg/`): see `README-eval.md`.
 - `death_profile.py` — death profile of eval dirs (`games/*.summary.json`) and / or `episodes.jsonl` (`@LO-HI` update
   ranges), one label per input, Markdown tables side by side (`--json` for machines): end-location bands, conditional
   death rates, killer ranking (encounter-id suffix kind), and with the wave-6 run-state fields boss-entry HP, deck /

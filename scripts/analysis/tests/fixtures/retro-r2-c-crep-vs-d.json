@@ -1,0 +1,5 @@
+{"schema": "sts2.prereg/1", "name": "retro-r2-c-crep-vs-d", "note": "retrospective: C and its replication C-rep against D (the control is shared)",
+ "arms": {"treat": ["w4-c", "w4-crep"], "control": ["w4-d", "w4-d"]}, "fork": 7664, "at": [9164], "max_at": 9164,
+ "primary": {"seedset": "dev128", "window": 5, "mode": "greedy-off"},
+ "confirm": {"seedset": "ab512", "mode": "greedy-off", "endpoint": true},
+ "mde": 0.015, "margin": 0.01}

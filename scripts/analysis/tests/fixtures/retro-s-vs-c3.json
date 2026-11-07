@@ -1,0 +1,5 @@
+{"schema": "sts2.prereg/1", "name": "retro-s-vs-c3", "note": "retrospective: boss school S vs pure continuation C3, both from C2 u10664",
+ "arms": {"treat": ["w10-s"], "control": ["w4-c3"]}, "fork": 10664, "at": [11164, 11664, 12164], "max_at": 12164,
+ "primary": {"seedset": ["dev512", "dev128"], "window": 5, "mode": "greedy-off"},
+ "confirm": {"seedset": "ab512", "mode": "greedy-off", "endpoint": true},
+ "mde": 0.015, "margin": 0.01, "kill": {"after_updates": 300, "delta": -0.03}}

@@ -1,0 +1,3 @@
+#!/bin/sh
+# test PATH shim: the driver's retry / wait sleeps return at once
+exit 0

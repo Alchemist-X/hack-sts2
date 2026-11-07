@@ -1,0 +1,19 @@
+{
+ "line": "c4",
+ "hypothesis": "pure continuation of the C lineage (C3 u12164 -> u13164); the paired control for S2",
+ "run": "w4-c4",
+ "bundle": "bundle-w17",
+ "fork": {"run": "w4-c3", "update": 12164, "from": "local", "wait_s": 21600},
+ "env": {"TAG": "c4", "ENT0": "0.005", "ENT1": "0.005", "MACROS": "all", "EXTRA": "",
+         "FORK_U": 12164, "LAST": 13164, "ENDS": "12664 13164", "OVERLAP": "off", "letter": "a",
+         "WAIT_MAX_S": 600},
+ "after": [{"run": "w4-c3", "need": "update", "update": 12164,
+            "file": "evals/endpoint/u0012164-dev128-sample-off/repeats.json"}],
+ "control": {"run": "w10-s2"},
+ "eval_plan": "legacy",
+ "kill": [],
+ "pair_rule": {},
+ "on_fail": "next",
+ "replicas": 1,
+ "note": "= scratchpad launch_c4.sh (2026-11-06 20:45 EST). C3 runs under the old driver (no line_status.json), so the dependency is the trainer's own status.json (u >= 12164, trainer exited) plus C3's last endpoint report in the store (the last thing its driver writes before 'w3m-c3: done')."
+}

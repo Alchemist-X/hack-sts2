@@ -1,0 +1,28 @@
+{
+ "_doc": "Default kill rules of scripts/colab/lab/line_guard.py (backlog GUARD; docs: the RULE fields in line_guard.py --help). Thresholds from the 2026-11-06 retrospective: E2 approx_kl 0.4..1e6 from its first update (normal 0.002-0.004); E3 push_clamped 0.89-0.93; G explore_pmass_macro.ChooseRestOption 0.34 -> 7e-28 in 48 updates and sps ~4,500 vs C3 ~11,100; E-prime loss 1.1e14 at u7676 then NaN; G dev-128 0.398 vs fork 0.489. A line's spec may copy this file and tighten or relax it; set warmup_updates there for a fork whose first updates are legitimately noisy.",
+ "warmup_updates": 0,
+ "fork": {"run": null, "update": null, "eval": null},
+ "control": null,
+ "rules": [
+  {"name": "kl_high", "metric": "approx_kl", "agg": "median", "window": 10, "op": ">", "value": 0.05,
+   "tags": ["smoke", "pilot"],
+   "_why": "median of 10 so a fork's few early spikes (G 0.11 at +6) do not fire; normal lines run 0.002-0.004"},
+  {"name": "push_clamped_high", "metric": "push_clamped", "agg": "mean", "window": 10, "op": ">", "value": 0.5,
+   "tags": ["smoke", "pilot"],
+   "_why": "the bounded push is saturated: E3 0.84-0.95 from its first update; G 0.15-0.67, mean 0.40"},
+  {"name": "pmass_collapse", "metric": "explore_pmass_macro.*", "agg": "last", "window": 1, "op": "<",
+   "ref": "first5", "factor": 0.1, "min_ref": 0.01, "for_updates": 3, "tags": ["pilot"],
+   "_why": "the policy's own mass on a targeted row fell below a tenth of its first-5 level for 3 updates; rows whose mass was already ~0 (min_ref) are not judged"},
+  {"name": "sps_slow", "metric": "sps", "agg": "median", "window": 10, "op": "<", "ref": "control",
+   "factor": 0.7, "tags": ["smoke", "pilot"],
+   "_why": "per-update env steps / t_total_s against the control run's median after the fork; needs --control"},
+  {"name": "loss_nonfinite", "metric": "loss", "op": "nonfinite", "limit": 1000000.0, "tags": ["smoke", "pilot"],
+   "_why": "the trainer itself only stops on a non-finite loss; E-prime wrote 1.1e14 the update before"},
+  {"name": "dev_window_vs_fork", "source": "evals", "seedset": "silent-a10-dev-v1", "mode": "greedy-off",
+   "agg": "mean", "window": 3, "min_points": 1, "op": "<", "ref": "fork", "delta": -0.04, "ci": true,
+   "_why": "EV5 KILL: mean of the last <=3 dev-128 greedy-off evals is 0.04 below the fork-point eval and the 95% interval excludes 0; needs --fork-run (or --fork-eval)"},
+  {"name": "dev_below_floor", "source": "evals", "seedset": "silent-a10-dev-v1", "mode": "greedy-off",
+   "agg": "last", "window": 1, "op": "<", "value": 0.42, "consecutive_evals": 3,
+   "_why": "boss-school-plan-2026-11-06 abandon rule: three consecutive eval points < 0.42"}
+ ]
+}

@@ -1,0 +1,11 @@
+#!/bin/bash
+# colab CLI stub: `colab --auth=adc sessions` prints $STUB_SESSIONS; exec/stop/new/ssh are recorded in $STUB_LOG.
+[ "${1:-}" = --auth=adc ] && shift
+cmd=${1:-}; shift
+echo "colab $cmd $*" >> "${STUB_LOG:-/dev/null}"
+case "$cmd" in
+  sessions) cat "$STUB_SESSIONS" ;;
+  exec) cat > /dev/null; echo "ping-ok" ;;
+  stop) echo "stopped" ;;
+  *) echo "stub colab: $cmd" ;;
+esac

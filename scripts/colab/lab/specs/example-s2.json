@@ -1,0 +1,20 @@
+{
+ "line": "s2",
+ "hypothesis": "boss school continued: S u12164 -> u13164 with the save pool and the boss bonus; paired with C4",
+ "run": "w10-s2",
+ "bundle": "bundle-w17",
+ "fork": {"run": "w10-s", "update": 12164, "from": "bucket", "wait_s": 21600},
+ "env": {"TAG": "s2", "ENT0": "0.005", "ENT1": "0.005", "MACROS": "all",
+         "EXTRA": "--start-saves /content/sts2/saves-silent-a9a10-late --save-mix 0.25 --copies-mode determinized --boss-bonus 0.2",
+         "FORK_U": 12164, "LAST": 13164, "ENDS": "12664 13164", "OVERLAP": "off", "letter": "a",
+         "WAIT_MAX_S": 600},
+ "after": [{"line": "c4", "need": "terminal"}],
+ "control": {"run": "w4-c4"},
+ "eval_plan": "legacy",
+ "preflight": {"paths": ["/content/sts2/saves-silent-a9a10-late"]},
+ "kill": [],
+ "pair_rule": {},
+ "on_fail": "hold",
+ "replicas": 1,
+ "note": "= scratchpad launch_s2.sh. eval_plan stays legacy so S2 pairs with C4 on identical evals; legacy+dev512 / dev512 need a bundle whose seedsets include silent-a10-dev-s512 (EVAL-C), which bundle-w17 does not."
+}
